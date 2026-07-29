@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_STORE_URL: https://store.example.invalid
+      NEXT_PUBLIC_PANEL_URL: https://panel.example.invalid
+      NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
+      SUPABASE_SECRET_KEY: ci-secret-placeholder
+      PAYMENT_PROVIDER: mercado_pago
+      MERCADO_PAGO_ACCESS_TOKEN: ci-access-placeholder
+      MERCADO_PAGO_PUBLIC_KEY: ci-public-placeholder
+      MERCADO_PAGO_WEBHOOK_SECRET: ci-webhook-placeholder
+      TURNSTILE_SECRET_KEY: ci-turnstile-placeholder
+      PII_ENCRYPTION_KEY: ci-pii-placeholder
+      AUDIT_HASH_KEY: ci-audit-placeholder
+      ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid
+      DEMO_MODE: "false"
+      REQUIRE_INTERNAL_MFA: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase start
+      - run: supabase test db

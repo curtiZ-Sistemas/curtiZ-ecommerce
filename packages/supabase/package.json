@@ -1,0 +1,17 @@
+{
+  "name": "@curtiz/supabase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/database.types.ts" },
+  "scripts": {
+    "build": "tsc --outDir dist --declaration --noEmit false --incremental false",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

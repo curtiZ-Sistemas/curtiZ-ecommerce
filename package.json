@@ -1,0 +1,42 @@
+{
+  "name": "curtiz-commerce",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:store": "pnpm --filter @curtiz/store dev",
+    "dev:panel": "pnpm --filter @curtiz/panel dev",
+    "build": "pnpm validate:production && turbo build",
+    "build:local": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "test:db": "supabase test db",
+    "test:e2e": "playwright test",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:reset": "supabase db reset",
+    "supabase:types": "supabase gen types typescript --local > packages/supabase/src/database.types.ts",
+    "validate:production": "tsx scripts/validate-production.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build:local"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.54.1",
+    "@types/node": "^22.16.5",
+    "eslint": "^9.32.0",
+    "eslint-config-next": "16.2.11",
+    "prettier": "^3.6.2",
+    "supabase": "^2.33.9",
+    "tsx": "^4.20.3",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  }
+}
