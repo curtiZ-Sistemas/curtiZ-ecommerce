@@ -1,6 +1,16 @@
 "use client";
 
-import { Heart, Menu, Search, ShoppingBag, User, X } from "lucide-react";
+import {
+  BadgePercent,
+  CreditCard,
+  Heart,
+  Menu,
+  Search,
+  ShoppingBag,
+  Truck,
+  User,
+  X
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { BrandLogo } from "./brand-logo";
@@ -25,9 +35,9 @@ export function SiteHeader() {
   return (
     <>
       <div className="benefit-bar" aria-label="Benefícios">
-        <span>Frete grátis acima de R$ 149</span>
-        <span>Parcele em até 6x sem juros</span>
-        <span>5% OFF no Pix</span>
+        <span><Truck aria-hidden="true" /> Frete grátis acima de R$ 149</span>
+        <span><CreditCard aria-hidden="true" /> Parcele em até 6x sem juros</span>
+        <span><BadgePercent aria-hidden="true" /> 5% OFF no Pix</span>
       </div>
       <header className="site-header">
         <div className="header-main container">
@@ -46,7 +56,7 @@ export function SiteHeader() {
           <nav className="header-actions" aria-label="Ações da conta">
             <Link href="/login" aria-label="Entrar ou acessar minha conta">
               <User />
-              <span>Minha conta</span>
+              <span className="account-copy"><small>Entrar</small>Minha conta</span>
             </Link>
             <Link href="/minha-conta/favoritos" aria-label="Favoritos">
               <Heart />
@@ -69,24 +79,30 @@ export function SiteHeader() {
         </nav>
       </header>
       {open && (
-        <div className="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu">
-          <button className="icon-button close-button" onClick={() => setOpen(false)} aria-label="Fechar menu">
-            <X />
-          </button>
-          <BrandLogo />
-          <nav>
-            <Link href="/" onClick={() => setOpen(false)}>
-              Início
-            </Link>
-            {navigation.map(([label, href]) => (
-              <Link href={href} key={href} onClick={() => setOpen(false)}>
-                {label}
+        <div className="mobile-menu-layer">
+          <button
+            className="mobile-menu-backdrop"
+            onClick={() => setOpen(false)}
+            aria-label="Fechar menu"
+          />
+          <div className="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu">
+            <button className="icon-button close-button" onClick={() => setOpen(false)} aria-label="Fechar menu">
+              <X />
+            </button>
+            <BrandLogo />
+            <nav>
+              <Link href="/" onClick={() => setOpen(false)}>Início</Link>
+              {navigation.map(([label, href]) => (
+                <Link href={href} key={href} onClick={() => setOpen(false)}>
+                  {label}
+                </Link>
+              ))}
+              <Link href="/ajuda" onClick={() => setOpen(false)}>Central de ajuda</Link>
+              <Link className="mobile-account-link" href="/login" onClick={() => setOpen(false)}>
+                Acessar minha conta
               </Link>
-            ))}
-            <Link href="/ajuda" onClick={() => setOpen(false)}>
-              Central de ajuda
-            </Link>
-          </nav>
+            </nav>
+          </div>
         </div>
       )}
     </>

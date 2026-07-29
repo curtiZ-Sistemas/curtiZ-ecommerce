@@ -556,3 +556,347 @@ textarea:focus-visible {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Refinamento visual e responsivo do painel. */
+
+body {
+  background:
+    radial-gradient(circle at 96% 0%, rgb(245 204 196 / 24%), transparent 28rem),
+    var(--canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+.primary-button,
+.secondary-button,
+.side-nav a,
+.panel-card,
+.metric-card {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+button:not(:disabled):active,
+.primary-button:active,
+.secondary-button:active {
+  transform: translateY(1px);
+}
+
+.sidebar {
+  z-index: 90;
+  box-shadow: 8px 0 28px rgb(64 28 20 / 3%);
+}
+
+.sidebar-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.panel-brand {
+  padding-bottom: 8px;
+}
+
+.panel-brand span {
+  transition: transform 220ms ease;
+}
+
+.panel-brand:hover span {
+  transform: rotate(-8deg);
+}
+
+.sidebar-context {
+  margin: 0 12px 22px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-close {
+  display: none;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+
+.side-nav a {
+  position: relative;
+}
+
+.side-nav a:hover:not(.active) {
+  color: var(--brand-900);
+  background: var(--brand-50);
+  transform: translateX(2px);
+}
+
+.side-nav a.active {
+  box-shadow: 0 10px 24px rgb(107 19 12 / 16%);
+}
+
+.side-nav a.active::before {
+  position: absolute;
+  left: 4px;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--brand-100);
+  content: "";
+}
+
+.support-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.support-card:hover {
+  border-color: var(--brand-100);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.support-card span,
+.support-card strong,
+.support-card small {
+  display: block;
+}
+
+.support-card small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.topbar {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  background: rgb(255 255 255 / 90%);
+  backdrop-filter: blur(16px);
+}
+
+.topbar button {
+  cursor: pointer;
+}
+
+.topbar button:hover {
+  color: var(--brand-900);
+  border-color: var(--brand-100);
+  background: var(--brand-50);
+}
+
+.topbar-search {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.topbar-search form {
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: width 220ms ease, opacity 180ms ease;
+}
+
+.topbar-search.open form {
+  width: min(34vw, 360px);
+  opacity: 1;
+}
+
+.topbar-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 11px 0 0 11px;
+  outline: 0;
+  background: white;
+}
+
+.topbar-search.open button {
+  border-radius: 0 11px 11px 0;
+}
+
+.store-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  transition: color 180ms ease;
+}
+
+.store-shortcut:hover {
+  color: var(--brand-900);
+}
+
+.store-shortcut svg {
+  width: 15px;
+}
+
+.avatar {
+  box-shadow: 0 0 0 4px var(--brand-50);
+}
+
+.panel-content {
+  width: min(100%, 1600px);
+  margin-inline: auto;
+  animation: panel-rise 380ms ease both;
+}
+
+.page-heading h1 {
+  text-wrap: balance;
+}
+
+.demo-status {
+  border: 1px solid rgb(126 28 19 / 8%);
+}
+
+.metric-card,
+.panel-card {
+  box-shadow: 0 8px 28px rgb(64 28 20 / 5%);
+}
+
+.metric-card {
+  overflow: hidden;
+}
+
+.metric-card::after {
+  position: absolute;
+  right: -30px;
+  bottom: -45px;
+  width: 105px;
+  height: 105px;
+  border-radius: 999px;
+  background: var(--brand-50);
+  content: "";
+}
+
+.metric-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--brand-100);
+  box-shadow: 0 15px 36px rgb(107 19 12 / 9%);
+}
+
+.metric-card > svg {
+  padding: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--brand-50);
+}
+
+.panel-card:hover {
+  border-color: #ded7d2;
+}
+
+.primary-button:hover {
+  background: var(--brand-800);
+  box-shadow: 0 8px 18px rgb(107 19 12 / 14%);
+}
+
+.secondary-button:hover {
+  background: var(--brand-50);
+}
+
+.data-table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.data-table tbody tr:hover {
+  background: #fffaf8;
+}
+
+.integration {
+  background: white;
+  box-shadow: 0 8px 24px rgb(64 28 20 / 4%);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.integration:hover {
+  transform: translateY(-2px);
+  border-color: var(--brand-100);
+  box-shadow: 0 14px 30px rgb(107 19 12 / 8%);
+}
+
+.panel-backdrop {
+  display: none;
+}
+
+@keyframes panel-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close {
+    display: grid;
+  }
+
+  .panel-backdrop {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: rgb(32 31 30 / 44%);
+    backdrop-filter: blur(3px);
+    animation: panel-fade 180ms ease both;
+  }
+
+  .topbar-search {
+    margin-left: 0;
+  }
+
+  .topbar-search.open {
+    position: absolute;
+    right: 70px;
+    left: 66px;
+  }
+
+  .topbar-search.open form {
+    width: 100%;
+  }
+
+  .store-shortcut {
+    display: none;
+  }
+}
+
+@keyframes panel-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-content,
+  .panel-backdrop {
+    animation: none !important;
+  }
+}

@@ -1,4 +1,11 @@
-import { Headphones, PackageCheck, ShieldCheck, WalletCards } from "lucide-react";
+import {
+  ArrowRight,
+  Headphones,
+  PackageCheck,
+  ShieldCheck,
+  Sparkles,
+  WalletCards
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { ProductCard } from "@/components/product-card";
@@ -16,19 +23,26 @@ export default function HomePage() {
     <>
       <section className="hero container">
         <div className="hero-copy">
-          <p className="eyebrow">Nova coleção Curtiz</p>
+          <p className="hero-label"><Sparkles aria-hidden="true" /> Nova coleção Curtiz</p>
           <h1>Conforto que combina com o seu ritmo.</h1>
           <p>
             Design brasileiro, materiais macios e escolhas para toda a família — do primeiro
             passo do dia ao descanso merecido.
           </p>
-          <Link className="secondary-button" href="/lancamentos">
-            Conheça os lançamentos
-          </Link>
+          <div className="hero-actions">
+            <Link className="secondary-button" href="/lancamentos">
+              Conheça os lançamentos <ArrowRight aria-hidden="true" />
+            </Link>
+            <Link className="hero-text-link" href="/produtos">Explorar produtos</Link>
+          </div>
+          <div className="hero-proof" aria-label="Diferenciais da coleção demonstrativa">
+            <span><strong>8</strong> modelos demonstrativos</span>
+            <span><strong>4,8</strong> avaliação média fictícia</span>
+          </div>
         </div>
       </section>
 
-      <section className="section container" aria-labelledby="categorias-title">
+      <section className="section container reveal-section" aria-labelledby="categorias-title">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Encontre seu estilo</p>
@@ -40,24 +54,22 @@ export default function HomePage() {
             <Link className="category-card" href={href} key={href}>
               <div>
                 <h3>{name}</h3>
-                <span>Ver produtos →</span>
+                <span>Ver produtos <ArrowRight aria-hidden="true" /></span>
               </div>
-              {product && (
-                <Image src={product.image} alt="" width={250} height={140} aria-hidden="true" />
-              )}
+              {product && <Image src={product.image} alt="" width={250} height={140} aria-hidden="true" />}
             </Link>
           ))}
         </div>
       </section>
 
-      <section className="section container" aria-labelledby="ofertas-title">
+      <section className="section container reveal-section" aria-labelledby="ofertas-title">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Seleção especial</p>
             <h2 id="ofertas-title">Ofertas em destaque</h2>
           </div>
-          <Link className="text-link" href="/ofertas">
-            Ver todas →
+          <Link className="text-link section-link" href="/ofertas">
+            Ver todas <ArrowRight aria-hidden="true" />
           </Link>
         </div>
         <div className="product-grid">
@@ -67,35 +79,23 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section container" aria-label="Benefícios da Curtiz">
+      <section className="section container reveal-section" aria-label="Benefícios da Curtiz">
         <div className="benefits-grid">
           <div className="benefit">
             <PackageCheck />
-            <div>
-              <strong>Entrega para todo o Brasil</strong>
-              <span>Acompanhe cada etapa do pedido.</span>
-            </div>
+            <div><strong>Entrega para todo o Brasil</strong><span>Acompanhe cada etapa do pedido.</span></div>
           </div>
           <div className="benefit">
             <ShieldCheck />
-            <div>
-              <strong>Compra segura</strong>
-              <span>Seus dados protegidos em todas as etapas.</span>
-            </div>
+            <div><strong>Compra segura</strong><span>Seus dados protegidos em todas as etapas.</span></div>
           </div>
           <div className="benefit">
             <WalletCards />
-            <div>
-              <strong>Parcele em até 6x</strong>
-              <span>Sem juros nos cartões de crédito.</span>
-            </div>
+            <div><strong>Parcele em até 6x</strong><span>Sem juros nos cartões de crédito.</span></div>
           </div>
           <div className="benefit">
             <Headphones />
-            <div>
-              <strong>Atendimento humano</strong>
-              <span>Ajuda rápida e histórico em um só lugar.</span>
-            </div>
+            <div><strong>Atendimento humano</strong><span>Ajuda rápida e histórico em um só lugar.</span></div>
           </div>
         </div>
       </section>

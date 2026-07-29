@@ -16,3 +16,15 @@ test("abre atendimento humano na fila administrativa", async ({ page }) => {
   await page.getByRole("button", { name: /Falar com um humano/i }).click();
   await expect(page.getByText(/fila do Administrador/i)).toBeVisible();
 });
+
+test("oferece um único acesso para clientes e equipe", async ({ page }) => {
+  await page.goto("/login");
+
+  await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
+  await expect(page.getByText(/Cliente ou equipe Curtiz/i)).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Cadastre-se" })).toHaveAttribute(
+    "href",
+    "/cadastro"
+  );
+});
