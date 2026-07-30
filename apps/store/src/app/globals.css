@@ -2766,6 +2766,16 @@ select:disabled {
   padding: 0;
   border: 0;
   outline: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.input-shell input:focus,
+.input-shell input:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
 }
 
 .password-toggle {

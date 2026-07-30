@@ -8,4 +8,6 @@ E-mails locais:
 - gerencia.demo@curtiz.local
 - tecnico.demo@curtiz.local
 
-A senha vem exclusivamente de `DEMO_USERS_PASSWORD` ou é gerada e mostrada uma única vez. O seed e o bypass local de MFA são bloqueados em produção.
+Após executar `pnpm seed:demo`, todas usam a senha `1234567890`, definida em `.env.local` pela
+variável `DEMO_USERS_PASSWORD`. O seed cria ou atualiza as contas no Supabase local e nunca
+registra a senha no console. O seed e o bypass local de MFA são bloqueados em produção.
