@@ -47,6 +47,18 @@ pnpm supabase:types
 - Notas internas e anexos privados possuem políticas próprias.
 - `DEMO_MODE=true` ou providers mock bloqueiam builds de produção.
 
+As políticas são executadas separadamente:
+
+```bash
+pnpm validate:development
+pnpm validate:staging
+pnpm validate:production
+```
+
+`pnpm build` permanece equivalente ao build de produção. Para demonstração hospedada use
+`pnpm build:staging`; a versão de staging continua exigindo Supabase gerenciado, chaves internas,
+URLs públicas e origens permitidas.
+
 Para criar contas locais:
 
 ```bash
@@ -72,4 +84,5 @@ No Windows desta estação, o binário Turbo pode encontrar `spawn UNKNOWN`; use
 
 Use dois deployments Next.js independentes, Supabase gerenciado e Cloudflare na borda. Configure todas as variáveis da `.env.example`, MFA interno, Turnstile e providers reais. Nunca exponha o stack Supabase local à internet.
 
-Consulte os runbooks e decisões em `docs/`.
+Consulte `docs/deployment.md` para os comandos exatos de staging e produção na Cloudflare e os
+demais runbooks e decisões em `docs/`.

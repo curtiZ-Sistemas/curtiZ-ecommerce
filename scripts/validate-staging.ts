@@ -1,3 +1,3 @@
 import { runEnvironmentValidation } from "./environment-validation";
 
-runEnvironmentValidation("production");
+runEnvironmentValidation("staging");
