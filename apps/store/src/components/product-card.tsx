@@ -16,7 +16,13 @@ export function ProductCard({ product }: { product: Product }) {
     <article className="product-card">
       <Link href={`/produto/${product.slug}`} className="product-image">
         {discount && <span className="discount-badge">-{discount}%</span>}
-        <Image src={product.image} alt={product.name} width={360} height={280} />
+        <Image
+          src={product.image}
+          alt={product.name}
+          width={360}
+          height={280}
+          sizes="(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"
+        />
       </Link>
       <button
         className={favorite ? "favorite-button active" : "favorite-button"}

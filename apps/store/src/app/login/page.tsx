@@ -43,6 +43,10 @@ export default function LoginPage() {
             <h2>Acesse sua conta</h2>
             <p>Use seu e-mail e senha cadastrados para continuar.</p>
           </header>
+          <p className="auth-mobile-team-note">
+            <LockKeyhole aria-hidden="true" />
+            Clientes e equipe Curtiz usam este mesmo acesso.
+          </p>
           <AuthForm mode="login" />
           <div className="auth-divider"><span>Primeira vez na Curtiz?</span></div>
           <Link className="secondary-button full-button auth-register-button" href="/cadastro">

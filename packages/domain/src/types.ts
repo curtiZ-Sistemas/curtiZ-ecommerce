@@ -19,12 +19,14 @@ export type Product = {
 
 export type CartLine = {
   productId: string;
+  slug?: string;
   variantId: string;
   name: string;
   image: string;
   color: string;
   size: string;
   quantity: number;
+  maxQuantity?: number;
   unitPriceInCents: number;
 };
 

@@ -12,6 +12,7 @@ export function AddToCart({ product }: { product: Product }) {
   const { add } = useCart();
 
   const handleAdd = () => {
+    if (added) return;
     add(product, color, size);
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1800);
@@ -49,7 +50,10 @@ export function AddToCart({ product }: { product: Product }) {
           ))}
         </div>
       </fieldset>
-      <button className="primary-button full-button" type="button" onClick={handleAdd}>
+      <p className="sr-only" role="status" aria-live="polite">
+        {added ? `${product.name} adicionado ao carrinho.` : ""}
+      </p>
+      <button className="primary-button full-button" type="button" onClick={handleAdd} disabled={added}>
         {added ? <Check /> : <ShoppingBag />}
         {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}
       </button>

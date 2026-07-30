@@ -22,6 +22,11 @@ export default defineConfig({
       testMatch: /store\.spec\.ts/
     },
     {
+      name: "store-responsive",
+      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3000" },
+      testMatch: /responsive\.spec\.ts/
+    },
+    {
       name: "panel-desktop",
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3001" },
       testMatch: /panel\.spec\.ts/

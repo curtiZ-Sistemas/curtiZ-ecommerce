@@ -112,7 +112,9 @@ function Addresses() {
       <MapPin />
       <h2>Endereços</h2>
       <p>Nenhum endereço salvo. O endereço só é solicitado quando necessário para uma compra.</p>
-      <button className="secondary-button">Adicionar endereço</button>
+      <button className="secondary-button" type="button" disabled title="Disponível após conectar o Supabase">
+        Adicionar endereço · não configurado
+      </button>
     </div>
   );
 }
@@ -124,7 +126,9 @@ function Security() {
         <ShieldCheck />
         <h2>Segurança da conta</h2>
         <p>Altere sua senha, revise sessões e ative MFA opcional.</p>
-        <button className="secondary-button">Revisar sessões</button>
+        <button className="secondary-button" type="button" disabled title="Disponível após conectar o Supabase Auth">
+          Revisar sessões · não configurado
+        </button>
       </div>
       <div className="form-card">
         <h2>Últimos acessos</h2>
@@ -154,7 +158,9 @@ function Privacy() {
         <h2>Preferências e LGPD</h2>
         <p>Gerencie consentimentos ou solicite exportação, anonimização e exclusão.</p>
       </div>
-      <button className="secondary-button">Solicitar meus dados</button>
+      <button className="secondary-button" type="button" disabled title="Disponível após conectar o fluxo LGPD">
+        Solicitar meus dados · não configurado
+      </button>
     </div>
   );
 }

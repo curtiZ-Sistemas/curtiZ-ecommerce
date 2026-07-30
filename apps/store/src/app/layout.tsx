@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { CartProvider } from "@/components/cart-provider";
+import { HelpChat } from "@/components/help-chat";
+import { RouteFeedback } from "@/components/route-feedback";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
@@ -28,14 +30,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
       <body>
         <CartProvider>
+          <a className="skip-link" href="#main-content">
+            Ir para o conteúdo principal
+          </a>
+          <RouteFeedback />
           {demo && (
             <div className="demo-banner">
               Ambiente de demonstração — produtos, pedidos e integrações exibidos são fictícios.
             </div>
           )}
           <SiteHeader />
-          <main>{children}</main>
+          <main id="main-content">{children}</main>
           <SiteFooter />
+          <HelpChat />
         </CartProvider>
       </body>
     </html>

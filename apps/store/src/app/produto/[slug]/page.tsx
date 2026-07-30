@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { formatBRL } from "@curtiz/domain";
-import { PackageCheck, ShieldCheck, Star } from "lucide-react";
+import { PackageCheck, RotateCcw, ShieldCheck, Star, Truck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -62,7 +62,15 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       </nav>
       <section className="product-detail">
         <div className="product-gallery">
-          <Image src={product.image} alt={product.name} width={720} height={560} priority />
+          {product.compareAtPriceInCents && <span className="gallery-offer">Oferta</span>}
+          <Image
+            src={product.image}
+            alt={product.name}
+            width={720}
+            height={560}
+            sizes="(max-width: 900px) 100vw, 56vw"
+            priority
+          />
         </div>
         <div className="product-summary">
           <p className="eyebrow">{product.category}</p>
@@ -75,10 +83,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <p className="product-description">{product.description}</p>
           <p className="product-price">
             <strong>{formatBRL(product.priceInCents)}</strong>
+            {product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
           </p>
-          <span className="installments">ou 6x sem juros • 5% de desconto no Pix</span>
+          <span className="installments">ou 6x sem juros · 5% de desconto no Pix</span>
           <AddToCart product={product} />
-          <div className="benefits-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 24 }}>
+          <div className="product-benefits">
             <div className="benefit">
               <PackageCheck />
               <div>
@@ -93,8 +102,35 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 <span>Valores validados no servidor.</span>
               </div>
             </div>
+            <div className="benefit">
+              <Truck />
+              <div>
+                <strong>Entrega acompanhada</strong>
+                <span>Eventos confirmados pelo provedor.</span>
+              </div>
+            </div>
+            <div className="benefit">
+              <RotateCcw />
+              <div>
+                <strong>Troca simplificada</strong>
+                <span>Solicitação vinculada ao pedido.</span>
+              </div>
+            </div>
           </div>
         </div>
+      </section>
+
+      <section className="product-information">
+        <div>
+          <p className="eyebrow">Detalhes do produto</p>
+          <h2>Conforto pensado para a rotina</h2>
+          <p>{product.description}</p>
+        </div>
+        <dl>
+          <div><dt>Material</dt><dd>Composição demonstrativa</dd></div>
+          <div><dt>Cuidados</dt><dd>Limpeza manual e secagem à sombra</dd></div>
+          <div><dt>Origem</dt><dd>Conteúdo de demonstração</dd></div>
+        </dl>
       </section>
 
       <section className="section">
