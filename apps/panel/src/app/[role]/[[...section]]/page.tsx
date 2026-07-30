@@ -1,3 +1,4 @@
+import { DEMO_SESSION_COOKIE, demoDestination, verifyDemoSession } from "@curtiz/security";
 import {
   Activity,
   BadgeDollarSign,
@@ -12,7 +13,9 @@ import {
   Truck,
   Webhook
 } from "lucide-react";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { PanelShell, type PanelRole } from "@/components/panel-shell";
 import { RevenueChart } from "@/components/revenue-chart";
 import { SupportConsole } from "@/components/support-console";
@@ -27,6 +30,17 @@ export default async function RolePage({
   const resolved = await params;
   if (!roles.has(resolved.role as PanelRole)) notFound();
   const role = resolved.role as PanelRole;
+
+  if (process.env.DEMO_MODE === "true") {
+    const cookieStore = await cookies();
+    const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
+    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+    if (!session || session.role === "customer") redirect(`${storeUrl}/login`);
+
+    const allowedDestination = demoDestination(session.role);
+    if (`/${role}` !== allowedDestination) redirect(allowedDestination);
+  }
+
   const section = resolved.section?.[0] ?? "";
 
   return (
@@ -110,7 +124,12 @@ function Administration({ section }: { section: string }) {
     <>
       <div className="metric-grid">
         <Metric label="Pedidos hoje" value="312" trend="+9,2%" icon={<ShoppingBag />} />
-        <Metric label="Faturamento comercial" value="R$ 48.920" trend="+16,4%" icon={<BadgeDollarSign />} />
+        <Metric
+          label="Faturamento comercial"
+          value="R$ 48.920"
+          trend="+16,4%"
+          icon={<BadgeDollarSign />}
+        />
         <Metric label="Estoque baixo" value="18" trend="Atenção" icon={<Boxes />} />
         <Metric label="Atendimentos na fila" value="7" trend="2 urgentes" icon={<Headphones />} />
       </div>
@@ -136,8 +155,18 @@ function Management({ section }: { section: string }) {
   return (
     <>
       <div className="metric-grid">
-        <Metric label="Faturamento bruto" value="R$ 2,84 mi" trend="+18,7%" icon={<BadgeDollarSign />} />
-        <Metric label="Faturamento líquido" value="R$ 2,45 mi" trend="+16,9%" icon={<CircleCheck />} />
+        <Metric
+          label="Faturamento bruto"
+          value="R$ 2,84 mi"
+          trend="+18,7%"
+          icon={<BadgeDollarSign />}
+        />
+        <Metric
+          label="Faturamento líquido"
+          value="R$ 2,45 mi"
+          trend="+16,9%"
+          icon={<CircleCheck />}
+        />
         <Metric label="Lucro estimado" value="R$ 731 mil" trend="+21,3%" icon={<Activity />} />
         <Metric label="Reembolsos" value="R$ 49 mil" trend="-8,6%" icon={<RotateCcw />} />
       </div>
@@ -274,16 +303,33 @@ function Products() {
       </div>
       <div className="toolbar">
         <input placeholder="Buscar nome, SKU ou categoria" aria-label="Buscar produtos" />
-        <select aria-label="Categoria"><option>Todas as categorias</option></select>
+        <select aria-label="Categoria">
+          <option>Todas as categorias</option>
+        </select>
       </div>
       <div className="table-scroll">
         <table className="data-table">
-          <thead><tr><th>Produto</th><th>SKU</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>SKU</th>
+              <th>Preço</th>
+              <th>Estoque</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
           <tbody>
             {products.map((row) => (
               <tr key={row[1]}>
-                {row.map((cell, index) => <td key={cell}>{index === 4 ? <span className="status green">{cell}</span> : cell}</td>)}
-                <td><button className="secondary-button">Editar</button></td>
+                {row.map((cell, index) => (
+                  <td key={cell}>
+                    {index === 4 ? <span className="status green">{cell}</span> : cell}
+                  </td>
+                ))}
+                <td>
+                  <button className="secondary-button">Editar</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -343,9 +389,16 @@ function Promotions() {
 function UsersPanel() {
   return (
     <section className="panel-card">
-      <div className="page-heading"><h2>Usuários internos</h2><button className="primary-button">Criar acesso</button></div>
+      <div className="page-heading">
+        <h2>Usuários internos</h2>
+        <button className="primary-button">Criar acesso</button>
+      </div>
       <p>Contas privilegiadas exigem MFA, reautenticação, motivo e possível segunda aprovação.</p>
-      <Compact label="operacional.demo@curtiz.local" detail="MFA pendente no ambiente local" value="Operacional" />
+      <Compact
+        label="operacional.demo@curtiz.local"
+        detail="MFA pendente no ambiente local"
+        value="Operacional"
+      />
       <Compact label="gerencia.demo@curtiz.local" detail="Acesso demonstrativo" value="Gerência" />
     </section>
   );
@@ -373,7 +426,9 @@ function Financial() {
       </section>
       <section className="panel-card">
         <h2>Fechamento</h2>
-        <p>Períodos fechados ficam bloqueados. Somente Gerência pode reabrir com motivo auditado.</p>
+        <p>
+          Períodos fechados ficam bloqueados. Somente Gerência pode reabrir com motivo auditado.
+        </p>
         <button className="primary-button">Iniciar fechamento</button>
       </section>
     </div>
@@ -384,8 +439,16 @@ function Approvals() {
   return (
     <section className="panel-card">
       <h2>Aprovações pendentes</h2>
-      <Compact label="Reembolso acima do limite" detail="R$ 489,90 • motivo registrado" value="Analisar" />
-      <Compact label="Ajuste de inventário" detail="+42 unidades • sessão INV-03" value="Analisar" />
+      <Compact
+        label="Reembolso acima do limite"
+        detail="R$ 489,90 • motivo registrado"
+        value="Analisar"
+      />
+      <Compact
+        label="Ajuste de inventário"
+        detail="+42 unidades • sessão INV-03"
+        value="Analisar"
+      />
       <Compact label="Novo usuário Técnico" detail="AAL2 obrigatório" value="Analisar" />
     </section>
   );
@@ -404,7 +467,10 @@ function Integrations() {
     <div className="integration-grid">
       {rows.map(([name, state, detail]) => (
         <article className="integration" key={name}>
-          <header><strong>{name}</strong><span className="status gray">{state}</span></header>
+          <header>
+            <strong>{name}</strong>
+            <span className="status gray">{state}</span>
+          </header>
           <p>{detail}</p>
         </article>
       ))}
@@ -418,7 +484,11 @@ function Webhooks() {
       <h2>Webhooks e filas</h2>
       <p>Nenhum evento real foi recebido. O painel não simula integrações conectadas.</p>
       <Compact label="Fila de e-mail" detail="Provider não configurado" value="0 pendentes" />
-      <Compact label="Mercado Pago" detail="Assinatura e idempotência obrigatórias" value="0 eventos" />
+      <Compact
+        label="Mercado Pago"
+        detail="Assinatura e idempotência obrigatórias"
+        value="0 eventos"
+      />
     </section>
   );
 }
@@ -427,10 +497,31 @@ function EventsTable() {
   return (
     <div className="table-scroll">
       <table className="data-table">
-        <thead><tr><th>Data</th><th>Fonte</th><th>Evento</th><th>Nível</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Fonte</th>
+            <th>Evento</th>
+            <th>Nível</th>
+          </tr>
+        </thead>
         <tbody>
-          <tr><td>Agora</td><td>panel</td><td>Aplicação inicializada em modo demo</td><td><span className="status blue">INFO</span></td></tr>
-          <tr><td>Agora</td><td>supabase</td><td>Integração não configurada</td><td><span className="status orange">WARNING</span></td></tr>
+          <tr>
+            <td>Agora</td>
+            <td>panel</td>
+            <td>Aplicação inicializada em modo demo</td>
+            <td>
+              <span className="status blue">INFO</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Agora</td>
+            <td>supabase</td>
+            <td>Integração não configurada</td>
+            <td>
+              <span className="status orange">WARNING</span>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

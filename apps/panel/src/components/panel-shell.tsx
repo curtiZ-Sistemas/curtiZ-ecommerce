@@ -10,6 +10,8 @@ import {
   FileClock,
   Headphones,
   LifeBuoy,
+  LoaderCircle,
+  LogOut,
   Menu,
   MessageSquareText,
   PackageCheck,
@@ -24,11 +26,11 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
-const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size?: number }> ]>> = {
+const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size?: number }>]>> = {
   operacional: [
     ["Fila operacional", "", CircleGauge],
     ["Pedidos", "pedidos", ShoppingBag],
@@ -89,20 +91,90 @@ export function PanelShell({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const closeMenu = () => setMenuOpen(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const closeMenu = (restoreFocus = false) => {
+    setMenuOpen(false);
+    if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
+  };
   const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    setLogoutError("");
+    try {
+      const response = await fetch(`${storeUrl}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("logout_failed");
+      window.location.assign(`${storeUrl}/login`);
+    } catch {
+      setLogoutError("Não foi possível sair. Tente novamente.");
+      setSigningOut(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu(true);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  const trapSidebarFocus = (event: KeyboardEvent<HTMLElement>) => {
+    if (!menuOpen || event.key !== "Tab") return;
+    const controls = sidebarRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!controls?.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 
   return (
     <div className="panel-layout">
       {menuOpen && (
-        <button className="panel-backdrop" onClick={closeMenu} aria-label="Fechar navegação" />
+        <button
+          className="panel-backdrop"
+          type="button"
+          onClick={() => closeMenu(true)}
+          aria-label="Fechar navegação"
+        />
       )}
-      <aside className={menuOpen ? "sidebar open" : "sidebar"}>
+      <aside
+        className={menuOpen ? "sidebar open" : "sidebar"}
+        ref={sidebarRef}
+        onKeyDown={trapSidebarFocus}
+      >
         <div className="sidebar-heading">
-          <Link className="panel-brand" href={`/${role}`} onClick={closeMenu}>
+          <Link className="panel-brand" href={`/${role}`} onClick={() => closeMenu()}>
             CURTI<span>Z</span>
           </Link>
-          <button className="sidebar-close" onClick={closeMenu} aria-label="Fechar menu">
+          <button
+            className="sidebar-close"
+            type="button"
+            onClick={() => closeMenu(true)}
+            aria-label="Fechar menu"
+            autoFocus={menuOpen}
+          >
             <X />
           </button>
         </div>
@@ -115,7 +187,7 @@ export function PanelShell({
                 className={section === route ? "active" : ""}
                 href={href}
                 key={href}
-                onClick={closeMenu}
+                onClick={() => closeMenu()}
               >
                 <Icon size={19} />
                 <span>{label}</span>
@@ -125,14 +197,19 @@ export function PanelShell({
         </nav>
         <Link className="support-card" href={`/${role}/atendimentos`}>
           <LifeBuoy size={20} />
-          <span><strong>Precisa de ajuda?</strong><small>Suporte interno auditado</small></span>
+          <span>
+            <strong>Precisa de ajuda?</strong>
+            <small>Suporte interno auditado</small>
+          </span>
         </Link>
       </aside>
 
       <div className="panel-main">
         <header className="topbar">
           <button
+            ref={menuButtonRef}
             className="menu-toggle"
+            type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Abrir menu"
             aria-expanded={menuOpen}
@@ -142,11 +219,19 @@ export function PanelShell({
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
               <form action={`/${role}/pedidos`}>
-                <label className="sr-only" htmlFor="panel-search">Buscar no painel</label>
-                <input id="panel-search" name="q" placeholder="Pedido, cliente ou produto…" autoFocus />
+                <label className="sr-only" htmlFor="panel-search">
+                  Buscar no painel
+                </label>
+                <input
+                  id="panel-search"
+                  name="q"
+                  placeholder="Pedido, cliente ou produto…"
+                  autoFocus
+                />
               </form>
             )}
             <button
+              type="button"
               onClick={() => setSearchOpen((current) => !current)}
               aria-label={searchOpen ? "Fechar busca" : "Abrir busca"}
               aria-expanded={searchOpen}
@@ -164,6 +249,27 @@ export function PanelShell({
               <small>{roleLabels[role]}</small>
             </div>
           </div>
+          <button
+            className="panel-logout"
+            type="button"
+            onClick={() => {
+              void logout();
+            }}
+            disabled={signingOut}
+            aria-label="Sair do painel"
+            title="Sair do painel"
+          >
+            {signingOut ? (
+              <LoaderCircle className="spin" aria-hidden="true" />
+            ) : (
+              <LogOut aria-hidden="true" />
+            )}
+          </button>
+          {logoutError && (
+            <span className="panel-logout-error" role="alert">
+              {logoutError}
+            </span>
+          )}
         </header>
         <main className="panel-content">{children}</main>
       </div>

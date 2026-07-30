@@ -11,11 +11,13 @@ import {
   UserRound,
   X
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BrandLogo } from "./brand-logo";
 import { useCart } from "./cart-provider";
+import { demoProducts } from "@/lib/catalog";
 
 const navigation = [
   ["Masculino", "/masculino"],
@@ -31,9 +33,42 @@ const navigation = [
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [accountName, setAccountName] = useState<string>();
   const pathname = usePathname();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const { hydrated, lines } = useCart();
   const items = lines.reduce((total, line) => total + line.quantity, 0);
+  const suggestions = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase("pt-BR");
+    if (normalized.length < 2) return [];
+    return demoProducts
+      .filter((product) =>
+        `${product.name} ${product.category} ${product.colors.join(" ")}`
+          .toLocaleLowerCase("pt-BR")
+          .includes(normalized)
+      )
+      .slice(0, 4);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/auth/session", {
+      cache: "no-store",
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { authenticated: boolean; fullName?: string };
+      })
+      .then((result) => {
+        if (result?.authenticated && result.fullName) setAccountName(result.fullName);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -49,17 +84,57 @@ export function SiteHeader() {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!menuOpen && !searchOpen) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (menuOpen) {
+        setMenuOpen(false);
+        window.setTimeout(() => menuButtonRef.current?.focus(), 0);
+      } else {
+        setSearchOpen(false);
+        window.setTimeout(() => searchButtonRef.current?.focus(), 0);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen, searchOpen]);
+
+  const trapDrawerFocus = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const focusable = drawerRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
+
   return (
     <>
       <div className="benefit-bar" aria-label="Benefícios da compra">
-        <span><Truck aria-hidden="true" /> Frete grátis acima de R$ 149</span>
-        <span><CreditCard aria-hidden="true" /> Até 6x sem juros</span>
-        <span><BadgePercent aria-hidden="true" /> 5% OFF no Pix</span>
+        <span>
+          <Truck aria-hidden="true" /> Frete grátis acima de R$ 149
+        </span>
+        <span>
+          <CreditCard aria-hidden="true" /> Até 6x sem juros
+        </span>
+        <span>
+          <BadgePercent aria-hidden="true" /> 5% OFF no Pix
+        </span>
       </div>
 
       <header className="site-header">
         <div className="header-main container">
           <button
+            ref={menuButtonRef}
             className="icon-button menu-button"
             type="button"
             onClick={() => setMenuOpen(true)}
@@ -88,6 +163,7 @@ export function SiteHeader() {
 
           <nav className="header-actions" aria-label="Conta e compras">
             <button
+              ref={searchButtonRef}
               className="header-search-toggle"
               type="button"
               onClick={() => setSearchOpen((current) => !current)}
@@ -96,9 +172,16 @@ export function SiteHeader() {
             >
               {searchOpen ? <X /> : <Search />}
             </button>
-            <Link className="account-action" href="/login" aria-label="Entrar ou acessar minha conta">
+            <Link
+              className="account-action"
+              href={accountName ? "/minha-conta" : "/login"}
+              aria-label={accountName ? "Acessar minha conta" : "Entrar na minha conta"}
+            >
               <UserRound />
-              <span className="account-copy"><small>Olá, entre</small>Minha conta</span>
+              <span className="account-copy">
+                <small>{accountName ? `Olá, ${accountName.split(" ")[0]}` : "Olá, entre"}</small>
+                Minha conta
+              </span>
             </Link>
             <Link className="favorite-action" href="/minha-conta/favoritos" aria-label="Favoritos">
               <Heart />
@@ -111,26 +194,67 @@ export function SiteHeader() {
         </div>
 
         {searchOpen && (
-          <div className="mobile-search-panel">
-            <form className="search-form container" action="/busca" role="search">
-              <Search aria-hidden="true" />
-              <label className="sr-only" htmlFor="mobile-site-search">
-                Buscar produtos
-              </label>
-              <input
-                id="mobile-site-search"
-                name="q"
-                type="search"
-                placeholder="O que você procura?"
-                autoFocus
-              />
-              <button type="submit">Buscar</button>
-            </form>
+          <div
+            className="mobile-search-panel"
+            role="dialog"
+            aria-modal="false"
+            aria-label="Busca de produtos"
+          >
+            <div className="container mobile-search-content">
+              <form className="search-form" action="/busca" role="search">
+                <Search aria-hidden="true" />
+                <label className="sr-only" htmlFor="mobile-site-search">
+                  Buscar produtos
+                </label>
+                <input
+                  id="mobile-site-search"
+                  name="q"
+                  type="search"
+                  placeholder="O que você procura?"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <button type="submit">Buscar</button>
+              </form>
+              {searchQuery.trim().length >= 2 && (
+                <div className="search-suggestions" aria-live="polite">
+                  <div className="search-suggestions-heading">
+                    <strong>
+                      {suggestions.length ? "Produtos encontrados" : "Nenhum produto encontrado"}
+                    </strong>
+                    <span>{suggestions.length} resultados rápidos</span>
+                  </div>
+                  {suggestions.map((product) => (
+                    <Link
+                      className="search-suggestion"
+                      href={`/produto/${product.slug}`}
+                      key={product.id}
+                    >
+                      <Image src={product.image} alt="" width={56} height={44} />
+                      <span>
+                        <strong>{product.name}</strong>
+                        <small>{product.category}</small>
+                      </span>
+                    </Link>
+                  ))}
+                  <Link
+                    className="search-all-results"
+                    href={`/busca?q=${encodeURIComponent(searchQuery.trim())}`}
+                  >
+                    Ver resultados completos
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         <nav className="desktop-nav container" aria-label="Categorias principais">
-          <Link className={pathname === "/" ? "active" : ""} href="/">Início</Link>
+          <Link className={pathname === "/" ? "active" : ""} href="/">
+            Início
+          </Link>
           {navigation.map(([label, href]) => (
             <Link className={pathname === href ? "active" : ""} href={href} key={href}>
               {label}
@@ -153,7 +277,14 @@ export function SiteHeader() {
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           />
-          <aside className="mobile-drawer" role="dialog" aria-modal="true" aria-label="Menu principal">
+          <aside
+            className="mobile-drawer"
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu principal"
+            onKeyDown={trapDrawerFocus}
+          >
             <div className="mobile-drawer-header">
               <BrandLogo />
               <button
@@ -169,14 +300,19 @@ export function SiteHeader() {
             <nav>
               <Link href="/">Início</Link>
               {navigation.map(([label, href]) => (
-                <Link href={href} key={href}>{label}</Link>
+                <Link href={href} key={href}>
+                  {label}
+                </Link>
               ))}
               <Link href="/rastrear-pedido">Rastrear pedido</Link>
               <Link href="/ajuda">Central de ajuda</Link>
             </nav>
             <div className="mobile-drawer-actions">
-              <Link className="primary-button full-button" href="/login">
-                <UserRound /> Acessar minha conta
+              <Link
+                className="primary-button full-button"
+                href={accountName ? "/minha-conta" : "/login"}
+              >
+                <UserRound /> {accountName ? "Minha conta" : "Acessar minha conta"}
               </Link>
               <Link className="secondary-button full-button" href="/carrinho">
                 <ShoppingBag /> Ver carrinho {items > 0 ? `(${items})` : ""}

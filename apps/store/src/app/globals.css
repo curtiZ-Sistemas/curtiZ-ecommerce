@@ -462,6 +462,94 @@ select:disabled {
   display: none;
 }
 
+.mobile-search-content {
+  position: relative;
+}
+
+.search-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  max-height: min(430px, calc(100vh - 170px));
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow-md);
+}
+
+.search-suggestions-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--neutral-150);
+}
+
+.search-suggestions-heading strong {
+  font-size: 0.8rem;
+}
+
+.search-suggestions-heading span {
+  color: var(--neutral-600);
+  font-size: 0.68rem;
+}
+
+.search-suggestion {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--neutral-150);
+}
+
+.search-suggestion:hover {
+  background: var(--neutral-50);
+}
+
+.search-suggestion img {
+  width: 56px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.search-suggestion span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.search-suggestion strong,
+.search-suggestion small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-suggestion strong {
+  font-size: 0.76rem;
+}
+
+.search-suggestion small {
+  color: var(--neutral-600);
+  font-size: 0.67rem;
+}
+
+.search-all-results {
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--brand-900);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
 .mobile-menu-layer {
   position: fixed;
   z-index: 100;
@@ -791,6 +879,24 @@ select:disabled {
   margin: 0 0 22px;
   color: var(--neutral-700);
   line-height: 1.6;
+}
+
+.status-page {
+  min-height: 58vh;
+  display: grid;
+  place-items: center;
+}
+
+.status-page .empty-state {
+  width: min(100%, 680px);
+}
+
+.status-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 8px;
 }
 
 .empty-state-icon {
@@ -1282,6 +1388,45 @@ select:disabled {
   gap: 12px;
   color: var(--neutral-600);
   font-size: 0.7rem;
+}
+
+.active-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.active-filter-list button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-xs);
+  color: var(--neutral-700);
+  background: var(--white);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.active-filter-list button:hover {
+  color: var(--brand-900);
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+}
+
+.active-filter-list button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.active-filter-list .clear-active-filters {
+  color: var(--brand-900);
+  border-color: transparent;
+  background: transparent;
 }
 
 .catalog-results .product-grid {
@@ -2529,10 +2674,59 @@ select:disabled {
   background: var(--brand-50);
 }
 
+.logout-control {
+  display: grid;
+  gap: 6px;
+}
+
+.account-logout-button {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-logout-button:hover {
+  background: #fff1f0;
+}
+
+.account-logout-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.logout-error {
+  color: var(--danger);
+  font-size: 0.76rem;
+}
+
 .account-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.compact-section-heading {
+  margin-bottom: 14px;
+}
+
+.favorite-skeleton {
+  min-height: 330px;
 }
 
 .account-card {
@@ -3217,9 +3411,20 @@ select:disabled {
     display: grid;
   }
 
-  .favorite-action,
-  .account-action {
+  .favorite-action {
     display: none !important;
+  }
+
+  .account-action {
+    width: 38px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+  }
+
+  .account-action .account-copy {
+    display: none;
   }
 
   .header-actions {
@@ -3240,6 +3445,10 @@ select:disabled {
   .mobile-search-panel .search-form button {
     min-width: 76px;
     padding-inline: 14px;
+  }
+
+  .favorites-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero {

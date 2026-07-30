@@ -7,7 +7,10 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
   await page.getByRole("link", { name: /Carrinho com 1 itens/i }).click();
-  await expect(page.getByRole("heading", { name: "Meu carrinho" })).toBeVisible();
+  await page.waitForURL("**/carrinho", { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Meu carrinho" })).toBeVisible({
+    timeout: 15_000
+  });
 });
 
 test("abre atendimento humano na fila administrativa", async ({ page }) => {
@@ -21,12 +24,43 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
   await page.goto("/login");
 
   await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
-  await expect(page.getByText(/Clientes? (ou|e) equipe Curtiz/i).filter({ visible: true })).toBeVisible();
+  await expect(
+    page.getByText(/Clientes? (ou|e) equipe Curtiz/i).filter({ visible: true })
+  ).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Cadastre-se" })).toHaveAttribute(
     "href",
     "/cadastro"
   );
+});
+
+test("autentica conta operacional no modo demo local sem Supabase", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("E-mail de acesso").fill("operacional.demo@curtiz.local");
+  await page.locator('input[name="password"]').fill("1234567890");
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+  await expect(page).toHaveURL("http://localhost:3001/operacional", {
+    timeout: 20_000
+  });
+  await expect(page.getByRole("heading", { name: "Fila operacional" })).toBeVisible();
+});
+
+test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Favoritar Curtiz Flip-Flop Wave Preto" }).click();
+
+  await page.goto("/login");
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]').fill("1234567890");
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.waitForURL("**/minha-conta", { timeout: 20_000 });
+  await page.goto("/minha-conta/favoritos");
+
+  await expect(page.getByRole("heading", { name: "Seus favoritos" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first()
+  ).toBeVisible();
 });
 
 test("chat flutuante responde em modo mock e pode ser minimizado", async ({ page }) => {

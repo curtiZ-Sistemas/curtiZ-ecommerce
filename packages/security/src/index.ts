@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto";
 
-const sensitiveKeys = /password|token|authorization|cookie|access_token|refresh_token|card|cvv|cpf/i;
+export {
+  DEMO_SESSION_COOKIE,
+  authenticateDemoAccount,
+  createDemoSession,
+  demoDestination,
+  isLocalDemoRequest,
+  verifyDemoSession
+} from "./demo-auth";
+export type { DemoAccount, DemoRole, DemoSession } from "./demo-auth";
+
+const sensitiveKeys =
+  /password|token|authorization|cookie|access_token|refresh_token|card|cvv|cpf/i;
 const unsafeProtocols = /^(javascript|data|vbscript):/i;
 
 export const createRequestId = (): string => randomUUID();
@@ -9,7 +20,10 @@ export const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, sensitiveKeys.test(key) ? "[REDACTED]" : redact(item)])
+      Object.entries(value).map(([key, item]) => [
+        key,
+        sensitiveKeys.test(key) ? "[REDACTED]" : redact(item)
+      ])
     );
   }
   return value;

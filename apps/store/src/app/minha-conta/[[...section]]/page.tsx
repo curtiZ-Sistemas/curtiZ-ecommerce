@@ -1,6 +1,11 @@
 import { formatBRL } from "@curtiz/domain";
+import { DEMO_SESSION_COOKIE, demoDestination, verifyDemoSession } from "@curtiz/security";
 import { Heart, MapPin, MessageCircle, PackageCheck, RotateCcw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { LogoutButton } from "@/components/logout-button";
+import { FavoritesPanel } from "@/components/favorites-panel";
 
 export const metadata = { title: "Minha conta", robots: { index: false, follow: false } };
 
@@ -15,18 +20,29 @@ const nav = [
   ["Privacidade", "/minha-conta/privacidade"]
 ] as const;
 
-export default async function AccountPage({
-  params
-}: {
-  params: Promise<{ section?: string[] }>;
-}) {
+export default async function AccountPage({ params }: { params: Promise<{ section?: string[] }> }) {
+  const cookieStore = await cookies();
+  const session =
+    process.env.DEMO_MODE === "true"
+      ? verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value)
+      : null;
+  if (process.env.DEMO_MODE === "true" && !session) redirect("/login");
+  if (session && session.role !== "customer") {
+    redirect(
+      new URL(
+        demoDestination(session.role),
+        process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001"
+      ).toString()
+    );
+  }
+
   const section = (await params).section?.[0] ?? "resumo";
   return (
     <div className="container page-shell">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Área do cliente</p>
-          <h1>Olá, cliente demo</h1>
+          <h1>Olá, {session?.fullName ?? "cliente"}</h1>
           <p>Dados fictícios para validar os fluxos locais.</p>
         </div>
       </div>
@@ -37,14 +53,17 @@ export default async function AccountPage({
               {label}
             </Link>
           ))}
+          <LogoutButton className="account-logout-button" />
         </nav>
         <section>
           {section === "resumo" && <AccountSummary />}
           {section === "pedidos" && <Orders />}
           {section === "enderecos" && <Addresses />}
-          {section === "favoritos" && <Empty title="Nenhum favorito salvo" icon={<Heart />} />}
+          {section === "favoritos" && <FavoritesPanel />}
           {section === "seguranca" && <Security />}
-          {section === "trocas" && <Empty title="Nenhuma troca em andamento" icon={<RotateCcw />} />}
+          {section === "trocas" && (
+            <Empty title="Nenhuma troca em andamento" icon={<RotateCcw />} />
+          )}
           {section === "atendimento" && <Support />}
           {section === "privacidade" && <Privacy />}
         </section>
@@ -112,7 +131,12 @@ function Addresses() {
       <MapPin />
       <h2>Endereços</h2>
       <p>Nenhum endereço salvo. O endereço só é solicitado quando necessário para uma compra.</p>
-      <button className="secondary-button" type="button" disabled title="Disponível após conectar o Supabase">
+      <button
+        className="secondary-button"
+        type="button"
+        disabled
+        title="Disponível após conectar o Supabase"
+      >
         Adicionar endereço · não configurado
       </button>
     </div>
@@ -126,7 +150,12 @@ function Security() {
         <ShieldCheck />
         <h2>Segurança da conta</h2>
         <p>Altere sua senha, revise sessões e ative MFA opcional.</p>
-        <button className="secondary-button" type="button" disabled title="Disponível após conectar o Supabase Auth">
+        <button
+          className="secondary-button"
+          type="button"
+          disabled
+          title="Disponível após conectar o Supabase Auth"
+        >
           Revisar sessões · não configurado
         </button>
       </div>
@@ -158,7 +187,12 @@ function Privacy() {
         <h2>Preferências e LGPD</h2>
         <p>Gerencie consentimentos ou solicite exportação, anonimização e exclusão.</p>
       </div>
-      <button className="secondary-button" type="button" disabled title="Disponível após conectar o fluxo LGPD">
+      <button
+        className="secondary-button"
+        type="button"
+        disabled
+        title="Disponível após conectar o fluxo LGPD"
+      >
         Solicitar meus dados · não configurado
       </button>
     </div>

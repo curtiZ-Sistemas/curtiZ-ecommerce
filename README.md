@@ -12,21 +12,31 @@ E-commerce e plataforma operacional da Curtiz. O repositório contém uma loja p
 
 - Node.js 20.9 ou superior.
 - pnpm 10.
-- Docker Desktop para Supabase local.
-- Supabase CLI (instalada como dependência do projeto).
+- Docker Desktop é opcional e necessário somente para executar o Supabase local.
+- Supabase CLI é usada somente nos fluxos de banco local.
 
 ## Instalação
 
 ```bash
 pnpm install
 copy .env.example .env.local
-pnpm supabase:start
-pnpm supabase:reset
-pnpm supabase:types
 pnpm dev
 ```
 
-Sem Docker ou credenciais, as aplicações abrem em modo demonstrativo e identificam explicitamente os mocks. Nenhum pagamento, e-mail, frete, WhatsApp ou ERP é apresentado como integração real.
+Sem Docker ou credenciais, configure `DEMO_MODE`, `DEMO_USERS_PASSWORD` e
+`DEMO_SESSION_SECRET` nos dois projetos Next.js. A autenticação demo funciona apenas em loopback,
+e os mocks são identificados. Nenhum pagamento, e-mail, frete, WhatsApp ou ERP é apresentado como
+integração real.
+
+Para trabalhar com Supabase gerenciado, informe as URLs e chaves públicas/privadas nos ambientes
+corretos. Para quem optar pelo Supabase local, os comandos continuam disponíveis, mas não fazem
+parte da execução padrão:
+
+```bash
+pnpm supabase:start
+pnpm supabase:reset
+pnpm supabase:types
+```
 
 ## Segurança e dados demo
 

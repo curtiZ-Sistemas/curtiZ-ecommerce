@@ -38,6 +38,24 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
     await expect(
       page.getByRole("banner").getByRole("link", { name: /Curtiz — página inicial/i })
     ).toBeVisible();
+    await expect(page.getByRole("link", { name: /Entrar na minha conta/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Carrinho com/i })).toBeVisible();
   }
+});
+
+test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Abrir busca" }).click();
+  await page.getByRole("searchbox", { name: "Buscar produtos" }).fill("wave");
+
+  await expect(page.getByText("Produtos encontrados")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Curtiz Flip-Flop Wave Preto Masculino/i })
+  ).toBeVisible();
+  const widths = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth
+  }));
+  expect(widths.content).toBeLessThanOrEqual(widths.viewport);
 });

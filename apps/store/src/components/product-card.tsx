@@ -4,10 +4,11 @@ import { formatBRL, type Product } from "@curtiz/domain";
 import { Heart, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useFavorites } from "./favorites-provider";
 
 export function ProductCard({ product }: { product: Product }) {
-  const [favorite, setFavorite] = useState(false);
+  const { hydrated, has, toggle } = useFavorites();
+  const favorite = hydrated && has(product.id);
   const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
@@ -27,16 +28,23 @@ export function ProductCard({ product }: { product: Product }) {
       <button
         className={favorite ? "favorite-button active" : "favorite-button"}
         type="button"
-        onClick={() => setFavorite((current) => !current)}
-        aria-label={favorite ? `Remover ${product.name} dos favoritos` : `Favoritar ${product.name}`}
+        onClick={() => toggle(product.id)}
+        aria-label={
+          favorite ? `Remover ${product.name} dos favoritos` : `Favoritar ${product.name}`
+        }
         aria-pressed={favorite}
       >
         <Heart fill={favorite ? "currentColor" : "none"} />
       </button>
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
-        <h3><Link href={`/produto/${product.slug}`}>{product.name}</Link></h3>
-        <div className="rating" aria-label={`${product.rating} de 5, ${product.reviews} avaliações`}>
+        <h3>
+          <Link href={`/produto/${product.slug}`}>{product.name}</Link>
+        </h3>
+        <div
+          className="rating"
+          aria-label={`${product.rating} de 5, ${product.reviews} avaliações`}
+        >
           <Star fill="currentColor" />
           <strong>{product.rating}</strong>
           <span>({product.reviews.toLocaleString("pt-BR")})</span>
