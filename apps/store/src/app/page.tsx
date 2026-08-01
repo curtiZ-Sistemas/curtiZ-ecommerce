@@ -22,6 +22,7 @@ export default function HomePage() {
     <>
       <section className="hero container">
         <div className="hero-copy">
+          <p className="hero-kicker">Nova coleção Curtiz</p>
           <h1>Conforto que combina com o seu ritmo.</h1>
           <p>
             Design brasileiro, materiais macios e escolhas para toda a família — do primeiro

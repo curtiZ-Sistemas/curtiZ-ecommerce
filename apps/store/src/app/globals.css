@@ -934,7 +934,7 @@ select:disabled {
   width: 56%;
   content: "";
   pointer-events: none;
-  background: url("/images/hero-curtiz.webp") 62% center / cover no-repeat;
+  background: url("/images/hero-curtiz-desktop.jpg") 76% center / cover no-repeat;
 }
 
 .hero-copy {
@@ -949,6 +949,20 @@ select:disabled {
   color: var(--white);
   background: var(--brand-950);
   animation: rise-in 450ms var(--ease) both;
+}
+
+.hero-kicker {
+  width: fit-content;
+  margin: 0 0 18px;
+  padding: 8px 10px;
+  color: #fff4f0;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 
@@ -3842,13 +3856,18 @@ select:disabled {
     inset: 0 0 auto;
     width: 100%;
     height: 230px;
-    background-position: 64% center;
+    background-image: url("/images/hero-curtiz-mobile.jpg");
+    background-position: center;
   }
 
   .hero-copy {
     width: 100%;
     min-height: 340px;
     padding: 28px;
+  }
+
+  .hero-kicker {
+    margin-bottom: 16px;
   }
 
   .hero h1 {
