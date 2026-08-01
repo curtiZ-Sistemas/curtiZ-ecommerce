@@ -1,4 +1,3 @@
-import { DEMO_SESSION_COOKIE, demoDestination, verifyDemoSession } from "@curtiz/security";
 import {
   Activity,
   BadgeDollarSign,
@@ -13,12 +12,12 @@ import {
   Truck,
   Webhook
 } from "lucide-react";
-import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
-import { redirect } from "next/navigation";
 import { PanelShell, type PanelRole } from "@/components/panel-shell";
 import { RevenueChart } from "@/components/revenue-chart";
 import { SupportConsole } from "@/components/support-console";
+import { RepresentativeConsole } from "@/components/representative-console";
+import { requirePanelAccess } from "@/lib/auth";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
 
@@ -31,23 +30,26 @@ export default async function RolePage({
   if (!roles.has(resolved.role as PanelRole)) notFound();
   const role = resolved.role as PanelRole;
 
-  if (process.env.DEMO_MODE === "true") {
-    const cookieStore = await cookies();
-    const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
-    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
-    if (!session || session.role === "customer") redirect(`${storeUrl}/login`);
-
-    const allowedDestination = demoDestination(session.role);
-    if (`/${role}` !== allowedDestination) redirect(allowedDestination);
-  }
-
   const section = resolved.section?.[0] ?? "";
+  const currentPath = `/${role}${section ? `/${section}` : ""}`;
+  await requirePanelAccess(role, currentPath);
+  const representativeSections = new Set([
+    "representantes",
+    "solicitacoes-representantes",
+    "kits-representantes",
+    "regras-representantes",
+    "comissoes-representantes",
+    "integridade-representantes",
+    "criativos"
+  ]);
 
   return (
     <PanelShell role={role} section={section}>
       <PageHeading role={role} section={section} />
       {section === "atendimentos" ? (
         <SupportConsole role={role} />
+      ) : representativeSections.has(section) ? (
+        <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
         <Operational section={section} />
       ) : role === "administracao" ? (

@@ -5,20 +5,25 @@ import {
   demoDestination,
   isLocalDemoRequest,
   safeInternalPath,
+  sharedCookieOptions,
   verifyDemoSession
 } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(10).max(256),
-  remember: z.string().optional()
+  remember: z.string().optional(),
+  next: z.string().max(300).optional(),
+  turnstileToken: z.string().max(4_096).optional()
 });
 
 const signupSchema = loginSchema
-  .omit({ remember: true })
+  .omit({ remember: true, next: true })
   .extend({
     name: z.string().trim().min(3).max(120),
     confirmPassword: z.string(),
@@ -33,11 +38,13 @@ const signupSchema = loginSchema
 
 const roleDestinations: Record<string, string> = {
   customer: "/minha-conta",
+  representative: "/representante",
   operational: "/operacional",
   admin: "/administracao",
   manager: "/gerencia",
   technical: "/tecnico"
 };
+const internalRolePriority = ["admin", "manager", "technical", "operational"] as const;
 
 const profileSchema = z.object({ status: z.string() }).nullable();
 const roleSchema = z.object({ role: z.string() }).nullable();
@@ -50,7 +57,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (demoSession) {
     return NextResponse.json(
-      { authenticated: true, fullName: demoSession.fullName },
+      { authenticated: true, fullName: demoSession.fullName, roles: demoSession.roles },
       { headers: { "cache-control": "no-store" } }
     );
   }
@@ -103,19 +110,24 @@ function demoLoginResponse(
 
   const destination = demoDestination(account.role);
   const redirectTo =
-    account.role === "customer"
-      ? destination
+    account.role === "customer" || account.role === "representative"
+      ? safeInternalPath(login.next, destination)
       : new URL(destination, panelBaseUrl(request)).toString();
   const response = NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
     { headers: { "cache-control": "no-store" } }
   );
   response.cookies.set(DEMO_SESSION_COOKIE, session.value, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: new URL(request.url).protocol === "https:",
-    path: "/",
-    ...(session.maxAge ? { maxAge: session.maxAge } : {})
+    ...sharedCookieOptions(
+      {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        secure: new URL(request.url).protocol === "https:",
+        path: "/",
+        ...(session.maxAge ? { maxAge: session.maxAge } : {})
+      },
+      new URL(request.url).hostname
+    )
   });
   return response;
 }
@@ -123,14 +135,46 @@ function demoLoginResponse(
 function isAllowedRequest(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
-  return new Set([
+  const configuredOrigins = new Set([
     process.env.NEXT_PUBLIC_STORE_URL,
     process.env.NEXT_PUBLIC_PANEL_URL,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001"
-  ]).has(origin);
+  ]);
+  if (configuredOrigins.has(origin)) return true;
+  if (process.env.DEMO_MODE !== "true") return false;
+  try {
+    const requestUrl = new URL(request.url);
+    const originUrl = new URL(origin);
+    return (
+      requestUrl.hostname === originUrl.hostname &&
+      (originUrl.port === "3000" || originUrl.port === "3001")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function corsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (!origin || !isAllowedRequest(request)) return { "cache-control": "no-store" };
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "cache-control": "no-store",
+    vary: "Origin"
+  };
+}
+
+export function OPTIONS(request: Request) {
+  if (!isAllowedRequest(request)) {
+    return new NextResponse(null, { status: 403 });
+  }
+  return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ mode: string }> }) {
@@ -144,26 +188,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
   }
 
   if (mode === "logout") {
-    const supabase = await createServerSupabaseClient();
-    if (supabase) await supabase.auth.signOut();
-
-    const origin = request.headers.get("origin");
-    const headers: Record<string, string> = { "cache-control": "no-store" };
-    if (origin) {
-      headers["access-control-allow-origin"] = origin;
-      headers["access-control-allow-credentials"] = "true";
-      headers.vary = "Origin";
+    const supabase =
+      process.env.DEMO_MODE === "true" ? null : await createServerSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        return NextResponse.json(
+          { message: "Não foi possível encerrar a sessão. Tente novamente." },
+          { status: 503, headers: corsHeaders(request) }
+        );
+      }
     }
     const response = NextResponse.json(
       { message: "Sessão encerrada.", redirectTo: "/login" },
-      { headers }
+      { headers: corsHeaders(request) }
     );
     response.cookies.set(DEMO_SESSION_COOKIE, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: new URL(request.url).protocol === "https:",
-      path: "/",
-      maxAge: 0
+      ...sharedCookieOptions(
+        {
+          httpOnly: true,
+          sameSite: "lax" as const,
+          secure: new URL(request.url).protocol === "https:",
+          path: "/",
+          maxAge: 0
+        },
+        new URL(request.url).hostname
+      )
     });
     return response;
   }
@@ -175,6 +225,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
   }
 
   const supabase = await createServerSupabaseClient();
+  const authInput = parsed.data as z.infer<typeof loginSchema>;
+  if (
+    !(await enforceAuthRateLimit({
+      request,
+      email: authInput.email,
+      scope: mode,
+      supabase
+    }))
+  ) {
+    return NextResponse.json(
+      { message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente." },
+      { status: 429, headers: { ...corsHeaders(request), "retry-after": "900" } }
+    );
+  }
+  if (!(await verifyTurnstile(request, authInput.turnstileToken))) {
+    return NextResponse.json(
+      { message: "Não foi possível confirmar a verificação de segurança." },
+      { status: 403, headers: corsHeaders(request) }
+    );
+  }
   if (!supabase) {
     if (mode === "login") {
       const demoResponse = demoLoginResponse(request, parsed.data);
@@ -238,12 +308,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
 
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("status").eq("id", data.user.id).maybeSingle(),
-    supabase.from("user_roles").select("role").eq("user_id", data.user.id).maybeSingle()
+    supabase.from("user_roles").select("role").eq("user_id", data.user.id)
   ]);
   const rawProfile: unknown = profileResult.data;
-  const rawRole: unknown = roleResult.data;
+  const rawRoles: unknown = roleResult.data;
   const profile = profileSchema.safeParse(rawProfile).data ?? null;
-  const assignedRole = roleSchema.safeParse(rawRole).data ?? null;
+  const assignedRoles = z.array(roleSchema.unwrap()).safeParse(rawRoles).data ?? [];
 
   if (profile?.status && profile.status !== "active") {
     await supabase.auth.signOut();
@@ -253,13 +323,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     );
   }
 
-  const role = assignedRole?.role ?? "customer";
+  const roles = assignedRoles.map((item) => item.role);
+  const internalRole = internalRolePriority.find((item) => roles.includes(item));
+  const role = internalRole ?? (roles.includes("representative") ? "representative" : "customer");
   const destination = roleDestinations[role] ?? "/minha-conta";
   const panelUrl = panelBaseUrl(request);
-  const redirectTo =
-    role === "customer"
-      ? safeInternalPath(destination, "/minha-conta")
+  let redirectTo =
+    role === "customer" || role === "representative"
+      ? safeInternalPath(login.next, safeInternalPath(destination, "/minha-conta"))
       : new URL(destination, panelUrl).toString();
+
+  if (internalRole && process.env.REQUIRE_INTERNAL_MFA === "true") {
+    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance.error) {
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        { message: "Não foi possível verificar a segurança desta conta." },
+        { status: 503, headers: { "cache-control": "no-store" } }
+      );
+    }
+    if (assurance.data.currentLevel !== "aal2") {
+      redirectTo = `/mfa?next=${encodeURIComponent(redirectTo)}`;
+    }
+  }
 
   return NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },

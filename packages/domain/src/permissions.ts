@@ -59,13 +59,40 @@ export const permissions = [
   "whatsapp.manage",
   "antifraud.read",
   "antifraud.review",
-  "antifraud.decide"
+  "antifraud.decide",
+  "representatives.application.create",
+  "representatives.application.review",
+  "representatives.read_own",
+  "representatives.read_all",
+  "representatives.manage",
+  "representatives.network.manage",
+  "representatives.rules.manage",
+  "representatives.kits.fulfill",
+  "representatives.sales.create_own",
+  "representatives.commissions.read_own",
+  "representatives.commissions.read_all",
+  "representatives.commissions.close",
+  "creatives.read_published",
+  "creatives.manage",
+  "creatives.approve",
+  "creatives.publish",
+  "creatives.metrics.read"
 ] as const;
 
 export type Permission = (typeof permissions)[number];
 
 const matrix: Record<AppRole, ReadonlySet<Permission>> = {
   customer: new Set(),
+  representative: new Set([
+    "products.read",
+    "representatives.read_own",
+    "representatives.sales.create_own",
+    "representatives.commissions.read_own",
+    "creatives.read_published",
+    "support.quick_answers.read",
+    "support.conversations.read",
+    "support.conversations.reply"
+  ]),
   operational: new Set([
     "orders.read_assigned",
     "orders.update_operational_status",
@@ -73,7 +100,8 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
     "returns.read",
     "support.quick_answers.read",
     "support.conversations.read",
-    "support.conversations.reply"
+    "support.conversations.reply",
+    "representatives.kits.fulfill"
   ]),
   admin: new Set(
     permissions.filter(
@@ -81,7 +109,9 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
         !permission.startsWith("financial.read_full") &&
         !permission.startsWith("finance.close") &&
         !permission.startsWith("finance.reopen") &&
-        !permission.startsWith("technical.")
+        !permission.startsWith("technical.") &&
+        permission !== "representatives.commissions.close" &&
+        permission !== "representatives.commissions.read_all"
     )
   ),
   manager: new Set(
@@ -99,7 +129,8 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
         permission === "erp.manage" ||
         permission === "whatsapp.manage" ||
         permission === "support.conversations.read" ||
-        permission === "support.conversations.reply"
+        permission === "support.conversations.reply" ||
+        permission === "representatives.read_all"
     )
   )
 };

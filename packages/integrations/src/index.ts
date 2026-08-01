@@ -96,8 +96,17 @@ export interface ERPProvider {
   issueInvoice(orderId: string): Promise<{ status: "issued" | "rejected"; reference: string }>;
 }
 
+export const isMockRuntimeAllowed = (
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): boolean => {
+  const appEnvironment = environment.APP_ENV?.trim().toLowerCase();
+  if (appEnvironment === "production") return false;
+  if (appEnvironment === "development" || appEnvironment === "staging") return true;
+  return environment.NODE_ENV !== "production";
+};
+
 const developmentOnly = (): void => {
-  if (process.env.NODE_ENV === "production") {
+  if (!isMockRuntimeAllowed()) {
     throw new Error("Provider mock bloqueado em produção.");
   }
 };
@@ -136,7 +145,7 @@ export class MockPaymentProvider implements PaymentProvider {
 export class MockShippingProvider implements ShippingProvider {
   readonly name = "mock";
   async health(): Promise<IntegrationState> {
-    return process.env.NODE_ENV === "production" ? "not_configured" : "online";
+    return isMockRuntimeAllowed() ? "online" : "not_configured";
   }
   async quote(input: ShippingQuoteInput): Promise<ShippingQuote[]> {
     developmentOnly();

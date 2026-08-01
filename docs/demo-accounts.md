@@ -3,6 +3,7 @@
 E-mails locais:
 
 - cliente.demo@curtiz.local
+- representante.demo@curtiz.local (cliente + representante)
 - operacional.demo@curtiz.local
 - admin.demo@curtiz.local
 - gerencia.demo@curtiz.local

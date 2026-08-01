@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { sharedCookieOptions } from "@curtiz/security";
+import { cookies, headers } from "next/headers";
 
 export async function createServerSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,6 +9,8 @@ export async function createServerSupabaseClient() {
   if (!url || !publishableKey) return null;
 
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
 
   return createServerClient(url, publishableKey, {
     cookies: {
@@ -18,7 +21,11 @@ export async function createServerSupabaseClient() {
         cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>
       ) {
         for (const { name, value, options } of cookiesToSet) {
-          cookieStore.set({ name, value, ...options });
+          try {
+            cookieStore.set({ name, value, ...sharedCookieOptions(options, host) });
+          } catch {
+            // Server Components não podem persistir refresh; o proxy o fará.
+          }
         }
       }
     }

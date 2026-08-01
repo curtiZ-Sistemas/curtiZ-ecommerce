@@ -9,6 +9,13 @@ export {
   verifyDemoSession
 } from "./demo-auth";
 export type { DemoAccount, DemoRole, DemoSession } from "./demo-auth";
+export {
+  cookieDomainMatchesHost,
+  normalizeCookieDomain,
+  sharedCookieOptions
+} from "./auth-cookie";
+export { buildNonceContentSecurityPolicy } from "./content-security-policy";
+export type { ContentSecurityPolicyOptions } from "./content-security-policy";
 
 const sensitiveKeys =
   /password|token|authorization|cookie|access_token|refresh_token|card|cvv|cpf/i;

@@ -16,7 +16,7 @@ export default function Page() {
           <h1>Crie sua conta</h1>
           <p>Leva poucos minutos. Endereço e CPF serão solicitados somente quando necessários.</p>
         </header>
-        <AuthForm mode="signup" />
+        <AuthForm mode="signup" turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"} />
         <p className="auth-security-note">
           <ShieldCheck aria-hidden="true" />
           Seus dados são enviados por conexão protegida e nunca serão usados para criar acessos

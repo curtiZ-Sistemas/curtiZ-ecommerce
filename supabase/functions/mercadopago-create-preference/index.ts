@@ -1,11 +1,13 @@
 import { corsHeaders, json, requestId } from "../_shared/http.ts";
 import { mercadoPagoRequest } from "../_shared/mercadopago.ts";
 import { serviceClient, userClient } from "../_shared/supabase.ts";
+import { integrationDisabledPayload, isMercadoPagoEnabled } from "../_shared/integrations.ts";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const correlationId = requestId(request);
+  if (!isMercadoPagoEnabled()) return json(integrationDisabledPayload(correlationId), 503);
   const authorization = request.headers.get("authorization") ?? "";
   const authClient = userClient(authorization);
   const { data: claims } = await authClient.auth.getClaims();
@@ -18,7 +20,9 @@ Deno.serve(async (request) => {
   const db = serviceClient();
   const { data: order, error } = await db
     .from("orders")
-    .select("id, public_code, customer_id, customer_email_snapshot, currency, grand_total, status, order_items(product_name_snapshot, quantity, unit_price)")
+    .select(
+      "id, public_code, customer_id, customer_email_snapshot, currency, grand_total, status, order_items(product_name_snapshot, quantity, unit_price)"
+    )
     .eq("id", order_id)
     .single();
   if (error || !order || order.customer_id !== userId || order.status !== "pending_payment") {
@@ -52,5 +56,9 @@ Deno.serve(async (request) => {
   );
   if (!response.ok) return json({ error: "provider_unavailable", request_id: correlationId }, 502);
   const preference = await response.json();
-  return json({ preference_id: preference.id, redirect_url: preference.init_point, request_id: correlationId });
+  return json({
+    preference_id: preference.id,
+    redirect_url: preference.init_point,
+    request_id: correlationId
+  });
 });

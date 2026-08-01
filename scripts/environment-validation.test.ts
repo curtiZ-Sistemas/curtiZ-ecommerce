@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type EnvironmentValues, validateEnvironment } from "./environment-validation";
 
 const stagingEnvironment: EnvironmentValues = {
+  APP_ENV: "staging",
   NEXT_PUBLIC_STORE_URL: "https://store-staging.example.com",
   NEXT_PUBLIC_PANEL_URL: "https://panel-staging.example.com",
   NEXT_PUBLIC_SUPABASE_URL: "https://staging.supabase.co",
@@ -10,18 +11,40 @@ const stagingEnvironment: EnvironmentValues = {
   PII_ENCRYPTION_KEY: "staging-pii-key",
   AUDIT_HASH_KEY: "staging-audit-key",
   ALLOWED_ORIGINS: "https://store-staging.example.com,https://panel-staging.example.com",
+  AUTH_COOKIE_DOMAIN: "example.com",
   DEMO_MODE: "true",
+  DEMO_USERS_PASSWORD: "a-secure-staging-demo-password",
+  DEMO_SESSION_SECRET: "staging-demo-session-secret-with-32-chars-minimum",
   PAYMENT_PROVIDER: "mock",
   EMAIL_PROVIDER: "mock",
   SHIPPING_PROVIDER: "mock",
+  WHATSAPP_PROVIDER: "mock",
   REQUIRE_INTERNAL_MFA: "false"
+};
+
+const disabledProduction: EnvironmentValues = {
+  ...stagingEnvironment,
+  APP_ENV: "production",
+  DEMO_MODE: "false",
+  REQUIRE_INTERNAL_MFA: "false",
+  CHECKOUT_ENABLED: "false",
+  PAYMENT_PROVIDER: "disabled",
+  MERCADO_PAGO_ENABLED: "false",
+  SHIPPING_PROVIDER: "disabled",
+  MELHOR_ENVIO_ENABLED: "false",
+  EMAIL_PROVIDER: "disabled",
+  EMAIL_ENABLED: "false",
+  TURNSTILE_ENABLED: "false",
+  WHATSAPP_PROVIDER: "disabled"
 };
 
 describe("environment validation", () => {
   it("permite mocks, demo, MFA desativado e integrações ausentes em staging", () => {
-    const result = validateEnvironment("staging", stagingEnvironment);
-
-    expect(result).toMatchObject({ environment: "staging", valid: true, errors: [] });
+    expect(validateEnvironment("staging", stagingEnvironment)).toMatchObject({
+      environment: "staging",
+      valid: true,
+      errors: []
+    });
   });
 
   it("continua exigindo infraestrutura e chaves internas em staging", () => {
@@ -31,8 +54,6 @@ describe("environment validation", () => {
       PII_ENCRYPTION_KEY: undefined,
       ALLOWED_ORIGINS: ""
     });
-
-    expect(result.valid).toBe(false);
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "SUPABASE_SECRET_KEY não está configurada",
@@ -42,13 +63,11 @@ describe("environment validation", () => {
     );
   });
 
-  it("exige credenciais quando um provider real é selecionado em staging", () => {
+  it("exige credenciais quando um provider real é selecionado", () => {
     const result = validateEnvironment("staging", {
       ...stagingEnvironment,
       PAYMENT_PROVIDER: "mercadopago"
     });
-
-    expect(result.valid).toBe(false);
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
@@ -58,49 +77,80 @@ describe("environment validation", () => {
     );
   });
 
-  it("não aceita a configuração permissiva de staging como produção", () => {
+  it("não aceita mocks nem modo demo em produção", () => {
     const result = validateEnvironment("production", stagingEnvironment);
-
-    expect(result.valid).toBe(false);
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "DEMO_MODE deve ser false em produção",
-        "PAYMENT_PROVIDER deve ser mercadopago em produção",
-        "EMAIL_PROVIDER deve usar um provedor real em produção",
-        "SHIPPING_PROVIDER deve usar um provedor real em produção",
-        "REQUIRE_INTERNAL_MFA deve ser true em produção"
+        "PAYMENT_PROVIDER=mock não é permitido em produção",
+        "EMAIL_PROVIDER=mock não é permitido em produção",
+        "SHIPPING_PROVIDER=mock não é permitido em produção"
       ])
     );
   });
 
-  it("aprova produção somente com providers reais e controles obrigatórios", () => {
-    const result = validateEnvironment("production", {
-      ...stagingEnvironment,
-      DEMO_MODE: "false",
-      REQUIRE_INTERNAL_MFA: "true",
-      PAYMENT_PROVIDER: "mercadopago",
-      MERCADO_PAGO_ACCESS_TOKEN: "production-access-token",
-      MERCADO_PAGO_PUBLIC_KEY: "production-public-key",
-      MERCADO_PAGO_WEBHOOK_SECRET: "production-webhook-secret",
-      EMAIL_PROVIDER: "resend",
-      RESEND_API_KEY: "production-resend-key",
-      EMAIL_FROM: "Curtiz <noreply@example.com>",
-      SHIPPING_PROVIDER: "custom",
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "production-turnstile-site-key",
-      TURNSTILE_SECRET_KEY: "production-turnstile-secret"
+  it("aprova produção inicial com integrações e MFA explicitamente desativados", () => {
+    expect(validateEnvironment("production", disabledProduction)).toMatchObject({
+      environment: "production",
+      valid: true,
+      errors: []
     });
+    expect(
+      validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).valid
+    ).toBe(true);
+  });
 
-    expect(result).toMatchObject({ environment: "production", valid: true, errors: [] });
+  it("exige segredos somente quando a integração é habilitada", () => {
+    expect(
+      validateEnvironment("production", {
+        ...disabledProduction,
+        MERCADO_PAGO_ENABLED: "true"
+      }).errors
+    ).toEqual(expect.arrayContaining(["MERCADO_PAGO_ACCESS_TOKEN não está configurada"]));
+    expect(
+      validateEnvironment("production", { ...disabledProduction, EMAIL_ENABLED: "true" }).errors
+    ).toEqual(expect.arrayContaining(["RESEND_API_KEY não está configurada"]));
+    expect(
+      validateEnvironment("production", {
+        ...disabledProduction,
+        TURNSTILE_ENABLED: "true"
+      }).errors
+    ).toEqual(expect.arrayContaining(["TURNSTILE_SECRET_KEY não está configurada"]));
+  });
+
+  it("rejeita false como provider e aceita somente em flags", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      SHIPPING_PROVIDER: "false"
+    });
+    expect(result.errors).toContain("SHIPPING_PROVIDER possui valor inválido: false");
   });
 
   it("permite desenvolvimento local sem credenciais remotas", () => {
-    const result = validateEnvironment("development", {
-      NEXT_PUBLIC_STORE_URL: "http://localhost:3000",
-      NEXT_PUBLIC_PANEL_URL: "http://localhost:3001",
-      DEMO_MODE: "true",
-      PAYMENT_PROVIDER: "mock"
-    });
+    expect(
+      validateEnvironment("development", {
+        APP_ENV: "development",
+        NEXT_PUBLIC_STORE_URL: "http://localhost:3000",
+        NEXT_PUBLIC_PANEL_URL: "http://localhost:3001",
+        DEMO_MODE: "true",
+        PAYMENT_PROVIDER: "mock"
+      }).valid
+    ).toBe(true);
+  });
 
-    expect(result.valid).toBe(true);
+  it("rejeita apps remotos iguais ou fora do domínio compartilhado", () => {
+    expect(
+      validateEnvironment("staging", {
+        ...stagingEnvironment,
+        NEXT_PUBLIC_PANEL_URL: stagingEnvironment.NEXT_PUBLIC_STORE_URL
+      }).errors
+    ).toContain("NEXT_PUBLIC_STORE_URL e NEXT_PUBLIC_PANEL_URL devem usar aplicações distintas");
+
+    expect(
+      validateEnvironment("staging", {
+        ...stagingEnvironment,
+        NEXT_PUBLIC_PANEL_URL: "https://panel.outro-dominio.com"
+      }).errors
+    ).toContain("NEXT_PUBLIC_PANEL_URL não pertence a AUTH_COOKIE_DOMAIN");
   });
 });

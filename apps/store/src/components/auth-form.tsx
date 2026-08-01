@@ -11,17 +11,28 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useCallback, useState } from "react";
+import { TurnstileField } from "./turnstile-field";
 
 type AuthResult = {
   message: string;
   redirectTo?: string;
 };
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+export function AuthForm({
+  mode,
+  returnTo,
+  turnstileEnabled = false
+}: {
+  mode: "login" | "signup";
+  returnTo?: string;
+  turnstileEnabled?: boolean;
+}) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -30,10 +41,13 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
     try {
       const form = new FormData(event.currentTarget);
+      const payload = Object.fromEntries(form);
+      if (turnstileEnabled) payload.turnstileToken = turnstileToken;
+      if (mode === "login" && returnTo) payload.next = returnTo;
       const response = await fetch(`/api/auth/${mode}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(form))
+        body: JSON.stringify(payload)
       });
       const result = (await response.json()) as AuthResult;
       setMessage(result.message);
@@ -175,7 +189,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </p>
       )}
 
-      <button className="primary-button full-button auth-submit" disabled={loading}>
+      <TurnstileField enabled={turnstileEnabled} onToken={handleTurnstileToken} />
+
+      <button
+        className="primary-button full-button auth-submit"
+        disabled={loading || (turnstileEnabled && !turnstileToken)}
+      >
         {loading ? (
           <>
             <LoaderCircle className="spin" aria-hidden="true" /> Processando

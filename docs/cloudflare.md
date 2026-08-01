@@ -1,9 +1,12 @@
 # Cloudflare
 
-Usar TLS Full Strict, WAF gerenciado/OWASP, DDoS, rate limiting e Turnstile. Aplicar limites por conta e IP para login, recuperação, cadastro, cupom e checkout. Webhooks do Mercado Pago não devem ser bloqueados indiscriminadamente; valide assinatura na origem.
+Use TLS Full Strict, WAF gerenciado, proteção DDoS e rate limiting. Turnstile é opcional por
+`TURNSTILE_ENABLED`; quando desativado, as chaves não são exigidas nem o widget inicializado. Quando
+ativado, valide o token no servidor.
 
-Cacheie somente páginas públicas. Respostas autenticadas, cookies de sessão e checkout usam `private, no-store`.
+Cacheie apenas conteúdo público. Respostas autenticadas, cookies de sessão, checkout e painel usam
+`private, no-store`. Webhooks habilitados devem validar assinatura e idempotência na origem.
 
-Em Workers Builds, use um Worker por aplicação e mantenha a raiz do monorepo como diretório de
-build. Os comandos de staging e a lista de variáveis obrigatórias estão em `docs/deployment.md`.
-Não use `pnpm build` para demo: esse comando é deliberadamente reservado à validação de produção.
+O monorepo possui configurações OpenNext e Wrangler independentes em `apps/store` e `apps/panel`.
+Comandos e variáveis de ambiente estão em `docs/deployment.md`. Nunca publique ambos os aplicativos
+no mesmo Worker ou na mesma rota.

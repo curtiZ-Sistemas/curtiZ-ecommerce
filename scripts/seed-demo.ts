@@ -10,7 +10,8 @@ if (process.env.NODE_ENV === "production") {
 type DemoUser = {
   email: string;
   fullName: string;
-  role: "customer" | "operational" | "admin" | "manager" | "technical";
+  role: "customer" | "representative" | "operational" | "admin" | "manager" | "technical";
+  roles?: Array<"customer" | "representative" | "operational" | "admin" | "manager" | "technical">;
 };
 
 type AdminUser = {
@@ -20,6 +21,12 @@ type AdminUser = {
 
 const users: DemoUser[] = [
   { email: "cliente.demo@curtiz.local", fullName: "Cliente Demo", role: "customer" },
+  {
+    email: "representante.demo@curtiz.local",
+    fullName: "Representante Demo",
+    role: "representative",
+    roles: ["customer", "representative"]
+  },
   { email: "operacional.demo@curtiz.local", fullName: "Operacional Demo", role: "operational" },
   { email: "admin.demo@curtiz.local", fullName: "Administrador Demo", role: "admin" },
   { email: "gerencia.demo@curtiz.local", fullName: "Gerência Demo", role: "manager" },
@@ -139,7 +146,9 @@ async function main() {
     await request<void>(supabaseUrl, serviceKey, "/rest/v1/user_roles", {
       method: "POST",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ user_id: authUser.id, role: demoUser.role })
+      body: JSON.stringify(
+        (demoUser.roles ?? [demoUser.role]).map((role) => ({ user_id: authUser.id, role }))
+      )
     });
     await request<void>(
       supabaseUrl,

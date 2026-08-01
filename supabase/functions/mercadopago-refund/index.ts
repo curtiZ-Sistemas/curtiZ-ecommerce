@@ -1,9 +1,11 @@
 import { corsHeaders, json } from "../_shared/http.ts";
 import { mercadoPagoRequest } from "../_shared/mercadopago.ts";
 import { userClient } from "../_shared/supabase.ts";
+import { integrationDisabledPayload, isMercadoPagoEnabled } from "../_shared/integrations.ts";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (!isMercadoPagoEnabled()) return json(integrationDisabledPayload(), 503);
   const auth = userClient(request.headers.get("authorization") ?? "");
   const { data: allowed } = await auth.rpc("has_permission", { permission_code: "returns.refund" });
   if (!allowed) return json({ error: "forbidden" }, 403);

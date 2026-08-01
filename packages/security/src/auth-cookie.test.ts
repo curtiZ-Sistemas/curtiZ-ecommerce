@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import {
+  cookieDomainMatchesHost,
+  normalizeCookieDomain,
+  sharedCookieOptions
+} from "./auth-cookie";
+
+describe("cookies compartilhados entre aplicações", () => {
+  it("normaliza e valida domínio sem aceitar URL ou host local", () => {
+    expect(normalizeCookieDomain(".example.com")).toBe("example.com");
+    expect(normalizeCookieDomain("https://example.com")).toBeNull();
+    expect(normalizeCookieDomain("localhost")).toBeNull();
+  });
+
+  it("aceita somente o domínio ou seus subdomínios", () => {
+    expect(cookieDomainMatchesHost("example.com", "store.example.com")).toBe(true);
+    expect(cookieDomainMatchesHost("example.com", "example.com")).toBe(true);
+    expect(cookieDomainMatchesHost("example.com", "notexample.com")).toBe(false);
+  });
+
+  it("não aplica Domain quando o host não corresponde", () => {
+    expect(sharedCookieOptions({ httpOnly: true }, "store.example.com", "example.com")).toEqual({
+      httpOnly: true,
+      domain: ".example.com"
+    });
+    expect(sharedCookieOptions({ httpOnly: true }, "attacker.test", "example.com")).toEqual({
+      httpOnly: true
+    });
+  });
+});
+

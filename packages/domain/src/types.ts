@@ -1,4 +1,5 @@
-export type AppRole = "customer" | "operational" | "admin" | "manager" | "technical";
+export type AppRole =
+  "customer" | "representative" | "operational" | "admin" | "manager" | "technical";
 
 export type Product = {
   id: string;
@@ -31,12 +32,7 @@ export type CartLine = {
 };
 
 export type IntegrationState =
-  | "online"
-  | "degraded"
-  | "offline"
-  | "not_configured"
-  | "awaiting_credentials"
-  | "maintenance";
+  "online" | "degraded" | "offline" | "not_configured" | "awaiting_credentials" | "maintenance";
 
 export type RequestContext = {
   requestId: string;

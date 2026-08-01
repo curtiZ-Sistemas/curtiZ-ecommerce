@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "next dev --port 3001",
     "build": "next build",
+    "build:worker": "opennextjs-cloudflare build",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
     "start": "next start --port 3001",
     "lint": "eslint src",
     "typecheck": "next typegen && tsc --noEmit",

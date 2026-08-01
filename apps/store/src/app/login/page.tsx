@@ -1,10 +1,17 @@
 import { Headphones, LockKeyhole, PackageCheck, ShieldCheck } from "lucide-react";
+import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
 
 export const metadata = { title: "Acesse sua conta", robots: { index: false, follow: false } };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const requestedReturn = (await searchParams).next;
+  const returnTo = requestedReturn ? safeInternalPath(requestedReturn, "/minha-conta") : undefined;
   return (
     <div className="auth-page">
       <div className="auth-shell">
@@ -30,11 +37,6 @@ export default function LoginPage() {
               <span><strong>Acesso protegido</strong>Sessões e permissões verificadas no servidor.</span>
             </div>
           </div>
-          <p className="auth-team-note">
-            <LockKeyhole aria-hidden="true" />
-            Cliente ou equipe Curtiz? O acesso é o mesmo. Seu perfil define o ambiente correto
-            após a autenticação.
-          </p>
         </aside>
 
         <section className="auth-card auth-login-card">
@@ -47,7 +49,11 @@ export default function LoginPage() {
             <LockKeyhole aria-hidden="true" />
             Clientes e equipe Curtiz usam este mesmo acesso.
           </p>
-          <AuthForm mode="login" />
+          <AuthForm
+            mode="login"
+            returnTo={returnTo}
+            turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
+          />
           <div className="auth-divider"><span>Primeira vez na Curtiz?</span></div>
           <Link className="secondary-button full-button auth-register-button" href="/cadastro">
             Cadastre-se

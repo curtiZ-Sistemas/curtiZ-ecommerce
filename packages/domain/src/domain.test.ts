@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateSubtotal,
+  calculateCommissionInCents,
+  canTransitionRepresentativeApplication,
   canTransitionOrder,
   evaluatePromotion,
   initialSupportAssignment,
-  roleHasPermission
+  roleHasPermission,
+  wouldCreateReferralCycle
 } from "./index";
 
 describe("domínio Curtiz", () => {
@@ -31,5 +34,25 @@ describe("domínio Curtiz", () => {
         { subtotalInCents: 5_000, quantity: 1, shippingInCents: 0 }
       )
     ).toBe(5_000);
+  });
+
+  it("calcula comissão em centavos por pontos-base", () => {
+    expect(calculateCommissionInCents(19_990, { id: "regra", version: 2, basisPoints: 750 })).toBe(
+      1_499
+    );
+  });
+
+  it("protege o fluxo de análise da representante", () => {
+    expect(canTransitionRepresentativeApplication("draft", "approved")).toBe(false);
+    expect(canTransitionRepresentativeApplication("under_review", "approved")).toBe(true);
+  });
+
+  it("impede autorreferência e ciclos na rede", () => {
+    const network = [
+      { representativeId: "b", sponsorId: "a" },
+      { representativeId: "c", sponsorId: "b" }
+    ];
+    expect(wouldCreateReferralCycle("a", "c", network)).toBe(true);
+    expect(wouldCreateReferralCycle("d", "c", network)).toBe(false);
   });
 });

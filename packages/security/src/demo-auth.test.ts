@@ -7,7 +7,9 @@ import {
 } from "./demo-auth";
 
 const previousEnvironment = {
+  appEnvironment: process.env.APP_ENV,
   demoMode: process.env.DEMO_MODE,
+  panelUrl: process.env.NEXT_PUBLIC_PANEL_URL,
   password: process.env.DEMO_USERS_PASSWORD,
   sessionSecret: process.env.DEMO_SESSION_SECRET
 };
@@ -19,7 +21,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.env.APP_ENV = previousEnvironment.appEnvironment;
   process.env.DEMO_MODE = previousEnvironment.demoMode;
+  process.env.NEXT_PUBLIC_PANEL_URL = previousEnvironment.panelUrl;
   process.env.DEMO_USERS_PASSWORD = previousEnvironment.password;
   process.env.DEMO_SESSION_SECRET = previousEnvironment.sessionSecret;
 });
@@ -44,5 +48,13 @@ describe("autenticação demo local", () => {
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(true);
     process.env.DEMO_MODE = "false";
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(false);
+  });
+
+  it("permite somente hosts HTTPS explicitamente configurados em staging", () => {
+    process.env.APP_ENV = "staging";
+    process.env.NEXT_PUBLIC_PANEL_URL = "https://painel.staging.example.com";
+    expect(isLocalDemoRequest(new Request("https://painel.staging.example.com/login"))).toBe(true);
+    expect(isLocalDemoRequest(new Request("http://painel.staging.example.com/login"))).toBe(false);
+    expect(isLocalDemoRequest(new Request("https://host-invasor.example.com/login"))).toBe(false);
   });
 });

@@ -2,12 +2,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const DEMO_SESSION_COOKIE = "curtiz-demo-session";
 
-export type DemoRole = "customer" | "operational" | "admin" | "manager" | "technical";
+export type DemoRole =
+  "customer" | "representative" | "operational" | "admin" | "manager" | "technical";
 
 export type DemoAccount = {
   email: string;
   fullName: string;
   role: DemoRole;
+  roles: readonly DemoRole[];
 };
 
 export type DemoSession = DemoAccount & {
@@ -15,18 +17,63 @@ export type DemoSession = DemoAccount & {
 };
 
 const demoAccounts: readonly DemoAccount[] = [
-  { email: "cliente.demo@curtiz.local", fullName: "Cliente Demo", role: "customer" },
+  {
+    email: "cliente.demo@curtiz.local",
+    fullName: "Cliente Demo",
+    role: "customer",
+    roles: ["customer"]
+  },
+  {
+    email: "representante.demo@curtiz.local",
+    fullName: "Representante Demo",
+    role: "representative",
+    roles: ["customer", "representative"]
+  },
   {
     email: "operacional.demo@curtiz.local",
     fullName: "Operacional Demo",
-    role: "operational"
+    role: "operational",
+    roles: ["operational"]
   },
-  { email: "admin.demo@curtiz.local", fullName: "Administrador Demo", role: "admin" },
-  { email: "gerencia.demo@curtiz.local", fullName: "Gerência Demo", role: "manager" },
-  { email: "tecnico.demo@curtiz.local", fullName: "Técnico Demo", role: "technical" }
+  {
+    email: "admin.demo@curtiz.local",
+    fullName: "Administrador Demo",
+    role: "admin",
+    roles: ["admin"]
+  },
+  {
+    email: "gerencia.demo@curtiz.local",
+    fullName: "Gerência Demo",
+    role: "manager",
+    roles: ["manager"]
+  },
+  {
+    email: "tecnico.demo@curtiz.local",
+    fullName: "Técnico Demo",
+    role: "technical",
+    roles: ["technical"]
+  }
 ];
 
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+const configuredStagingHosts = (): Set<string> => {
+  const configured = [
+    ...(process.env.STAGING_DEMO_HOSTS ?? "").split(","),
+    process.env.NEXT_PUBLIC_STORE_URL,
+    process.env.NEXT_PUBLIC_PANEL_URL
+  ];
+  const hosts = new Set<string>();
+  for (const value of configured) {
+    if (!value?.trim()) continue;
+    try {
+      hosts.add(value.includes("://") ? new URL(value).hostname : value.trim().toLowerCase());
+    } catch {
+      // O validador de ambiente rejeita valores inválidos antes do deploy.
+    }
+  }
+  return hosts;
+};
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -48,7 +95,13 @@ export const isLocalDemoRequest = (request: Request): boolean => {
   if (process.env.DEMO_MODE !== "true") return false;
 
   try {
-    return localHosts.has(new URL(request.url).hostname);
+    const url = new URL(request.url);
+    if (localHosts.has(url.hostname)) return true;
+    return (
+      process.env.APP_ENV === "staging" &&
+      url.protocol === "https:" &&
+      configuredStagingHosts().has(url.hostname)
+    );
   } catch {
     return false;
   }
@@ -98,7 +151,10 @@ export const verifyDemoSession = (
       (item) =>
         item.email === candidate.email &&
         item.fullName === candidate.fullName &&
-        item.role === candidate.role
+        item.role === candidate.role &&
+        Array.isArray(candidate.roles) &&
+        item.roles.length === candidate.roles.length &&
+        item.roles.every((role, index) => role === candidate.roles?.[index])
     );
     if (!account || typeof candidate.expiresAt !== "number" || candidate.expiresAt <= now) {
       return null;
@@ -112,6 +168,7 @@ export const verifyDemoSession = (
 export const demoDestination = (role: DemoRole): string => {
   const destinations: Record<DemoRole, string> = {
     customer: "/minha-conta",
+    representative: "/representante",
     operational: "/operacional",
     admin: "/administracao",
     manager: "/gerencia",

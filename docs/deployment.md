@@ -1,44 +1,57 @@
 # Deploy
 
-Referência: dois projetos Next.js, Supabase gerenciado e dois Workers Cloudflare independentes.
-Crie ambientes local, staging e produção com projetos Supabase separados. Execute migrations por CI
-após dry-run e aprovação.
+A arquitetura de referência usa dois projetos Next.js, dois Workers Cloudflare independentes e um
+Supabase gerenciado por ambiente. Loja e painel precisam de nomes e rotas próprias; usar a mesma URL
+para os dois impede que o roteamento distinga as aplicações.
 
-## Políticas de ambiente
+## Validação dos ambientes
 
-- `pnpm validate:development`: valida somente valores informados e aceita URLs locais e mocks.
-- `pnpm validate:staging`: exige URLs, Supabase gerenciado, chaves internas e origens permitidas.
-  Aceita `DEMO_MODE=true`, providers mock, MFA interno desativado e ausência de Mercado Pago e
-  Turnstile. Se um provider real for selecionado, suas credenciais passam a ser obrigatórias.
-- `pnpm validate:production`: exige HTTPS, providers reais, Mercado Pago, e-mail transacional,
-  Turnstile, MFA interno e `DEMO_MODE=false`.
+- `pnpm validate:development`: aceita URLs locais e mocks.
+- `pnpm validate:staging`: exige URLs, Supabase remoto de homologação, chaves internas e origens
+  permitidas. Aceita `DEMO_MODE=true`, mocks e integrações opcionais desativadas.
+- `pnpm validate:production`: exige HTTPS, Supabase remoto, chaves internas, origens permitidas e
+  `DEMO_MODE=false`. Mocks continuam proibidos. Pagamento, frete, e-mail, Turnstile e MFA podem ficar
+  desativados por flags explícitas; suas credenciais só são exigidas quando o recurso é habilitado.
 
-O comando `pnpm build` continua sendo estritamente de produção. Staging deve usar
-`pnpm build:staging`; isso evita que uma variável demo ative silenciosamente uma política mais
-permissiva em um build de produção.
+`NODE_ENV=production` seleciona otimizações do framework; não habilita integrações comerciais.
 
-## Cloudflare Workers Builds — staging/demo
+## Produção inicial com integrações desativadas
 
-Mantenha a raiz do repositório como **Root directory** e crie um Worker para cada aplicação.
+```dotenv
+CHECKOUT_ENABLED=false
+PAYMENT_PROVIDER=disabled
+MERCADO_PAGO_ENABLED=false
+SHIPPING_PROVIDER=disabled
+MELHOR_ENVIO_ENABLED=false
+EMAIL_PROVIDER=disabled
+EMAIL_ENABLED=false
+TURNSTILE_ENABLED=false
+REQUIRE_INTERNAL_MFA=false
+```
+
+Não configure tokens fictícios. Com uma integração desativada, o SDK não é inicializado, nenhuma API
+externa é chamada e a interface apresenta indisponibilidade comercial, sem erro técnico.
+
+## Cloudflare Workers
+
+Mantenha a raiz do monorepo como **Root directory** e configure as variáveis em **Settings > Build >
+Variables and secrets**.
 
 ### Loja
 
-- Build command: `pnpm build:store:staging`
+- Build command: `npm run build:worker`
 - Deploy command: `cd apps/store && npx wrangler deploy`
+- Dry-run local: `npm run deploy:dry-run`
 
 ### Painel
 
-- Build command: `pnpm build:panel:staging`
+- Build command: `npm run build:worker:panel`
 - Deploy command: `cd apps/panel && npx wrangler deploy`
+- Dry-run local: `npm run deploy:dry-run:panel`
 
-O Wrangler detecta o Next.js e aplica o adaptador OpenNext. Configure todas as variáveis exigidas
-por staging em **Settings > Build > Variables and secrets**, pois o Next.js precisa delas durante o
-build. Use nomes de Worker e domínios distintos para loja e painel.
+Os comandos de build executam a validação de produção e depois o OpenNext. Crie Workers separados,
+por exemplo `curtiz-ecommerce` e `curtiz-painel`, com URLs diferentes. O domínio da loja deve preencher
+`NEXT_PUBLIC_STORE_URL`; o domínio do painel deve preencher `NEXT_PUBLIC_PANEL_URL`.
 
-Para produção real, troque os comandos de build direcionados por:
-
-- Loja: `pnpm validate:production && turbo build --filter=@curtiz/store`
-- Painel: `pnpm validate:production && turbo build --filter=@curtiz/panel`
-
-Os comandos de deploy permanecem os mesmos. A configuração de produção falha quando encontra demo,
-providers mock, HTTP, MFA interno desativado ou secrets essenciais ausentes.
+Migrations somente podem ser aplicadas ao projeto remoto de homologação durante testes. Produção
+exige aprovação explícita, backup verificado e pipeline próprio; nunca execute seeds de demonstração.

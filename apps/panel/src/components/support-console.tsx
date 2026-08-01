@@ -1,96 +1,339 @@
 "use client";
 
-import { ArrowUpRight, Send, UserRoundCheck } from "lucide-react";
-import { useState } from "react";
+import {
+  supportStatusLabels,
+  type SupportConversationView,
+  type SupportStatus,
+  type SupportTeamMember
+} from "@curtiz/domain";
+import { createBrowserClient } from "@supabase/ssr";
+import {
+  ArrowUpRight,
+  CircleCheck,
+  Inbox,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Send,
+  UserRoundCheck
+} from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-const conversations = [
-  { code: "ATD-7F9C2A10", subject: "Pedido atrasado", customer: "Cliente D.", priority: "Alta" },
-  { code: "ATD-92F1B880", subject: "Dúvida sobre troca", customer: "Cliente B.", priority: "Normal" },
-  { code: "ATD-11A7C029", subject: "Pagamento pendente", customer: "Cliente R.", priority: "Urgente" }
+type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
+
+type SupportResponse = {
+  ok: boolean;
+  conversations?: SupportConversationView[];
+  team?: SupportTeamMember[];
+  message?: string;
+};
+
+const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+
+function storeUrl() {
+  if (typeof window === "undefined") return configuredStoreUrl;
+  try {
+    const configured = new URL(configuredStoreUrl);
+    if (
+      ["localhost", "127.0.0.1"].includes(configured.hostname) &&
+      !["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ) {
+      configured.hostname = window.location.hostname;
+    }
+    return configured.origin;
+  } catch {
+    return configuredStoreUrl;
+  }
+}
+
+const statusFilters: Array<{ value: "all" | SupportStatus; label: string }> = [
+  { value: "all", label: "Todos os status" },
+  { value: "queued", label: "Na fila" },
+  { value: "in_progress", label: "Em atendimento" },
+  { value: "waiting_customer", label: "Aguardando cliente" },
+  { value: "escalated", label: "Escalados" },
+  { value: "resolved", label: "Resolvidos" },
+  { value: "closed", label: "Encerrados" }
 ];
 
-export function SupportConsole({ role }: { role: string }) {
-  const [selected, setSelected] = useState(conversations[0]);
-  const [messages, setMessages] = useState([
-    { agent: false, text: "Olá! Meu pedido passou da previsão e não atualizou." }
-  ]);
-  const [reply, setReply] = useState("");
+const roleLabels = {
+  operational: "Operacional",
+  manager: "Gerência",
+  technical: "Técnico"
+} as const;
+
+const formatDateTime = (value: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo"
+  }).format(new Date(value));
+
+export function SupportConsole({ role }: { role: PanelRole }) {
+  const [conversations, setConversations] = useState<SupportConversationView[]>([]);
+  const [team, setTeam] = useState<SupportTeamMember[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | SupportStatus>("all");
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState("");
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
 
-  if (!selected) return null;
-  const canRoute = role === "administracao";
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const response = await fetch(`${storeUrl()}/api/support`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const result = (await response.json()) as SupportResponse;
+      if (!response.ok || !result.ok) throw new Error(result.message ?? "support_load_failed");
+      setConversations(result.conversations ?? []);
+      setTeam(result.team ?? []);
+      setSelectedId((current) => {
+        if (current && result.conversations?.some((item) => item.id === current)) return current;
+        return result.conversations?.[0]?.id ?? "";
+      });
+      setError("");
+    } catch {
+      setError("Não foi possível carregar a fila. Verifique sua sessão e tente novamente.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
-  const send = () => {
-    if (!reply.trim()) return;
-    setMessages((current) => [...current, { agent: true, text: reply.trim() }]);
-    setReply("");
-    setNotice("Resposta adicionada à demonstração. A persistência exige Supabase local.");
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (url && key) {
+      const supabase = createBrowserClient(url, key);
+      const channel = supabase
+        .channel("panel-support-updates")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "support_conversations" },
+          () => void load(true)
+        )
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "support_messages" },
+          () => void load(true)
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    }
+    const timer = window.setInterval(() => void load(true), 30_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("pt-BR");
+    return conversations.filter((conversation) => {
+      const matchesStatus = status === "all" || conversation.status === status;
+      const matchesQuery =
+        !normalized ||
+        [conversation.publicCode, conversation.subject, conversation.customerName]
+          .join(" ")
+          .toLocaleLowerCase("pt-BR")
+          .includes(normalized);
+      return matchesStatus && matchesQuery;
+    });
+  }, [conversations, query, status]);
+
+  const selected = conversations.find((item) => item.id === selectedId) ?? null;
+  const isManager = role === "gerencia";
+  const isAdmin = role === "administracao";
+  const canClaim = Boolean(selected && (isAdmin || isManager) && !selected.assignedName);
+  const canReply = Boolean(selected && (selected.assignedToCurrentUser || isManager));
+  const canManage = Boolean(selected && (selected.assignedToCurrentUser || isManager));
+  const canAddInternal = canReply && (isAdmin || isManager);
+
+  const update = async (body: Record<string, unknown>, success: string) => {
+    if (processing) return false;
+    setProcessing(String(body.action));
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${storeUrl()}/api/support`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const result = (await response.json()) as SupportResponse;
+      if (!response.ok || !result.ok) {
+        setError(result.message ?? "Não foi possível concluir a operação.");
+        return false;
+      }
+      setConversations(result.conversations ?? []);
+      setNotice(success);
+      return true;
+    } catch {
+      setError("Conexão interrompida. A operação não foi concluída.");
+      return false;
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected || processing || !canReply) return;
+    const form = new FormData(event.currentTarget);
+    const message = form.get("message");
+    const internal = form.get("internal") === "on";
+    setProcessing("message");
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${storeUrl()}/api/support`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "message",
+          conversationId: selected.id,
+          message,
+          internal
+        })
+      });
+      const result = (await response.json()) as SupportResponse;
+      if (!response.ok || !result.ok) {
+        setError(result.message ?? "Não foi possível enviar a mensagem.");
+        return;
+      }
+      setConversations(result.conversations ?? []);
+      setNotice(internal ? "Nota interna registrada." : "Resposta enviada ao cliente.");
+      event.currentTarget.reset();
+    } catch {
+      setError("Conexão interrompida. A mensagem não foi enviada.");
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  const transfer = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected || processing) return;
+    const form = new FormData(event.currentTarget);
+    const member = team.find((item) => item.id === form.get("target"));
+    if (!member) {
+      setError("Selecione um colaborador elegível.");
+      return;
+    }
+    const done = await update(
+      {
+        action: "transfer",
+        conversationId: selected.id,
+        targetRole: member.role,
+        targetUserId: member.demo ? undefined : member.id,
+        reason: form.get("reason")
+      },
+      `Atendimento transferido para ${member.fullName}.`
+    );
+    if (done) setTransferOpen(false);
   };
 
   return (
-    <div className="support-layout">
-      <section className="panel-card conversation-list">
-        <h2>Fila de atendimentos</h2>
-        {role === "operacional" && (
-          <p className="demo-status">Somente chamados transferidos ao Operacional</p>
-        )}
-        {conversations.map((conversation) => (
-          <button key={conversation.code} onClick={() => setSelected(conversation)}>
-            <strong>{conversation.subject}</strong>
-            <small>
-              {conversation.code} • {conversation.customer} • {conversation.priority}
-            </small>
-          </button>
-        ))}
-      </section>
-      <section className="panel-card">
-        <div className="page-heading">
+    <div className="support-console">
+      <section className="panel-card support-queue">
+        <header className="support-section-heading">
           <div>
-            <h2>{selected.subject}</h2>
-            <p>{selected.code} • Fila do Administrador</p>
+            <h2>Fila de atendimentos</h2>
+            <p>{role === "operacional" ? "Somente chamados transferidos para você." : "Conversas autorizadas para seu perfil."}</p>
           </div>
-          <span className="status orange">Em atendimento</span>
-        </div>
-        <div className="message-thread" aria-live="polite">
-          {messages.map((message, index) => (
-            <div className={message.agent ? "message agent" : "message"} key={`${message.text}-${index}`}>
-              {message.text}
-            </div>
-          ))}
-          <div className="internal-note">
-            Nota interna: visível somente aos colaboradores autorizados, nunca ao cliente.
-          </div>
-        </div>
-        {notice && <p className="demo-status">{notice}</p>}
-        <div className="reply-box">
-          <label className="sr-only" htmlFor="support-reply">
-            Resposta
-          </label>
-          <input
-            id="support-reply"
-            value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            placeholder="Digite uma resposta segura..."
-            onKeyDown={(event) => {
-              if (event.key === "Enter") send();
-            }}
-          />
-          <button className="primary-button" onClick={send}>
-            <Send size={17} /> Enviar
+          <button className="icon-button" type="button" onClick={() => void load()} aria-label="Atualizar fila" disabled={loading}>
+            <RefreshCw className={loading ? "spin" : ""} />
           </button>
+        </header>
+        <div className="support-filters">
+          <label>
+            <span className="sr-only">Buscar chamado</span>
+            <Search />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, assunto ou cliente" />
+          </label>
+          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="Filtrar por status">
+            {statusFilters.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          </select>
         </div>
-        {canRoute && (
-          <div className="toolbar" style={{ marginTop: 14, flexWrap: "wrap" }}>
-            <button className="secondary-button" onClick={() => setNotice("Atendimento assumido pelo Administrador.")}>
-              <UserRoundCheck size={17} /> Assumir
-            </button>
-            <button className="secondary-button" onClick={() => setNotice("Transferência requer motivo e será auditada.")}>
-              <ArrowUpRight size={17} /> Transferir
-            </button>
-            <button className="secondary-button" onClick={() => setNotice("Escalonamento exige categoria, contexto e justificativa.")}>
-              Escalar
-            </button>
-          </div>
+        {loading ? (
+          <div className="support-state"><LoaderCircle className="spin" /> Carregando fila…</div>
+        ) : error && conversations.length === 0 ? (
+          <div className="support-state support-error"><p>{error}</p><button className="secondary-button" onClick={() => void load()}>Tentar novamente</button></div>
+        ) : filtered.length === 0 ? (
+          <div className="support-state"><Inbox /><strong>Nenhum atendimento encontrado</strong><span>A fila será atualizada automaticamente.</span></div>
+        ) : (
+          <nav className="conversation-list" aria-label="Atendimentos">
+            {filtered.map((conversation) => (
+              <button className={conversation.id === selectedId ? "active" : ""} key={conversation.id} onClick={() => setSelectedId(conversation.id)}>
+                <span><strong>{conversation.subject}</strong><small>{conversation.publicCode} · {conversation.customerName}</small></span>
+                <span className={`status ${conversation.status}`}>{supportStatusLabels[conversation.status]}</span>
+              </button>
+            ))}
+          </nav>
+        )}
+      </section>
+
+      <section className="panel-card support-workspace">
+        {!selected ? (
+          <div className="support-state"><Inbox /><strong>Selecione um atendimento</strong><span>As mensagens e ações aparecerão aqui.</span></div>
+        ) : (
+          <>
+            <header className="support-conversation-heading">
+              <div><p className="eyebrow">{selected.publicCode}</p><h2>{selected.subject}</h2><p>{selected.customerName}{selected.relatedOrderCode ? ` · ${selected.relatedOrderCode}` : ""}</p></div>
+              <span className={`status ${selected.status}`}>{supportStatusLabels[selected.status]}</span>
+            </header>
+            {error && <p className="support-feedback error" role="alert">{error}</p>}
+            {notice && <p className="support-feedback success" role="status"><CircleCheck /> {notice}</p>}
+            <div className="support-owner-row">
+              <span>{selected.assignedName ? `Responsável: ${selected.assignedName}` : "Aguardando responsável"}</span>
+              {canClaim && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "claim", conversationId: selected.id }, "Atendimento assumido com sucesso.")}>
+                {processing === "claim" ? <LoaderCircle className="spin" /> : <UserRoundCheck />} Assumir
+              </button>}
+            </div>
+            <div className="message-thread" aria-live="polite">
+              {selected.messages.map((message) => (
+                <article className={`message ${message.author}`} key={message.id}>
+                  <p>{message.content}</p>
+                  <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
+                </article>
+              ))}
+            </div>
+            {canReply ? (
+              <form className="support-reply-form" onSubmit={(event) => void sendMessage(event)}>
+                <label htmlFor="support-reply">Responder</label>
+                <textarea id="support-reply" name="message" required maxLength={4000} placeholder="Escreva uma resposta objetiva e segura." />
+                {canAddInternal && <label className="support-internal-toggle"><input type="checkbox" name="internal" /> Registrar como nota interna (invisível ao cliente)</label>}
+                <button className="primary-button" disabled={Boolean(processing)}>
+                  {processing === "message" ? <LoaderCircle className="spin" /> : <Send />} {processing === "message" ? "Enviando…" : "Enviar"}
+                </button>
+              </form>
+            ) : (
+              <p className="support-feedback">Assuma o atendimento ou aguarde uma transferência para responder.</p>
+            )}
+            {canManage && (
+              <div className="support-actions">
+                {(isAdmin || isManager) && team.length > 0 && <button className="secondary-button" onClick={() => setTransferOpen((current) => !current)}><ArrowUpRight /> Transferir</button>}
+                {!(["resolved", "closed"] as SupportStatus[]).includes(selected.status) && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "resolved", reason: "Solicitação concluída pela equipe" }, "Atendimento marcado como resolvido.")}><CircleCheck /> Resolver</button>}
+                {selected.status === "resolved" && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "closed", reason: "Atendimento encerrado após resolução" }, "Atendimento encerrado.")}>Encerrar</button>}
+                {selected.status === "closed" && isManager && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "reopened", reason: "Atendimento reaberto pela Gerência" }, "Atendimento reaberto.")}>Reabrir</button>}
+              </div>
+            )}
+            {transferOpen && <form className="support-transfer-form" onSubmit={(event) => void transfer(event)}>
+              <h3>Transferir atendimento</h3>
+              <label>Colaborador<select name="target" required defaultValue=""><option value="" disabled>Selecione</option>{team.map((member) => <option value={member.id} key={member.id}>{member.fullName} · {roleLabels[member.role]}</option>)}</select></label>
+              <label>Motivo<textarea name="reason" required minLength={10} maxLength={500} /></label>
+              <div className="support-actions"><button className="secondary-button" type="button" onClick={() => setTransferOpen(false)}>Cancelar</button><button className="primary-button" disabled={Boolean(processing)}>{processing === "transfer" ? <LoaderCircle className="spin" /> : <ArrowUpRight />} Confirmar transferência</button></div>
+            </form>}
+          </>
         )}
       </section>
     </div>
