@@ -125,7 +125,11 @@ export function HelpChat() {
                   </div>
                 )}
               </div>
-              <Link className="help-human-link" href="/ajuda" onClick={close}>
+              <Link
+                className="help-human-link"
+                href="/minha-conta/atendimento?new=1"
+                onClick={close}
+              >
                 Precisa de uma pessoa? Abrir atendimento humano
               </Link>
               <form className="help-chat-form" onSubmit={submit}>

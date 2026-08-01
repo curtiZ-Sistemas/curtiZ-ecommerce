@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getIntegrationConfig } from "@curtiz/config";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "@/lib/catalog";
@@ -30,10 +31,27 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const integrations = getIntegrationConfig();
+  if (!integrations.checkoutEnabled) {
+    return NextResponse.json(
+      {
+        success: false,
+        ok: false,
+        code: "INTEGRATION_DISABLED",
+        message: "A finalização de compras estará disponível em breve."
+      },
+      { status: 503, headers: { "cache-control": "no-store" } }
+    );
+  }
+
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json(
-      { ok: false, message: "Revise os dados do checkout.", issues: parsed.error.flatten().fieldErrors },
+      {
+        ok: false,
+        message: "Revise os dados do checkout.",
+        issues: parsed.error.flatten().fieldErrors
+      },
       { status: 400 }
     );
   }
@@ -55,11 +73,33 @@ export async function POST(request: Request) {
     );
   }
 
+  if (
+    integrations.payment.provider !== "mercadopago" ||
+    integrations.shipping.provider !== "melhorenvio"
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        ok: false,
+        code: "INTEGRATION_CONFIGURATION_ERROR",
+        message: "A finalização de compras está temporariamente indisponível."
+      },
+      { status: 503, headers: { "cache-control": "no-store" } }
+    );
+  }
+
+  // Pedido e preferência serão criados transacionalmente pelo Supabase/adapter real.
+  // Esta rota não produz aprovação, frete ou pedido fictício.
   const orderCode = `CZT-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
   return NextResponse.json(
-    { ok: true, orderCode, provider: "mock", paymentState: "pending" },
     {
-      status: 201,
+      ok: false,
+      orderCode,
+      code: "INTEGRATION_NOT_READY",
+      message: "Checkout temporariamente indisponível."
+    },
+    {
+      status: 503,
       headers: { "cache-control": "no-store", "x-request-id": randomUUID() }
     }
   );

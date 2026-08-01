@@ -4,9 +4,7 @@ import { calculateSubtotal, formatBRL } from "@curtiz/domain";
 import {
   ArrowLeft,
   Check,
-  LockKeyhole,
   Minus,
-  PackageCheck,
   Plus,
   ShoppingBag,
   Trash2,
@@ -16,9 +14,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export default function CartPage() {
   const { hydrated, lines, changeQuantity, remove } = useCart();
+  const integrationStatus = useIntegrationStatus();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const releaseRef = useRef<number | null>(null);
@@ -191,19 +191,24 @@ export default function CartPage() {
               </div>
             </div>
 
-            <Link className="primary-button full-button checkout-button" href="/checkout">
-              Continuar para o checkout
-            </Link>
-            <p className="secure-note"><LockKeyhole /> Ambiente seguro e valores validados no servidor.</p>
+            {integrationStatus?.checkoutEnabled ? (
+              <Link className="primary-button full-button checkout-button" href="/checkout">
+                Continuar para o checkout
+              </Link>
+            ) : (
+              <button className="primary-button full-button checkout-button" type="button" disabled>
+                Finalização indisponível
+              </button>
+            )}
+            {integrationStatus && !integrationStatus.checkoutEnabled && (
+              <p className="integration-notice" role="status">
+                A finalização de compras estará disponível em breve. Seus itens continuam salvos.
+              </p>
+            )}
           </aside>
         </div>
       )}
 
-      <section className="cart-assurances" aria-label="Diferenciais da compra">
-        <div><Truck /><span><strong>Entrega acompanhada</strong>Consulte cada etapa do pedido.</span></div>
-        <div><PackageCheck /><span><strong>Troca simplificada</strong>Solicite pela sua conta.</span></div>
-        <div><LockKeyhole /><span><strong>Dados protegidos</strong>Segurança em todas as etapas.</span></div>
-      </section>
     </div>
   );
 }

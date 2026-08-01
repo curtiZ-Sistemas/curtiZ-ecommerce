@@ -222,6 +222,7 @@ export function CatalogPage({
                 </button>
               )}
               {sizes.map((size) => (
+                
                 <button
                   type="button"
                   onClick={() => setSizes((current) => current.filter((item) => item !== size))}

@@ -1,11 +1,13 @@
 import {
   DEMO_SESSION_COOKIE,
+  REFERRAL_ATTRIBUTION_COOKIE,
   authenticateDemoAccount,
   createDemoSession,
   demoDestination,
   isLocalDemoRequest,
   safeInternalPath,
   sharedCookieOptions,
+  verifyReferralAttribution,
   verifyDemoSession
 } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
@@ -13,6 +15,7 @@ import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { readQueryResult } from "@/lib/unknown-data";
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -177,7 +180,7 @@ export function OPTIONS(request: Request) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ mode: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ mode: string }> }) {
   if (!isAllowedRequest(request)) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
   }
@@ -306,6 +309,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     );
   }
 
+  let referralClaimed = false;
+  const referral = verifyReferralAttribution(
+    request.cookies.get(REFERRAL_ATTRIBUTION_COOKIE)?.value,
+    process.env.AUDIT_HASH_KEY ?? ""
+  );
+  if (referral) {
+    const referralResult: unknown = await supabase.rpc("claim_referral_attribution", {
+      p_code: referral.code
+    });
+    referralClaimed = !readQueryResult(referralResult).error;
+  }
+
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("status").eq("id", data.user.id).maybeSingle(),
     supabase.from("user_roles").select("role").eq("user_id", data.user.id)
@@ -347,8 +362,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     }
   }
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
     { headers: { "cache-control": "no-store" } }
   );
+  if (referralClaimed) {
+    response.cookies.set(REFERRAL_ATTRIBUTION_COOKIE, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge: 0
+    });
+  }
+  return response;
 }

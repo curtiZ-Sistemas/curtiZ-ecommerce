@@ -1,16 +1,20 @@
 import { formatBRL } from "@curtiz/domain";
 import { DEMO_SESSION_COOKIE, demoDestination, verifyDemoSession } from "@curtiz/security";
-import { Heart, MapPin, MessageCircle, PackageCheck, RotateCcw, ShieldCheck } from "lucide-react";
+import { Heart, MapPin, PackageCheck, RotateCcw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { FavoritesPanel } from "@/components/favorites-panel";
+import { SupportCenter } from "@/components/support-center";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
 export const metadata = { title: "Minha conta", robots: { index: false, follow: false } };
 
 const nav = [
-  ["Resumo", "/minha-conta"],
+  ["Perfil", "/minha-conta"],
+  ["Minha conta", "/minha-conta/conta"],
   ["Pedidos", "/minha-conta/pedidos"],
   ["Endereços", "/minha-conta/enderecos"],
   ["Favoritos", "/minha-conta/favoritos"],
@@ -20,14 +24,27 @@ const nav = [
   ["Privacidade", "/minha-conta/privacidade"]
 ] as const;
 
-export default async function AccountPage({ params }: { params: Promise<{ section?: string[] }> }) {
+export default async function AccountPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ section?: string[] }>;
+  searchParams: Promise<{ new?: string }>;
+}) {
+  const section = (await params).section?.[0] ?? "perfil";
+  const startNewSupport = (await searchParams).new === "1";
+  const returnPath = `/minha-conta${section === "perfil" ? "" : `/${section}`}${
+    startNewSupport ? "?new=1" : ""
+  }`;
   const cookieStore = await cookies();
   const session =
     process.env.DEMO_MODE === "true"
       ? verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value)
       : null;
-  if (process.env.DEMO_MODE === "true" && !session) redirect("/login");
-  if (session && session.role !== "customer") {
+  if (process.env.DEMO_MODE === "true" && !session) {
+    redirect(`/login?next=${encodeURIComponent(returnPath)}`);
+  }
+  if (session && !session.roles.includes("customer")) {
     redirect(
       new URL(
         demoDestination(session.role),
@@ -36,14 +53,43 @@ export default async function AccountPage({ params }: { params: Promise<{ sectio
     );
   }
 
-  const section = (await params).section?.[0] ?? "resumo";
+  let customerName = session?.fullName ?? "cliente";
+  if (process.env.DEMO_MODE !== "true") {
+    const supabase = await createServerSupabaseClient();
+    const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
+    if (!data.user) redirect(`/login?next=${encodeURIComponent(returnPath)}`);
+    const rolesResponse: unknown = await supabase!
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.user.id);
+    const roles = readRows(readQueryResult(rolesResponse).data).map((item) =>
+      readString(item, "role")
+    );
+    const internalRole = roles.find(
+      (role): role is "admin" | "manager" | "operational" | "technical" =>
+        role === "admin" ||
+        role === "manager" ||
+        role === "operational" ||
+        role === "technical"
+    );
+    if (internalRole && !roles.includes("customer")) {
+      redirect(
+        new URL(
+          demoDestination(internalRole),
+          process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001"
+        ).toString()
+      );
+    }
+    const metadataName: unknown = data.user.user_metadata.full_name;
+    customerName = typeof metadataName === "string" ? metadataName : "cliente";
+  }
   return (
     <div className="container page-shell">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Área do cliente</p>
-          <h1>Olá, {session?.fullName ?? "cliente"}</h1>
-          <p>Dados fictícios para validar os fluxos locais.</p>
+          <h1>Olá, {customerName}</h1>
+          {process.env.DEMO_MODE === "true" && <p>Dados fictícios para validar os fluxos locais.</p>}
         </div>
       </div>
       <div className="account-layout">
@@ -56,7 +102,8 @@ export default async function AccountPage({ params }: { params: Promise<{ sectio
           <LogoutButton className="account-logout-button" />
         </nav>
         <section>
-          {section === "resumo" && <AccountSummary />}
+          {section === "perfil" && <AccountProfile customerName={customerName} representative={session?.roles.includes("representative") ?? false} />}
+          {section === "conta" && <AccountSummary />}
           {section === "pedidos" && <Orders />}
           {section === "enderecos" && <Addresses />}
           {section === "favoritos" && <FavoritesPanel />}
@@ -64,10 +111,37 @@ export default async function AccountPage({ params }: { params: Promise<{ sectio
           {section === "trocas" && (
             <Empty title="Nenhuma troca em andamento" icon={<RotateCcw />} />
           )}
-          {section === "atendimento" && <Support />}
+          {section === "atendimento" && (
+            <SupportCenter accountMode startNew={startNewSupport} />
+          )}
           {section === "privacidade" && <Privacy />}
         </section>
       </div>
+    </div>
+  );
+}
+
+function AccountProfile({ customerName, representative }: { customerName: string; representative: boolean }) {
+  return (
+    <div className="form-stack">
+      <article className="account-profile-card">
+        <div className="account-avatar" aria-hidden="true">{customerName.slice(0, 1).toUpperCase()}</div>
+        <div>
+          <p className="eyebrow">Perfil Curtiz</p>
+          <h2>{customerName}</h2>
+          <p>Seus dados sensíveis permanecem protegidos e aparecem mascarados.</p>
+        </div>
+      </article>
+      <article className="representative-account-card">
+        <div>
+          <p className="eyebrow">Programa de representantes</p>
+          <h2>{representative ? "Seu portal está disponível" : "Tenha uma nova área profissional"}</h2>
+          <p>{representative ? "Acesse vendas, materiais, rede e histórico em um ambiente separado." : "Envie uma solicitação, acompanhe a análise e preserve sua conta de cliente."}</p>
+        </div>
+        <Link className="primary-button" href={representative ? "/representante" : "/representante/solicitacao"}>
+          {representative ? "Abrir portal" : "Quero ser representante"}
+        </Link>
+      </article>
     </div>
   );
 }
@@ -163,19 +237,6 @@ function Security() {
         <h2>Últimos acessos</h2>
         <p>Os dados serão carregados do Supabase Auth após a conexão local.</p>
       </div>
-    </div>
-  );
-}
-
-function Support() {
-  return (
-    <div className="form-card">
-      <MessageCircle />
-      <h2>Meus atendimentos</h2>
-      <p>Acompanhe respostas, status e histórico completo.</p>
-      <Link className="primary-button" href="/ajuda">
-        Abrir atendimento
-      </Link>
     </div>
   );
 }

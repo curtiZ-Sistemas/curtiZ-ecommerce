@@ -87,36 +87,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </p>
           <span className="installments">ou 6x sem juros · 5% de desconto no Pix</span>
           <AddToCart product={product} />
-          <div className="product-benefits">
-            <div className="benefit">
-              <PackageCheck />
-              <div>
-                <strong>Em estoque</strong>
-                <span>Prazo calculado pelo CEP.</span>
-              </div>
-            </div>
-            <div className="benefit">
-              <ShieldCheck />
-              <div>
-                <strong>Compra segura</strong>
-                <span>Valores validados no servidor.</span>
-              </div>
-            </div>
-            <div className="benefit">
-              <Truck />
-              <div>
-                <strong>Entrega acompanhada</strong>
-                <span>Eventos confirmados pelo provedor.</span>
-              </div>
-            </div>
-            <div className="benefit">
-              <RotateCcw />
-              <div>
-                <strong>Troca simplificada</strong>
-                <span>Solicitação vinculada ao pedido.</span>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

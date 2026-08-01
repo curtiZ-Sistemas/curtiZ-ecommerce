@@ -37,10 +37,10 @@ const localAllowed = (key: string, limit: number, windowSeconds: number): boolea
 export async function enforceAuthRateLimit(input: {
   request: Request;
   email: string;
-  scope: "login" | "signup";
+  scope: "login" | "signup" | "password_reset";
   supabase: unknown;
 }): Promise<boolean> {
-  const limit = input.scope === "login" ? 10 : 5;
+  const limit = input.scope === "login" ? 10 : input.scope === "signup" ? 5 : 3;
   const windowSeconds = input.scope === "login" ? 15 * 60 : 60 * 60;
   const hash = keyHash(input.request, input.email, input.scope);
   if (!input.supabase) return localAllowed(hash, limit, windowSeconds);
@@ -57,4 +57,3 @@ export async function enforceAuthRateLimit(input: {
   }
   return response.data;
 }
-

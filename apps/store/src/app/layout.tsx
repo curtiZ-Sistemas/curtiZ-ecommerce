@@ -26,7 +26,6 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const demo = process.env.DEMO_MODE !== "false";
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
       <body>
@@ -36,11 +35,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               Ir para o conteúdo principal
             </a>
             <RouteFeedback />
-            {demo && (
-              <div className="demo-banner">
-                Ambiente de demonstração — produtos, pedidos e integrações exibidos são fictícios.
-              </div>
-            )}
             <SiteHeader />
             <main id="main-content">{children}</main>
             <SiteFooter />

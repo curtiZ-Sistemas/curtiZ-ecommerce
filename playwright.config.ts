@@ -43,7 +43,7 @@ export default defineConfig({
     {
       command: "npx --no-install next dev --port 3001",
       cwd: "apps/panel",
-      url: "http://localhost:3001",
+      url: "http://localhost:3001/administracao",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000
     }

@@ -1,4 +1,3 @@
-import { CreditCard, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { BrandLogo } from "./brand-logo";
 
@@ -36,13 +35,6 @@ const groups = [
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div className="footer-trust">
-        <div className="container">
-          <span><PackageCheck /><strong>Entrega acompanhada</strong> do pedido ao destino</span>
-          <span><LockKeyhole /><strong>Compra protegida</strong> em todas as etapas</span>
-          <span><CreditCard /><strong>Pagamento flexível</strong> em até 6x sem juros</span>
-        </div>
-      </div>
       <div className="container footer-grid">
         <div className="footer-brand">
           <BrandLogo />

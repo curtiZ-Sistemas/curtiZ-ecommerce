@@ -10,6 +10,7 @@ describe("representative migrations without a local database", () => {
   const creatives = migration("202607310004_representative_creatives.sql");
   const hardening = migration("202608010001_security_hardening.sql");
   const saleTransaction = migration("202608010002_representative_sale_transaction.sql");
+  const referralAttribution = migration("202608010003_referral_attribution.sql");
 
   it("keeps privileged functions on an explicit empty search path", () => {
     const privilegedFunctions = [
@@ -70,5 +71,15 @@ describe("representative migrations without a local database", () => {
     expect(saleTransaction).toContain("representative.sale.recorded");
     expect(saleTransaction).not.toContain("p_total");
     expect(saleTransaction).not.toContain("p_price");
+  });
+
+  it("captures immutable referrals and converts them without cycles", () => {
+    expect(referralAttribution).toContain("force row level security");
+    expect(referralAttribution).toContain("self referral is forbidden");
+    expect(referralAttribution).toContain("referral attribution is immutable");
+    expect(referralAttribution).toContain("private.rebuild_representative_network_closure()");
+    expect(referralAttribution).toContain("security definer");
+    expect(referralAttribution).toContain("set search_path = ''");
+    expect(referralAttribution).toContain("grant execute on function public.is_valid_referral_code(text) to anon");
   });
 });

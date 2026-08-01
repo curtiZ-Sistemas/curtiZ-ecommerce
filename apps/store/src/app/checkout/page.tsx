@@ -7,9 +7,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export default function CheckoutPage() {
   const { hydrated, lines, clear } = useCart();
+  const integrationStatus = useIntegrationStatus();
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,7 +71,7 @@ export default function CheckoutPage() {
     }
   };
 
-  if (!hydrated) {
+  if (!hydrated || !integrationStatus) {
     return (
       <div className="container page-shell">
         <div className="checkout-layout">
@@ -88,6 +90,23 @@ export default function CheckoutPage() {
           <h1>Seu carrinho está vazio</h1>
           <p>Adicione um produto antes de iniciar o checkout.</p>
           <Link className="primary-button" href="/produtos">Ver produtos</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!integrationStatus.checkoutEnabled) {
+    return (
+      <div className="container page-shell">
+        <div className="empty-state checkout-unavailable-state">
+          <span className="empty-state-icon"><LockKeyhole /></span>
+          <p className="eyebrow">Carrinho preservado</p>
+          <h1>A finalização de compras estará disponível em breve.</h1>
+          <p>Você pode continuar escolhendo produtos e editar o carrinho normalmente.</p>
+          <div className="empty-state-actions">
+            <Link className="primary-button" href="/carrinho">Voltar ao carrinho</Link>
+            <Link className="secondary-button" href="/produtos">Continuar comprando</Link>
+          </div>
         </div>
       </div>
     );

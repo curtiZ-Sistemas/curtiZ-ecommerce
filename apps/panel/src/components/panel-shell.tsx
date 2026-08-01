@@ -37,6 +37,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Separação", "separacao", PackageCheck],
     ["Expedição", "expedicao", Boxes],
     ["Estoque", "estoque", Boxes],
+    ["Kits de representantes", "kits-representantes", PackageCheck],
     ["Trocas", "trocas", FileClock],
     ["Atendimento atribuído", "atendimentos", Headphones]
   ],
@@ -49,6 +50,10 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Estoque", "estoque", PackageCheck],
     ["Atendimentos", "atendimentos", Headphones],
     ["Clientes", "clientes", Users],
+    ["Representantes", "representantes", Users],
+    ["Solicitações", "solicitacoes-representantes", ShieldCheck],
+    ["Kits e regras", "regras-representantes", Boxes],
+    ["Criativos", "criativos", PanelsTopLeft],
     ["Usuários", "usuarios", ShieldCheck],
     ["Configurações", "configuracoes", Settings]
   ],
@@ -56,6 +61,11 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Visão estratégica", "", ChartNoAxesCombined],
     ["Financeiro", "financeiro", BadgeDollarSign],
     ["Vendas", "vendas", ShoppingBag],
+    ["Rede de representantes", "representantes", Users],
+    ["Solicitações", "solicitacoes-representantes", ShieldCheck],
+    ["Comissões", "comissoes-representantes", BadgeDollarSign],
+    ["Regras e níveis", "regras-representantes", ChartNoAxesCombined],
+    ["Criativos", "criativos", PanelsTopLeft],
     ["Relatórios", "relatorios", ChartNoAxesCombined],
     ["Aprovações", "aprovacoes", ShieldCheck],
     ["Atendimentos", "atendimentos", Headphones],
@@ -68,6 +78,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Webhooks e filas", "webhooks", MessageSquareText],
     ["Sessões", "sessoes", Users],
     ["Backups", "backups", FileClock],
+    ["Integridade de representantes", "integridade-representantes", ShieldCheck],
     ["Feature flags", "features", Settings],
     ["Atendimentos técnicos", "atendimentos", Headphones]
   ]
@@ -99,16 +110,29 @@ export function PanelShell({
     setMenuOpen(false);
     if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
   };
-  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+  const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+
+  const browserStoreUrl = () => {
+    const configured = new URL(configuredStoreUrl);
+    const current = new URL(window.location.href);
+    const configuredIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(configured.hostname);
+    const currentIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(current.hostname);
+    if (configuredIsLoopback && !currentIsLoopback) {
+      return `${current.protocol}//${current.hostname}:3000`;
+    }
+    return configured.origin;
+  };
 
   const logout = async () => {
     if (signingOut) return;
     setSigningOut(true);
     setLogoutError("");
     try {
+      const storeUrl = browserStoreUrl();
       const response = await fetch(`${storeUrl}/api/auth/logout`, {
         method: "POST",
-        credentials: "include"
+        credentials: "include",
+        cache: "no-store"
       });
       if (!response.ok) throw new Error("logout_failed");
       window.location.assign(`${storeUrl}/login`);
@@ -239,7 +263,7 @@ export function PanelShell({
               {searchOpen ? <X /> : <Search />}
             </button>
           </div>
-          <a className="store-shortcut" href={storeUrl} target="_blank" rel="noreferrer">
+          <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">
             Ver loja <ExternalLink aria-hidden="true" />
           </a>
           <div className="user-chip">

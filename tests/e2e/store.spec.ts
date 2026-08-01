@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Conforto que combina/i })).toBeVisible();
   await page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first().click();
@@ -13,11 +14,20 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   });
 });
 
-test("abre atendimento humano na fila administrativa", async ({ page }) => {
+test("preserva o retorno do login e abre atendimento humano", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/ajuda");
   await page.getByRole("button", { name: /Como funciona o frete/i }).click();
   await page.getByRole("button", { name: /Falar com um humano/i }).click();
-  await expect(page.getByText(/fila do Administrador/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]').fill("1234567890");
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
+  await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
+  await page.getByLabel("Mensagem inicial").fill("Preciso confirmar o prazo atualizado da minha entrega.");
+  await page.getByRole("button", { name: /Enviar para a equipe/i }).click();
+  await expect(page.getByText(/pode levar de 1 a 3 horas/i)).toBeVisible();
 });
 
 test("oferece um único acesso para clientes e equipe", async ({ page }) => {

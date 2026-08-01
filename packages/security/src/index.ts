@@ -16,6 +16,11 @@ export {
 } from "./auth-cookie";
 export { buildNonceContentSecurityPolicy } from "./content-security-policy";
 export type { ContentSecurityPolicyOptions } from "./content-security-policy";
+export {
+  REFERRAL_ATTRIBUTION_COOKIE,
+  createReferralAttribution,
+  verifyReferralAttribution
+} from "./referral-attribution";
 
 const sensitiveKeys =
   /password|token|authorization|cookie|access_token|refresh_token|card|cvv|cpf/i;
