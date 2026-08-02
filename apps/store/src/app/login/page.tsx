@@ -45,10 +45,6 @@ export default async function LoginPage({
             <h2>Acesse sua conta</h2>
             <p>Use seu e-mail e senha cadastrados para continuar.</p>
           </header>
-          <p className="auth-mobile-team-note">
-            <LockKeyhole aria-hidden="true" />
-            Clientes e equipe Curtiz usam este mesmo acesso.
-          </p>
           <AuthForm
             mode="login"
             returnTo={returnTo}

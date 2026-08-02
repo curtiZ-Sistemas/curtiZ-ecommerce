@@ -934,7 +934,7 @@ select:disabled {
   width: 56%;
   content: "";
   pointer-events: none;
-  background: url("/images/hero-curtiz-desktop.jpg") 76% center / cover no-repeat;
+  background: url("/images/hero-curtiz-desktop.png") 76% center / cover no-repeat;
 }
 
 .hero-copy {
@@ -3856,7 +3856,7 @@ select:disabled {
     inset: 0 0 auto;
     width: 100%;
     height: 230px;
-    background-image: url("/images/hero-curtiz-mobile.jpg");
+    background-image: url("/images/hero-curtiz-mobile.png");
     background-position: center;
   }
 

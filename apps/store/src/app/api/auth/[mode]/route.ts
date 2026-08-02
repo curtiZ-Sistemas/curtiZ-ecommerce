@@ -229,7 +229,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const supabase = await createServerSupabaseClient();
   const authInput = parsed.data as z.infer<typeof loginSchema>;
+
+  // Desativado por padrão. Só ativa quando AUTH_RATE_LIMIT_ENABLED=true.
+  const authRateLimitEnabled =
+    process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
+
   if (
+    authRateLimitEnabled &&
     !(await enforceAuthRateLimit({
       request,
       email: authInput.email,
@@ -238,8 +244,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }))
   ) {
     return NextResponse.json(
-      { message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente." },
-      { status: 429, headers: { ...corsHeaders(request), "retry-after": "900" } }
+      {
+        message:
+          "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
+      },
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders(request),
+          "retry-after": "900"
+        }
+      }
     );
   }
   if (!(await verifyTurnstile(request, authInput.turnstileToken))) {

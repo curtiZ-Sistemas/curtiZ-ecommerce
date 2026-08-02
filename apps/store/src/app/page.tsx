@@ -37,27 +37,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section container reveal-section" aria-label="Benefícios da Curtiz">
-        <div className="benefits-grid">
-          <div className="benefit">
-            <PackageCheck />
-            <div><strong>Entrega para todo o Brasil</strong><span>Acompanhe cada etapa do pedido.</span></div>
-          </div>
-          <div className="benefit">
-            <ShieldCheck />
-            <div><strong>Compra segura</strong><span>Seus dados protegidos em todas as etapas.</span></div>
-          </div>
-          <div className="benefit">
-            <WalletCards />
-            <div><strong>Parcele em até 6x</strong><span>Sem juros nos cartões de crédito.</span></div>
-          </div>
-          <div className="benefit">
-            <Headphones />
-            <div><strong>Atendimento humano</strong><span>Ajuda rápida e histórico em um só lugar.</span></div>
-          </div>
-        </div>
-      </section>
-
       <section className="section container reveal-section" aria-labelledby="categorias-title">
         <div className="section-heading">
           <div>
