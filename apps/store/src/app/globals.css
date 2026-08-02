@@ -893,8 +893,6 @@ select:disabled {
 .hero {
   position: relative;
   min-height: 446px;
-  display: grid;
-  align-items: center;
   margin-top: 18px;
   overflow: hidden;
   border: 1px solid #b65a4d;
@@ -905,27 +903,32 @@ select:disabled {
 
 .hero::before {
   position: absolute;
-  inset: 0 0 0 auto;
-  width: 56%;
+  inset: 0;
   content: "";
   pointer-events: none;
-  background: url("/images/hero-curtiz-desktop.png") 76% center / cover no-repeat;
+  background-image: url("/images/hero-curtiz-desktop.png");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .hero-copy {
   position: relative;
   z-index: 1;
-  width: min(610px, 57%);
+  width: 100%;
   min-height: 446px;
+
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(38px, 6vw, 70px);
+  align-items: flex-end;
+  justify-content: flex-start;
+
+  padding: clamp(28px, 5vw, 56px);
+
   color: var(--white);
-  background: var(--brand-950);
+  background: transparent;
+
   animation: rise-in 450ms var(--ease) both;
 }
-
 .hero-kicker {
   width: fit-content;
   margin: 0 0 18px;
