@@ -194,31 +194,6 @@ select:disabled {
 
 /* Header */
 
-.benefit-bar {
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  gap: 20px;
-  padding: 6px max(20px, calc((100vw - var(--container)) / 2));
-  color: var(--white);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.benefit-bar span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.benefit-bar svg {
-  width: 16px;
-  height: 16px;
-}
-
 .site-header {
   position: sticky;
   z-index: 40;
@@ -3592,14 +3567,6 @@ select:disabled {
     width: min(calc(100% - 30px), var(--container));
   }
 
-  .benefit-bar {
-    justify-content: center;
-  }
-
-  .benefit-bar span:not(:first-child) {
-    display: none;
-  }
-
   .header-main {
     grid-template-columns: 42px 1fr auto;
     gap: 10px;
@@ -4743,7 +4710,6 @@ body:has(.representative-portal-layout) > main {
   min-height: 100vh;
 }
 
-body:has(.representative-portal-layout) .benefit-bar,
 body:has(.representative-portal-layout) .site-header,
 body:has(.representative-portal-layout) .site-footer,
 body:has(.representative-portal-layout) .help-widget,
