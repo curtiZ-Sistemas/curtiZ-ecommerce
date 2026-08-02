@@ -53,7 +53,6 @@ export function SiteFooter() {
       <div className="footer-bottom">
         <div className="container">
           <span>© 2026 Curtiz. Todos os direitos reservados.</span>
-          <span>Ambiente demonstrativo · Identidade visual provisória</span>
         </div>
       </div>
     </footer>
