@@ -22,17 +22,14 @@ export default function HomePage() {
     <>
       <section className="hero container">
         <div className="hero-copy">
-          <p className="hero-kicker">Nova coleção Curtiz</p>
-          <h1>Conforto que combina com o seu ritmo.</h1>
-          <p>
-            Design brasileiro, materiais macios e escolhas para toda a família — do primeiro
-            passo do dia ao descanso merecido.
-          </p>
           <div className="hero-actions">
             <Link className="secondary-button" href="/lancamentos">
               Conheça os lançamentos <ArrowRight aria-hidden="true" />
             </Link>
-            <Link className="hero-text-link" href="/produtos">Explorar produtos</Link>
+
+            <Link className="hero-text-link" href="/produtos">
+              Explorar produtos
+            </Link>
           </div>
         </div>
       </section>
