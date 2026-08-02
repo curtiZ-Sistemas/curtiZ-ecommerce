@@ -5221,3 +5221,132 @@ body:has(.representative-portal-layout) > .demo-banner {
   margin-top: 8px;
   overflow-wrap: anywhere;
 }
+
+
+
+/* Correção definitiva do banner */
+.hero.container {
+  position: relative;
+  display: block !important;
+
+  width: min(calc(100% - 32px), var(--container));
+  height: fit-content !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+
+  margin: 18px auto 0;
+  padding: 0 !important;
+
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: var(--radius-lg);
+  background: transparent !important;
+  box-shadow: none !important;
+  line-height: 0;
+}
+
+.hero::before,
+.hero::after {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  content: none !important;
+}
+
+.hero-link {
+  display: block !important;
+
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: inherit;
+  background: transparent !important;
+  box-shadow: none !important;
+  line-height: 0;
+}
+
+.hero-media {
+  display: block;
+
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  background: transparent !important;
+  line-height: 0;
+}
+
+.hero-media-desktop {
+  display: block;
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+}
+
+.hero-media-mobile {
+  display: none;
+}
+
+.hero-media img {
+  display: block;
+
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none !important;
+
+  object-fit: contain;
+  object-position: center;
+}
+
+
+@media (max-width: 700px) {
+  .hero.container {
+    width: min(calc(100% - 24px), var(--container));
+    height: fit-content !important;
+    min-height: 0 !important;
+    margin-top: 12px;
+  }
+
+  .hero-media-desktop {
+    display: none;
+  }
+
+  .hero-media-mobile {
+    display: block;
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: auto !important;
+  }
+
+  .hero-media-mobile img {
+    width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    object-fit: contain;
+  }
+}
