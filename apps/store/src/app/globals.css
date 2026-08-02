@@ -3816,37 +3816,82 @@ select:disabled {
   }
 
   .hero {
-    min-height: 570px;
-    align-items: end;
+    min-height: 520px;
+    display: block;
     margin-top: 12px;
+    overflow: hidden;
     background-color: var(--brand-950);
   }
 
   .hero::before {
-    inset: 0 0 auto;
+    position: absolute;
+    z-index: 0;
+    inset: 0;
     width: 100%;
-    height: 230px;
+    height: 100%;
+    content: "";
     background-image: url("/images/hero-curtiz-mobile.png");
     background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    pointer-events: none;
+  }
+
+  .hero::after {
+    position: absolute;
+    z-index: 1;
+    inset: auto 0 0;
+    height: 42%;
+    content: "";
+    background: linear-gradient(
+      to top,
+      rgba(35, 4, 2, 0.72),
+      rgba(35, 4, 2, 0)
+    );
+    pointer-events: none;
   }
 
   .hero-copy {
+    position: relative;
+    z-index: 2;
     width: 100%;
-    min-height: 340px;
-    padding: 28px;
+    min-height: 520px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+    padding: 24px;
+    color: var(--white);
+    background: transparent;
   }
 
-  .hero-kicker {
-    margin-bottom: 16px;
+  .hero-actions {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
   }
 
-  .hero h1 {
-    max-width: 12ch;
-    font-size: clamp(2.2rem, 11vw, 3.35rem);
+  .hero-actions .secondary-button {
+    min-height: 46px;
+    color: var(--brand-950);
+    background: var(--white);
+    border-color: var(--white);
   }
 
-  .hero-proof {
-    gap: 15px;
+  .hero-text-link {
+    min-height: 46px;
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 4px;
+    color: var(--white);
+    font-weight: 700;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+  }
+
+  .hero-text-link:hover {
+    color: var(--white);
   }
 
   .category-grid {
