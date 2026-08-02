@@ -119,17 +119,6 @@ export function SiteHeader() {
 
   return (
     <>
-      <div className="benefit-bar" aria-label="Benefícios da compra">
-        <span>
-          <Truck aria-hidden="true" /> Frete grátis acima de R$ 149
-        </span>
-        <span>
-          <CreditCard aria-hidden="true" /> Até 6x sem juros
-        </span>
-        <span>
-          <BadgePercent aria-hidden="true" /> 5% OFF no Pix
-        </span>
-      </div>
 
       <header className="site-header">
         <div className="header-main container">
