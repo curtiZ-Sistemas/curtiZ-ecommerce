@@ -15,39 +15,37 @@ const categories = [
 export default function HomePage() {
   return (
     <>
-      <section className="hero container" aria-label="Destaques da coleção Curtiz">
-        <div className="hero-media hero-media-desktop">
-          <Image
-            src="/images/hero-curtiz-desktop.png"
-            alt="Coleção Curtiz com opções para toda a família"
-            width={1600}
-            height={560}
-            sizes="(min-width: 701px) calc(100vw - 48px), 0px"
-            priority
-          />
-        </div>
+      <section
+        className="hero container"
+        aria-label="Destaques da coleção Curtiz"
+      >
+        <Link
+          className="hero-link"
+          href="/lancamentos"
+          aria-label="Conheça os lançamentos da Curtiz"
+        >
+          <div className="hero-media hero-media-desktop">
+            <Image
+              src="/images/hero-curtiz-desktop.png"
+              alt="Conheça os lançamentos da coleção Curtiz"
+              width={1600}
+              height={560}
+              sizes="(min-width: 701px) calc(100vw - 48px), 0px"
+              priority
+            />
+          </div>
 
-        <div className="hero-media hero-media-mobile">
-          <Image
-            src="/images/hero-curtiz-mobile.png"
-            alt="Coleção Curtiz com opções para toda a família"
-            width={800}
-            height={1170}
-            sizes="(max-width: 700px) calc(100vw - 24px), 0px"
-            priority
-          />
-        </div>
-
-        <div className="hero-actions">
-          <Link className="secondary-button" href="/lancamentos">
-            Conheça os lançamentos
-            <ArrowRight aria-hidden="true" />
-          </Link>
-
-          <Link className="hero-text-link" href="/produtos">
-            Explorar produtos
-          </Link>
-        </div>
+          <div className="hero-media hero-media-mobile">
+            <Image
+              src="/images/hero-curtiz-mobile.png"
+              alt="Conheça os lançamentos da coleção Curtiz"
+              width={800}
+              height={1170}
+              sizes="(max-width: 700px) calc(100vw - 24px), 0px"
+              priority
+            />
+          </div>
+        </Link>
       </section>
 
       <section
