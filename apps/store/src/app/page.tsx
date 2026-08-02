@@ -15,10 +15,7 @@ const categories = [
 export default function HomePage() {
   return (
     <>
-      <section
-        className="hero container"
-        aria-label="Destaques da coleção Curtiz"
-      >
+      <section className="hero container" aria-label="Destaques da coleção Curtiz">
         <div className="hero-media hero-media-desktop">
           <Image
             src="/images/hero-curtiz-desktop.png"
