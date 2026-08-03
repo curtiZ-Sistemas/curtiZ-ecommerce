@@ -39,3 +39,24 @@ export type RequestContext = {
   userId?: string;
   role?: AppRole;
 };
+
+export type HomepageSectionType =
+  | "banner_hero"
+  | "featured_products"
+  | "categories_grid"
+  | "banner_promo"
+  | "reviews_carousel"
+  | "brands_strip"
+  | "custom_banner";
+
+export type HomepageSection = {
+  id: string;
+  sectionType: HomepageSectionType;
+  title?: string;
+  subtitle?: string;
+  settings: Record<string, unknown>;
+  active: boolean;
+  startsAt?: string;
+  endsAt?: string;
+  sortOrder: number;
+};

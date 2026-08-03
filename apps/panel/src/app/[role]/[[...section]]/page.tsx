@@ -17,6 +17,7 @@ import { PanelShell, type PanelRole } from "@/components/panel-shell";
 import { RevenueChart } from "@/components/revenue-chart";
 import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
+import { HomepageBuilder } from "@/components/homepage-builder";
 import { requirePanelAccess } from "@/lib/auth";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
@@ -121,7 +122,8 @@ function Administration({ section }: { section: string }) {
   if (section === "estoque") return <Inventory />;
   if (section === "promocoes") return <Promotions />;
   if (section === "usuarios") return <UsersPanel />;
-  if (section === "conteudo") return <Cms />;
+  if (section === "conteudo" || section === "construtor") return <HomepageBuilder />;
+  if (section === "cms-legado") return <Cms />;
   return (
     <>
       <div className="metric-grid">
