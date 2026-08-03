@@ -12,7 +12,13 @@ import {
   Search,
   X
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
 import {
   adminResources,
   type AdminResourceField,
@@ -20,6 +26,7 @@ import {
 } from "@/lib/admin-resources";
 
 type Item = Record<string, unknown>;
+
 type ListResponse = {
   items?: Item[];
   total?: number;
@@ -28,28 +35,93 @@ type ListResponse = {
   message?: string;
 };
 
-const displayValue = (value: unknown) => {
+function isRecord(value: unknown): value is Item {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseListResponse(value: unknown): ListResponse {
+  if (!isRecord(value)) return {};
+
+  return {
+    items: Array.isArray(value.items) ? value.items.filter(isRecord) : undefined,
+    total: readNumber(value.total),
+    page: readNumber(value.page),
+    pageSize: readNumber(value.pageSize),
+    message: typeof value.message === "string" ? value.message : undefined
+  };
+}
+
+async function readListResponse(response: Response): Promise<ListResponse> {
+  const payload: unknown = await response.json();
+  return parseListResponse(payload);
+}
+
+function scalarToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Sim" : "Não";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-};
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
 
-const itemId = (item: Item) =>
-  typeof item.id === "string" ? item.id : typeof item.key === "string" ? item.key : "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value) ?? "—";
+    } catch {
+      return "—";
+    }
+  }
 
-const fieldValue = (item: Item, field: AdminResourceField) => {
+  return "—";
+}
+
+function itemId(item: Item): string {
+  if (typeof item.id === "string") return item.id;
+  if (typeof item.key === "string") return item.key;
+  return "";
+}
+
+function fieldValue(item: Item, field: AdminResourceField): unknown {
   const value = item[field.key];
+
   if (field.type === "datetime" && typeof value === "string") {
     return value.slice(0, 16);
   }
+
   if (field.type === "json" && value && typeof value === "object") {
     return JSON.stringify(value, null, 2);
   }
-  return value ?? "";
-};
 
-export function AdminResourceManager({ resource }: { resource: AdminResourceKey }) {
+  return value ?? "";
+}
+
+function formValue(value: unknown): string {
+  return scalarToString(value);
+}
+
+function getFormValue(form: FormData, field: AdminResourceField): unknown {
+  if (field.type === "boolean") {
+    return form.get(field.key) === "on";
+  }
+
+  const value = form.get(field.key);
+  return typeof value === "string" ? value : "";
+}
+
+export function AdminResourceManager({
+  resource
+}: {
+  resource: AdminResourceKey;
+}) {
   const definition = adminResources[resource];
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
@@ -67,15 +139,24 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
   const load = useCallback(async () => {
     setLoading(true);
     setMessage("");
-    const params = new URLSearchParams({ page: String(page) });
+
+    const params = new URLSearchParams({
+      page: String(page)
+    });
+
     if (submittedQuery) params.set("q", submittedQuery);
     if (status) params.set("status", status);
+
     try {
       const response = await fetch(`/api/admin/resources/${resource}?${params}`, {
         cache: "no-store"
       });
-      const result = (await response.json()) as ListResponse;
-      if (!response.ok) throw new Error(result.message);
+      const result = await readListResponse(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Não foi possível carregar os registros.");
+      }
+
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
@@ -93,75 +174,130 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
   const statusField = definition.fields.find(
     (field) => field.key === "status" || field.key === "active"
   );
+
   const columns = useMemo(() => {
     const keys = definition.select
       .split(",")
       .map((key) => key.trim())
       .filter((key) => !["id", "updated_at", "created_at", "edited_at"].includes(key));
+
     return keys.slice(0, 5);
   }, [definition.select]);
+
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  const save = async (event: FormEvent<HTMLFormElement>) => {
+  const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (pending || !editing) return;
+
     setPending(true);
     setMessage("");
+
     const form = new FormData(event.currentTarget);
-    const values = Object.fromEntries(
-      definition.fields.map((field) => {
-        if (field.type === "boolean") return [field.key, form.get(field.key) === "on"];
-        return [field.key, form.get(field.key) ?? ""];
-      })
-    );
-    const isNew = editing === "new" || editing._duplicate === true;
-    const id = isNew ? undefined : itemId(editing);
+    const values: Record<string, unknown> = {};
+
+    for (const field of definition.fields) {
+      values[field.key] = getFormValue(form, field);
+    }
+
+    const isDuplicate =
+      editing !== "new" &&
+      editing._duplicate === true;
+
+    const isNew =
+      editing === "new" ||
+      isDuplicate;
+
+    let id: string | undefined;
+
+    if (
+      editing === "new" ||
+      isDuplicate
+    ) {
+      id = undefined;
+    } else {
+      id = itemId(editing);
+    }
+
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
         method: isNew ? "POST" : "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, values })
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          id,
+          values
+        })
       });
-      const result = (await response.json()) as ListResponse;
-      if (!response.ok) throw new Error(result.message);
+      const result = await readListResponse(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Não foi possível salvar.");
+      }
+
       setMessage(result.message ?? "Alterações salvas.");
       setEditing(null);
       await load();
     } catch (error) {
       setMessage(
-        error instanceof Error && error.message ? error.message : "Não foi possível salvar."
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível salvar."
       );
     } finally {
       setPending(false);
     }
   };
 
-  const duplicate = (item: Item) => {
-    const copy = { ...item, _duplicate: true };
+  const duplicate = (item: Item): void => {
+    const copy: Item = {
+      ...item,
+      _duplicate: true
+    };
+
     delete copy.id;
+
     for (const key of ["name", "title", "slug", "code", "sku"]) {
-      if (typeof copy[key] === "string") copy[key] = `${copy[key]}-copia`;
+      const currentValue = copy[key];
+      if (typeof currentValue === "string") {
+        copy[key] = `${currentValue}-copia`;
+      }
     }
+
     setEditing(copy);
   };
 
-  const archive = async () => {
+  const archive = async (): Promise<void> => {
     if (!archiveTarget || pending) return;
+
     setPending(true);
+    setMessage("");
+
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
         method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: itemId(archiveTarget) })
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          id: itemId(archiveTarget)
+        })
       });
-      const result = (await response.json()) as ListResponse;
-      if (!response.ok) throw new Error(result.message);
+      const result = await readListResponse(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Não foi possível arquivar.");
+      }
+
       setMessage(result.message ?? "Registro arquivado.");
       setArchiveTarget(null);
       await load();
     } catch (error) {
       setMessage(
-        error instanceof Error && error.message ? error.message : "Não foi possível arquivar."
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível arquivar."
       );
     } finally {
       setPending(false);
@@ -175,11 +311,16 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
           <h2>{definition.label}</h2>
           <p>{definition.description}</p>
         </div>
-        {definition.allowCreate && (
-          <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+
+        {definition.allowCreate ? (
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => setEditing("new")}
+          >
             <Plus aria-hidden="true" /> Novo
           </button>
-        )}
+        ) : null}
       </header>
 
       <div className="admin-toolbar">
@@ -192,20 +333,24 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
           }}
         >
           <Search aria-hidden="true" />
+
           <label className="sr-only" htmlFor={`search-${resource}`}>
             Buscar
           </label>
+
           <input
             id={`search-${resource}`}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={`Buscar em ${definition.label.toLocaleLowerCase("pt-BR")}`}
           />
+
           <button className="secondary-button" type="submit">
             Buscar
           </button>
         </form>
-        {statusField && (
+
+        {statusField ? (
           <select
             aria-label="Filtrar por status"
             value={status}
@@ -215,6 +360,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
             }}
           >
             <option value="">Todos os status</option>
+
             {statusField.type === "boolean" ? (
               <>
                 <option value="active">Ativos</option>
@@ -228,7 +374,8 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
               ))
             )}
           </select>
-        )}
+        ) : null}
+
         <button
           className="icon-button"
           type="button"
@@ -240,11 +387,11 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
         </button>
       </div>
 
-      {message && (
+      {message ? (
         <p className="admin-feedback" role="status">
           {message}
         </p>
-      )}
+      ) : null}
 
       {loading ? (
         <div className="admin-loading" role="status">
@@ -264,23 +411,30 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                   {columns.map((column) => (
                     <th key={column}>{column.replaceAll("_", " ")}</th>
                   ))}
-                  {definition.fields.length > 0 && <th>Ações</th>}
+                  {definition.fields.length > 0 ? <th>Ações</th> : null}
                 </tr>
               </thead>
+
               <tbody>
-                {items.map((item) => (
-                  <tr key={itemId(item)}>
+                {items.map((item, index) => (
+                  <tr key={itemId(item) || `item-${index}`}>
                     {columns.map((column) => (
                       <td key={column} data-label={column.replaceAll("_", " ")}>
                         {displayValue(item[column])}
                       </td>
                     ))}
-                    {definition.fields.length > 0 && (
+
+                    {definition.fields.length > 0 ? (
                       <td className="admin-row-actions">
-                        <button type="button" onClick={() => setEditing(item)} aria-label="Editar">
+                        <button
+                          type="button"
+                          onClick={() => setEditing(item)}
+                          aria-label="Editar"
+                        >
                           <Pencil />
                         </button>
-                        {definition.allowCreate && (
+
+                        {definition.allowCreate ? (
                           <button
                             type="button"
                             onClick={() => duplicate(item)}
@@ -288,8 +442,9 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                           >
                             <Copy />
                           </button>
-                        )}
-                        {definition.allowArchive && (
+                        ) : null}
+
+                        {definition.allowArchive ? (
                           <button
                             type="button"
                             onClick={() => setArchiveTarget(item)}
@@ -297,16 +452,18 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                           >
                             <Archive />
                           </button>
-                        )}
+                        ) : null}
                       </td>
-                    )}
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
           <footer className="admin-pagination">
             <span>{total.toLocaleString("pt-BR")} registros</span>
+
             <div>
               <button
                 type="button"
@@ -316,9 +473,11 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
               >
                 <ChevronLeft />
               </button>
+
               <span>
                 Página {page} de {pages}
               </span>
+
               <button
                 type="button"
                 disabled={page >= pages}
@@ -332,7 +491,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
         </>
       )}
 
-      {editing && (
+      {editing ? (
         <div className="admin-modal-backdrop">
           <section
             className="admin-modal"
@@ -345,30 +504,44 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                 <span>{editing === "new" ? "Novo registro" : "Editar registro"}</span>
                 <h2 id="resource-form-title">{definition.singular}</h2>
               </div>
-              <button type="button" onClick={() => setEditing(null)} aria-label="Fechar">
+
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                aria-label="Fechar"
+              >
                 <X />
               </button>
             </header>
+
             <form onSubmit={(event) => void save(event)}>
               <div className="admin-form-grid">
                 {definition.fields.map((field) => {
-                  const source = editing === "new" ? {} : editing;
+                  const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
+
                   return (
                     <label
-                      className={field.type === "textarea" || field.type === "json" ? "wide" : ""}
+                      className={
+                        field.type === "textarea" || field.type === "json" ? "wide" : ""
+                      }
                       key={field.key}
                     >
                       <span>
                         {field.label}
                         {field.required ? " *" : ""}
                       </span>
+
                       {field.type === "boolean" ? (
-                        <input name={field.key} type="checkbox" defaultChecked={value === true} />
+                        <input
+                          name={field.key}
+                          type="checkbox"
+                          defaultChecked={value === true}
+                        />
                       ) : field.type === "select" ? (
                         <select
                           name={field.key}
-                          defaultValue={String(value)}
+                          defaultValue={formValue(value)}
                           required={field.required}
                         >
                           <option value="">Selecione</option>
@@ -381,7 +554,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                       ) : field.type === "textarea" || field.type === "json" ? (
                         <textarea
                           name={field.key}
-                          defaultValue={String(value)}
+                          defaultValue={formValue(value)}
                           required={field.required}
                           rows={field.type === "json" ? 6 : 4}
                         />
@@ -395,7 +568,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                                 ? "datetime-local"
                                 : "text"
                           }
-                          defaultValue={String(value)}
+                          defaultValue={formValue(value)}
                           required={field.required}
                           step={field.type === "number" ? "any" : undefined}
                         />
@@ -404,6 +577,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                   );
                 })}
               </div>
+
               <footer>
                 <button
                   className="secondary-button"
@@ -413,16 +587,18 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                 >
                   Cancelar
                 </button>
+
                 <button className="primary-button" type="submit" disabled={pending}>
-                  {pending && <LoaderCircle className="spin" />} Salvar
+                  {pending ? <LoaderCircle className="spin" /> : null}
+                  Salvar
                 </button>
               </footer>
             </form>
           </section>
         </div>
-      )}
+      ) : null}
 
-      {archiveTarget && (
+      {archiveTarget ? (
         <div className="admin-modal-backdrop">
           <section
             className="admin-confirm"
@@ -432,6 +608,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
           >
             <h2 id="archive-title">Arquivar registro?</h2>
             <p>O item deixará de ficar ativo, mas o histórico será preservado.</p>
+
             <div>
               <button
                 className="secondary-button"
@@ -441,18 +618,20 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
               >
                 Cancelar
               </button>
+
               <button
                 className="primary-button"
                 type="button"
                 onClick={() => void archive()}
                 disabled={pending}
               >
-                {pending && <LoaderCircle className="spin" />} Arquivar
+                {pending ? <LoaderCircle className="spin" /> : null}
+                Arquivar
               </button>
             </div>
           </section>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

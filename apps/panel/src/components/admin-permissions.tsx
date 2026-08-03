@@ -1,10 +1,24 @@
 "use client";
 
 import { LoaderCircle, ShieldCheck } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useState
+} from "react";
 
-type Permission = { id: string; code: string; description: string };
-type UserOption = { id: string; fullName: string };
+type Permission = {
+  id: string;
+  code: string;
+  description: string;
+};
+
+type UserOption = {
+  id: string;
+  fullName: string;
+};
+
 type PermissionData = {
   permissions?: Permission[];
   users?: UserOption[];
@@ -12,7 +26,24 @@ type PermissionData = {
   message?: string;
 };
 
-const text = (value: unknown) => (typeof value === "string" ? value : "—");
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "—";
+}
+
+function getFormString(form: FormData, key: string): string {
+  const value = form.get(key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function readPermissionData(response: Response): Promise<PermissionData> {
+  const payload: unknown = await response.json();
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {};
+  }
+
+  return payload;
+}
 
 export function AdminPermissions() {
   const [data, setData] = useState<PermissionData>({});
@@ -22,10 +53,17 @@ export function AdminPermissions() {
 
   const load = useCallback(async () => {
     setLoading(true);
+
     try {
-      const response = await fetch("/api/admin/permissions", { cache: "no-store" });
-      const result = (await response.json()) as PermissionData;
-      if (!response.ok) throw new Error(result.message);
+      const response = await fetch("/api/admin/permissions", {
+        cache: "no-store"
+      });
+      const result = await readPermissionData(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Não foi possível carregar as permissões.");
+      }
+
       setData(result);
       setMessage("");
     } catch {
@@ -39,31 +77,61 @@ export function AdminPermissions() {
     void load();
   }, [load]);
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (pending) return;
+
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+
+    const userId = getFormString(form, "userId");
+    const permissionCode = getFormString(form, "permissionCode");
+    const allowed = getFormString(form, "allowed") === "true";
+    const expiresAtInput = getFormString(form, "expiresAt");
+    const reason = getFormString(form, "reason");
+    const expiresAtDate = new Date(expiresAtInput);
+
+    if (!userId || !permissionCode || !expiresAtInput || !reason) {
+      setMessage("Preencha todos os campos obrigatórios.");
+      return;
+    }
+
+    if (Number.isNaN(expiresAtDate.getTime())) {
+      setMessage("Informe uma data de validade válida.");
+      return;
+    }
+
     setPending(true);
-    const form = new FormData(event.currentTarget);
+    setMessage("");
+
     try {
       const response = await fetch("/api/admin/permissions", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json"
+        },
         body: JSON.stringify({
-          userId: form.get("userId"),
-          permissionCode: form.get("permissionCode"),
-          allowed: form.get("allowed") === "true",
-          expiresAt: new Date(String(form.get("expiresAt"))).toISOString(),
-          reason: form.get("reason")
+          userId,
+          permissionCode,
+          allowed,
+          expiresAt: expiresAtDate.toISOString(),
+          reason
         })
       });
-      const result = (await response.json()) as PermissionData;
-      if (!response.ok) throw new Error(result.message);
+      const result = await readPermissionData(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Não foi possível registrar a permissão.");
+      }
+
       setMessage(result.message ?? "Permissão registrada.");
-      event.currentTarget.reset();
+      formElement.reset();
       await load();
     } catch (error) {
       setMessage(
-        error instanceof Error && error.message ? error.message : "Não foi possível registrar."
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível registrar."
       );
     } finally {
       setPending(false);
@@ -79,17 +147,22 @@ export function AdminPermissions() {
             <p>Conceda ou negue permissões temporárias sem alterar papéis.</p>
           </div>
         </header>
-        {message && (
+
+        {message ? (
           <p className="admin-feedback" role="status">
             {message}
           </p>
-        )}
+        ) : null}
+
         {loading ? (
           <div className="admin-loading">
             <LoaderCircle className="spin" /> Carregando
           </div>
         ) : (
-          <form className="admin-permission-form" onSubmit={(event) => void submit(event)}>
+          <form
+            className="admin-permission-form"
+            onSubmit={(event) => void submit(event)}
+          >
             <label>
               <span>Usuário</span>
               <select name="userId" required>
@@ -101,6 +174,7 @@ export function AdminPermissions() {
                 ))}
               </select>
             </label>
+
             <label>
               <span>Permissão</span>
               <select name="permissionCode" required>
@@ -108,7 +182,8 @@ export function AdminPermissions() {
                 {data.permissions
                   ?.filter(
                     (permission) =>
-                      !permission.code.startsWith("users.") && permission.code !== "audit.read"
+                      !permission.code.startsWith("users.") &&
+                      permission.code !== "audit.read"
                   )
                   .map((permission) => (
                     <option key={permission.id} value={permission.code}>
@@ -117,6 +192,7 @@ export function AdminPermissions() {
                   ))}
               </select>
             </label>
+
             <label>
               <span>Decisão</span>
               <select name="allowed" defaultValue="true">
@@ -124,22 +200,34 @@ export function AdminPermissions() {
                 <option value="false">Negar</option>
               </select>
             </label>
+
             <label>
               <span>Validade</span>
               <input name="expiresAt" type="datetime-local" required />
             </label>
+
             <label className="wide">
               <span>Justificativa</span>
-              <textarea name="reason" minLength={10} maxLength={500} required rows={4} />
+              <textarea
+                name="reason"
+                minLength={10}
+                maxLength={500}
+                required
+                rows={4}
+              />
             </label>
+
             <button className="primary-button" type="submit" disabled={pending}>
-              {pending ? <LoaderCircle className="spin" /> : <ShieldCheck />} Registrar permissão
+              {pending ? <LoaderCircle className="spin" /> : <ShieldCheck />}
+              Registrar permissão
             </button>
           </form>
         )}
       </section>
+
       <section className="panel-card">
         <h2>Alterações recentes</h2>
+
         <div className="admin-compact-list">
           {data.overrides?.length ? (
             data.overrides.map((override, index) => {
@@ -147,6 +235,7 @@ export function AdminPermissions() {
                 override.permissions && typeof override.permissions === "object"
                   ? text((override.permissions as Record<string, unknown>).code)
                   : "Permissão";
+
               return (
                 <div key={`${text(override.user_id)}-${index}`}>
                   <span>
@@ -158,7 +247,9 @@ export function AdminPermissions() {
               );
             })
           ) : (
-            <p className="admin-empty-copy">Nenhuma alteração temporária registrada.</p>
+            <p className="admin-empty-copy">
+              Nenhuma alteração temporária registrada.
+            </p>
           )}
         </div>
       </section>
