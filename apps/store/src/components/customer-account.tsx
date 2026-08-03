@@ -160,11 +160,7 @@ export function CustomerAccount({
       setError(result.message ?? "Não foi possível atualizar o avatar.");
       return;
     }
-    setMessage(
-      result.simulated
-        ? result.message ?? "Avatar validado no modo de demonstração."
-        : "Avatar atualizado."
-    );
+    setMessage(result.message ?? "Avatar atualizado.");
     startTransition(() => router.refresh());
   };
 
@@ -196,13 +192,11 @@ export function CustomerAccount({
         </Link>
       </header>
 
-      {(snapshot.warning || snapshot.demo || signupComplete) && (
+      {(snapshot.warning || signupComplete) && (
         <p className="customer-account-notice" role="status">
           {signupComplete
             ? "Cadastro concluído. Seu perfil está pronto para ser completado."
-            : snapshot.warning || snapshot.demo
-              ? snapshot.warning
-              : ""}
+            : snapshot.warning}
         </p>
       )}
       {(message || error) && (
@@ -254,7 +248,7 @@ export function CustomerAccount({
                 <SectionTitle
                   eyebrow="Favoritos"
                   title="Seus produtos favoritos"
-                  description="No modo de demonstração, esta lista permanece somente neste dispositivo."
+                  description="Esta lista permanece disponível neste dispositivo."
                 />
                 <FavoritesPanel />
               </div>
@@ -838,7 +832,7 @@ function Favorites({
             <div>
               <Link href={`/produto/${favorite.slug}`}><h3>{favorite.name}</h3></Link>
               <strong>{formatBRL(favorite.priceInCents)}</strong>
-              <small>{favorite.available ? `${favorite.stock} unidade(s) disponível(is)` : "Produto sem estoque"}</small>
+              {!favorite.available && <small>Indisponível</small>}
             </div>
             <div className="customer-favorite-actions">
               <button

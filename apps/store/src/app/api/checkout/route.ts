@@ -134,14 +134,14 @@ export async function POST(request: NextRequest) {
     integrations.shipping.provider === "mock" &&
     process.env.DEMO_MODE === "true"
   ) {
-    const orderCode = `CZT-DEMO-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+    const orderCode = `CZT-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
     return NextResponse.json(
       {
         success: true,
         ok: true,
         orderCode,
-        code: "DEMO_ORDER_CREATED",
-        message: "Pedido demonstrativo criado. Nenhum pagamento real foi processado."
+        code: "ORDER_CREATED",
+        message: "Pedido criado. Nenhum pagamento foi processado."
       },
       { status: 201, headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
     );

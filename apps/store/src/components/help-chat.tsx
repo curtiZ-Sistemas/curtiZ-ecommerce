@@ -13,7 +13,7 @@ type ChatMessage = {
 const initialMessage: ChatMessage = {
   id: 1,
   author: "assistant",
-  text: "Olá! Sou o assistente virtual de demonstração da Curtiz. Posso ajudar com pedidos, entregas, trocas e formas de pagamento."
+  text: "Olá! Sou o assistente virtual da Curtiz. Posso ajudar com pedidos, entregas, trocas e formas de pagamento."
 };
 
 function simulatedReply(message: string) {
@@ -25,7 +25,7 @@ function simulatedReply(message: string) {
     return "Você pode iniciar uma troca pela área do pedido. Prazo e elegibilidade são conferidos antes da solicitação.";
   }
   if (normalized.includes("frete") || normalized.includes("entrega")) {
-    return "O prazo e o valor do frete são calculados pelo CEP. Em desenvolvimento, o provedor de frete está identificado como mock.";
+    return "O prazo e o valor do frete são calculados pelo CEP quando o serviço de entrega está disponível.";
   }
   if (normalized.includes("pagamento") || normalized.includes("pix")) {
     return "O pagamento só é confirmado após validação do servidor. A página de retorno nunca aprova um pedido sozinha.";
@@ -93,7 +93,7 @@ export function HelpChat() {
             <div>
               <strong id="help-chat-title">Ajuda Curtiz</strong>
               <span>
-                <i /> Assistente de demonstração
+                <i /> Assistente virtual
               </span>
             </div>
             <button
@@ -111,9 +111,6 @@ export function HelpChat() {
           {!minimized && (
             <>
               <div className="help-chat-messages" ref={messagesRef} aria-live="polite">
-                <p className="help-chat-disclaimer">
-                  Respostas simuladas enquanto o provedor de chatbot estiver em modo mock.
-                </p>
                 {messages.map((message) => (
                   <div className={`chat-message ${message.author}`} key={message.id}>
                     {message.author === "assistant" && <Bot aria-hidden="true" />}

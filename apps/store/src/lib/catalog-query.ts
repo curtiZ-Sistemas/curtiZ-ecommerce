@@ -109,6 +109,7 @@ export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: str
 export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
   const normalizedQuery = filters.query?.toLocaleLowerCase("pt-BR");
   const categoryFiltered = demoProducts.filter((product) => {
+    if (product.stock <= 0) return false;
     if (
       filters.category &&
       product.category.toLocaleLowerCase("pt-BR") !== filters.category.toLocaleLowerCase("pt-BR")
@@ -152,7 +153,6 @@ export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
     if (filters.priceMin !== undefined && product.priceInCents < filters.priceMin) return false;
     if (filters.priceMax !== undefined && product.priceInCents > filters.priceMax) return false;
     if (filters.promotion && !product.compareAtPriceInCents) return false;
-    if (filters.inStock && product.stock <= 0) return false;
     if (filters.newest && !product.featured) return false;
     if (filters.minRating !== undefined && product.rating < filters.minRating) return false;
     return true;

@@ -328,17 +328,9 @@ export function CatalogPage({
           </button>
         </FilterSection>
       )}
-      {(facets.inStockCount > 0 || facets.newestCount > 0 || facets.promotionCount > 0) && (
+      {(facets.newestCount > 0 || facets.promotionCount > 0) && (
         <FilterSection title="Disponibilidade" initiallyOpen>
           <div className="filter-option-list">
-            {facets.inStockCount > 0 && (
-              <FilterCheckbox
-                label="Em estoque"
-                count={facets.inStockCount}
-                checked={filters.inStock}
-                onChange={(checked) => setFlag("estoque", checked)}
-              />
-            )}
             {facets.newestCount > 0 && (
               <FilterCheckbox
                 label="Lançamentos"
@@ -378,11 +370,6 @@ export function CatalogPage({
 
   return (
     <div className="container page-shell catalog-page">
-      {result?.source === "demo" && (
-        <p className="storefront-presentation-notice" role="status">
-          Catálogo de apresentação: produtos, preços e condições são demonstrativos.
-        </p>
-      )}
       <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">Catálogo Curtiz</p>
@@ -518,9 +505,6 @@ export function CatalogPage({
               )}
               {filters.promotion && (
                 <FilterChip label="Em promoção" onRemove={() => setFlag("promocao", false)} />
-              )}
-              {filters.inStock && (
-                <FilterChip label="Em estoque" onRemove={() => setFlag("estoque", false)} />
               )}
               {filters.newest && (
                 <FilterChip label="Lançamentos" onRemove={() => setFlag("novidades", false)} />

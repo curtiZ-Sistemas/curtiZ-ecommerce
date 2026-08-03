@@ -48,11 +48,9 @@ describe("autenticação demo local", () => {
     expect(isLocalDemoRequest(new Request("https://loja.example/login"))).toBe(false);
   });
 
-  it("habilita loopback somente com modo ou credenciais demo configuradas", () => {
+  it("habilita loopback somente com modo demo explícito", () => {
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(true);
     process.env.DEMO_MODE = "false";
-    delete process.env.DEMO_USERS_PASSWORD;
-    delete process.env.DEMO_SESSION_SECRET;
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(false);
   });
 
@@ -64,21 +62,7 @@ describe("autenticação demo local", () => {
     expect(isLocalDemoRequest(new Request("https://host-invasor.example.com/login"))).toBe(false);
   });
 
-  it("permite apresentação remota assinada quando o checkout está explicitamente desativado", () => {
-    process.env.DEMO_MODE = "false";
-    process.env.APP_ENV = "production";
-    process.env.CHECKOUT_ENABLED = "false";
-    process.env.NEXT_PUBLIC_STORE_URL = "https://loja.apresentacao.example.com";
-
-    expect(
-      isLocalDemoRequest(new Request("https://loja.apresentacao.example.com/api/auth/login"))
-    ).toBe(true);
-    expect(
-      isLocalDemoRequest(new Request("https://outro.example.com/api/auth/login"))
-    ).toBe(false);
-  });
-
-  it("reconhece credenciais demo configuradas somente no host HTTPS permitido", () => {
+  it("não usa credenciais demo configuradas como bypass em produção", () => {
     process.env.DEMO_MODE = "false";
     delete process.env.CHECKOUT_ENABLED;
     process.env.APP_ENV = "production";
@@ -86,9 +70,6 @@ describe("autenticação demo local", () => {
 
     expect(
       isLocalDemoRequest(new Request("https://curtiz.example.com/api/auth/login"))
-    ).toBe(true);
-    expect(
-      isLocalDemoRequest(new Request("http://curtiz.example.com/api/auth/login"))
     ).toBe(false);
   });
 });

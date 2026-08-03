@@ -266,7 +266,7 @@ export function OperationalConsole({ section }: { section: string }) {
 
   const run = async (body: Record<string, unknown>, success: string) => {
     if (processing || data.demo) {
-      if (data.demo) setError("Ações estão desativadas no modo demonstração sem dados.");
+      if (data.demo) setError("Ações indisponíveis enquanto não houver dados conectados.");
       return false;
     }
     setProcessing(String(body.action));
@@ -304,12 +304,6 @@ export function OperationalConsole({ section }: { section: string }) {
 
   return (
     <div className="operational-console">
-      {data.demo && (
-        <p className="operational-demo-notice">
-          Ambiente demonstrativo sem registros operacionais fictícios. Conecte a homologação para
-          validar dados reais.
-        </p>
-      )}
       {(notice || error) && (
         <p className={`operational-feedback ${error ? "error" : "success"}`} role={error ? "alert" : "status"}>
           {error || notice}

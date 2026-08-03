@@ -231,7 +231,6 @@ function CreativeManager({ role }: { role: PanelRole }) {
                 <div>
                   <small>
                     {item.platform} · {item.type ?? item.asset_type}
-                    {item.demo ? " · demo" : ""}
                   </small>
                   <strong>{item.title}</strong>
                   <p>{item.campaign ?? item.description}</p>

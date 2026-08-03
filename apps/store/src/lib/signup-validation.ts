@@ -51,7 +51,10 @@ export const normalizeFullName = (value: string) =>
 export const normalizeEmail = (value: string) =>
   value.replace(/\s+/gu, "").trim().toLocaleLowerCase("pt-BR");
 
-export const phoneDigits = (value: string) => value.replace(/\D/gu, "").slice(0, 11);
+export const phoneDigits = (value: string) => {
+  const digits = value.replace(/\D/gu, "");
+  return digits.length === 12 || digits.length === 13 ? digits.replace(/^55/u, "") : digits;
+};
 
 export const formatBrazilianPhone = (value: string) => {
   const digits = phoneDigits(value);
@@ -70,9 +73,9 @@ export const normalizeBrazilianPhone = (value: string) => {
 
 export const isValidBrazilianPhone = (value: string) => {
   const digits = phoneDigits(value);
+  if (/\p{L}/u.test(value)) return false;
   if (digits.length !== 10 && digits.length !== 11) return false;
   if (!validBrazilianAreaCodes.has(digits.slice(0, 2))) return false;
-  if (/^(\d)\1+$/u.test(digits.slice(2))) return false;
   return digits.length === 10 || digits[2] === "9";
 };
 
@@ -147,7 +150,7 @@ const signupRawSchema = z.object({
   marketing: z.string().optional(),
   next: z.string().max(300).optional(),
   turnstileToken: z.string().max(4_096).optional()
-});
+}).strict();
 
 export type NormalizedSignupInput = {
   name: string;
@@ -188,9 +191,6 @@ export const parseSignupInput = (payload: unknown) => {
   }
   if (!phone || !isValidBrazilianPhone(raw.data.phone)) {
     issues.push({ path: ["phone"], message: "Informe um telefone válido com DDD." });
-  }
-  if (/\p{L}/u.test(raw.data.phone)) {
-    issues.push({ path: ["phone"], message: "O telefone deve conter somente números." });
   }
   if (!password.valid) {
     issues.push({ path: ["password"], message: "A senha não atende aos requisitos de segurança." });

@@ -1502,6 +1502,147 @@ button:not(:disabled):active,
   transform: translateY(1px);
 }
 
+.product-management {
+  display: grid;
+  gap: 18px;
+}
+
+.product-filter-tabs,
+.managed-product header,
+.managed-variant,
+.confirm-dialog > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-filter-tabs .active {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.product-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.product-search svg {
+  width: 18px;
+}
+
+.product-search input {
+  width: 100%;
+  border: 0;
+}
+
+.managed-product-list,
+.managed-variant-list {
+  display: grid;
+  gap: 12px;
+}
+
+.managed-product {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.managed-product header {
+  justify-content: space-between;
+  padding: 16px;
+  background: var(--surface-muted, #faf9f8);
+}
+
+.managed-product header div {
+  display: grid;
+  gap: 3px;
+}
+
+.managed-product header span,
+.managed-variant span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.managed-variant-list {
+  padding: 0 16px;
+}
+
+.managed-variant {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) repeat(2, minmax(90px, 0.7fr)) 110px auto;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.managed-variant:last-child {
+  border-bottom: 0;
+}
+
+.managed-variant > div,
+.managed-variant label {
+  display: grid;
+  gap: 3px;
+}
+
+.managed-variant input {
+  width: 100%;
+  min-height: 38px;
+}
+
+.danger-button {
+  color: #9f241b;
+}
+
+.confirm-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 16 14 / 48%);
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+  padding: 24px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgb(20 16 14 / 18%);
+}
+
+.confirm-dialog > div {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+@media (max-width: 800px) {
+  .product-management > .page-heading,
+  .managed-product header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .product-filter-tabs {
+    overflow-x: auto;
+  }
+
+  .managed-variant {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .managed-variant > div,
+  .managed-variant > button {
+    grid-column: 1 / -1;
+  }
+}
+
 .sidebar {
   z-index: 90;
   box-shadow: 8px 0 28px rgb(64 28 20 / 3%);

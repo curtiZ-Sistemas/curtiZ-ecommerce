@@ -16,6 +16,7 @@ import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
 import { OperationalConsole } from "@/components/operational-console";
+import { ProductManagement } from "@/components/product-management";
 import { requirePanelAccess } from "@/lib/auth";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
@@ -79,7 +80,6 @@ function PageHeading({ role, section }: { role: PanelRole; section: string }) {
             : "Informações internas conforme as permissões do perfil."}
         </p>
       </div>
-      {process.env.DEMO_MODE === "true" && <span className="demo-status">Modo demonstração</span>}
     </div>
   );
 }
@@ -115,7 +115,7 @@ function Administration({ section }: { section: string }) {
         </section>
         <section className="panel-card">
           <h2>Atividades recentes</h2>
-          <Compact label="Produto atualizado" detail="Por Admin Demo" value="10:24" />
+          <Compact label="Produto atualizado" detail="Alteração registrada" value="10:24" />
           <Compact label="Cupom publicado" detail="PRIMEIRA15" value="09:15" />
           <Compact label="Atendimento assumido" detail="ATD-7F9C2A10" value="08:42" />
         </section>
@@ -152,7 +152,7 @@ function Management({ section }: { section: string }) {
         </section>
         <section className="panel-card">
           <h2>Aprovações pendentes</h2>
-          <Compact label="Reembolso elevado" detail="Pedido CZT-DEMO08" value="2" />
+          <Compact label="Reembolso elevado" detail="Pedidos aguardando análise" value="2" />
           <Compact label="Ajuste de estoque" detail="Acima do limite" value="3" />
           <Compact label="Conta privilegiada" detail="Requer AAL2" value="1" />
         </section>
@@ -181,8 +181,8 @@ function Technical({ section }: { section: string }) {
           <h2>Estado dos serviços</h2>
           <Compact label="Loja Next.js" detail="Verificação desta aplicação" value="Online" />
           <Compact label="Supabase" detail="Sem URL/chave local" value="Não configurado" />
-          <Compact label="E-mail" detail="Provider mock local" value="Não configurado" />
-          <Compact label="Frete" detail="Provider mock local" value="Não configurado" />
+          <Compact label="E-mail" detail="Serviço não configurado" value="Não configurado" />
+          <Compact label="Frete" detail="Serviço não configurado" value="Não configurado" />
         </section>
       </div>
     </>
@@ -264,54 +264,7 @@ function Compact({ label, detail, value }: { label: string; detail: string; valu
 }
 
 function Products() {
-  const products = [
-    ["Curtiz Flip-Flop Wave Preto", "CZT-FW-PRE-40", "R$ 59,90", "156", "Ativo"],
-    ["Curtiz Slide Bold Marinho", "CZT-SB-MAR-41", "R$ 79,90", "98", "Ativo"],
-    ["Curtiz Sandália Comfort Areia", "CZT-SC-ARE-37", "R$ 79,90", "64", "Ativo"],
-    ["Curtiz Infantil Joy Rosa", "CZT-JY-ROS-28", "R$ 39,90", "112", "Ativo"]
-  ];
-  return (
-    <section className="panel-card">
-      <div className="page-heading">
-        <h2>Todos os produtos</h2>
-        <button className="primary-button">+ Novo produto</button>
-      </div>
-      <div className="toolbar">
-        <input placeholder="Buscar nome, SKU ou categoria" aria-label="Buscar produtos" />
-        <select aria-label="Categoria">
-          <option>Todas as categorias</option>
-        </select>
-      </div>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Produto</th>
-              <th>SKU</th>
-              <th>Preço</th>
-              <th>Estoque</th>
-              <th>Status</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((row) => (
-              <tr key={row[1]}>
-                {row.map((cell, index) => (
-                  <td key={cell}>
-                    {index === 4 ? <span className="status green">{cell}</span> : cell}
-                  </td>
-                ))}
-                <td>
-                  <button className="secondary-button">Editar</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  return <ProductManagement />;
 }
 
 function Inventory() {
@@ -358,12 +311,7 @@ function UsersPanel() {
         <button className="primary-button">Criar acesso</button>
       </div>
       <p>Contas privilegiadas exigem MFA, reautenticação, motivo e possível segunda aprovação.</p>
-      <Compact
-        label="operacional.demo@curtiz.local"
-        detail="MFA pendente no ambiente local"
-        value="Operacional"
-      />
-      <Compact label="gerencia.demo@curtiz.local" detail="Acesso demonstrativo" value="Gerência" />
+      <p>Os usuários autorizados aparecem aqui quando o diretório de identidades está conectado.</p>
     </section>
   );
 }
@@ -385,8 +333,8 @@ function Financial() {
     <div className="dashboard-grid">
       <section className="panel-card">
         <h2>Conciliação Mercado Pago</h2>
-        <Compact label="CZT-DEMO01" detail="Bruto R$ 134,80 • Taxa R$ 6,41" value="Conciliado" />
-        <Compact label="CZT-DEMO04" detail="Divergência de R$ 2,10" value="Revisar" />
+        <Compact label="Pagamento conciliado" detail="Bruto R$ 134,80 • Taxa R$ 6,41" value="Conciliado" />
+        <Compact label="Divergência financeira" detail="Diferença de R$ 2,10" value="Revisar" />
       </section>
       <section className="panel-card">
         <h2>Fechamento</h2>
@@ -421,7 +369,7 @@ function Approvals() {
 function Integrations() {
   const rows = [
     ["Supabase", "Não configurado", "URL e publishable key ausentes"],
-    ["Mercado Pago", "Aguardando credenciais", "Provider mock somente local"],
+    ["Mercado Pago", "Aguardando credenciais", "Serviço ainda não configurado"],
     ["Frete", "Não configurado", "Melhor Envio/Correios disponíveis por adapter"],
     ["E-mail", "Não configurado", "Fila local sem provider transacional"],
     ["WhatsApp", "Não configurado", "Somente API oficial Meta"],
@@ -473,7 +421,7 @@ function EventsTable() {
           <tr>
             <td>Agora</td>
             <td>panel</td>
-            <td>Aplicação inicializada em modo demo</td>
+            <td>Aplicação inicializada</td>
             <td>
               <span className="status blue">INFO</span>
             </td>

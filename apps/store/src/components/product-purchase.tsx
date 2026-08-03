@@ -188,13 +188,9 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
               })}
             </div>
           </fieldset>
-          <p className={currentStock > 0 ? "product-stock available" : "product-stock unavailable"}>
-            {currentStock > 0
-              ? currentStock <= 5
-                ? `Últimas ${currentStock} unidades`
-                : "Em estoque"
-              : "Indisponível nesta combinação"}
-          </p>
+          {currentStock <= 0 && (
+            <p className="product-stock unavailable">Indisponível nesta combinação</p>
+          )}
           <p className="sr-only" role="status" aria-live="polite">
             {busy ? `${product.name} adicionado ao carrinho.` : ""}
           </p>

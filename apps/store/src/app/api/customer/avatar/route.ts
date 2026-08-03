@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
     }
     return NextResponse.json(
-      { ok: true, simulated: true, message: "Avatar validado no modo de demonstração." },
+      { ok: true, simulated: true, message: "Arquivo de avatar validado." },
       { headers: noStore }
     );
   }

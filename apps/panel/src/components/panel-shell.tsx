@@ -283,7 +283,7 @@ export function PanelShell({
           <div className="user-chip">
             <div className="avatar">{roleLabels[role].slice(0, 1)}</div>
             <div>
-              <strong>{roleLabels[role]} Demo</strong>
+              <strong>{roleLabels[role]}</strong>
               <small>{roleLabels[role]}</small>
             </div>
           </div>

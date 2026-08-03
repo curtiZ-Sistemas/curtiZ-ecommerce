@@ -72,11 +72,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="container page-shell">
-      {detail.source === "demo" && (
-        <p className="storefront-presentation-notice" role="status">
-          Produto de apresentação: preço, estoque e condições são demonstrativos.
-        </p>
-      )}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

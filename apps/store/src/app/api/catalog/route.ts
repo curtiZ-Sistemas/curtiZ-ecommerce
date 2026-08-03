@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       p_price_min: filters.priceMin ?? null,
       p_price_max: filters.priceMax ?? null,
       p_promotion: filters.promotion,
-      p_in_stock: filters.inStock,
+      p_in_stock: true,
       p_featured: filters.newest,
       p_min_rating: filters.minRating ?? null,
       p_sort: filters.sort,
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         page: filters.page,
         pageSize: filters.pageSize
       });
-      if (result && (result.total > 0 || !presentationFallback)) {
+      if (result) {
         return NextResponse.json(result, {
           headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" }
         });

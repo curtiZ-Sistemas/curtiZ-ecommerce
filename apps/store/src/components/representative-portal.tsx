@@ -361,11 +361,6 @@ export function RepresentativePortal({ section }: { section: string }) {
           </span>
         </header>
         <main className="representative-content">
-          {snapshot.demo && (
-            <p className="demo-banner">
-              Ambiente de demonstração · informações fictícias identificadas
-            </p>
-          )}
           {["suspended", "cancelled", "inactive"].includes(snapshot.representative.status) && (
             <div className="representative-access-alert" role="status">
               <ShieldCheck />
@@ -1355,12 +1350,7 @@ function Kits({
         kitId,
         idempotencyKey: crypto.randomUUID()
       });
-      const selectedKit = available.find((kit) => kit.id === kitId);
-      setMessage(
-        selectedKit?.demo
-          ? "Pedido demonstrativo criado com pagamento mock identificado."
-          : "Pedido criado. O pagamento permanece pendente até um provedor ser disponibilizado."
-      );
+      setMessage("Pedido criado. O pagamento permanece pendente até um provedor ser disponibilizado.");
       onRefresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível criar o pedido.");
@@ -1388,7 +1378,6 @@ function Kits({
               <h2>{kit.name}</h2>
               <p>{kit.description}</p>
               <strong>{formatBRL(kit.priceInCents)}</strong>
-              {kit.demo && <span className="representative-pill warning">Oferta fictícia · demo</span>}
               <button className="primary-button" disabled={loadingId === kit.id} onClick={() => void buy(kit.id)}>
                 {loadingId === kit.id ? <LoaderCircle className="spin" /> : <ShoppingBag />} Solicitar kit
               </button>
@@ -1467,7 +1456,6 @@ function Creatives({ creatives }: { creatives: NonNullable<Snapshot["creatives"]
               </div>
               <small>
                 {creative.platform} · {creative.type}
-                {creative.demo ? " · demo" : ""}
               </small>
               <h2>{creative.title}</h2>
               <p>{creative.campaign}</p>

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { demoProducts } from "./catalog";
 import { parseCatalogFilters, queryDemoCatalog } from "./catalog-query";
 
 describe("catalog query", () => {
@@ -42,5 +43,17 @@ describe("catalog query", () => {
     expect(filters.promotion).toBe(true);
     expect(result.products.length).toBeGreaterThan(0);
     expect(result.products.every((product) => product.compareAtPriceInCents)).toBe(true);
+  });
+
+  it("remove produtos sem saldo de todas as listagens públicas", () => {
+    const product = demoProducts[0]!;
+    const originalStock = product.stock;
+    product.stock = 0;
+    try {
+      const result = queryDemoCatalog(parseCatalogFilters(new URLSearchParams()));
+      expect(result.products.some((item) => item.id === product.id)).toBe(false);
+    } finally {
+      product.stock = originalStock;
+    }
   });
 });

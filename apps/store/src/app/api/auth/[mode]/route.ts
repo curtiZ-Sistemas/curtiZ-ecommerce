@@ -13,13 +13,19 @@ import {
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
+import { loginDestinations, resolveLoginRole } from "@/lib/auth-routing";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
 import { parseSignupInput, type NormalizedSignupInput } from "@/lib/signup-validation";
 
 const loginSchema = z.object({
-  email: z.string().trim().email().max(254),
+  email: z
+    .string()
+    .trim()
+    .email()
+    .max(254)
+    .transform((value) => value.toLocaleLowerCase("pt-BR")),
   password: z.string().min(6).max(256),
   remember: z.string().optional(),
   next: z.string().max(300).optional(),
@@ -35,16 +41,6 @@ const resendSchema = z.object({
     .transform((value) => value.toLocaleLowerCase("pt-BR")),
   next: z.string().max(300).optional()
 });
-
-const roleDestinations: Record<string, string> = {
-  customer: "/minha-conta",
-  representative: "/representante",
-  operational: "/operacional",
-  admin: "/administracao",
-  manager: "/gerencia",
-  technical: "/tecnico"
-};
-const internalRolePriority = ["admin", "manager", "technical", "operational"] as const;
 
 const profileSchema = z.object({ status: z.string() }).nullable();
 const roleSchema = z.object({ role: z.string() }).nullable();
@@ -194,7 +190,7 @@ function demoLoginResponse(
   request: Request,
   login: z.infer<typeof loginSchema>
 ): NextResponse | null {
-  if (!isLocalDemoRequest(request)) return null;
+  if (!login.email.endsWith("@curtiz.local") || !isLocalDemoRequest(request)) return null;
 
   const account = authenticateDemoAccount(login.email, login.password);
   if (!account) {
@@ -207,7 +203,7 @@ function demoLoginResponse(
   const session = createDemoSession(account, login.remember === "on");
   if (!session) {
     return NextResponse.json(
-      { message: "O acesso demo local não está configurado corretamente." },
+      { message: "O acesso local não está configurado corretamente." },
       { status: 503, headers: { "cache-control": "no-store" } }
     );
   }
@@ -393,9 +389,7 @@ export async function POST(
     );
   }
 
-  // Demo accounts are authenticated by the isolated staging provider even when
-  // a remote Supabase client is configured. The host, HTTPS and DEMO_MODE
-  // restrictions remain enforced by isLocalDemoRequest.
+  // Contas locais isoladas nunca interceptam credenciais reais do Supabase.
   if (mode === "login") {
     const demoResponse = demoLoginResponse(
       request,
@@ -494,6 +488,44 @@ export async function POST(
     if (profileUpdate.error || consentInsert.error) {
       const details = readSupabaseAuthError(profileUpdate.error ?? consentInsert.error);
       logSupabaseAuthError(details);
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        {
+          code: "signup_profile_unavailable",
+          message: "A conta foi criada, mas não foi possível concluir seu perfil. Tente entrar novamente."
+        },
+        { status: 503, headers: corsHeaders(request) }
+      );
+    }
+
+    const [profileResult, roleResult] = await Promise.all([
+      supabase.from("profiles").select("status").eq("id", data.user.id).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", data.user.id)
+    ]);
+    const signupRoles = z.array(roleSchema.unwrap()).safeParse(roleResult.data).data ?? [];
+    if (
+      profileResult.error ||
+      roleResult.error ||
+      profileResult.data?.status !== "active" ||
+      !signupRoles.some((item) => item.role === "customer")
+    ) {
+      const details = readSupabaseAuthError(
+        profileResult.error ??
+          roleResult.error ?? {
+            code: "signup_identity_incomplete",
+            status: 503,
+            message: "Perfil ou papel customer não foi criado pelo gatilho de identidade."
+          }
+      );
+      logSupabaseAuthError(details);
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        {
+          code: "signup_identity_incomplete",
+          message: "A conta foi criada, mas não foi possível concluir seu perfil. Tente entrar novamente."
+        },
+        { status: 503, headers: corsHeaders(request) }
+      );
     }
 
     return NextResponse.json(
@@ -556,7 +588,27 @@ export async function POST(
   const profile = profileSchema.safeParse(rawProfile).data ?? null;
   const assignedRoles = z.array(roleSchema.unwrap()).safeParse(rawRoles).data ?? [];
 
-  if (profile?.status && profile.status !== "active") {
+  if (profileResult.error || roleResult.error || !profile) {
+    const details = readSupabaseAuthError(
+      profileResult.error ??
+        roleResult.error ?? {
+          code: "identity_data_unavailable",
+          status: 503,
+          message: "Perfil ou papéis do usuário não foram encontrados."
+        }
+    );
+    logSupabaseAuthError(details);
+    await supabase.auth.signOut();
+    return NextResponse.json(
+      {
+        code: "identity_data_unavailable",
+        message: "Não foi possível verificar as permissões da sua conta agora. Tente novamente."
+      },
+      { status: 503, headers: corsHeaders(request) }
+    );
+  }
+
+  if (profile.status !== "active") {
     await supabase.auth.signOut();
     return NextResponse.json(
       { message: "Este acesso está indisponível. Entre em contato com o suporte." },
@@ -565,9 +617,27 @@ export async function POST(
   }
 
   const roles = assignedRoles.map((item) => item.role);
-  const internalRole = internalRolePriority.find((item) => roles.includes(item));
-  const role = internalRole ?? (roles.includes("representative") ? "representative" : "customer");
-  const destination = roleDestinations[role] ?? "/minha-conta";
+  const role = resolveLoginRole(roles);
+  if (!role) {
+    const details: SupabaseAuthErrorDetails = {
+      code: "identity_roles_unavailable",
+      status: 503,
+      message: "Nenhum papel foi associado ao usuário autenticado."
+    };
+    logSupabaseAuthError(details);
+    await supabase.auth.signOut();
+    return NextResponse.json(
+      {
+        code: details.code,
+        message: "Não foi possível verificar as permissões da sua conta agora. Tente novamente."
+      },
+      { status: 503, headers: corsHeaders(request) }
+    );
+  }
+  const internalRole = ["admin", "manager", "technical", "operational"].includes(role)
+    ? role
+    : null;
+  const destination = loginDestinations[role];
   const panelUrl = panelBaseUrl(request);
   let redirectTo =
     role === "customer" || role === "representative"

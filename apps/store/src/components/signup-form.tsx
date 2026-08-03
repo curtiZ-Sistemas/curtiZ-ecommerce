@@ -16,7 +16,6 @@ import Link from "next/link";
 import { type FormEvent, useMemo, useRef, useState } from "react";
 import {
   assessPassword,
-  formatBrazilianPhone,
   normalizeEmail,
   normalizeFullName,
   parseSignupInput
@@ -82,9 +81,7 @@ export function SignupForm({
         ? normalizeFullName(value)
         : field === "email"
           ? normalizeEmail(value)
-          : field === "phone"
-            ? formatBrazilianPhone(value)
-            : value;
+          : value;
     setFields((current) => ({ ...current, [field]: nextValue }));
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   };
@@ -284,12 +281,12 @@ export function SignupForm({
             id="signup-phone"
             name="phone"
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
             autoComplete="tel"
             value={fields.phone}
             onChange={(event) => updateField("phone", event.target.value)}
             placeholder="(31) 99999-0000"
-            maxLength={15}
+            maxLength={24}
             aria-invalid={Boolean(errors.phone)}
             aria-describedby={errors.phone ? "signup-phone-error" : "signup-phone-help"}
             required

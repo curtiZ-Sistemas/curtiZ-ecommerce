@@ -93,18 +93,13 @@ const signatureFor = (payload: string, secret: string): string =>
 
 export const isLocalDemoRequest = (request: Request): boolean => {
   const explicitDemo = process.env.DEMO_MODE === "true";
-  const presentationAccess =
-    process.env.CHECKOUT_ENABLED?.trim().toLowerCase() === "false";
-  const configuredDemoAccess =
-    Boolean(process.env.DEMO_USERS_PASSWORD?.trim()) &&
-    (process.env.DEMO_SESSION_SECRET?.trim().length ?? 0) >= 32;
-  if (!explicitDemo && !presentationAccess && !configuredDemoAccess) return false;
+  if (!explicitDemo) return false;
 
   try {
     const url = new URL(request.url);
     if (localHosts.has(url.hostname)) return true;
     return (
-      (process.env.APP_ENV === "staging" || presentationAccess || configuredDemoAccess) &&
+      process.env.APP_ENV === "staging" &&
       url.protocol === "https:" &&
       configuredStagingHosts().has(url.hostname)
     );

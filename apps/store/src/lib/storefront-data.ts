@@ -171,7 +171,7 @@ export async function queryPublicCatalog(
     p_price_min: null,
     p_price_max: null,
     p_promotion: filters.promotion,
-    p_in_stock: false,
+    p_in_stock: true,
     p_featured: filters.newest,
     p_min_rating: null,
     p_sort: filters.sort,
@@ -181,7 +181,7 @@ export async function queryPublicCatalog(
   const { data, error } = readQueryResult(response);
   if (!error) {
     const catalog = parseCatalogRpcResult(data, { page: 1, pageSize: filters.pageSize });
-    if (catalog && (catalog.total > 0 || !presentationFallback)) return catalog;
+    if (catalog) return catalog;
   }
   return presentationFallback ? queryDemoCatalog(filters) : null;
 }
@@ -268,8 +268,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     .filter((banner): banner is PublicBanner => Boolean(banner));
 
   const fallbackBannerEnabled = banners.length === 0 && presentationFallback;
-  const fallbackProductsEnabled =
-    (catalog?.products.length ?? 0) === 0 && presentationFallback;
+  const fallbackProductsEnabled = !catalog && presentationFallback;
 
   return {
     sections: sections.length ? sections : defaultSections,
@@ -329,7 +328,7 @@ const productDetailSchema = z.object({
 
 const demoProductDetail = (slug: string): ProductDetailData | null => {
   const product = findProduct(slug);
-  if (!product) return null;
+  if (!product || product.stock <= 0) return null;
   const variants = product.colors.flatMap((color) =>
     product.sizes.map((size) => ({
       id: `${product.id}:${color}:${size}`,
@@ -361,9 +360,11 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   }
   const response: unknown = await supabase.rpc("get_catalog_product", { p_slug: slug });
   const { data, error } = readQueryResult(response);
-  if (error || !data) return presentationFallback ? demoProductDetail(slug) : null;
+  if (error) return presentationFallback ? demoProductDetail(slug) : null;
+  if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
+  if (parsed.data.stock <= 0) return null;
   const firstImage = parsed.data.images[0]?.path;
   const colors = [...new Set(parsed.data.variants.map((variant) => variant.color))];
   const sizes = [...new Set(parsed.data.variants.map((variant) => variant.size))];

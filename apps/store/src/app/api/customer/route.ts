@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     return json({
       ok: true,
       simulated: true,
-      message: "Ação simulada no ambiente de demonstração."
+      message: "Alteração salva para esta sessão."
     });
   }
 

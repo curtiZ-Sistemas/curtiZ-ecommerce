@@ -22,7 +22,7 @@ const data = [
 
 export function RevenueChart() {
   return (
-    <div style={{ width: "100%", height: 300 }} aria-label="Gráfico de faturamento demonstrativo">
+    <div style={{ width: "100%", height: 300 }} aria-label="Gráfico de faturamento">
       <ResponsiveContainer>
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#eee7e4" />

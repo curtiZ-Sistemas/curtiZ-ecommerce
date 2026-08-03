@@ -46,6 +46,9 @@ export function AuthForm({
     try {
       const form = new FormData(event.currentTarget);
       const payload = Object.fromEntries(form);
+      if (typeof payload.email === "string") {
+        payload.email = payload.email.trim().toLocaleLowerCase("pt-BR");
+      }
       if (turnstileEnabled) payload.turnstileToken = turnstileToken;
       if (mode === "login" && returnTo) payload.next = returnTo;
       const response = await fetch(`/api/auth/${mode}`, {

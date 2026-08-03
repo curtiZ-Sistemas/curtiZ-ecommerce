@@ -3,7 +3,6 @@
 import { calculateSubtotal, formatBRL } from "@curtiz/domain";
 import {
   ArrowLeft,
-  Check,
   Minus,
   Plus,
   ShoppingBag,
@@ -104,7 +103,6 @@ export default function CartPage() {
                   </Link>
 
                   <div className="cart-item-info">
-                    <p className="cart-item-stock"><Check /> Em estoque</p>
                     <h2>{line.name}</h2>
                     <dl className="cart-variations">
                       <div><dt>Cor</dt><dd>{line.color}</dd></div>

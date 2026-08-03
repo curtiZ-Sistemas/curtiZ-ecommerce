@@ -12,7 +12,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <p className="eyebrow">Pedido {pedido ?? "em processamento"}</p>
         <h1>Aguardando confirmação do pagamento</h1>
         <p>
-          Este ambiente usa um provedor mock. Nenhum valor foi cobrado e o pedido não será marcado
+          Nenhum valor foi cobrado e o pedido não será marcado
           como pago sem confirmação do servidor.
         </p>
         <Link className="primary-button" href="/minha-conta/pedidos">

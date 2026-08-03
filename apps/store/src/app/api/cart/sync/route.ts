@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   if (process.env.DEMO_MODE === "true") {
     return NextResponse.json(
-      { message: "Carrinho local ativo no ambiente de demonstração." },
+      { message: "Carrinho salvo neste dispositivo." },
       { headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
     );
   }

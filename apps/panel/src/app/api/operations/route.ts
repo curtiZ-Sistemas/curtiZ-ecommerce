@@ -576,7 +576,7 @@ export async function POST(request: NextRequest) {
   }
   if (authorized.demo) {
     return NextResponse.json(
-      { ok: false, message: "Ações operacionais estão desativadas no modo demonstração sem dados." },
+      { ok: false, message: "Ações indisponíveis enquanto não houver dados conectados." },
       { status: 409, headers: noStore }
     );
   }

@@ -2,11 +2,16 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { HomepageHero } from "./homepage-hero";
+import { ProductCard } from "./product-card";
 import { SearchAutocomplete } from "./search-autocomplete";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() })
 }));
+vi.mock("./favorites-provider", () => ({
+  useFavorites: () => ({ hydrated: true, has: () => false, toggle: vi.fn() })
+}));
+vi.stubGlobal("React", React);
 
 const banners = [
   {
@@ -44,5 +49,30 @@ describe("public storefront components", () => {
     expect(html).toContain('role="combobox"');
     expect(html).toContain('aria-autocomplete="list"');
     expect(html).toContain('action="/busca"');
+  });
+
+  it("mostra produto disponível sem revelar quantidade ou texto de estoque", () => {
+    const html = renderToStaticMarkup(
+      <ProductCard
+        product={{
+          id: "produto-1",
+          slug: "produto-disponivel",
+          name: "Produto disponível",
+          category: "Masculino",
+          description: "Produto",
+          priceInCents: 5990,
+          rating: 4.8,
+          reviews: 10,
+          colors: ["Preto"],
+          sizes: ["40"],
+          image: "/images/products/wave-preto.png",
+          stock: 1
+        }}
+      />
+    );
+
+    expect(html).toContain("Produto disponível");
+    expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
+    expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
   });
 });
