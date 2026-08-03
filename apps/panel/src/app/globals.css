@@ -435,6 +435,11 @@ textarea:focus-visible {
   background: #eee;
 }
 
+.status.red {
+  color: var(--danger);
+  background: #fff0ef;
+}
+
 .compact-list {
   display: grid;
 }
@@ -907,6 +912,566 @@ textarea:focus-visible {
   * {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+}
+
+/* Painel operacional: densidade de execução, mobile e filas auditáveis. */
+
+.operational-console {
+  display: grid;
+  gap: 16px;
+}
+
+.operational-demo-notice,
+.operational-feedback {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid #e7caaa;
+  border-radius: 6px;
+  background: #fff8ed;
+  color: #704210;
+  font-size: 0.8rem;
+}
+
+.operational-feedback.success {
+  border-color: #a9d5b3;
+  background: #f0faf2;
+  color: #17632b;
+}
+
+.operational-feedback.error {
+  border-color: #efc2bd;
+  background: #fff0ef;
+  color: var(--danger);
+}
+
+.operational-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.operational-metric {
+  display: grid;
+  min-height: 132px;
+  grid-template-columns: 1fr auto;
+  align-content: space-between;
+  gap: 5px 12px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 7px 22px rgb(64 28 20 / 5%);
+}
+
+.operational-metric:hover {
+  border-color: var(--brand-100);
+  box-shadow: 0 12px 28px rgb(64 28 20 / 9%);
+  transform: translateY(-2px);
+}
+
+.operational-metric > svg {
+  grid-column: 2;
+  grid-row: 1;
+  width: 22px;
+  color: var(--brand-600);
+}
+
+.operational-metric > span {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 0.77rem;
+  font-weight: 750;
+}
+
+.operational-metric > strong {
+  grid-column: 1 / -1;
+  font-size: 1.7rem;
+}
+
+.operational-metric > small {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand-800);
+  font-weight: 750;
+}
+
+.operational-metric > small svg {
+  width: 15px;
+}
+
+.operational-dashboard-grid,
+.operational-occurrence-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.8fr);
+  gap: 16px;
+}
+
+.operational-section-heading {
+  margin-bottom: 14px;
+}
+
+.operational-section-heading h2,
+.operational-detail h2,
+.operational-detail h3 {
+  margin: 0;
+}
+
+.operational-section-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.operational-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 260px) auto;
+  gap: 9px;
+}
+
+.operational-filters label {
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.operational-filters label svg {
+  width: 17px;
+  color: var(--muted);
+}
+
+.operational-filters input,
+.operational-filters select,
+.operational-occurrence-form input,
+.operational-occurrence-form select,
+.operational-occurrence-form textarea,
+.operational-note-form textarea,
+.operational-check-list input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+}
+
+.operational-filters input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+}
+
+.operational-filters select {
+  min-height: 43px;
+  padding: 0 10px;
+}
+
+.operational-list {
+  display: grid;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.operational-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.25fr) minmax(110px, auto) minmax(90px, auto) minmax(150px, auto) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.operational-row:last-child {
+  border-bottom: 0;
+}
+
+.operational-row:hover {
+  background: #fffaf8;
+}
+
+.operational-row > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.operational-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+
+.operational-row > span:not(.status) {
+  color: #514d49;
+  font-size: 0.76rem;
+}
+
+.operational-row.inventory {
+  grid-template-columns: minmax(200px, 1.4fr) repeat(4, minmax(90px, auto)) auto;
+}
+
+.operational-row.inventory.critical {
+  border-left: 3px solid var(--danger);
+}
+
+.operation-ok {
+  color: var(--success) !important;
+  font-weight: 750;
+}
+
+.operation-warning {
+  color: var(--warning) !important;
+  font-weight: 750;
+}
+
+.operational-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.operational-actions .primary-button,
+.operational-actions .secondary-button,
+.operational-row .secondary-button {
+  min-height: 36px;
+  padding-inline: 10px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.operational-detail {
+  margin-top: 14px;
+  border-color: var(--brand-100);
+  box-shadow: 0 16px 40px rgb(64 28 20 / 9%);
+}
+
+.operational-detail > header,
+.operational-return-grid article > header,
+.return-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operational-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.operational-detail-grid > div {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.operational-detail-grid p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.operational-note-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.operational-note-form label,
+.operational-occurrence-form label,
+.operational-check-list label {
+  display: grid;
+  gap: 5px;
+  color: #4d4845;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.operational-note-form textarea,
+.operational-occurrence-form textarea {
+  min-height: 78px;
+  padding: 9px;
+  resize: vertical;
+}
+
+.operational-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--brand-100);
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.operational-check-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.operational-check-list form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 95px 95px minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.operational-check-list form > div {
+  display: grid;
+}
+
+.operational-check-list input {
+  min-height: 38px;
+  padding: 0 8px;
+}
+
+.operational-return-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.operational-return-grid article p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.return-item {
+  align-items: center;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+
+.return-item span {
+  display: grid;
+}
+
+.return-item small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.operational-occurrence-form,
+.operational-occurrence-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.operational-occurrence-form {
+  gap: 12px;
+}
+
+.operational-occurrence-form input,
+.operational-occurrence-form select {
+  min-height: 42px;
+  padding: 0 9px;
+}
+
+.operational-occurrence-form textarea {
+  min-height: 110px;
+}
+
+.operational-record {
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  color: #514d49;
+  font-size: 0.76rem;
+}
+
+.operational-muted {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.operational-report {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1px;
+  padding: 1px;
+  overflow: hidden;
+}
+
+.operational-report > div {
+  display: grid;
+  min-height: 95px;
+  align-content: space-between;
+  padding: 15px;
+  background: white;
+}
+
+.operational-report span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.operational-report strong {
+  font-size: 1.45rem;
+}
+
+.operational-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.operational-pagination span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.operational-empty {
+  display: grid;
+  min-height: 190px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 22px;
+  border: 1px dashed #d7d0cb;
+  border-radius: 8px;
+  background: white;
+  color: var(--muted);
+  text-align: center;
+}
+
+.operational-empty > svg {
+  width: 28px;
+  color: var(--brand-600);
+}
+
+.operational-empty h2,
+.operational-empty p {
+  margin: 0;
+}
+
+.operational-empty small {
+  max-width: 360px;
+}
+
+.operational-loading {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.operational-loading div {
+  height: 130px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f1ece9 25%, #faf7f5 50%, #f1ece9 75%);
+  background-size: 200% 100%;
+  animation: panel-skeleton 1.2s ease-in-out infinite;
+}
+
+@media (max-width: 1180px) {
+  .operational-row,
+  .operational-row.inventory {
+    grid-template-columns: minmax(180px, 1fr) repeat(2, auto);
+  }
+
+  .operational-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .operational-check-list form {
+    grid-template-columns: minmax(180px, 1fr) repeat(2, 90px);
+  }
+
+  .operational-check-list form label:nth-of-type(3),
+  .operational-check-list form button {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .operational-metric-grid,
+  .operational-loading {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .operational-dashboard-grid,
+  .operational-occurrence-layout,
+  .operational-detail-grid,
+  .operational-filters,
+  .operational-note-form {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-row,
+  .operational-row.inventory {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: 8px;
+  }
+
+  .operational-row > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .operational-row > p,
+  .operational-row > .operational-actions,
+  .operational-row > button {
+    grid-column: 1 / -1;
+  }
+
+  .operational-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .operational-actions .primary-button,
+  .operational-actions .secondary-button {
+    width: 100%;
+  }
+
+  .operational-check-list form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .operational-check-list form > div,
+  .operational-check-list form label:nth-of-type(3),
+  .operational-check-list form button {
+    grid-column: 1 / -1;
+  }
+
+  .operational-return-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-pagination {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 390px) {
+  .operational-metric-grid,
+  .operational-loading {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-row,
+  .operational-row.inventory,
+  .operational-actions {
+    grid-template-columns: 1fr;
   }
 }
 

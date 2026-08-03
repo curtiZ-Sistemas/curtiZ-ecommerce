@@ -5,11 +5,8 @@ import {
   CircleCheck,
   Clock3,
   Headphones,
-  PackageCheck,
   RotateCcw,
   ShoppingBag,
-  Tags,
-  Truck,
   Webhook
 } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -18,6 +15,7 @@ import { RevenueChart } from "@/components/revenue-chart";
 import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
+import { OperationalConsole } from "@/components/operational-console";
 import { requirePanelAccess } from "@/lib/auth";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
@@ -75,46 +73,19 @@ function PageHeading({ role, section }: { role: PanelRole; section: string }) {
     <div className="page-heading">
       <div>
         <h1>{titles[role]}</h1>
-        <p>Informações fictícias para validar a interface e as permissões locais.</p>
+        <p>
+          {role === "operacional"
+            ? "Execute as filas diárias com conferência e rastreabilidade."
+            : "Informações internas conforme as permissões do perfil."}
+        </p>
       </div>
-      <span className="demo-status">Modo demonstração</span>
+      {process.env.DEMO_MODE === "true" && <span className="demo-status">Modo demonstração</span>}
     </div>
   );
 }
 
 function Operational({ section }: { section: string }) {
-  if (section === "estoque") return <Inventory />;
-  if (section === "trocas") return <Returns />;
-  return (
-    <>
-      <div className="metric-grid">
-        <Metric label="Pedidos para separar" value="78" trend="+12,5%" icon={<PackageCheck />} />
-        <Metric label="Pedidos para enviar" value="26" trend="+8,3%" icon={<Truck />} />
-        <Metric label="Trocas pendentes" value="12" trend="-7,1%" icon={<RotateCcw />} />
-        <Metric label="Etiquetas prontas" value="145" trend="+15,4%" icon={<Tags />} />
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel-card">
-          <h2>Pedidos na fila</h2>
-          <div className="toolbar">
-            <input placeholder="Buscar pedido ou cliente" aria-label="Buscar pedido" />
-            <select aria-label="Status">
-              <option>Todos os status</option>
-              <option>Em separação</option>
-              <option>Pronto para envio</option>
-            </select>
-          </div>
-          <OrdersTable operational />
-        </section>
-        <section className="panel-card">
-          <h2>Próximos envios</h2>
-          <Compact label="Hoje até 12:00" detail="Coleta: Correios" value="8 pedidos" />
-          <Compact label="Hoje até 16:00" detail="Coleta: transportadora" value="12 pedidos" />
-          <Compact label="Amanhã até 12:00" detail="Coleta: Correios" value="14 pedidos" />
-        </section>
-      </div>
-    </>
-  );
+  return <OperationalConsole section={section} />;
 }
 
 function Administration({ section }: { section: string }) {
@@ -358,17 +329,6 @@ function Inventory() {
         <button className="primary-button">Nova contagem</button>
       </section>
     </div>
-  );
-}
-
-function Returns() {
-  return (
-    <section className="panel-card">
-      <h2>Trocas e devoluções</h2>
-      <Compact label="DEV-DEMO01" detail="Aguardando fotos • Cliente J." value="Em análise" />
-      <Compact label="DEV-DEMO02" detail="Produto recebido" value="Inspeção" />
-      <p className="demo-status">Nenhum item retorna ao estoque vendável sem inspeção.</p>
-    </section>
   );
 }
 

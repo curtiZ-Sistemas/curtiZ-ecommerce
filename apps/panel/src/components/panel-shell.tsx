@@ -6,8 +6,10 @@ import {
   Boxes,
   ChartNoAxesCombined,
   CircleGauge,
+  ClipboardCheck,
   ExternalLink,
   FileClock,
+  FileText,
   Headphones,
   LifeBuoy,
   LoaderCircle,
@@ -15,6 +17,7 @@ import {
   Menu,
   MessageSquareText,
   PackageCheck,
+  PackagePlus,
   PanelsTopLeft,
   Search,
   Settings,
@@ -22,6 +25,7 @@ import {
   ShoppingBag,
   Tags,
   Users,
+  Wrench,
   Webhook,
   X
 } from "lucide-react";
@@ -32,14 +36,24 @@ export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico"
 
 const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size?: number }>]>> = {
   operacional: [
-    ["Fila operacional", "", CircleGauge],
+    ["Dashboard", "", CircleGauge],
     ["Pedidos", "pedidos", ShoppingBag],
-    ["Separação", "separacao", PackageCheck],
-    ["Expedição", "expedicao", Boxes],
+    ["Separação", "separacao", ClipboardCheck],
+    ["Expedição", "expedicao", PackageCheck],
+    ["Envio", "envio", ExternalLink],
     ["Estoque", "estoque", Boxes],
-    ["Kits de representantes", "kits-representantes", PackageCheck],
+    ["Kits", "kits", PackageCheck],
+    ["Montagem de kits", "montagem-kits", PackagePlus],
+    ["Reposição", "reposicao", PackagePlus],
+    ["Notas fiscais", "notas-fiscais", FileText],
     ["Trocas", "trocas", FileClock],
-    ["Atendimento atribuído", "atendimentos", Headphones]
+    ["Devoluções", "devolucoes", FileClock],
+    ["Produtos danificados", "danificados", ShieldCheck],
+    ["Ocorrências", "ocorrencias", Wrench],
+    ["Atendimento atribuído", "atendimentos", Headphones],
+    ["Representantes", "representantes", Users],
+    ["Pendências", "pendencias", FileClock],
+    ["Relatórios operacionais", "relatorios-operacionais", ChartNoAxesCombined]
   ],
   administracao: [
     ["Dashboard", "", PanelsTopLeft],
