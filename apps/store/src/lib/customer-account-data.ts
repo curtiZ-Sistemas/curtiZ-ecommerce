@@ -119,7 +119,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const internalRole = roles.find((role) =>
     ["admin", "manager", "operational", "technical"].includes(role)
   );
-  if (!roles.includes("customer") && internalRole) {
+  if (internalRole) {
     return {
       ...emptyCustomerAccount(),
       panelDestination: demoDestination(
