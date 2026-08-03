@@ -1,121 +1,151 @@
 import type { Metadata } from "next";
-import { formatBRL } from "@curtiz/domain";
 import { Star } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AddToCart } from "@/components/add-to-cart";
 import { ProductCard } from "@/components/product-card";
-import { demoProducts, findProduct } from "@/lib/catalog";
+import { ProductPurchase } from "@/components/product-purchase";
+import { demoProducts } from "@/lib/catalog";
+import { getPublicProduct, queryPublicCatalog } from "@/lib/storefront-data";
 
 export async function generateMetadata({
   params
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const product = findProduct((await params).slug);
-  if (!product) return {};
+  const detail = await getPublicProduct((await params).slug);
+  if (!detail) return {};
   return {
-    title: product.name,
-    description: product.description,
-    alternates: { canonical: `/produto/${product.slug}` }
+    title: detail.product.name,
+    description: detail.product.description,
+    alternates: { canonical: `/produto/${detail.product.slug}` },
+    openGraph: {
+      type: "website",
+      images: [{ url: detail.product.image, alt: detail.product.name }]
+    }
   };
 }
 
 export function generateStaticParams() {
-  return demoProducts.map((product) => ({ slug: product.slug }));
+  return process.env.DEMO_MODE === "true"
+    ? demoProducts.map((product) => ({ slug: product.slug }))
+    : [];
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const product = findProduct((await params).slug);
-  if (!product) notFound();
+  const detail = await getPublicProduct((await params).slug);
+  if (!detail) notFound();
+  const { product } = detail;
+  const relatedResult = await queryPublicCatalog({
+    category: product.category,
+    sort: "best_sellers",
+    pageSize: 5
+  });
+  const related = (relatedResult?.products ?? [])
+    .filter((item) => item.id !== product.id)
+    .slice(0, 4);
 
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
     description: product.description,
-    image: product.image,
+    image: detail.gallery.map((image) => image.src),
     brand: { "@type": "Brand", name: "Curtiz" },
     offers: {
       "@type": "Offer",
       priceCurrency: "BRL",
       price: (product.priceInCents / 100).toFixed(2),
-      availability: "https://schema.org/InStock"
+      availability:
+        product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock"
     },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: product.rating,
-      reviewCount: product.reviews
-    }
+    ...(product.reviews > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: product.rating,
+            reviewCount: product.reviews
+          }
+        }
+      : {})
   };
 
   return (
     <div className="container page-shell">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c")
+        }}
       />
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
         <Link href="/">Início</Link> / <Link href="/produtos">Produtos</Link> /{" "}
         <span>{product.name}</span>
       </nav>
-      <section className="product-detail">
-        <div className="product-gallery">
-          {product.compareAtPriceInCents && <span className="gallery-offer">Oferta</span>}
-          <Image
-            src={product.image}
-            alt={product.name}
-            width={720}
-            height={560}
-            sizes="(max-width: 900px) 100vw, 56vw"
-            priority
-          />
-        </div>
-        <div className="product-summary">
-          <p className="eyebrow">{product.category}</p>
-          <h1>{product.name}</h1>
-          <div className="rating">
-            <Star fill="currentColor" />
-            <strong>{product.rating}</strong>
-            <span>({product.reviews.toLocaleString("pt-BR")} avaliações)</span>
-          </div>
-          <p className="product-description">{product.description}</p>
-          <p className="product-price">
-            <strong>{formatBRL(product.priceInCents)}</strong>
-            {product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
-          </p>
-          <span className="installments">ou 6x sem juros · 5% de desconto no Pix</span>
-          <AddToCart product={product} />
-        </div>
-      </section>
+
+      <ProductPurchase detail={detail} />
 
       <section className="product-information">
         <div>
           <p className="eyebrow">Detalhes do produto</p>
-          <h2>Conforto pensado para a rotina</h2>
+          <h2>Informações para escolher com segurança</h2>
           <p>{product.description}</p>
         </div>
-        <dl>
-          <div><dt>Material</dt><dd>Composição demonstrativa</dd></div>
-          <div><dt>Cuidados</dt><dd>Limpeza manual e secagem à sombra</dd></div>
-          <div><dt>Origem</dt><dd>Conteúdo de demonstração</dd></div>
-        </dl>
+        {detail.specifications.length > 0 && (
+          <dl>
+            {detail.specifications.map((specification) => (
+              <div key={specification.label}>
+                <dt>{specification.label}</dt>
+                <dd>{specification.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </section>
 
-      <section className="section">
-        <div className="section-heading">
-          <h2>Você também pode gostar</h2>
-        </div>
-        <div className="product-grid">
-          {demoProducts
-            .filter((item) => item.id !== product.id)
-            .slice(0, 4)
-            .map((item) => (
+      {detail.reviews.length > 0 && (
+        <section className="section product-reviews" aria-labelledby="product-reviews-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Experiências publicadas</p>
+              <h2 id="product-reviews-title">Avaliações deste produto</h2>
+            </div>
+          </div>
+          <div className="product-review-grid">
+            {detail.reviews.map((review) => (
+              <article key={review.id}>
+                <div className="rating" aria-label={`${review.rating} de 5 estrelas`}>
+                  <Star fill="currentColor" />
+                  <strong>{review.rating}</strong>
+                  {review.verified && <span>Compra verificada</span>}
+                </div>
+                {review.title && <h3>{review.title}</h3>}
+                <p>{review.content}</p>
+                <small>
+                  {new Intl.DateTimeFormat("pt-BR", {
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric",
+                    timeZone: "America/Sao_Paulo"
+                  }).format(new Date(review.createdAt))}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {related.length > 0 && (
+        <section className="section">
+          <div className="section-heading">
+            <h2>Você também pode gostar</h2>
+          </div>
+          <div className="product-grid">
+            {related.map((item) => (
               <ProductCard product={item} key={item.id} />
             ))}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

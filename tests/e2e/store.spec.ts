@@ -3,8 +3,9 @@ import { expect, test } from "@playwright/test";
 test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Conforto que combina/i })).toBeVisible();
+  await expect(page.locator(".homepage-hero")).toBeVisible();
   await page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first().click();
+  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible();
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
   await page.getByRole("link", { name: /Carrinho com 1 itens/i }).click();
@@ -25,7 +26,9 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
-  await page.getByLabel("Mensagem inicial").fill("Preciso confirmar o prazo atualizado da minha entrega.");
+  await page
+    .getByLabel("Mensagem inicial")
+    .fill("Preciso confirmar o prazo atualizado da minha entrega.");
   await page.getByRole("button", { name: /Enviar para a equipe/i }).click();
   await expect(page.getByText(/pode levar de 1 a 3 horas/i)).toBeVisible();
 });
@@ -35,7 +38,7 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
   await expect(
-    page.getByText(/Clientes? (ou|e) equipe Curtiz/i).filter({ visible: true })
+    page.getByRole("main").getByText("Use seu e-mail e senha cadastrados para continuar.").first()
   ).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Cadastre-se" })).toHaveAttribute(
@@ -46,8 +49,10 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
 
 test("autentica conta operacional no modo demo local sem Supabase", async ({ page }) => {
   await page.goto("/login");
-  await page.getByLabel("E-mail de acesso").fill("operacional.demo@curtiz.local");
-  await page.locator('input[name="password"]').fill("1234567890");
+  const email = page.locator('input[name="email"]:visible');
+  await email.fill("operacional.demo@curtiz.local");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
+  await expect(email).toHaveValue("operacional.demo@curtiz.local");
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
 
   await expect(page).toHaveURL("http://localhost:3001/operacional", {
@@ -68,6 +73,18 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/minha-conta/favoritos");
 
   await expect(page.getByRole("heading", { name: "Seus favoritos" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first()
+  ).toBeVisible();
+});
+
+test("permite consultar favoritos antes do login", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Favoritar Curtiz Flip-Flop Wave Preto" }).click();
+  await page.goto("/favoritos");
+
+  await expect(page).toHaveURL(/\/favoritos$/);
+  await expect(page.getByRole("heading", { name: "Favoritos" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first()
   ).toBeVisible();

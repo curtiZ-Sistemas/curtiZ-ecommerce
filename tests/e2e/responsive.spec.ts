@@ -13,7 +13,16 @@ const viewports = [
   { width: 1440, height: 900 }
 ] as const;
 
-const routes = ["/", "/produtos", "/carrinho", "/checkout", "/login", "/ajuda"] as const;
+const routes = [
+  "/",
+  "/produtos",
+  "/produto/flip-flop-wave-preto",
+  "/favoritos",
+  "/carrinho",
+  "/checkout",
+  "/login",
+  "/ajuda"
+] as const;
 
 test("não cria rolagem horizontal nas telas principais", async ({ page }) => {
   test.setTimeout(240_000);
@@ -48,23 +57,24 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
   }
 });
 
-test("carrossel de estilos usa scroll nativo e mantém os vizinhos visíveis", async ({ page }) => {
+test("categorias usam rolagem interna sem criar overflow na página", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto("/");
-  const carousel = page.getByRole("list", { name: /Arraste horizontalmente/i });
-  await expect(carousel).toBeVisible();
-  await expect(carousel.getByRole("listitem")).toHaveCount(4);
-  const behavior = await carousel.evaluate((element) => {
+  const categories = page.getByRole("list", { name: "Categorias de produtos" });
+  await expect(categories).toBeVisible();
+  expect(await categories.getByRole("listitem").count()).toBeGreaterThanOrEqual(4);
+  const behavior = await categories.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
       scrollable: element.scrollWidth > element.clientWidth,
-      snap: style.scrollSnapType,
-      overflow: style.overflowX
+      overflow: style.overflowX,
+      viewport: document.documentElement.clientWidth,
+      pageWidth: document.documentElement.scrollWidth
     };
   });
   expect(behavior.scrollable).toBe(true);
-  expect(behavior.snap).toMatch(/(x|inline)/);
   expect(["auto", "scroll"]).toContain(behavior.overflow);
+  expect(behavior.pageWidth).toBeLessThanOrEqual(behavior.viewport);
 });
 
 test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page }) => {
@@ -72,11 +82,11 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/");
   await page.getByRole("button", { name: "Abrir busca" }).click();
-  await page.getByRole("searchbox", { name: "Buscar produtos" }).fill("wave");
+  await page.locator('input[role="combobox"]:visible').fill("wave");
 
-  await expect(page.getByText("Produtos encontrados")).toBeVisible();
+  await expect(page.getByText("Sugestões")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Curtiz Flip-Flop Wave Preto Masculino/i })
+    page.getByRole("option", { name: /Curtiz Flip-Flop Wave Preto Masculino/i })
   ).toBeVisible();
   const widths = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

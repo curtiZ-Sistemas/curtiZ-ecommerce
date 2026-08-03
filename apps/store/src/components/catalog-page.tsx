@@ -1,23 +1,9 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronDown,
-  RotateCcw,
-  SlidersHorizontal,
-  X
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  type ChangeEvent,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   parseCatalogFilters,
   type CatalogFacets,
@@ -170,7 +156,10 @@ export function CatalogPage({
   const toggleList = (name: "cores" | "tamanhos", value: string) =>
     updateUrl((params) => {
       const current = new Set(
-        (params.get(name) ?? "").split(",").map((item) => item.trim()).filter(Boolean)
+        (params.get(name) ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
       );
       if (current.has(value)) current.delete(value);
       else current.add(value);
@@ -269,7 +258,8 @@ export function CatalogPage({
                   }}
                   aria-hidden="true"
                 />
-                <span>{option.label}</span><small>{option.count}</small>
+                <span>{option.label}</span>
+                <small>{option.count}</small>
               </label>
             ))}
           </div>
@@ -288,7 +278,8 @@ export function CatalogPage({
                   checked={filters.sizes.includes(option.value)}
                   onChange={() => toggleList("tamanhos", option.value)}
                 />
-                <span>{option.label}</span><small>{option.count}</small>
+                <span>{option.label}</span>
+                <small>{option.count}</small>
               </label>
             ))}
           </div>
@@ -299,30 +290,40 @@ export function CatalogPage({
           <div className="price-filter-fields">
             <label>
               <span>Mínimo</span>
-              <div><i>R$</i><input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="decimal"
-                value={priceMinDraft}
-                onChange={(event) => setPriceMinDraft(event.target.value)}
-                placeholder={String(Math.floor(facets.price.min / 100))}
-              /></div>
+              <div>
+                <i>R$</i>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="decimal"
+                  value={priceMinDraft}
+                  onChange={(event) => setPriceMinDraft(event.target.value)}
+                  placeholder={String(Math.floor(facets.price.min / 100))}
+                />
+              </div>
             </label>
             <label>
               <span>Máximo</span>
-              <div><i>R$</i><input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="decimal"
-                value={priceMaxDraft}
-                onChange={(event) => setPriceMaxDraft(event.target.value)}
-                placeholder={String(Math.ceil(facets.price.max / 100))}
-              /></div>
+              <div>
+                <i>R$</i>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="decimal"
+                  value={priceMaxDraft}
+                  onChange={(event) => setPriceMaxDraft(event.target.value)}
+                  placeholder={String(Math.ceil(facets.price.max / 100))}
+                />
+              </div>
             </label>
           </div>
-          <button className="secondary-button compact-button price-apply" type="button" onClick={applyPrice}>
+          <button
+            className="secondary-button compact-button price-apply"
+            type="button"
+            onClick={applyPrice}
+          >
             Aplicar preço
           </button>
         </FilterSection>
@@ -424,13 +425,23 @@ export function CatalogPage({
                 <p className="eyebrow">Refine sua busca</p>
                 <h2 id="mobile-filter-title">Filtros</h2>
               </div>
-              <button ref={closeRef} type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar">
+              <button
+                ref={closeRef}
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Fechar"
+              >
                 <X />
               </button>
             </header>
             <div className="filter-drawer-scroll">{filterContent(true)}</div>
             <footer>
-              <button className="secondary-button" type="button" onClick={reset} disabled={!activeFilters}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={reset}
+                disabled={!activeFilters}
+              >
                 Limpar
               </button>
               <button className="primary-button" type="button" onClick={() => setMobileOpen(false)}>
@@ -444,8 +455,15 @@ export function CatalogPage({
       <div className="catalog-layout">
         <aside className="filter-panel" aria-label="Filtros do catálogo">
           <div className="filter-panel-heading">
-            <div><h2>Filtros</h2><span>{result?.total ?? 0} produtos</span></div>
-            {activeFilters > 0 && <button type="button" onClick={reset}><RotateCcw /> Limpar</button>}
+            <div>
+              <h2>Filtros</h2>
+              <span>{result?.total ?? 0} produtos</span>
+            </div>
+            {activeFilters > 0 && (
+              <button type="button" onClick={reset}>
+                <RotateCcw /> Limpar
+              </button>
+            )}
           </div>
           {filterContent()}
         </aside>
@@ -475,21 +493,42 @@ export function CatalogPage({
                 <FilterChip key={color} label={color} onRemove={() => toggleList("cores", color)} />
               ))}
               {filters.sizes.map((size) => (
-                <FilterChip key={size} label={`Tamanho ${size}`} onRemove={() => toggleList("tamanhos", size)} />
+                <FilterChip
+                  key={size}
+                  label={`Tamanho ${size}`}
+                  onRemove={() => toggleList("tamanhos", size)}
+                />
               ))}
               {filters.priceMin !== undefined && (
-                <FilterChip label={`A partir de ${formatBRL(filters.priceMin)}`} onRemove={() => setSingle("preco_min", "")} />
+                <FilterChip
+                  label={`A partir de ${formatBRL(filters.priceMin)}`}
+                  onRemove={() => setSingle("preco_min", "")}
+                />
               )}
               {filters.priceMax !== undefined && (
-                <FilterChip label={`Até ${formatBRL(filters.priceMax)}`} onRemove={() => setSingle("preco_max", "")} />
+                <FilterChip
+                  label={`Até ${formatBRL(filters.priceMax)}`}
+                  onRemove={() => setSingle("preco_max", "")}
+                />
               )}
-              {filters.promotion && <FilterChip label="Em promoção" onRemove={() => setFlag("promocao", false)} />}
-              {filters.inStock && <FilterChip label="Em estoque" onRemove={() => setFlag("estoque", false)} />}
-              {filters.newest && <FilterChip label="Lançamentos" onRemove={() => setFlag("novidades", false)} />}
+              {filters.promotion && (
+                <FilterChip label="Em promoção" onRemove={() => setFlag("promocao", false)} />
+              )}
+              {filters.inStock && (
+                <FilterChip label="Em estoque" onRemove={() => setFlag("estoque", false)} />
+              )}
+              {filters.newest && (
+                <FilterChip label="Lançamentos" onRemove={() => setFlag("novidades", false)} />
+              )}
               {filters.minRating !== undefined && (
-                <FilterChip label={`${filters.minRating}+ estrelas`} onRemove={() => setSingle("avaliacao", "")} />
+                <FilterChip
+                  label={`${filters.minRating}+ estrelas`}
+                  onRemove={() => setSingle("avaliacao", "")}
+                />
               )}
-              <button className="clear-active-filters" type="button" onClick={reset}>Limpar todos</button>
+              <button className="clear-active-filters" type="button" onClick={reset}>
+                Limpar todos
+              </button>
             </div>
           )}
 
@@ -507,22 +546,30 @@ export function CatalogPage({
           ) : products.length ? (
             <>
               <div className="product-grid">
-                {products.map((product) => <ProductCard product={product} key={product.id} />)}
+                {products.map((product, index) => (
+                  <ProductCard product={product} priority={index < 2} key={product.id} />
+                ))}
               </div>
               {totalPages > 1 && (
                 <nav className="catalog-pagination" aria-label="Paginação do catálogo">
                   <button
                     type="button"
                     disabled={filters.page <= 1}
-                    onClick={() => updateUrl((params) => params.set("pagina", String(filters.page - 1)), true)}
+                    onClick={() =>
+                      updateUrl((params) => params.set("pagina", String(filters.page - 1)), true)
+                    }
                   >
                     <ArrowLeft /> Anterior
                   </button>
-                  <span>Página {filters.page} de {totalPages}</span>
+                  <span>
+                    Página {filters.page} de {totalPages}
+                  </span>
                   <button
                     type="button"
                     disabled={filters.page >= totalPages}
-                    onClick={() => updateUrl((params) => params.set("pagina", String(filters.page + 1)), true)}
+                    onClick={() =>
+                      updateUrl((params) => params.set("pagina", String(filters.page + 1)), true)
+                    }
                   >
                     Próxima <ArrowRight />
                   </button>
@@ -535,8 +582,12 @@ export function CatalogPage({
               <h2>Nenhum produto encontrado com esses filtros.</h2>
               <p>Remova um filtro ou limpe a seleção para visualizar outras opções.</p>
               <div className="empty-state-actions">
-                <button className="primary-button" type="button" onClick={reset}>Limpar filtros</button>
-                <button className="secondary-button" type="button" onClick={() => router.back()}>Voltar</button>
+                <button className="primary-button" type="button" onClick={reset}>
+                  Limpar filtros
+                </button>
+                <button className="secondary-button" type="button" onClick={() => router.back()}>
+                  Voltar
+                </button>
               </div>
             </div>
           )}
@@ -557,7 +608,10 @@ function FilterSection({
 }) {
   return (
     <details className="filter-section" open={initiallyOpen}>
-      <summary>{title}<ChevronDown aria-hidden="true" /></summary>
+      <summary>
+        {title}
+        <ChevronDown aria-hidden="true" />
+      </summary>
       <div>{children}</div>
     </details>
   );
@@ -576,8 +630,13 @@ function FilterCheckbox({
 }) {
   return (
     <label>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span>{label}</span><small>{count}</small>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>{label}</span>
+      <small>{count}</small>
     </label>
   );
 }
@@ -607,7 +666,8 @@ function RadioOptions({
             checked={value === option.value || value === option.label}
             onChange={() => onChange(option.value)}
           />
-          <span>{option.label}</span><small>{option.count}</small>
+          <span>{option.label}</span>
+          <small>{option.count}</small>
         </label>
       ))}
     </div>
@@ -615,7 +675,12 @@ function RadioOptions({
 }
 
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return <button type="button" onClick={onRemove}>{label}<X aria-hidden="true" /></button>;
+  return (
+    <button type="button" onClick={onRemove}>
+      {label}
+      <X aria-hidden="true" />
+    </button>
+  );
 }
 
 function SortSelect({
@@ -639,7 +704,11 @@ function SortSelect({
       >
         {sortOptions
           .filter(([option]) => option !== "discount" || promotionAvailable)
-          .map(([option, label]) => <option value={option} key={option}>{label}</option>)}
+          .map(([option, label]) => (
+            <option value={option} key={option}>
+              {label}
+            </option>
+          ))}
       </select>
     </label>
   );

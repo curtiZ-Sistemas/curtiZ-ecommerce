@@ -6,7 +6,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { useFavorites } from "./favorites-provider";
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({
+  product,
+  priority = false
+}: {
+  product: Product;
+  priority?: boolean;
+}) {
   const { hydrated, has, toggle } = useFavorites();
   const favorite = hydrated && has(product.id);
   const discount = product.compareAtPriceInCents
@@ -23,12 +29,13 @@ export function ProductCard({ product }: { product: Product }) {
           width={360}
           height={280}
           sizes="(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"
+          priority={priority}
         />
       </Link>
       <button
         className={favorite ? "favorite-button active" : "favorite-button"}
         type="button"
-        onClick={() => toggle(product.id)}
+        onClick={() => toggle(product)}
         aria-label={
           favorite ? `Remover ${product.name} dos favoritos` : `Favoritar ${product.name}`
         }

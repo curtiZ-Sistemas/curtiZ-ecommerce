@@ -1,87 +1,101 @@
-import { ArrowRight } from "lucide-react";
+import type { HomepageSection } from "@curtiz/domain";
+import { ArrowRight, Headphones, PackageCheck, ShieldCheck, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-
+import { HomepageHero } from "@/components/homepage-hero";
 import { ProductCard } from "@/components/product-card";
-import { demoProducts } from "@/lib/catalog";
+import { getHomepageData, type HomepageData, type PublicBanner } from "@/lib/storefront-data";
 
-const categories = [
-  ["Masculino", "/masculino", demoProducts[0]],
-  ["Feminino", "/feminino", demoProducts[1]],
-  ["Infantil", "/infantil", demoProducts[4]],
-  ["Slides", "/slides", demoProducts[2]]
-] as const;
+const categoryRoutes = new Map([
+  ["Masculino", "/masculino"],
+  ["Feminino", "/feminino"],
+  ["Infantil", "/infantil"],
+  ["Slides", "/slides"],
+  ["Sandálias", "/sandalias"]
+]);
 
-export default function HomePage() {
+const settingString = (section: HomepageSection, key: string, fallback = "") => {
+  const value = section.settings[key];
+  return typeof value === "string" ? value : fallback;
+};
+
+const settingNumber = (section: HomepageSection, key: string, fallback: number) => {
+  const value = section.settings[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+};
+
+const bannersFor = (data: HomepageData, section: HomepageSection): PublicBanner[] => {
+  const position = settingString(
+    section,
+    "position",
+    section.sectionType === "banner_hero" ? "hero" : section.sectionType
+  );
+  const matches = data.banners.filter((banner) => banner.position === position);
+  return (
+    matches.length ? matches : section.sectionType === "banner_hero" ? data.banners : []
+  ).slice(0, 4);
+};
+
+export default async function HomePage() {
+  const data = await getHomepageData();
+  const unavailable = data.banners.length === 0 && data.products.length === 0;
   return (
     <>
-      <section
-        className="hero container"
-        aria-label="Destaques da coleção Curtiz"
-      >
-        <Link
-          className="hero-link"
-          href="/lancamentos"
-          aria-label="Conheça os lançamentos da Curtiz"
-        >
-          <div className="hero-media hero-media-desktop">
-            <Image
-              src="/images/hero-curtiz-desktop.png"
-              alt="Conheça os lançamentos da coleção Curtiz"
-              width={1600}
-              height={560}
-              sizes="(min-width: 701px) calc(100vw - 48px), 0px"
-              priority
-            />
+      {unavailable && (
+        <section className="section container">
+          <div className="empty-state" role="status">
+            <ShoppingBag aria-hidden="true" />
+            <h1>Catálogo temporariamente indisponível</h1>
+            <p>Não foi possível carregar os produtos agora. Tente novamente em alguns instantes.</p>
+            <Link className="secondary-button" href="/produtos">
+              Tentar novamente
+            </Link>
           </div>
+        </section>
+      )}
+      {data.sections.map((section) => (
+        <HomepageSectionRenderer data={data} section={section} key={section.id} />
+      ))}
+    </>
+  );
+}
 
-          <div className="hero-media hero-media-mobile">
-            <Image
-              src="/images/hero-curtiz-mobile.png"
-              alt="Conheça os lançamentos da coleção Curtiz"
-              width={800}
-              height={1170}
-              sizes="(max-width: 700px) calc(100vw - 24px), 0px"
-              priority
-            />
-          </div>
-        </Link>
-      </section>
+function HomepageSectionRenderer({
+  data,
+  section
+}: {
+  data: HomepageData;
+  section: HomepageSection;
+}) {
+  if (section.sectionType === "banner_hero") {
+    return <HomepageHero banners={bannersFor(data, section)} />;
+  }
 
-      <section
-        className="section container reveal-section"
-        aria-labelledby="categorias-title"
-      >
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Encontre seu estilo</p>
-            <h2 id="categorias-title">Para todos os momentos</h2>
-          </div>
-        </div>
-
-        <div
-          className="category-grid"
-          role="list"
-          aria-label="Categorias de produtos. Arraste horizontalmente no celular."
-        >
-          {categories.map(([name, href, product], index) => (
-            <Link
-              className="category-card"
-              href={href}
-              key={href}
-              role="listitem"
-              aria-posinset={index + 1}
-              aria-setsize={categories.length}
-            >
+  if (section.sectionType === "categories_grid") {
+    const categories = [...categoryRoutes.entries()]
+      .map(([name, href]) => ({
+        name,
+        href,
+        product: data.products.find((product) => product.category === name)
+      }))
+      .filter((category) => category.product);
+    if (!categories.length) return null;
+    return (
+      <section className="section container reveal-section" aria-labelledby={`${section.id}-title`}>
+        <SectionHeading
+          id={`${section.id}-title`}
+          eyebrow={section.subtitle ?? "Encontre seu estilo"}
+          title={section.title ?? "Para todos os momentos"}
+        />
+        <div className="category-grid" role="list" aria-label="Categorias de produtos">
+          {categories.map(({ name, href, product }, index) => (
+            <Link className="category-card" href={href} key={href} role="listitem">
               <div>
                 <h3>{name}</h3>
-
                 <span>
-                  Ver produtos
-                  <ArrowRight aria-hidden="true" />
+                  Ver produtos <ArrowRight aria-hidden="true" />
                 </span>
               </div>
-
               {product && (
                 <Image
                   src={product.image}
@@ -89,35 +103,160 @@ export default function HomePage() {
                   width={250}
                   height={140}
                   aria-hidden="true"
+                  priority={index < 2}
                 />
               )}
             </Link>
           ))}
         </div>
       </section>
+    );
+  }
 
-      <section
-        className="section container reveal-section"
-        aria-labelledby="ofertas-title"
-      >
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Seleção especial</p>
-            <h2 id="ofertas-title">Ofertas em destaque</h2>
-          </div>
-
-          <Link className="text-link section-link" href="/ofertas">
-            Ver todas
-            <ArrowRight aria-hidden="true" />
-          </Link>
-        </div>
-
+  if (section.sectionType === "featured_products") {
+    const limit = Math.min(12, Math.max(1, settingNumber(section, "limit", 8)));
+    const products = data.products.slice(0, limit);
+    if (!products.length) return null;
+    const href = settingString(section, "href", "/produtos");
+    return (
+      <section className="section container reveal-section" aria-labelledby={`${section.id}-title`}>
+        <SectionHeading
+          id={`${section.id}-title`}
+          eyebrow={section.subtitle ?? "Seleção Curtiz"}
+          title={section.title ?? "Produtos em destaque"}
+          href={href}
+        />
         <div className="product-grid">
-          {demoProducts.slice(0, 8).map((product) => (
-            <ProductCard product={product} key={product.id} />
+          {products.map((product, index) => (
+            <ProductCard product={product} priority={index < 2} key={product.id} />
           ))}
         </div>
       </section>
-    </>
+    );
+  }
+
+  if (section.sectionType === "banner_promo" || section.sectionType === "custom_banner") {
+    const banners = bannersFor(data, section);
+    if (!banners.length) return null;
+    return (
+      <section
+        className="section container home-campaigns"
+        aria-label={section.title ?? "Campanha"}
+      >
+        {banners.map((banner) => (
+          <Link href={banner.href} className="home-campaign-banner" key={banner.id}>
+            <Image
+              className="home-campaign-desktop"
+              src={banner.desktopImage}
+              alt={banner.title}
+              width={1440}
+              height={420}
+              sizes="(min-width: 701px) calc(100vw - 48px), 0px"
+            />
+            <Image
+              className="home-campaign-mobile"
+              src={banner.mobileImage}
+              alt={banner.title}
+              width={720}
+              height={840}
+              sizes="(max-width: 700px) calc(100vw - 24px), 0px"
+            />
+          </Link>
+        ))}
+      </section>
+    );
+  }
+
+  if (section.sectionType === "reviews_carousel") {
+    const reviewed = data.products.filter((product) => product.reviews > 0).slice(0, 4);
+    if (!reviewed.length) return null;
+    return (
+      <section className="section container" aria-labelledby={`${section.id}-title`}>
+        <SectionHeading
+          id={`${section.id}-title`}
+          eyebrow={section.subtitle ?? "Avaliações verificadas"}
+          title={section.title ?? "Modelos bem avaliados"}
+        />
+        <div className="home-review-grid">
+          {reviewed.map((product) => (
+            <Link href={`/produto/${product.slug}`} key={product.id}>
+              <strong>{product.rating.toLocaleString("pt-BR")} de 5</strong>
+              <span>{product.name}</span>
+              <small>{product.reviews.toLocaleString("pt-BR")} avaliações publicadas</small>
+            </Link>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (section.sectionType === "brands_strip") {
+    return (
+      <section className="section container home-benefits" aria-labelledby={`${section.id}-title`}>
+        <SectionHeading
+          id={`${section.id}-title`}
+          eyebrow="Experiência de compra"
+          title={section.title ?? "Comprar na Curtiz é simples"}
+        />
+        <div className="benefits-grid">
+          <div className="benefit">
+            <ShoppingBag />
+            <div>
+              <strong>Carrinho preservado</strong>
+              <span>Monte sua seleção antes de entrar.</span>
+            </div>
+          </div>
+          <div className="benefit">
+            <ShieldCheck />
+            <div>
+              <strong>Compra protegida</strong>
+              <span>Preço e estoque são validados no servidor.</span>
+            </div>
+          </div>
+          <div className="benefit">
+            <PackageCheck />
+            <div>
+              <strong>Acompanhamento</strong>
+              <span>Pedidos ficam organizados na sua conta.</span>
+            </div>
+          </div>
+          <div className="benefit">
+            <Headphones />
+            <div>
+              <strong>Atendimento</strong>
+              <span>Central de ajuda acessível em toda a loja.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return null;
+}
+
+function SectionHeading({
+  id,
+  eyebrow,
+  title,
+  href
+}: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  href?: string;
+}) {
+  return (
+    <div className="section-heading">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h2 id={id}>{title}</h2>
+      </div>
+      {href && (
+        <Link className="text-link section-link" href={href}>
+          Ver todos <ArrowRight aria-hidden="true" />
+        </Link>
+      )}
+    </div>
   );
 }

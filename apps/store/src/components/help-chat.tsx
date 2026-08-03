@@ -92,7 +92,9 @@ export function HelpChat() {
             </div>
             <div>
               <strong id="help-chat-title">Ajuda Curtiz</strong>
-              <span><i /> Assistente de demonstração</span>
+              <span>
+                <i /> Assistente de demonstração
+              </span>
             </div>
             <button
               type="button"
@@ -121,16 +123,16 @@ export function HelpChat() {
                 {typing && (
                   <div className="chat-message assistant typing-indicator" aria-label="Digitando">
                     <Bot aria-hidden="true" />
-                    <p><span /><span /><span /></p>
+                    <p>
+                      <span />
+                      <span />
+                      <span />
+                    </p>
                   </div>
                 )}
               </div>
-              <Link
-                className="help-human-link"
-                href="/minha-conta/atendimento?new=1"
-                onClick={close}
-              >
-                Precisa de uma pessoa? Abrir atendimento humano
+              <Link className="help-human-link" href="/ajuda" onClick={close}>
+                Precisa de uma pessoa? Abrir Central de ajuda
               </Link>
               <form className="help-chat-form" onSubmit={submit}>
                 <label className="sr-only" htmlFor="help-chat-message">

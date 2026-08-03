@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getPublicCmsPage } from "@/lib/storefront-data";
 
 const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   sobre: {
@@ -6,7 +7,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
     lead: "Conforto, estilo e escolhas feitas para a vida real.",
     body: [
       "A Curtiz é uma marca exclusivamente online de chinelos, slides e sandálias.",
-      "Esta página usa conteúdo demonstrativo e poderá ser administrada pelo CMS interno."
+      "Nossa experiência digital prioriza clareza, segurança e atendimento em todas as etapas."
     ]
   },
   contato: {
@@ -25,12 +26,16 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   "formas-de-envio": {
     title: "Formas de envio",
     lead: "O frete é calculado conforme CEP, dimensões e disponibilidade do provedor.",
-    body: ["Não oferecemos retirada em loja. Provedores não configurados nunca aparecem como online."]
+    body: [
+      "Não oferecemos retirada em loja. Provedores não configurados nunca aparecem como online."
+    ]
   },
   "formas-de-pagamento": {
     title: "Formas de pagamento",
     lead: "Pagamento seguro com valores recalculados no servidor.",
-    body: ["A integração prevista é o Checkout Pro do Mercado Pago. A Curtiz não armazena CVV."]
+    body: [
+      "Quando habilitado, o pagamento é processado pelo provedor configurado. A Curtiz não armazena CVV."
+    ]
   },
   "politica-de-privacidade": {
     title: "Política de Privacidade",
@@ -62,7 +67,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   },
   "confirmar-email": {
     title: "Confirme seu e-mail",
-    lead: "Use o link enviado pelo Supabase Auth.",
+    lead: "Use o link enviado pelo serviço de autenticação.",
     body: ["Links possuem expiração e ações sensíveis exigem uma conta confirmada."]
   },
   "redefinir-senha": {
@@ -83,29 +88,49 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   indisponivel: {
     title: "Serviço temporariamente indisponível",
     lead: "Preservamos seu carrinho para você tentar novamente.",
-    body: ["Não inventamos cotações, pagamentos ou estados de integração."]
+    body: [
+      "Cotações, pagamentos e estados de integração são sempre apresentados com transparência."
+    ]
   }
 };
 
 export async function generateMetadata({ params }: { params: Promise<{ page: string }> }) {
-  const page = pages[(await params).page];
-  return page ? { title: page.title } : {};
+  const slug = (await params).page;
+  const cmsPage = await getPublicCmsPage(slug);
+  const fallback = pages[slug];
+
+  if (cmsPage) {
+    return {
+      title: cmsPage.seoTitle ?? cmsPage.title,
+      description: cmsPage.seoDescription ?? cmsPage.summary
+    };
+  }
+
+  return fallback ? { title: fallback.title, description: fallback.lead } : {};
 }
 
 export default async function ContentPage({ params }: { params: Promise<{ page: string }> }) {
-  const page = pages[(await params).page];
-  if (!page) notFound();
+  const slug = (await params).page;
+  const cmsPage = await getPublicCmsPage(slug);
+  const fallback = pages[slug];
+
+  if (!cmsPage && !fallback) notFound();
+
+  const title = cmsPage?.title ?? fallback!.title;
+  const lead = cmsPage?.summary ?? fallback!.lead;
+  const body = cmsPage?.paragraphs.length ? cmsPage.paragraphs : fallback!.body;
+
   return (
     <div className="container page-shell">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Curtiz</p>
-          <h1>{page.title}</h1>
-          <p>{page.lead}</p>
+          <h1>{title}</h1>
+          <p>{lead}</p>
         </div>
       </div>
       <section className="form-card">
-        {page.body.map((paragraph) => (
+        {body.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
       </section>

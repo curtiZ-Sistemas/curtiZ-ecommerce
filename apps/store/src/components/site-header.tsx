@@ -1,20 +1,12 @@
 "use client";
 
-import {
-  Heart,
-  Menu,
-  Search,
-  ShoppingBag,
-  UserRound,
-  X
-} from "lucide-react";
-import Image from "next/image";
+import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { BrandLogo } from "./brand-logo";
 import { useCart } from "./cart-provider";
-import { demoProducts } from "@/lib/catalog";
+import { SearchAutocomplete } from "./search-autocomplete";
 
 const navigation = [
   ["Masculino", "/masculino"],
@@ -30,7 +22,6 @@ const navigation = [
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [accountName, setAccountName] = useState<string>();
   const pathname = usePathname();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -38,18 +29,6 @@ export function SiteHeader() {
   const drawerRef = useRef<HTMLElement>(null);
   const { hydrated, lines } = useCart();
   const items = lines.reduce((total, line) => total + line.quantity, 0);
-  const suggestions = useMemo(() => {
-    const normalized = searchQuery.trim().toLocaleLowerCase("pt-BR");
-    if (normalized.length < 2) return [];
-    return demoProducts
-      .filter((product) =>
-        `${product.name} ${product.category} ${product.colors.join(" ")}`
-          .toLocaleLowerCase("pt-BR")
-          .includes(normalized)
-      )
-      .slice(0, 4);
-  }, [searchQuery]);
-
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/auth/session", {
@@ -116,7 +95,6 @@ export function SiteHeader() {
 
   return (
     <>
-
       <header className="site-header">
         <div className="header-main container">
           <button
@@ -132,20 +110,7 @@ export function SiteHeader() {
 
           <BrandLogo />
 
-          <form className="search-form desktop-search" action="/busca" role="search">
-            <Search aria-hidden="true" />
-            <label className="sr-only" htmlFor="site-search">
-              Buscar produtos
-            </label>
-            <input
-              id="site-search"
-              name="q"
-              type="search"
-              placeholder="Busque por produto, cor ou categoria"
-              autoComplete="off"
-            />
-            <button type="submit">Buscar</button>
-          </form>
+          <SearchAutocomplete idPrefix="desktop" className="desktop-search" />
 
           <nav className="header-actions" aria-label="Conta e compras">
             <button
@@ -169,7 +134,7 @@ export function SiteHeader() {
                 Minha conta
               </span>
             </Link>
-            <Link className="favorite-action" href="/minha-conta/favoritos" aria-label="Favoritos">
+            <Link className="favorite-action" href="/favoritos" aria-label="Favoritos">
               <Heart />
             </Link>
             <Link href="/carrinho" className="cart-link" aria-label={`Carrinho com ${items} itens`}>
@@ -187,52 +152,12 @@ export function SiteHeader() {
             aria-label="Busca de produtos"
           >
             <div className="container mobile-search-content">
-              <form className="search-form" action="/busca" role="search">
-                <Search aria-hidden="true" />
-                <label className="sr-only" htmlFor="mobile-site-search">
-                  Buscar produtos
-                </label>
-                <input
-                  id="mobile-site-search"
-                  name="q"
-                  type="search"
-                  placeholder="O que você procura?"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  autoComplete="off"
-                  autoFocus
-                />
-                <button type="submit">Buscar</button>
-              </form>
-              {searchQuery.trim().length >= 2 && (
-                <div className="search-suggestions" aria-live="polite">
-                  <div className="search-suggestions-heading">
-                    <strong>
-                      {suggestions.length ? "Produtos encontrados" : "Nenhum produto encontrado"}
-                    </strong>
-                    <span>{suggestions.length} resultados rápidos</span>
-                  </div>
-                  {suggestions.map((product) => (
-                    <Link
-                      className="search-suggestion"
-                      href={`/produto/${product.slug}`}
-                      key={product.id}
-                    >
-                      <Image src={product.image} alt="" width={56} height={44} />
-                      <span>
-                        <strong>{product.name}</strong>
-                        <small>{product.category}</small>
-                      </span>
-                    </Link>
-                  ))}
-                  <Link
-                    className="search-all-results"
-                    href={`/busca?q=${encodeURIComponent(searchQuery.trim())}`}
-                  >
-                    Ver resultados completos
-                  </Link>
-                </div>
-              )}
+              <SearchAutocomplete
+                idPrefix="mobile"
+                placeholder="O que você procura?"
+                autoFocus
+                onNavigate={() => setSearchOpen(false)}
+              />
             </div>
           </div>
         )}
@@ -290,6 +215,7 @@ export function SiteHeader() {
                   {label}
                 </Link>
               ))}
+              <Link href="/favoritos">Favoritos</Link>
               <Link href="/rastrear-pedido">Rastrear pedido</Link>
               <Link href="/ajuda">Central de ajuda</Link>
             </nav>

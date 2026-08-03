@@ -27,7 +27,12 @@ const loginSchema = z.object({
 });
 
 const resendSchema = z.object({
-  email: z.string().trim().email().max(254).transform((value) => value.toLocaleLowerCase("pt-BR")),
+  email: z
+    .string()
+    .trim()
+    .email()
+    .max(254)
+    .transform((value) => value.toLocaleLowerCase("pt-BR")),
   next: z.string().max(300).optional()
 });
 
@@ -276,7 +281,10 @@ export function OPTIONS(request: Request) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ mode: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ mode: string }> }
+) {
   if (!isAllowedRequest(request)) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
   }
@@ -287,8 +295,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   if (mode === "logout") {
-    const supabase =
-      process.env.DEMO_MODE === "true" ? null : await createServerSupabaseClient();
+    const supabase = process.env.DEMO_MODE === "true" ? null : await createServerSupabaseClient();
     if (supabase) {
       const { error } = await supabase.auth.signOut();
       if (error) {
@@ -317,7 +324,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return response;
   }
 
-  const payload: unknown = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json(
+      { message: "Dados de acesso inválidos." },
+      { status: 400, headers: corsHeaders(request) }
+    );
+  }
   const parsed =
     mode === "signup"
       ? parseSignupInput(payload)
@@ -338,8 +353,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const authInput = parsed.data as z.infer<typeof loginSchema>;
 
   // Desativado por padrão. Só ativa quando AUTH_RATE_LIMIT_ENABLED=true.
-  const authRateLimitEnabled =
-    process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
+  const authRateLimitEnabled = process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
 
   if (
     authRateLimitEnabled &&
@@ -352,8 +366,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   ) {
     return NextResponse.json(
       {
-        message:
-          "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
+        message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
       },
       {
         status: 429,
@@ -366,7 +379,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   if (
     mode !== "resend" &&
-    !(await verifyTurnstile(request, "turnstileToken" in authInput ? authInput.turnstileToken : undefined))
+    !(await verifyTurnstile(
+      request,
+      "turnstileToken" in authInput ? authInput.turnstileToken : undefined
+    ))
   ) {
     return NextResponse.json(
       { message: "Não foi possível confirmar a verificação de segurança." },
@@ -375,10 +391,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   if (!supabase) {
     if (mode === "login") {
-      const demoResponse = demoLoginResponse(
-        request,
-        parsed.data as z.infer<typeof loginSchema>
-      );
+      const demoResponse = demoLoginResponse(request, parsed.data as z.infer<typeof loginSchema>);
       if (demoResponse) return demoResponse;
     }
 

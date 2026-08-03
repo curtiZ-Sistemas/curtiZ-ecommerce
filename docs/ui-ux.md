@@ -30,6 +30,22 @@ rolagem própria, Escape, bloqueio do fundo, retorno do foco, safe area e açõe
 Filtros ativos aparecem como chips removíveis e os resultados possuem skeleton, erro, vazio,
 paginação e anúncio por leitor de tela.
 
+## Página inicial, busca e favoritos
+
+A página inicial lê seções publicadas, banners ativos e produtos do Supabase. Cada posição aceita
+no máximo quatro banners; o hero usa imagens distintas para desktop e celular e respeita redução
+de movimento. Quando `DEMO_MODE=true`, a mesma composição usa conteúdo identificado de
+demonstração.
+
+A busca do cabeçalho consulta `/api/catalog` com debounce, cancelamento de requisição anterior,
+teclado e histórico local curto. Sugestões de produtos e categorias vêm do catálogo público.
+Favoritos podem ser montados antes do login e ficam apenas no dispositivo até existir uma
+sincronização autenticada.
+
+O detalhe do produto é entregue pela RPC pública `get_catalog_product`, que retorna somente produto
+ativo, preço atual, estoque disponível, variantes ativas e avaliações aprovadas. O navegador nunca
+define preço ou disponibilidade.
+
 ## Feedback e carregamento
 
 - `RouteFeedback` apresenta uma barra imediata durante navegações internas.
@@ -41,8 +57,8 @@ paginação e anúncio por leitor de tela.
 
 ## Desempenho visual
 
-O hero usa `hero-curtiz.webp` (aproximadamente 83 KB) no lugar do PNG original de cerca de
-2 MB. As imagens de produto continuam em arquivos-fonte com transparência, mas são entregues pelo
+O hero possui arquivos WebP separados para desktop e celular (menos de 200 KB cada) no lugar dos
+PNGs originais de aproximadamente 2,5 MB. Imagens do CMS e dos produtos são entregues pelo
 `next/image` com `sizes` responsivos e negociação automática do formato adequado.
 
 ## Carrinho

@@ -17,6 +17,11 @@ estático para `security definer`, `search_path`, grants e limites de paginaçã
 carrinho e a revalidação do checkout possuem invariantes estáticas para autenticação, preço do
 banco, estoque disponível, grants restritos e `search_path` fixo.
 
+O storefront público possui testes de componente para as imagens responsivas do hero e a semântica
+do autocomplete. A migration de detalhe do produto possui teste estático para produto ativo,
+avaliações aprovadas, preço atual, estoque disponível, grants públicos limitados e `search_path`
+fixo.
+
 ## Supabase remoto de homologação
 
 Testes reais de migrations, RLS, concorrência, Auth, Storage, RPCs e Edge Functions só podem usar o

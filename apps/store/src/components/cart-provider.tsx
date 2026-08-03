@@ -7,7 +7,17 @@ type CartContextValue = {
   lines: CartLine[];
   hydrated: boolean;
   syncMessage: string;
-  add: (product: Product, color: string, size: string) => void;
+  add: (
+    product: Product,
+    color: string,
+    size: string,
+    options?: {
+      variantId?: string;
+      unitPriceInCents?: number;
+      stock?: number;
+      image?: string;
+    }
+  ) => void;
   remove: (variantId: string) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
   clear: () => void;
@@ -84,14 +94,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       lines,
       hydrated,
       syncMessage,
-      add(product, color, size) {
-        const variantId = `${product.id}:${color}:${size}`;
+      add(product, color, size, options) {
+        const variantId = options?.variantId ?? `${product.id}:${color}:${size}`;
+        const stock = Math.max(0, options?.stock ?? product.stock);
         setLines((current) => {
           const found = current.find((line) => line.variantId === variantId);
           if (found) {
             return current.map((line) =>
               line.variantId === variantId
-                ? { ...line, quantity: Math.min(line.quantity + 1, product.stock) }
+                ? { ...line, quantity: Math.min(line.quantity + 1, stock) }
                 : line
             );
           }
@@ -102,12 +113,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               slug: product.slug,
               variantId,
               name: product.name,
-              image: product.image,
+              image: options?.image ?? product.image,
               color,
               size,
               quantity: 1,
-              maxQuantity: Math.min(product.stock, 10),
-              unitPriceInCents: product.priceInCents
+              maxQuantity: Math.min(stock, 10),
+              unitPriceInCents: options?.unitPriceInCents ?? product.priceInCents
             }
           ];
         });

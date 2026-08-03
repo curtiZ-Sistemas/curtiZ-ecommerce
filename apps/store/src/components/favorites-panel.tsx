@@ -2,13 +2,11 @@
 
 import { Heart } from "lucide-react";
 import Link from "next/link";
-import { demoProducts } from "@/lib/catalog";
 import { ProductCard } from "./product-card";
 import { useFavorites } from "./favorites-provider";
 
 export function FavoritesPanel() {
-  const { hydrated, ids } = useFavorites();
-  const products = demoProducts.filter((product) => ids.includes(product.id));
+  const { hydrated, products } = useFavorites();
 
   if (!hydrated) {
     return (

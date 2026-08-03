@@ -13,7 +13,7 @@
     "lint": "eslint src",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:components": "vitest run src/components/representative-access-card.component.test.tsx"
+    "test:components": "vitest run src/components"
   },
   "dependencies": {
     "@curtiz/config": "workspace:*",
