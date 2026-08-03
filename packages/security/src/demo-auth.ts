@@ -95,13 +95,16 @@ export const isLocalDemoRequest = (request: Request): boolean => {
   const explicitDemo = process.env.DEMO_MODE === "true";
   const presentationAccess =
     process.env.CHECKOUT_ENABLED?.trim().toLowerCase() === "false";
-  if (!explicitDemo && !presentationAccess) return false;
+  const configuredDemoAccess =
+    Boolean(process.env.DEMO_USERS_PASSWORD?.trim()) &&
+    (process.env.DEMO_SESSION_SECRET?.trim().length ?? 0) >= 32;
+  if (!explicitDemo && !presentationAccess && !configuredDemoAccess) return false;
 
   try {
     const url = new URL(request.url);
     if (localHosts.has(url.hostname)) return true;
     return (
-      (process.env.APP_ENV === "staging" || presentationAccess) &&
+      (process.env.APP_ENV === "staging" || presentationAccess || configuredDemoAccess) &&
       url.protocol === "https:" &&
       configuredStagingHosts().has(url.hostname)
     );

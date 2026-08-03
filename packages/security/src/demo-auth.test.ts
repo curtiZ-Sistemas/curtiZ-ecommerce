@@ -48,9 +48,11 @@ describe("autenticação demo local", () => {
     expect(isLocalDemoRequest(new Request("https://loja.example/login"))).toBe(false);
   });
 
-  it("só habilita o fallback em loopback com DEMO_MODE explícito", () => {
+  it("habilita loopback somente com modo ou credenciais demo configuradas", () => {
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(true);
     process.env.DEMO_MODE = "false";
+    delete process.env.DEMO_USERS_PASSWORD;
+    delete process.env.DEMO_SESSION_SECRET;
     expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(false);
   });
 
@@ -73,6 +75,20 @@ describe("autenticação demo local", () => {
     ).toBe(true);
     expect(
       isLocalDemoRequest(new Request("https://outro.example.com/api/auth/login"))
+    ).toBe(false);
+  });
+
+  it("reconhece credenciais demo configuradas somente no host HTTPS permitido", () => {
+    process.env.DEMO_MODE = "false";
+    delete process.env.CHECKOUT_ENABLED;
+    process.env.APP_ENV = "production";
+    process.env.NEXT_PUBLIC_STORE_URL = "https://curtiz.example.com";
+
+    expect(
+      isLocalDemoRequest(new Request("https://curtiz.example.com/api/auth/login"))
+    ).toBe(true);
+    expect(
+      isLocalDemoRequest(new Request("http://curtiz.example.com/api/auth/login"))
     ).toBe(false);
   });
 });
