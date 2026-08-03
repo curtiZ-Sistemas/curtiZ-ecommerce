@@ -412,11 +412,11 @@ export async function middleware(
   let response = createNextResponse();
 
   const demoSession =
-    await hasValidDemoSession(
-      request.cookies.get(
-        DEMO_SESSION_COOKIE
-      )?.value
-    );
+    process.env.DEMO_MODE === "true"
+      ? await hasValidDemoSession(
+          request.cookies.get(DEMO_SESSION_COOKIE)?.value
+        )
+      : false;
 
   /*
    * Falha de configuração não deve liberar checkout
