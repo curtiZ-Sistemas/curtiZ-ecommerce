@@ -22,7 +22,7 @@ function isEnabled(value: string | undefined): boolean {
   );
 }
 
-function decodeBase64Url(value: string): Uint8Array {
+function decodeBase64Url(value: string): ArrayBuffer {
   if (
     !value ||
     value.length > 8_192 ||
@@ -40,10 +40,15 @@ function decodeBase64Url(value: string): Uint8Array {
     "="
   );
 
-  return Uint8Array.from(
-    atob(padded),
-    (character) => character.charCodeAt(0)
-  );
+  const decoded = atob(padded);
+  const buffer = new ArrayBuffer(decoded.length);
+  const bytes = new Uint8Array(buffer);
+
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+
+  return buffer;
 }
 
 async function hasValidDemoSession(
