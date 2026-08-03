@@ -11,7 +11,7 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useCallback, useState } from "react";
+import { type FormEvent, useCallback, useRef, useState } from "react";
 import { TurnstileField } from "./turnstile-field";
 
 type AuthResult = {
@@ -32,10 +32,14 @@ export function AuthForm({
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const isSubmittingRef = useRef(false);
   const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
     setLoading(true);
     setMessage("");
 
@@ -55,6 +59,7 @@ export function AuthForm({
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
     } finally {
+      isSubmittingRef.current = false;
       setLoading(false);
     }
   };
@@ -130,7 +135,7 @@ export function AuthForm({
             type={showPassword ? "text" : "password"}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             placeholder="Digite sua senha"
-            minLength={10}
+            minLength={6}
             required
           />
           <button
@@ -164,7 +169,7 @@ export function AuthForm({
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 placeholder="Repita a senha"
-                minLength={10}
+                minLength={6}
                 required
               />
             </div>
@@ -193,7 +198,9 @@ export function AuthForm({
 
       <button
         className="primary-button full-button auth-submit"
+        type="submit"
         disabled={loading || (turnstileEnabled && !turnstileToken)}
+        aria-busy={loading}
       >
         {loading ? (
           <>

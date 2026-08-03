@@ -16,28 +16,20 @@ import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
+import { parseSignupInput, type NormalizedSignupInput } from "@/lib/signup-validation";
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
-  password: z.string().min(10).max(256),
+  password: z.string().min(6).max(256),
   remember: z.string().optional(),
   next: z.string().max(300).optional(),
   turnstileToken: z.string().max(4_096).optional()
 });
 
-const signupSchema = loginSchema
-  .omit({ remember: true, next: true })
-  .extend({
-    name: z.string().trim().min(3).max(120),
-    confirmPassword: z.string(),
-    phone: z.string().trim().max(20).optional(),
-    terms: z.literal("on"),
-    marketing: z.string().optional()
-  })
-  .refine((value) => value.password === value.confirmPassword, {
-    message: "As senhas não coincidem.",
-    path: ["confirmPassword"]
-  });
+const resendSchema = z.object({
+  email: z.string().trim().email().max(254).transform((value) => value.toLocaleLowerCase("pt-BR")),
+  next: z.string().max(300).optional()
+});
 
 const roleDestinations: Record<string, string> = {
   customer: "/minha-conta",
@@ -51,6 +43,92 @@ const internalRolePriority = ["admin", "manager", "technical", "operational"] as
 
 const profileSchema = z.object({ status: z.string() }).nullable();
 const roleSchema = z.object({ role: z.string() }).nullable();
+
+type SupabaseAuthErrorDetails = {
+  code: string;
+  status: number;
+  message: string;
+};
+
+function readSupabaseAuthError(error: unknown): SupabaseAuthErrorDetails {
+  if (!error || typeof error !== "object") {
+    return {
+      code: "supabase_auth_unavailable",
+      status: 503,
+      message: "Supabase Auth não retornou um erro estruturado."
+    };
+  }
+
+  const candidate = error as { code?: unknown; status?: unknown; message?: unknown };
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : "supabase_auth_unavailable",
+    status: typeof candidate.status === "number" ? candidate.status : 503,
+    message:
+      typeof candidate.message === "string"
+        ? candidate.message
+        : "Supabase Auth não retornou uma mensagem de erro."
+  };
+}
+
+function logSupabaseAuthError(error: SupabaseAuthErrorDetails) {
+  console.error("Supabase Auth login error", {
+    code: error.code,
+    status: error.status,
+    message: error.message
+  });
+}
+
+function authErrorResponse(error: SupabaseAuthErrorDetails, request: Request) {
+  const normalizedMessage = error.message.toLowerCase();
+  const headers = corsHeaders(request);
+
+  if (error.code === "email_not_confirmed") {
+    return NextResponse.json(
+      {
+        code: error.code,
+        message: "Confirme seu e-mail antes de acessar a conta."
+      },
+      { status: 403, headers }
+    );
+  }
+
+  if (error.code === "over_request_rate_limit") {
+    return NextResponse.json(
+      {
+        code: error.code,
+        message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
+      },
+      { status: 429, headers: { ...headers, "retry-after": "900" } }
+    );
+  }
+
+  if (error.code === "invalid_credentials") {
+    return NextResponse.json(
+      {
+        code: error.code,
+        message: "E-mail ou senha inválidos."
+      },
+      { status: 401, headers }
+    );
+  }
+
+  const configurationError =
+    error.code === "supabase_auth_unavailable" ||
+    error.code === "unexpected_failure" ||
+    normalizedMessage.includes("invalid api key") ||
+    normalizedMessage.includes("api key") ||
+    error.status >= 500;
+
+  return NextResponse.json(
+    {
+      code: configurationError ? "supabase_configuration_error" : error.code,
+      message: configurationError
+        ? "O acesso está temporariamente indisponível por uma falha de configuração."
+        : "Não foi possível acessar sua conta agora. Tente novamente."
+    },
+    { status: configurationError ? 503 : Math.max(400, error.status), headers }
+  );
+}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ mode: string }> }) {
   if ((await params).mode !== "session") {
@@ -87,6 +165,24 @@ function panelBaseUrl(request: Request) {
     return `${requestUrl.protocol}//${requestUrl.hostname}:3001`;
   }
   return process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001";
+}
+
+function customerDestination(value: string | undefined) {
+  const destination = safeInternalPath(value, "/minha-conta?cadastro=sucesso");
+  if (
+    destination.startsWith("/login") ||
+    destination.startsWith("/cadastro") ||
+    destination.startsWith("/auth/")
+  ) {
+    return "/minha-conta?cadastro=sucesso";
+  }
+  return destination;
+}
+
+function confirmationRedirect(request: Request, next: string | undefined) {
+  const callback = new URL("/auth/callback", process.env.NEXT_PUBLIC_STORE_URL ?? request.url);
+  callback.searchParams.set("next", customerDestination(next));
+  return callback.toString();
 }
 
 function demoLoginResponse(
@@ -186,7 +282,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const mode = (await params).mode;
-  if (mode !== "login" && mode !== "signup" && mode !== "logout") {
+  if (mode !== "login" && mode !== "signup" && mode !== "resend" && mode !== "logout") {
     return NextResponse.json({ message: "Operação inválida." }, { status: 404 });
   }
 
@@ -222,9 +318,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const payload: unknown = await request.json();
-  const parsed = (mode === "signup" ? signupSchema : loginSchema).safeParse(payload);
+  const parsed =
+    mode === "signup"
+      ? parseSignupInput(payload)
+      : mode === "resend"
+        ? resendSchema.safeParse(payload)
+        : loginSchema.safeParse(payload);
   if (!parsed.success) {
-    return NextResponse.json({ message: "Revise os dados informados." }, { status: 400 });
+    return NextResponse.json(
+      {
+        message: "Revise os dados informados.",
+        issues: parsed.error.flatten().fieldErrors
+      },
+      { status: 400, headers: corsHeaders(request) }
+    );
   }
 
   const supabase = await createServerSupabaseClient();
@@ -239,7 +346,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     !(await enforceAuthRateLimit({
       request,
       email: authInput.email,
-      scope: mode,
+      scope: mode === "resend" ? "signup" : mode,
       supabase
     }))
   ) {
@@ -257,7 +364,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     );
   }
-  if (!(await verifyTurnstile(request, authInput.turnstileToken))) {
+  if (
+    mode !== "resend" &&
+    !(await verifyTurnstile(request, "turnstileToken" in authInput ? authInput.turnstileToken : undefined))
+  ) {
     return NextResponse.json(
       { message: "Não foi possível confirmar a verificação de segurança." },
       { status: 403, headers: corsHeaders(request) }
@@ -265,7 +375,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   if (!supabase) {
     if (mode === "login") {
-      const demoResponse = demoLoginResponse(request, parsed.data);
+      const demoResponse = demoLoginResponse(
+        request,
+        parsed.data as z.infer<typeof loginSchema>
+      );
       if (demoResponse) return demoResponse;
     }
 
@@ -280,48 +393,123 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
   }
 
+  if (mode === "resend") {
+    const resend = parsed.data;
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: resend.email,
+      options: { emailRedirectTo: confirmationRedirect(request, resend.next) }
+    });
+    if (error) {
+      const details = readSupabaseAuthError(error);
+      logSupabaseAuthError(details);
+      if (details.code === "over_request_rate_limit") {
+        return authErrorResponse(details, request);
+      }
+    }
+    return NextResponse.json(
+      {
+        message:
+          "Se o cadastro estiver aguardando confirmação, um novo e-mail será enviado em instantes."
+      },
+      { headers: corsHeaders(request) }
+    );
+  }
+
   if (mode === "signup") {
-    const signup = parsed.data as z.infer<typeof signupSchema>;
-    const { error } = await supabase.auth.signUp({
+    const signup = parsed.data as NormalizedSignupInput;
+    const { data, error } = await supabase.auth.signUp({
       email: signup.email,
       password: signup.password,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"}/minha-conta`,
+        emailRedirectTo: confirmationRedirect(request, signup.next),
         data: {
           full_name: signup.name,
-          phone: signup.phone || null,
+          phone: signup.phone,
+          terms_accepted_at: new Date().toISOString(),
           marketing_consent: signup.marketing === "on"
         }
       }
     });
 
     if (error) {
+      const details = readSupabaseAuthError(error);
+      logSupabaseAuthError(details);
       return NextResponse.json(
-        { message: "Não foi possível concluir o cadastro. Revise os dados ou tente novamente." },
-        { status: 400, headers: { "cache-control": "no-store" } }
+        {
+          code: details.code,
+          message:
+            "Não foi possível concluir o cadastro. Se você já possui conta, tente entrar ou recuperar a senha."
+        },
+        { status: details.status === 429 ? 429 : 400, headers: corsHeaders(request) }
       );
+    }
+
+    if (!data.session || !data.user) {
+      return NextResponse.json(
+        {
+          code: "email_confirmation_required",
+          message: "Cadastro recebido. Confirme seu e-mail para continuar."
+        },
+        { status: 202, headers: corsHeaders(request) }
+      );
+    }
+
+    const [profileUpdate, consentInsert] = await Promise.all([
+      supabase
+        .from("profiles")
+        .update({ full_name: signup.name, phone: signup.phone })
+        .eq("id", data.user.id),
+      supabase.from("customer_consents").insert({
+        user_id: data.user.id,
+        consent_type: "terms_and_privacy",
+        accepted: true,
+        version: "2026-08",
+        user_agent_summary: request.headers.get("user-agent")?.slice(0, 180) ?? null
+      })
+    ]);
+    if (profileUpdate.error || consentInsert.error) {
+      const details = readSupabaseAuthError(profileUpdate.error ?? consentInsert.error);
+      logSupabaseAuthError(details);
     }
 
     return NextResponse.json(
       {
-        message: "Cadastro recebido. Confira seu e-mail para confirmar a conta.",
-        redirectTo: "/login"
+        code: "signup_complete",
+        message: "Cadastro realizado com sucesso.",
+        redirectTo: customerDestination(signup.next)
       },
-      { status: 201, headers: { "cache-control": "no-store" } }
+      { status: 201, headers: corsHeaders(request) }
     );
   }
 
   const login = parsed.data as z.infer<typeof loginSchema>;
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: login.email,
-    password: login.password
-  });
+  let signInResult: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+  try {
+    signInResult = await supabase.auth.signInWithPassword({
+      email: login.email,
+      password: login.password
+    });
+  } catch (error) {
+    const details = readSupabaseAuthError(error);
+    logSupabaseAuthError(details);
+    return authErrorResponse(details, request);
+  }
 
-  if (error || !data.user) {
-    return NextResponse.json(
-      { message: "E-mail ou senha inválidos." },
-      { status: 401, headers: { "cache-control": "no-store" } }
-    );
+  const { data, error } = signInResult;
+  if (error) {
+    const details = readSupabaseAuthError(error);
+    logSupabaseAuthError(details);
+    return authErrorResponse(details, request);
+  }
+  if (!data.user) {
+    const details: SupabaseAuthErrorDetails = {
+      code: "supabase_auth_unavailable",
+      status: 503,
+      message: "Supabase Auth concluiu o login sem retornar o usuário."
+    };
+    logSupabaseAuthError(details);
+    return authErrorResponse(details, request);
   }
 
   let referralClaimed = false;

@@ -8,7 +8,7 @@ import { LogoutButton } from "@/components/logout-button";
 import { FavoritesPanel } from "@/components/favorites-panel";
 import { SupportCenter } from "@/components/support-center";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import { isUnknownRecord, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
 export const metadata = { title: "Minha conta", robots: { index: false, follow: false } };
 
@@ -29,10 +29,12 @@ export default async function AccountPage({
   searchParams
 }: {
   params: Promise<{ section?: string[] }>;
-  searchParams: Promise<{ new?: string }>;
+  searchParams: Promise<{ new?: string; cadastro?: string }>;
 }) {
   const section = (await params).section?.[0] ?? "perfil";
-  const startNewSupport = (await searchParams).new === "1";
+  const query = await searchParams;
+  const startNewSupport = query.new === "1";
+  const signupComplete = query.cadastro === "sucesso";
   const returnPath = `/minha-conta${section === "perfil" ? "" : `/${section}`}${
     startNewSupport ? "?new=1" : ""
   }`;
@@ -54,6 +56,9 @@ export default async function AccountPage({
   }
 
   let customerName = session?.fullName ?? "cliente";
+  let customerEmail = session?.email ?? "";
+  let customerPhone = "";
+  let accountStatus = "Ativa";
   if (process.env.DEMO_MODE !== "true") {
     const supabase = await createServerSupabaseClient();
     const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
@@ -82,6 +87,19 @@ export default async function AccountPage({
     }
     const metadataName: unknown = data.user.user_metadata.full_name;
     customerName = typeof metadataName === "string" ? metadataName : "cliente";
+    customerEmail = data.user.email ?? "";
+    const profileResponse = await supabase!
+      .from("profiles")
+      .select("full_name,email_snapshot,phone,status")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    const profile = readQueryResult(profileResponse).data;
+    if (isUnknownRecord(profile)) {
+      customerName = readString(profile, "full_name") || customerName;
+      customerEmail = readString(profile, "email_snapshot") || customerEmail;
+      customerPhone = readString(profile, "phone");
+      accountStatus = readString(profile, "status") === "active" ? "Ativa" : "Em análise";
+    }
   }
   return (
     <div className="container page-shell">
@@ -102,7 +120,23 @@ export default async function AccountPage({
           <LogoutButton className="account-logout-button" />
         </nav>
         <section>
-          {section === "perfil" && <AccountProfile customerName={customerName} representative={session?.roles.includes("representative") ?? false} />}
+          {section === "perfil" && (
+            <>
+              {signupComplete && (
+                <p className="form-message success account-welcome" role="status">
+                  Cadastro realizado com sucesso. Complete seu perfil para aproveitar todos os
+                  recursos da Curtiz.
+                </p>
+              )}
+              <AccountProfile
+                customerName={customerName}
+                customerEmail={customerEmail}
+                customerPhone={customerPhone}
+                accountStatus={accountStatus}
+                representative={session?.roles.includes("representative") ?? false}
+              />
+            </>
+          )}
           {section === "conta" && <AccountSummary />}
           {section === "pedidos" && <Orders />}
           {section === "enderecos" && <Addresses />}
@@ -121,7 +155,19 @@ export default async function AccountPage({
   );
 }
 
-function AccountProfile({ customerName, representative }: { customerName: string; representative: boolean }) {
+function AccountProfile({
+  customerName,
+  customerEmail,
+  customerPhone,
+  accountStatus,
+  representative
+}: {
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  accountStatus: string;
+  representative: boolean;
+}) {
   return (
     <div className="form-stack">
       <article className="account-profile-card">
@@ -131,6 +177,18 @@ function AccountProfile({ customerName, representative }: { customerName: string
           <h2>{customerName}</h2>
           <p>Seus dados sensíveis permanecem protegidos e aparecem mascarados.</p>
         </div>
+      </article>
+      <article className="form-card account-personal-data">
+        <div className="section-heading compact-heading">
+          <div><p className="eyebrow">Dados pessoais</p><h2>Informações da conta</h2></div>
+          <Link className="secondary-button compact-button" href="/minha-conta/conta">Editar</Link>
+        </div>
+        <dl>
+          <div><dt>Nome</dt><dd>{customerName}</dd></div>
+          <div><dt>E-mail</dt><dd>{customerEmail || "Não informado"}</dd></div>
+          <div><dt>Telefone</dt><dd>{customerPhone || "Complete seu perfil"}</dd></div>
+          <div><dt>Status</dt><dd><span className="status-pill">{accountStatus}</span></dd></div>
+        </dl>
       </article>
       <article className="representative-account-card">
         <div>
