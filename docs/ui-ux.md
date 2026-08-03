@@ -17,6 +17,19 @@ checkout passam para uma coluna.
 O teste `tests/e2e/responsive.spec.ts` verifica ausência de rolagem horizontal nas rotas
 principais e mantém marca, menu e carrinho acessíveis nas quatro larguras de celular.
 
+## Catálogo e filtros
+
+Filtros são persistidos com parâmetros estáveis: `categoria`, `colecao`, `cores`, `tamanhos`,
+`preco_min`, `preco_max`, `promocao`, `estoque`, `novidades`, `avaliacao`, `ordem` e `pagina`.
+A API `/api/catalog` valida esses parâmetros e consulta a função paginada `search_catalog`; o
+navegador nunca carrega o catálogo inteiro para filtrá-lo. Modo demonstrativo usa o mesmo contrato
+fora da produção ou quando `DEMO_MODE=true`.
+
+Desktop usa sidebar fixa com seções recolhíveis. Até 900 px, filtros passam para um drawer com
+rolagem própria, Escape, bloqueio do fundo, retorno do foco, safe area e ações Limpar/Aplicar.
+Filtros ativos aparecem como chips removíveis e os resultados possuem skeleton, erro, vazio,
+paginação e anúncio por leitor de tela.
+
 ## Feedback e carregamento
 
 - `RouteFeedback` apresenta uma barra imediata durante navegações internas.
@@ -37,7 +50,9 @@ O hero usa `hero-curtiz.webp` (aproximadamente 83 KB) no lugar do PNG original d
 O carrinho só persiste dados depois de concluir a hidratação do `localStorage`. Isso impede que um
 estado vazio inicial apague itens salvos. Desktop usa lista e resumo em duas colunas; mobile usa
 cards compactos em uma coluna. Quantidade, variação, preço unitário, subtotal e remoção possuem
-hierarquia e rótulos próprios.
+hierarquia e rótulos próprios. Depois da autenticação, a loja tenta sincronizar o carrinho com a
+conta e mantém a cópia local caso o serviço remoto esteja indisponível. Ajustes de preço,
+quantidade ou disponibilidade são apresentados em mensagem de status.
 
 ## Ajuda
 

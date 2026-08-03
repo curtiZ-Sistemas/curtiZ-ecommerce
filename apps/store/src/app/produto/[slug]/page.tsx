@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { formatBRL } from "@curtiz/domain";
-import { PackageCheck, RotateCcw, ShieldCheck, Star, Truck } from "lucide-react";
+import { Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";

@@ -11,6 +11,12 @@ O fluxo padrão deste computador não usa Docker nem Supabase local.
 - `pnpm test:db:static`: invariantes estáticas de migrations, RLS, `search_path`, idempotência e
   buckets privados.
 
+Cadastro possui testes unitários de normalização, telefone, senha e confirmação. Catálogo cobre
+restauração pela URL, filtros combinados, ordenação e paginação. A migration de busca possui teste
+estático para `security definer`, `search_path`, grants e limites de paginação. A sincronização do
+carrinho e a revalidação do checkout possuem invariantes estáticas para autenticação, preço do
+banco, estoque disponível, grants restritos e `search_path` fixo.
+
 ## Supabase remoto de homologação
 
 Testes reais de migrations, RLS, concorrência, Auth, Storage, RPCs e Edge Functions só podem usar o

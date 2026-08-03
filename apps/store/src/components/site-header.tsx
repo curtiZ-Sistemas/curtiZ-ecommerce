@@ -1,13 +1,10 @@
 "use client";
 
 import {
-  BadgePercent,
-  CreditCard,
   Heart,
   Menu,
   Search,
   ShoppingBag,
-  Truck,
   UserRound,
   X
 } from "lucide-react";

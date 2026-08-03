@@ -1,0 +1,189 @@
+import type { Product } from "@curtiz/domain";
+import { demoProducts } from "./catalog";
+
+export const catalogSorts = [
+  "relevant",
+  "newest",
+  "best_sellers",
+  "rating",
+  "price_asc",
+  "price_desc",
+  "discount",
+  "name_asc",
+  "name_desc"
+] as const;
+
+export type CatalogSort = (typeof catalogSorts)[number];
+
+export type CatalogFilters = {
+  query?: string;
+  category?: string;
+  collection?: string;
+  colors: string[];
+  sizes: string[];
+  priceMin?: number;
+  priceMax?: number;
+  promotion: boolean;
+  inStock: boolean;
+  newest: boolean;
+  minRating?: number;
+  sort: CatalogSort;
+  page: number;
+  pageSize: number;
+};
+
+export type FacetOption = { value: string; label: string; count: number; hex?: string };
+
+export type CatalogFacets = {
+  categories: FacetOption[];
+  collections: FacetOption[];
+  colors: FacetOption[];
+  sizes: FacetOption[];
+  price: { min: number; max: number };
+  promotionCount: number;
+  inStockCount: number;
+  newestCount: number;
+};
+
+export type CatalogResult = {
+  products: Product[];
+  facets: CatalogFacets;
+  total: number;
+  page: number;
+  pageSize: number;
+  source: "supabase" | "demo";
+};
+
+const unique = <T>(items: T[]) => [...new Set(items)];
+
+const optionCounts = (values: string[]): FacetOption[] =>
+  Object.entries(
+    values.reduce<Record<string, number>>((counts, value) => {
+      counts[value] = (counts[value] ?? 0) + 1;
+      return counts;
+    }, {})
+  )
+    .map(([value, count]) => ({ value, label: value, count }))
+    .sort((first, second) => first.label.localeCompare(second.label, "pt-BR"));
+
+export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: string): CatalogFilters => {
+  const readList = (name: string) =>
+    unique(
+      (params.get(name) ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    ).slice(0, 20);
+  const readMoney = (name: string) => {
+    const raw = params.get(name);
+    if (!raw?.trim()) return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) : undefined;
+  };
+  const requestedSort = params.get("ordem");
+  const sort = catalogSorts.includes(requestedSort as CatalogSort)
+    ? (requestedSort as CatalogSort)
+    : "relevant";
+
+  return {
+    query: params.get("q")?.trim().slice(0, 100) || undefined,
+    category:
+      fixedCategory ?? (params.get("categoria")?.trim().slice(0, 80) || undefined),
+    collection: params.get("colecao")?.trim().slice(0, 80) || undefined,
+    colors: readList("cores"),
+    sizes: readList("tamanhos"),
+    priceMin: readMoney("preco_min"),
+    priceMax: readMoney("preco_max"),
+    promotion: params.get("promocao") === "1",
+    inStock: params.get("estoque") === "1",
+    newest: params.get("novidades") === "1",
+    minRating: [3, 4, 4.5].includes(Number(params.get("avaliacao")))
+      ? Number(params.get("avaliacao"))
+      : undefined,
+    sort,
+    page: Math.max(1, Math.min(500, Number(params.get("pagina")) || 1)),
+    pageSize: 12
+  };
+};
+
+export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
+  const normalizedQuery = filters.query?.toLocaleLowerCase("pt-BR");
+  const categoryFiltered = demoProducts.filter((product) => {
+    if (
+      filters.category &&
+      product.category.toLocaleLowerCase("pt-BR") !== filters.category.toLocaleLowerCase("pt-BR")
+    ) {
+      return false;
+    }
+    if (
+      normalizedQuery &&
+      !`${product.name} ${product.category} ${product.colors.join(" ")} ${product.description}`
+        .toLocaleLowerCase("pt-BR")
+        .includes(normalizedQuery)
+    ) {
+      return false;
+    }
+    if (filters.collection) return false;
+    return true;
+  });
+
+  const prices = categoryFiltered.map((product) => product.priceInCents);
+  const facets: CatalogFacets = {
+    categories: optionCounts(categoryFiltered.map((product) => product.category)),
+    collections: [],
+    colors: optionCounts(categoryFiltered.flatMap((product) => product.colors)),
+    sizes: optionCounts(categoryFiltered.flatMap((product) => product.sizes)),
+    price: {
+      min: prices.length ? Math.min(...prices) : 0,
+      max: prices.length ? Math.max(...prices) : 0
+    },
+    promotionCount: categoryFiltered.filter((product) => product.compareAtPriceInCents).length,
+    inStockCount: categoryFiltered.filter((product) => product.stock > 0).length,
+    newestCount: categoryFiltered.filter((product) => product.featured).length
+  };
+
+  const filtered = categoryFiltered.filter((product) => {
+    if (filters.colors.length && !filters.colors.some((color) => product.colors.includes(color))) {
+      return false;
+    }
+    if (filters.sizes.length && !filters.sizes.some((size) => product.sizes.includes(size))) {
+      return false;
+    }
+    if (filters.priceMin !== undefined && product.priceInCents < filters.priceMin) return false;
+    if (filters.priceMax !== undefined && product.priceInCents > filters.priceMax) return false;
+    if (filters.promotion && !product.compareAtPriceInCents) return false;
+    if (filters.inStock && product.stock <= 0) return false;
+    if (filters.newest && !product.featured) return false;
+    if (filters.minRating !== undefined && product.rating < filters.minRating) return false;
+    return true;
+  });
+
+  const products = [...filtered].sort((first, second) => {
+    if (filters.sort === "price_asc") return first.priceInCents - second.priceInCents;
+    if (filters.sort === "price_desc") return second.priceInCents - first.priceInCents;
+    if (filters.sort === "newest")
+      return Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+    if (filters.sort === "best_sellers") return second.reviews - first.reviews;
+    if (filters.sort === "rating") return second.rating - first.rating;
+    if (filters.sort === "discount") {
+      const discount = (product: Product) =>
+        product.compareAtPriceInCents
+          ? 1 - product.priceInCents / product.compareAtPriceInCents
+          : 0;
+      return discount(second) - discount(first);
+    }
+    if (filters.sort === "name_asc") return first.name.localeCompare(second.name, "pt-BR");
+    if (filters.sort === "name_desc") return second.name.localeCompare(first.name, "pt-BR");
+    return Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+  });
+
+  const start = (filters.page - 1) * filters.pageSize;
+  return {
+    products: products.slice(start, start + filters.pageSize),
+    facets,
+    total: products.length,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    source: "demo"
+  };
+};
