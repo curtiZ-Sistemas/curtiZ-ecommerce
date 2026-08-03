@@ -16,13 +16,17 @@ export async function findAccountByEmail(email: string): Promise<AccountExistenc
       persistSession: false
     }
   });
-  const result = await client
-    .from("profiles")
-    .select("id")
-    .eq("email_snapshot", email)
-    .limit(1)
-    .maybeSingle();
+  try {
+    const result = await client
+      .from("profiles")
+      .select("id")
+      .eq("email_snapshot", email)
+      .limit(1)
+      .maybeSingle();
 
-  if (result.error) return "unavailable";
-  return result.data ? "exists" : "missing";
+    if (result.error) return "unavailable";
+    return result.data ? "exists" : "missing";
+  } catch {
+    return "unavailable";
+  }
 }
