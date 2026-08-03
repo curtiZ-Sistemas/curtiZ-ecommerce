@@ -9,6 +9,8 @@ import {
 const previousEnvironment = {
   appEnvironment: process.env.APP_ENV,
   demoMode: process.env.DEMO_MODE,
+  checkoutEnabled: process.env.CHECKOUT_ENABLED,
+  storeUrl: process.env.NEXT_PUBLIC_STORE_URL,
   panelUrl: process.env.NEXT_PUBLIC_PANEL_URL,
   password: process.env.DEMO_USERS_PASSWORD,
   sessionSecret: process.env.DEMO_SESSION_SECRET
@@ -23,6 +25,8 @@ beforeEach(() => {
 afterEach(() => {
   process.env.APP_ENV = previousEnvironment.appEnvironment;
   process.env.DEMO_MODE = previousEnvironment.demoMode;
+  process.env.CHECKOUT_ENABLED = previousEnvironment.checkoutEnabled;
+  process.env.NEXT_PUBLIC_STORE_URL = previousEnvironment.storeUrl;
   process.env.NEXT_PUBLIC_PANEL_URL = previousEnvironment.panelUrl;
   process.env.DEMO_USERS_PASSWORD = previousEnvironment.password;
   process.env.DEMO_SESSION_SECRET = previousEnvironment.sessionSecret;
@@ -56,5 +60,19 @@ describe("autenticação demo local", () => {
     expect(isLocalDemoRequest(new Request("https://painel.staging.example.com/login"))).toBe(true);
     expect(isLocalDemoRequest(new Request("http://painel.staging.example.com/login"))).toBe(false);
     expect(isLocalDemoRequest(new Request("https://host-invasor.example.com/login"))).toBe(false);
+  });
+
+  it("permite apresentação remota assinada quando o checkout está explicitamente desativado", () => {
+    process.env.DEMO_MODE = "false";
+    process.env.APP_ENV = "production";
+    process.env.CHECKOUT_ENABLED = "false";
+    process.env.NEXT_PUBLIC_STORE_URL = "https://loja.apresentacao.example.com";
+
+    expect(
+      isLocalDemoRequest(new Request("https://loja.apresentacao.example.com/api/auth/login"))
+    ).toBe(true);
+    expect(
+      isLocalDemoRequest(new Request("https://outro.example.com/api/auth/login"))
+    ).toBe(false);
   });
 });

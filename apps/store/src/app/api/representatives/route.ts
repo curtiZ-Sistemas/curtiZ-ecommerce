@@ -98,9 +98,7 @@ export function OPTIONS(request: Request) {
 }
 
 const demoSessionFor = (request: NextRequest) =>
-  process.env.DEMO_MODE === "true"
-    ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-    : null;
+  verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
 
 export async function GET(request: NextRequest) {
   const session = demoSessionFor(request);

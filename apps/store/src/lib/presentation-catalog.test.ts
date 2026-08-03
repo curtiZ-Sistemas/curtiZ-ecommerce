@@ -10,8 +10,8 @@ describe("isPresentationCatalogEnabled", () => {
     expect(isPresentationCatalogEnabled({ CHECKOUT_ENABLED: "false" })).toBe(true);
   });
 
-  it("does not infer presentation mode from missing configuration", () => {
-    expect(isPresentationCatalogEnabled({})).toBe(false);
+  it("uses the safe disabled-checkout default when configuration is missing", () => {
+    expect(isPresentationCatalogEnabled({})).toBe(true);
   });
 
   it("keeps the fallback disabled when checkout is active", () => {

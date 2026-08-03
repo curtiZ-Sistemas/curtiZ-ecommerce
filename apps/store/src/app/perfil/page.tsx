@@ -11,14 +11,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const cookieStore = await cookies();
-  const demoSession =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
+  const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
   let fullName = demoSession?.fullName ?? null;
   let roles: string[] = demoSession ? [...demoSession.roles] : [];
 
-  if (!demoSession && process.env.DEMO_MODE !== "true") {
+  if (!demoSession) {
     const supabase = await createServerSupabaseClient();
     const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     if (data.user && supabase) {

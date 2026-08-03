@@ -126,8 +126,8 @@ const safeOrigin = (request: NextRequest) => {
 };
 
 async function access(request: NextRequest) {
-  if (process.env.DEMO_MODE === "true") {
-    const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
+  const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
+  if (session) {
     return session?.role === "operational"
       ? { demo: true as const, supabase: null, userId: session.email }
       : null;

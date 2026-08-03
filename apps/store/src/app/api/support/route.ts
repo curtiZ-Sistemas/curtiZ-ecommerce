@@ -149,7 +149,7 @@ const nestedString = (value: unknown, key: string): string | null => {
 
 async function getActor(request: NextRequest): Promise<SupportActor | null> {
   const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
-  if (process.env.DEMO_MODE === "true" && demoSession) {
+  if (demoSession) {
     return {
       kind: "demo",
       email: demoSession.email,

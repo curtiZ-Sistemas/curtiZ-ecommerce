@@ -80,10 +80,7 @@ const mapOrderItem = (row: UnknownRecord): CustomerOrderItem => {
 
 export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const cookieStore = await cookies();
-  const demoSession =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
+  const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
 
   if (demoSession) {
     if (!demoSession.roles.includes("customer")) {

@@ -295,7 +295,10 @@ export async function POST(
   }
 
   if (mode === "logout") {
-    const supabase = process.env.DEMO_MODE === "true" ? null : await createServerSupabaseClient();
+    const signedDemoSession = verifyDemoSession(
+      request.cookies.get(DEMO_SESSION_COOKIE)?.value
+    );
+    const supabase = signedDemoSession ? null : await createServerSupabaseClient();
     if (supabase) {
       const { error } = await supabase.auth.signOut();
       if (error) {

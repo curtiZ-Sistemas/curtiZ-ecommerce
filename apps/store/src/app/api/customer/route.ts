@@ -115,10 +115,10 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return json({ message: "Revise os campos informados." }, 400);
 
-  if (process.env.DEMO_MODE === "true") {
-    const cookieStore = await cookies();
-    const demo = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
-    if (!demo?.roles.includes("customer")) return json({ message: "Faça login para continuar." }, 401);
+  const cookieStore = await cookies();
+  const demo = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
+  if (demo) {
+    if (!demo.roles.includes("customer")) return json({ message: "Faça login para continuar." }, 401);
     return json({
       ok: true,
       simulated: true,

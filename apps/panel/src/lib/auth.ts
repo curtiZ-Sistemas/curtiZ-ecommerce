@@ -10,10 +10,10 @@ const panelUrl = () => process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:30
 const storeDestination = (path: string) => new URL(path, storeUrl()).toString();
 
 export async function requirePanelAccess(role: PanelRouteRole, currentPath: string) {
-  if (process.env.DEMO_MODE === "true") {
-    const cookieStore = await cookies();
-    const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
-    if (!session || session.role === "customer" || session.role === "representative") {
+  const cookieStore = await cookies();
+  const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
+  if (session) {
+    if (session.role === "customer" || session.role === "representative") {
       redirect(storeDestination(`/login?next=${encodeURIComponent(currentPath)}`));
     }
     const allowed = demoDestination(session.role);
@@ -58,4 +58,3 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
 
   return { userId: user.id, roles: assignedRoles, demo: false } as const;
 }
-

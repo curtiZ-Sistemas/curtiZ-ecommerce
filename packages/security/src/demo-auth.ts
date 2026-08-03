@@ -92,13 +92,16 @@ const signatureFor = (payload: string, secret: string): string =>
   createHmac("sha256", secret).update(payload).digest("base64url");
 
 export const isLocalDemoRequest = (request: Request): boolean => {
-  if (process.env.DEMO_MODE !== "true") return false;
+  const explicitDemo = process.env.DEMO_MODE === "true";
+  const presentationAccess =
+    process.env.CHECKOUT_ENABLED?.trim().toLowerCase() === "false";
+  if (!explicitDemo && !presentationAccess) return false;
 
   try {
     const url = new URL(request.url);
     if (localHosts.has(url.hostname)) return true;
     return (
-      process.env.APP_ENV === "staging" &&
+      (process.env.APP_ENV === "staging" || presentationAccess) &&
       url.protocol === "https:" &&
       configuredStagingHosts().has(url.hostname)
     );
