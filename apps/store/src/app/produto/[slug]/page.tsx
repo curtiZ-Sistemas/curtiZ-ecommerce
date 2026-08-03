@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/product-card";
 import { ProductPurchase } from "@/components/product-purchase";
 import { demoProducts } from "@/lib/catalog";
 import { getPublicProduct, queryPublicCatalog } from "@/lib/storefront-data";
+import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 
 export async function generateMetadata({
   params
@@ -26,7 +27,7 @@ export async function generateMetadata({
 }
 
 export function generateStaticParams() {
-  return process.env.DEMO_MODE === "true"
+  return isPresentationCatalogEnabled()
     ? demoProducts.map((product) => ({ slug: product.slug }))
     : [];
 }
@@ -71,6 +72,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="container page-shell">
+      {detail.source === "demo" && (
+        <p className="storefront-presentation-notice" role="status">
+          Produto de apresentação: preço, estoque e condições são demonstrativos.
+        </p>
+      )}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

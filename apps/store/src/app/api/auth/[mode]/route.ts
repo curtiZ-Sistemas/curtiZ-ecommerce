@@ -389,12 +389,19 @@ export async function POST(
       { status: 403, headers: corsHeaders(request) }
     );
   }
-  if (!supabase) {
-    if (mode === "login") {
-      const demoResponse = demoLoginResponse(request, parsed.data as z.infer<typeof loginSchema>);
-      if (demoResponse) return demoResponse;
-    }
 
+  // Demo accounts are authenticated by the isolated staging provider even when
+  // a remote Supabase client is configured. The host, HTTPS and DEMO_MODE
+  // restrictions remain enforced by isLocalDemoRequest.
+  if (mode === "login") {
+    const demoResponse = demoLoginResponse(
+      request,
+      parsed.data as z.infer<typeof loginSchema>
+    );
+    if (demoResponse) return demoResponse;
+  }
+
+  if (!supabase) {
     return NextResponse.json(
       {
         message:

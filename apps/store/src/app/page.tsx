@@ -41,6 +41,11 @@ export default async function HomePage() {
   const unavailable = data.banners.length === 0 && data.products.length === 0;
   return (
     <>
+      {data.source === "demo" && (
+        <p className="storefront-presentation-notice" role="status">
+          Catálogo de apresentação: produtos, preços e condições são demonstrativos.
+        </p>
+      )}
       {unavailable && (
         <section className="section container">
           <div className="empty-state" role="status">

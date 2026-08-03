@@ -378,6 +378,11 @@ export function CatalogPage({
 
   return (
     <div className="container page-shell catalog-page">
+      {result?.source === "demo" && (
+        <p className="storefront-presentation-notice" role="status">
+          Catálogo de apresentação: produtos, preços e condições são demonstrativos.
+        </p>
+      )}
       <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">Catálogo Curtiz</p>

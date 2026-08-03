@@ -192,6 +192,24 @@ select:disabled {
   font-weight: 700;
 }
 
+.storefront-presentation-notice {
+  width: min(100% - 24px, var(--container));
+  margin: 12px auto 0;
+  padding: 9px 12px;
+  border: 1px solid #efc8c1;
+  border-radius: var(--radius-xs);
+  color: #6f2119;
+  background: #fff6f4;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.page-shell > .storefront-presentation-notice {
+  width: 100%;
+  margin-top: 0;
+}
+
 /* Header */
 
 .site-header {

@@ -11,6 +11,7 @@ import {
   type CatalogSort
 } from "./catalog-query";
 import { parseCatalogRpcResult, productCategory, publicCatalogImage } from "./catalog-result";
+import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import { createServerSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
 
@@ -153,10 +154,13 @@ export async function queryPublicCatalog(
     newest: options.newest ?? false
   };
   if (process.env.DEMO_MODE === "true") return queryDemoCatalog(filters);
+  const presentationFallback = isPresentationCatalogEnabled();
 
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    return process.env.NODE_ENV === "production" ? null : queryDemoCatalog(filters);
+    return presentationFallback || process.env.NODE_ENV !== "production"
+      ? queryDemoCatalog(filters)
+      : null;
   }
   const response: unknown = await supabase.rpc("search_catalog", {
     p_query: filters.query ?? null,
@@ -175,7 +179,11 @@ export async function queryPublicCatalog(
     p_page_size: filters.pageSize
   });
   const { data, error } = readQueryResult(response);
-  return error ? null : parseCatalogRpcResult(data, { page: 1, pageSize: filters.pageSize });
+  if (!error) {
+    const catalog = parseCatalogRpcResult(data, { page: 1, pageSize: filters.pageSize });
+    if (catalog && (catalog.total > 0 || !presentationFallback)) return catalog;
+  }
+  return presentationFallback ? queryDemoCatalog(filters) : null;
 }
 
 export const getHomepageData = cache(async (): Promise<HomepageData> => {
@@ -187,9 +195,11 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       source: "demo"
     };
   }
+  const presentationFallback = isPresentationCatalogEnabled();
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    const developmentFallback = process.env.NODE_ENV !== "production";
+    const developmentFallback =
+      presentationFallback || process.env.NODE_ENV !== "production";
     return {
       sections: defaultSections,
       banners: developmentFallback ? [fallbackBanner] : [],
@@ -257,11 +267,19 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     })
     .filter((banner): banner is PublicBanner => Boolean(banner));
 
+  const fallbackBannerEnabled = banners.length === 0 && presentationFallback;
+  const fallbackProductsEnabled =
+    (catalog?.products.length ?? 0) === 0 && presentationFallback;
+
   return {
     sections: sections.length ? sections : defaultSections,
-    banners: banners.length || process.env.NODE_ENV === "production" ? banners : [fallbackBanner],
-    products: catalog?.products ?? [],
-    source: "supabase"
+    banners: fallbackBannerEnabled
+      ? [fallbackBanner]
+      : banners.length || process.env.NODE_ENV === "production"
+        ? banners
+        : [fallbackBanner],
+    products: fallbackProductsEnabled ? demoProducts : (catalog?.products ?? []),
+    source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
   };
 });
 
@@ -334,13 +352,18 @@ const demoProductDetail = (slug: string): ProductDetailData | null => {
 
 export const getPublicProduct = cache(async (slug: string): Promise<ProductDetailData | null> => {
   if (process.env.DEMO_MODE === "true") return demoProductDetail(slug);
+  const presentationFallback = isPresentationCatalogEnabled();
   const supabase = await createServerSupabaseClient();
-  if (!supabase) return process.env.NODE_ENV === "production" ? null : demoProductDetail(slug);
+  if (!supabase) {
+    return presentationFallback || process.env.NODE_ENV !== "production"
+      ? demoProductDetail(slug)
+      : null;
+  }
   const response: unknown = await supabase.rpc("get_catalog_product", { p_slug: slug });
   const { data, error } = readQueryResult(response);
-  if (error || !data) return null;
+  if (error || !data) return presentationFallback ? demoProductDetail(slug) : null;
   const parsed = productDetailSchema.safeParse(data);
-  if (!parsed.success) return null;
+  if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
   const firstImage = parsed.data.images[0]?.path;
   const colors = [...new Set(parsed.data.variants.map((variant) => variant.color))];
   const sizes = [...new Set(parsed.data.variants.map((variant) => variant.size))];

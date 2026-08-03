@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseCatalogFilters, queryDemoCatalog } from "@/lib/catalog-query";
 import { parseCatalogRpcResult } from "@/lib/catalog-result";
+import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store", "x-catalog-source": "demo" }
     });
   }
+  const presentationFallback = isPresentationCatalogEnabled();
 
   const supabase = await createServerSupabaseClient();
   if (supabase) {
@@ -40,7 +42,7 @@ export async function GET(request: Request) {
         page: filters.page,
         pageSize: filters.pageSize
       });
-      if (result) {
+      if (result && (result.total > 0 || !presentationFallback)) {
         return NextResponse.json(result, {
           headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" }
         });
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
     }
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (presentationFallback || process.env.NODE_ENV !== "production") {
     return NextResponse.json(queryDemoCatalog(filters), {
       headers: { "cache-control": "private, no-store", "x-catalog-source": "demo" }
     });
