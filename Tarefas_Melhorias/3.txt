@@ -1,0 +1,1587 @@
+Quero realizar uma atualização completa e prioritária no e-commerce Curtiz, concentrada em quatro áreas essenciais:
+
+1. Sistema profissional de banners na página inicial.
+2. Gestão completa de produtos e variações.
+3. Experiência completa da página do produto e compra imediata.
+4. Sistema real e completo de avaliações.
+
+Esta implementação deve envolver loja, painel administrativo, painel gerencial, banco de dados, Supabase Storage, permissões, responsividade, segurança, testes, documentação, staging e commit final no GitHub.
+
+Não quero apenas melhorias visuais. Tudo deve funcionar de verdade, persistir no banco e estar integrado ao restante do sistema.
+
+==================================================
+1. ANÁLISE INICIAL OBRIGATÓRIA
+==================================================
+
+Antes de alterar qualquer arquivo:
+
+1. Analise a arquitetura atual do projeto.
+2. Identifique onde ficam:
+   - aplicação da loja;
+   - aplicação dos painéis;
+   - componentes compartilhados;
+   - produtos;
+   - banners;
+   - carrinho;
+   - checkout;
+   - avaliações;
+   - Supabase;
+   - Storage;
+   - migrations;
+   - políticas RLS;
+   - permissões;
+   - scripts de build e deploy.
+3. Verifique as funcionalidades já existentes.
+4. Não duplique tabelas ou componentes sem necessidade.
+5. Não remova funcionalidades atuais.
+6. Não quebre autenticação, pedidos, estoque, carrinho, checkout, representantes ou staging.
+7. Registre um plano de implementação antes de iniciar.
+8. Depois da análise, implemente tudo.
+
+==================================================
+2. SISTEMA COMPLETO DE BANNERS
+==================================================
+
+Criar ou reformular completamente a funcionalidade de banners da página inicial.
+
+A Curtiz poderá possuir até quatro banners ativos e visíveis simultaneamente na página inicial.
+
+O sistema poderá manter mais banners cadastrados como:
+
+- rascunho;
+- agendado;
+- inativo;
+- expirado;
+- arquivado.
+
+O limite de quatro é apenas para banners ativos exibidos simultaneamente.
+
+==================================================
+3. CRUD COMPLETO DE BANNERS
+==================================================
+
+Implementar:
+
+- criar banner;
+- visualizar;
+- editar;
+- duplicar;
+- ativar;
+- desativar;
+- agendar;
+- reordenar;
+- arquivar;
+- excluir com confirmação;
+- restaurar, quando aplicável;
+- pré-visualizar antes de publicar.
+
+Cada banner deverá possuir:
+
+- título interno;
+- título visível opcional;
+- subtítulo opcional;
+- descrição opcional;
+- imagem para desktop;
+- imagem para mobile;
+- texto alternativo;
+- botão opcional;
+- texto do botão;
+- destino do clique;
+- posição;
+- prioridade;
+- status;
+- data de início;
+- data de encerramento;
+- cor de sobreposição opcional;
+- alinhamento do conteúdo;
+- responsável pela criação;
+- responsável pela última alteração;
+- data de criação;
+- data de atualização.
+
+==================================================
+4. DESTINO DO BANNER SEM DIGITAR LINKS
+==================================================
+
+O usuário interno não deve precisar procurar, copiar ou digitar URLs manualmente.
+
+No formulário do banner, criar o campo:
+
+“Destino do banner”
+
+Opções:
+
+- Nenhum destino;
+- Produto;
+- Categoria;
+- Coleção;
+- Página institucional;
+- Guia;
+- Campanha;
+- Página interna;
+- Busca predefinida;
+- URL externa autorizada.
+
+Ao selecionar Produto:
+
+- abrir busca de produtos;
+- permitir pesquisar por nome, SKU ou categoria;
+- mostrar imagem, nome, status e estoque;
+- selecionar o produto;
+- gerar a rota automaticamente.
+
+Ao selecionar Categoria:
+
+- mostrar as categorias existentes;
+- selecionar uma categoria;
+- gerar a rota automaticamente.
+
+Ao selecionar Página ou Guia:
+
+- mostrar uma lista das páginas existentes;
+- mostrar nome e rota;
+- selecionar sem digitar URL.
+
+Ao selecionar Campanha:
+
+- mostrar campanhas cadastradas;
+- selecionar a campanha;
+- gerar o destino automaticamente.
+
+A opção URL externa deverá:
+
+- exigir protocolo HTTPS;
+- validar o endereço;
+- mostrar aviso;
+- permitir abrir em nova guia;
+- ser restrita a usuários autorizados.
+
+Nenhum usuário deve precisar conhecer a estrutura técnica das rotas.
+
+==================================================
+5. INTERFACE DE GESTÃO DOS BANNERS
+==================================================
+
+Criar uma página profissional no painel:
+
+Conteúdo
+└── Banners da página inicial
+
+A tela deverá mostrar:
+
+- prévia da imagem;
+- título;
+- destino;
+- status;
+- posição;
+- período;
+- dispositivo;
+- responsável;
+- ações.
+
+Adicionar:
+
+- busca;
+- filtros;
+- ordenação;
+- seleção;
+- ações em massa;
+- paginação;
+- estado vazio;
+- loading;
+- skeleton;
+- mensagens de erro;
+- confirmação;
+- feedback de sucesso.
+
+Implementar reordenação por arrastar e soltar ou controles acessíveis.
+
+Mostrar claramente:
+
+- Banner 1;
+- Banner 2;
+- Banner 3;
+- Banner 4.
+
+Impedir a ativação de um quinto banner simultâneo.
+
+Exibir mensagem clara:
+
+“Já existem quatro banners ativos. Desative ou substitua um banner para continuar.”
+
+==================================================
+6. PREVIEW DOS BANNERS
+==================================================
+
+Criar pré-visualização real para:
+
+- desktop;
+- tablet;
+- celular.
+
+Mostrar:
+
+- corte da imagem;
+- textos;
+- botão;
+- posicionamento;
+- contraste;
+- destino configurado.
+
+Permitir visualizar o banner no contexto real da página inicial antes de publicar.
+
+==================================================
+7. COMPORTAMENTO DOS BANNERS NA LOJA
+==================================================
+
+Na página inicial:
+
+- mostrar no máximo quatro banners ativos;
+- respeitar ordem;
+- respeitar agendamento;
+- não mostrar expirados;
+- usar imagem específica para mobile;
+- usar imagem específica para desktop;
+- utilizar carregamento otimizado;
+- evitar layout shift;
+- manter boa legibilidade;
+- possuir navegação por gesto no celular;
+- possuir controles acessíveis;
+- pausar rotação quando o usuário interagir;
+- respeitar preferência por redução de movimento;
+- não usar animações exageradas.
+
+Se existir apenas um banner:
+
+- não mostrar controles desnecessários.
+
+Se não existir banner ativo:
+
+- não deixar área vazia quebrada;
+- ocultar a seção ou mostrar conteúdo alternativo configurado.
+
+==================================================
+8. MÉTRICAS INTERNAS DE BANNERS
+==================================================
+
+Registrar métricas internas básicas:
+
+- visualizações;
+- cliques;
+- taxa interna de cliques;
+- período;
+- dispositivo;
+- banner;
+- destino.
+
+Não registrar dados pessoais desnecessários.
+
+Criar relatório simples no painel:
+
+- banners mais visualizados;
+- banners mais clicados;
+- desempenho por período;
+- desempenho por dispositivo.
+
+==================================================
+9. ARMAZENAMENTO DOS BANNERS
+==================================================
+
+Usar Supabase Storage ou a infraestrutura já existente.
+
+Aplicar:
+
+- validação de formato;
+- validação de tamanho;
+- nomes seguros;
+- otimização;
+- miniaturas;
+- remoção segura;
+- prevenção de arquivos executáveis;
+- controle de acesso;
+- auditoria.
+
+Formatos permitidos inicialmente:
+
+- JPG;
+- JPEG;
+- PNG;
+- WEBP.
+
+Preparar suporte futuro para AVIF, caso a arquitetura permita.
+
+==================================================
+10. GESTÃO COMPLETA DE PRODUTOS
+==================================================
+
+Reformular completamente o CRUD de produtos.
+
+Essa é uma das funções principais do sistema e precisa ser extremamente completa, confiável, organizada e profissional.
+
+Implementar:
+
+- criar produto;
+- salvar como rascunho;
+- publicar;
+- editar;
+- duplicar;
+- visualizar;
+- pré-visualizar;
+- ativar;
+- desativar;
+- arquivar;
+- excluir com confirmação;
+- restaurar, quando aplicável;
+- importar;
+- exportar;
+- ações em massa;
+- histórico de alterações.
+
+Nenhum botão pode ser apenas visual.
+
+==================================================
+11. STATUS DO PRODUTO
+==================================================
+
+Criar status claros:
+
+- draft;
+- pending_review;
+- active;
+- inactive;
+- out_of_stock;
+- archived;
+- rejected.
+
+Permitir fluxo de aprovação quando configurado.
+
+Registrar:
+
+- quem criou;
+- quem editou;
+- quem publicou;
+- data;
+- horário;
+- alterações;
+- motivo da desativação;
+- motivo do arquivamento.
+
+==================================================
+12. FORMULÁRIO PROFISSIONAL DE PRODUTO
+==================================================
+
+Organizar o cadastro em etapas ou guias:
+
+1. Informações básicas.
+2. Categoria e organização.
+3. Preços.
+4. Variações.
+5. Estoque.
+6. Dimensões e envio.
+7. Imagens e vídeos.
+8. Descrição e conteúdo.
+9. SEO.
+10. Produtos relacionados.
+11. Revisão e publicação.
+
+Permitir:
+
+- salvar rascunho;
+- salvar automaticamente;
+- voltar sem perder dados;
+- revisar antes de publicar;
+- mostrar progresso;
+- validar cada etapa;
+- indicar campos incompletos.
+
+==================================================
+13. INFORMAÇÕES BÁSICAS DO PRODUTO
+==================================================
+
+Campos:
+
+- nome;
+- slug;
+- código interno;
+- SKU principal;
+- marca;
+- categoria;
+- subcategoria;
+- coleção;
+- gênero;
+- público;
+- status;
+- destaque;
+- lançamento;
+- promoção;
+- mais vendido;
+- produto físico;
+- produto ativo;
+- tags;
+- palavras-chave;
+- fornecedor, quando aplicável.
+
+O slug poderá ser gerado automaticamente, mas deve permitir edição com validação.
+
+Impedir slugs duplicados.
+
+==================================================
+14. PREÇOS
+==================================================
+
+Permitir:
+
+- preço normal;
+- preço promocional;
+- custo;
+- margem estimada;
+- desconto;
+- preço no Pix;
+- parcelamento;
+- data inicial da promoção;
+- data final da promoção;
+- preço por variante;
+- histórico de preço.
+
+Validar:
+
+- preço negativo;
+- promoção maior que o preço normal;
+- datas inválidas;
+- valores incoerentes.
+
+Não mostrar custo interno na loja.
+
+==================================================
+15. DIMENSÕES E FRETE
+==================================================
+
+Cadastrar:
+
+- peso;
+- altura;
+- largura;
+- comprimento;
+- unidade de peso;
+- unidade de dimensão;
+- peso da embalagem;
+- dimensões da embalagem;
+- tipo de embalagem;
+- quantidade por volume;
+- produto frágil;
+- restrições de transporte.
+
+Permitir dimensões diferentes por variante quando necessário.
+
+Os dados deverão estar preparados para futura integração com:
+
+- Melhor Envio;
+- Correios;
+- outros provedores.
+
+Enquanto o frete estiver em modo mock, esses campos ainda devem funcionar e ser salvos corretamente.
+
+==================================================
+16. VARIAÇÕES DE PRODUTO
+==================================================
+
+Criar um sistema completo de variações.
+
+Suportar inicialmente:
+
+- cor;
+- tamanho;
+- modelo;
+- material;
+- estampa;
+- acabamento;
+- outras opções configuráveis.
+
+Exemplo:
+
+Produto:
+Sandália Curtiz
+
+Cores:
+- Azul;
+- Preto;
+- Branco.
+
+Tamanhos:
+- 33/34;
+- 35/36;
+- 37/38;
+- 39/40.
+
+Combinações:
+
+- Azul + 33/34;
+- Azul + 35/36;
+- Preto + 33/34;
+- Preto + 35/36.
+
+Cada combinação poderá ter:
+
+- SKU próprio;
+- código de barras opcional;
+- preço;
+- preço promocional;
+- custo;
+- estoque;
+- peso;
+- dimensões;
+- status;
+- imagem principal;
+- imagens relacionadas;
+- vídeo relacionado;
+- prazo;
+- limite de compra.
+
+Impedir combinações duplicadas.
+
+==================================================
+17. GERADOR DE VARIAÇÕES
+==================================================
+
+Criar uma ferramenta que permita:
+
+1. Selecionar atributos.
+2. Adicionar valores.
+3. Gerar combinações automaticamente.
+4. Editar cada combinação.
+5. Ativar ou desativar combinações.
+6. Definir valores em massa.
+7. Definir estoque em massa.
+8. Definir preço em massa.
+9. Associar mídia em massa.
+10. Remover combinações com confirmação.
+
+A interface deve ser clara e não parecer uma planilha confusa.
+
+==================================================
+18. COR LIGADA À IMAGEM
+==================================================
+
+Implementar corretamente a relação entre cor e mídia.
+
+Exemplo:
+
+Ao selecionar a cor Azul:
+
+- mostrar foto principal do produto azul;
+- mostrar galeria do produto azul;
+- mostrar vídeo do produto azul, quando existir.
+
+Ao selecionar Preto:
+
+- trocar para a galeria preta.
+
+No painel:
+
+- permitir criar a cor;
+- definir nome;
+- definir código hexadecimal;
+- definir imagem de referência;
+- selecionar quais imagens pertencem àquela cor;
+- selecionar qual imagem será a principal;
+- relacionar vídeos.
+
+Na loja:
+
+- atualizar imagens sem recarregar a página inteira;
+- manter a variante selecionada;
+- atualizar estoque;
+- atualizar preço;
+- atualizar SKU;
+- atualizar URL quando adequado;
+- mostrar feedback imediato;
+- não perder tamanho selecionado quando a combinação existir.
+
+Se a combinação escolhida estiver indisponível:
+
+- mostrar indisponível;
+- sugerir combinações válidas;
+- não permitir compra.
+
+==================================================
+19. ESTOQUE DOS PRODUTOS
+==================================================
+
+Implementar:
+
+- estoque por produto;
+- estoque por variante;
+- estoque reservado;
+- estoque disponível;
+- estoque vendido;
+- estoque devolvido;
+- estoque danificado;
+- estoque mínimo;
+- alerta de estoque;
+- movimentações;
+- ajustes;
+- histórico;
+- responsável;
+- motivo.
+
+Toda alteração deve gerar movimentação auditável.
+
+Impedir estoque negativo, salvo quando uma regra explícita permitir.
+
+Preparar integração com reservas de carrinho e checkout.
+
+==================================================
+20. IMAGENS E VÍDEOS DO PRODUTO
+==================================================
+
+Criar gestão completa de mídia.
+
+Permitir:
+
+- múltiplas imagens;
+- múltiplos vídeos;
+- arrastar e soltar;
+- reordenar;
+- definir imagem principal;
+- definir imagem de capa;
+- associar mídia à cor;
+- associar mídia à variante;
+- adicionar texto alternativo;
+- adicionar legenda;
+- visualizar;
+- substituir;
+- excluir;
+- otimizar.
+
+Imagens:
+
+- JPG;
+- JPEG;
+- PNG;
+- WEBP.
+
+Vídeos:
+
+- MP4;
+- WEBM.
+
+Validar:
+
+- MIME type;
+- extensão;
+- tamanho;
+- duração;
+- resolução;
+- arquivo inválido.
+
+Criar miniaturas para vídeos.
+
+Não deixar arquivos órfãos no Storage após exclusões definitivas.
+
+==================================================
+21. DESCRIÇÕES COMPLETAS DO PRODUTO
+==================================================
+
+O produto deverá permitir:
+
+- descrição curta;
+- descrição completa;
+- benefícios;
+- especificações técnicas;
+- materiais;
+- composição;
+- instruções de uso;
+- cuidados;
+- limpeza;
+- conservação;
+- conteúdo da embalagem;
+- garantia;
+- política de troca;
+- tabela de medidas;
+- guia de tamanho;
+- perguntas frequentes;
+- observações;
+- informações adicionais.
+
+Criar editor organizado e seguro.
+
+Não permitir HTML perigoso.
+
+Permitir blocos ou seções reordenáveis.
+
+==================================================
+22. SEO DO PRODUTO
+==================================================
+
+Adicionar:
+
+- título SEO;
+- descrição SEO;
+- slug;
+- imagem social;
+- palavras-chave;
+- canonical;
+- dados estruturados;
+- status de indexação.
+
+Gerar automaticamente quando os campos não forem preenchidos, mas permitir edição.
+
+Evitar conteúdo duplicado entre variantes.
+
+==================================================
+23. PRODUTOS RELACIONADOS
+==================================================
+
+Permitir relacionar:
+
+- produtos semelhantes;
+- combina com;
+- compre junto;
+- outras cores;
+- mesma coleção;
+- mais vendidos;
+- lançamentos.
+
+No painel, a pessoa deve pesquisar e selecionar produtos sem digitar links.
+
+==================================================
+24. LISTAGEM ADMINISTRATIVA DE PRODUTOS
+==================================================
+
+Criar uma tabela profissional com:
+
+- imagem;
+- nome;
+- SKU;
+- categoria;
+- preço;
+- estoque;
+- variantes;
+- status;
+- vendas;
+- avaliações;
+- atualização;
+- ações.
+
+Adicionar:
+
+- busca;
+- filtros;
+- ordenação;
+- paginação;
+- seleção;
+- edição rápida;
+- ações em massa;
+- exportação;
+- duplicação;
+- arquivamento;
+- ativação;
+- desativação.
+
+Filtros:
+
+- status;
+- categoria;
+- coleção;
+- estoque;
+- promoção;
+- lançamento;
+- avaliação;
+- fornecedor;
+- data;
+- preço.
+
+==================================================
+25. PÁGINA DO PRODUTO NA LOJA
+==================================================
+
+Reformular e concluir completamente a página de produto.
+
+Deve apresentar:
+
+- galeria;
+- miniaturas;
+- zoom;
+- vídeos;
+- seleção de cor;
+- seleção de tamanho;
+- preço;
+- promoção;
+- Pix;
+- parcelamento;
+- estoque;
+- quantidade;
+- frete;
+- prazo;
+- favoritos;
+- SKU;
+- categoria;
+- avaliações;
+- descrição;
+- especificações;
+- materiais;
+- cuidados;
+- guia de tamanhos;
+- trocas;
+- garantia;
+- perguntas frequentes;
+- produtos relacionados;
+- compre junto;
+- avaliações completas.
+
+A interface precisa ser profissional, responsiva e semelhante ao nível de grandes e-commerces, sem copiar literalmente outras marcas.
+
+==================================================
+26. BOTÃO ADICIONAR AO CARRINHO
+==================================================
+
+O botão deverá:
+
+- exigir variante válida;
+- validar estoque;
+- validar quantidade;
+- mostrar loading;
+- impedir clique duplicado;
+- adicionar corretamente;
+- atualizar carrinho;
+- mostrar confirmação;
+- permitir ir ao carrinho;
+- permitir continuar comprando;
+- manter a seleção.
+
+Quando faltar tamanho ou cor:
+
+- destacar o campo;
+- mostrar mensagem clara;
+- não adicionar item inválido.
+
+==================================================
+27. BOTÃO COMPRAR AGORA
+==================================================
+
+Adicionar o botão:
+
+“Comprar agora”
+
+Ele deve ficar próximo ao botão “Adicionar ao carrinho”.
+
+Comportamento:
+
+1. Validar cor.
+2. Validar tamanho.
+3. Validar quantidade.
+4. Validar estoque.
+5. Criar uma intenção de compra imediata.
+6. Direcionar diretamente para o checkout.
+7. Levar o produto e a variante corretos.
+8. Manter preço e quantidade.
+9. Não perder os dados selecionados.
+10. Não criar duplicidade.
+11. Não limpar o carrinho normal sem autorização.
+
+Definir uma estratégia segura:
+
+- compra imediata separada do carrinho; ou
+- carrinho temporário de checkout.
+
+Não apagar itens existentes do carrinho silenciosamente.
+
+Se o usuário não estiver autenticado e o checkout permitir convidado:
+
+- continuar como convidado.
+
+Se a regra exigir autenticação:
+
+- direcionar ao login;
+- retornar ao checkout depois do login.
+
+Mostrar loading imediato ao clicar.
+
+==================================================
+28. EXPERIÊNCIA MOBILE DO PRODUTO
+==================================================
+
+No celular:
+
+- galeria com swipe;
+- seleção de cor visível;
+- tamanhos fáceis de tocar;
+- preço claro;
+- estoque;
+- entrega;
+- avaliações;
+- descrição em acordeões;
+- botão Adicionar ao carrinho;
+- botão Comprar agora;
+- barra inferior de ação, quando apropriado;
+- respeito à safe area;
+- sem sobreposição com chat ou navegação.
+
+Testar:
+
+- 320px;
+- 360px;
+- 375px;
+- 390px;
+- 430px;
+- tablet.
+
+==================================================
+29. SISTEMA COMPLETO DE AVALIAÇÕES
+==================================================
+
+Implementar um sistema real de avaliações associado a produtos, pedidos e clientes.
+
+Somente um cliente com compra entregue poderá avaliar o produto.
+
+Fluxo:
+
+1. Pedido é marcado como entregue.
+2. Cliente confirma o recebimento, quando essa etapa existir.
+3. Sistema libera avaliação.
+4. Cliente acessa pedido ou produto.
+5. Seleciona estrelas.
+6. Pode escrever comentário.
+7. Pode enviar fotos.
+8. Pode enviar vídeos.
+9. Envia avaliação.
+10. Avaliação passa por moderação, conforme configuração.
+11. Depois de aprovada, aparece no produto.
+
+==================================================
+30. CAMPOS DA AVALIAÇÃO
+==================================================
+
+Obrigatório:
+
+- nota de 1 a 5 estrelas.
+
+Opcionais:
+
+- título;
+- comentário;
+- fotos;
+- vídeos;
+- informações adicionais;
+- avaliação de tamanho;
+- avaliação de qualidade;
+- avaliação de conforto;
+- recomendação do produto.
+
+Registrar:
+
+- cliente;
+- produto;
+- variante;
+- pedido;
+- item do pedido;
+- data;
+- status;
+- compra verificada;
+- data da compra;
+- data da entrega;
+- versão editada;
+- moderação.
+
+Não permitir avaliação duplicada do mesmo item sem regra explícita.
+
+==================================================
+31. MÍDIA NAS AVALIAÇÕES
+==================================================
+
+Permitir:
+
+- múltiplas fotos;
+- vídeos;
+- pré-visualização;
+- remoção antes do envio;
+- validação;
+- limite configurável;
+- upload seguro;
+- miniaturas;
+- moderação.
+
+Usar Storage protegido.
+
+Não expor dados privados do cliente.
+
+==================================================
+32. MODERAÇÃO DE AVALIAÇÕES
+==================================================
+
+Criar uma área no painel:
+
+Avaliações
+├── Pendentes
+├── Aprovadas
+├── Reprovadas
+├── Denunciadas
+├── Com mídia
+├── Respondidas
+└── Arquivadas
+
+Permitir:
+
+- visualizar;
+- aprovar;
+- reprovar;
+- solicitar edição;
+- ocultar;
+- arquivar;
+- responder em nome da Curtiz;
+- registrar motivo;
+- auditar decisão.
+
+Não alterar o conteúdo escrito pelo cliente silenciosamente.
+
+Status:
+
+- draft;
+- pending;
+- approved;
+- rejected;
+- hidden;
+- reported;
+- archived.
+
+==================================================
+33. AVALIAÇÕES NA PÁGINA DO PRODUTO
+==================================================
+
+Mostrar na parte inferior da página:
+
+- média geral;
+- quantidade total;
+- distribuição por estrelas;
+- porcentagem de recomendação;
+- avaliações recentes;
+- avaliações com mídia;
+- selo Compra verificada;
+- nome parcialmente oculto;
+- data;
+- variante comprada;
+- comentário;
+- fotos;
+- vídeos;
+- resposta da Curtiz;
+- botão útil;
+- botão denunciar.
+
+Filtros:
+
+- todas;
+- 5 estrelas;
+- 4 estrelas;
+- 3 estrelas;
+- 2 estrelas;
+- 1 estrela;
+- com fotos;
+- com vídeos;
+- compra verificada;
+- mais recentes;
+- mais úteis.
+
+Paginação ou carregamento progressivo.
+
+Não carregar todas as avaliações de uma vez.
+
+==================================================
+34. RESUMO DE AVALIAÇÕES
+==================================================
+
+Os dados devem ser calculados de avaliações aprovadas reais.
+
+Não usar números fixos.
+
+Atualizar:
+
+- média;
+- total;
+- distribuição;
+- recomendação;
+- contagem com mídia.
+
+Garantir consistência após:
+
+- aprovação;
+- reprovação;
+- exclusão;
+- ocultação;
+- alteração.
+
+==================================================
+35. EDIÇÃO E EXCLUSÃO DA AVALIAÇÃO
+==================================================
+
+Permitir ao cliente:
+
+- visualizar sua avaliação;
+- editar dentro da regra configurada;
+- excluir ou solicitar exclusão;
+- adicionar mídia, se permitido;
+- consultar status de moderação.
+
+Registrar histórico de edição.
+
+A avaliação editada poderá voltar para moderação.
+
+==================================================
+36. NOTIFICAÇÕES DAS AVALIAÇÕES
+==================================================
+
+Criar notificações internas para:
+
+- avaliação liberada;
+- lembrete de avaliação;
+- avaliação enviada;
+- avaliação aprovada;
+- avaliação rejeitada;
+- solicitação de correção;
+- resposta da Curtiz;
+- denúncia analisada.
+
+E-mail e WhatsApp não podem bloquear o fluxo enquanto estiverem em mock.
+
+==================================================
+37. BANCO DE DADOS
+==================================================
+
+Criar ou ajustar migrations para suportar:
+
+- banners;
+- destinos dos banners;
+- métricas de banners;
+- produtos;
+- atributos;
+- valores de atributos;
+- variantes;
+- estoque;
+- movimentos de estoque;
+- mídias;
+- relação mídia-cor;
+- relação mídia-variante;
+- descrições;
+- especificações;
+- produtos relacionados;
+- avaliações;
+- mídias das avaliações;
+- votos úteis;
+- denúncias;
+- respostas;
+- histórico de moderação.
+
+Nomes sugeridos, adaptando à arquitetura existente:
+
+- home_banners;
+- banner_targets;
+- banner_events;
+- products;
+- product_attributes;
+- product_attribute_values;
+- product_variants;
+- product_variant_values;
+- product_media;
+- product_media_links;
+- inventory_movements;
+- product_relations;
+- product_reviews;
+- product_review_media;
+- product_review_votes;
+- product_review_reports;
+- product_review_responses;
+- product_review_moderation_history.
+
+Não criar tabelas duplicadas quando estruturas atuais puderem ser reaproveitadas.
+
+==================================================
+38. RLS E PERMISSÕES
+==================================================
+
+Aplicar permissões granulares.
+
+Cliente:
+
+- visualizar produtos ativos;
+- visualizar banners ativos;
+- visualizar avaliações aprovadas;
+- criar avaliação somente para compra elegível;
+- editar apenas sua avaliação permitida;
+- não acessar custos;
+- não acessar estoque interno;
+- não acessar dados administrativos.
+
+Administrador autorizado:
+
+- gerenciar produtos;
+- gerenciar banners;
+- gerenciar avaliações;
+- gerenciar mídias;
+- gerenciar categorias;
+- gerenciar estoque conforme permissão.
+
+Gerência:
+
+- aprovar conteúdo;
+- acompanhar métricas;
+- visualizar relatórios;
+- moderar conforme permissão.
+
+Operacional:
+
+- atualizar estoque;
+- operar produtos e pedidos apenas dentro das permissões;
+- não acessar custos ou dados estratégicos sem autorização.
+
+Aplicar:
+
+- RLS;
+- RBAC;
+- validação server-side;
+- proteção contra IDOR;
+- validação de uploads;
+- auditoria;
+- menor privilégio.
+
+==================================================
+39. INTERFACE DOS PAINÉIS
+==================================================
+
+As telas precisam ser profissionais.
+
+Não criar CRUD básico e sem acabamento.
+
+Usar:
+
+- navegação clara;
+- formulários em etapas;
+- cards informativos;
+- tabelas profissionais;
+- filtros;
+- busca;
+- paginação;
+- skeleton;
+- loading;
+- estados vazios;
+- mensagens de erro;
+- toasts;
+- confirmação;
+- pré-visualização;
+- responsividade;
+- acessibilidade.
+
+Todos os botões devem ter:
+
+- hover;
+- focus;
+- active;
+- disabled;
+- loading.
+
+==================================================
+40. PERFORMANCE
+==================================================
+
+Otimizar:
+
+- imagens;
+- vídeos;
+- consultas;
+- paginação;
+- filtros;
+- busca;
+- carregamento da página do produto;
+- avaliações;
+- banners;
+- variantes;
+- Storage;
+- cache;
+- re-renderizações;
+- JavaScript;
+- componentes client-side.
+
+Aplicar:
+
+- lazy loading;
+- imagens responsivas;
+- formatos otimizados;
+- cache;
+- debounce;
+- prefetch;
+- consultas paralelas;
+- skeleton;
+- paginação;
+- carregamento progressivo.
+
+==================================================
+41. ACESSIBILIDADE
+==================================================
+
+Garantir:
+
+- labels;
+- foco visível;
+- teclado;
+- leitor de tela;
+- textos alternativos;
+- contraste;
+- botões com área adequada;
+- mensagens associadas aos campos;
+- controles de carrossel acessíveis;
+- galeria acessível;
+- estrelas acessíveis;
+- redução de movimento.
+
+==================================================
+42. STAGING
+==================================================
+
+Não bloquear o deploy de staging por APIs futuras.
+
+Manter:
+
+PAYMENT_PROVIDER=mock
+EMAIL_PROVIDER=mock
+SHIPPING_PROVIDER=mock
+WHATSAPP_PROVIDER=mock
+DEMO_MODE=true
+
+Mercado Pago, Resend, Melhor Envio, Correios, WhatsApp e Turnstile reais serão configurados posteriormente.
+
+O checkout em staging deve funcionar de forma simulada.
+
+A validação de produção deve permanecer separada e rigorosa.
+
+==================================================
+43. TESTES DOS BANNERS
+==================================================
+
+Testar:
+
+- criar;
+- editar;
+- duplicar;
+- ativar;
+- desativar;
+- ordenar;
+- agendar;
+- expirar;
+- excluir;
+- limitar quatro ativos;
+- selecionar produto;
+- selecionar categoria;
+- selecionar página;
+- selecionar campanha;
+- mobile;
+- desktop;
+- clique;
+- métrica;
+- upload;
+- permissão;
+- RLS.
+
+==================================================
+44. TESTES DOS PRODUTOS
+==================================================
+
+Testar:
+
+- criação;
+- rascunho;
+- edição;
+- duplicação;
+- publicação;
+- arquivamento;
+- categorias;
+- preços;
+- promoção;
+- dimensões;
+- peso;
+- cores;
+- tamanhos;
+- geração de variantes;
+- SKU;
+- estoque;
+- mídia;
+- relação cor-imagem;
+- vídeo;
+- descrição;
+- SEO;
+- produtos relacionados;
+- página pública;
+- adicionar ao carrinho;
+- comprar agora;
+- checkout;
+- mobile.
+
+==================================================
+45. TESTES DAS AVALIAÇÕES
+==================================================
+
+Testar:
+
+- pedido não entregue não pode avaliar;
+- pedido entregue pode avaliar;
+- estrelas obrigatórias;
+- comentário opcional;
+- foto opcional;
+- vídeo opcional;
+- compra verificada;
+- avaliação duplicada;
+- moderação;
+- aprovação;
+- reprovação;
+- resposta;
+- edição;
+- exclusão;
+- denúncia;
+- voto útil;
+- cálculo da média;
+- filtros;
+- paginação;
+- RLS;
+- Storage;
+- mobile.
+
+==================================================
+46. VALIDAÇÃO FINAL
+==================================================
+
+Executar:
+
+- lint;
+- typecheck;
+- testes unitários;
+- testes de integração;
+- testes E2E;
+- testes de permissões;
+- testes RLS;
+- build;
+- build de staging;
+- teste de rotas;
+- teste mobile;
+- teste de acessibilidade;
+- teste de performance;
+- inspeção do console;
+- inspeção de requisições;
+- verificação de arquivos órfãos;
+- verificação de links quebrados.
+
+Não considerar concluído enquanto existirem:
+
+- botões sem ação;
+- formulários sem salvar;
+- filtros falsos;
+- variantes quebradas;
+- imagens sem relação com cor;
+- estoque inconsistente;
+- Comprar agora sem checkout;
+- avaliações fictícias;
+- banners sem destino;
+- links manuais obrigatórios;
+- erros no console;
+- problemas mobile;
+- falhas de permissão;
+- staging bloqueado.
+
+==================================================
+47. DOCUMENTAÇÃO
+==================================================
+
+Criar ou atualizar documentação contendo:
+
+- arquitetura;
+- fluxo de banners;
+- fluxo de produtos;
+- fluxo de variantes;
+- fluxo de mídia;
+- fluxo de estoque;
+- fluxo de Compra agora;
+- fluxo de avaliações;
+- migrations;
+- RLS;
+- Storage;
+- permissões;
+- testes;
+- variáveis de ambiente;
+- staging;
+- produção.
+
+==================================================
+48. COMMITS E GITHUB
+==================================================
+
+Após concluir e validar tudo:
+
+1. Verificar git status.
+2. Confirmar que nenhum arquivo secreto será enviado.
+3. Confirmar que `.env`, `.env.local` e chaves reais estão ignorados.
+4. Não incluir arquivos temporários, logs ou builds.
+5. Criar commits organizados.
+
+Sugestão:
+
+- feat: implementa gestão completa de banners
+- feat: conclui CRUD e variações de produtos
+- feat: adiciona mídia e estoque avançado
+- feat: implementa compra imediata no checkout
+- feat: implementa avaliações verificadas
+- fix: melhora interface responsiva e acessibilidade
+- test: adiciona testes de banners produtos e avaliações
+- docs: atualiza documentação do ecommerce
+
+6. Executar novamente lint, typecheck, testes e build após os commits.
+7. Fazer push para o repositório correto da Curtiz.
+8. Confirmar branch e remote antes do push.
+9. Não usar force push.
+10. Informar os hashes dos commits realizados.
+
+Se o ambiente não possuir autenticação para fazer push:
+
+- deixar todos os commits prontos;
+- informar o comando exato para realizar o push;
+- não afirmar que o push foi feito sem confirmação.
+
+==================================================
+49. ENTREGA FINAL
+==================================================
+
+Ao terminar, informar:
+
+- banners implementados;
+- funcionalidades dos banners;
+- produtos implementados;
+- campos disponíveis;
+- variações implementadas;
+- relação de cor e imagem;
+- mídia implementada;
+- estoque implementado;
+- página do produto reformulada;
+- botão Comprar agora;
+- avaliações implementadas;
+- moderação;
+- migrations;
+- RLS;
+- Storage;
+- componentes criados;
+- páginas criadas;
+- páginas alteradas;
+- testes executados;
+- resultado do lint;
+- resultado do typecheck;
+- resultado dos testes;
+- resultado do build;
+- resultado do staging;
+- commits;
+- push;
+- pendências reais;
+- integrações futuras.
+
+Quero uma implementação completa, funcional, segura, responsiva, profissional e conectada ao banco.
+
+Não entregue apenas interface.
+
+Não deixe funcionalidades pela metade.
+
+Não use dados fixos.
+
+Não finalize antes de validar todos os fluxos.

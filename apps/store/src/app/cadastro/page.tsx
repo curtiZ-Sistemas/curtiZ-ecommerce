@@ -1,4 +1,4 @@
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { SignupForm } from "@/components/signup-form";
@@ -30,7 +30,7 @@ export default async function Page({
         </header>
         {referralStatus === "confirmada" && (
           <p className="form-message success" role="status">
-            Indicação confirmada. O vínculo será validado com segurança depois que você entrar.
+            Indicação confirmada. O vínculo será validado depois que você entrar.
           </p>
         )}
         {referralStatus === "invalida" && (
@@ -47,11 +47,6 @@ export default async function Page({
           returnTo={returnTo}
           turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
         />
-        <p className="auth-security-note">
-          <ShieldCheck aria-hidden="true" />
-          Seus dados são enviados por conexão protegida e nunca serão usados para criar acessos
-          internos.
-        </p>
       </section>
     </div>
   );

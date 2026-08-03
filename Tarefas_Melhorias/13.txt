@@ -1,0 +1,520 @@
+Implemente uma reformulação completa da Central de Ajuda e do atendimento da Curtiz.
+
+Trabalhe somente nos arquivos, rotas, tabelas e componentes relacionados a ajuda, FAQ, atendimento, chat flutuante, chamados e notificações. Não faça auditoria geral do repositório e não altere módulos sem relação direta.
+
+Antes de implementar:
+
+1. Localize a implementação atual de Atendimento e do botão flutuante.
+2. Identifique conteúdos estáticos, respostas incompletas, botões sem ação e páginas vazias.
+3. Verifique banco, Supabase Storage, RLS, autenticação e permissões existentes.
+4. Reutilize estruturas atuais quando forem adequadas.
+5. Apresente apenas um plano curto e execute a implementação.
+
+==================================================
+OBJETIVO
+==================================================
+
+Criar uma Central de Ajuda profissional, editável, pesquisável e integrada ao botão de ajuda do canto inferior direito.
+
+O sistema deve funcionar em desktop e mobile, utilizar dados reais e permitir atendimento automático baseado em conteúdos aprovados, além de encaminhamento para atendimento humano.
+
+==================================================
+PERMISSÕES
+==================================================
+
+Aplicar RBAC e validação server-side.
+
+Gerência:
+- revisar, aprovar, publicar, agendar, arquivar e restaurar conteúdos;
+- acessar métricas e auditoria;
+- configurar responsáveis e permissões.
+
+Administrador ou Conteúdo autorizado:
+- criar e editar categorias, artigos, perguntas, tutoriais e respostas rápidas;
+- salvar rascunhos;
+- enviar para aprovação;
+- organizar conteúdos e mídias.
+
+Operacional de Atendimento:
+- atender chamados;
+- responder clientes;
+- usar respostas rápidas;
+- criar rascunhos;
+- sugerir novos conteúdos;
+- sinalizar conteúdos desatualizados.
+
+Técnico:
+- acessar logs, falhas e integrações;
+- não modificar respostas comerciais diretamente.
+
+Criar permissões granulares equivalentes a:
+
+- support_content.view
+- support_content.create
+- support_content.edit
+- support_content.review
+- support_content.publish
+- support_ticket.view
+- support_ticket.assign
+- support_ticket.reply
+- support_ticket.close
+- support_settings.manage
+
+==================================================
+CENTRAL DE AJUDA
+==================================================
+
+Criar ou reformular:
+
+/ajuda
+
+A página deve conter:
+
+- busca principal;
+- categorias;
+- perguntas frequentes;
+- artigos populares;
+- tutoriais;
+- conteúdos recentes;
+- atalhos;
+- contato;
+- acompanhamento de chamados;
+- estado sem resultado;
+- conteúdos relacionados.
+
+Categorias iniciais:
+
+- Conta e cadastro;
+- Pedidos;
+- Pagamentos;
+- Entregas e rastreamento;
+- Produtos e tamanhos;
+- Carrinho;
+- Cupons;
+- Trocas e devoluções;
+- Cancelamentos;
+- Avaliações;
+- Segurança e privacidade;
+- Representante Curtiz;
+- Kits;
+- Comissões;
+- Criativos;
+- Atendimento.
+
+As categorias devem ser editáveis pelo painel.
+
+==================================================
+CONTEÚDOS
+==================================================
+
+Suportar:
+
+- perguntas frequentes;
+- artigos;
+- tutoriais;
+- passo a passo;
+- avisos;
+- vídeos;
+- documentos;
+- respostas rápidas;
+- orientações contextuais.
+
+Cada conteúdo deve possuir:
+
+- título;
+- resumo;
+- conteúdo;
+- categoria;
+- palavras-chave;
+- sinônimos;
+- público;
+- status;
+- prioridade;
+- mídia;
+- anexos;
+- autor;
+- revisor;
+- versão;
+- data de publicação;
+- data da última revisão;
+- data de expiração;
+- conteúdos relacionados;
+- rota ou ação relacionada.
+
+Públicos:
+
+- visitante;
+- customer;
+- representative;
+- operational;
+- admin;
+- manager;
+- technical.
+
+Conteúdos internos não podem aparecer publicamente.
+
+==================================================
+CRUD E VERSIONAMENTO
+==================================================
+
+Criar no painel:
+
+Atendimento
+└── Central de Ajuda
+    ├── Visão geral
+    ├── Categorias
+    ├── Perguntas frequentes
+    ├── Artigos e tutoriais
+    ├── Respostas rápidas
+    ├── Rascunhos
+    ├── Em revisão
+    ├── Publicados
+    ├── Desatualizados
+    ├── Arquivados
+    ├── Chamados
+    ├── Métricas
+    └── Auditoria
+
+Implementar CRUD completo:
+
+- criar;
+- visualizar;
+- editar;
+- duplicar;
+- salvar rascunho;
+- enviar para revisão;
+- aprovar;
+- rejeitar;
+- publicar;
+- agendar;
+- despublicar;
+- arquivar;
+- restaurar;
+- excluir com confirmação;
+- ordenar;
+- relacionar conteúdos.
+
+Cada edição deve gerar versão e auditoria.
+
+Um rascunho não pode alterar o conteúdo público até ser aprovado e publicado.
+
+==================================================
+BUSCA
+==================================================
+
+Pesquisar em:
+
+- título;
+- pergunta;
+- conteúdo;
+- palavras-chave;
+- sinônimos;
+- categoria.
+
+Aplicar:
+
+- debounce;
+- destaque do termo;
+- tolerância a pequenas variações;
+- sugestões;
+- conteúdos populares;
+- paginação;
+- estado sem resultado.
+
+Registrar termos sem resultado para análise interna, sem coletar dados pessoais desnecessários.
+
+==================================================
+BOTÃO FLUTUANTE
+==================================================
+
+Reformular completamente o botão de ajuda do canto inferior direito.
+
+Desktop:
+
+- botão fixo;
+- ícone e texto opcional;
+- janela compacta;
+- minimizar;
+- fechar;
+- manter histórico durante a sessão.
+
+Mobile:
+
+- respeitar safe area;
+- não cobrir carrinho, checkout, compra ou navegação;
+- abrir como painel adaptado;
+- funcionar com teclado aberto;
+- manter o campo de mensagem visível.
+
+Mensagem inicial:
+
+“Olá! Como podemos ajudar?”
+
+Ações rápidas:
+
+- Rastrear pedido;
+- Problema com entrega;
+- Troca ou devolução;
+- Pagamento;
+- Produto;
+- Minha conta;
+- Avaliação;
+- Representante Curtiz;
+- Falar com atendimento.
+
+==================================================
+RESPOSTAS AUTOMÁTICAS
+==================================================
+
+O assistente só poderá responder usando:
+
+- conteúdos publicados;
+- perguntas aprovadas;
+- regras reais do sistema;
+- dados autorizados do próprio usuário.
+
+Não inventar:
+
+- prazos;
+- preços;
+- políticas;
+- status;
+- comissões;
+- regras jurídicas.
+
+Quando não existir resposta confiável:
+
+“Não encontrei uma resposta segura para essa situação. Posso encaminhar você para o atendimento.”
+
+Sempre que possível, mostrar:
+
+- fonte da resposta;
+- link do artigo;
+- última atualização;
+- ação relacionada.
+
+==================================================
+CONTA E PEDIDOS
+==================================================
+
+Quando autenticado, permitir:
+
+- visualizar pedidos;
+- rastrear pedido;
+- abrir detalhes;
+- iniciar troca ou devolução;
+- consultar avaliações pendentes;
+- consultar chamados.
+
+Todas as consultas devem ocorrer no servidor e respeitar RLS.
+
+Quando não autenticado:
+
+- direcionar para login;
+- preservar returnTo;
+- voltar ao atendimento após autenticar.
+
+==================================================
+CHAMADOS
+==================================================
+
+Criar fluxo completo de atendimento humano.
+
+Campos:
+
+- protocolo;
+- assunto;
+- categoria;
+- prioridade;
+- mensagem;
+- pedido relacionado;
+- produto relacionado;
+- anexos;
+- responsável;
+- status.
+
+Status:
+
+- aberto;
+- aguardando atendimento;
+- em atendimento;
+- aguardando cliente;
+- resolvido;
+- encerrado;
+- reaberto.
+
+Permitir:
+
+- criar;
+- responder;
+- anexar;
+- atribuir;
+- transferir;
+- priorizar;
+- encerrar;
+- reabrir;
+- avaliar atendimento.
+
+O customer deve acompanhar seus chamados pela conta.
+
+O operational autorizado deve possuir fila de atendimento.
+
+==================================================
+FEEDBACK E MÉTRICAS
+==================================================
+
+Em artigos e respostas, perguntar:
+
+“Esta informação ajudou?”
+
+Registrar:
+
+- resposta positiva ou negativa;
+- motivo opcional;
+- conteúdo;
+- data;
+- ação tomada.
+
+Exibir métricas:
+
+- conteúdos mais vistos;
+- conteúdos mais úteis;
+- conteúdos mal avaliados;
+- buscas sem resultado;
+- temas frequentes;
+- chamados criados;
+- taxa de resolução automática;
+- tempo médio de atendimento.
+
+==================================================
+BANCO E SEGURANÇA
+==================================================
+
+Reutilize estruturas existentes. Quando necessário, crie migrations para entidades equivalentes a:
+
+- help_categories;
+- help_contents;
+- help_content_versions;
+- help_content_relations;
+- help_tags;
+- help_search_events;
+- help_content_feedback;
+- support_tickets;
+- support_ticket_messages;
+- support_ticket_attachments;
+- support_quick_replies;
+- support_assignments;
+- support_audit_logs.
+
+Aplicar:
+
+- RLS;
+- RBAC;
+- validação server-side;
+- prevenção de IDOR;
+- proteção de anexos;
+- URLs assinadas;
+- validação de MIME type;
+- limite de arquivo;
+- rate limiting;
+- sanitização;
+- auditoria;
+- mascaramento de dados.
+
+Nunca enviar ao assistente:
+
+- senhas;
+- tokens;
+- chaves;
+- dados completos de cartão;
+- CPF completo;
+- dados de outros clientes.
+
+==================================================
+PERFORMANCE E INTERFACE
+==================================================
+
+Aplicar:
+
+- busca indexada;
+- paginação;
+- cache;
+- debounce;
+- lazy loading;
+- consultas eficientes;
+- carregamento progressivo;
+- redução de JavaScript.
+
+O botão flutuante não pode prejudicar o desempenho da loja.
+
+Garantir:
+
+- loading;
+- skeleton;
+- estados vazios;
+- erros claros;
+- acessibilidade;
+- navegação por teclado;
+- foco visível;
+- fechamento por Escape;
+- responsividade completa.
+
+==================================================
+STAGING
+==================================================
+
+O módulo deve funcionar com:
+
+EMAIL_PROVIDER=mock
+WHATSAPP_PROVIDER=mock
+DEMO_MODE=true
+
+Chamados e notificações internas devem funcionar sem Resend ou WhatsApp.
+
+Não bloquear staging por integrações futuras.
+
+==================================================
+TESTES E ENTREGA
+==================================================
+
+Testar:
+
+- CRUD;
+- aprovação;
+- publicação;
+- versionamento;
+- busca;
+- bot flutuante;
+- ações rápidas;
+- login;
+- pedidos;
+- chamados;
+- anexos;
+- feedback;
+- permissões;
+- RLS;
+- mobile;
+- acessibilidade;
+- performance.
+
+Execute:
+
+- lint;
+- typecheck;
+- testes relacionados;
+- build;
+- validação de staging.
+
+Não faça relatório extenso. Ao concluir, informe resumidamente:
+
+- páginas criadas;
+- migrations;
+- permissões;
+- testes;
+- pendências reais.
+
+Crie um commit organizado:
+
+feat: reformula central de ajuda e atendimento Curtiz
+
+Não inclua `.env`, chaves, logs ou arquivos temporários. Não use force push.

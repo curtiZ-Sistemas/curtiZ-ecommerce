@@ -1,4 +1,4 @@
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { PasswordRecoveryForm } from "@/components/password-recovery-form";
 
@@ -14,12 +14,9 @@ export default function ResetPasswordPage() {
         <header className="auth-card-header">
           <span className="auth-kicker">Link confirmado</span>
           <h1>Crie uma nova senha</h1>
-          <p>Escolha uma senha exclusiva para proteger sua conta Curtiz.</p>
+          <p>Escolha a nova senha da sua conta Curtiz.</p>
         </header>
         <PasswordRecoveryForm mode="update" />
-        <p className="auth-security-note">
-          <ShieldCheck aria-hidden="true" /> Esta alteração exige uma sessão temporária criada pelo link recebido.
-        </p>
       </section>
     </main>
   );

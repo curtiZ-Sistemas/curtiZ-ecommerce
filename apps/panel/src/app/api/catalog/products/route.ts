@@ -13,7 +13,9 @@ const record = (value: unknown): UnknownRecord | null =>
     ? (value as UnknownRecord)
     : null;
 const rows = (value: unknown): UnknownRecord[] =>
-  Array.isArray(value) ? value.map(record).filter((item): item is UnknownRecord => Boolean(item)) : [];
+  Array.isArray(value)
+    ? value.map(record).filter((item): item is UnknownRecord => Boolean(item))
+    : [];
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
@@ -29,6 +31,46 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("archive"),
     productId: z.string().uuid()
+  }),
+  z.object({
+    action: z.literal("status"),
+    productId: z.string().uuid(),
+    status: z.enum(["draft", "active", "archived"])
+  }),
+  z.object({
+    action: z.literal("duplicate"),
+    productId: z.string().uuid(),
+    name: z.string().trim().min(3).max(160),
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .max(180)
+  }),
+  z.object({
+    action: z.literal("save"),
+    productId: z.string().uuid().optional(),
+    name: z.string().trim().min(3).max(160),
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .max(180),
+    shortDescription: z.string().trim().min(3).max(280),
+    description: z.string().trim().min(3).max(4_000),
+    categoryId: z.string().uuid(),
+    modelId: z.string().uuid().nullable().optional(),
+    collectionId: z.string().uuid().nullable().optional(),
+    status: z.enum(["draft", "active", "archived"]),
+    featured: z.boolean(),
+    priceInCents: z.number().int().min(0).max(100_000_000),
+    costInCents: z.number().int().min(0).max(100_000_000),
+    weightGrams: z.number().int().min(1).max(100_000),
+    heightCm: z.number().positive().max(10_000),
+    widthCm: z.number().positive().max(10_000),
+    lengthCm: z.number().positive().max(10_000),
+    seoTitle: z.string().trim().max(160).optional(),
+    seoDescription: z.string().trim().max(320).optional()
   })
 ]);
 
@@ -91,6 +133,19 @@ const serializeProducts = (data: unknown) =>
       slug: text(product.slug),
       status: text(product.status),
       priceInCents: Math.round(number(product.base_price) * 100),
+      categoryId: text(product.category_id),
+      modelId: text(product.model_id),
+      collectionId: text(product.collection_id),
+      shortDescription: text(product.short_description),
+      description: text(product.description),
+      costInCents: Math.round(number(product.cost_price) * 100),
+      featured: product.featured === true,
+      weightGrams: number(product.weight_grams),
+      heightCm: number(product.height_cm),
+      widthCm: number(product.width_cm),
+      lengthCm: number(product.length_cm),
+      seoTitle: text(product.seo_title),
+      seoDescription: text(product.seo_description),
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
     };
@@ -105,41 +160,71 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const result = await supabase
-    .from("products")
-    .select(
-      "id,name,slug,status,base_price,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))"
-    )
-    .order("updated_at", { ascending: false })
-    .limit(500);
-  if (result.error) {
+  const [result, categories, models, collections] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        "id,name,slug,short_description,description,category_id,model_id,collection_id,status,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))"
+      )
+      .order("updated_at", { ascending: false })
+      .limit(500),
+    supabase.from("categories").select("id,name").order("name"),
+    supabase.from("product_models").select("id,name").order("name"),
+    supabase.from("collections").select("id,name").order("name")
+  ]);
+  if (result.error || categories.error) {
     return NextResponse.json(
       { message: "Não foi possível carregar os produtos." },
       { status: 503, headers: noStore }
     );
   }
 
-  return NextResponse.json({ products: serializeProducts(result.data) }, { headers: noStore });
+  return NextResponse.json(
+    {
+      products: serializeProducts(result.data),
+      categories: rows(categories.data).map((item) => ({
+        id: text(item.id),
+        name: text(item.name)
+      })),
+      models: models.error
+        ? []
+        : rows(models.data).map((item) => ({ id: text(item.id), name: text(item.name) })),
+      collections: collections.error
+        ? []
+        : rows(collections.data).map((item) => ({ id: text(item.id), name: text(item.name) }))
+    },
+    { headers: noStore }
+  );
 }
 
 export async function PATCH(request: NextRequest) {
   if (!safeOrigin(request)) {
-    return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: noStore });
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: noStore }
+    );
   }
   const supabase = await authorizedClient(request);
   if (!supabase) {
-    return NextResponse.json({ message: "Acesso não autorizado." }, { status: 401, headers: noStore });
+    return NextResponse.json(
+      { message: "Acesso não autorizado." },
+      { status: 401, headers: noStore }
+    );
   }
 
   const parsed = actionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ message: "Revise os dados informados." }, { status: 400, headers: noStore });
+    return NextResponse.json(
+      { message: "Revise os dados informados." },
+      { status: 400, headers: noStore }
+    );
   }
 
-  if (parsed.data.action === "archive") {
+  if (parsed.data.action === "archive" || parsed.data.action === "status") {
+    const status = parsed.data.action === "archive" ? "archived" : parsed.data.status;
     const result = await supabase
       .from("products")
-      .update({ status: "archived" })
+      .update({ status })
       .eq("id", parsed.data.productId)
       .select("id")
       .maybeSingle();
@@ -150,7 +235,78 @@ export async function PATCH(request: NextRequest) {
       );
     }
     return NextResponse.json(
-      { ok: true, message: "Produto excluído do catálogo sem apagar o histórico de pedidos." },
+      {
+        ok: true,
+        message:
+          status === "archived"
+            ? "Produto arquivado sem apagar o histórico de pedidos."
+            : "Status do produto atualizado."
+      },
+      { headers: noStore }
+    );
+  }
+
+  if (parsed.data.action === "duplicate") {
+    const result = await supabase.rpc("duplicate_product", {
+      p_product_id: parsed.data.productId,
+      p_name: parsed.data.name,
+      p_slug: parsed.data.slug
+    });
+    if (result.error) {
+      return NextResponse.json(
+        { message: "Não foi possível duplicar o produto." },
+        { status: 409, headers: noStore }
+      );
+    }
+    return NextResponse.json(
+      { ok: true, message: "Produto e variações duplicados como rascunho." },
+      { headers: noStore }
+    );
+  }
+
+  if (parsed.data.action === "save") {
+    const values = {
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      short_description: parsed.data.shortDescription,
+      description: parsed.data.description,
+      category_id: parsed.data.categoryId,
+      model_id: parsed.data.modelId || null,
+      collection_id: parsed.data.collectionId || null,
+      status: parsed.data.status,
+      featured: parsed.data.featured,
+      base_price: parsed.data.priceInCents / 100,
+      cost_price: parsed.data.costInCents / 100,
+      weight_grams: parsed.data.weightGrams,
+      height_cm: parsed.data.heightCm,
+      width_cm: parsed.data.widthCm,
+      length_cm: parsed.data.lengthCm,
+      seo_title: parsed.data.seoTitle || null,
+      seo_description: parsed.data.seoDescription || null
+    };
+    const result = parsed.data.productId
+      ? await supabase
+          .from("products")
+          .update({ ...values, updated_by: (await supabase.auth.getUser()).data.user?.id })
+          .eq("id", parsed.data.productId)
+          .select("id")
+          .maybeSingle()
+      : await supabase
+          .from("products")
+          .insert({ ...values, created_by: (await supabase.auth.getUser()).data.user?.id })
+          .select("id")
+          .single();
+    if (result.error || !result.data) {
+      return NextResponse.json(
+        { message: "Não foi possível salvar o produto." },
+        { status: 409, headers: noStore }
+      );
+    }
+    return NextResponse.json(
+      {
+        ok: true,
+        message: parsed.data.productId ? "Produto atualizado." : "Produto criado como configurado."
+      },
       { headers: noStore }
     );
   }
@@ -162,7 +318,10 @@ export async function PATCH(request: NextRequest) {
     .eq("product_id", parsed.data.productId)
     .maybeSingle();
   if (variantResult.error || !variantResult.data) {
-    return NextResponse.json({ message: "Variação não encontrada." }, { status: 404, headers: noStore });
+    return NextResponse.json(
+      { message: "Variação não encontrada." },
+      { status: 404, headers: noStore }
+    );
   }
 
   const inventoryResult = await supabase

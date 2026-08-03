@@ -1,0 +1,724 @@
+Agora execute a implementação completa das melhorias encontradas na auditoria do sistema Curtiz.
+
+Use obrigatoriamente como fonte principal:
+
+AUDITORIA_COMPLETA_CURTIZ.md
+
+Não refaça uma análise genérica. Leia o relatório inteiro, valide os problemas no código e implemente as correções.
+
+==================================================
+1. OBJETIVO
+==================================================
+
+Transformar todos os acessos do sistema em áreas completas, profissionais, funcionais, seguras e conectadas ao banco.
+
+Perfis envolvidos:
+
+- Cliente;
+- Representante Curtiz;
+- Gerência;
+- Administrador;
+- Operacional;
+- Técnico.
+
+A implementação deve resolver os problemas P0, P1, P2 e P3 encontrados na auditoria.
+
+Itens P4 devem ser preparados arquiteturalmente e documentados, sem prejudicar o prazo das funcionalidades principais.
+
+==================================================
+2. ORGANIZAÇÃO DA EXECUÇÃO
+==================================================
+
+Antes de modificar arquivos:
+
+1. Leia AUDITORIA_COMPLETA_CURTIZ.md.
+2. Confirme os problemas diretamente no código.
+3. Crie o arquivo PLANO_IMPLEMENTACAO_CURTIZ.md.
+4. Organize as correções por fases.
+5. Identifique dependências.
+6. Identifique migrations necessárias.
+7. Identifique riscos.
+8. Identifique testes necessários.
+
+Fases obrigatórias:
+
+Fase 1:
+- segurança;
+- autenticação;
+- permissões;
+- RLS;
+- erros que bloqueiam o sistema;
+- staging;
+- build e deploy.
+
+Fase 2:
+- funções principais quebradas;
+- banco;
+- formulários;
+- botões;
+- rotas;
+- ações;
+- uploads;
+- downloads.
+
+Fase 3:
+- Cliente;
+- Representante Curtiz;
+- Gerência;
+- Administrador;
+- Operacional;
+- Técnico.
+
+Fase 4:
+- kits;
+- estoque;
+- níveis;
+- qualificação;
+- indicações;
+- comissões;
+- criativos;
+- campanhas.
+
+Fase 5:
+- UI;
+- UX;
+- mobile;
+- acessibilidade;
+- performance.
+
+Fase 6:
+- testes;
+- documentação;
+- preparação de deploy;
+- validação final.
+
+Atualize o plano durante a execução.
+
+==================================================
+3. REGRAS DE IMPLEMENTAÇÃO
+==================================================
+
+Não pode permanecer:
+
+- botão sem ação;
+- link quebrado;
+- menu sem rota;
+- formulário sem persistência;
+- filtro falso;
+- gráfico fictício;
+- card com número fixo;
+- busca sem funcionamento;
+- paginação visual;
+- tabela desconectada;
+- download sem arquivo;
+- upload inseguro;
+- modal sem ação;
+- aprovação sem efeito;
+- página vazia sem estado;
+- função sem permissão adequada.
+
+Toda ação deve possuir:
+
+- validação server-side;
+- loading;
+- sucesso;
+- erro;
+- prevenção de duplicidade;
+- auditoria quando necessária;
+- atualização dos dados;
+- mensagem clara para o usuário.
+
+==================================================
+4. DADOS REAIS
+==================================================
+
+Substitua dados fixos e fictícios por:
+
+- consultas reais;
+- agregações reais;
+- estados vazios;
+- dados de demonstração claramente identificados, somente quando necessário.
+
+Gráficos e indicadores devem utilizar dados reais do banco.
+
+Quando não houver registros, mostrar estado vazio profissional.
+
+Não inventar números para preencher dashboards.
+
+==================================================
+5. CLIENTE
+==================================================
+
+Concluir e melhorar:
+
+- Perfil sem login;
+- login;
+- cadastro;
+- retorno ao Perfil;
+- dados pessoais;
+- edição;
+- segurança;
+- pedidos;
+- rastreamento;
+- favoritos;
+- avaliações;
+- cupons;
+- endereços;
+- trocas;
+- devoluções;
+- notificações;
+- atendimento;
+- solicitação para Representante Curtiz.
+
+Garantir que todos os botões e fluxos funcionem.
+
+==================================================
+6. REPRESENTANTE CURTIZ
+==================================================
+
+Concluir o portal completo:
+
+- dashboard;
+- perfil;
+- status;
+- solicitação;
+- aprovação;
+- documentos;
+- kit inicial;
+- kits mensais;
+- estoque;
+- registro de vendas;
+- histórico;
+- níveis;
+- qualificação;
+- metas;
+- indicações;
+- equipe;
+- árvore;
+- comissões;
+- estornos;
+- fechamento;
+- pagamentos;
+- criativos;
+- campanhas;
+- materiais;
+- treinamentos;
+- documentos;
+- contrato;
+- notificações;
+- atendimento.
+
+Todas as regras comerciais devem ser configuráveis pelo painel.
+
+Não fixar:
+
+- nomes dos níveis;
+- quantidade de níveis;
+- percentuais;
+- metas;
+- kits mínimos;
+- regras de progressão;
+- regras de manutenção;
+- regras de rebaixamento.
+
+==================================================
+7. GERÊNCIA
+==================================================
+
+Criar ou concluir:
+
+- dashboard estratégico;
+- solicitações de representantes;
+- análise;
+- correção documental;
+- aprovação;
+- reprovação;
+- suspensão;
+- representantes ativos;
+- estrutura da rede;
+- níveis;
+- regras;
+- metas;
+- qualificação;
+- kits;
+- comissões;
+- simulação;
+- fechamento;
+- pagamentos;
+- criativos;
+- campanhas;
+- relatórios;
+- auditoria;
+- alertas;
+- configurações.
+
+Toda decisão deve registrar responsável, data, motivo e histórico.
+
+==================================================
+8. ADMINISTRADOR
+==================================================
+
+Garantir gestão completa de:
+
+- produtos;
+- categorias;
+- variações;
+- conteúdo;
+- marketing;
+- cupons;
+- estoque;
+- pedidos;
+- clientes;
+- representantes;
+- kits;
+- níveis;
+- metas;
+- regras de comissão;
+- criativos;
+- campanhas;
+- treinamentos;
+- contratos;
+- usuários;
+- permissões;
+- configurações.
+
+Todos os CRUDs devem funcionar de verdade.
+
+==================================================
+9. OPERACIONAL
+==================================================
+
+Garantir funcionamento completo de:
+
+- pedidos;
+- separação;
+- expedição;
+- envio;
+- estoque;
+- montagem de kits;
+- pedidos de kits;
+- reposição;
+- notas fiscais;
+- trocas;
+- devoluções;
+- produtos danificados;
+- ocorrências;
+- atendimento;
+- pendências;
+- suporte ao representante;
+- criativos, somente quando autorizado.
+
+Não conceder acesso estratégico ou financeiro sem permissão.
+
+==================================================
+10. TÉCNICO
+==================================================
+
+Criar ou concluir:
+
+- saúde dos serviços;
+- logs;
+- alertas;
+- segurança;
+- acessos;
+- integrações;
+- webhooks;
+- filas;
+- jobs;
+- falhas;
+- banco;
+- Storage;
+- backups;
+- integridade;
+- auditoria técnica;
+- monitoramento.
+
+O perfil técnico não deve alterar valores financeiros diretamente.
+
+==================================================
+11. KITS E ESTOQUE
+==================================================
+
+Implementar corretamente:
+
+- cadastro de kits;
+- composição;
+- produtos;
+- variações;
+- preço;
+- estoque;
+- kit inicial;
+- reposição;
+- kits por nível;
+- pedidos;
+- pagamento mock;
+- recebimento;
+- estoque do representante;
+- venda;
+- devolução;
+- dano;
+- perda;
+- ajuste;
+- histórico de movimentações.
+
+Toda movimentação deve ser auditável.
+
+==================================================
+12. NÍVEIS E QUALIFICAÇÃO
+==================================================
+
+Implementar mecanismo configurável de:
+
+- níveis;
+- metas;
+- kits mínimos;
+- vendas mínimas;
+- volume da equipe;
+- representantes ativos;
+- comissão;
+- benefícios;
+- promoção;
+- manutenção;
+- rebaixamento;
+- tolerância;
+- carência;
+- período de avaliação.
+
+Mostrar progresso real ao representante.
+
+Registrar histórico de mudança de nível.
+
+==================================================
+13. REDE DE INDICAÇÕES
+==================================================
+
+Implementar e validar:
+
+- código único;
+- link;
+- indicador direto;
+- equipe;
+- árvore;
+- profundidade;
+- busca;
+- filtros;
+- histórico;
+- auditoria.
+
+Impedir:
+
+- autoindicação;
+- ciclos;
+- duplicidade;
+- troca indevida;
+- manipulação por URL;
+- acesso a informações não autorizadas.
+
+==================================================
+14. COMISSÕES
+==================================================
+
+Implementar motor configurável:
+
+- comissão direta;
+- liderança;
+- bônus;
+- campanha;
+- ajuste;
+- estorno.
+
+Comissão somente após venda válida e pagamento confirmado.
+
+Cancelamento, devolução e chargeback devem gerar estorno.
+
+Criar:
+
+- extrato;
+- saldo pendente;
+- saldo disponível;
+- saldo pago;
+- saldo estornado;
+- simulação;
+- aprovação;
+- fechamento;
+- pagamento;
+- auditoria.
+
+==================================================
+15. CRIATIVOS E CAMPANHAS
+==================================================
+
+Concluir:
+
+- upload de imagens;
+- upload de vídeos;
+- PDFs;
+- miniaturas;
+- categorias;
+- campanhas;
+- legendas;
+- hashtags;
+- rascunho;
+- aprovação;
+- agendamento;
+- publicação;
+- expiração;
+- arquivamento;
+- restrições;
+- notificações;
+- visualização;
+- favoritos;
+- downloads;
+- histórico;
+- métricas internas.
+
+Usar Storage seguro, RLS e URLs assinadas quando necessário.
+
+==================================================
+16. UI, UX E MOBILE
+==================================================
+
+Reformular telas limitadas ou sem acabamento.
+
+Todos os painéis devem ter:
+
+- dashboard útil;
+- indicadores reais;
+- atalhos;
+- alertas;
+- pendências;
+- atividades recentes;
+- filtros;
+- busca;
+- paginação;
+- estados vazios;
+- loading;
+- skeleton;
+- mensagens de erro;
+- feedback imediato.
+
+Aplicar design consistente em:
+
+- desktop;
+- tablet;
+- 430px;
+- 390px;
+- 375px;
+- 360px;
+- 320px.
+
+Não permitir rolagem horizontal, sobreposição ou elementos cortados.
+
+==================================================
+17. PERFORMANCE
+==================================================
+
+Corrigir problemas encontrados na auditoria:
+
+- consultas lentas;
+- chamadas duplicadas;
+- navegação sem feedback;
+- componentes client-side desnecessários;
+- re-renderizações;
+- imagens pesadas;
+- bundle excessivo;
+- ausência de cache;
+- ausência de paginação;
+- ausência de debounce;
+- hidratação;
+- layout shift.
+
+Implementar feedback de navegação imediato.
+
+==================================================
+18. SEGURANÇA
+==================================================
+
+Corrigir todos os itens P0 e P1 relacionados a:
+
+- RLS;
+- RBAC;
+- rotas;
+- IDOR;
+- escalada de privilégio;
+- uploads;
+- documentos;
+- Storage;
+- dados pessoais;
+- chaves;
+- sessões;
+- auditoria;
+- acesso direto por URL;
+- validação server-side.
+
+Aplicar menor privilégio.
+
+==================================================
+19. BANCO E MIGRATIONS
+==================================================
+
+Todas as alterações no banco devem utilizar migrations.
+
+Não editar produção manualmente.
+
+Adicionar:
+
+- constraints;
+- índices;
+- foreign keys;
+- políticas;
+- histórico;
+- auditoria;
+- integridade.
+
+Evitar tabelas e colunas duplicadas.
+
+Criar rollback seguro quando aplicável.
+
+==================================================
+20. STAGING
+==================================================
+
+Garantir deploy funcional usando:
+
+PAYMENT_PROVIDER=mock
+EMAIL_PROVIDER=mock
+SHIPPING_PROVIDER=mock
+WHATSAPP_PROVIDER=mock
+DEMO_MODE=true
+
+Não exigir no staging:
+
+- Mercado Pago real;
+- Resend real;
+- Melhor Envio real;
+- Correios real;
+- Turnstile real;
+- WhatsApp real.
+
+Manter validação de produção separada e rigorosa.
+
+Criar ou corrigir:
+
+- validate:staging;
+- build:staging;
+- deploy:staging;
+- validate:production;
+- build:production;
+- deploy:production.
+
+==================================================
+21. TESTES
+==================================================
+
+Criar ou ampliar testes para:
+
+- Cliente;
+- Representante;
+- Gerência;
+- Administrador;
+- Operacional;
+- Técnico;
+- permissões;
+- RLS;
+- login;
+- redirecionamento;
+- solicitações;
+- kits;
+- estoque;
+- vendas;
+- níveis;
+- qualificação;
+- rede;
+- comissões;
+- estornos;
+- criativos;
+- downloads;
+- uploads;
+- mobile;
+- build;
+- staging.
+
+Executar:
+
+- lint;
+- typecheck;
+- testes unitários;
+- integração;
+- permissões;
+- RLS;
+- build;
+- staging;
+- acessibilidade;
+- performance.
+
+==================================================
+22. CONTROLE DE PROGRESSO
+==================================================
+
+Atualize durante a implementação:
+
+- AUDITORIA_COMPLETA_CURTIZ.md;
+- PLANO_IMPLEMENTACAO_CURTIZ.md.
+
+Cada problema deve receber um status:
+
+- pendente;
+- em andamento;
+- corrigido;
+- validado;
+- bloqueado;
+- adiado.
+
+Não marque como corrigido sem testar.
+
+==================================================
+23. COMMITS
+==================================================
+
+Faça commits organizados por fase.
+
+Exemplos:
+
+- fix: corrige autenticação e permissões
+- feat: conclui painel do cliente
+- feat: implementa portal do representante
+- feat: conclui gestão gerencial e administrativa
+- feat: implementa kits e estoque
+- feat: implementa níveis e qualificação
+- feat: implementa rede e comissões
+- feat: conclui criativos e campanhas
+- fix: melhora responsividade e performance
+- test: amplia cobertura dos fluxos
+- docs: atualiza auditoria e documentação
+
+Não colocar chaves ou arquivos `.env` reais nos commits.
+
+==================================================
+24. ENTREGA FINAL
+==================================================
+
+Ao concluir, apresentar:
+
+1. Problemas corrigidos.
+2. Problemas restantes.
+3. Páginas criadas.
+4. Páginas reformuladas.
+5. Botões corrigidos.
+6. Fluxos concluídos.
+7. Migrations.
+8. Políticas RLS.
+9. Permissões.
+10. Componentes.
+11. Testes.
+12. Resultado do build.
+13. Resultado do staging.
+14. Variáveis necessárias.
+15. Comandos da Cloudflare.
+16. Root directory.
+17. Build command.
+18. Deploy command.
+19. Commits realizados.
+20. Dependências futuras.
+
+Não considerar a implementação concluída enquanto ainda existirem funcionalidades principais apenas visuais, botões sem ação, páginas vazias, permissões incorretas, erros no console, problemas mobile ou staging bloqueado por APIs que serão configuradas futuramente.

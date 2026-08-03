@@ -3181,14 +3181,11 @@ select:disabled {
   padding: 0 11px;
   border: 1px solid var(--neutral-300);
   border-radius: var(--radius-sm);
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
+  transition: box-shadow 150ms ease;
 }
 
 .input-shell:focus-within {
-  border-color: var(--brand-700);
-  box-shadow: 0 0 0 3px var(--brand-100);
+  box-shadow: 0 0 0 3px rgb(124 29 23 / 14%);
 }
 
 .input-shell > svg {
@@ -3284,18 +3281,6 @@ select:disabled {
   font-size: 0.65rem;
 }
 
-.auth-privacy {
-  margin: 16px 0 0;
-  color: var(--neutral-500);
-  font-size: 0.61rem;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.auth-privacy a {
-  color: var(--brand-900);
-}
-
 .auth-signup-card {
   width: min(100%, 670px);
   margin: 0 auto;
@@ -3320,17 +3305,16 @@ select:disabled {
   width: 16px;
 }
 
-.auth-security-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 18px;
+.auth-form-message {
+  border: 0;
+  background: var(--neutral-100);
 }
 
-.auth-security-note svg {
-  width: 16px;
-  flex: 0 0 auto;
-  color: var(--success);
+.auth-form-message a {
+  color: var(--brand-900);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .optional-label {

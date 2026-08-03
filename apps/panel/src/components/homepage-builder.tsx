@@ -3,449 +3,380 @@
 import {
   ArrowDown,
   ArrowUp,
-  Eye,
-  EyeOff,
   Copy,
-  Trash2,
+  Eye,
+  ExternalLink,
+  LoaderCircle,
+  Pencil,
+  Plus,
   Save,
-  Check,
-  LayoutGrid,
-  Image as ImageIcon,
-  Sparkles,
-  Star
+  Trash2,
+  X
 } from "lucide-react";
-import { useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
-export type SectionType =
-  | "banner_hero"
-  | "featured_products"
-  | "categories_grid"
-  | "banner_promo"
-  | "reviews_carousel"
-  | "brands_strip"
-  | "custom_banner";
-
-export type HomepageSectionItem = {
+type HomepageSection = {
   id: string;
-  sectionType: SectionType;
-  title: string;
-  subtitle: string;
+  section_type: string;
+  title: string | null;
+  subtitle: string | null;
+  settings: Record<string, unknown>;
   active: boolean;
-  startsAt: string;
-  endsAt: string;
-  sortOrder: number;
-  settings: Record<string, string | number | boolean>;
+  starts_at: string | null;
+  ends_at: string | null;
+  sort_order: number;
 };
 
-const initialSections: HomepageSectionItem[] = [
-  {
-    id: "sec-1",
-    sectionType: "banner_hero",
-    title: "Banners Principais (Hero Carousel)",
-    subtitle: "Carrossel topo de linha em alta resolução",
-    active: true,
-    startsAt: "",
-    endsAt: "",
-    sortOrder: 1,
-    settings: {
-      autoPlay: true,
-      intervalSeconds: 5
-    }
-  },
-  {
-    id: "sec-2",
-    sectionType: "featured_products",
-    title: "Lançamentos e Mais Vendidos",
-    subtitle: "Seleção especial de sandálias e slides",
-    active: true,
-    startsAt: "",
-    endsAt: "",
-    sortOrder: 2,
-    settings: {
-      limit: 8,
-      layout: "grid_4"
-    }
-  },
-  {
-    id: "sec-3",
-    sectionType: "categories_grid",
-    title: "Navegue por Categoria",
-    subtitle: "Masculino, Feminino, Infantil e Edições Especiais",
-    active: true,
-    startsAt: "",
-    endsAt: "",
-    sortOrder: 3,
-    settings: {
-      columns: 4
-    }
-  },
-  {
-    id: "sec-4",
-    sectionType: "banner_promo",
-    title: "Banner Promocional de Verão",
-    subtitle: "Descontos de até 30% em modelos selecionados",
-    active: true,
-    startsAt: "",
-    endsAt: "",
-    sortOrder: 4,
-    settings: {
-      ctaText: "Aproveitar Ofertas",
-      ctaLink: "/categoria/promocoes"
-    }
-  },
-  {
-    id: "sec-5",
-    sectionType: "reviews_carousel",
-    title: "O que Nossos Clientes Dizem",
-    subtitle: "Avaliações reais verificadas pós-compra",
-    active: true,
-    startsAt: "",
-    endsAt: "",
-    sortOrder: 5,
-    settings: {
-      minRating: 4
-    }
-  }
-];
-
-const sectionTypeLabels: Record<SectionType, { label: string; icon: React.ElementType }> = {
-  banner_hero: { label: "Hero Banner Carousel", icon: ImageIcon },
-  featured_products: { label: "Grid de Produtos em Destaque", icon: LayoutGrid },
-  categories_grid: { label: "Grid de Categorias", icon: LayoutGrid },
-  banner_promo: { label: "Fita/Banner Promocional", icon: Sparkles },
-  reviews_carousel: { label: "Carrossel de Avaliações", icon: Star },
-  brands_strip: { label: "Faixa Institucional/Marcas", icon: Sparkles },
-  custom_banner: { label: "Banner Personalizado", icon: ImageIcon }
+type ApiResult = {
+  items?: HomepageSection[];
+  item?: HomepageSection;
+  message?: string;
 };
+
+const sectionTypes = [
+  ["banner_hero", "Banners principais"],
+  ["featured_products", "Produtos em destaque"],
+  ["categories_grid", "Categorias"],
+  ["banner_promo", "Banner promocional"],
+  ["reviews_carousel", "Avaliações"],
+  ["brands_strip", "Marcas"],
+  ["custom_banner", "Banner personalizado"]
+] as const;
+
+const inputDate = (value: string | null) => value?.slice(0, 16) ?? "";
 
 export function HomepageBuilder() {
-  const [sections, setSections] = useState<HomepageSectionItem[]>(initialSections);
-  const [editingSection, setEditingSection] = useState<HomepageSectionItem | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [sections, setSections] = useState<HomepageSection[]>([]);
+  const [editing, setEditing] = useState<HomepageSection | "new" | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
 
-  const moveUp = (index: number) => {
-    if (index === 0) return;
-    const updated = [...sections];
-    const previous = updated[index - 1];
-    const current = updated[index];
-    if (!previous || !current) return;
-    updated[index - 1] = current;
-    updated[index] = previous;
-    updated.forEach((sec, idx) => (sec.sortOrder = idx + 1));
-    setSections(updated);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/resources/pagina-inicial?page=1", {
+        cache: "no-store"
+      });
+      const result = (await response.json()) as ApiResult;
+      if (!response.ok) throw new Error(result.message);
+      setSections(result.items ?? []);
+    } catch {
+      setMessage("Não foi possível carregar a estrutura da página inicial.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const mutate = async (method: "POST" | "PATCH" | "DELETE", payload: Record<string, unknown>) => {
+    if (pending) return false;
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/resources/pagina-inicial", {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = (await response.json()) as ApiResult;
+      if (!response.ok) throw new Error(result.message);
+      setMessage(result.message ?? "Página inicial atualizada.");
+      await load();
+      return true;
+    } catch (error) {
+      setMessage(
+        error instanceof Error && error.message ? error.message : "Não foi possível salvar."
+      );
+      return false;
+    } finally {
+      setPending(false);
+    }
   };
 
-  const moveDown = (index: number) => {
-    if (index === sections.length - 1) return;
-    const updated = [...sections];
-    const current = updated[index];
-    const next = updated[index + 1];
-    if (!current || !next) return;
-    updated[index + 1] = current;
-    updated[index] = next;
-    updated.forEach((sec, idx) => (sec.sortOrder = idx + 1));
-    setSections(updated);
-  };
-
-  const toggleActive = (id: string) => {
-    setSections((prev) =>
-      prev.map((sec) => (sec.id === id ? { ...sec, active: !sec.active } : sec))
-    );
-  };
-
-  const duplicateSection = (sec: HomepageSectionItem) => {
-    const newSec: HomepageSectionItem = {
-      ...sec,
-      id: `sec-${Date.now()}`,
-      title: `${sec.title} (Cópia)`,
-      sortOrder: sections.length + 1
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing) return;
+    const form = new FormData(event.currentTarget);
+    const settingsText = String(form.get("settings") ?? "{}");
+    let settings: Record<string, unknown>;
+    try {
+      settings = JSON.parse(settingsText) as Record<string, unknown>;
+    } catch {
+      setMessage("A configuração JSON não é válida.");
+      return;
+    }
+    const values = {
+      section_type: String(form.get("section_type") ?? ""),
+      title: String(form.get("title") ?? ""),
+      subtitle: String(form.get("subtitle") ?? ""),
+      settings,
+      active: form.get("active") === "on",
+      starts_at: String(form.get("starts_at") ?? ""),
+      ends_at: String(form.get("ends_at") ?? ""),
+      sort_order: Number(form.get("sort_order") ?? 0)
     };
-    setSections([...sections, newSec]);
+    const success = await mutate(editing === "new" ? "POST" : "PATCH", {
+      ...(editing === "new" ? {} : { id: editing.id }),
+      values
+    });
+    if (success) setEditing(null);
   };
 
-  const removeSection = (id: string) => {
-    setSections((prev) => prev.filter((sec) => sec.id !== id));
+  const reorder = async (index: number, direction: -1 | 1) => {
+    const target = sections[index];
+    const other = sections[index + direction];
+    if (!target || !other) return;
+    const first = await mutate("PATCH", {
+      id: target.id,
+      values: { ...target, sort_order: other.sort_order }
+    });
+    if (first) {
+      await mutate("PATCH", {
+        id: other.id,
+        values: { ...other, sort_order: target.sort_order }
+      });
+    }
   };
 
-  const addNewSection = (type: SectionType) => {
-    const typeInfo = sectionTypeLabels[type];
-    const newSec: HomepageSectionItem = {
-      id: `sec-${Date.now()}`,
-      sectionType: type,
-      title: `Nova Seção — ${typeInfo.label}`,
-      subtitle: "Subtítulo editável da seção",
-      active: true,
-      startsAt: "",
-      endsAt: "",
-      sortOrder: sections.length + 1,
-      settings: {}
-    };
-    setSections([...sections, newSec]);
-    setEditingSection(newSec);
-  };
-
-  const saveChanges = () => {
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+  const duplicate = async (section: HomepageSection) => {
+    await mutate("POST", {
+      values: {
+        ...section,
+        title: `${section.title ?? "Seção"} — cópia`,
+        sort_order: sections.length + 1
+      }
+    });
   };
 
   return (
-    <div className="homepage-builder">
-      <div className="page-heading">
+    <section className="panel-card homepage-builder">
+      <header className="admin-resource-header">
         <div>
-          <h1>Construtor da Página Inicial</h1>
+          <h2>Construtor da página inicial</h2>
           <p>
-            Crie, reordene, agende e personalize cada seção da loja em tempo real sem alterar código.
+            Organize seções reais, agendamento e visibilidade. Cada alteração mantém uma versão
+            anterior.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="primary-button" type="button" onClick={saveChanges}>
-            {savedSuccess ? <Check size={18} /> : <Save size={18} />}
-            {savedSuccess ? "Alterações Salvas!" : "Salvar Configuração"}
+        <div className="admin-header-actions">
+          <a
+            className="secondary-button"
+            href={process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink aria-hidden="true" /> Visualizar loja
+          </a>
+          <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <Plus aria-hidden="true" /> Nova seção
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="dashboard-grid">
-        <section className="panel-card" style={{ gridColumn: "span 2" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "1rem"
-            }}
-          >
-            <h2>Estrutura Atual da Página Inicial ({sections.length} Seções)</h2>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <select
-                aria-label="Adicionar tipo de seção"
-                defaultValue=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    addNewSection(e.target.value as SectionType);
-                    e.target.value = "";
-                  }
-                }}
-                style={{ padding: "0.4rem 0.8rem", borderRadius: "6px", fontSize: "0.875rem" }}
-              >
-                <option value="" disabled>
-                  + Adicionar Nova Seção...
-                </option>
-                {Object.entries(sectionTypeLabels).map(([type, { label }]) => (
-                  <option key={type} value={type}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {sections.map((sec, idx) => {
-              const Icon = sectionTypeLabels[sec.sectionType]?.icon || LayoutGrid;
-              return (
-                <div
-                  key={sec.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "1rem",
-                    borderRadius: "8px",
-                    border: "1px solid var(--border, #e5e7eb)",
-                    background: sec.active ? "var(--surface, #ffffff)" : "var(--surface-muted, #f9fafb)",
-                    opacity: sec.active ? 1 : 0.65
-                  }}
+      {message && (
+        <p className="admin-feedback" role="status">
+          {message}
+        </p>
+      )}
+      {loading ? (
+        <div className="admin-loading">
+          <LoaderCircle className="spin" /> Carregando estrutura
+        </div>
+      ) : sections.length === 0 ? (
+        <div className="admin-empty-state">
+          <h3>A página inicial ainda não possui seções</h3>
+          <p>Crie a primeira seção para começar a composição.</p>
+        </div>
+      ) : (
+        <div className="homepage-section-list">
+          {sections.map((section, index) => (
+            <article key={section.id} className={section.active ? "" : "inactive"}>
+              <span className="homepage-order">{index + 1}</span>
+              <div>
+                <strong>{section.title || "Seção sem título"}</strong>
+                <small>
+                  {sectionTypes.find(([type]) => type === section.section_type)?.[1] ??
+                    section.section_type}
+                </small>
+              </div>
+              <span className={section.active ? "status green" : "status gray"}>
+                {section.active ? "Ativa" : "Oculta"}
+              </span>
+              <div className="homepage-actions">
+                <button
+                  type="button"
+                  disabled={index === 0 || pending}
+                  onClick={() => void reorder(index, -1)}
+                  aria-label="Subir seção"
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                    <div
-                      style={{
-                        padding: "0.5rem",
-                        borderRadius: "6px",
-                        background: "var(--primary-subtle, #eff6ff)",
-                        color: "var(--primary, #2563eb)"
-                      }}
-                    >
-                      <Icon size={20} />
-                    </div>
-                    <div>
-                      <strong style={{ display: "block", fontSize: "0.95rem" }}>
-                        {idx + 1}. {sec.title}
-                      </strong>
-                      <small style={{ color: "var(--muted, #6b7280)" }}>
-                        {sectionTypeLabels[sec.sectionType]?.label} • {sec.subtitle || "Sem subtítulo"}
-                      </small>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => moveUp(idx)}
-                      disabled={idx === 0}
-                      title="Subir ordem"
-                    >
-                      <ArrowUp size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => moveDown(idx)}
-                      disabled={idx === sections.length - 1}
-                      title="Descer ordem"
-                    >
-                      <ArrowDown size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => toggleActive(sec.id)}
-                      title={sec.active ? "Ocultar seção" : "Exibir seção"}
-                    >
-                      {sec.active ? <Eye size={16} /> : <EyeOff size={16} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => duplicateSection(sec)}
-                      title="Duplicar seção"
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => setEditingSection(sec)}
-                      title="Editar configurações"
-                    >
-                      Configurar
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      style={{ color: "#dc2626" }}
-                      onClick={() => removeSection(sec.id)}
-                      title="Remover seção"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      {editingSection && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-            padding: "1rem"
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "12px",
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: "540px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "1rem"
-            }}
-          >
-            <h3>Editar Seção: {editingSection.title}</h3>
-            <div>
-              <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
-                Título Principal
-              </label>
-              <input
-                type="text"
-                value={editingSection.title}
-                onChange={(e) =>
-                  setEditingSection({ ...editingSection, title: e.target.value })
-                }
-                style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
-                Subtítulo / Descrição
-              </label>
-              <input
-                type="text"
-                value={editingSection.subtitle}
-                onChange={(e) =>
-                  setEditingSection({ ...editingSection, subtitle: e.target.value })
-                }
-                style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: "1rem" }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
-                  Agendar Início
-                </label>
-                <input
-                  type="datetime-local"
-                  value={editingSection.startsAt}
-                  onChange={(e) =>
-                    setEditingSection({ ...editingSection, startsAt: e.target.value })
+                  <ArrowUp />
+                </button>
+                <button
+                  type="button"
+                  disabled={index === sections.length - 1 || pending}
+                  onClick={() => void reorder(index, 1)}
+                  aria-label="Descer seção"
+                >
+                  <ArrowDown />
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    void mutate("PATCH", {
+                      id: section.id,
+                      values: { ...section, active: !section.active }
+                    })
                   }
-                  style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
-                />
+                  aria-label={section.active ? "Ocultar seção" : "Exibir seção"}
+                >
+                  <Eye />
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void duplicate(section)}
+                  aria-label="Duplicar seção"
+                >
+                  <Copy />
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setEditing(section)}
+                  aria-label="Editar seção"
+                >
+                  <Pencil />
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void mutate("DELETE", { id: section.id })}
+                  aria-label="Arquivar seção"
+                >
+                  <Trash2 />
+                </button>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>
-                  Agendar Término
-                </label>
-                <input
-                  type="datetime-local"
-                  value={editingSection.endsAt}
-                  onChange={(e) =>
-                    setEditingSection({ ...editingSection, endsAt: e.target.value })
-                  }
-                  style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setEditingSection(null)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => {
-                  setSections((prev) =>
-                    prev.map((sec) => (sec.id === editingSection.id ? editingSection : sec))
-                  );
-                  setEditingSection(null);
-                }}
-              >
-                Salvar Seção
-              </button>
-            </div>
-          </div>
+            </article>
+          ))}
         </div>
       )}
-    </div>
+
+      {editing && (
+        <div className="admin-modal-backdrop">
+          <section
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="homepage-form-title"
+          >
+            <header>
+              <div>
+                <span>{editing === "new" ? "Nova seção" : "Configuração"}</span>
+                <h2 id="homepage-form-title">Página inicial</h2>
+              </div>
+              <button type="button" onClick={() => setEditing(null)} aria-label="Fechar">
+                <X />
+              </button>
+            </header>
+            <form onSubmit={(event) => void save(event)}>
+              <div className="admin-form-grid">
+                <label>
+                  <span>Tipo *</span>
+                  <select
+                    name="section_type"
+                    defaultValue={editing === "new" ? "" : editing.section_type}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {sectionTypes.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Ordem</span>
+                  <input
+                    name="sort_order"
+                    type="number"
+                    min="0"
+                    defaultValue={editing === "new" ? sections.length + 1 : editing.sort_order}
+                  />
+                </label>
+                <label className="wide">
+                  <span>Título</span>
+                  <input
+                    name="title"
+                    defaultValue={editing === "new" ? "" : (editing.title ?? "")}
+                  />
+                </label>
+                <label className="wide">
+                  <span>Subtítulo</span>
+                  <textarea
+                    name="subtitle"
+                    rows={3}
+                    defaultValue={editing === "new" ? "" : (editing.subtitle ?? "")}
+                  />
+                </label>
+                <label>
+                  <span>Início</span>
+                  <input
+                    name="starts_at"
+                    type="datetime-local"
+                    defaultValue={editing === "new" ? "" : inputDate(editing.starts_at)}
+                  />
+                </label>
+                <label>
+                  <span>Término</span>
+                  <input
+                    name="ends_at"
+                    type="datetime-local"
+                    defaultValue={editing === "new" ? "" : inputDate(editing.ends_at)}
+                  />
+                </label>
+                <label className="wide">
+                  <span>Configuração (JSON)</span>
+                  <textarea
+                    name="settings"
+                    rows={7}
+                    defaultValue={
+                      editing === "new" ? "{}" : JSON.stringify(editing.settings, null, 2)
+                    }
+                  />
+                </label>
+                <label className="admin-checkbox">
+                  <input
+                    name="active"
+                    type="checkbox"
+                    defaultChecked={editing === "new" || editing.active}
+                  />
+                  <span>Seção ativa</span>
+                </label>
+              </div>
+              <footer>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  disabled={pending}
+                >
+                  Cancelar
+                </button>
+                <button className="primary-button" type="submit" disabled={pending}>
+                  {pending ? <LoaderCircle className="spin" /> : <Save />} Salvar
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+    </section>
   );
 }

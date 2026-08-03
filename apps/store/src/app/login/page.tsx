@@ -1,4 +1,4 @@
-import { Headphones, PackageCheck, ShieldCheck } from "lucide-react";
+import { Headphones, PackageCheck } from "lucide-react";
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
@@ -22,21 +22,21 @@ export default async function LoginPage({
             <p className="eyebrow">Sua experiência Curtiz</p>
             <h1>Tudo sobre seus pedidos em um só lugar.</h1>
             <p className="auth-aside-copy">
-              Acompanhe compras, entregas e atendimentos com clareza e segurança.
+              Acompanhe compras, entregas e atendimentos em um só lugar.
             </p>
           </div>
           <div className="auth-benefits">
             <div>
               <PackageCheck aria-hidden="true" />
-              <span><strong>Pedidos organizados</strong>Histórico e andamento em tempo real.</span>
+              <span>
+                <strong>Pedidos organizados</strong>Histórico e andamento em tempo real.
+              </span>
             </div>
             <div>
               <Headphones aria-hidden="true" />
-              <span><strong>Atendimento centralizado</strong>Conversas e solicitações com histórico.</span>
-            </div>
-            <div>
-              <ShieldCheck aria-hidden="true" />
-              <span><strong>Acesso protegido</strong>Sessões e permissões verificadas no servidor.</span>
+              <span>
+                <strong>Atendimento centralizado</strong>Conversas e solicitações com histórico.
+              </span>
             </div>
           </div>
         </aside>
@@ -52,14 +52,12 @@ export default async function LoginPage({
             returnTo={returnTo}
             turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
           />
-          <div className="auth-divider"><span>Primeira vez na Curtiz?</span></div>
+          <div className="auth-divider">
+            <span>Primeira vez na Curtiz?</span>
+          </div>
           <Link className="secondary-button full-button auth-register-button" href={signupHref}>
             Cadastre-se
           </Link>
-          <p className="auth-privacy">
-            Ao continuar, seus dados são tratados conforme nossa{" "}
-            <Link href="/politica-de-privacidade">Política de Privacidade</Link>.
-          </p>
         </section>
       </div>
     </div>

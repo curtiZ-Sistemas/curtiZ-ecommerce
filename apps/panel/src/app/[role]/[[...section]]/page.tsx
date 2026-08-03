@@ -17,7 +17,12 @@ import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
 import { OperationalConsole } from "@/components/operational-console";
 import { ProductManagement } from "@/components/product-management";
+import { AdminDashboard } from "@/components/admin-dashboard";
+import { AdminPermissions } from "@/components/admin-permissions";
+import { AdminResourceManager } from "@/components/admin-resource-manager";
+import { AdminUsers } from "@/components/admin-users";
 import { requirePanelAccess } from "@/lib/auth";
+import { isAdminResource } from "@/lib/admin-resources";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
 
@@ -46,14 +51,14 @@ export default async function RolePage({
   return (
     <PanelShell role={role} section={section}>
       <PageHeading role={role} section={section} />
-      {section === "atendimentos" ? (
+      {role === "administracao" ? (
+        <Administration section={section} />
+      ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
       ) : representativeSections.has(section) ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
         <Operational section={section} />
-      ) : role === "administracao" ? (
-        <Administration section={section} />
       ) : role === "gerencia" ? (
         <Management section={section} />
       ) : (
@@ -89,38 +94,17 @@ function Operational({ section }: { section: string }) {
 }
 
 function Administration({ section }: { section: string }) {
-  if (section === "produtos") return <Products />;
-  if (section === "estoque") return <Inventory />;
-  if (section === "promocoes") return <Promotions />;
-  if (section === "usuarios") return <UsersPanel />;
-  if (section === "conteudo" || section === "construtor") return <HomepageBuilder />;
-  if (section === "cms-legado") return <Cms />;
+  if (!section) return <AdminDashboard />;
+  if (section === "produtos" || section === "estoque") return <ProductManagement />;
+  if (section === "construtor-home") return <HomepageBuilder />;
+  if (section === "usuarios") return <AdminUsers />;
+  if (section === "permissoes") return <AdminPermissions />;
+  if (isAdminResource(section)) return <AdminResourceManager resource={section} />;
   return (
-    <>
-      <div className="metric-grid">
-        <Metric label="Pedidos hoje" value="312" trend="+9,2%" icon={<ShoppingBag />} />
-        <Metric
-          label="Faturamento comercial"
-          value="R$ 48.920"
-          trend="+16,4%"
-          icon={<BadgeDollarSign />}
-        />
-        <Metric label="Estoque baixo" value="18" trend="Atenção" icon={<Boxes />} />
-        <Metric label="Atendimentos na fila" value="7" trend="2 urgentes" icon={<Headphones />} />
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel-card">
-          <h2>Pedidos recentes</h2>
-          <OrdersTable />
-        </section>
-        <section className="panel-card">
-          <h2>Atividades recentes</h2>
-          <Compact label="Produto atualizado" detail="Alteração registrada" value="10:24" />
-          <Compact label="Cupom publicado" detail="PRIMEIRA15" value="09:15" />
-          <Compact label="Atendimento assumido" detail="ATD-7F9C2A10" value="08:42" />
-        </section>
-      </div>
-    </>
+    <div className="admin-empty-state">
+      <h2>Área administrativa não encontrada</h2>
+      <p>Escolha uma opção disponível no menu.</p>
+    </div>
   );
 }
 
@@ -210,47 +194,6 @@ function Metric({
   );
 }
 
-function OrdersTable({ operational = false }: { operational?: boolean }) {
-  const rows = [
-    ["#CZT-10245", "Cliente J.", "São Paulo, SP", "Em separação", "Hoje 18:00"],
-    ["#CZT-10244", "Cliente R.", "Curitiba, PR", "Em separação", "Hoje 16:00"],
-    ["#CZT-10243", "Cliente C.", "Rio de Janeiro, RJ", "Pronto para envio", "Hoje 16:00"],
-    ["#CZT-10242", "Cliente A.", "Belo Horizonte, MG", "Enviado", "Ontem 17:10"]
-  ];
-  return (
-    <div className="table-scroll">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Pedido</th>
-            <th>Cliente mascarado</th>
-            <th>Cidade</th>
-            <th>Status</th>
-            <th>Prazo</th>
-            {operational && <th>Ação</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row[0]}>
-              {row.map((cell, index) => (
-                <td key={`${row[0]}-${cell}`}>
-                  {index === 3 ? <span className="status orange">{cell}</span> : cell}
-                </td>
-              ))}
-              {operational && (
-                <td>
-                  <button className="secondary-button">Assumir</button>
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function Compact({ label, detail, value }: { label: string; detail: string; value: string }) {
   return (
     <div className="compact-item">
@@ -263,77 +206,16 @@ function Compact({ label, detail, value }: { label: string; detail: string; valu
   );
 }
 
-function Products() {
-  return <ProductManagement />;
-}
-
-function Inventory() {
-  return (
-    <div className="dashboard-grid">
-      <section className="panel-card">
-        <h2>Estoque por variante</h2>
-        <Compact label="Wave Preto 41/42" detail="Disponível 156 • Reservado 8" value="164 total" />
-        <Compact label="Slim Coral 39/40" detail="Disponível 73 • Reservado 4" value="77 total" />
-        <Compact label="Comfort Areia 37" detail="Disponível 64 • Reservado 3" value="67 total" />
-      </section>
-      <section className="panel-card">
-        <h2>Ações controladas</h2>
-        <p>Ajustes elevados exigem justificativa, auditoria e aprovação da Gerência.</p>
-        <button className="primary-button">Nova contagem</button>
-      </section>
-    </div>
-  );
-}
-
-function Promotions() {
-  return (
-    <div className="dashboard-grid">
-      <section className="panel-card">
-        <h2>Campanhas e cupons</h2>
-        <Compact label="PRIMEIRA15" detail="Primeira compra • não combinável" value="Ativo" />
-        <Compact label="FRETEGRATIS" detail="Acima de R$ 149" value="Ativo" />
-        <Compact label="KITVERAO" detail="Compre X, ganhe Y" value="Programado" />
-      </section>
-      <section className="panel-card">
-        <h2>Motor de promoções</h2>
-        <p>Todos os critérios são recalculados no servidor e resgates são idempotentes.</p>
-        <button className="primary-button">Criar promoção</button>
-      </section>
-    </div>
-  );
-}
-
-function UsersPanel() {
-  return (
-    <section className="panel-card">
-      <div className="page-heading">
-        <h2>Usuários internos</h2>
-        <button className="primary-button">Criar acesso</button>
-      </div>
-      <p>Contas privilegiadas exigem MFA, reautenticação, motivo e possível segunda aprovação.</p>
-      <p>Os usuários autorizados aparecem aqui quando o diretório de identidades está conectado.</p>
-    </section>
-  );
-}
-
-function Cms() {
-  return (
-    <section className="panel-card">
-      <h2>Conteúdo e SEO</h2>
-      <Compact label="Página inicial" detail="Revisão 3 • Publicada" value="Editar" />
-      <Compact label="Política de trocas" detail="Revisão 2 • Publicada" value="Editar" />
-      <Compact label="Coleção Verão" detail="Rascunho" value="Revisar" />
-      <p className="demo-status">Conteúdo rico será sanitizado; HTML inseguro é bloqueado.</p>
-    </section>
-  );
-}
-
 function Financial() {
   return (
     <div className="dashboard-grid">
       <section className="panel-card">
         <h2>Conciliação Mercado Pago</h2>
-        <Compact label="Pagamento conciliado" detail="Bruto R$ 134,80 • Taxa R$ 6,41" value="Conciliado" />
+        <Compact
+          label="Pagamento conciliado"
+          detail="Bruto R$ 134,80 • Taxa R$ 6,41"
+          value="Conciliado"
+        />
         <Compact label="Divergência financeira" detail="Diferença de R$ 2,10" value="Revisar" />
       </section>
       <section className="panel-card">

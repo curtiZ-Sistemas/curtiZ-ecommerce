@@ -1,0 +1,312 @@
+import { type NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  authorizeAdminRequest,
+  privateNoStore,
+  safePanelOrigin,
+  unauthorizedAdminResponse
+} from "@/lib/admin-api";
+import {
+  adminResources,
+  isAdminResource,
+  type AdminResourceDefinition
+} from "@/lib/admin-resources";
+
+export const dynamic = "force-dynamic";
+
+const mutationSchema = z.object({
+  id: z.string().uuid().optional(),
+  values: z.record(z.string(), z.unknown()).default({})
+});
+
+function cleanSearch(value: string) {
+  return value
+    .replaceAll(/[,%()]/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function normalizeValues(definition: AdminResourceDefinition, input: Record<string, unknown>) {
+  const normalized: Record<string, unknown> = {};
+  for (const field of definition.fields) {
+    if (field.readOnly || !(field.key in input)) continue;
+    const value = input[field.key];
+    if (field.type === "boolean") {
+      normalized[field.key] = value === true || value === "true";
+      continue;
+    }
+    if (field.type === "number") {
+      if (value === "" || value === null || value === undefined) {
+        normalized[field.key] = null;
+        continue;
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) throw new Error(`Campo inválido: ${field.label}`);
+      normalized[field.key] = parsed;
+      continue;
+    }
+    if (field.type === "json") {
+      if (value !== null && typeof value === "object") {
+        normalized[field.key] = value;
+        continue;
+      }
+      try {
+        normalized[field.key] = JSON.parse(String(value));
+      } catch {
+        throw new Error(`Campo inválido: ${field.label}`);
+      }
+      continue;
+    }
+    if (value === null || value === undefined || value === "") {
+      normalized[field.key] = null;
+      continue;
+    }
+    const text = String(value).trim();
+    if (text.length > 4_000) throw new Error(`Campo muito extenso: ${field.label}`);
+    if (field.options && !field.options.includes(text)) {
+      throw new Error(`Opção inválida: ${field.label}`);
+    }
+    normalized[field.key] = field.type === "datetime" && text ? new Date(text).toISOString() : text;
+  }
+  for (const field of definition.fields) {
+    if (field.required && !normalized[field.key]) {
+      throw new Error(`Preencha o campo ${field.label}.`);
+    }
+  }
+  return normalized;
+}
+
+async function resourceContext(request: NextRequest, params: Promise<{ resource: string }>) {
+  const resource = (await params).resource;
+  if (!isAdminResource(resource)) return null;
+  const auth = await authorizeAdminRequest(request);
+  if (!auth) return { resource, definition: adminResources[resource], auth: null };
+  return { resource, definition: adminResources[resource], auth };
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ resource: string }> }
+) {
+  const context = await resourceContext(request, params);
+  if (!context) {
+    return NextResponse.json(
+      { message: "Área administrativa não encontrada." },
+      { status: 404, headers: privateNoStore }
+    );
+  }
+  if (!context.auth) return unauthorizedAdminResponse();
+
+  const page = Math.max(1, Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1));
+  const pageSize = 20;
+  const queryText = cleanSearch(request.nextUrl.searchParams.get("q") ?? "");
+  const status = (request.nextUrl.searchParams.get("status") ?? "").slice(0, 40);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = context.auth.supabase
+    .from(context.definition.table)
+    .select(context.definition.select, { count: "exact" });
+  if (queryText && context.definition.searchColumns.length) {
+    query = query.or(
+      context.definition.searchColumns.map((column) => `${column}.ilike.%${queryText}%`).join(",")
+    );
+  }
+  if (status) {
+    const statusField = context.definition.fields.find(
+      (field) => field.key === "status" || field.key === "active"
+    );
+    if (statusField) {
+      query = query.eq(
+        statusField.key,
+        statusField.type === "boolean" ? status === "active" : status
+      );
+    }
+  }
+  const result = await query
+    .order(context.definition.orderColumn, { ascending: false })
+    .range(from, to);
+
+  if (result.error) {
+    return NextResponse.json(
+      { message: "Não foi possível carregar os registros desta área." },
+      { status: 503, headers: privateNoStore }
+    );
+  }
+  return NextResponse.json(
+    {
+      items: result.data ?? [],
+      total: result.count ?? 0,
+      page,
+      pageSize
+    },
+    { headers: privateNoStore }
+  );
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ resource: string }> }
+) {
+  if (!safePanelOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const context = await resourceContext(request, params);
+  if (!context) {
+    return NextResponse.json(
+      { message: "Área não encontrada." },
+      { status: 404, headers: privateNoStore }
+    );
+  }
+  if (!context.auth) return unauthorizedAdminResponse();
+  if (!context.definition.allowCreate) {
+    return NextResponse.json(
+      { message: "Novos registros não são criados por esta área." },
+      { status: 405, headers: privateNoStore }
+    );
+  }
+  const parsed = mutationSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Revise os dados informados." },
+      { status: 400, headers: privateNoStore }
+    );
+  }
+  try {
+    const values = normalizeValues(context.definition, parsed.data.values);
+    if (context.definition.createdByField) {
+      values[context.definition.createdByField] = context.auth.userId;
+    }
+    if (context.definition.updatedByField) {
+      values[context.definition.updatedByField] = context.auth.userId;
+    }
+    const result = await context.auth.supabase
+      .from(context.definition.table)
+      .insert(values)
+      .select(context.definition.select)
+      .single();
+    if (result.error) throw result.error;
+    return NextResponse.json(
+      { item: result.data, message: `${context.definition.singular} criada com sucesso.` },
+      { status: 201, headers: privateNoStore }
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.startsWith("Preencha")
+        ? error.message
+        : `Não foi possível criar ${context.definition.singular}.`;
+    return NextResponse.json({ message }, { status: 409, headers: privateNoStore });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ resource: string }> }
+) {
+  if (!safePanelOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const context = await resourceContext(request, params);
+  if (!context) {
+    return NextResponse.json(
+      { message: "Área não encontrada." },
+      { status: 404, headers: privateNoStore }
+    );
+  }
+  if (!context.auth) return unauthorizedAdminResponse();
+  const parsed = mutationSchema
+    .extend({ id: z.string().uuid() })
+    .safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Revise os dados informados." },
+      { status: 400, headers: privateNoStore }
+    );
+  }
+  try {
+    const values = normalizeValues(context.definition, parsed.data.values);
+    if (context.definition.updatedByField) {
+      values[context.definition.updatedByField] = context.auth.userId;
+    }
+    const result = await context.auth.supabase
+      .from(context.definition.table)
+      .update(values)
+      .eq("id", parsed.data.id)
+      .select(context.definition.select)
+      .maybeSingle();
+    if (result.error || !result.data) throw result.error ?? new Error("missing");
+    return NextResponse.json(
+      { item: result.data, message: "Alterações salvas." },
+      { headers: privateNoStore }
+    );
+  } catch {
+    return NextResponse.json(
+      { message: "Não foi possível salvar as alterações." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ resource: string }> }
+) {
+  if (!safePanelOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const context = await resourceContext(request, params);
+  if (!context) {
+    return NextResponse.json(
+      { message: "Área não encontrada." },
+      { status: 404, headers: privateNoStore }
+    );
+  }
+  if (!context.auth) return unauthorizedAdminResponse();
+  if (
+    !context.definition.allowArchive ||
+    !context.definition.archiveField ||
+    context.definition.archiveValue === undefined
+  ) {
+    return NextResponse.json(
+      { message: "Este registro deve ser mantido por integridade histórica." },
+      { status: 405, headers: privateNoStore }
+    );
+  }
+  const parsed = z
+    .object({ id: z.string().uuid() })
+    .safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Registro inválido." },
+      { status: 400, headers: privateNoStore }
+    );
+  }
+  const values: Record<string, unknown> = {
+    [context.definition.archiveField]: context.definition.archiveValue
+  };
+  if (context.definition.updatedByField) {
+    values[context.definition.updatedByField] = context.auth.userId;
+  }
+  const result = await context.auth.supabase
+    .from(context.definition.table)
+    .update(values)
+    .eq("id", parsed.data.id)
+    .select("id")
+    .maybeSingle();
+  if (result.error || !result.data) {
+    return NextResponse.json(
+      { message: "Não foi possível arquivar o registro." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
+  return NextResponse.json({ message: "Registro arquivado." }, { headers: privateNoStore });
+}

@@ -16,6 +16,19 @@ export type ManagedProduct = {
   status: string;
   priceInCents: number;
   stock: number;
+  categoryId?: string;
+  modelId?: string;
+  collectionId?: string;
+  shortDescription?: string;
+  description?: string;
+  costInCents?: number;
+  featured?: boolean;
+  weightGrams?: number;
+  heightCm?: number;
+  widthCm?: number;
+  lengthCm?: number;
+  seoTitle?: string;
+  seoDescription?: string;
   variants: ManagedVariant[];
 };
 

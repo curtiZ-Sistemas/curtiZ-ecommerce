@@ -15,6 +15,7 @@ import { type FormEvent, useCallback, useRef, useState } from "react";
 import { TurnstileField } from "./turnstile-field";
 
 type AuthResult = {
+  code?: string;
   message: string;
   redirectTo?: string;
 };
@@ -29,6 +30,7 @@ export function AuthForm({
   turnstileEnabled?: boolean;
 }) {
   const [message, setMessage] = useState("");
+  const [messageCode, setMessageCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
@@ -42,6 +44,7 @@ export function AuthForm({
     isSubmittingRef.current = true;
     setLoading(true);
     setMessage("");
+    setMessageCode("");
 
     try {
       const form = new FormData(event.currentTarget);
@@ -58,9 +61,11 @@ export function AuthForm({
       });
       const result = (await response.json()) as AuthResult;
       setMessage(result.message);
+      setMessageCode(result.code ?? "");
       if (response.ok && result.redirectTo) window.location.assign(result.redirectTo);
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
+      setMessageCode("");
     } finally {
       isSubmittingRef.current = false;
       setLoading(false);
@@ -92,9 +97,7 @@ export function AuthForm({
       )}
 
       <div className="field">
-        <label htmlFor={`${mode}-email`}>
-          {mode === "login" ? "E-mail de acesso" : "E-mail"}
-        </label>
+        <label htmlFor={`${mode}-email`}>{mode === "login" ? "E-mail de acesso" : "E-mail"}</label>
         <div className="input-shell">
           <Mail aria-hidden="true" />
           <input
@@ -110,7 +113,9 @@ export function AuthForm({
 
       {mode === "signup" && (
         <div className="field">
-          <label htmlFor="signup-phone">WhatsApp <span className="optional-label">opcional</span></label>
+          <label htmlFor="signup-phone">
+            WhatsApp <span className="optional-label">opcional</span>
+          </label>
           <input
             id="signup-phone"
             name="phone"
@@ -192,8 +197,14 @@ export function AuthForm({
       )}
 
       {message && (
-        <p className="form-message" role="status" aria-live="polite">
-          {message}
+        <p className="form-message auth-form-message" role="status" aria-live="polite">
+          {messageCode === "user_not_found" ? "Esse usuário não existe." : message}
+          {mode === "login" && messageCode === "user_not_found" && (
+            <>
+              {" "}
+              <Link href="/cadastro">Cadastre-se</Link>
+            </>
+          )}
         </p>
       )}
 

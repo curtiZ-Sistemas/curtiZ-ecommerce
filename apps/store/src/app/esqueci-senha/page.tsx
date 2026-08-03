@@ -1,4 +1,4 @@
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { PasswordRecoveryForm } from "@/components/password-recovery-form";
 
@@ -14,12 +14,9 @@ export default function PasswordRecoveryPage() {
         <header className="auth-card-header">
           <span className="auth-kicker">Recuperação de acesso</span>
           <h1>Redefina sua senha</h1>
-          <p>Enviaremos um link seguro caso exista uma conta para o e-mail informado.</p>
+          <p>Enviaremos as instruções para o e-mail informado.</p>
         </header>
         <PasswordRecoveryForm turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"} mode="request" />
-        <p className="auth-security-note">
-          <ShieldCheck aria-hidden="true" /> Por segurança, não confirmamos se um e-mail possui cadastro.
-        </p>
       </section>
     </main>
   );
