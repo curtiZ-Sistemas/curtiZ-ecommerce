@@ -175,12 +175,36 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   return NextResponse.json({ authenticated: false }, { headers: { "cache-control": "no-store" } });
 }
 
-function panelBaseUrl(request: Request) {
+function panelBaseUrl(request: Request): string {
   const requestUrl = new URL(request.url);
-  if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) {
+
+  if (
+    ["localhost", "127.0.0.1", "::1"].includes(
+      requestUrl.hostname
+    )
+  ) {
     return `${requestUrl.protocol}//${requestUrl.hostname}:3001`;
   }
-  return process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001";
+
+  const configuredPanelUrl =
+    process.env.NEXT_PUBLIC_PANEL_URL?.trim();
+
+  if (configuredPanelUrl) {
+    try {
+      const configuredOrigin =
+        new URL(configuredPanelUrl).origin;
+
+      // Impede que uma configuração errada envie o painel
+      // para o mesmo Worker da loja.
+      if (configuredOrigin !== requestUrl.origin) {
+        return configuredOrigin;
+      }
+    } catch {
+      // Continua para o endereço de produção conhecido.
+    }
+  }
+
+  return "https://curtiz-painel.sistemas-curtiz.workers.dev";
 }
 
 function customerDestination(value: string | undefined) {
