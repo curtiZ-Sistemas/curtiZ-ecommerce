@@ -3149,8 +3149,7 @@ select:disabled {
   letter-spacing: -0.045em;
 }
 
-.auth-card-header p,
-.auth-security-note {
+.auth-card-header p {
   margin: 0;
   color: var(--neutral-600);
   font-size: 0.75rem;

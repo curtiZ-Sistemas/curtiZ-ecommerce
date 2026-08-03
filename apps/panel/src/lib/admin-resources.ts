@@ -156,14 +156,7 @@ export const adminResources = {
     table: "profiles",
     select: "id,full_name,email_snapshot,status,created_at,updated_at",
     searchColumns: ["full_name", "email_snapshot"],
-    fields: [
-      {
-        key: "status",
-        label: "Status",
-        type: "select",
-        options: ["active", "suspended", "disabled"]
-      }
-    ],
+    fields: [],
     allowCreate: false,
     allowArchive: false,
     orderColumn: "created_at"
@@ -443,7 +436,7 @@ export const adminResources = {
     description: "Gerencie rascunhos, aprovações, publicação e disponibilidade.",
     table: "creative_assets",
     select:
-      "id,title,description,asset_type,platform,status,starts_at,expires_at,storage_path,created_at,updated_at",
+      "id,title,description,asset_type,platform,status,starts_at,expires_at,storage_path,caption_text,created_at,updated_at",
     searchColumns: ["title", "description", "platform"],
     fields: [
       { key: "title", label: "Título", type: "text", required: true },
