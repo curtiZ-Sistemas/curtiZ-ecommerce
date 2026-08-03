@@ -32,4 +32,17 @@ describe("Supabase mock sem Docker", () => {
     const client = createMockSupabaseClient({ errors: { "from:orders:select": expected } });
     expect((await client.from("orders").select()).error).toBe(expected);
   });
+
+  it("simula filtros nulos usados por notificações do cliente", async () => {
+    const client = createMockSupabaseClient({
+      tables: {
+        notifications: [
+          { id: "n1", read_at: null },
+          { id: "n2", read_at: "2026-08-03T12:00:00Z" }
+        ]
+      }
+    });
+    const result = await client.from("notifications").select().is("read_at", null);
+    expect(result.data?.map((row) => row.id)).toEqual(["n1"]);
+  });
 });

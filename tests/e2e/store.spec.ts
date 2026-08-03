@@ -78,6 +78,27 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("entrega a área customer sem dados fictícios e sem overflow mobile", async ({ page }) => {
+  await page.goto("/minha-conta");
+  await expect(page.getByRole("heading", { name: "Entre na sua conta Curtiz" })).toBeVisible();
+  await page.getByRole("link", { name: "Entrar", exact: true }).click();
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]').fill("1234567890");
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+  await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();
+  await expect(page.getByText("#CZT-DEMO01")).toHaveCount(0);
+  await page.getByRole("link", { name: "Perfil", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Dados pessoais" })).toBeVisible();
+  await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
+
+  const hasPageOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+  );
+  expect(hasPageOverflow).toBe(false);
+});
+
 test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Favoritar Curtiz Flip-Flop Wave Preto" }).click();

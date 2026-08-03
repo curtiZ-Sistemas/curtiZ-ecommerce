@@ -24,7 +24,7 @@ export class MockSupabaseError extends Error implements MockSupabaseErrorShape {
 }
 
 type QueryResult<T = MockRow[]> = { data: T | null; error: MockSupabaseError | null };
-type Filter = { column: string; operator: "eq" | "neq" | "in"; value: unknown };
+type Filter = { column: string; operator: "eq" | "neq" | "in" | "is"; value: unknown };
 type Order = { column: string; ascending: boolean };
 
 export type MockAuthUser = {
@@ -110,6 +110,11 @@ class MockQueryBuilder implements PromiseLike<QueryResult> {
     return this;
   }
 
+  is(column: string, value: null | boolean) {
+    this.filters.push({ column, operator: "is", value });
+    return this;
+  }
+
   order(column: string, options: { ascending?: boolean } = {}) {
     this.orderBy = { column, ascending: options.ascending ?? true };
     return this;
@@ -152,6 +157,7 @@ class MockQueryBuilder implements PromiseLike<QueryResult> {
     return this.filters.every((filter) => {
       if (filter.operator === "eq") return row[filter.column] === filter.value;
       if (filter.operator === "neq") return row[filter.column] !== filter.value;
+      if (filter.operator === "is") return row[filter.column] === filter.value;
       return Array.isArray(filter.value) && filter.value.includes(row[filter.column]);
     });
   }

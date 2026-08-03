@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   if (process.env.DEMO_MODE === "true") {
     return NextResponse.json(
       { message: "Carrinho local ativo no ambiente de demonstração." },
-      { status: 401, headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
+      { headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
     );
   }
 
@@ -72,14 +72,14 @@ export async function POST(request: Request) {
   if (!supabase) {
     return NextResponse.json(
       { message: "Sincronização indisponível." },
-      { status: 401, headers: { "cache-control": "no-store" } }
+      { headers: { "cache-control": "no-store" } }
     );
   }
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) {
     return NextResponse.json(
       { message: "Entre para sincronizar o carrinho." },
-      { status: 401, headers: { "cache-control": "no-store" } }
+      { headers: { "cache-control": "no-store" } }
     );
   }
 

@@ -16,6 +16,19 @@ type FavoritesContextValue = {
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 const storageKey = "curtiz-favorites";
 const legacyStorageKey = "curtiz-demo-favorites";
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+const syncFavorite = (action: "favorite_save" | "favorite_remove", productId: string) => {
+  if (!uuidPattern.test(productId)) return;
+  void fetch("/api/customer", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, productId })
+  }).catch(() => {
+    // O favorito permanece neste dispositivo quando a conta está offline ou deslogada.
+  });
+};
 
 const isStoredProduct = (value: unknown): value is Product => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -76,13 +89,16 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
         return products.some((product) => product.id === productId);
       },
       toggle(product) {
-        setProducts((current) =>
-          current.some((item) => item.id === product.id)
+        setProducts((current) => {
+          const removing = current.some((item) => item.id === product.id);
+          syncFavorite(removing ? "favorite_remove" : "favorite_save", product.id);
+          return removing
             ? current.filter((item) => item.id !== product.id)
-            : [...current, product].slice(-50)
-        );
+            : [...current, product].slice(-50);
+        });
       },
       remove(productId) {
+        syncFavorite("favorite_remove", productId);
         setProducts((current) => current.filter((item) => item.id !== productId));
       }
     }),
