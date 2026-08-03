@@ -17,7 +17,7 @@ import { useCart } from "@/components/cart-provider";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export default function CartPage() {
-  const { hydrated, lines, changeQuantity, remove } = useCart();
+  const { hydrated, lines, syncMessage, changeQuantity, remove } = useCart();
   const integrationStatus = useIntegrationStatus();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -62,6 +62,11 @@ export default function CartPage() {
       </div>
 
       <p className="sr-only" role="status" aria-live="polite">{feedback}</p>
+      {syncMessage && (
+        <p className="form-message cart-sync-message" role="status">
+          {syncMessage}
+        </p>
+      )}
 
       {!hydrated ? (
         <CartSkeleton />

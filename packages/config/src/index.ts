@@ -23,7 +23,7 @@ export const serverEnvSchema = z.object({
   AUTH_COOKIE_DOMAIN: z.string().min(3).optional(),
   STAGING_DEMO_HOSTS: z.string().optional(),
   DEMO_MODE: booleanString.default(false),
-  ALLOW_GUEST_CHECKOUT: booleanString.default(true),
+  ALLOW_GUEST_CHECKOUT: booleanString.default(false),
   REQUIRE_INTERNAL_MFA: booleanString.default(false),
   CHECKOUT_ENABLED: booleanString.default(false),
   MERCADO_PAGO_ENABLED: booleanString.default(false),

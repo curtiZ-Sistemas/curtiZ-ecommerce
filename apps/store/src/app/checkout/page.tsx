@@ -53,11 +53,22 @@ export default function CheckoutPage() {
           lines: lines.map((line) => ({
             productId: line.productId,
             variantId: line.variantId,
+            color: line.color,
+            size: line.size,
             quantity: line.quantity
           }))
         })
       });
-      const result = (await response.json()) as { ok: boolean; orderCode?: string; message?: string };
+      const result = (await response.json()) as {
+        ok: boolean;
+        orderCode?: string;
+        message?: string;
+        redirectTo?: string;
+      };
+      if (response.status === 401 && result.redirectTo) {
+        router.replace(result.redirectTo);
+        return;
+      }
       if (!result.ok || !result.orderCode) {
         setMessage(result.message ?? "Não foi possível iniciar o pagamento.");
         return;
@@ -126,9 +137,13 @@ export default function CheckoutPage() {
       </div>
 
       <ol className="checkout-steps" aria-label="Etapas do checkout">
-        <li className="active"><span>1</span>Identificação</li>
-        <li><span>2</span>Entrega</li>
-        <li><span>3</span>Pagamento</li>
+        <li className="completed"><span><Check aria-hidden="true" /></span>Conta</li>
+        <li className="active" aria-current="step"><span>2</span>Dados</li>
+        <li><span>3</span>Endereço</li>
+        <li><span>4</span>Entrega</li>
+        <li><span>5</span>Pagamento</li>
+        <li><span>6</span>Revisão</li>
+        <li><span>7</span>Confirmação</li>
       </ol>
 
       <form className="checkout-layout" onSubmit={(event) => void submit(event)}>
@@ -219,7 +234,12 @@ export default function CheckoutPage() {
           <div className="summary-line"><span>Subtotal</span><strong>{formatBRL(subtotal)}</strong></div>
           <div className="summary-line"><span>Frete</span><strong>{shipping ? formatBRL(shipping) : "Grátis"}</strong></div>
           <div className="summary-line summary-total"><span>Total</span><strong>{formatBRL(total)}</strong></div>
-          <button className="primary-button full-button checkout-button" disabled={loading}>
+          <button
+            className="primary-button full-button checkout-button"
+            type="submit"
+            disabled={loading}
+            aria-busy={loading}
+          >
             {loading ? <LoaderCircle className="spin" /> : <LockKeyhole />}
             {loading ? "Validando pedido…" : "Ir para pagamento seguro"}
           </button>

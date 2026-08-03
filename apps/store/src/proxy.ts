@@ -1,7 +1,5 @@
-import {
-  buildNonceContentSecurityPolicy,
-  sharedCookieOptions
-} from "@curtiz/security";
+import { sharedCookieOptions } from "@curtiz/security/auth-cookie";
+import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
 import {
   createServerClient,
   type CookieOptions
@@ -11,7 +9,47 @@ import {
   NextResponse
 } from "next/server";
 
-export async function middleware(request: NextRequest) {
+const demoSessionCookie = "curtiz-demo-session";
+
+const decodeBase64Url = (value: string) => {
+  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+};
+
+async function hasValidDemoSession(value: string | undefined) {
+  const secret = process.env.DEMO_SESSION_SECRET?.trim();
+  if (!value || !secret || secret.length < 32) return false;
+  const [payload, signature, extra] = value.split(".");
+  if (!payload || !signature || extra) return false;
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      decodeBase64Url(signature),
+      new TextEncoder().encode(payload)
+    );
+    if (!valid) return false;
+    const session: unknown = JSON.parse(new TextDecoder().decode(decodeBase64Url(payload)));
+    return (
+      Boolean(session) &&
+      typeof session === "object" &&
+      typeof (session as { expiresAt?: unknown }).expiresAt === "number" &&
+      (session as { expiresAt: number }).expiresAt > Date.now()
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
 
   const csp = buildNonceContentSecurityPolicy({
@@ -59,11 +97,17 @@ export async function middleware(request: NextRequest) {
 
   const supabasePublishableKey =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const demoSession =
+    process.env.DEMO_MODE === "true"
+      ? await hasValidDemoSession(request.cookies.get(demoSessionCookie)?.value)
+      : false;
 
-  const demoMode =
-    process.env.DEMO_MODE?.trim().toLowerCase() === "true";
-
-  if (!supabaseUrl || !supabasePublishableKey || demoMode) {
+  if (!supabaseUrl || !supabasePublishableKey) {
+    if (request.nextUrl.pathname === "/checkout" && !demoSession) {
+      const login = new URL("/login", request.url);
+      login.searchParams.set("returnTo", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(login, 303);
+    }
     return response;
   }
 
@@ -108,7 +152,12 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  const { data } = await supabase.auth.getUser();
+  if (request.nextUrl.pathname === "/checkout" && !data.user && !demoSession) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set("returnTo", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(login, 303);
+  }
 
   return response;
 }

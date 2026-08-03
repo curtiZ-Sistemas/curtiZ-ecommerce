@@ -2,6 +2,7 @@
 
 import type { Product } from "@curtiz/domain";
 import { Check, ShoppingBag } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useCart } from "./cart-provider";
 
@@ -10,12 +11,21 @@ export function AddToCart({ product }: { product: Product }) {
   const [size, setSize] = useState(product.sizes[0] ?? "");
   const [added, setAdded] = useState(false);
   const { add } = useCart();
+  const router = useRouter();
 
   const handleAdd = () => {
     if (added) return;
     add(product, color, size);
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1800);
+  };
+
+  const handleBuyNow = () => {
+    if (added) return;
+    add(product, color, size);
+    setAdded(true);
+    const variant = `${product.id}:${color}:${size}`;
+    router.push(`/checkout?comprarAgora=${encodeURIComponent(variant)}`);
   };
 
   return (
@@ -56,6 +66,14 @@ export function AddToCart({ product }: { product: Product }) {
       <button className="primary-button full-button" type="button" onClick={handleAdd} disabled={added}>
         {added ? <Check /> : <ShoppingBag />}
         {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}
+      </button>
+      <button
+        className="secondary-button full-button buy-now-button"
+        type="button"
+        onClick={handleBuyNow}
+        disabled={added}
+      >
+        Comprar agora
       </button>
     </div>
   );

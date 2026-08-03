@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { getIntegrationConfig } from "@curtiz/config";
-import { NextResponse } from "next/server";
+import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
+import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "@/lib/catalog";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { readQueryResult } from "@/lib/unknown-data";
 
 const schema = z.object({
   customer: z.object({
@@ -24,14 +27,36 @@ const schema = z.object({
       z.object({
         productId: z.string().min(1),
         variantId: z.string().min(1),
+        color: z.string().trim().min(1).max(80),
+        size: z.string().trim().min(1).max(40),
         quantity: z.number().int().min(1).max(10)
       })
     )
     .min(1)
 });
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const integrations = getIntegrationConfig();
+  const supabase = await createServerSupabaseClient();
+  const { data: authData } = supabase
+    ? await supabase.auth.getUser()
+    : { data: { user: null } };
+  const demoSession =
+    process.env.DEMO_MODE === "true"
+      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
+      : null;
+  if (!authData.user && !demoSession) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "AUTHENTICATION_REQUIRED",
+        message: "Entre na sua conta para finalizar a compra.",
+        redirectTo: "/login?returnTo=/checkout"
+      },
+      { status: 401, headers: { "cache-control": "no-store" } }
+    );
+  }
+
   if (!integrations.checkoutEnabled) {
     return NextResponse.json(
       {
@@ -56,11 +81,42 @@ export async function POST(request: Request) {
     );
   }
 
-  for (const line of parsed.data.lines) {
-    const product = demoProducts.find((item) => item.id === line.productId);
-    if (!product || product.stock < line.quantity) {
+  if (process.env.DEMO_MODE === "true") {
+    for (const line of parsed.data.lines) {
+      const product = demoProducts.find((item) => item.id === line.productId);
+      if (
+        !product ||
+        !product.colors.includes(line.color) ||
+        !product.sizes.includes(line.size) ||
+        product.stock < line.quantity
+      ) {
+        return NextResponse.json(
+          { ok: false, message: "Um produto ficou indisponível. Atualize o carrinho." },
+          { status: 409 }
+        );
+      }
+    }
+  } else {
+    const validationResponse: unknown = await supabase!.rpc("validate_checkout_lines", {
+      p_lines: parsed.data.lines.map((line) => ({
+        product_id: line.productId,
+        variant_id: line.variantId,
+        quantity: line.quantity
+      }))
+    });
+    const validation = readQueryResult(validationResponse);
+    const valid =
+      validation.data &&
+      typeof validation.data === "object" &&
+      !Array.isArray(validation.data) &&
+      (validation.data as { valid?: unknown }).valid === true;
+    if (validation.error || !valid) {
       return NextResponse.json(
-        { ok: false, message: "Um produto ficou indisponível. Atualize o carrinho." },
+        {
+          ok: false,
+          message:
+            "Preço, variante ou estoque mudaram. Revise o carrinho antes de continuar."
+        },
         { status: 409 }
       );
     }
@@ -70,6 +126,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, message: "Checkout temporariamente indisponível." },
       { status: 503 }
+    );
+  }
+
+  if (
+    integrations.payment.provider === "mock" &&
+    integrations.shipping.provider === "mock" &&
+    process.env.DEMO_MODE === "true"
+  ) {
+    const orderCode = `CZT-DEMO-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+    return NextResponse.json(
+      {
+        success: true,
+        ok: true,
+        orderCode,
+        code: "DEMO_ORDER_CREATED",
+        message: "Pedido demonstrativo criado. Nenhum pagamento real foi processado."
+      },
+      { status: 201, headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
     );
   }
 
