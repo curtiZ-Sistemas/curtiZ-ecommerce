@@ -203,7 +203,11 @@ export function ProductManagement() {
                   <h3>{product.name}</h3>
                   <span>
                     {formatBRL(product.priceInCents)} ·{" "}
-                    {product.status === "archived" ? "Arquivado" : "Ativo"}
+                    {product.status === "archived"
+                      ? "Arquivado"
+                      : product.status === "active"
+                        ? "Publicado"
+                        : "Rascunho"}
                   </span>
                 </div>
                 <div>

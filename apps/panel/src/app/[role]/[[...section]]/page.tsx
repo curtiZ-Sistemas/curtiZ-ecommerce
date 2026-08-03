@@ -4,9 +4,7 @@ import {
   Boxes,
   CircleCheck,
   Clock3,
-  Headphones,
   RotateCcw,
-  ShoppingBag,
   Webhook
 } from "lucide-react";
 import { notFound } from "next/navigation";

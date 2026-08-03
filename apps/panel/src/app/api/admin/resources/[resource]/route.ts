@@ -76,6 +76,23 @@ function normalizeValues(definition: AdminResourceDefinition, input: Record<stri
   return normalized;
 }
 
+function validateResourceRules(resource: string, values: Record<string, unknown>) {
+  if (resource === "metas") {
+    const hasRepresentative = typeof values.representative_id === "string";
+    const hasLevel = typeof values.level_id === "string";
+    if (hasRepresentative === hasLevel) {
+      throw new Error("Escolha um representante ou um nível para a meta.");
+    }
+  }
+  if (
+    resource === "criativos" &&
+    typeof values.storage_path !== "string" &&
+    typeof values.caption_text !== "string"
+  ) {
+    throw new Error("Informe um arquivo ou o texto do criativo.");
+  }
+}
+
 async function resourceContext(request: NextRequest, params: Promise<{ resource: string }>) {
   const resource = (await params).resource;
   if (!isAdminResource(resource)) return null;
@@ -177,6 +194,7 @@ export async function POST(
   }
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
+    validateResourceRules(context.resource, values);
     if (context.definition.createdByField) {
       values[context.definition.createdByField] = context.auth.userId;
     }
@@ -194,10 +212,14 @@ export async function POST(
       { status: 201, headers: privateNoStore }
     );
   } catch (error) {
-    const message =
-      error instanceof Error && error.message.startsWith("Preencha")
+    const validationMessage =
+      error instanceof Error &&
+      ["Preencha", "Escolha", "Informe", "Campo"].some((prefix) =>
+        error.message.startsWith(prefix)
+      )
         ? error.message
-        : `Não foi possível criar ${context.definition.singular}.`;
+        : null;
+    const message = validationMessage ?? `Não foi possível criar ${context.definition.singular}.`;
     return NextResponse.json({ message }, { status: 409, headers: privateNoStore });
   }
 }
@@ -231,6 +253,7 @@ export async function PATCH(
   }
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
+    validateResourceRules(context.resource, values);
     if (context.definition.updatedByField) {
       values[context.definition.updatedByField] = context.auth.userId;
     }
@@ -245,9 +268,16 @@ export async function PATCH(
       { item: result.data, message: "Alterações salvas." },
       { headers: privateNoStore }
     );
-  } catch {
+  } catch (error) {
+    const validationMessage =
+      error instanceof Error &&
+      ["Preencha", "Escolha", "Informe", "Campo"].some((prefix) =>
+        error.message.startsWith(prefix)
+      )
+        ? error.message
+        : null;
     return NextResponse.json(
-      { message: "Não foi possível salvar as alterações." },
+      { message: validationMessage ?? "Não foi possível salvar as alterações." },
       { status: 409, headers: privateNoStore }
     );
   }

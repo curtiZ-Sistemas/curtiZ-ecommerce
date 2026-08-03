@@ -27,7 +27,35 @@ export type AdminResourceDefinition = {
   updatedByField?: string;
 };
 
-export const adminResources = {
+export const adminResourceKeys = [
+  "categorias",
+  "modelos",
+  "colecoes",
+  "variacoes",
+  "midias",
+  "pedidos",
+  "clientes",
+  "banners",
+  "pagina-inicial",
+  "conteudo",
+  "marketing",
+  "cupons",
+  "representantes",
+  "kits",
+  "niveis",
+  "metas",
+  "comissoes",
+  "criativos",
+  "campanhas",
+  "avaliacoes",
+  "treinamentos",
+  "contratos",
+  "configuracoes"
+] as const;
+
+export type AdminResourceKey = (typeof adminResourceKeys)[number];
+
+export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> = {
   categorias: {
     label: "Categorias",
     singular: "categoria",
@@ -574,10 +602,8 @@ export const adminResources = {
     allowArchive: false,
     orderColumn: "updated_at"
   }
-} as const satisfies Record<string, AdminResourceDefinition>;
-
-export type AdminResourceKey = keyof typeof adminResources;
+};
 
 export function isAdminResource(value: string): value is AdminResourceKey {
-  return Object.hasOwn(adminResources, value);
+  return adminResourceKeys.includes(value as AdminResourceKey);
 }
