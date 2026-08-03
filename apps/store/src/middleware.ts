@@ -84,7 +84,7 @@ async function hasValidDemoSession(
       await crypto.subtle.verify(
         "HMAC",
         key,
-        decodeBase64Url(signature),
+        Uint8Array.from(decodeBase64Url(signature)),
         new TextEncoder().encode(payload)
       );
 

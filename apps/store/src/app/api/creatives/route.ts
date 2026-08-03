@@ -9,7 +9,7 @@ import {
 } from "@/lib/demo-representative-store";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import { isUnknownRecord, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
 export const dynamic = "force-dynamic";
 
@@ -76,14 +76,38 @@ export async function GET(request: NextRequest) {
       { status: 403, headers }
     );
   }
+  const representativeResponse: unknown = await supabase
+    .from("representatives")
+    .select("id")
+    .eq("user_id", userResult.data.user.id)
+    .maybeSingle();
+  const representativeData = readQueryResult(representativeResponse).data;
+  const representativeId = isUnknownRecord(representativeData)
+    ? readString(representativeData, "id")
+    : "";
+  const favoriteResponse: unknown = representativeId
+    ? await supabase
+        .from("creative_favorites")
+        .select("creative_id")
+        .eq("representative_id", representativeId)
+    : { data: [] };
+  const favoriteIds = new Set(
+    readRows(readQueryResult(favoriteResponse).data).map((favorite) =>
+      readString(favorite, "creative_id")
+    )
+  );
   const creatives = await Promise.all(
     readRows(data).map(async (creative) => {
       const storagePath = readString(creative, "storage_path");
-      if (!storagePath) return creative;
+      if (!storagePath) return { ...creative, favorite: favoriteIds.has(readString(creative, "id")) };
       const signed = await supabase.storage
         .from("representative-creatives")
         .createSignedUrl(storagePath, 300);
-      return { ...creative, signedUrl: signed.data?.signedUrl ?? null };
+      return {
+        ...creative,
+        favorite: favoriteIds.has(readString(creative, "id")),
+        signedUrl: signed.data?.signedUrl ?? null
+      };
     })
   );
   return NextResponse.json({ creatives, demo: false }, { headers });

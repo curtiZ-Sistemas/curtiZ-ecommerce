@@ -3,14 +3,18 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  cancelDemoRepresentativeSale,
+  createDemoKitOrder,
   DemoRepresentativeError,
   getDemoRepresentativeSnapshot,
   listDemoRepresentativeApplications,
+  markDemoRepresentativeNotification,
   recordDemoRepresentativeSale,
   registerDemoCreativeEvent,
   reviewDemoRepresentativeApplication,
   saveDemoRepresentativeDraft,
-  submitDemoRepresentativeApplication
+  submitDemoRepresentativeApplication,
+  updateDemoRepresentativeProfile
 } from "@/lib/demo-representative-store";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -49,12 +53,33 @@ const actionSchema = z.discriminatedUnion("action", [
         (items) => new Set(items.map((item) => item.variantId)).size === items.length,
         "Variantes duplicadas."
       ),
-    customerReference: z.string().trim().regex(/^[A-Za-z0-9._/-]+$/u).max(80).optional()
+    customerReference: z.string().trim().regex(/^[A-Za-z0-9._/-]+$/u).max(80).optional(),
+    paymentMethod: z.enum(["pix", "card", "cash", "transfer", "other"]).optional(),
+    notes: z.string().trim().max(500).optional(),
+    soldAt: z.iso.datetime({ offset: true }).optional()
   }),
   z.object({
     action: z.literal("creative_event"),
     creativeId: z.string().min(1).max(120),
     eventType: z.enum(["view", "download", "copy", "favorite", "unfavorite", "share"])
+  }),
+  z.object({
+    action: z.literal("update_profile"),
+    regionCode: z.string().trim().toUpperCase().regex(/^[A-Z]{2,8}$/u)
+  }),
+  z.object({
+    action: z.literal("buy_kit"),
+    kitId: z.string().uuid(),
+    idempotencyKey: z.string().uuid()
+  }),
+  z.object({
+    action: z.literal("cancel_sale"),
+    saleId: z.string().uuid(),
+    reason: z.string().trim().min(3).max(500)
+  }),
+  z.object({
+    action: z.literal("mark_notification"),
+    notificationId: z.string().uuid().or(z.string().startsWith("notification-demo-"))
   })
 ]);
 
@@ -117,7 +142,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [{ data: applicationRaw }, { data: representativeRaw }] = await Promise.all([
+  const [{ data: applicationRaw }, { data: representativeRaw, error: representativeError }] = await Promise.all([
     supabase
       .from("representative_applications")
       .select("id,public_code,status,current_step,answers,decision_reason,updated_at")
@@ -125,10 +150,18 @@ export async function GET(request: NextRequest) {
       .maybeSingle(),
     supabase
       .from("representatives")
-      .select("id,public_code,referral_code,status,region_code,activated_at")
+      .select(
+        "id,user_id,public_code,referral_code,status,region_code,activated_at,current_level_id,representative_levels(name,description,rank)"
+      )
       .eq("user_id", user.id)
       .maybeSingle()
   ]);
+  if (representativeError) {
+    return NextResponse.json(
+      { message: "Não foi possível carregar o perfil de representante." },
+      { status: 503, headers: noStore }
+    );
+  }
   const application = isUnknownRecord(applicationRaw)
     ? {
         id: readString(applicationRaw, "id"),
@@ -147,19 +180,61 @@ export async function GET(request: NextRequest) {
     );
   }
   const representativeId = readString(representativeRecord, "id");
-  const [salesResult, kitOrdersResult, inventoryResult] = await Promise.all([
+  const representativeStatus = readString(representativeRecord, "status");
+  const levelId = readString(representativeRecord, "current_level_id");
+  const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = 20;
+  const rangeFrom = (page - 1) * pageSize;
+  const rangeTo = rangeFrom + pageSize - 1;
+  const networkSearch = request.nextUrl.searchParams.get("search")?.trim().slice(0, 80) || null;
+  const networkStatus = request.nextUrl.searchParams.get("status")?.trim() || null;
+  const goalsQuery = supabase
+    .from("representative_goals")
+    .select("id,title,period_start,period_end,target,active")
+    .eq("active", true)
+    .order("period_end", { ascending: true });
+  const scopedGoalsQuery = levelId
+    ? goalsQuery.or(`representative_id.eq.${representativeId},level_id.eq.${levelId}`)
+    : goalsQuery.eq("representative_id", representativeId);
+  const [
+    profileResult,
+    salesResult,
+    kitOrdersResult,
+    inventoryResult,
+    movementsResult,
+    availableKitsResult,
+    qualificationResult,
+    goalsResult,
+    levelHistoryResult,
+    commissionResult,
+    paymentResult,
+    documentsResult,
+    contractsResult,
+    trainingsResult,
+    notificationsResult,
+    networkResult,
+    networkCountResult
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name,email_snapshot,phone,avatar_path")
+      .eq("id", user.id)
+      .maybeSingle(),
     supabase
       .from("representative_sales")
-      .select("id,public_code,total_in_cents,status,sold_at")
+      .select(
+        "id,public_code,total_in_cents,status,sold_at,payment_method,notes,representative_sale_items(quantity,item_snapshot)",
+        { count: "exact" }
+      )
       .eq("representative_id", representativeId)
       .order("sold_at", { ascending: false })
-      .limit(100),
+      .range(rangeFrom, rangeTo),
     supabase
       .from("kit_orders")
-      .select("id,public_code,total_in_cents,status,kits(name)")
+      .select("id,public_code,total_in_cents,status,created_at,paid_at,shipped_at,delivered_at,kits(name)")
       .eq("representative_id", representativeId)
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(50),
     supabase
       .from("representative_inventory")
       .select(
@@ -167,14 +242,92 @@ export async function GET(request: NextRequest) {
       )
       .eq("representative_id", representativeId)
       .order("updated_at", { ascending: false })
-      .limit(200)
+      .limit(200),
+    supabase
+      .from("representative_inventory_movements")
+      .select("id,variant_id,quantity_delta,reason,source_type,created_at")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("kits")
+      .select("id,name,description,price_in_cents,required_for_activation,kit_level_rules(level_id,available,required)")
+      .eq("active", true)
+      .order("price_in_cents", { ascending: true })
+      .limit(50),
+    supabase
+      .from("representative_qualifications")
+      .select("id,qualified,period_start,period_end,metrics_snapshot,evaluated_at,qualification_rules(name,criteria)")
+      .eq("representative_id", representativeId)
+      .order("period_end", { ascending: false })
+      .limit(24),
+    scopedGoalsQuery.limit(50),
+    supabase
+      .from("representative_level_history")
+      .select("id,reason,created_at,representative_levels!representative_level_history_new_level_id_fkey(name)")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(24),
+    supabase
+      .from("commission_entries")
+      .select("id,status,eligible_amount_in_cents,commission_in_cents,created_at,representative_sales(public_code)")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("commission_payments")
+      .select("id,amount_in_cents,status,paid_at,created_at")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("representative_documents")
+      .select("id,document_type,storage_path,valid_until,created_at")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("representative_contracts")
+      .select("id,version,storage_path,accepted_at")
+      .eq("representative_id", representativeId)
+      .order("accepted_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("representative_trainings")
+      .select("id,training_code,status,progress,completed_at")
+      .eq("representative_id", representativeId)
+      .order("training_code", { ascending: true })
+      .limit(100),
+    supabase
+      .from("representative_notifications")
+      .select("id,title,body,action_path,read_at,created_at")
+      .eq("representative_id", representativeId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase.rpc("get_representative_network", {
+      p_search: networkSearch,
+      p_status: networkStatus,
+      p_limit: pageSize,
+      p_offset: rangeFrom
+    }),
+    supabase
+      .from("representative_network_closure")
+      .select("descendant_id", { count: "exact", head: true })
+      .eq("ancestor_id", representativeId)
+      .gt("depth", 0)
   ]);
   const sales = readRows(salesResult.data).map((sale) => ({
     id: readString(sale, "id"),
     publicCode: readString(sale, "public_code"),
     totalInCents: readNumber(sale, "total_in_cents"),
     status: readString(sale, "status"),
-    soldAt: readString(sale, "sold_at")
+    soldAt: readString(sale, "sold_at"),
+    paymentMethod: readString(sale, "payment_method") || null,
+    notes: readString(sale, "notes") || null,
+    items: readRows(sale.representative_sale_items).map((item) => ({
+      quantity: readNumber(item, "quantity"),
+      snapshot: isUnknownRecord(item.item_snapshot) ? item.item_snapshot : {}
+    }))
   }));
   const kitOrders = readRows(kitOrdersResult.data).map((order) => {
     const kit = isUnknownRecord(order.kits) ? order.kits : null;
@@ -183,7 +336,11 @@ export async function GET(request: NextRequest) {
       publicCode: readString(order, "public_code"),
       kitName: kit ? readString(kit, "name", "Kit Curtiz") : "Kit Curtiz",
       totalInCents: readNumber(order, "total_in_cents"),
-      status: readString(order, "status")
+      status: readString(order, "status"),
+      createdAt: readString(order, "created_at"),
+      paidAt: readString(order, "paid_at") || null,
+      shippedAt: readString(order, "shipped_at") || null,
+      deliveredAt: readString(order, "delivered_at") || null
     };
   });
   const inventory = readRows(inventoryResult.data).map((entry) => {
@@ -201,6 +358,139 @@ export async function GET(request: NextRequest) {
       quantity: readNumber(entry, "quantity")
     };
   });
+  const level = isUnknownRecord(representativeRecord.representative_levels)
+    ? representativeRecord.representative_levels
+    : null;
+  const profile = isUnknownRecord(profileResult.data) ? profileResult.data : null;
+  const availableKits = readRows(availableKitsResult.data)
+    .filter((kit) => {
+      const rules = readRows(kit.kit_level_rules);
+      return (
+        rules.length === 0 ||
+        rules.some(
+          (rule) =>
+            readString(rule, "level_id") === levelId &&
+            rule.available === true
+        )
+      );
+    })
+    .map((kit) => ({
+      id: readString(kit, "id"),
+      name: readString(kit, "name"),
+      description: readString(kit, "description"),
+      priceInCents: readNumber(kit, "price_in_cents"),
+      requiredForActivation: kit.required_for_activation === true
+    }));
+  const qualifications = readRows(qualificationResult.data).map((item) => {
+    const rule = isUnknownRecord(item.qualification_rules) ? item.qualification_rules : null;
+    return {
+      id: readString(item, "id"),
+      name: rule ? readString(rule, "name") : "Regra vigente",
+      qualified: item.qualified === true,
+      periodStart: readString(item, "period_start"),
+      periodEnd: readString(item, "period_end"),
+      metrics: isUnknownRecord(item.metrics_snapshot) ? item.metrics_snapshot : {},
+      criteria: rule && isUnknownRecord(rule.criteria) ? rule.criteria : {},
+      evaluatedAt: readString(item, "evaluated_at")
+    };
+  });
+  const goals = readRows(goalsResult.data).map((goal) => ({
+    id: readString(goal, "id"),
+    title: readString(goal, "title"),
+    periodStart: readString(goal, "period_start"),
+    periodEnd: readString(goal, "period_end"),
+    target: isUnknownRecord(goal.target) ? goal.target : {}
+  }));
+  const levelHistory = readRows(levelHistoryResult.data).map((entry) => {
+    const assignedLevel = isUnknownRecord(entry.representative_levels)
+      ? entry.representative_levels
+      : null;
+    return {
+      id: readString(entry, "id"),
+      levelName: assignedLevel ? readString(assignedLevel, "name") : "Nível",
+      reason: readString(entry, "reason"),
+      createdAt: readString(entry, "created_at")
+    };
+  });
+  const commissions = readRows(commissionResult.data).map((entry) => {
+    const sale = isUnknownRecord(entry.representative_sales) ? entry.representative_sales : null;
+    return {
+      id: readString(entry, "id"),
+      status: readString(entry, "status"),
+      eligibleInCents: readNumber(entry, "eligible_amount_in_cents"),
+      amountInCents: readNumber(entry, "commission_in_cents"),
+      createdAt: readString(entry, "created_at"),
+      saleCode: sale ? readString(sale, "public_code") : ""
+    };
+  });
+  const payments = readRows(paymentResult.data).map((payment) => ({
+    id: readString(payment, "id"),
+    amountInCents: readNumber(payment, "amount_in_cents"),
+    status: readString(payment, "status"),
+    paidAt: readString(payment, "paid_at") || null,
+    createdAt: readString(payment, "created_at")
+  }));
+  const inventoryMovements = readRows(movementsResult.data).map((movement) => ({
+    id: readString(movement, "id"),
+    variantId: readString(movement, "variant_id"),
+    quantityDelta: readNumber(movement, "quantity_delta"),
+    reason: readString(movement, "reason"),
+    sourceType: readString(movement, "source_type"),
+    createdAt: readString(movement, "created_at")
+  }));
+  const team = readRows(networkResult.data).map((member) => ({
+    id: readString(member, "representative_id"),
+    publicCode: readString(member, "public_code"),
+    displayName: readString(member, "display_name"),
+    status: readString(member, "status"),
+    levelName: readString(member, "level_name") || null,
+    depth: readNumber(member, "depth"),
+    joinedAt: readString(member, "joined_at")
+  }));
+  const documents = await Promise.all(
+    readRows(documentsResult.data).map(async (document) => {
+      const path = readString(document, "storage_path");
+      const signed = path
+        ? await supabase.storage.from("representative-documents").createSignedUrl(path, 300)
+        : null;
+      return {
+        id: readString(document, "id"),
+        type: readString(document, "document_type"),
+        validUntil: readString(document, "valid_until") || null,
+        createdAt: readString(document, "created_at"),
+        signedUrl: signed?.data?.signedUrl ?? null
+      };
+    })
+  );
+  const contracts = await Promise.all(
+    readRows(contractsResult.data).map(async (contract) => {
+      const path = readString(contract, "storage_path");
+      const signed = path
+        ? await supabase.storage.from("representative-documents").createSignedUrl(path, 300)
+        : null;
+      return {
+        id: readString(contract, "id"),
+        version: readString(contract, "version"),
+        acceptedAt: readString(contract, "accepted_at"),
+        signedUrl: signed?.data?.signedUrl ?? null
+      };
+    })
+  );
+  const trainings = readRows(trainingsResult.data).map((training) => ({
+    id: readString(training, "id"),
+    code: readString(training, "training_code"),
+    status: readString(training, "status"),
+    progress: readNumber(training, "progress"),
+    completedAt: readString(training, "completed_at") || null
+  }));
+  const notifications = readRows(notificationsResult.data).map((notification) => ({
+    id: readString(notification, "id"),
+    title: readString(notification, "title"),
+    body: readString(notification, "body"),
+    actionPath: readString(notification, "action_path") || null,
+    readAt: readString(notification, "read_at") || null,
+    createdAt: readString(notification, "created_at")
+  }));
   return NextResponse.json(
     {
       demo: false,
@@ -210,13 +500,39 @@ export async function GET(request: NextRequest) {
         publicCode: readString(representativeRecord, "public_code"),
         referralCode: readString(representativeRecord, "referral_code"),
         status: readString(representativeRecord, "status"),
-        levelName: null,
+        levelName: level ? readString(level, "name") : null,
+        levelDescription: level ? readString(level, "description") : null,
+        fullName: profile ? readString(profile, "full_name") : "",
+        email: profile ? readString(profile, "email_snapshot") : "",
+        phone: profile ? readString(profile, "phone") || null : null,
         regionCode: readString(representativeRecord, "region_code"),
         activatedAt: readString(representativeRecord, "activated_at") || null
       },
       sales,
       kitOrders,
-      inventory
+      inventory,
+      inventoryMovements,
+      availableKits,
+      qualifications,
+      goals,
+      levelHistory,
+      team,
+      commissions,
+      payments,
+      documents,
+      contracts,
+      trainings,
+      notifications,
+      pagination: {
+        sales: { page, pageSize, total: salesResult.count ?? sales.length },
+        team: {
+          page,
+          pageSize,
+          total: ["active", "unqualified", "approved_waiting_kit"].includes(representativeStatus)
+            ? networkCountResult.count ?? team.length
+            : 0
+        }
+      }
     },
     { headers: noStore }
   );
@@ -272,6 +588,29 @@ export async function POST(request: NextRequest) {
           status: 201,
           headers: noStore
         });
+      }
+      if (input.action === "update_profile") {
+        return NextResponse.json(
+          updateDemoRepresentativeProfile(session.email, input.regionCode),
+          { headers: noStore }
+        );
+      }
+      if (input.action === "buy_kit") {
+        return NextResponse.json(
+          createDemoKitOrder(session.email, input.kitId, input.idempotencyKey),
+          { status: 201, headers: noStore }
+        );
+      }
+      if (input.action === "cancel_sale") {
+        return NextResponse.json(cancelDemoRepresentativeSale(session.email, input.saleId), {
+          headers: noStore
+        });
+      }
+      if (input.action === "mark_notification") {
+        return NextResponse.json(
+          markDemoRepresentativeNotification(session.email, input.notificationId),
+          { headers: noStore }
+        );
       }
       registerDemoCreativeEvent(session.email, input.creativeId, input.eventType);
       return NextResponse.json({ ok: true }, { headers: noStore });
@@ -389,6 +728,26 @@ export async function POST(request: NextRequest) {
         { status: 409, headers: noStore }
       );
     }
+    if (input.paymentMethod || input.notes || input.soldAt) {
+      const metadataResponse: unknown = await supabase.rpc("set_representative_sale_metadata", {
+        p_sale_id: readString(sale, "id"),
+        p_payment_method: input.paymentMethod ?? null,
+        p_notes: input.notes ?? null,
+        p_sold_at: input.soldAt ?? null
+      });
+      if (readQueryResult(metadataResponse).error) {
+        return NextResponse.json(
+          {
+            id: readString(sale, "id"),
+            publicCode: readString(sale, "public_code"),
+            status: readString(sale, "status"),
+            warning:
+              "A venda foi registrada, mas os dados complementares não foram aceitos."
+          },
+          { status: 207, headers: noStore }
+        );
+      }
+    }
     const rawTotal = sale.total_in_cents;
     return NextResponse.json(
       {
@@ -399,6 +758,38 @@ export async function POST(request: NextRequest) {
           typeof rawTotal === "number" ? rawTotal : Number.parseInt(String(rawTotal), 10) || 0
       },
       { status: 201, headers: noStore }
+    );
+  }
+  if (input.action === "update_profile") {
+    const rpcResponse: unknown = await supabase.rpc("update_representative_profile", {
+      p_region_code: input.regionCode
+    });
+    const { data, error } = readQueryResult(rpcResponse);
+    return NextResponse.json(
+      error ? { message: "Não foi possível atualizar o perfil." } : data,
+      { status: error ? 422 : 200, headers: noStore }
+    );
+  }
+  if (input.action === "buy_kit") {
+    const rpcResponse: unknown = await supabase.rpc("create_representative_kit_order", {
+      p_kit_id: input.kitId,
+      p_idempotency_key: input.idempotencyKey
+    });
+    const { data, error } = readQueryResult(rpcResponse);
+    return NextResponse.json(
+      error ? { message: "Este kit não está disponível para seu perfil." } : data,
+      { status: error ? 409 : 201, headers: noStore }
+    );
+  }
+  if (input.action === "cancel_sale") {
+    const rpcResponse: unknown = await supabase.rpc("cancel_representative_sale", {
+      p_sale_id: input.saleId,
+      p_reason: input.reason
+    });
+    const { data, error } = readQueryResult(rpcResponse);
+    return NextResponse.json(
+      error ? { message: "A venda não pode ser cancelada." } : data,
+      { status: error ? 409 : 200, headers: noStore }
     );
   }
 
@@ -412,6 +803,32 @@ export async function POST(request: NextRequest) {
   const representativeId = representative ? readString(representative, "id") : "";
   if (!representativeId) {
     return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
+  }
+  if (input.action === "mark_notification") {
+    const queryResponse: unknown = await supabase
+      .from("representative_notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", input.notificationId)
+      .eq("representative_id", representativeId)
+      .select("id")
+      .maybeSingle();
+    const { data, error } = readQueryResult(queryResponse);
+    return NextResponse.json(
+      error || !data ? { message: "Notificação não encontrada." } : { ok: true },
+      { status: error || !data ? 404 : 200, headers: noStore }
+    );
+  }
+  if (input.eventType === "favorite") {
+    await supabase.from("creative_favorites").upsert({
+      representative_id: representativeId,
+      creative_id: input.creativeId
+    });
+  } else if (input.eventType === "unfavorite") {
+    await supabase
+      .from("creative_favorites")
+      .delete()
+      .eq("representative_id", representativeId)
+      .eq("creative_id", input.creativeId);
   }
   const eventResponse: unknown = await supabase.from("creative_usage_events").insert({
     representative_id: representativeId,

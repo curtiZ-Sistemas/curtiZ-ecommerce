@@ -11,6 +11,7 @@ describe("representative migrations without a local database", () => {
   const hardening = migration("202608010001_security_hardening.sql");
   const saleTransaction = migration("202608010002_representative_sale_transaction.sql");
   const referralAttribution = migration("202608010003_referral_attribution.sql");
+  const portal = migration("202608030005_representative_portal.sql");
 
   it("keeps privileged functions on an explicit empty search path", () => {
     const privilegedFunctions = [
@@ -81,5 +82,29 @@ describe("representative migrations without a local database", () => {
     expect(referralAttribution).toContain("security definer");
     expect(referralAttribution).toContain("set search_path = ''");
     expect(referralAttribution).toContain("grant execute on function public.is_valid_referral_code(text) to anon");
+  });
+
+  it("keeps portal mutations server-owned, idempotent and auditable", () => {
+    expect(portal).toContain("create_representative_kit_order");
+    expect(portal).toContain("cancel_representative_sale");
+    expect(portal).toContain("set_representative_sale_metadata");
+    expect(portal).toContain("get_representative_network");
+    expect(portal).toContain("pg_advisory_xact_lock");
+    expect(portal).toContain("for update");
+    expect(portal).toContain("representative_inventory_movements");
+    expect(portal).toContain("sale_cancellation");
+    expect(portal).toContain("kit_delivery");
+    expect(portal).toContain("security definer");
+    expect(portal).toContain("set search_path = ''");
+    expect(portal).not.toContain("p_price");
+    expect(portal).not.toContain("p_total");
+  });
+
+  it("limits network data and notification updates to the authenticated owner", () => {
+    expect(portal).toContain("owner.user_id = auth.uid()");
+    expect(portal).toContain("owner.status in ('active', 'unqualified', 'approved_waiting_kit')");
+    expect(portal).toContain("limit least(greatest(p_limit, 1), 50)");
+    expect(portal).toContain('create policy "representative updates own notification"');
+    expect(portal).toContain("private.owns_representative(representative_id)");
   });
 });

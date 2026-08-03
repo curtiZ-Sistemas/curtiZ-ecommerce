@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  cancelDemoRepresentativeSale,
+  createDemoKitOrder,
   getDemoRepresentativeSnapshot,
+  markDemoRepresentativeNotification,
   recordDemoRepresentativeSale,
   saveDemoRepresentativeDraft,
-  submitDemoRepresentativeApplication
+  submitDemoRepresentativeApplication,
+  updateDemoRepresentativeProfile
 } from "./demo-representative-store";
 
 describe("fluxo demo de representante", () => {
@@ -34,5 +38,30 @@ describe("fluxo demo de representante", () => {
     expect(
       getDemoRepresentativeSnapshot("representante.demo@curtiz.local").inventory[0]?.quantity
     ).toBe(4);
+  });
+
+  it("estorna o estoque ao cancelar uma venda demonstrativa", () => {
+    const email = "representante.demo@curtiz.local";
+    const before = getDemoRepresentativeSnapshot(email).inventory[0]?.quantity ?? 0;
+    const sale = recordDemoRepresentativeSale(
+      email,
+      [{ variantId: "10000000-0000-4000-8000-000000000001", quantity: 1 }],
+      "00000000-0000-4000-8000-000000000101"
+    );
+    expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before - 1);
+    expect(cancelDemoRepresentativeSale(email, sale.id).status).toBe("cancelled");
+    expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before);
+  });
+
+  it("mantém perfil, kit e notificações no escopo da representante demo", () => {
+    const email = "representante.demo@curtiz.local";
+    expect(updateDemoRepresentativeProfile(email, "RJ").regionCode).toBe("RJ");
+    const order = createDemoKitOrder(
+      email,
+      "20000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000102"
+    );
+    expect(order).toMatchObject({ status: "paid", totalInCents: 19_990 });
+    expect(markDemoRepresentativeNotification(email, "notification-demo-1").readAt).toBeTruthy();
   });
 });

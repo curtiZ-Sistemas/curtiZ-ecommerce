@@ -60,6 +60,7 @@ type DemoState = {
     status: string;
     soldAt: string;
     idempotencyKey: string;
+    items: Array<{ variantId: string; quantity: number }>;
   }>;
   inventory: Array<{
     representativeId: string;
@@ -73,6 +74,15 @@ type DemoState = {
   }>;
   creatives: DemoCreative[];
   creativeEvents: Array<{ creativeId: string; representativeId: string; type: string }>;
+  notifications: Array<{
+    id: string;
+    representativeId: string;
+    title: string;
+    body: string;
+    actionPath: string | null;
+    readAt: string | null;
+    createdAt: string;
+  }>;
 };
 
 const demoRules = {
@@ -174,7 +184,18 @@ const state = (): DemoState => {
         demo: true
       }
     ],
-    creativeEvents: []
+    creativeEvents: [],
+    notifications: [
+      {
+        id: "notification-demo-1",
+        representativeId: "demo-representative",
+        title: "Portal demonstrativo disponível",
+        body: "Os dados desta conta são fictícios e servem apenas para validação do fluxo.",
+        actionPath: null,
+        readAt: null,
+        createdAt: now()
+      }
+    ]
   };
   globalState.__curtizDemoRepresentatives.inventory ??= demoInventory.map((item) => ({ ...item }));
   return globalState.__curtizDemoRepresentatives;
@@ -206,7 +227,33 @@ export const getDemoRepresentativeSnapshot = (email: string) => {
     inventory: representative
       ? state().inventory.filter((item) => item.representativeId === representative.id)
       : [],
-    creatives: representative ? state().creatives.filter((item) => item.status === "published") : []
+    inventoryMovements: [],
+    creatives: representative ? state().creatives.filter((item) => item.status === "published") : [],
+    availableKits: representative
+      ? [
+          {
+            id: "20000000-0000-4000-8000-000000000001",
+            name: "Kit demonstrativo Curtiz",
+            description: "Oferta fictícia para validar o fluxo de compra em ambiente demo.",
+            priceInCents: 19990,
+            requiredForActivation: false,
+            demo: true as const
+          }
+        ]
+      : [],
+    qualifications: [],
+    goals: [],
+    levelHistory: [],
+    team: [],
+    commissions: [],
+    payments: [],
+    documents: [],
+    contracts: [],
+    trainings: [],
+    notifications: representative
+      ? state().notifications.filter((item) => item.representativeId === representative.id)
+      : [],
+    pagination: { sales: { page: 1, pageSize: 20, total: 0 }, team: { page: 1, pageSize: 20, total: 0 } }
   };
 };
 
@@ -333,7 +380,8 @@ export const recordDemoRepresentativeSale = (
     totalInCents,
     status: "confirmed",
     soldAt: now(),
-    idempotencyKey
+    idempotencyKey,
+    items: items.map((item) => ({ ...item }))
   };
   selected.forEach(({ inventory, quantity }) => {
     inventory.quantity -= quantity;
@@ -353,6 +401,69 @@ export const registerDemoCreativeEvent = (email: string, creativeId: string, typ
     throw new DemoRepresentativeError("Evento inválido.", 400);
   }
   state().creativeEvents.push({ creativeId, representativeId: representative.id, type });
+};
+
+export const updateDemoRepresentativeProfile = (email: string, regionCode: string) => {
+  const representative = state().representatives.find((item) => item.email === email);
+  if (!representative) throw new DemoRepresentativeError("Representante não encontrada.", 404);
+  if (!/^[A-Z]{2,8}$/u.test(regionCode)) {
+    throw new DemoRepresentativeError("Informe uma região válida.", 422);
+  }
+  representative.regionCode = regionCode;
+  return representative;
+};
+
+export const createDemoKitOrder = (email: string, kitId: string, idempotencyKey: string) => {
+  const representative = state().representatives.find((item) => item.email === email);
+  if (!representative || !["active", "approved_waiting_kit", "unqualified"].includes(representative.status)) {
+    throw new DemoRepresentativeError("Compra de kit indisponível para este perfil.", 403);
+  }
+  const existing = state().kitOrders.find(
+    (item) => item.representativeId === representative.id && item.id === idempotencyKey
+  );
+  if (existing) return existing;
+  if (kitId !== "20000000-0000-4000-8000-000000000001") {
+    throw new DemoRepresentativeError("Kit demonstrativo indisponível.", 404);
+  }
+  const order = {
+    id: idempotencyKey,
+    publicCode: code("KIT"),
+    representativeId: representative.id,
+    kitName: "Kit demonstrativo Curtiz",
+    status: "paid",
+    totalInCents: 19990
+  };
+  state().kitOrders.unshift(order);
+  return order;
+};
+
+export const cancelDemoRepresentativeSale = (email: string, saleId: string) => {
+  const representative = state().representatives.find((item) => item.email === email);
+  const sale = state().sales.find(
+    (item) => item.id === saleId && item.representativeId === representative?.id
+  );
+  if (!sale || sale.status !== "confirmed") {
+    throw new DemoRepresentativeError("Venda não pode ser cancelada.", 409);
+  }
+  sale.items.forEach((item) => {
+    const inventory = state().inventory.find(
+      (entry) =>
+        entry.representativeId === representative?.id && entry.variantId === item.variantId
+    );
+    if (inventory) inventory.quantity += item.quantity;
+  });
+  sale.status = "cancelled";
+  return sale;
+};
+
+export const markDemoRepresentativeNotification = (email: string, notificationId: string) => {
+  const representative = state().representatives.find((item) => item.email === email);
+  const notification = state().notifications.find(
+    (item) => item.id === notificationId && item.representativeId === representative?.id
+  );
+  if (!notification) throw new DemoRepresentativeError("Notificação não encontrada.", 404);
+  notification.readAt = now();
+  return notification;
 };
 
 export const listDemoCreatives = (publishedOnly = false) =>
