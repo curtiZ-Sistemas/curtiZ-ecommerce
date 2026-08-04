@@ -129,7 +129,7 @@ textarea:focus-visible {
 
 .side-nav a:hover,
 .side-nav a.active {
-  color: white;
+  color: black;
 }
 
 .side-nav svg {
@@ -212,7 +212,7 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  color: white;
+  color: black;
   font-weight: 800;
 }
 
@@ -1803,7 +1803,7 @@ button:not(:disabled):active,
 }
 
 .avatar {
-  box-shadow: 0 0 0 4px var(--brand-50);
+      box-shadow: 0 0 0 4px #b91c1c;
 }
 
 .panel-content {
