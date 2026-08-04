@@ -1,7 +1,6 @@
-import {
-  buildNonceContentSecurityPolicy,
-  sharedCookieOptions
-} from "@curtiz/security";
+import { sharedCookieOptions } from "@curtiz/security/auth-cookie";
+import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
+
 import {
   createServerClient,
   type CookieOptions
