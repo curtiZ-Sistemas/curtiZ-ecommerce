@@ -5,6 +5,7 @@ import Link from "next/link";
 import { HomepageHero } from "@/components/homepage-hero";
 import { ProductCard } from "@/components/product-card";
 import { getHomepageData, type HomepageData, type PublicBanner } from "@/lib/storefront-data";
+import { CategoryCarousel } from "@/components/category-carousel";
 
 const categoryRoutes = new Map([
   ["Masculino", "/masculino"],
@@ -87,28 +88,13 @@ function HomepageSectionRenderer({
           eyebrow={section.subtitle ?? "Encontre seu estilo"}
           title={section.title ?? "Para todos os momentos"}
         />
-        <div className="category-grid" role="list" aria-label="Categorias de produtos">
-          {categories.map(({ name, href, product }, index) => (
-            <Link className="category-card" href={href} key={href} role="listitem">
-              <div>
-                <h3>{name}</h3>
-                <span>
-                  Ver produtos <ArrowRight aria-hidden="true" />
-                </span>
-              </div>
-              {product && (
-                <Image
-                  src={product.image}
-                  alt=""
-                  width={250}
-                  height={140}
-                  aria-hidden="true"
-                  priority={index < 2}
-                />
-              )}
-            </Link>
-          ))}
-        </div>
+        <CategoryCarousel
+          categories={categories.map(({ name, href, product }) => ({
+            name,
+            href,
+            image: product!.image
+          }))}
+        />
       </section>
     );
   }

@@ -8268,7 +8268,7 @@ body:has(.representative-portal-layout) > .demo-banner {
 
 .category-carousel-viewport {
   width: 100%;
-  padding-inline: 18px;
+  padding: 8px 18px 4px;
   overflow: hidden;
   touch-action: pan-y pinch-zoom;
 }
@@ -8331,13 +8331,12 @@ body:has(.representative-portal-layout) > .demo-banner {
 
 @media (max-width: 700px) {
   .category-carousel-viewport {
-    padding-inline: 22px;
+    padding: 8px 22px 4px;
   }
 
   .category-carousel-track {
     gap: 12px;
   }
-
   .category-carousel-slide {
     flex: 0 0 82%;
   }
