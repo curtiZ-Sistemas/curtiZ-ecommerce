@@ -17,9 +17,9 @@ export default async function LoginPage({
   return (
     <div className="auth-page">
       <div className="auth-shell">
-        <aside className="auth-aside" aria-label="Benefícios da conta Curtiz">
+        <aside className="auth-aside" aria-label="Benefícios da conta curti Z">
           <div>
-            <p className="eyebrow">Sua experiência Curtiz</p>
+            <p className="eyebrow">Sua experiência curti Z</p>
             <h1>Tudo sobre seus pedidos em um só lugar.</h1>
             <p className="auth-aside-copy">
               Acompanhe compras, entregas e atendimentos em um só lugar.
@@ -53,7 +53,7 @@ export default async function LoginPage({
             turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
           />
           <div className="auth-divider">
-            <span>Primeira vez na Curtiz?</span>
+            <span>Primeira vez na curti Z?</span>
           </div>
           <Link className="secondary-button full-button auth-register-button" href={signupHref}>
             Cadastre-se

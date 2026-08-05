@@ -1,4 +1,4 @@
-# Auditoria completa do sistema Curtiz
+# Auditoria completa do sistema curti Z
 
 **Data da auditoria:** 1 de agosto de 2026  
 **Escopo:** análise estática, testes locais somente leitura e inventário funcional do monorepo.  
@@ -6,7 +6,7 @@
 
 ## 1. Resumo executivo
 
-A Curtiz possui uma fundação técnica relevante, mas ainda não está pronta para operação comercial. O monorepo está corretamente separado em loja (`apps/store`) e painel (`apps/panel`), compartilha domínio, configuração, segurança, integrações e Supabase por pacotes e contém um schema amplo para comércio, suporte, representantes, criativos, finanças e auditoria.
+A curti Z possui uma fundação técnica relevante, mas ainda não está pronta para operação comercial. O monorepo está corretamente separado em loja (`apps/store`) e painel (`apps/panel`), compartilha domínio, configuração, segurança, integrações e Supabase por pacotes e contém um schema amplo para comércio, suporte, representantes, criativos, finanças e auditoria.
 
 A existência do schema não corresponde, porém, à entrega funcional. A loja pública e os painéis usam grande volume de catálogo, métricas, gráficos e tabelas demonstrativos. Checkout, pedidos reais, estoque transacional, CRUD administrativo, operação logística, gerência financeira, observabilidade técnica e grande parte do portal de representantes não estão conectados de ponta a ponta.
 

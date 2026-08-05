@@ -24,7 +24,7 @@ export default async function Page({
           <ArrowLeft aria-hidden="true" /> Já tenho uma conta
         </Link>
         <header className="auth-card-header">
-          <span className="auth-kicker">Conta Curtiz</span>
+          <span className="auth-kicker">Conta curti Z</span>
           <h1>Crie sua conta</h1>
           <p>Leva poucos minutos. Endereço e CPF serão solicitados somente quando necessários.</p>
         </header>

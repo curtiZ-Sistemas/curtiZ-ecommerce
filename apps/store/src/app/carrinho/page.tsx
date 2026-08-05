@@ -74,7 +74,7 @@ export default function CartPage() {
           <span className="empty-state-icon"><ShoppingBag /></span>
           <p className="eyebrow">Seu carrinho está esperando</p>
           <h2>Escolha algo que combine com você</h2>
-          <p>Explore a coleção Curtiz e adicione seus modelos favoritos para continuar.</p>
+          <p>Explore a coleção curti Z e adicione seus modelos favoritos para continuar.</p>
           <Link className="primary-button" href="/produtos">
             Explorar produtos
           </Link>

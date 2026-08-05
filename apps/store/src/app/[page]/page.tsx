@@ -3,15 +3,15 @@ import { getPublicCmsPage } from "@/lib/storefront-data";
 
 const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   sobre: {
-    title: "Sobre a Curtiz",
+    title: "Sobre a curti Z",
     lead: "Conforto, estilo e escolhas feitas para a vida real.",
     body: [
-      "A Curtiz é uma marca exclusivamente online de chinelos, slides e sandálias.",
+      "A curti Z é uma marca exclusivamente online de chinelos, slides e sandálias.",
       "Nossa experiência digital prioriza clareza, segurança e atendimento em todas as etapas."
     ]
   },
   contato: {
-    title: "Fale com a Curtiz",
+    title: "Fale com a curti Z",
     lead: "Nossa central de ajuda reúne respostas rápidas e atendimento humano.",
     body: ["Para iniciar um atendimento com histórico, acesse a Central de ajuda."]
   },
@@ -34,7 +34,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
     title: "Formas de pagamento",
     lead: "Pagamento seguro com valores recalculados no servidor.",
     body: [
-      "Quando habilitado, o pagamento é processado pelo provedor configurado. A Curtiz não armazena CVV."
+      "Quando habilitado, o pagamento é processado pelo provedor configurado. A curti Z não armazena CVV."
     ]
   },
   "politica-de-privacidade": {
@@ -52,7 +52,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   },
   "termos-de-uso": {
     title: "Termos de Uso",
-    lead: "Condições transparentes para uso da plataforma Curtiz.",
+    lead: "Condições transparentes para uso da plataforma curti Z.",
     body: ["A versão aceita dos termos é registrada junto ao consentimento."]
   },
   "rastrear-pedido": {
@@ -124,7 +124,7 @@ export default async function ContentPage({ params }: { params: Promise<{ page: 
     <div className="container page-shell">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Curtiz</p>
+          <p className="eyebrow">curti Z</p>
           <h1>{title}</h1>
           <p>{lead}</p>
         </div>

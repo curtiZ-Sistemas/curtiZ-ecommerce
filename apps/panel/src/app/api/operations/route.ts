@@ -433,7 +433,7 @@ export async function GET(request: NextRequest) {
     id: text(kit.id),
     publicCode: text(kit.public_code),
     status: text(kit.status),
-    kitName: text(record(kit.kits)?.name, "Kit Curtiz"),
+    kitName: text(record(kit.kits)?.name, "Kit curti Z"),
     representativeCode: text(record(kit.representatives)?.public_code),
     createdAt: text(kit.created_at),
     items: mapItems(kit.kit_order_items)

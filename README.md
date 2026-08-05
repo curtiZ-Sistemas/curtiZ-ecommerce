@@ -1,6 +1,6 @@
 # Curtiz Commerce
 
-E-commerce e plataforma operacional da Curtiz. O repositório contém uma loja pública, um painel interno por perfis, domínio compartilhado e infraestrutura Supabase versionada.
+E-commerce e plataforma operacional da curti Z. O repositório contém uma loja pública, um painel interno por perfis, domínio compartilhado e infraestrutura Supabase versionada.
 
 ## Aplicações
 

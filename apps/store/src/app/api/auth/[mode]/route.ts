@@ -164,7 +164,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { data } = await supabase.auth.getUser();
     if (data.user) {
       const metadataName: unknown = data.user.user_metadata.full_name;
-      const fullName = typeof metadataName === "string" ? metadataName : "Cliente Curtiz";
+      const fullName = typeof metadataName === "string" ? metadataName : "Cliente z";
       return NextResponse.json(
         { authenticated: true, fullName },
         { headers: { "cache-control": "no-store" } }

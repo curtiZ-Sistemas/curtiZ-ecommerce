@@ -22,7 +22,7 @@ export default async function ProfilePage() {
       fullName =
         typeof data.user.user_metadata.full_name === "string"
           ? data.user.user_metadata.full_name
-          : "Cliente Curtiz";
+          : "Cliente curti Z";
       const roleResponse: unknown = await supabase
         .from("user_roles")
         .select("role")
@@ -38,7 +38,7 @@ export default async function ProfilePage() {
           <span className="profile-empty-icon">
             <UserRound />
           </span>
-          <p className="eyebrow">Seu espaço Curtiz</p>
+          <p className="eyebrow">Seu espaço curti Z</p>
           <h1>Acesse seu perfil</h1>
           <p>
             Entre para consultar seus dados, compras e o andamento de uma solicitação de
@@ -68,7 +68,7 @@ export default async function ProfilePage() {
           {fullName.slice(0, 1).toUpperCase()}
         </span>
         <div>
-          <p className="eyebrow">Perfil Curtiz</p>
+          <p className="eyebrow">Perfil curti Z</p>
           <h1>{fullName}</h1>
           <p>Conta verificada · dados pessoais protegidos</p>
         </div>

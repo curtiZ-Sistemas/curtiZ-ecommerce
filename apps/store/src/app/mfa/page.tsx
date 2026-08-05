@@ -27,7 +27,7 @@ export default async function MfaPage({ searchParams }: { searchParams: Promise<
         <div>
           <p className="eyebrow">Segurança do acesso</p>
           <h1>Confirme sua identidade</h1>
-          <p>Use um código temporário antes de entrar em uma área interna da Curtiz.</p>
+          <p>Use um código temporário antes de entrar em uma área interna da curti Z.</p>
         </div>
       </div>
       <MfaForm destination={destination} />

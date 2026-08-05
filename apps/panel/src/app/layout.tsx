@@ -5,8 +5,8 @@ import "./globals.css";
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "Painel Curtiz", template: "%s — Painel Curtiz" },
-  description: "Operação interna Curtiz",
+  title: { default: "Painel curti Z", template: "%s — Painel curti Z" },
+  description: "Operação interna curti Z",
   robots: { index: false, follow: false, noarchive: true }
 };
 

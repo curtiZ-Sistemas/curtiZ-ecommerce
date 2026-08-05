@@ -1,4 +1,4 @@
-# Plano de implementação Curtiz
+# Plano de implementação curti Z
 
 **Fonte principal:** `AUDITORIA_COMPLETA_CURTIZ.md`  
 **Início:** 1 de agosto de 2026  

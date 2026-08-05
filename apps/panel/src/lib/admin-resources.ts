@@ -525,7 +525,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
   avaliacoes: {
     label: "Avaliações",
     singular: "avaliação",
-    description: "Modere avaliações, denúncias, mídias e respostas da Curtiz.",
+    description: "Modere avaliações, denúncias, mídias e respostas da curti Z.",
     table: "reviews",
     select:
       "id,product_id,rating,title,content,status,verified_purchase,brand_response,created_at,edited_at",
@@ -537,7 +537,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
         type: "select",
         options: ["pending", "approved", "rejected", "reported"]
       },
-      { key: "brand_response", label: "Resposta da Curtiz", type: "textarea" }
+      { key: "brand_response", label: "Resposta da curti Z", type: "textarea" }
     ],
     allowCreate: false,
     allowArchive: false,

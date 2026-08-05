@@ -19,7 +19,7 @@ jobs:
       MERCADO_PAGO_PUBLIC_KEY: ci-public-placeholder
       MERCADO_PAGO_WEBHOOK_SECRET: ci-webhook-placeholder
       EMAIL_PROVIDER: resend
-      EMAIL_FROM: Curtiz <noreply@store.example.invalid>
+      EMAIL_FROM: curti Z <noreply@store.example.invalid>
       RESEND_API_KEY: ci-resend-placeholder
       SHIPPING_PROVIDER: custom
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-site-placeholder

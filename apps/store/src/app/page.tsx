@@ -122,7 +122,7 @@ function HomepageSectionRenderer({
       <section className="section container reveal-section" aria-labelledby={`${section.id}-title`}>
         <SectionHeading
           id={`${section.id}-title`}
-          eyebrow={section.subtitle ?? "Seleção Curtiz"}
+          eyebrow={section.subtitle ?? "Seleção curti Z"}
           title={section.title ?? "Produtos em destaque"}
           href={href}
         />
@@ -196,7 +196,7 @@ function HomepageSectionRenderer({
         <SectionHeading
           id={`${section.id}-title`}
           eyebrow="Experiência de compra"
-          title={section.title ?? "Comprar na Curtiz é simples"}
+          title={section.title ?? "Comprar na curti Z é simples"}
         />
         <div className="benefits-grid">
           <div className="benefit">

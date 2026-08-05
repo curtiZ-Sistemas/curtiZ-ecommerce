@@ -17,16 +17,16 @@ const banners = [
   {
     id: "hero-1",
     title: "Coleção Curtiz",
-    desktopImage: "/images/hero-curtiz-desktop.webp",
-    mobileImage: "/images/hero-curtiz-mobile.webp",
+    desktopImage: "/images/hero-curtiz-desktop.png",
+    mobileImage: "/images/hero-curtiz-mobile.png",
     href: "/lancamentos",
     position: "hero"
   },
   {
     id: "hero-2",
     title: "Seleção de produtos",
-    desktopImage: "/images/hero-curtiz-desktop.webp",
-    mobileImage: "/images/hero-curtiz-mobile.webp",
+    desktopImage: "/images/hero-curtiz-desktop.png",
+    mobileImage: "/images/hero-curtiz-mobile.png",
     href: "/produtos",
     position: "hero"
   }

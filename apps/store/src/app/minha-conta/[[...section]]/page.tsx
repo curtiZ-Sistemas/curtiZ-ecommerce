@@ -40,7 +40,7 @@ export default async function AccountPage({
             <UserRound />
           </span>
           <p className="eyebrow">Área do cliente</p>
-          <h1>Entre na sua conta Curtiz</h1>
+          <h1>Entre na sua conta curti Z</h1>
           <p>
             Consulte pedidos, favoritos, endereços, avaliações e atendimentos em um
             ambiente protegido.

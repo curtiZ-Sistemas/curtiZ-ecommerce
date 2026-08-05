@@ -1,8 +1,8 @@
-# Curtiz — regras de desenvolvimento
+# curti Z — regras de desenvolvimento
 
 ## Objetivo
 
-A Curtiz é um e-commerce multimarcas que deve funcionar como um produto comercial real: seguro, rápido, acessível, responsivo, confiável e visualmente próprio.
+A curti Z é um e-commerce multimarcas que deve funcionar como um produto comercial real: seguro, rápido, acessível, responsivo, confiável e visualmente próprio.
 
 A loja pública tem prioridade mobile. O painel administrativo deve manter clareza operacional, segurança e consistência com o design system do projeto.
 
@@ -440,7 +440,7 @@ A interface deve ser:
 * consistente;
 * acessível;
 * responsiva;
-* reconhecível como Curtiz.
+* reconhecível como curti Z.
 
 Não criar design típico de inteligência artificial.
 

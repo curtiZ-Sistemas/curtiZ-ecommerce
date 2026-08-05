@@ -51,7 +51,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     name: product.name,
     description: product.description,
     image: detail.gallery.map((image) => image.src),
-    brand: { "@type": "Brand", name: "Curtiz" },
+    brand: { "@type": "Brand", name: "curti Z" },
     offers: {
       "@type": "Offer",
       priceCurrency: "BRL",

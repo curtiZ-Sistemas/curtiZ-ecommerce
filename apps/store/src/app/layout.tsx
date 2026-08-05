@@ -13,15 +13,15 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", displa
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"),
   title: {
-    default: "Curtiz — conforto e estilo para todos os momentos",
-    template: "%s — Curtiz"
+    default: "curti Z — conforto e estilo para todos os momentos",
+    template: "%s — curti Z"
   },
-  description: "Chinelos, slides e sandálias Curtiz com conforto, design e compra segura.",
+  description: "Chinelos, slides e sandálias curti Z com conforto, design e compra segura.",
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     locale: "pt_BR",
-    siteName: "Curtiz"
+    siteName: "curti Z"
   }
 };
 
