@@ -3942,20 +3942,6 @@ select:disabled {
 
   /* Categorias */
 
-  .category-grid {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: min(78vw, 300px);
-    gap: 12px;
-    padding: 2px max(0px, calc((100% - min(78vw, 300px)) / 2)) 12px;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scroll-padding-inline: max(0px, calc((100% - min(78vw, 300px)) / 2));
-    scroll-snap-type: inline mandatory;
-    scrollbar-width: thin;
-    touch-action: pan-x pan-y;
-  }
-
   .category-card {
     min-height: 172px;
     padding: 18px;
@@ -8272,5 +8258,91 @@ body:has(.representative-portal-layout) > .demo-banner {
 
   .product-price strong {
     font-size: 1.7rem;
+  }
+}
+
+.category-carousel {
+  position: relative;
+  width: 100%;
+}
+
+.category-carousel-viewport {
+  width: 100%;
+  padding-inline: 18px;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+.category-carousel-track {
+  display: flex;
+  gap: 12px;
+}
+
+.category-carousel-slide {
+  min-width: 0;
+  flex: 0 0 calc((100% - 48px) / 4.35);
+}
+
+.category-carousel-slide .category-card {
+  width: 100%;
+  height: 100%;
+}
+
+.category-carousel-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.category-carousel-controls button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--brand-900);
+  border: 1px solid var(--neutral-300);
+  border-radius: 50%;
+  background: var(--white);
+  cursor: pointer;
+}
+
+.category-carousel-controls button:hover {
+  color: var(--white);
+  border-color: var(--brand-800);
+  background: var(--brand-800);
+}
+
+.category-carousel-controls button svg {
+  width: 19px;
+  height: 19px;
+}
+
+@media (max-width: 1000px) {
+  .category-carousel-viewport {
+    padding-inline: 16px;
+  }
+
+  .category-carousel-slide {
+    flex-basis: calc((100% - 24px) / 3.25);
+  }
+}
+
+@media (max-width: 700px) {
+  .category-carousel-viewport {
+    padding-inline: 22px;
+  }
+
+  .category-carousel-track {
+    gap: 12px;
+  }
+
+  .category-carousel-slide {
+    flex: 0 0 82%;
+  }
+
+  .category-carousel-controls {
+    display: none;
   }
 }
