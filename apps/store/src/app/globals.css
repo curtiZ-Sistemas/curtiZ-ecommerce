@@ -8262,25 +8262,36 @@ body:has(.representative-portal-layout) > .demo-banner {
 }
 
 .category-carousel {
+  --category-spacing: 12px;
   position: relative;
   width: 100%;
 }
 
 .category-carousel-viewport {
   width: 100%;
-  padding: 8px 18px 4px;
+  padding-block: 8px 4px;
   overflow: hidden;
+  isolation: isolate;
   touch-action: pan-y pinch-zoom;
 }
 
 .category-carousel-track {
   display: flex;
-  gap: 12px;
+  margin-left: calc(var(--category-spacing) * -1);
+  backface-visibility: hidden;
+  touch-action: pan-y pinch-zoom;
 }
 
 .category-carousel-slide {
+  position: relative;
   min-width: 0;
-  flex: 0 0 calc((100% - 48px) / 4.35);
+  flex: 0 0 31%;
+  padding-left: var(--category-spacing);
+  transform: translate3d(0, 0, 0);
+}
+
+.category-carousel-slide:hover {
+  z-index: 2;
 }
 
 .category-carousel-slide .category-card {
@@ -8306,12 +8317,18 @@ body:has(.representative-portal-layout) > .demo-banner {
   border-radius: 50%;
   background: var(--white);
   cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
 }
 
 .category-carousel-controls button:hover {
   color: var(--white);
   border-color: var(--brand-800);
   background: var(--brand-800);
+  transform: translateY(-2px);
 }
 
 .category-carousel-controls button svg {
@@ -8320,25 +8337,24 @@ body:has(.representative-portal-layout) > .demo-banner {
 }
 
 @media (max-width: 1000px) {
-  .category-carousel-viewport {
-    padding-inline: 16px;
-  }
-
   .category-carousel-slide {
-    flex-basis: calc((100% - 24px) / 3.25);
+    flex-basis: 44%;
   }
 }
 
 @media (max-width: 700px) {
-  .category-carousel-viewport {
-    padding: 8px 22px 4px;
+  .category-carousel {
+    --category-spacing: 12px;
   }
 
-  .category-carousel-track {
-    gap: 12px;
+  .category-carousel-viewport {
+    padding-block: 8px 4px;
+    padding-inline: 0;
   }
+
   .category-carousel-slide {
     flex: 0 0 82%;
+    padding-left: var(--category-spacing);
   }
 
   .category-carousel-controls {

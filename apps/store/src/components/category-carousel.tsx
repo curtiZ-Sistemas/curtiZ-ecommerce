@@ -3,7 +3,9 @@
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
+import { useRef } from "react";
 
 type CategoryItem = {
   name: string;
@@ -18,25 +20,43 @@ type CategoryCarouselProps = {
 export function CategoryCarousel({
   categories
 }: CategoryCarouselProps) {
-    const [emblaRef, emblaApi] = useEmblaCarousel({
-    loop: true,
-    align: "center",
-    dragFree: false,
-    skipSnaps: false,
-    containScroll: false
-    });
+  const autoplay = useRef(
+    Autoplay({
+      delay: 2000,
+      stopOnInteraction: false,
+      stopOnMouseEnter: true
+    })
+  );
+
+  const [emblaRef, emblaApi] = useEmblaCarousel(
+    {
+      loop: true,
+      align: "center",
+      slidesToScroll: 1,
+      dragFree: false,
+      skipSnaps: false,
+      duration: 28
+    },
+    [autoplay.current]
+  );
 
   const previous = () => {
     emblaApi?.scrollPrev();
+    autoplay.current.reset();
   };
 
   const next = () => {
     emblaApi?.scrollNext();
+    autoplay.current.reset();
   };
 
   return (
     <div className="category-carousel">
-      <div className="category-carousel-viewport" ref={emblaRef}>
+      <div
+        className="category-carousel-viewport"
+        ref={emblaRef}
+        aria-label="Carrossel de categorias"
+      >
         <div className="category-carousel-track">
           {categories.map((category) => (
             <div
