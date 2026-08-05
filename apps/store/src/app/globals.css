@@ -3355,6 +3355,16 @@ select:disabled {
 
 .footer-brand .brand {
   width: 150px;
+  height: auto;
+  overflow: visible;
+  align-items: flex-start;
+}
+
+.footer-brand .brand img {
+  width: 150px;
+  height: auto;
+  max-width: none;
+  flex: 0 0 auto;
 }
 
 .footer-grid h2 {
