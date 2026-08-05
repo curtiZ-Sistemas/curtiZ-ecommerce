@@ -224,24 +224,21 @@ select:disabled {
 .header-main {
   min-height: var(--header-height);
   display: grid;
-  grid-template-columns: 220px minmax(300px, 1fr) auto;
+  grid-template-columns: 176px minmax(300px, 1fr) auto;
   align-items: center;
   gap: clamp(20px, 3vw, 42px);
 }
 
 .brand {
-  width: 210px;
-  height: 64px;
+  width: 168px;
+  height: 52px;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
   flex: 0 0 auto;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .brand img {
-  width: 100%;
-  height: 100%;
   display: block;
   object-fit: contain;
   object-position: left center;
@@ -572,8 +569,7 @@ select:disabled {
 }
 
 .mobile-drawer-header .brand {
-  width: 180px;
-  height: 56px;
+  width: 142px;
 }
 
 .mobile-drawer nav {
