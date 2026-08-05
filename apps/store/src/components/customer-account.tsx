@@ -1156,11 +1156,11 @@ function Representative({ representative }: { representative: CustomerAccountSna
   const hasApplication = Boolean(representative.applicationStatus);
   return (
     <div className="customer-section-stack">
-      <SectionTitle eyebrow="Oportunidade Curtiz" title="Representante Curtiz" description="Envie sua solicitação, documentos e acompanhe a análise sem sair da sua conta." />
+      <SectionTitle eyebrow="Oportunidade curti Z" title="Representante curti Z" description="Envie sua solicitação, documentos e acompanhe a análise sem sair da sua conta." />
       <article className="customer-panel customer-representative-card">
         <UserRoundCheck aria-hidden="true" />
         <div>
-          <h3>{representative.approved ? "Você já é representante Curtiz" : hasApplication ? `Solicitação #${representative.applicationCode}` : "Quero ser representante"}</h3>
+          <h3>{representative.approved ? "Você já é representante curti Z" : hasApplication ? `Solicitação #${representative.applicationCode}` : "Quero ser representante"}</h3>
           <p>{representative.approved ? "Acesse seu ambiente profissional separado para consultar materiais, vendas e rede." : hasApplication ? `Status atual: ${customerStatusLabel(representative.applicationStatus)}. Abra a solicitação para acompanhar ou corrigir pendências.` : "Conheça os requisitos e preencha sua solicitação por etapas. O rascunho fica salvo."}</p>
         </div>
         <Link className="primary-button" href={representative.approved ? "/representante" : "/representante/solicitacao"}>

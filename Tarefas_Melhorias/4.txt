@@ -274,9 +274,9 @@ Permitir criar uma seção chamada, por exemplo:
 
 Dentro dela poderão aparecer:
 
-- Curtiz 2.0;
-- Curtiz Classic;
-- Curtiz Premium;
+- curti Z 2.0;
+- curti Z Classic;
+- curti Z Premium;
 - outras linhas cadastradas.
 
 Cada item poderá possuir:
@@ -291,7 +291,7 @@ Cada item poderá possuir:
 - estado ativo;
 - texto alternativo.
 
-Ao clicar em “Curtiz 2.0”, o cliente deverá visualizar automaticamente todos os produtos relacionados ao modelo Curtiz 2.0.
+Ao clicar em curti Z 2.0”, o cliente deverá visualizar automaticamente todos os produtos relacionados ao modelo curti Z 2.0.
 
 O administrador não deverá procurar ou digitar links.
 

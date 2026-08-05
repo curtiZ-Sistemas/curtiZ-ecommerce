@@ -191,7 +191,7 @@ export function AuthForm({
           </label>
           <label className="check-row">
             <input name="marketing" type="checkbox" />
-            <span>Quero receber novidades e ofertas da Curtiz.</span>
+            <span>Quero receber novidades e ofertas da curti Z.</span>
           </label>
         </>
       )}

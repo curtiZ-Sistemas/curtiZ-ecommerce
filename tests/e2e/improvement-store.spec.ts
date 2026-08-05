@@ -38,7 +38,7 @@ test("checkout direto exige login e preserva o carrinho", async ({ page }) => {
           productId: "wave-preto",
           slug: "flip-flop-wave-preto",
           variantId: "wave-preto:Preto:39/40",
-          name: "Curtiz Flip-Flop Wave Preto",
+          name: "curti Z Flip-Flop Wave Preto",
           image: "/images/products/wave-preto.png",
           color: "Preto",
           size: "39/40",
@@ -52,7 +52,7 @@ test("checkout direto exige login e preserva o carrinho", async ({ page }) => {
   await page.goto("/checkout");
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fcheckout/);
   await page.goto("/carrinho");
-  await expect(page.getByRole("heading", { name: "Curtiz Flip-Flop Wave Preto" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
 });
 
 test("drawer mobile cabe na viewport e fecha com Escape", async ({ page }) => {

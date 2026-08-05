@@ -10,7 +10,7 @@ export default function RepresentativeApplicationPage() {
     <main className="container page-shell representative-application-page">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Programa Curtiz</p>
+          <p className="eyebrow">Programa curti Z</p>
           <h1>Solicitação para representante</h1>
           <p>Preencha com atenção. O processo pode ser salvo e retomado.</p>
         </div>

@@ -16,7 +16,7 @@ vi.stubGlobal("React", React);
 const banners = [
   {
     id: "hero-1",
-    title: "Coleção Curtiz",
+    title: "Coleção curti Z",
     desktopImage: "/images/hero-curtiz-desktop.png",
     mobileImage: "/images/hero-curtiz-mobile.png",
     href: "/lancamentos",

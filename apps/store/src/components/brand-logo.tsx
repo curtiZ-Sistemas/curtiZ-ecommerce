@@ -6,11 +6,11 @@ export function BrandLogo() {
     <Link
       className="brand"
       href="/"
-      aria-label="Curtiz — página inicial"
+      aria-label="curti Z — página inicial"
     >
       <Image
         src="/images/logo-curtiz.png"
-        alt="Curtiz"
+        alt="curti Z"
         width={420}
         height={120}
         priority

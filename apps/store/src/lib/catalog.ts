@@ -4,7 +4,7 @@ export const demoProducts: Product[] = [
   {
     id: "wave-preto",
     slug: "flip-flop-wave-preto",
-    name: "Curtiz Flip-Flop Wave Preto",
+    name: "curti Z Flip-Flop Wave Preto",
     category: "Masculino",
     description: "Leve, resistente e macio para acompanhar todos os momentos.",
     priceInCents: 5990,
@@ -20,7 +20,7 @@ export const demoProducts: Product[] = [
   {
     id: "slim-coral",
     slug: "flip-flop-slim-coral",
-    name: "Curtiz Flip-Flop Slim Coral",
+    name: "curti Z Flip-Flop Slim Coral",
     category: "Feminino",
     description: "Design minimalista em tom coral vibrante e palmilha confortável.",
     priceInCents: 5490,
@@ -36,7 +36,7 @@ export const demoProducts: Product[] = [
   {
     id: "bold-marinho",
     slug: "slide-bold-marinho",
-    name: "Curtiz Slide Bold Marinho",
+    name: "curti Z Slide Bold Marinho",
     category: "Slides",
     description: "Slide marcante com tira acolchoada e base anatômica.",
     priceInCents: 7990,
@@ -52,7 +52,7 @@ export const demoProducts: Product[] = [
   {
     id: "comfort-areia",
     slug: "sandalia-comfort-areia",
-    name: "Curtiz Sandália Comfort Areia",
+    name: "curti Z Sandália Comfort Areia",
     category: "Sandálias",
     description: "Sandália versátil com ajuste seguro e acabamento suave.",
     priceInCents: 7990,
@@ -68,7 +68,7 @@ export const demoProducts: Product[] = [
   {
     id: "joy-rosa",
     slug: "infantil-joy-rosa",
-    name: "Curtiz Infantil Joy Rosa",
+    name: "curti Z Infantil Joy Rosa",
     category: "Infantil",
     description: "Conforto, cores alegres e segurança para os pequenos.",
     priceInCents: 3990,
@@ -84,7 +84,7 @@ export const demoProducts: Product[] = [
   {
     id: "soft-preto",
     slug: "slide-soft-preto",
-    name: "Curtiz Slide Soft Preto",
+    name: "curti Z Slide Soft Preto",
     category: "Slides",
     description: "Visual urbano, construção monobloco e toque macio.",
     priceInCents: 6990,
@@ -99,7 +99,7 @@ export const demoProducts: Product[] = [
   {
     id: "classic-preto",
     slug: "flip-flop-classic-preto",
-    name: "Curtiz Flip-Flop Classic Preto",
+    name: "curti Z Flip-Flop Classic Preto",
     category: "Masculino",
     description: "O essencial bem-feito, com conforto e durabilidade.",
     priceInCents: 4990,
@@ -113,7 +113,7 @@ export const demoProducts: Product[] = [
   {
     id: "comfort-bege",
     slug: "slide-comfort-bege",
-    name: "Curtiz Slide Comfort Bege",
+    name: "curti Z Slide Comfort Bege",
     category: "Feminino",
     description: "Tons naturais e conforto para uma rotina leve.",
     priceInCents: 7490,

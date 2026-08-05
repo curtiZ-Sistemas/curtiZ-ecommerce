@@ -101,7 +101,7 @@ const demoInventory = [
   {
     representativeId: "demo-representative",
     variantId: "10000000-0000-4000-8000-000000000001",
-    productName: "Curtiz Flip-Flop Wave Preto",
+    productName: "curti Z Flip-Flop Wave Preto",
     sku: "CZT-FW-PRE-40",
     color: "Preto",
     size: "39/40",
@@ -111,7 +111,7 @@ const demoInventory = [
   {
     representativeId: "demo-representative",
     variantId: "10000000-0000-4000-8000-000000000002",
-    productName: "Curtiz Slide Comfort Bege",
+    productName: "curti Z Slide Comfort Bege",
     sku: "CZT-SC-BEG-38",
     color: "Bege",
     size: "37/38",
@@ -168,7 +168,7 @@ const state = (): DemoState => {
         type: "caption",
         platform: "Instagram",
         status: "published",
-        caption: "Conheça a seleção Curtiz disponível para demonstração.",
+        caption: "Conheça a seleção curti Z disponível para demonstração.",
         publishedAt: now(),
         demo: true
       },
@@ -429,7 +429,7 @@ export const createDemoKitOrder = (email: string, kitId: string, idempotencyKey:
     id: idempotencyKey,
     publicCode: code("KIT"),
     representativeId: representative.id,
-    kitName: "Kit demonstrativo Curtiz",
+    kitName: "Kit demonstrativo curti Z",
     status: "paid",
     totalInCents: 19990
   };

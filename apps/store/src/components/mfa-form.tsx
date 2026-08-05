@@ -36,7 +36,7 @@ export function MfaForm({ destination }: { destination: string }) {
       }
       const enrolled = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Acesso interno Curtiz"
+        friendlyName: "Acesso interno curti Z"
       });
       if (enrolled.error) {
         if (active) setMessage("Não foi possível preparar o autenticador.");

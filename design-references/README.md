@@ -1,6 +1,6 @@
 # Referências visuais
 
-As dez telas desta pasta foram fornecidas como direção visual para a implementação da Curtiz.
+As dez telas desta pasta foram fornecidas como direção visual para a implementação da curti Z.
 Elas não são telas de produção nem uma afirmação de que produtos, integrações, lojas ou dados
 mostrados nas imagens existam.
 

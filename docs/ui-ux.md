@@ -2,7 +2,7 @@
 
 ## Direção visual
 
-A loja usa uma linguagem editorial sóbria, com superfícies claras, vermelho Curtiz e cantos
+A loja usa uma linguagem editorial sóbria, com superfícies claras, vermelho curti Z e cantos
 discretos. Os raios variam de 3 a 12 px; sombras são reservadas para hierarquia, menus e
 feedbacks flutuantes. Grid, campos, botões e estados interativos compartilham os mesmos tokens em
 `apps/store/src/app/globals.css`.

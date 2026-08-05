@@ -25,7 +25,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     setActive((current) => (current + direction + slides.length) % slides.length);
 
   return (
-    <section className="hero container homepage-hero" aria-label="Destaques da Curtiz">
+    <section className="hero container homepage-hero" aria-label="Destaques da curti Z">
       <h1 className="sr-only">{banner.title}</h1>
       <Link className="hero-link" href={banner.href} aria-label={banner.title}>
         <div className="hero-media hero-media-desktop">

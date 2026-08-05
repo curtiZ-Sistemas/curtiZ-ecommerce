@@ -14,7 +14,7 @@ export default function ResetPasswordPage() {
         <header className="auth-card-header">
           <span className="auth-kicker">Link confirmado</span>
           <h1>Crie uma nova senha</h1>
-          <p>Escolha a nova senha da sua conta Curtiz.</p>
+          <p>Escolha a nova senha da sua conta curti Z.</p>
         </header>
         <PasswordRecoveryForm mode="update" />
       </section>

@@ -137,7 +137,7 @@ Utilizar somente quando aplicável e com base em fontes oficiais:
 
 Não incluir leis apenas para aumentar o texto.
 
-Não aplicar automaticamente o Decreto nº 11.034/2022 sem validar se a Curtiz se enquadra em seu escopo.
+Não aplicar automaticamente o Decreto nº 11.034/2022 sem validar se a curti Z se enquadra em seu escopo.
 
 Registrar:
 

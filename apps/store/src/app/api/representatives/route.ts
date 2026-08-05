@@ -347,7 +347,7 @@ export async function GET(request: NextRequest) {
     const override = variant ? readNumber(variant, "price_override", -1) : -1;
     return {
       variantId: readString(entry, "variant_id"),
-      productName: product ? readString(product, "name", "Produto Curtiz") : "Produto Curtiz",
+      productName: product ? readString(product, "name", "Produto curti Z") : "Produto curti Z",
       sku: variant ? readString(variant, "sku") : "",
       color: variant ? readString(variant, "color_name") : "",
       size: variant ? readString(variant, "size") : "",

@@ -50,7 +50,7 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("button", { name: "Abrir menu" })).toBeVisible();
     await expect(
-      page.getByRole("banner").getByRole("link", { name: /Curtiz — página inicial/i })
+      page.getByRole("banner").getByRole("link", { name: /curti Z — página inicial/i })
     ).toBeVisible();
     await expect(page.getByRole("link", { name: /Entrar na minha conta/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Carrinho com/i })).toBeVisible();
@@ -86,7 +86,7 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
 
   await expect(page.getByText("Sugestões")).toBeVisible();
   await expect(
-    page.getByRole("option", { name: /Curtiz Flip-Flop Wave Preto Masculino/i })
+    page.getByRole("option", { name: /curti Z Flip-Flop Wave Preto Masculino/i })
   ).toBeVisible();
   const widths = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

@@ -182,7 +182,7 @@ async function getActor(request: NextRequest): Promise<SupportActor | null> {
   return {
     kind: "supabase",
     email: data.user.email ?? "",
-    fullName: typeof metadataName === "string" ? metadataName : "Cliente Curtiz",
+    fullName: typeof metadataName === "string" ? metadataName : "Cliente curti Z",
     role,
     userId: data.user.id,
     supabase

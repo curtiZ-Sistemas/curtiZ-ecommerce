@@ -4,7 +4,7 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/");
   await expect(page.locator(".homepage-hero")).toBeVisible();
-  await page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first().click();
+  await page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first().click();
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible();
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
@@ -63,7 +63,7 @@ test("autentica conta operacional no modo demo local sem Supabase", async ({ pag
 
 test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Favoritar Curtiz Flip-Flop Wave Preto" }).click();
+  await page.getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" }).click();
 
   await page.goto("/login");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
@@ -74,7 +74,7 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Seus favoritos" })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first()
+    page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first()
   ).toBeVisible();
 });
 
@@ -101,13 +101,13 @@ test("entrega a área customer sem dados fictícios e sem overflow mobile", asyn
 
 test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Favoritar Curtiz Flip-Flop Wave Preto" }).click();
+  await page.getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" }).click();
   await page.goto("/favoritos");
 
   await expect(page).toHaveURL(/\/favoritos$/);
   await expect(page.getByRole("heading", { name: "Favoritos" })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Curtiz Flip-Flop Wave Preto" }).first()
+    page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first()
   ).toBeVisible();
 });
 
@@ -136,7 +136,7 @@ test("preserva o carrinho durante a hidratação", async ({ page }) => {
           productId: "wave-preto",
           slug: "flip-flop-wave-preto",
           variantId: "wave-preto:Preto:39/40",
-          name: "Curtiz Flip-Flop Wave Preto",
+          name: "curti Z Flip-Flop Wave Preto",
           image: "/images/products/wave-preto.png",
           color: "Preto",
           size: "39/40",
@@ -148,6 +148,6 @@ test("preserva o carrinho durante a hidratação", async ({ page }) => {
     );
   });
   await page.goto("/carrinho");
-  await expect(page.getByRole("heading", { name: "Curtiz Flip-Flop Wave Preto" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
   await expect(page.getByText("R$ 59,90").first()).toBeVisible();
 });

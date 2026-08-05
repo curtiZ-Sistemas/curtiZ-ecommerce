@@ -108,7 +108,7 @@ const defaultSections: HomepageSection[] = [
   {
     id: "default-benefits",
     sectionType: "brands_strip",
-    title: "Comprar na Curtiz é simples",
+    title: "Comprar na curti Z é simples",
     settings: {},
     active: true,
     sortOrder: 4

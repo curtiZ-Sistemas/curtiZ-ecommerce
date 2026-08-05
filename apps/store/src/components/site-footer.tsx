@@ -52,7 +52,7 @@ export function SiteFooter() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <span>© 2026 Curtiz. Todos os direitos reservados.</span>
+          <span>© 2026 curti Z. Todos os direitos reservados.</span>
         </div>
       </div>
     </footer>

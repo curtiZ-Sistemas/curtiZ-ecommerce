@@ -105,14 +105,14 @@ insert into public.products(
 values
   (
     '20000000-0000-0000-0000-000000000001',
-    'Curtiz Flip-Flop Wave Preto', 'flip-flop-wave-preto',
+    'curti Z Flip-Flop Wave Preto', 'flip-flop-wave-preto',
     'Leve, resistente e macio.', 'Produto fictício para demonstração local.',
     '10000000-0000-0000-0000-000000000001', 'active', true,
     59.90, 22.00, 350, 8, 20, 30
   ),
   (
     '20000000-0000-0000-0000-000000000002',
-    'Curtiz Flip-Flop Slim Coral', 'flip-flop-slim-coral',
+    'curti Z Flip-Flop Slim Coral', 'flip-flop-slim-coral',
     'Design minimalista em tom coral.', 'Produto fictício para demonstração local.',
     '10000000-0000-0000-0000-000000000002', 'active', true,
     54.90, 20.00, 320, 8, 20, 30

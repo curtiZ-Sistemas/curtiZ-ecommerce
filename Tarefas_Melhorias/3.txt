@@ -44,7 +44,7 @@ Antes de alterar qualquer arquivo:
 
 Criar ou reformular completamente a funcionalidade de banners da página inicial.
 
-A Curtiz poderá possuir até quatro banners ativos e visíveis simultaneamente na página inicial.
+A curti Z poderá possuir até quatro banners ativos e visíveis simultaneamente na página inicial.
 
 O sistema poderá manter mais banners cadastrados como:
 

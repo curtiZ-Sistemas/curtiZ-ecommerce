@@ -234,7 +234,7 @@ export function RepresentativePortal({ section }: { section: string }) {
           title: readString(creative, "title", "Criativo"),
           campaign:
             readString(creative, "campaign") ||
-            readString(creative, "description", "Material Curtiz"),
+            readString(creative, "description", "Material curti Z"),
           type: readString(creative, "type") || readString(creative, "asset_type", "caption"),
           platform: readString(creative, "platform", "Canal não informado"),
           caption: readString(creative, "caption") || readString(creative, "caption_text"),
@@ -310,7 +310,7 @@ export function RepresentativePortal({ section }: { section: string }) {
       <aside className={menuOpen ? "representative-sidebar open" : "representative-sidebar"}>
         <header>
           <Link href="/representante" className="representative-brand">
-            CURTIZ <small>Representantes</small>
+            curti Z <small>Representantes</small>
           </Link>
           <button onClick={() => setMenuOpen(false)} aria-label="Fechar menu">
             <X />
@@ -867,7 +867,7 @@ function Commissions({ entries }: { entries: NonNullable<Snapshot["commissions"]
 function Payments({ payments }: { payments: NonNullable<Snapshot["payments"]> }) {
   return (
     <section>
-      <PageTitle title="Pagamentos" description="Histórico de repasses processados pela Curtiz." />
+      <PageTitle title="Pagamentos" description="Histórico de repasses processados pela curti Z." />
       <RecordList
         title="Repasses"
         empty="Nenhum pagamento processado."

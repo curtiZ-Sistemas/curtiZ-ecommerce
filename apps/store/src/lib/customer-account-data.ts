@@ -381,7 +381,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
         readString(profile, "full_name") ||
         (typeof user.user_metadata.full_name === "string"
           ? user.user_metadata.full_name
-          : "Cliente Curtiz"),
+          : "Cliente curti Z"),
       email: readString(profile, "email_snapshot") || user.email || "",
       phone: readString(profile, "phone"),
       avatarUrl,

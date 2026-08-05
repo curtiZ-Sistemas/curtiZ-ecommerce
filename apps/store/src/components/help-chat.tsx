@@ -13,7 +13,7 @@ type ChatMessage = {
 const initialMessage: ChatMessage = {
   id: 1,
   author: "assistant",
-  text: "Olá! Sou o assistente virtual da Curtiz. Posso ajudar com pedidos, entregas, trocas e formas de pagamento."
+  text: "Olá! Sou o assistente virtual da curti Z. Posso ajudar com pedidos, entregas, trocas e formas de pagamento."
 };
 
 function simulatedReply(message: string) {
@@ -91,7 +91,7 @@ export function HelpChat() {
               <Headphones />
             </div>
             <div>
-              <strong id="help-chat-title">Ajuda Curtiz</strong>
+              <strong id="help-chat-title">Ajuda curti Z</strong>
               <span>
                 <i /> Assistente virtual
               </span>
