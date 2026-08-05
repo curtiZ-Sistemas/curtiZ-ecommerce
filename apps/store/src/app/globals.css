@@ -941,6 +941,18 @@ select:disabled {
   outline-offset: 3px;
 }
 
+.hero-picture {
+  width: 100%;
+  display: block;
+  line-height: 0;
+}
+
+.hero-picture img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .hero-media {
   width: 100%;
   height: auto;
