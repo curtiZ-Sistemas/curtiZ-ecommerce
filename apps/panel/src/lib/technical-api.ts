@@ -4,8 +4,15 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { type TechnicalRecord } from "@/lib/technical-sanitizer";
 
 export { sanitizeTechnicalValue } from "@/lib/technical-sanitizer";
+export { technicalDemoResourceRows } from "./technical-demo";
 
 export const technicalNoStore = { "cache-control": "private, no-store" };
+
+export function isAuthorizedTechnicalDemo(request: NextRequest): boolean {
+  const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
+  return Boolean(session?.roles.includes("technical"));
+}
+
 export function technicalRows(value: unknown): TechnicalRecord[] {
   return Array.isArray(value)
     ? value.filter(

@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeTechnicalRequest,
+  isAuthorizedTechnicalDemo,
   sanitizeTechnicalValue,
+  technicalDemoResourceRows,
   technicalNoStore,
   technicalRows,
   unauthorizedTechnicalResponse
@@ -91,6 +93,19 @@ export async function GET(
     return NextResponse.json(
       { message: "Área técnica não encontrada." },
       { status: 404, headers: technicalNoStore }
+    );
+  }
+  if (isAuthorizedTechnicalDemo(request)) {
+    if (request.nextUrl.searchParams.get("format") === "csv") {
+      return NextResponse.json(
+        { message: "A exportação não está disponível no ambiente de demonstração." },
+        { status: 403, headers: technicalNoStore }
+      );
+    }
+    const items = technicalDemoResourceRows(resource);
+    return NextResponse.json(
+      { items, total: items.length, page: 1, pageSize },
+      { headers: technicalNoStore }
     );
   }
   const auth = await authorizeTechnicalRequest(request);

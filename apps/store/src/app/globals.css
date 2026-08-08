@@ -2471,6 +2471,7 @@ select:disabled {
   padding: 0 17px;
   color: var(--white);
   background: var(--brand-800);
+  border: 1px solid var(--brand-950);
   border-radius: var(--radius);
   box-shadow: 0 12px 32px rgb(94 25 18 / 26%);
   font-size: 0.76rem;
@@ -2519,6 +2520,7 @@ select:disabled {
   gap: 8px;
   padding: 10px 12px;
   color: var(--white);
+  background: var(--brand-950);
 }
 
 .help-chat-avatar {
@@ -2576,6 +2578,13 @@ select:disabled {
 
 .help-chat-header button:hover {
   background: var(--brand-800);
+}
+
+.help-chat-header button:focus-visible,
+.help-launcher:focus-visible,
+.help-chat-form button:focus-visible {
+  outline: 3px solid var(--brand-200);
+  outline-offset: 2px;
 }
 
 .help-chat-header button svg {
@@ -2695,6 +2704,13 @@ select:disabled {
   border-radius: var(--radius-sm);
   outline: 0;
   font-size: 0.72rem;
+  color: var(--ink);
+  background: var(--white);
+}
+
+.help-chat-form input::placeholder {
+  color: var(--neutral-600);
+  opacity: 1;
 }
 
 .help-chat-form input:focus {
@@ -4254,13 +4270,9 @@ select:disabled {
   }
 
   .help-launcher {
-    width: 50px;
-    padding: 0;
+    width: auto;
+    padding: 0 14px;
     justify-content: center;
-  }
-
-  .help-launcher span {
-    display: none;
   }
 
   /* Conta do cliente */
@@ -7307,6 +7319,30 @@ body:has(.representative-portal-layout) > .demo-banner {
   width: 16px;
 }
 
+.help-inline-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #e8c98f;
+  border-radius: 8px;
+  color: #5f451d;
+  background: #fff9ed;
+}
+
+.help-inline-warning > svg {
+  width: 20px;
+  flex: 0 0 auto;
+}
+
+.help-inline-warning p {
+  flex: 1;
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
 .help-result-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -7604,7 +7640,8 @@ body:has(.representative-portal-layout) > .demo-banner {
   }
 
   .help-section-title,
-  .help-reader footer {
+  .help-reader footer,
+  .help-inline-warning {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -7631,13 +7668,9 @@ body:has(.representative-portal-layout) > .demo-banner {
     border-radius: 10px;
   }
 
-  .help-launcher span {
-    display: none;
-  }
-
   .help-launcher {
-    width: 50px;
-    padding: 0;
+    width: auto;
+    padding: 0 14px;
     justify-content: center;
   }
 
@@ -7680,10 +7713,15 @@ body:has(.representative-portal-layout) > .demo-banner {
 }
 
 .representative-brand {
-  color: #a62d23;
-  font-size: 1.35rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+  display: block;
+  width: 150px;
+}
+
+.representative-brand img {
+  display: block;
+  width: 132px;
+  height: auto;
+  object-fit: contain;
 }
 
 .representative-brand small {

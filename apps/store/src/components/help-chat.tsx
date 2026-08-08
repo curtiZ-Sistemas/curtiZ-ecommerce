@@ -4,12 +4,14 @@ import { Bot, ChevronDown, Headphones, LoaderCircle, MessageCircle, Send, X } fr
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { HelpContent } from "@/lib/help-content";
+import { localHelpReply } from "@/lib/help-intents";
 
 type ChatMessage = {
   id: number;
   author: "assistant" | "customer";
   text: string;
   source?: Pick<HelpContent, "title" | "slug" | "updatedAt">;
+  action?: { label: string; href: string };
 };
 
 type HelpResponse = { ok: boolean; contents?: HelpContent[] };
@@ -87,6 +89,15 @@ export function HelpChat() {
       const nextId = Date.now();
       setMessages((current) => [...current, { id: nextId, author: "customer", text: text.trim() }]);
       setTyping(true);
+      const localReply = localHelpReply(text);
+      if (localReply) {
+        setMessages((current) => [
+          ...current,
+          { id: nextId + 1, author: "assistant", ...localReply }
+        ]);
+        setTyping(false);
+        return;
+      }
       try {
         const params = new URLSearchParams({ q: text.trim().slice(0, 160), origin: "chat" });
         const response = await fetch(`/api/help?${params}`, { cache: "no-store" });
@@ -175,6 +186,11 @@ export function HelpChat() {
                           }).format(new Date(message.source.updatedAt))}
                         </Link>
                       )}
+                      {message.action && (
+                        <Link href={message.action.href} onClick={close}>
+                          {message.action.label}
+                        </Link>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -235,12 +251,12 @@ export function HelpChat() {
       <button
         className={open ? "help-launcher is-open" : "help-launcher"}
         type="button"
-        onClick={() => (open ? setMinimized(false) : setOpen(true))}
-        aria-label={open ? "Retomar conversa de ajuda" : "Abrir ajuda"}
+        onClick={() => (open ? close() : setOpen(true))}
+        aria-label={open ? "Fechar ajuda" : "Abrir ajuda"}
         aria-expanded={open}
       >
         <MessageCircle />
-        <span>Precisa de ajuda?</span>
+        <span>Posso ajudar?</span>
       </button>
     </div>
   );

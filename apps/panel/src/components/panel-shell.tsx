@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Bell,
   BadgeDollarSign,
   Boxes,
   ChartNoAxesCombined,
@@ -33,8 +34,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import React, { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import React, { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import logoCurtiz from "../../public/images/logo-curtiz.png";
+import {
+  keepActiveItemVisible,
+  panelSidebarScrollKey,
+  readSidebarScroll,
+  writeSidebarScroll
+} from "../lib/sidebar-scroll";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -160,6 +167,20 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
+const menuGroups: Record<PanelRole, Record<number, string>> = {
+  operacional: { 0: "Visão geral", 1: "Operação", 5: "Estoque", 9: "Pós-venda", 14: "Atendimento", 16: "Conteúdo", 18: "Gestão" },
+  administracao: { 0: "Visão geral", 1: "Catálogo", 8: "Comercial", 10: "Conteúdo", 15: "Representantes", 23: "Governança" },
+  gerencia: { 0: "Visão geral", 2: "Resultados", 5: "Representantes", 12: "Financeiro", 16: "Conteúdo", 20: "Governança", 27: "Atendimento" },
+  tecnico: { 0: "Monitoramento", 2: "Diagnóstico", 5: "Segurança", 6: "Integrações", 8: "Processamento", 11: "Dados", 15: "Plataforma", 23: "Atendimento" }
+};
+
+const notificationRoutes: Record<PanelRole, string> = {
+  operacional: "/operacional/pendencias",
+  administracao: "/administracao/pedidos",
+  gerencia: "/gerencia/alertas",
+  tecnico: "/tecnico/erros"
+};
+
 const searchRoutes: Record<PanelRole, string> = {
   operacional: "/operacional/pedidos",
   administracao: "/administracao/produtos",
@@ -188,6 +209,7 @@ export function PanelShell({
   const [logoutError, setLogoutError] = useState("");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const closeMenu = (restoreFocus = false) => {
     setMenuOpen(false);
     if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
@@ -238,6 +260,32 @@ export function PanelShell({
     };
   }, [menuOpen]);
 
+  useLayoutEffect(() => {
+    const navigation = navRef.current;
+    if (!navigation) return;
+    const key = panelSidebarScrollKey(role);
+    const restore = window.requestAnimationFrame(() => {
+      const stored = readSidebarScroll(window.sessionStorage, key);
+      navigation.scrollTop = stored;
+      const active = navigation.querySelector<HTMLElement>("a.active");
+      if (active) {
+        navigation.scrollTop = keepActiveItemVisible(
+          navigation.scrollTop,
+          navigation.clientHeight,
+          active.offsetTop,
+          active.offsetHeight
+        );
+      }
+    });
+    const persist = () => writeSidebarScroll(window.sessionStorage, key, navigation.scrollTop);
+    navigation.addEventListener("scroll", persist, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(restore);
+      persist();
+      navigation.removeEventListener("scroll", persist);
+    };
+  }, [role, section]);
+
   const trapSidebarFocus = (event: KeyboardEvent<HTMLElement>) => {
     if (!menuOpen || event.key !== "Tab") return;
     const controls = sidebarRef.current?.querySelectorAll<HTMLElement>(
@@ -285,19 +333,21 @@ export function PanelShell({
           </button>
         </div>
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
-        <nav className="side-nav" aria-label={`Menu ${roleLabels[role]}`}>
-          {menus[role].map(([label, route, Icon]) => {
+        <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
+          {menus[role].map(([label, route, Icon], index) => {
             const href = route ? `/${role}/${route}` : `/${role}`;
             return (
-              <Link
-                className={section === route ? "active" : ""}
-                href={href}
-                key={href}
-                onClick={() => closeMenu()}
-              >
-                <Icon size={19} />
-                <span>{label}</span>
-              </Link>
+              <React.Fragment key={href}>
+                {menuGroups[role][index] ? <span className="side-nav-group">{menuGroups[role][index]}</span> : null}
+                <Link
+                  className={section === route ? "active" : ""}
+                  href={href}
+                  onClick={() => closeMenu()}
+                >
+                  <Icon size={19} />
+                  <span>{label}</span>
+                </Link>
+              </React.Fragment>
             );
           })}
         </nav>
@@ -332,6 +382,10 @@ export function PanelShell({
           >
             <Menu />
           </button>
+          <div className="topbar-context">
+            <small>Painel {roleLabels[role]}</small>
+            <strong>{menus[role].find(([, route]) => route === section)?.[0] ?? roleLabels[role]}</strong>
+          </div>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
               <form action={panelSearchRoute(role)}>
@@ -358,6 +412,9 @@ export function PanelShell({
           <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">
             Ver loja <ExternalLink aria-hidden="true" />
           </a>
+          <Link className="topbar-notifications" href={notificationRoutes[role]} aria-label="Abrir notificações e pendências">
+            <Bell aria-hidden="true" />
+          </Link>
           {canSwitchPanel ? (
             <Link className="panel-switch-link topbar-switch-link" href="/selecionar-painel">
               <PanelsTopLeft aria-hidden="true" /> Trocar painel

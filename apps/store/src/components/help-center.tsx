@@ -59,6 +59,7 @@ export function HelpCenter() {
   const [selected, setSelected] = useState<HelpContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
   const [feedback, setFeedback] = useState<Record<string, boolean>>({});
   const sessionId = useRef("");
 
@@ -83,10 +84,10 @@ export function HelpCenter() {
           signal: controller.signal
         });
         const result = (await response.json()) as HelpResponse;
+        if (result.categories?.length) setCategories(result.categories);
         if (!response.ok || !result.ok) throw new Error(result.message);
         setContents(result.contents ?? []);
         setTotal(result.total ?? 0);
-        if (result.categories?.length) setCategories(result.categories);
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === "AbortError") return;
         setError("Não foi possível consultar a Central de Ajuda.");
@@ -99,7 +100,20 @@ export function HelpCenter() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [category, page, query]);
+  }, [category, page, query, retryToken]);
+
+  const visibleCategories = useMemo(() => {
+    const primary = new Set([
+      "conta-cadastro",
+      "pedidos",
+      "pagamentos",
+      "entregas-rastreamento",
+      "produtos-tamanhos",
+      "trocas-devolucoes",
+      "representante-curtiz"
+    ]);
+    return categories.filter((item) => primary.has(item.slug) || item.slug === category);
+  }, [categories, category]);
 
   const totalPages = Math.max(1, Math.ceil(total / 12));
   const heading = useMemo(() => {
@@ -182,7 +196,7 @@ export function HelpCenter() {
           )}
         </div>
         <div className="help-category-grid">
-          {categories.map((item) => (
+          {visibleCategories.map((item) => (
             <button
               type="button"
               key={item.slug}
@@ -247,19 +261,29 @@ export function HelpCenter() {
             {total} resultado{total === 1 ? "" : "s"}
           </span>
         </div>
-        {error ? (
-          <div className="help-empty" role="alert">
+        {error && (
+          <div className="help-inline-warning" role="status">
             <CircleHelp />
-            <h3>Busca indisponível</h3>
-            <p>{error}</p>
+            <p>
+              <strong>Alguns artigos estão temporariamente indisponíveis.</strong> Os atalhos,
+              tópicos e o atendimento continuam disponíveis.
+            </p>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setRetryToken((value) => value + 1)}
+            >
+              Tentar novamente
+            </button>
           </div>
-        ) : loading ? (
+        )}
+        {loading ? (
           <div className="help-result-grid" aria-label="Carregando conteúdos">
             {[1, 2, 3].map((item) => (
               <div className="help-result-skeleton" key={item} />
             ))}
           </div>
-        ) : contents.length === 0 ? (
+        ) : error ? null : contents.length === 0 ? (
           <div className="help-empty">
             <CircleHelp />
             <h3>Nenhum conteúdo encontrado</h3>

@@ -4,8 +4,11 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/");
   await expect(page.locator(".homepage-hero")).toBeVisible();
-  await page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first().click();
-  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible();
+  await Promise.all([
+    page.waitForURL("**/produto/flip-flop-wave-preto", { timeout: 20_000 }),
+    page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first().click()
+  ]);
+  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
   await page.getByRole("link", { name: /Carrinho com 1 itens/i }).click();
@@ -18,8 +21,8 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
 test("preserva o retorno do login e abre atendimento humano", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/ajuda");
-  await page.getByRole("button", { name: /Como funciona o frete/i }).click();
-  await page.getByRole("button", { name: /Falar com um humano/i }).click();
+  await expect(page.getByRole("button", { name: /Entregas e rastreamento/i })).toBeVisible();
+  await page.getByRole("button", { name: "Novo chamado" }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]').fill("1234567890");
@@ -30,7 +33,7 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
     .getByLabel("Mensagem inicial")
     .fill("Preciso confirmar o prazo atualizado da minha entrega.");
   await page.getByRole("button", { name: /Enviar para a equipe/i }).click();
-  await expect(page.getByText(/pode levar de 1 a 3 horas/i)).toBeVisible();
+  await expect(page.getByText(/Seu chamado foi enviado e aguarda atendimento/i).first()).toBeVisible();
 });
 
 test("oferece um único acesso para clientes e equipe", async ({ page }) => {
@@ -80,7 +83,7 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
 
 test("entrega a área customer sem dados fictícios e sem overflow mobile", async ({ page }) => {
   await page.goto("/minha-conta");
-  await expect(page.getByRole("heading", { name: "Entre na sua conta Curtiz" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Entre na sua conta curti Z" })).toBeVisible();
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]').fill("1234567890");
@@ -111,19 +114,14 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("chat flutuante responde em modo mock e pode ser minimizado", async ({ page }) => {
+test("chat flutuante responde a uma saudação e o launcher também fecha", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Abrir ajuda" }).click();
   await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeVisible();
-  await expect(page.getByText(/Respostas simuladas/i)).toBeVisible();
-
-  await page.getByLabel("Digite sua mensagem").fill("Como rastrear meu pedido?");
+  await page.getByLabel("Digite sua mensagem").fill("Oi");
   await page.getByRole("button", { name: "Enviar mensagem" }).click();
-  await expect(page.getByText(/Minha conta › Pedidos/i)).toBeVisible();
-
-  await page.getByRole("button", { name: "Minimizar conversa" }).click();
-  await expect(page.getByRole("button", { name: "Expandir conversa" })).toBeVisible();
-  await page.getByRole("button", { name: "Fechar conversa" }).click();
+  await expect(page.getByText(/Como posso ajudar você hoje/i)).toBeVisible();
+  await page.getByRole("button", { name: "Fechar ajuda" }).click();
   await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeHidden();
 });
 

@@ -38,6 +38,9 @@ function safeAction(value: unknown): HelpContent["relatedAction"] {
   return label && href.startsWith("/") && !href.startsWith("//") ? { label, href } : undefined;
 }
 
+const safeErrorCode = (value: unknown) =>
+  isUnknownRecord(value) && typeof value.code === "string" ? value.code : "unknown";
+
 function mapRow(row: Record<string, unknown>): HelpContent | null {
   const id = readString(row, "id");
   const slug = readString(row, "slug");
@@ -120,9 +123,19 @@ export async function GET(request: NextRequest) {
 
   const actor = await audienceFor(request);
   if (typeof actor === "string" || !actor.supabase) {
+    console.error("[help-api] public search unavailable", {
+      requestId: crypto.randomUUID(),
+      reason: "supabase_client_unavailable"
+    });
     return NextResponse.json(
-      { ok: true, contents: [], total: 0, categories: [] },
-      { headers: headersFor(request) }
+      {
+        ok: false,
+        message: "A busca está temporariamente indisponível.",
+        contents: [],
+        total: 0,
+        categories: helpCategories
+      },
+      { status: 503, headers: headersFor(request) }
     );
   }
   const [response, categoryResponse] = await Promise.all([
@@ -141,9 +154,20 @@ export async function GET(request: NextRequest) {
   ]);
   const result = readQueryResult(response as unknown);
   if (result.error || categoryResponse.error) {
+    console.error("[help-api] published search failed", {
+      requestId: crypto.randomUUID(),
+      searchCode: safeErrorCode(result.error),
+      categoryCode: safeErrorCode(categoryResponse.error)
+    });
     return NextResponse.json(
-      { ok: false, message: "A busca está temporariamente indisponível." },
-      { status: 503 }
+      {
+        ok: false,
+        message: "A busca está temporariamente indisponível.",
+        contents: [],
+        total: 0,
+        categories: helpCategories
+      },
+      { status: 503, headers: headersFor(request) }
     );
   }
   let contents = readRows(result.data).flatMap((row) => {

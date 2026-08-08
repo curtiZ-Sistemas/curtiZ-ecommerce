@@ -30,7 +30,7 @@ test("novo suporte aparece na fila administrativa", async ({ page }) => {
   await page.getByLabel("Assunto").fill(subject);
   await page.getByLabel("Mensagem inicial").fill("Meu pedido ainda não recebeu uma atualização logística.");
   await page.getByRole("button", { name: /Enviar para a equipe/i }).click();
-  await expect(page.getByText(/pode levar de 1 a 3 horas/i)).toBeVisible();
+  await expect(page.getByText(/Seu chamado foi enviado e aguarda atendimento/i).first()).toBeVisible();
 
   await loginAs(page, "admin.demo@curtiz.local");
   await page.goto("/administracao/atendimentos");
@@ -48,4 +48,17 @@ test("logout do painel encerra a sessão e volta ao login", async ({ page }) => 
   await loginAs(page, "admin.demo@curtiz.local");
   await page.getByRole("button", { name: "Sair do painel" }).click();
   await expect(page).toHaveURL("http://localhost:3000/login", { timeout: 20_000 });
+});
+
+test("preserva o scroll da sidebar ao navegar para um item no fim do menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 650 });
+  await loginAs(page, "admin.demo@curtiz.local");
+  const navigation = page.locator(".side-nav");
+  await navigation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect(await navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
+  await page.getByRole("link", { name: "Configurações administrativas" }).click();
+  await page.waitForURL("**/administracao/configuracoes");
+  const restored = await page.locator(".side-nav").evaluate((element) => element.scrollTop);
+  expect(restored).toBeGreaterThan(100);
+  await expect(page.getByRole("link", { name: "Configurações administrativas" })).toHaveClass(/active/);
 });

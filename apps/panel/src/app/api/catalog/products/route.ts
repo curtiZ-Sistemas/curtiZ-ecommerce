@@ -19,6 +19,17 @@ const text = (value: unknown) => (typeof value === "string" ? value : "");
 const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
 const noStore = { "cache-control": "private, no-store" };
+const variantSchema = z.object({
+  id: z.string().uuid().optional(),
+  sku: z.string().trim().min(2).max(140),
+  color: z.string().trim().min(1).max(80),
+  colorHex: z.string().regex(/^#[0-9a-f]{6}$/iu).or(z.literal("")),
+  size: z.string().trim().min(1).max(40),
+  priceInCents: z.number().int().min(0).max(100_000_000).nullable(),
+  costInCents: z.number().int().min(0).max(100_000_000).nullable(),
+  stock: z.number().int().min(0).max(999_999),
+  active: z.boolean()
+});
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -67,15 +78,27 @@ const actionSchema = z.discriminatedUnion("action", [
     statusReason: z.string().trim().max(1000).optional(),
     featured: z.boolean(),
     priceInCents: z.number().int().min(0).max(100_000_000),
+    compareAtPriceInCents: z.number().int().min(0).max(100_000_000).nullable(),
     costInCents: z.number().int().min(0).max(100_000_000),
     weightGrams: z.number().int().min(1).max(100_000),
     heightCm: z.number().positive().max(10_000),
     widthCm: z.number().positive().max(10_000),
     lengthCm: z.number().positive().max(10_000),
     seoTitle: z.string().trim().max(160).optional(),
-    seoDescription: z.string().trim().max(320).optional()
+    seoDescription: z.string().trim().max(320).optional(),
+    stockReason: z.string().trim().min(10).max(500),
+    variants: z.array(variantSchema).max(500)
   })
 ]);
+
+function logCatalogFailure(operation: string, error: { code?: string; message?: string } | null) {
+  console.error("[panel-catalog-api] operation failed", {
+    requestId: crypto.randomUUID(),
+    operation,
+    code: error?.code ?? "unknown",
+    message: error?.message?.slice(0, 180) ?? "unknown"
+  });
+}
 
 const safeOrigin = (request: NextRequest) => {
   const origin = request.headers.get("origin");
@@ -113,7 +136,7 @@ async function authorizedClient(request: NextRequest) {
   return supabase;
 }
 
-const serializeProducts = (data: unknown) =>
+const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
   rows(data).map((product) => {
     const variants = rows(product.product_variants).map((variant) => {
       const inventory = rows(variant.inventory)[0] ?? record(variant.inventory);
@@ -123,8 +146,17 @@ const serializeProducts = (data: unknown) =>
         id: text(variant.id),
         sku: text(variant.sku),
         color: text(variant.color_name),
+        colorHex: text(variant.color_hex),
         size: text(variant.size),
         active: variant.active === true,
+        priceInCents:
+          variant.price_override === null || variant.price_override === undefined
+            ? null
+            : Math.round(number(variant.price_override) * 100),
+        costInCents:
+          variant.cost_override === null || variant.cost_override === undefined
+            ? null
+            : Math.round(number(variant.cost_override) * 100),
         available,
         reserved,
         sellable: Math.max(available, 0)
@@ -137,6 +169,10 @@ const serializeProducts = (data: unknown) =>
       status: text(product.status),
       statusReason: text(product.status_reason),
       priceInCents: Math.round(number(product.base_price) * 100),
+      compareAtPriceInCents:
+        product.compare_at_price === null || product.compare_at_price === undefined
+          ? null
+          : Math.round(number(product.compare_at_price) * 100),
       categoryId: text(product.category_id),
       modelId: text(product.model_id),
       collectionId: text(product.collection_id),
@@ -150,6 +186,17 @@ const serializeProducts = (data: unknown) =>
       lengthCm: number(product.length_cm),
       seoTitle: text(product.seo_title),
       seoDescription: text(product.seo_description),
+      images: rows(product.product_images)
+        .map((image) => ({
+          id: text(image.id),
+          path: text(image.storage_path),
+          url: mediaUrl(text(image.storage_path)),
+          alt: text(image.alt_text),
+          primary: image.is_primary === true,
+          sortOrder: number(image.sort_order),
+          variantId: text(image.variant_id) || undefined
+        }))
+        .sort((left, right) => Number(right.primary) - Number(left.primary) || left.sortOrder - right.sortOrder),
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
     };
@@ -178,8 +225,10 @@ export async function GET(request: NextRequest) {
     ? requestedStatus
     : "";
   const outOfStock = request.nextUrl.searchParams.get("stock") === "out";
+  const mediaUrl = (path: string) =>
+    path ? supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl : "";
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,inventory(available_quantity,reserved_quantity))";
 
   const variantMatches = queryText
     ? await (async () => {
@@ -205,6 +254,7 @@ export async function GET(request: NextRequest) {
     : null;
 
   if (variantMatches?.error) {
+    logCatalogFailure("search_variants", variantMatches.error);
     return NextResponse.json(
       { message: "Não foi possível filtrar os produtos." },
       { status: 503, headers: noStore }
@@ -259,7 +309,7 @@ export async function GET(request: NextRequest) {
       offset += chunkSize;
     }
 
-    const filtered = serializeProducts(allProducts).filter((product) => product.stock <= 0);
+    const filtered = serializeProducts(allProducts, mediaUrl).filter((product) => product.stock <= 0);
     const from = (page - 1) * pageSize;
     return {
       data: filtered.slice(from, from + pageSize),
@@ -276,6 +326,7 @@ export async function GET(request: NextRequest) {
     supabase.from("collections").select("id,name").order("name")
   ]);
   if (result.error || categories.error) {
+    logCatalogFailure("load_products", result.error ?? categories.error);
     return NextResponse.json(
       { message: "Não foi possível carregar os produtos." },
       { status: 503, headers: noStore }
@@ -284,7 +335,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(
     {
-      products: "serialized" in result ? result.data : serializeProducts(result.data),
+      products: "serialized" in result ? result.data : serializeProducts(result.data, mediaUrl),
       total: result.total,
       page,
       pageSize,
@@ -335,20 +386,15 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
-    const actorId = (await supabase.auth.getUser()).data.user?.id;
-    const result = await supabase
-      .from("products")
-      .update({
-        status,
-        status_reason: reason,
-        ...(status === "active" ? { published_at: new Date().toISOString(), published_by: actorId } : {})
-      })
-      .eq("id", parsed.data.productId)
-      .select("id")
-      .maybeSingle();
-    if (result.error || !result.data) {
+    const result = await supabase.rpc("admin_set_product_status", {
+      p_product_id: parsed.data.productId,
+      p_status: status,
+      p_reason: reason
+    });
+    if (result.error || typeof result.data !== "string") {
+      logCatalogFailure("set_product_status", result.error);
       return NextResponse.json(
-        { message: "Não foi possível excluir o produto." },
+        { message: "Não foi possível alterar o status do produto." },
         { status: 409, headers: noStore }
       );
     }
@@ -371,6 +417,7 @@ export async function PATCH(request: NextRequest) {
       p_slug: parsed.data.slug
     });
     if (result.error) {
+      logCatalogFailure("duplicate_product", result.error);
       return NextResponse.json(
         { message: "Não foi possível duplicar o produto." },
         { status: 409, headers: noStore }
@@ -389,41 +436,24 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
-    const actorId = (await supabase.auth.getUser()).data.user?.id;
-    const values = {
-      name: parsed.data.name,
-      slug: parsed.data.slug,
-      short_description: parsed.data.shortDescription,
-      description: parsed.data.description,
-      category_id: parsed.data.categoryId,
-      model_id: parsed.data.modelId || null,
-      collection_id: parsed.data.collectionId || null,
-      status: parsed.data.status,
-      status_reason: parsed.data.statusReason || null,
-      featured: parsed.data.featured,
-      base_price: parsed.data.priceInCents / 100,
-      cost_price: parsed.data.costInCents / 100,
-      weight_grams: parsed.data.weightGrams,
-      height_cm: parsed.data.heightCm,
-      width_cm: parsed.data.widthCm,
-      length_cm: parsed.data.lengthCm,
-      seo_title: parsed.data.seoTitle || null,
-      seo_description: parsed.data.seoDescription || null,
-      ...(parsed.data.status === "active" ? { published_at: new Date().toISOString(), published_by: actorId } : {})
-    };
-    const result = parsed.data.productId
-      ? await supabase
-          .from("products")
-          .update({ ...values, updated_by: actorId })
-          .eq("id", parsed.data.productId)
-          .select("id")
-          .maybeSingle()
-      : await supabase
-          .from("products")
-          .insert({ ...values, created_by: actorId })
-          .select("id")
-          .single();
-    if (result.error || !result.data) {
+    if (parsed.data.status === "active" && !parsed.data.variants.some((variant) => variant.active)) {
+      return NextResponse.json(
+        { message: "Mantenha pelo menos uma variação ativa antes de publicar." },
+        { status: 400, headers: noStore }
+      );
+    }
+    if (
+      parsed.data.compareAtPriceInCents !== null &&
+      parsed.data.compareAtPriceInCents <= parsed.data.priceInCents
+    ) {
+      return NextResponse.json(
+        { message: "O preço anterior deve ser maior que o preço de venda." },
+        { status: 400, headers: noStore }
+      );
+    }
+    const result = await supabase.rpc("admin_save_product", { p_payload: parsed.data });
+    if (result.error || typeof result.data !== "string") {
+      logCatalogFailure("save_product", result.error);
       return NextResponse.json(
         { message: "Não foi possível salvar o produto." },
         { status: 409, headers: noStore }
@@ -432,6 +462,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
+        productId: result.data,
         message: parsed.data.productId ? "Produto atualizado." : "Produto criado como configurado."
       },
       { headers: noStore }

@@ -56,10 +56,10 @@ export default async function RolePage({
       <PageHeading role={role} section={section} />
       {section === "central-ajuda" && role !== "tecnico" ? (
         <HelpContentCenter />
-      ) : role === "administracao" ? (
-        <Administration section={section} />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
+      ) : role === "administracao" ? (
+        <Administration section={section} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
@@ -104,7 +104,7 @@ function Operational({ section }: { section: string }) {
 
 function Administration({ section }: { section: string }) {
   if (!section) return <AdminDashboard />;
-  if (section === "produtos" || section === "estoque") return <ProductManagement />;
+  if (["produtos", "variacoes", "midias", "estoque"].includes(section)) return <ProductManagement />;
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "permissoes") return <AdminPermissions />;

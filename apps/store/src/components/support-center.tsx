@@ -115,9 +115,10 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
   const createConversation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
+    const formElement = event.currentTarget;
     setSubmitting(true);
     setMessage("");
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     try {
       const response = await fetch("/api/support", {
         method: "POST",
@@ -149,7 +150,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
       setFormOpen(false);
       setMessage(result.message ?? "Chamado enviado com sucesso.");
       requestIdRef.current = crypto.randomUUID();
-      event.currentTarget.reset();
+      formElement.reset();
     } catch {
       setMessage("Não foi possível conectar ao atendimento. Tente novamente.");
     } finally {
@@ -160,7 +161,8 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting || !selectedId) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const content = form.get("message");
     const contentText = typeof content === "string" ? content : "";
     const file = form.get("file");
@@ -197,7 +199,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
       }
       if (hasFile) await loadConversations(true);
       else setConversations(result.conversations ?? []);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch {
       setMessage("Conexão interrompida. Sua mensagem não foi enviada; tente novamente.");
     } finally {

@@ -57,23 +57,25 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
   }
 });
 
-test("categorias usam rolagem interna sem criar overflow na página", async ({ page }) => {
+test("menu de categorias mobile permanece dentro da viewport", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto("/");
-  const categories = page.getByRole("list", { name: "Categorias de produtos" });
-  await expect(categories).toBeVisible();
-  expect(await categories.getByRole("listitem").count()).toBeGreaterThanOrEqual(4);
-  const behavior = await categories.evaluate((element) => {
-    const style = getComputedStyle(element);
+  const menuButton = page.getByRole("button", { name: "Abrir menu" });
+  await expect(async () => {
+    await menuButton.click();
+    await expect(menuButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  const menu = page.getByRole("dialog", { name: "Menu principal" });
+  await expect(menu).toBeVisible();
+  expect(await menu.getByRole("link").count()).toBeGreaterThanOrEqual(8);
+  const behavior = await menu.evaluate((element) => {
     return {
-      scrollable: element.scrollWidth > element.clientWidth,
-      overflow: style.overflowX,
+      menuWidth: element.getBoundingClientRect().width,
       viewport: document.documentElement.clientWidth,
       pageWidth: document.documentElement.scrollWidth
     };
   });
-  expect(behavior.scrollable).toBe(true);
-  expect(["auto", "scroll"]).toContain(behavior.overflow);
+  expect(behavior.menuWidth).toBeLessThanOrEqual(behavior.viewport);
   expect(behavior.pageWidth).toBeLessThanOrEqual(behavior.viewport);
 });
 
@@ -81,7 +83,11 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Abrir busca" }).click();
+  const searchButton = page.locator(".header-search-toggle");
+  await expect(async () => {
+    await searchButton.click();
+    await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await page.locator('input[role="combobox"]:visible').fill("wave");
 
   await expect(page.getByText("Sugestões")).toBeVisible();

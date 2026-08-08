@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterManagedProducts } from "../lib/product-management";
+import { filterManagedProducts, generateVariantCombinations } from "../lib/product-management";
 
 const products = [
   {
@@ -41,5 +41,16 @@ describe("product management", () => {
   it("busca por nome ou SKU sem alterar a lista original", () => {
     expect(filterManagedProducts(products, "all", "sku-1")).toEqual([products[0]]);
     expect(products).toHaveLength(2);
+  });
+
+  it("gera combinações de cor e tamanho com SKU estável", () => {
+    const variants = generateVariantCombinations("Azul, Preto", "35, 36", "Sandália 10");
+    expect(variants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sku: "SANDALIA-10-AZUL-35", color: "Azul", size: "35" }),
+        expect.objectContaining({ sku: "SANDALIA-10-PRETO-36", color: "Preto", size: "36" })
+      ])
+    );
+    expect(variants).toHaveLength(4);
   });
 });

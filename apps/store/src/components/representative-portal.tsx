@@ -36,7 +36,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
+import Image from "next/image";
+import { type CSSProperties, type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/components/logout-button";
 import { readString } from "@/lib/unknown-data";
 
@@ -212,6 +213,7 @@ export function RepresentativePortal({ section }: { section: string }) {
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const sidebarRef = useRef<HTMLElement>(null);
 
   const load = (targetPage = page) => {
     setError("");
@@ -254,6 +256,38 @@ export function RepresentativePortal({ section }: { section: string }) {
     setPage(1);
     load(1);
   }, [section]);
+
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const key = "curtiz:representative-sidebar";
+    const restore = window.requestAnimationFrame(() => {
+      const stored = Number(window.sessionStorage.getItem(key));
+      sidebar.scrollTop = Number.isFinite(stored) && stored > 0 ? stored : 0;
+      const active = sidebar.querySelector<HTMLElement>("nav a.active");
+      if (!active) return;
+      const margin = 12;
+      if (active.offsetTop < sidebar.scrollTop + margin) {
+        sidebar.scrollTop = Math.max(0, active.offsetTop - margin);
+      } else if (
+        active.offsetTop + active.offsetHeight >
+        sidebar.scrollTop + sidebar.clientHeight - margin
+      ) {
+        sidebar.scrollTop = Math.max(
+          0,
+          active.offsetTop + active.offsetHeight - sidebar.clientHeight + margin
+        );
+      }
+    });
+    const persist = () =>
+      window.sessionStorage.setItem(key, String(Math.max(0, Math.round(sidebar.scrollTop))));
+    sidebar.addEventListener("scroll", persist, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(restore);
+      persist();
+      sidebar.removeEventListener("scroll", persist);
+    };
+  }, [section, snapshot]);
 
   if (error)
     return (
@@ -307,10 +341,14 @@ export function RepresentativePortal({ section }: { section: string }) {
           onClick={() => setMenuOpen(false)}
         />
       )}
-      <aside className={menuOpen ? "representative-sidebar open" : "representative-sidebar"}>
+      <aside
+        className={menuOpen ? "representative-sidebar open" : "representative-sidebar"}
+        ref={sidebarRef}
+      >
         <header>
           <Link href="/representante" className="representative-brand">
-            curti Z <small>Representantes</small>
+            <Image src="/images/logo-curtiz.png" alt="curti Z" width={150} height={100} priority />
+            <small>Representantes</small>
           </Link>
           <button onClick={() => setMenuOpen(false)} aria-label="Fechar menu">
             <X />

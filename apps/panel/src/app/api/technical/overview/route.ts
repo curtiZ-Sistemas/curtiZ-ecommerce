@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeTechnicalRequest,
+  isAuthorizedTechnicalDemo,
   sanitizeTechnicalValue,
   technicalNoStore,
   technicalRows,
@@ -47,6 +48,46 @@ async function checkStore(): Promise<Service> {
 }
 
 export async function GET(request: NextRequest) {
+  if (isAuthorizedTechnicalDemo(request)) {
+    return NextResponse.json(
+      {
+        services: [
+          {
+            name: "Painel",
+            state: "online",
+            detail: "Ambiente de demonstração ativo",
+            checkedAt: new Date().toISOString()
+          },
+          {
+            name: "Integrações externas",
+            state: "not_configured",
+            detail: "Credenciais reais não são usadas no ambiente de demonstração"
+          }
+        ],
+        metrics: {
+          recentErrors: 0,
+          openErrors: 0,
+          pendingJobs: 0,
+          runningJobs: 0,
+          failedJobs: 0,
+          failedWebhooks: 0,
+          recentSecurityEvents: 0,
+          featureFlags: 0,
+          enabledFeatureFlags: 0
+        },
+        storage: null,
+        database: null,
+        runtime: {
+          environment: "demonstração",
+          version: process.env.APP_VERSION ?? "não configurada",
+          commit: process.env.GIT_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA ?? null,
+          backup: "não configurado",
+          databaseDiagnostics: "Diagnósticos reais não são exibidos no ambiente de demonstração."
+        }
+      },
+      { headers: technicalNoStore }
+    );
+  }
   const auth = await authorizeTechnicalRequest(request);
   if (!auth) return unauthorizedTechnicalResponse();
 
