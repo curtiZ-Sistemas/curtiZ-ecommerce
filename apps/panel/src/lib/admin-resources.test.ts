@@ -41,4 +41,15 @@ describe("admin resources", () => {
       restoreValue: true
     });
   });
+
+  it("oferece destinos estruturados para banners e moderação reversível", () => {
+    expect(adminResources.banners.fields.find((field) => field.key === "destination_type")?.options)
+      .toEqual(expect.arrayContaining(["product", "category", "institutional_page", "predefined_search"]));
+    expect(adminResources.banners.fields.find((field) => field.key === "image_path_mobile")?.required).toBe(true);
+    expect(adminResources.avaliacoes).toMatchObject({
+      allowArchive: true,
+      archiveValue: "archived",
+      restoreValue: "pending"
+    });
+  });
 });

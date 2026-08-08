@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { databaseRoleToPanelPath, panelRoleToDatabaseRole } from "./panel-roles";
+import {
+  authorizedSelectablePanels,
+  databaseRoleToPanelPath,
+  hasMultipleSelectablePanels,
+  hasPanelRouteAccess,
+  panelRoleToDatabaseRole
+} from "./panel-roles";
 
 describe("papéis do painel", () => {
   it("mapeia cada rota ao papel persistido", () => {
@@ -11,9 +17,20 @@ describe("papéis do painel", () => {
     });
   });
 
-  it("prioriza contexto interno privilegiado em contas com mais de um papel", () => {
+  it("direciona contas multipainel para a Central", () => {
     expect(databaseRoleToPanelPath(["customer", "representative", "manager"])).toBe("/gerencia");
-    expect(databaseRoleToPanelPath(["operational", "admin"])).toBe("/administracao");
+    expect(databaseRoleToPanelPath(["operational", "admin"])).toBe("/selecionar-painel");
+    expect(hasMultipleSelectablePanels(["admin", "manager", "operational"])).toBe(true);
+  });
+
+  it("exibe somente painéis efetivamente atribuídos e nunca o técnico", () => {
+    expect(authorizedSelectablePanels(["admin", "technical"]).map((panel) => panel.databaseRole)).toEqual(["admin"]);
+    expect(authorizedSelectablePanels(["manager", "operational"]).map((panel) => panel.databaseRole)).toEqual(["operational", "manager"]);
+  });
+
+  it("nega acesso direto quando a função correspondente não foi atribuída", () => {
+    expect(hasPanelRouteAccess(["manager"], "gerencia")).toBe(true);
+    expect(hasPanelRouteAccess(["manager"], "administracao")).toBe(false);
+    expect(hasPanelRouteAccess(["admin"], "operacional")).toBe(false);
   });
 });
-

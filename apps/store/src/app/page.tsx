@@ -130,11 +130,11 @@ function HomepageSectionRenderer({
         aria-label={section.title ?? "Campanha"}
       >
         {banners.map((banner) => (
-          <Link href={banner.href} className="home-campaign-banner" key={banner.id}>
+          banner.href ? <Link href={banner.href} className="home-campaign-banner" key={banner.id} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>
             <Image
               className="home-campaign-desktop"
               src={banner.desktopImage}
-              alt={banner.title}
+              alt={banner.altText}
               width={1440}
               height={420}
               sizes="(min-width: 701px) calc(100vw - 48px), 0px"
@@ -142,12 +142,15 @@ function HomepageSectionRenderer({
             <Image
               className="home-campaign-mobile"
               src={banner.mobileImage}
-              alt={banner.title}
+              alt={banner.altText}
               width={720}
               height={840}
               sizes="(max-width: 700px) calc(100vw - 24px), 0px"
             />
-          </Link>
+          </Link> : <div className="home-campaign-banner" key={banner.id}>
+            <Image className="home-campaign-desktop" src={banner.desktopImage} alt={banner.altText} width={1440} height={420} sizes="(min-width: 701px) calc(100vw - 48px), 0px" />
+            <Image className="home-campaign-mobile" src={banner.mobileImage} alt={banner.altText} width={720} height={840} sizes="(max-width: 700px) calc(100vw - 24px), 0px" />
+          </div>
         ))}
       </section>
     );

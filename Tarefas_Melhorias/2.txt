@@ -1,724 +1,973 @@
-Agora execute a implementação completa das melhorias encontradas na auditoria do sistema Curtiz.
+Você está atuando como engenheiro responsável pela CORREÇÃO PÓS-AUDITORIA do projeto curtiZ-ecommerce.
 
-Use obrigatoriamente como fonte principal:
+Existe na raiz do projeto o arquivo:
 
 AUDITORIA_COMPLETA_CURTIZ.md
 
-Não refaça uma análise genérica. Leia o relatório inteiro, valide os problemas no código e implemente as correções.
+Esse arquivo contém uma auditoria atualizada do sistema.
+
+Sua missão é:
+
+VALIDAR → PRIORIZAR → CORRIGIR → TESTAR → ATUALIZAR A AUDITORIA
+
+até resolver todos os problemas tecnicamente solucionáveis encontrados na auditoria.
+
+Quero o melhor resultado possível, mas com uso econômico de contexto, tokens e comandos.
 
 ==================================================
-1. OBJETIVO
+FONTE PRINCIPAL
 ==================================================
 
-Transformar todos os acessos do sistema em áreas completas, profissionais, funcionais, seguras e conectadas ao banco.
+Comece lendo:
 
-Perfis envolvidos:
+AUDITORIA_COMPLETA_CURTIZ.md
 
-- Cliente;
-- Representante Curtiz;
-- Gerência;
-- Administrador;
-- Operacional;
-- Técnico.
+NÃO faça uma nova auditoria completa do repositório.
 
-A implementação deve resolver os problemas P0, P1, P2 e P3 encontrados na auditoria.
+A auditoria já foi feita.
 
-Itens P4 devem ser preparados arquiteturalmente e documentados, sem prejudicar o prazo das funcionalidades principais.
+Use o documento como mapa do trabalho.
 
-==================================================
-2. ORGANIZAÇÃO DA EXECUÇÃO
-==================================================
+Para cada achado:
 
-Antes de modificar arquivos:
+1. leia o ID;
+2. severidade;
+3. área;
+4. evidência;
+5. arquivos relacionados;
+6. impacto;
+7. correção recomendada.
 
-1. Leia AUDITORIA_COMPLETA_CURTIZ.md.
-2. Confirme os problemas diretamente no código.
-3. Crie o arquivo PLANO_IMPLEMENTACAO_CURTIZ.md.
-4. Organize as correções por fases.
-5. Identifique dependências.
-6. Identifique migrations necessárias.
-7. Identifique riscos.
-8. Identifique testes necessários.
+Depois abra SOMENTE os arquivos necessários para validar e corrigir aquele problema.
 
-Fases obrigatórias:
-
-Fase 1:
-- segurança;
-- autenticação;
-- permissões;
-- RLS;
-- erros que bloqueiam o sistema;
-- staging;
-- build e deploy.
-
-Fase 2:
-- funções principais quebradas;
-- banco;
-- formulários;
-- botões;
-- rotas;
-- ações;
-- uploads;
-- downloads.
-
-Fase 3:
-- Cliente;
-- Representante Curtiz;
-- Gerência;
-- Administrador;
-- Operacional;
-- Técnico.
-
-Fase 4:
-- kits;
-- estoque;
-- níveis;
-- qualificação;
-- indicações;
-- comissões;
-- criativos;
-- campanhas.
-
-Fase 5:
-- UI;
-- UX;
-- mobile;
-- acessibilidade;
-- performance.
-
-Fase 6:
-- testes;
-- documentação;
-- preparação de deploy;
-- validação final.
-
-Atualize o plano durante a execução.
+Não comece explorando o monorepo inteiro.
 
 ==================================================
-3. REGRAS DE IMPLEMENTAÇÃO
+REGRA DE VALIDAÇÃO
 ==================================================
 
-Não pode permanecer:
+Mesmo que o problema esteja documentado, confirme rapidamente que ele ainda existe antes de modificar código.
 
-- botão sem ação;
-- link quebrado;
-- menu sem rota;
-- formulário sem persistência;
-- filtro falso;
-- gráfico fictício;
-- card com número fixo;
-- busca sem funcionamento;
-- paginação visual;
-- tabela desconectada;
-- download sem arquivo;
-- upload inseguro;
-- modal sem ação;
-- aprovação sem efeito;
-- página vazia sem estado;
-- função sem permissão adequada.
+Se o problema:
 
-Toda ação deve possuir:
+- ainda existir → corrija;
+- já tiver sido corrigido → não mexa;
+- estiver desatualizado → atualize a auditoria;
+- tiver sido causado por outro problema já corrigido → teste novamente antes de fazer alteração;
+- depender exclusivamente de credencial/serviço externo → não invente solução;
+- estiver incorreto na auditoria → documente isso.
 
-- validação server-side;
-- loading;
-- sucesso;
-- erro;
-- prevenção de duplicidade;
-- auditoria quando necessária;
-- atualização dos dados;
-- mensagem clara para o usuário.
+Nunca faça alteração somente porque o relatório mandou.
+
+Use evidência atual.
 
 ==================================================
-4. DADOS REAIS
+OBJETIVO
 ==================================================
 
-Substitua dados fixos e fictícios por:
+Resolver os problemas encontrados em:
 
-- consultas reais;
-- agregações reais;
-- estados vazios;
-- dados de demonstração claramente identificados, somente quando necessário.
+- Segurança
+- Autenticação
+- Autorização
+- RBAC
+- Supabase
+- RLS
+- Storage
+- Banco de dados
+- APIs
+- Cliente
+- Representante
+- Administrativo
+- Operacional
+- Gerencial
+- Técnico
+- Multiacesso
+- Funcionalidades
+- CRUDs
+- Regras de negócio
+- UI
+- UX
+- Responsividade
+- Acessibilidade
+- Performance
+- Arquitetura
+- Qualidade de código
+- Tratamento de erros
+- Integrações
+- Testes
+- Cloudflare/OpenNext
+- configuração da aplicação
 
-Gráficos e indicadores devem utilizar dados reais do banco.
+Mas SOMENTE quando o problema estiver realmente registrado ou for uma consequência direta necessária para corrigir um achado.
 
-Quando não houver registros, mostrar estado vazio profissional.
-
-Não inventar números para preencher dashboards.
+Não amplie o escopo desnecessariamente.
 
 ==================================================
-5. CLIENTE
+ORDEM DE TRABALHO
 ==================================================
 
-Concluir e melhorar:
+Trabalhe obrigatoriamente nesta ordem:
 
-- Perfil sem login;
-- login;
-- cadastro;
-- retorno ao Perfil;
+1. P0 — Críticos
+2. P1 — Altos
+3. P2 — Médios
+4. P3 — Baixos
+
+Porém, antes de corrigir individualmente, AGRUPE problemas com a mesma causa raiz.
+
+Exemplo:
+
+P1-003 Categorias sem CRUD
+P1-004 Modelos sem CRUD
+P1-005 Coleções sem CRUD
+P1-006 Banners sem CRUD
+
+Se todos forem consequência da mesma API/gerenciador administrativo incompleto:
+
+corrija a infraestrutura comum primeiro.
+
+Depois teste todas as áreas afetadas.
+
+Não implemente quatro soluções duplicadas.
+
+==================================================
+MODO ECONÔMICO
+==================================================
+
+Para reduzir consumo de créditos/tokens:
+
+1. Não releia arquivos já analisados sem necessidade.
+
+2. Não abra arquivos gigantes integralmente se busca por função/nome resolver.
+
+3. Use busca por:
+   - ID do achado;
+   - componente;
+   - rota;
+   - função;
+   - tabela;
+   - API;
+   - mensagem de erro.
+
+4. Trabalhe por causa raiz.
+
+5. Não execute lint/typecheck/testes depois de cada pequena alteração.
+
+6. Use testes específicos durante a correção somente quando necessário.
+
+7. Faça validação ampla apenas após concluir um grupo relacionado.
+
+8. Reutilize:
+   - componentes;
+   - APIs;
+   - helpers;
+   - schemas Zod;
+   - validações;
+   - tipos;
+   - padrões existentes.
+
+9. Não faça refatorações sem relação com os achados.
+
+10. Não atualize dependências sem necessidade absoluta.
+
+11. Não troque stack.
+
+12. Não reescreva módulos funcionais apenas por preferência arquitetural.
+
+13. Não produza relatórios longos durante a execução.
+
+14. Continue trabalhando sem me pedir confirmação entre cada correção.
+
+==================================================
+REGRA DE FUNCIONALIDADE REAL
+==================================================
+
+Não considere um problema corrigido apenas porque:
+
+- a página renderiza;
+- o TypeScript compila;
+- o botão apareceu;
+- a API retorna 200;
+- o lint passou.
+
+A funcionalidade precisa funcionar de ponta a ponta.
+
+Exemplo:
+
+Cadastrar categoria:
+
+Botão
+→ formulário
+→ validação
+→ API
+→ autorização
+→ Supabase
+→ persistência
+→ resposta
+→ atualização da interface
+→ permanece após refresh
+
+Só então considere corrigido.
+
+==================================================
+CLIENTE
+==================================================
+
+Para problemas encontrados na área do cliente, valide os fluxos completos.
+
+Especialmente:
+
+- perfil;
+- avatar;
 - dados pessoais;
-- edição;
-- segurança;
+- endereços;
 - pedidos;
 - rastreamento;
 - favoritos;
 - avaliações;
 - cupons;
-- endereços;
 - trocas;
 - devoluções;
-- notificações;
 - atendimento;
-- solicitação para Representante Curtiz.
-
-Garantir que todos os botões e fluxos funcionem.
-
-==================================================
-6. REPRESENTANTE CURTIZ
-==================================================
-
-Concluir o portal completo:
-
-- dashboard;
-- perfil;
-- status;
-- solicitação;
-- aprovação;
-- documentos;
-- kit inicial;
-- kits mensais;
-- estoque;
-- registro de vendas;
-- histórico;
-- níveis;
-- qualificação;
-- metas;
-- indicações;
-- equipe;
-- árvore;
-- comissões;
-- estornos;
-- fechamento;
-- pagamentos;
-- criativos;
-- campanhas;
-- materiais;
-- treinamentos;
-- documentos;
-- contrato;
-- notificações;
-- atendimento.
-
-Todas as regras comerciais devem ser configuráveis pelo painel.
-
-Não fixar:
-
-- nomes dos níveis;
-- quantidade de níveis;
-- percentuais;
-- metas;
-- kits mínimos;
-- regras de progressão;
-- regras de manutenção;
-- regras de rebaixamento.
-
-==================================================
-7. GERÊNCIA
-==================================================
-
-Criar ou concluir:
-
-- dashboard estratégico;
-- solicitações de representantes;
-- análise;
-- correção documental;
-- aprovação;
-- reprovação;
-- suspensão;
-- representantes ativos;
-- estrutura da rede;
-- níveis;
-- regras;
-- metas;
-- qualificação;
-- kits;
-- comissões;
-- simulação;
-- fechamento;
-- pagamentos;
-- criativos;
-- campanhas;
-- relatórios;
-- auditoria;
-- alertas;
-- configurações.
-
-Toda decisão deve registrar responsável, data, motivo e histórico.
-
-==================================================
-8. ADMINISTRADOR
-==================================================
-
-Garantir gestão completa de:
-
-- produtos;
-- categorias;
-- variações;
-- conteúdo;
-- marketing;
-- cupons;
-- estoque;
-- pedidos;
-- clientes;
-- representantes;
-- kits;
-- níveis;
-- metas;
-- regras de comissão;
-- criativos;
-- campanhas;
-- treinamentos;
-- contratos;
-- usuários;
-- permissões;
-- configurações.
-
-Todos os CRUDs devem funcionar de verdade.
-
-==================================================
-9. OPERACIONAL
-==================================================
-
-Garantir funcionamento completo de:
-
-- pedidos;
-- separação;
-- expedição;
-- envio;
-- estoque;
-- montagem de kits;
-- pedidos de kits;
-- reposição;
-- notas fiscais;
-- trocas;
-- devoluções;
-- produtos danificados;
-- ocorrências;
-- atendimento;
-- pendências;
-- suporte ao representante;
-- criativos, somente quando autorizado.
-
-Não conceder acesso estratégico ou financeiro sem permissão.
-
-==================================================
-10. TÉCNICO
-==================================================
-
-Criar ou concluir:
-
-- saúde dos serviços;
-- logs;
-- alertas;
 - segurança;
-- acessos;
-- integrações;
-- webhooks;
-- filas;
-- jobs;
-- falhas;
-- banco;
-- Storage;
-- backups;
-- integridade;
-- auditoria técnica;
-- monitoramento.
+- carrinho;
+- checkout.
 
-O perfil técnico não deve alterar valores financeiros diretamente.
+AVATAR:
+
+Já existe ou pode existir implementação em:
+
+/api/customer/avatar
+
+Não recrie sem antes analisar.
+
+O fluxo correto deve incluir:
+
+selecionar arquivo
+→ validar
+→ enviar
+→ Storage
+→ atualizar profiles.avatar_path
+→ retornar sucesso
+→ atualizar interface
+→ continuar visível após refresh
+
+Verifique também:
+
+- bucket customer-private;
+- policies;
+- leitura segura;
+- URL assinada quando aplicável;
+- substituição do arquivo antigo;
+- limpeza em caso de falha.
+
+Nunca torne bucket privado público apenas para contornar erro.
 
 ==================================================
-11. KITS E ESTOQUE
+ADMINISTRATIVO
 ==================================================
 
-Implementar corretamente:
+Corrija os módulos apontados pela auditoria.
 
-- cadastro de kits;
-- composição;
-- produtos;
-- variações;
+Quando aplicável, recursos administrativos precisam possuir ações reais como:
+
+- cadastrar;
+- editar;
+- ativar/desativar;
+- publicar;
+- arquivar;
+- excluir quando permitido;
+- buscar;
+- filtrar;
+- salvar;
+- cancelar;
+- confirmar;
+- atualizar.
+
+Não aplique CRUD genérico quando a regra de negócio exigir outra ação.
+
+PRODUTOS devem funcionar de ponta a ponta conforme o schema existente, incluindo quando suportado:
+
+- dados básicos;
+- categoria;
+- modelo;
+- coleção;
+- descrição;
 - preço;
+- custo;
+- status;
+- destaque;
+- SEO;
+- peso;
+- dimensões;
+- variantes;
+- SKU;
+- cor;
+- tamanho;
 - estoque;
-- kit inicial;
-- reposição;
-- kits por nível;
-- pedidos;
-- pagamento mock;
-- recebimento;
-- estoque do representante;
-- venda;
-- devolução;
-- dano;
-- perda;
-- ajuste;
-- histórico de movimentações.
-
-Toda movimentação deve ser auditável.
-
-==================================================
-12. NÍVEIS E QUALIFICAÇÃO
-==================================================
-
-Implementar mecanismo configurável de:
-
-- níveis;
-- metas;
-- kits mínimos;
-- vendas mínimas;
-- volume da equipe;
-- representantes ativos;
-- comissão;
-- benefícios;
-- promoção;
-- manutenção;
-- rebaixamento;
-- tolerância;
-- carência;
-- período de avaliação.
-
-Mostrar progresso real ao representante.
-
-Registrar histórico de mudança de nível.
-
-==================================================
-13. REDE DE INDICAÇÕES
-==================================================
-
-Implementar e validar:
-
-- código único;
-- link;
-- indicador direto;
-- equipe;
-- árvore;
-- profundidade;
-- busca;
-- filtros;
-- histórico;
-- auditoria.
-
-Impedir:
-
-- autoindicação;
-- ciclos;
-- duplicidade;
-- troca indevida;
-- manipulação por URL;
-- acesso a informações não autorizadas.
-
-==================================================
-14. COMISSÕES
-==================================================
-
-Implementar motor configurável:
-
-- comissão direta;
-- liderança;
-- bônus;
-- campanha;
-- ajuste;
-- estorno.
-
-Comissão somente após venda válida e pagamento confirmado.
-
-Cancelamento, devolução e chargeback devem gerar estorno.
-
-Criar:
-
-- extrato;
-- saldo pendente;
-- saldo disponível;
-- saldo pago;
-- saldo estornado;
-- simulação;
-- aprovação;
-- fechamento;
-- pagamento;
-- auditoria.
-
-==================================================
-15. CRIATIVOS E CAMPANHAS
-==================================================
-
-Concluir:
-
-- upload de imagens;
-- upload de vídeos;
-- PDFs;
-- miniaturas;
-- categorias;
-- campanhas;
-- legendas;
-- hashtags;
-- rascunho;
-- aprovação;
-- agendamento;
+- imagens;
 - publicação;
-- expiração;
-- arquivamento;
-- restrições;
-- notificações;
-- visualização;
-- favoritos;
-- downloads;
-- histórico;
-- métricas internas.
-
-Usar Storage seguro, RLS e URLs assinadas quando necessário.
+- edição;
+- duplicação;
+- arquivamento.
 
 ==================================================
-16. UI, UX E MOBILE
+OPERACIONAL
 ==================================================
 
-Reformular telas limitadas ou sem acabamento.
+Não transforme o painel operacional em CRUD genérico.
 
-Todos os painéis devem ter:
+Corrija FLUXOS.
 
-- dashboard útil;
-- indicadores reais;
-- atalhos;
-- alertas;
-- pendências;
-- atividades recentes;
-- filtros;
-- busca;
-- paginação;
-- estados vazios;
-- loading;
-- skeleton;
-- mensagens de erro;
-- feedback imediato.
+Exemplo:
 
-Aplicar design consistente em:
+PEDIDO
 
-- desktop;
-- tablet;
-- 430px;
-- 390px;
-- 375px;
-- 360px;
-- 320px.
+recebido
+→ separação
+→ conferência
+→ expedição
+→ envio
+→ concluído
 
-Não permitir rolagem horizontal, sobreposição ou elementos cortados.
+TROCAS/DEVOLUÇÕES
 
-==================================================
-17. PERFORMANCE
-==================================================
+solicitação
+→ análise
+→ aprovado/rejeitado
+→ recebimento
+→ conclusão
 
-Corrigir problemas encontrados na auditoria:
+OCORRÊNCIAS
 
-- consultas lentas;
-- chamadas duplicadas;
-- navegação sem feedback;
-- componentes client-side desnecessários;
-- re-renderizações;
-- imagens pesadas;
-- bundle excessivo;
-- ausência de cache;
-- ausência de paginação;
-- ausência de debounce;
-- hidratação;
-- layout shift.
+abrir
+→ atribuir
+→ acompanhar
+→ resolver
 
-Implementar feedback de navegação imediato.
+ESTOQUE
+
+consultar
+→ movimentar conforme permissão
+→ registrar histórico
+
+Impeça transições inválidas.
+
+Preserve rastreabilidade.
 
 ==================================================
-18. SEGURANÇA
+GERENCIAL
 ==================================================
 
-Corrigir todos os itens P0 e P1 relacionados a:
+Corrija problemas relacionados a:
 
-- RLS;
-- RBAC;
-- rotas;
-- IDOR;
-- escalada de privilégio;
-- uploads;
-- documentos;
-- Storage;
-- dados pessoais;
-- chaves;
-- sessões;
+- financeiro;
+- vendas;
+- relatórios;
+- aprovações;
+- representantes;
+- comissões;
 - auditoria;
-- acesso direto por URL;
-- validação server-side.
+- visão estratégica.
 
-Aplicar menor privilégio.
+Não mantenha números hardcoded apresentados como métricas reais.
+
+Se não houver dados:
+
+mostrar estado vazio real.
+
+Se houver dados:
+
+consultar fonte real.
+
+Ações como:
+
+“Analisar”
+
+não devem ser apenas texto.
+
+Quando o sistema exigir ação gerencial, implemente fluxo real:
+
+abrir
+→ analisar
+→ aprovar/rejeitar
+→ registrar motivo
+→ persistir
+→ auditar
 
 ==================================================
-19. BANCO E MIGRATIONS
+REPRESENTANTE
 ==================================================
 
-Todas as alterações no banco devem utilizar migrations.
+Corrija somente funcionalidades pertencentes ao escopo atual.
 
-Não editar produção manualmente.
+Garanta isolamento de dados.
 
-Adicionar:
+Um representante nunca deve visualizar dados privados pertencentes a outro representante.
 
+Valide especialmente:
+
+- perfil;
+- indicações;
+- vendas;
+- clientes atribuídos;
+- comissão;
+- metas;
+- níveis;
+- kits;
+- criativos;
+- solicitações;
+- treinamentos.
+
+==================================================
+PAINEL TÉCNICO
+==================================================
+
+Não simule serviços externos.
+
+Corrija o que realmente pode funcionar internamente.
+
+Estados devem ser verdadeiros:
+
+- conectado;
+- não configurado;
+- indisponível;
+- erro.
+
+Não apresente “Online” baseado apenas em texto hardcoded.
+
+Nenhuma função técnica pode expor:
+
+- secret;
+- token;
+- chave;
+- PII desnecessária.
+
+==================================================
+SEGURANÇA
+==================================================
+
+Problemas de segurança têm prioridade sobre UI/UX.
+
+Corrija quando encontrados:
+
+- autorização ausente;
+- IDOR;
+- privilege escalation;
+- acesso horizontal;
+- acesso vertical;
+- RLS incorreta;
+- políticas recursivas;
+- grants excessivos;
+- RPC insegura;
+- SECURITY DEFINER inseguro;
+- search_path inseguro;
+- CSRF;
+- CORS;
+- origem;
+- open redirect;
+- XSS;
+- upload inseguro;
+- enumeração;
+- rate limiting;
+- vazamento de PII;
+- exposição de secrets;
+- sessões;
+- cookies;
+- logout;
+- MFA;
+- Storage policies.
+
+REGRAS ABSOLUTAS:
+
+Nunca:
+
+- desative RLS globalmente;
+- use USING (true) indiscriminadamente;
+- exponha service role;
+- coloque segredo em NEXT_PUBLIC;
+- confie somente na interface;
+- faça autorização apenas escondendo botão;
+- insira diretamente em auth.users;
+- reduza segurança para fazer um teste passar.
+
+Toda autorização importante deve ocorrer server-side.
+
+==================================================
+BANCO DE DADOS
+==================================================
+
+Se uma correção exigir mudança no banco:
+
+NÃO altere migrations antigas já utilizadas.
+
+Crie migration nova e pequena.
+
+Antes de criar migration confirme que:
+
+- tabela realmente não existe;
+- coluna realmente não existe;
+- policy realmente está errada;
+- índice realmente é necessário;
+- RPC realmente precisa mudar.
+
+Evite migrations desnecessárias.
+
+Preserve dados.
+
+Use transações quando apropriado.
+
+Garanta:
+
+- foreign keys;
 - constraints;
 - índices;
-- foreign keys;
-- políticas;
-- histórico;
-- auditoria;
-- integridade.
-
-Evitar tabelas e colunas duplicadas.
-
-Criar rollback seguro quando aplicável.
+- unique;
+- integridade;
+- consistência.
 
 ==================================================
-20. STAGING
+RLS
 ==================================================
 
-Garantir deploy funcional usando:
+Tenha cuidado especial com user_roles e profiles.
 
-PAYMENT_PROVIDER=mock
-EMAIL_PROVIDER=mock
-SHIPPING_PROVIDER=mock
-WHATSAPP_PROVIDER=mock
-DEMO_MODE=true
+Não crie policies que consultem a mesma tabela de maneira recursiva.
 
-Não exigir no staging:
+Quando necessário, utilize função SECURITY DEFINER segura com:
 
-- Mercado Pago real;
-- Resend real;
-- Melhor Envio real;
-- Correios real;
-- Turnstile real;
-- WhatsApp real.
+SET search_path = ''
 
-Manter validação de produção separada e rigorosa.
+e privilégios mínimos.
 
-Criar ou corrigir:
-
-- validate:staging;
-- build:staging;
-- deploy:staging;
-- validate:production;
-- build:production;
-- deploy:production.
+Toda policy deve aplicar princípio do menor privilégio.
 
 ==================================================
-21. TESTES
+UPLOADS
 ==================================================
 
-Criar ou ampliar testes para:
+Para qualquer correção envolvendo arquivo:
 
-- Cliente;
-- Representante;
-- Gerência;
-- Administrador;
-- Operacional;
-- Técnico;
-- permissões;
-- RLS;
-- login;
-- redirecionamento;
-- solicitações;
-- kits;
-- estoque;
-- vendas;
-- níveis;
-- qualificação;
-- rede;
-- comissões;
-- estornos;
-- criativos;
-- downloads;
-- uploads;
+validar:
+
+- tamanho;
+- MIME real;
+- extensão;
+- autenticação;
+- autorização;
+- caminho;
+- bucket;
+- policy;
+- substituição;
+- remoção de arquivo antigo;
+- limpeza após erro.
+
+Não confie somente no MIME enviado pelo browser.
+
+==================================================
+UI / UX
+==================================================
+
+Corrija problemas de UI/UX apontados pela auditoria, mas preserve a identidade visual atual.
+
+Priorize:
+
+- ação principal evidente;
+- feedback;
+- loading;
+- erro;
+- sucesso;
+- confirmação;
+- formulários claros;
+- responsividade;
 - mobile;
-- build;
-- staging.
+- tabelas utilizáveis;
+- modais;
+- navegação;
+- estado vazio.
 
-Executar:
-
-- lint;
-- typecheck;
-- testes unitários;
-- integração;
-- permissões;
-- RLS;
-- build;
-- staging;
-- acessibilidade;
-- performance.
+Não faça redesign completo.
 
 ==================================================
-22. CONTROLE DE PROGRESSO
+ACESSIBILIDADE
 ==================================================
 
-Atualize durante a implementação:
+Corrija achados envolvendo:
 
-- AUDITORIA_COMPLETA_CURTIZ.md;
-- PLANO_IMPLEMENTACAO_CURTIZ.md.
+- labels;
+- aria;
+- focus;
+- teclado;
+- modal;
+- Escape;
+- headings;
+- alt;
+- contraste;
+- button/link;
+- mensagens de status;
+- formulário.
 
-Cada problema deve receber um status:
-
-- pendente;
-- em andamento;
-- corrigido;
-- validado;
-- bloqueado;
-- adiado.
-
-Não marque como corrigido sem testar.
-
-==================================================
-23. COMMITS
-==================================================
-
-Faça commits organizados por fase.
-
-Exemplos:
-
-- fix: corrige autenticação e permissões
-- feat: conclui painel do cliente
-- feat: implementa portal do representante
-- feat: conclui gestão gerencial e administrativa
-- feat: implementa kits e estoque
-- feat: implementa níveis e qualificação
-- feat: implementa rede e comissões
-- feat: conclui criativos e campanhas
-- fix: melhora responsividade e performance
-- test: amplia cobertura dos fluxos
-- docs: atualiza auditoria e documentação
-
-Não colocar chaves ou arquivos `.env` reais nos commits.
+Preserve comportamento visual quando possível.
 
 ==================================================
-24. ENTREGA FINAL
+PERFORMANCE
 ==================================================
 
-Ao concluir, apresentar:
+Corrija somente problemas comprovados.
 
-1. Problemas corrigidos.
-2. Problemas restantes.
-3. Páginas criadas.
-4. Páginas reformuladas.
-5. Botões corrigidos.
-6. Fluxos concluídos.
-7. Migrations.
-8. Políticas RLS.
-9. Permissões.
-10. Componentes.
-11. Testes.
-12. Resultado do build.
-13. Resultado do staging.
-14. Variáveis necessárias.
-15. Comandos da Cloudflare.
-16. Root directory.
-17. Build command.
-18. Deploy command.
-19. Commits realizados.
-20. Dependências futuras.
+Priorize:
 
-Não considerar a implementação concluída enquanto ainda existirem funcionalidades principais apenas visuais, botões sem ação, páginas vazias, permissões incorretas, erros no console, problemas mobile ou staging bloqueado por APIs que serão configuradas futuramente.
+- requests duplicados;
+- N+1;
+- consultas excessivas;
+- listas sem limite;
+- queries sem índice;
+- selects excessivos;
+- fetch sequencial desnecessário;
+- re-render problemático;
+- Client Component desnecessário;
+- operações pesadas em Cloudflare Worker.
+
+Não faça micro-otimização sem benefício real.
+
+==================================================
+CLOUDFLARE / OPENNEXT
+==================================================
+
+Pode corrigir código/configuração necessária para compatibilidade.
+
+NÃO faça deploy.
+
+Preserve:
+
+- Worker da loja;
+- Worker do painel;
+- NEXT_PUBLIC_STORE_URL;
+- NEXT_PUBLIC_PANEL_URL;
+- AUTH_COOKIE_DOMAIN;
+- ALLOWED_ORIGINS.
+
+Evite imports incompatíveis com Edge/Worker.
+
+Não introduza node:* em código executado em runtime incompatível.
+
+==================================================
+INTEGRAÇÕES EXTERNAS
+==================================================
+
+Se um problema depender exclusivamente de:
+
+- Mercado Pago;
+- Meta;
+- e-mail;
+- ERP;
+- frete;
+- outra API externa;
+
+e faltarem credenciais:
+
+NÃO invente credenciais.
+
+Corrija somente a implementação interna possível.
+
+Depois marque como:
+
+BLOQUEADO POR CONFIGURAÇÃO EXTERNA
+
+na auditoria.
+
+==================================================
+TRATAMENTO DE ERROS
+==================================================
+
+APIs devem:
+
+- retornar status HTTP coerente;
+- não esconder erro crítico;
+- não expor detalhes sensíveis;
+- oferecer mensagem útil para a interface;
+- registrar erro de forma segura quando apropriado.
+
+INTERFACE deve:
+
+- mostrar erro;
+- permitir tentar novamente quando aplicável;
+- impedir clique repetido;
+- mostrar loading.
+
+==================================================
+TESTES
+==================================================
+
+Estratégia econômica:
+
+Durante uma correção:
+
+rode teste específico somente se necessário.
+
+Após terminar uma CAUSA RAIZ:
+
+rode os testes diretamente afetados.
+
+Depois de finalizar todos os problemas:
+
+faça UMA validação geral.
+
+Preferencialmente:
+
+STORE
+- lint
+- typecheck
+- testes
+
+PANEL
+- lint
+- typecheck
+- testes
+
+PACKAGES afetados
+- testes relevantes
+
+Build somente se necessário para confirmar compatibilidade.
+
+Não faça deploy.
+
+Não repita a suíte completa após cada correção pequena.
+
+==================================================
+REGRESSÃO
+==================================================
+
+Toda correção importante deve preservar comportamento existente.
+
+Antes de alterar uma função compartilhada, descubra quem a utiliza.
+
+Depois teste os principais consumidores.
+
+Especialmente:
+
+- autenticação;
+- user_roles;
+- cookies;
+- componentes administrativos compartilhados;
+- APIs genéricas;
+- Storage;
+- operações de estoque.
+
+==================================================
+AUDITORIA APÓS CORREÇÃO
+==================================================
+
+Você está autorizado a atualizar:
+
+AUDITORIA_COMPLETA_CURTIZ.md
+
+Depois que um achado for realmente corrigido e validado:
+
+NÃO simplesmente apague a evidência.
+
+Na seção “Revisão da auditoria” registre resumidamente que foi corrigido.
+
+Na lista principal de problemas atuais:
+
+remova os achados resolvidos.
+
+Mantenha apenas:
+
+- problemas ainda existentes;
+- bloqueios externos;
+- problemas parcialmente resolvidos.
+
+Atualize também:
+
+- quantidade P0;
+- quantidade P1;
+- quantidade P2;
+- quantidade P3;
+- notas;
+- prontidão para produção.
+
+Não faça uma nova auditoria completa.
+
+Apenas valide os pontos afetados pelas correções.
+
+==================================================
+DEFINIÇÃO DE “RESOLVIDO”
+==================================================
+
+Um achado só pode ser marcado como resolvido quando:
+
+1. causa raiz foi entendida;
+2. código foi corrigido;
+3. autorização continua correta;
+4. persistência funciona quando aplicável;
+5. interface reflete a alteração;
+6. erro é tratado;
+7. teste relacionado passa;
+8. não existe regressão conhecida;
+9. documentação da auditoria foi atualizada.
+
+==================================================
+O QUE NÃO FAZER
+==================================================
+
+Não:
+
+- faça deploy;
+- faça git push;
+- faça commit;
+- altere secrets reais;
+- crie usuários reais;
+- apague dados de produção;
+- execute SQL destrutivo;
+- atualize Next.js;
+- atualize Supabase;
+- atualize OpenNext;
+- atualize bibliotecas;
+- troque stack;
+- redesenhe o projeto;
+- refatore código sem relação;
+- crie mocks para esconder problema;
+- remova segurança;
+- ignore erro de teste para declarar sucesso.
+
+==================================================
+CONTROLE DE ALTERAÇÕES
+==================================================
+
+Antes de começar:
+
+git status
+
+Identifique alterações preexistentes.
+
+NÃO sobrescreva trabalho do usuário.
+
+Ao terminar:
+
+git status
+git diff --stat
+
+Confira exatamente o que foi alterado.
+
+==================================================
+ESTRATÉGIA DE EXECUÇÃO
+==================================================
+
+PASSO 1
+
+Leia AUDITORIA_COMPLETA_CURTIZ.md.
+
+PASSO 2
+
+Extraia mentalmente os achados por:
+
+P0
+P1
+P2
+P3
+
+PASSO 3
+
+Agrupe por causa raiz.
+
+PASSO 4
+
+Comece pelos P0.
+
+PASSO 5
+
+Depois P1.
+
+PASSO 6
+
+Depois P2.
+
+PASSO 7
+
+Finalize P3 realmente relevante.
+
+PASSO 8
+
+Execute validação final.
+
+PASSO 9
+
+Atualize AUDITORIA_COMPLETA_CURTIZ.md.
+
+PASSO 10
+
+Revise git diff.
+
+==================================================
+NÃO INTERROMPA DESNECESSARIAMENTE
+==================================================
+
+Não me peça confirmação a cada arquivo ou problema.
+
+Tome decisões técnicas razoáveis dentro do escopo.
+
+Só pare e me pergunte quando existir uma decisão realmente impossível de inferir, por exemplo:
+
+- credencial externa necessária;
+- regra comercial inexistente;
+- risco real de perda de dados;
+- duas soluções incompatíveis com impacto importante.
+
+Caso contrário:
+
+continue.
+
+==================================================
+ENTREGA FINAL
+==================================================
+
+Não despeje todo o trabalho no chat.
+
+Ao terminar, responda de forma compacta:
+
+1. Quantos achados havia inicialmente:
+   - P0
+   - P1
+   - P2
+   - P3
+
+2. Quantos foram corrigidos.
+
+3. Quantos permanecem.
+
+4. Quantos ficaram bloqueados por dependência externa.
+
+5. Principais causas raiz corrigidas.
+
+6. Arquivos/migrations alterados.
+
+7. Testes executados e resultado.
+
+8. Status final:
+   - NÃO PRONTO
+   - PRONTO COM BLOQUEIOS
+   - PRONTO COM RESSALVAS
+   - PRONTO
+
+9. Confirme que:
+   - não fez deploy;
+   - não fez commit;
+   - não fez push.
+
+O detalhamento restante deve ficar atualizado em:
+
+AUDITORIA_COMPLETA_CURTIZ.md
+
+==================================================
+IMPORTANTE
+==================================================
+
+Não tente “melhorar tudo” por conta própria.
+
+O objetivo é transformar os achados comprovados da auditoria em correções concretas e seguras, com o mínimo possível de alterações desnecessárias.
+
+Qualidade e funcionamento real têm prioridade sobre quantidade de código.
+
+Comece agora lendo AUDITORIA_COMPLETA_CURTIZ.md e resolva primeiro as causas raiz dos P0/P1.

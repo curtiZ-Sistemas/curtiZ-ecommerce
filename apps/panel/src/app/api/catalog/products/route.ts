@@ -30,12 +30,14 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("archive"),
-    productId: z.string().uuid()
+    productId: z.string().uuid(),
+    reason: z.string().trim().min(3).max(1000)
   }),
   z.object({
     action: z.literal("status"),
     productId: z.string().uuid(),
-    status: z.enum(["draft", "active", "archived"])
+    status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
+    reason: z.string().trim().min(3).max(1000).optional()
   }),
   z.object({
     action: z.literal("duplicate"),
@@ -61,7 +63,8 @@ const actionSchema = z.discriminatedUnion("action", [
     categoryId: z.string().uuid(),
     modelId: z.string().uuid().nullable().optional(),
     collectionId: z.string().uuid().nullable().optional(),
-    status: z.enum(["draft", "active", "archived"]),
+    status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
+    statusReason: z.string().trim().max(1000).optional(),
     featured: z.boolean(),
     priceInCents: z.number().int().min(0).max(100_000_000),
     costInCents: z.number().int().min(0).max(100_000_000),
@@ -132,6 +135,7 @@ const serializeProducts = (data: unknown) =>
       name: text(product.name),
       slug: text(product.slug),
       status: text(product.status),
+      statusReason: text(product.status_reason),
       priceInCents: Math.round(number(product.base_price) * 100),
       categoryId: text(product.category_id),
       modelId: text(product.model_id),
@@ -170,12 +174,12 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   const queryText = cleanCatalogSearch(request.nextUrl.searchParams.get("q") ?? "");
   const requestedStatus = request.nextUrl.searchParams.get("status") ?? "";
-  const status = ["draft", "active", "archived"].includes(requestedStatus)
+  const status = ["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"].includes(requestedStatus)
     ? requestedStatus
     : "";
   const outOfStock = request.nextUrl.searchParams.get("stock") === "out";
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))";
 
   const variantMatches = queryText
     ? await (async () => {
@@ -324,9 +328,21 @@ export async function PATCH(request: NextRequest) {
 
   if (parsed.data.action === "archive" || parsed.data.action === "status") {
     const status = parsed.data.action === "archive" ? "archived" : parsed.data.status;
+    const reason = parsed.data.reason?.trim() || null;
+    if (["inactive", "archived", "rejected"].includes(status) && !reason) {
+      return NextResponse.json(
+        { message: "Informe o motivo da alteração de status." },
+        { status: 400, headers: noStore }
+      );
+    }
+    const actorId = (await supabase.auth.getUser()).data.user?.id;
     const result = await supabase
       .from("products")
-      .update({ status })
+      .update({
+        status,
+        status_reason: reason,
+        ...(status === "active" ? { published_at: new Date().toISOString(), published_by: actorId } : {})
+      })
       .eq("id", parsed.data.productId)
       .select("id")
       .maybeSingle();
@@ -367,6 +383,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (parsed.data.action === "save") {
+    if (["inactive", "archived", "rejected"].includes(parsed.data.status) && !parsed.data.statusReason?.trim()) {
+      return NextResponse.json(
+        { message: "Informe o motivo da alteração de status." },
+        { status: 400, headers: noStore }
+      );
+    }
+    const actorId = (await supabase.auth.getUser()).data.user?.id;
     const values = {
       name: parsed.data.name,
       slug: parsed.data.slug,
@@ -376,6 +399,7 @@ export async function PATCH(request: NextRequest) {
       model_id: parsed.data.modelId || null,
       collection_id: parsed.data.collectionId || null,
       status: parsed.data.status,
+      status_reason: parsed.data.statusReason || null,
       featured: parsed.data.featured,
       base_price: parsed.data.priceInCents / 100,
       cost_price: parsed.data.costInCents / 100,
@@ -384,18 +408,19 @@ export async function PATCH(request: NextRequest) {
       width_cm: parsed.data.widthCm,
       length_cm: parsed.data.lengthCm,
       seo_title: parsed.data.seoTitle || null,
-      seo_description: parsed.data.seoDescription || null
+      seo_description: parsed.data.seoDescription || null,
+      ...(parsed.data.status === "active" ? { published_at: new Date().toISOString(), published_by: actorId } : {})
     };
     const result = parsed.data.productId
       ? await supabase
           .from("products")
-          .update({ ...values, updated_by: (await supabase.auth.getUser()).data.user?.id })
+          .update({ ...values, updated_by: actorId })
           .eq("id", parsed.data.productId)
           .select("id")
           .maybeSingle()
       : await supabase
           .from("products")
-          .insert({ ...values, created_by: (await supabase.auth.getUser()).data.user?.id })
+          .insert({ ...values, created_by: actorId })
           .select("id")
           .single();
     if (result.error || !result.data) {

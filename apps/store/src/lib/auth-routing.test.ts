@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loginDestinations, resolveLoginRole } from "./auth-routing";
+import { loginDestinations, resolveLoginDestination, resolveLoginRole } from "./auth-routing";
 
 describe("login routing", () => {
   it.each([
@@ -18,5 +18,21 @@ describe("login routing", () => {
   it("não concede papel padrão quando a associação está ausente", () => {
     expect(resolveLoginRole([])).toBeNull();
     expect(resolveLoginRole(["unknown"])).toBeNull();
+  });
+
+  it("direciona múltiplos painéis selecionáveis para a Central", () => {
+    expect(resolveLoginDestination(["admin", "manager", "operational"])).toBe("/selecionar-painel");
+    expect(resolveLoginDestination(["admin", "manager"])).toBe("/selecionar-painel");
+  });
+
+  it.each([
+    [["admin"], "/administracao"],
+    [["manager"], "/gerencia"],
+    [["operational"], "/operacional"],
+    [["customer"], "/minha-conta"],
+    [["representative"], "/representante"],
+    [["technical"], "/tecnico"]
+  ])("preserva o destino de %j", (roles, destination) => {
+    expect(resolveLoginDestination(roles)).toBe(destination);
   });
 });

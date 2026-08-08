@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
 import { SearchAutocomplete } from "./search-autocomplete";
+import type { PublicBanner } from "@/lib/storefront-data";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() })
@@ -13,10 +14,11 @@ vi.mock("./favorites-provider", () => ({
 }));
 vi.stubGlobal("React", React);
 
-const banners = [
+const banners: PublicBanner[] = [
   {
     id: "hero-1",
     title: "Coleção curti Z",
+    altText: "Coleção curti Z",
     desktopImage: "/images/hero-curtiz-desktop.png",
     mobileImage: "/images/hero-curtiz-mobile.png",
     href: "/lancamentos",
@@ -25,6 +27,7 @@ const banners = [
   {
     id: "hero-2",
     title: "Seleção de produtos",
+    altText: "Seleção de produtos",
     desktopImage: "/images/hero-curtiz-desktop.png",
     mobileImage: "/images/hero-curtiz-mobile.png",
     href: "/produtos",
@@ -40,6 +43,12 @@ describe("public storefront components", () => {
     expect(html).toContain("hero-media-mobile");
     expect(html).toContain('aria-label="Controles dos banners"');
     expect(html).toContain('href="/lancamentos"');
+  });
+
+  it("não cria link decorativo quando o banner não possui destino", () => {
+    const html = renderToStaticMarkup(<HomepageHero banners={[{ ...banners[0]!, href: undefined }]} />);
+    expect(html).not.toContain("<a");
+    expect(html).toContain("hero-picture");
   });
 
   it("expõe uma busca acessível com autocomplete", () => {

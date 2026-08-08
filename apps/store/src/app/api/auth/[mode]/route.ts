@@ -13,7 +13,7 @@ import {
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
-import { loginDestinations, resolveLoginRole } from "@/lib/auth-routing";
+import { resolveLoginDestination, resolveLoginRole } from "@/lib/auth-routing";
 import { findAccountByEmail } from "@/lib/supabase/account-existence";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -506,6 +506,12 @@ export async function POST(
       );
     }
 
+    const legalVersions = await supabase
+      .from("published_legal_documents")
+      .select("version_id")
+      .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
+    const legalVersionIds = z.array(z.object({ version_id: z.string().uuid() }))
+      .safeParse(legalVersions.data).data?.map((item) => item.version_id) ?? [];
     const [profileUpdate, consentInsert] = await Promise.all([
       supabase
         .from("profiles")
@@ -515,12 +521,20 @@ export async function POST(
         user_id: data.user.id,
         consent_type: "terms_and_privacy",
         accepted: true,
-        version: "2026-08",
+        version: legalVersionIds.length ? `legal:${legalVersionIds.join(",")}` : "legacy:2026-08",
         user_agent_summary: request.headers.get("user-agent")?.slice(0, 180) ?? null
       })
     ]);
-    if (profileUpdate.error || consentInsert.error) {
-      const details = readSupabaseAuthError(profileUpdate.error ?? consentInsert.error);
+    const legalAcceptance = legalVersionIds.length
+      ? await supabase.rpc("record_legal_acceptances", {
+          p_context: "signup",
+          p_version_ids: legalVersionIds
+        })
+      : { error: null };
+    if (legalVersions.error || profileUpdate.error || consentInsert.error || legalAcceptance.error) {
+      const details = readSupabaseAuthError(
+        legalVersions.error ?? profileUpdate.error ?? consentInsert.error ?? legalAcceptance.error
+      );
       logSupabaseAuthError(details);
       await supabase.auth.signOut();
       return NextResponse.json(
@@ -673,7 +687,14 @@ export async function POST(
   const internalRole = ["admin", "manager", "technical", "operational"].includes(role)
     ? role
     : null;
-  const destination = loginDestinations[role];
+  const destination = resolveLoginDestination(roles);
+  if (!destination) {
+    await supabase.auth.signOut();
+    return NextResponse.json(
+      { code: "identity_roles_unavailable", message: "Não foi possível determinar o destino desta conta." },
+      { status: 503, headers: corsHeaders(request) }
+    );
+  }
   const panelUrl = panelBaseUrl(request);
   let redirectTo =
     role === "customer" || role === "representative"

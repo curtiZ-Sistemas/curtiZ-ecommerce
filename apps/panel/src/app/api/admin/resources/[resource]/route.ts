@@ -21,7 +21,8 @@ const mutationSchema = z.object({
 
 const stateActionSchema = z.object({
   action: z.enum(["archive", "restore"]),
-  ids: z.array(z.string().uuid()).min(1).max(100)
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  reason: z.string().trim().min(3).max(1000).optional()
 });
 
 function cleanSearch(value: string): string {
@@ -142,6 +143,37 @@ function normalizeValues(
 }
 
 function validateResourceRules(resource: string, values: Record<string, unknown>): void {
+  if (resource === "banners") {
+    const destinationType = typeof values.destination_type === "string" ? values.destination_type : "";
+    const destinationUrl = typeof values.destination_url === "string" ? values.destination_url : "";
+    if (destinationType === "external_url") {
+      let parsed: URL;
+      try {
+        parsed = new URL(destinationUrl);
+      } catch {
+        throw new Error("Informe uma URL externa HTTPS válida.");
+      }
+      if (parsed.protocol !== "https:") {
+        throw new Error("Informe uma URL externa HTTPS válida.");
+      }
+    } else if (!destinationUrl.startsWith("/") || destinationUrl.startsWith("//")) {
+      throw new Error("Informe um destino interno válido.");
+    }
+    const startsAt = typeof values.starts_at === "string" ? values.starts_at : "";
+    const endsAt = typeof values.ends_at === "string" ? values.ends_at : "";
+    if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+      throw new Error("Informe um período de publicação válido.");
+    }
+  }
+
+  if (resource === "avaliacoes") {
+    const status = typeof values.status === "string" ? values.status : "";
+    const reason = typeof values.moderation_reason === "string" ? values.moderation_reason.trim() : "";
+    if (["rejected", "hidden", "archived"].includes(status) && reason.length < 3) {
+      throw new Error("Informe a justificativa da moderação.");
+    }
+  }
+
   if (resource === "metas") {
     const hasRepresentative = typeof values.representative_id === "string";
     const hasLevel = typeof values.level_id === "string";
@@ -322,7 +354,15 @@ export async function POST(
       .select(context.definition.select)
       .single();
 
-    if (result.error) throw result.error;
+    if (result.error) {
+      if (context.resource === "banners" && result.error.message.includes("four active banners")) {
+        throw new Error("Já existem quatro banners ativos. Desative ou substitua um banner para continuar.");
+      }
+      if (context.resource === "banners" && result.error.message.includes("external banner host")) {
+        throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
+      }
+      throw result.error;
+    }
 
     return NextResponse.json(
       {
@@ -334,7 +374,7 @@ export async function POST(
   } catch (error) {
     const validationMessage =
       error instanceof Error &&
-      ["Preencha", "Escolha", "Informe", "Campo", "Opção"].some((prefix) =>
+      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some((prefix) =>
         error.message.startsWith(prefix)
       )
         ? error.message
@@ -396,6 +436,16 @@ export async function PATCH(
       [context.definition.archiveField]: targetValue
     };
 
+    if (context.resource === "avaliacoes" && stateAction.data.action === "archive") {
+      if (!stateAction.data.reason) {
+        return NextResponse.json(
+          { message: "Informe a justificativa da moderação." },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+      values.moderation_reason = stateAction.data.reason;
+    }
+
     if (context.definition.updatedByField) {
       values[context.definition.updatedByField] = context.auth.userId;
     }
@@ -440,6 +490,12 @@ export async function PATCH(
     const values = normalizeValues(context.definition, parsed.data.values);
     validateResourceRules(context.resource, values);
 
+    if (context.resource === "avaliacoes") {
+      values.responded_at = typeof values.brand_response === "string" && values.brand_response.trim()
+        ? new Date().toISOString()
+        : null;
+    }
+
     if (context.definition.updatedByField) {
       values[context.definition.updatedByField] = context.auth.userId;
     }
@@ -452,6 +508,12 @@ export async function PATCH(
       .maybeSingle();
 
     if (result.error || !result.data) {
+      if (context.resource === "banners" && result.error?.message.includes("four active banners")) {
+        throw new Error("Já existem quatro banners ativos. Desative ou substitua um banner para continuar.");
+      }
+      if (context.resource === "banners" && result.error?.message.includes("external banner host")) {
+        throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
+      }
       throw result.error ?? new Error("missing");
     }
 
@@ -462,7 +524,7 @@ export async function PATCH(
   } catch (error) {
     const validationMessage =
       error instanceof Error &&
-      ["Preencha", "Escolha", "Informe", "Campo", "Opção"].some((prefix) =>
+      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some((prefix) =>
         error.message.startsWith(prefix)
       )
         ? error.message

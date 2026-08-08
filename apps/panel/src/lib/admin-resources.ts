@@ -198,14 +198,27 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     description: "Publique imagens desktop e mobile com destino e agendamento.",
     table: "banners",
     select:
-      "id,title,subtitle,image_path_desktop,image_path_mobile,destination_url,position,status,starts_at,ends_at,sort_order,updated_at",
-    searchColumns: ["title", "position"],
+      "id,internal_title,title,subtitle,description,image_path_desktop,image_path_mobile,alt_text,button_text,destination_type,destination_id,destination_url,open_new_tab,position,status,starts_at,ends_at,sort_order,priority,overlay_color,content_alignment,created_by,updated_by,updated_at",
+    searchColumns: ["internal_title", "title", "position", "destination_url"],
     fields: [
-      { key: "title", label: "Título", type: "text", required: true },
+      { key: "internal_title", label: "Título interno", type: "text", required: true },
+      { key: "title", label: "Título visível", type: "text", required: true },
       { key: "subtitle", label: "Subtítulo", type: "textarea" },
+      { key: "description", label: "Descrição", type: "textarea" },
       { key: "image_path_desktop", label: "Imagem desktop", type: "text", required: true },
       { key: "image_path_mobile", label: "Imagem mobile", type: "text", required: true },
+      { key: "alt_text", label: "Texto alternativo", type: "text", required: true },
+      { key: "button_text", label: "Texto do botão", type: "text" },
+      {
+        key: "destination_type",
+        label: "Tipo de destino",
+        type: "select",
+        required: true,
+        options: ["none", "product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page", "predefined_search", "external_url"]
+      },
+      { key: "destination_id", label: "Destino selecionado", type: "text" },
       { key: "destination_url", label: "Destino", type: "text", required: true },
+      { key: "open_new_tab", label: "Abrir em nova guia", type: "boolean" },
       {
         key: "position",
         label: "Posição",
@@ -217,11 +230,14 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
         key: "status",
         label: "Status",
         type: "select",
-        options: ["draft", "published", "archived"]
+        options: ["draft", "scheduled", "published", "inactive", "expired", "archived"]
       },
       { key: "starts_at", label: "Início", type: "datetime" },
       { key: "ends_at", label: "Término", type: "datetime" },
-      { key: "sort_order", label: "Ordem", type: "number" }
+      { key: "sort_order", label: "Ordem", type: "number" },
+      { key: "priority", label: "Prioridade", type: "number" },
+      { key: "overlay_color", label: "Cor de sobreposição", type: "text" },
+      { key: "content_alignment", label: "Alinhamento", type: "select", options: ["left", "center", "right"] }
     ],
     allowCreate: true,
     allowArchive: true,
@@ -483,19 +499,23 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     description: "Modere avaliações, denúncias, mídias e respostas da curti Z.",
     table: "reviews",
     select:
-      "id,product_id,rating,title,content,status,verified_purchase,brand_response,created_at,edited_at",
+      "id,customer_id,product_id,order_item_id,variant_id,rating,title,content,status,verified_purchase,moderation_reason,brand_response,moderated_by,created_at,edited_at,responded_at",
     searchColumns: ["title", "content"],
     fields: [
       {
         key: "status",
         label: "Status",
         type: "select",
-        options: ["pending", "approved", "rejected", "reported"]
+        options: ["pending", "approved", "rejected", "hidden", "reported", "archived"]
       },
+      { key: "moderation_reason", label: "Justificativa da moderação", type: "textarea" },
       { key: "brand_response", label: "Resposta da curti Z", type: "textarea" }
     ],
     allowCreate: false,
-    allowArchive: false,
+    allowArchive: true,
+    archiveField: "status",
+    archiveValue: "archived",
+    restoreValue: "pending",
     orderColumn: "created_at",
     updatedByField: "moderated_by"
   },

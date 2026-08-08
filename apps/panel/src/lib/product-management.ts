@@ -14,6 +14,7 @@ export type ManagedProduct = {
   name: string;
   slug: string;
   status: string;
+  statusReason?: string;
   priceInCents: number;
   stock: number;
   categoryId?: string;

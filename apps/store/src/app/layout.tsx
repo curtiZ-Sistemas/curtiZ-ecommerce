@@ -4,6 +4,7 @@ import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
 import { HelpChat } from "@/components/help-chat";
 import { RouteFeedback } from "@/components/route-feedback";
+import { CookiePreferences } from "@/components/cookie-preferences";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <main id="main-content">{children}</main>
             <SiteFooter />
             <HelpChat />
+            <CookiePreferences />
           </FavoritesProvider>
         </CartProvider>
       </body>

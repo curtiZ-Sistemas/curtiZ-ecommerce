@@ -9,6 +9,8 @@ export const loginDestinations = {
 
 export type LoginRole = keyof typeof loginDestinations;
 
+const selectablePanelRoles = ["admin", "operational", "manager"] as const;
+
 const internalRolePriority: LoginRole[] = ["admin", "manager", "technical", "operational"];
 
 export const resolveLoginRole = (roles: string[]): LoginRole | null => {
@@ -17,4 +19,11 @@ export const resolveLoginRole = (roles: string[]): LoginRole | null => {
   if (roles.includes("representative")) return "representative";
   if (roles.includes("customer")) return "customer";
   return null;
+};
+
+export const resolveLoginDestination = (roles: string[]): string | null => {
+  const selectableCount = selectablePanelRoles.filter((role) => roles.includes(role)).length;
+  if (selectableCount >= 2) return "/selecionar-painel";
+  const role = resolveLoginRole(roles);
+  return role ? loginDestinations[role] : null;
 };

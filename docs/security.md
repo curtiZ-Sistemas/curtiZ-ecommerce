@@ -20,3 +20,15 @@ rejeita ciclos e lançamentos financeiros usam chaves de idempotência.
 MFA e Turnstile podem ficar temporariamente desativados por configuração explícita, mas seu estado
 deve ser exibido como não configurado. Habilitar as flags torna as respectivas credenciais e
 verificações obrigatórias.
+
+## Políticas, consentimentos e direitos dos titulares
+
+Documentos jurídicos começam como minutas privadas. Edição administrativa, revisão jurídica e
+publicação gerencial usam permissões diferentes. A publicação exige responsável, revisor, aprovação,
+vigência e dados empresariais conferidos; cada publicação gera snapshot imutável com hash. A visão
+pública remove identificadores internos e apresenta apenas versões vigentes.
+
+Aceites ficam ligados à versão imutável e ao contexto. Preferências de cookies registram apenas um
+identificador aleatório, versão, categorias, origem e revogação; cookies opcionais partem desligados.
+Solicitações de titulares recebem protocolo e exigem verificação de identidade antes de resposta ou
+qualquer providência sobre dados. Exclusões nunca são automáticas quando houver retenção aplicável.

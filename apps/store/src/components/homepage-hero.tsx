@@ -2,17 +2,20 @@
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { PublicBanner } from "@/lib/storefront-data";
 
 export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const pointerStart = useRef<number | null>(null);
 
   useEffect(() => {
     if (
       slides.length < 2 ||
+      paused ||
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
       return;
@@ -23,7 +26,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     }, 6000);
 
     return () => window.clearInterval(timer);
-  }, [slides.length]);
+  }, [paused, slides.length]);
 
   if (!slides.length) {
     return null;
@@ -32,40 +35,35 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const banner = slides[Math.min(active, slides.length - 1)]!;
 
   const go = (direction: number) => {
+    setPaused(true);
     setActive(
       (current) =>
         (current + direction + slides.length) % slides.length
     );
   };
 
+  const picture = (
+    <picture className="hero-picture">
+      <source className="hero-media-mobile" media="(max-width: 700px)" srcSet={banner.mobileImage} />
+      <img className="hero-media-desktop" src={banner.desktopImage} alt={banner.altText} width={1600} height={560} fetchPriority="high" decoding="async" />
+    </picture>
+  );
+
   return (
     <section
       className="hero container homepage-hero"
       aria-label="Destaques da curti Z"
+      onPointerDown={(event) => { pointerStart.current = event.clientX; setPaused(true); }}
+      onPointerUp={(event) => {
+        if (pointerStart.current === null) return;
+        const distance = event.clientX - pointerStart.current;
+        pointerStart.current = null;
+        if (Math.abs(distance) >= 40) go(distance > 0 ? -1 : 1);
+      }}
     >
       <h1 className="sr-only">{banner.title}</h1>
 
-      <Link
-        className="hero-link"
-        href={banner.href}
-        aria-label={banner.title}
-      >
-        <picture className="hero-picture">
-          <source
-            media="(max-width: 700px)"
-            srcSet={banner.mobileImage}
-          />
-
-          <img
-            src={banner.desktopImage}
-            alt={banner.title}
-            width={1600}
-            height={560}
-            fetchPriority="high"
-            decoding="async"
-          />
-        </picture>
-      </Link>
+      {banner.href ? <Link className="hero-link" href={banner.href} aria-label={banner.title} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>{picture}</Link> : <div className="hero-link">{picture}</div>}
 
       {slides.length > 1 && (
         <div
@@ -87,7 +85,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
                 role="tab"
                 aria-selected={active === index}
                 aria-label={`Exibir banner ${index + 1}: ${slide.title}`}
-                onClick={() => setActive(index)}
+                onClick={() => { setPaused(true); setActive(index); }}
                 key={slide.id}
               />
             ))}

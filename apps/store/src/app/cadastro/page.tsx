@@ -43,6 +43,12 @@ export default async function Page({
             Não foi possível registrar a indicação agora. Solicite um novo link ao representante.
           </p>
         )}
+        {referralStatus === "consentimento" && (
+          <p className="form-message" role="status">
+            Para registrar a indicação, habilite a categoria “Funcionais” nas preferências de cookies
+            e abra novamente o link recebido.
+          </p>
+        )}
         <SignupForm
           returnTo={returnTo}
           turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}

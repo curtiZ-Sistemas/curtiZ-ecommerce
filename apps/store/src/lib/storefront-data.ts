@@ -18,10 +18,12 @@ import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } fr
 export type PublicBanner = {
   id: string;
   title: string;
+  altText: string;
   subtitle?: string;
   desktopImage: string;
   mobileImage: string;
-  href: string;
+  href?: string;
+  openNewTab?: boolean;
   position: string;
 };
 
@@ -118,14 +120,22 @@ const defaultSections: HomepageSection[] = [
 const fallbackBanner: PublicBanner = {
   id: "default-hero-banner",
   title: "Conheça os lançamentos da Curtiz",
+  altText: "Conheça os lançamentos da Curtiz",
   desktopImage: "/images/hero-curtiz-desktop.png",
   mobileImage: "/images/hero-curtiz-mobile.png",
   href: "/lancamentos",
   position: "hero"
 };
 
-const safeDestination = (value: string) =>
-  value.startsWith("/") && !value.startsWith("//") ? value : "/produtos";
+const safeDestination = (value: string) => {
+  if (value.startsWith("/") && !value.startsWith("//")) return value;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" ? parsed.toString() : "/produtos";
+  } catch {
+    return "/produtos";
+  }
+};
 
 const publicImage = (path: string) => {
   if (path.startsWith("/") || path.startsWith("https://")) return path;
@@ -218,9 +228,10 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     supabase
       .from("banners")
       .select(
-        "id,title,subtitle,image_path_desktop,image_path_mobile,destination_url,position,sort_order"
+        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,open_new_tab,position,priority,sort_order"
       )
-      .eq("status", "published")
+      .in("status", ["published", "scheduled"])
+      .order("priority", { ascending: false })
       .order("sort_order")
       .limit(40),
     queryPublicCatalog({ sort: "best_sellers", pageSize: 12 })
@@ -258,10 +269,14 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       return {
         id: readString(row, "id"),
         title: readString(row, "title"),
+        altText: readString(row, "alt_text") || readString(row, "title"),
         ...(readString(row, "subtitle") ? { subtitle: readString(row, "subtitle") } : {}),
         desktopImage: publicImage(desktop),
         mobileImage: publicImage(mobile),
-        href: safeDestination(readString(row, "destination_url")),
+        ...(readString(row, "destination_type") === "none"
+          ? {}
+          : { href: safeDestination(readString(row, "destination_url")) }),
+        ...(row.open_new_tab === true ? { openNewTab: true } : {}),
         position
       };
     })

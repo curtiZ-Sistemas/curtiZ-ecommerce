@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Upload,
   X
 } from "lucide-react";
 import {
@@ -18,6 +19,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import {
@@ -98,6 +100,9 @@ const statusLabels: Record<string, string> = {
   archived: "Arquivado",
   rejected: "Rejeitado",
   reported: "Denunciado",
+  scheduled: "Agendado",
+  expired: "Expirado",
+  hidden: "Oculto",
   suspended: "Suspenso",
   cancelled: "Cancelado"
 };
@@ -312,6 +317,7 @@ export function AdminResourceManager({
       }
 
       const successMessage = result.message ?? "Alterações salvas.";
+      window.dispatchEvent(new Event("banner-form-saved"));
       setEditing(null);
       await load();
       setMessage(successMessage);
@@ -351,6 +357,11 @@ export function AdminResourceManager({
   const updateState = async (): Promise<void> => {
     if (!stateTarget || pending) return;
 
+    const moderationReason = resource === "avaliacoes" && stateTarget.action === "archive"
+      ? window.prompt("Informe a justificativa para arquivar esta avaliação:")?.trim()
+      : undefined;
+    if (resource === "avaliacoes" && stateTarget.action === "archive" && !moderationReason) return;
+
     setPending(true);
     setMessage("");
 
@@ -362,7 +373,8 @@ export function AdminResourceManager({
         },
         body: JSON.stringify({
           action: stateTarget.action,
-          ids: stateTarget.items.map(itemId).filter(Boolean)
+          ids: stateTarget.items.map(itemId).filter(Boolean),
+          reason: moderationReason
         })
       });
       const result = await readListResponse(response);
@@ -677,6 +689,18 @@ export function AdminResourceManager({
                   const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
 
+                  if (resource === "banners" && (field.key === "image_path_desktop" || field.key === "image_path_mobile")) {
+                    return <BannerImageField field={field} initialPath={formValue(value)} key={field.key} />;
+                  }
+
+                  if (resource === "banners" && field.key === "destination_type") {
+                    return <BannerDestinationField source={source} key={field.key} />;
+                  }
+
+                  if (resource === "banners" && ["destination_id", "destination_url"].includes(field.key)) {
+                    return null;
+                  }
+
                   return (
                     <label
                       className={
@@ -797,5 +821,162 @@ export function AdminResourceManager({
         </div>
       ) : null}
     </section>
+  );
+}
+
+type BannerTarget = { id: string; label: string; detail: string; route: string };
+
+const destinationLabels: Record<string, string> = {
+  none: "Nenhum destino",
+  product: "Produto",
+  category: "Categoria",
+  collection: "Coleção",
+  institutional_page: "Página institucional",
+  guide: "Guia",
+  campaign: "Campanha",
+  internal_page: "Página interna",
+  predefined_search: "Busca predefinida",
+  external_url: "URL externa autorizada"
+};
+
+function bannerPublicUrl(path: string) {
+  if (!path) return "";
+  if (path.startsWith("/") || path.startsWith("https://")) return path;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return supabaseUrl
+    ? `${supabaseUrl}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
+    : "";
+}
+
+function BannerImageField({ field, initialPath }: { field: AdminResourceField; initialPath: string }) {
+  const device = field.key === "image_path_mobile" ? "mobile" : "desktop";
+  const [path, setPath] = useState(initialPath);
+  const [preview, setPreview] = useState(() => bannerPublicUrl(initialPath));
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const uploadedPath = useRef("");
+  const persisted = useRef(false);
+
+  useEffect(() => {
+    const markPersisted = () => { persisted.current = true; };
+    window.addEventListener("banner-form-saved", markPersisted);
+    return () => {
+      window.removeEventListener("banner-form-saved", markPersisted);
+      if (uploadedPath.current && !persisted.current) {
+        void fetch("/api/admin/banner-media", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path: uploadedPath.current }),
+          keepalive: true
+        });
+      }
+    };
+  }, []);
+
+  const upload = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("device", device);
+      const response = await fetch("/api/admin/banner-media", { method: "POST", body: form });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isRecord(payload) || typeof payload.path !== "string") {
+        throw new Error(isRecord(payload) && typeof payload.message === "string" ? payload.message : "Upload indisponível.");
+      }
+      if (uploadedPath.current) {
+        void fetch("/api/admin/banner-media", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path: uploadedPath.current })
+        });
+      }
+      uploadedPath.current = payload.path;
+      setPath(payload.path);
+      setPreview(typeof payload.publicUrl === "string" ? payload.publicUrl : bannerPublicUrl(payload.path));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="banner-image-field">
+      <span>{field.label}{field.required ? " *" : ""}</span>
+      <input name={field.key} type="hidden" value={path} />
+      {preview ? <img src={preview} alt={`Prévia da ${field.label.toLocaleLowerCase("pt-BR")}`} /> : <div className="banner-image-placeholder">Nenhuma imagem enviada</div>}
+      <label className="secondary-button">
+        {uploading ? <LoaderCircle className="spin" /> : <Upload aria-hidden="true" />}
+        {uploading ? "Enviando…" : "Selecionar imagem"}
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void upload(event.target.files?.[0])} disabled={uploading} />
+      </label>
+      <small>JPG, PNG ou WebP, até 10 MB.</small>
+      {error ? <small className="banner-field-error" role="alert">{error}</small> : null}
+    </div>
+  );
+}
+
+function BannerDestinationField({ source }: { source: Item }) {
+  const initialType = typeof source.destination_type === "string" ? source.destination_type : "internal_page";
+  const [type, setType] = useState(initialType);
+  const [targetId, setTargetId] = useState(typeof source.destination_id === "string" ? source.destination_id : "");
+  const [url, setUrl] = useState(typeof source.destination_url === "string" ? source.destination_url : "/");
+  const [query, setQuery] = useState("");
+  const [targets, setTargets] = useState<BannerTarget[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const selectable = ["product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page"].includes(type);
+
+  const loadTargets = useCallback(async (search = "") => {
+    if (!["product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page"].includes(type)) return;
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ type });
+      if (search.trim()) params.set("q", search.trim());
+      const response = await fetch(`/api/admin/banner-targets?${params}`, { cache: "no-store" });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isRecord(payload)) throw new Error("Não foi possível carregar os destinos.");
+      setTargets(Array.isArray(payload.targets) ? payload.targets.filter(isRecord).flatMap((item) =>
+        typeof item.id === "string" && typeof item.label === "string" && typeof item.route === "string"
+          ? [{ id: item.id, label: item.label, detail: typeof item.detail === "string" ? item.detail : "", route: item.route }]
+          : []) : []);
+    } catch (targetError) {
+      setError(targetError instanceof Error ? targetError.message : "Não foi possível carregar os destinos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [type]);
+
+  useEffect(() => { if (selectable) void loadTargets(); }, [loadTargets, selectable]);
+
+  const chooseType = (nextType: string) => {
+    setType(nextType);
+    setTargetId("");
+    setTargets([]);
+    setUrl(nextType === "none" ? "/" : "");
+  };
+
+  return (
+    <fieldset className="wide banner-destination-field">
+      <legend>Destino do banner</legend>
+      <input name="destination_type" type="hidden" value={type} />
+      <input name="destination_id" type="hidden" value={targetId} />
+      <input name="destination_url" type="hidden" value={url} />
+      <label>Tipo<select value={type} onChange={(event) => chooseType(event.target.value)}>{Object.entries(destinationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      {selectable ? (
+        <>
+          <div className="banner-target-search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar destino" /><button className="secondary-button" type="button" onClick={() => void loadTargets(query)} disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <Search />} Buscar</button></div>
+          <label>Destino<select value={targetId} onChange={(event) => { const target = targets.find((item) => item.id === event.target.value); setTargetId(target?.id ?? ""); setUrl(target?.route ?? ""); }} required><option value="">Selecione sem digitar links</option>{targets.map((target) => <option value={target.id} key={target.id}>{target.label} · {target.detail}</option>)}</select></label>
+        </>
+      ) : null}
+      {type === "predefined_search" ? <label>Busca<input value={url.startsWith("/busca?q=") ? decodeURIComponent(url.slice(9)) : ""} onChange={(event) => setUrl(event.target.value.trim() ? `/busca?q=${encodeURIComponent(event.target.value.trim())}` : "")} placeholder="Termo de busca" required /></label> : null}
+      {type === "external_url" ? <label>URL HTTPS autorizada<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://dominio-autorizado.com/…" required /><small>O domínio precisa constar em Configurações administrativas → banner_external_hosts.</small></label> : null}
+      {url && type !== "none" ? <p>Destino gerado: <code>{url}</code></p> : null}
+      {error ? <p className="banner-field-error" role="alert">{error}</p> : null}
+    </fieldset>
   );
 }

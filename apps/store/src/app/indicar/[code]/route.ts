@@ -35,6 +35,24 @@ export async function GET(
     return NextResponse.redirect(cadastro, 303);
   }
 
+  const preferenceValue = request.cookies.get("curtiz-cookie-preferences")?.value;
+  let functionalAllowed = false;
+  if (preferenceValue) {
+    try {
+      const preferences: unknown = JSON.parse(preferenceValue);
+      functionalAllowed = Boolean(
+        preferences && typeof preferences === "object" && !Array.isArray(preferences)
+          && (preferences as Record<string, unknown>).functional === true
+      );
+    } catch {
+      functionalAllowed = false;
+    }
+  }
+  if (!functionalAllowed) {
+    cadastro.searchParams.set("indicacao", "consentimento");
+    return NextResponse.redirect(cadastro, 303);
+  }
+
   cadastro.searchParams.set("indicacao", "confirmada");
   const response = NextResponse.redirect(cadastro, 303);
   response.cookies.set(REFERRAL_ATTRIBUTION_COOKIE, token, {

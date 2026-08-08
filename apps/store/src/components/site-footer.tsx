@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BrandLogo } from "./brand-logo";
+import { CookieSettingsButton } from "./cookie-preferences";
 
 const groups = [
   {
@@ -7,27 +8,30 @@ const groups = [
     links: [
       ["Quem somos", "/sobre"],
       ["Fale conosco", "/contato"],
-      ["Privacidade", "/politica-de-privacidade"],
-      ["Termos de uso", "/termos-de-uso"]
+      ["Atendimento", "/ajuda"]
     ]
   },
   {
-    title: "Ajuda",
+    title: "Políticas",
     links: [
-      ["Central de ajuda", "/ajuda"],
+      ["Centro de políticas", "/politicas"],
+      ["Termos", "/politicas/termos-de-uso"],
+      ["Privacidade", "/politicas/aviso-de-privacidade"],
+      ["Cookies", "/politicas/politica-de-cookies"],
       ["Trocas e devoluções", "/trocas-e-devolucoes"],
       ["Formas de envio", "/formas-de-envio"],
-      ["Formas de pagamento", "/formas-de-pagamento"]
+      ["Formas de pagamento", "/formas-de-pagamento"],
+      ["Garantia", "/politicas/garantia"],
+      ["Acessibilidade", "/politicas/acessibilidade"]
     ]
   },
   {
-    title: "Categorias",
+    title: "Representantes",
     links: [
-      ["Masculino", "/masculino"],
-      ["Feminino", "/feminino"],
-      ["Infantil", "/infantil"],
-      ["Slides", "/slides"],
-      ["Ofertas", "/ofertas"]
+      ["Termos", "/politicas/termos-representante"],
+      ["Kits e qualificação", "/politicas/kits-e-qualificacao"],
+      ["Comissões", "/politicas/comissoes"],
+      ["Uso da marca", "/politicas/criativos"]
     ]
   }
 ] as const;
@@ -38,14 +42,18 @@ export function SiteFooter() {
       <div className="container footer-grid">
         <div className="footer-brand">
           <BrandLogo />
-          <p>Conforto e estilo para todos os momentos, com uma experiência de compra clara e segura.</p>
+          <p>
+            Conforto e estilo para todos os momentos, com uma experiência de compra clara e segura.
+          </p>
           <span>Loja exclusivamente online.</span>
         </div>
         {groups.map((group) => (
           <nav aria-label={group.title} key={group.title}>
             <h2>{group.title}</h2>
             {group.links.map(([label, href]) => (
-              <Link href={href} key={href}>{label}</Link>
+              <Link href={href} key={href}>
+                {label}
+              </Link>
             ))}
           </nav>
         ))}
@@ -53,6 +61,7 @@ export function SiteFooter() {
       <div className="footer-bottom">
         <div className="container">
           <span>© 2026 curti Z. Todos os direitos reservados.</span>
+          <CookieSettingsButton />
         </div>
       </div>
     </footer>

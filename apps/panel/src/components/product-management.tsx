@@ -32,6 +32,16 @@ type CatalogResponse = {
 const formatBRL = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value / 100);
 
+const productStatusLabel = (status: string) => ({
+  draft: "Rascunho",
+  pending_review: "Em análise",
+  active: "Publicado",
+  inactive: "Inativo",
+  out_of_stock: "Sem estoque",
+  archived: "Arquivado",
+  rejected: "Rejeitado"
+}[status] ?? status);
+
 export function ProductManagement() {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [filter, setFilter] = useState<"all" | "out">("all");
@@ -120,6 +130,7 @@ export function ProductManagement() {
         modelId: form.get("modelId") || null,
         collectionId: form.get("collectionId") || null,
         status: form.get("status"),
+        statusReason: form.get("statusReason"),
         featured: form.get("featured") === "on",
         priceInCents: Math.round(Number(form.get("price")) * 100),
         costInCents: Math.round(Number(form.get("cost")) * 100),
@@ -133,6 +144,15 @@ export function ProductManagement() {
       editing === "new" ? "new-product" : editing.id
     );
     if (success) setEditing(null);
+  };
+
+  const changeStatus = async (product: ManagedProduct, nextStatus: string) => {
+    const needsReason = ["inactive", "archived", "rejected"].includes(nextStatus);
+    const reason = needsReason
+      ? window.prompt(`Informe o motivo para alterar o status para ${productStatusLabel(nextStatus)}:`)?.trim()
+      : undefined;
+    if (needsReason && !reason) return;
+    await execute({ action: "status", productId: product.id, status: nextStatus, reason }, product.id);
   };
 
   const duplicateProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -221,7 +241,11 @@ export function ProductManagement() {
           >
             <option value="">Todos</option>
             <option value="draft">Rascunhos</option>
+            <option value="pending_review">Em análise</option>
             <option value="active">Publicados</option>
+            <option value="inactive">Inativos</option>
+            <option value="out_of_stock">Sem estoque</option>
+            <option value="rejected">Rejeitados</option>
             <option value="archived">Arquivados</option>
           </select>
         </label>
@@ -251,11 +275,7 @@ export function ProductManagement() {
                   <h3>{product.name}</h3>
                   <span>
                     {formatBRL(product.priceInCents)} ·{" "}
-                    {product.status === "archived"
-                      ? "Arquivado"
-                      : product.status === "active"
-                        ? "Publicado"
-                        : "Rascunho"}
+                    {productStatusLabel(product.status)}
                   </span>
                 </div>
                 <div>
@@ -284,12 +304,7 @@ export function ProductManagement() {
                       className="secondary-button"
                       type="button"
                       disabled={Boolean(pending)}
-                      onClick={() =>
-                        void execute(
-                          { action: "status", productId: product.id, status: "draft" },
-                          product.id
-                        )
-                      }
+                      onClick={() => void changeStatus(product, "inactive")}
                     >
                       <EyeOff /> Desativar
                     </button>
@@ -298,12 +313,7 @@ export function ProductManagement() {
                       className="secondary-button"
                       type="button"
                       disabled={Boolean(pending)}
-                      onClick={() =>
-                        void execute(
-                          { action: "status", productId: product.id, status: "draft" },
-                          product.id
-                        )
-                      }
+                      onClick={() => void changeStatus(product, "draft")}
                     >
                       <RotateCcw /> Restaurar
                     </button>
@@ -312,12 +322,7 @@ export function ProductManagement() {
                       className="secondary-button"
                       type="button"
                       disabled={Boolean(pending)}
-                      onClick={() =>
-                        void execute(
-                          { action: "status", productId: product.id, status: "active" },
-                          product.id
-                        )
-                      }
+                      onClick={() => void changeStatus(product, "active")}
                     >
                       <Eye /> Publicar
                     </button>
@@ -472,7 +477,9 @@ export function ProductManagement() {
                 disabled={Boolean(pending)}
                 onClick={() => {
                   const target = archiveTarget;
-                  void execute({ action: "archive", productId: target.id }, target.id).then(
+                  const reason = window.prompt("Informe o motivo do arquivamento:")?.trim();
+                  if (!reason) return;
+                  void execute({ action: "archive", productId: target.id, reason }, target.id).then(
                     (ok) => {
                       if (ok) setArchiveTarget(null);
                     }
@@ -585,9 +592,17 @@ export function ProductManagement() {
                   <span>Status</span>
                   <select name="status" defaultValue={editing === "new" ? "draft" : editing.status}>
                     <option value="draft">Rascunho</option>
+                    <option value="pending_review">Em análise</option>
                     <option value="active">Publicado</option>
+                    <option value="inactive">Inativo</option>
+                    <option value="out_of_stock">Sem estoque</option>
+                    <option value="rejected">Rejeitado</option>
                     <option value="archived">Arquivado</option>
                   </select>
+                </label>
+                <label className="wide">
+                  <span>Motivo do status</span>
+                  <textarea name="statusReason" rows={3} defaultValue={editing === "new" ? "" : editing.statusReason} placeholder="Obrigatório para inativar, rejeitar ou arquivar" />
                 </label>
                 <label>
                   <span>Preço (R$) *</span>

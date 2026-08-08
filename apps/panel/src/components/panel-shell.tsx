@@ -20,7 +20,9 @@ import {
   PackagePlus,
   PanelsTopLeft,
   Search,
+  Scale,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   ShoppingBag,
   Tags,
@@ -30,7 +32,8 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import React, { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -53,7 +56,8 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Atendimento atribuído", "atendimentos", Headphones],
     ["Representantes", "representantes", Users],
     ["Pendências", "pendencias", FileClock],
-    ["Relatórios operacionais", "relatorios-operacionais", ChartNoAxesCombined]
+    ["Relatórios operacionais", "relatorios-operacionais", ChartNoAxesCombined],
+    ["Políticas oficiais", "politicas", Scale]
   ],
   administracao: [
     ["Dashboard", "", PanelsTopLeft],
@@ -79,6 +83,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Criativos", "criativos", PanelsTopLeft],
     ["Campanhas", "campanhas", Tags],
     ["Avaliações", "avaliacoes", MessageSquareText],
+    ["Políticas e documentos legais", "politicas", Scale],
     ["Treinamentos", "treinamentos", FileText],
     ["Contratos", "contratos", FileClock],
     ["Usuários", "usuarios", ShieldCheck],
@@ -109,20 +114,36 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Relatórios", "relatorios", ChartNoAxesCombined],
     ["Aprovações", "aprovacoes", ShieldCheck],
     ["Auditoria", "auditoria", FileClock],
+    ["Políticas e conformidade", "politicas", Scale],
     ["Simulações", "simulacoes", ChartNoAxesCombined],
     ["Alertas", "alertas", Activity],
     ["Configurações estratégicas", "configuracoes-estrategicas", Settings],
     ["Atendimentos", "atendimentos", Headphones]
   ],
   tecnico: [
-    ["Saúde do sistema", "", Activity],
-    ["Logs e erros", "logs", FileClock],
+    ["Visão geral", "", Activity],
+    ["Saúde dos serviços", "saude-servicos", CircleGauge],
+    ["Logs", "logs", FileClock],
+    ["Erros", "erros", ShieldAlert],
+    ["Segurança", "seguranca", ShieldCheck],
+    ["Acessos técnicos", "acessos-tecnicos", Users],
     ["Integrações", "integracoes", Webhook],
-    ["Webhooks e filas", "webhooks", MessageSquareText],
-    ["Sessões", "sessoes", Users],
+    ["Webhooks", "webhooks", Webhook],
+    ["Filas", "filas", MessageSquareText],
+    ["Jobs", "jobs", Wrench],
+    ["Falhas", "falhas", ShieldAlert],
+    ["Banco de dados", "banco-dados", Boxes],
+    ["Supabase", "supabase", CircleGauge],
+    ["Storage", "storage", Boxes],
     ["Backups", "backups", FileClock],
-    ["Integridade de representantes", "integridade-representantes", ShieldCheck],
-    ["Feature flags", "features", Settings],
+    ["Auditoria técnica", "auditoria-tecnica", FileClock],
+    ["Integridade dos dados", "integridade-dados", ShieldCheck],
+    ["Performance", "performance", ChartNoAxesCombined],
+    ["Deploys", "deploys", ExternalLink],
+    ["Versões", "versoes", FileText],
+    ["Sessões", "sessoes", Users],
+    ["Feature flags", "feature-flags", Settings],
+    ["Configurações técnicas", "configuracoes-tecnicas", Settings],
     ["Atendimentos técnicos", "atendimentos", Headphones]
   ]
 };
@@ -137,10 +158,12 @@ const roleLabels: Record<PanelRole, string> = {
 export function PanelShell({
   role,
   section,
+  canSwitchPanel = false,
   children
 }: {
   role: PanelRole;
   section: string;
+  canSwitchPanel?: boolean;
   children: React.ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -233,7 +256,7 @@ export function PanelShell({
       >
         <div className="sidebar-heading">
           <Link className="panel-brand" href={`/${role}`} onClick={() => closeMenu()}>
-            CURTI<span>Z</span>
+            <Image src="/images/logo-curtiz.png" alt="curti Z" width={150} height={100} priority />
           </Link>
           <button
             className="sidebar-close"
@@ -262,6 +285,12 @@ export function PanelShell({
             );
           })}
         </nav>
+        {canSwitchPanel ? (
+          <Link className="panel-switch-link sidebar-switch-link" href="/selecionar-painel" onClick={() => closeMenu()}>
+            <PanelsTopLeft size={19} />
+            <span>Trocar painel</span>
+          </Link>
+        ) : null}
         <Link className="support-card" href={`/${role}/atendimentos`}>
           <LifeBuoy size={20} />
           <span>
@@ -309,6 +338,11 @@ export function PanelShell({
           <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">
             Ver loja <ExternalLink aria-hidden="true" />
           </a>
+          {canSwitchPanel ? (
+            <Link className="panel-switch-link topbar-switch-link" href="/selecionar-painel">
+              <PanelsTopLeft aria-hidden="true" /> Trocar painel
+            </Link>
+          ) : null}
           <div className="user-chip">
             <div className="avatar">{roleLabels[role].slice(0, 1)}</div>
             <div>

@@ -19,7 +19,13 @@ import {
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { encryptPII } from "@/lib/pii";
-import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import {
+  isUnknownRecord,
+  readNumber,
+  readQueryResult,
+  readRows,
+  readString
+} from "@/lib/unknown-data";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +59,12 @@ const actionSchema = z.discriminatedUnion("action", [
         (items) => new Set(items.map((item) => item.variantId)).size === items.length,
         "Variantes duplicadas."
       ),
-    customerReference: z.string().trim().regex(/^[A-Za-z0-9._/-]+$/u).max(80).optional(),
+    customerReference: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._/-]+$/u)
+      .max(80)
+      .optional(),
     paymentMethod: z.enum(["pix", "card", "cash", "transfer", "other"]).optional(),
     notes: z.string().trim().max(500).optional(),
     soldAt: z.iso.datetime({ offset: true }).optional()
@@ -65,7 +76,11 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("update_profile"),
-    regionCode: z.string().trim().toUpperCase().regex(/^[A-Z]{2,8}$/u)
+    regionCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2,8}$/u)
   }),
   z.object({
     action: z.literal("buy_kit"),
@@ -140,20 +155,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [{ data: applicationRaw }, { data: representativeRaw, error: representativeError }] = await Promise.all([
-    supabase
-      .from("representative_applications")
-      .select("id,public_code,status,current_step,answers,decision_reason,updated_at")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("representatives")
-      .select(
-        "id,user_id,public_code,referral_code,status,region_code,activated_at,current_level_id,representative_levels(name,description,rank)"
-      )
-      .eq("user_id", user.id)
-      .maybeSingle()
-  ]);
+  const [{ data: applicationRaw }, { data: representativeRaw, error: representativeError }] =
+    await Promise.all([
+      supabase
+        .from("representative_applications")
+        .select("id,public_code,status,current_step,answers,decision_reason,updated_at")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("representatives")
+        .select(
+          "id,user_id,public_code,referral_code,status,region_code,activated_at,current_level_id,representative_levels(name,description,rank)"
+        )
+        .eq("user_id", user.id)
+        .maybeSingle()
+    ]);
   if (representativeError) {
     return NextResponse.json(
       { message: "Não foi possível carregar o perfil de representante." },
@@ -180,7 +196,10 @@ export async function GET(request: NextRequest) {
   const representativeId = readString(representativeRecord, "id");
   const representativeStatus = readString(representativeRecord, "status");
   const levelId = readString(representativeRecord, "current_level_id");
-  const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1);
+  const page = Math.max(
+    1,
+    Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1
+  );
   const pageSize = 20;
   const rangeFrom = (page - 1) * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;
@@ -229,7 +248,9 @@ export async function GET(request: NextRequest) {
       .range(rangeFrom, rangeTo),
     supabase
       .from("kit_orders")
-      .select("id,public_code,total_in_cents,status,created_at,paid_at,shipped_at,delivered_at,kits(name)")
+      .select(
+        "id,public_code,total_in_cents,status,created_at,paid_at,shipped_at,delivered_at,kits(name)"
+      )
       .eq("representative_id", representativeId)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -249,26 +270,34 @@ export async function GET(request: NextRequest) {
       .limit(100),
     supabase
       .from("kits")
-      .select("id,name,description,price_in_cents,required_for_activation,kit_level_rules(level_id,available,required)")
+      .select(
+        "id,name,description,price_in_cents,required_for_activation,kit_level_rules(level_id,available,required)"
+      )
       .eq("active", true)
       .order("price_in_cents", { ascending: true })
       .limit(50),
     supabase
       .from("representative_qualifications")
-      .select("id,qualified,period_start,period_end,metrics_snapshot,evaluated_at,qualification_rules(name,criteria)")
+      .select(
+        "id,qualified,period_start,period_end,metrics_snapshot,evaluated_at,qualification_rules(name,criteria)"
+      )
       .eq("representative_id", representativeId)
       .order("period_end", { ascending: false })
       .limit(24),
     scopedGoalsQuery.limit(50),
     supabase
       .from("representative_level_history")
-      .select("id,reason,created_at,representative_levels!representative_level_history_new_level_id_fkey(name)")
+      .select(
+        "id,reason,created_at,representative_levels!representative_level_history_new_level_id_fkey(name)"
+      )
       .eq("representative_id", representativeId)
       .order("created_at", { ascending: false })
       .limit(24),
     supabase
       .from("commission_entries")
-      .select("id,status,eligible_amount_in_cents,commission_in_cents,created_at,representative_sales(public_code)")
+      .select(
+        "id,status,eligible_amount_in_cents,commission_in_cents,created_at,representative_sales(public_code)"
+      )
       .eq("representative_id", representativeId)
       .order("created_at", { ascending: false })
       .limit(100),
@@ -352,7 +381,9 @@ export async function GET(request: NextRequest) {
       color: variant ? readString(variant, "color_name") : "",
       size: variant ? readString(variant, "size") : "",
       priceInCents:
-        override >= 0 ? Math.round(override * 100) : Math.round((product ? readNumber(product, "base_price") : 0) * 100),
+        override >= 0
+          ? Math.round(override * 100)
+          : Math.round((product ? readNumber(product, "base_price") : 0) * 100),
       quantity: readNumber(entry, "quantity")
     };
   });
@@ -365,11 +396,7 @@ export async function GET(request: NextRequest) {
       const rules = readRows(kit.kit_level_rules);
       return (
         rules.length === 0 ||
-        rules.some(
-          (rule) =>
-            readString(rule, "level_id") === levelId &&
-            rule.available === true
-        )
+        rules.some((rule) => readString(rule, "level_id") === levelId && rule.available === true)
       );
     })
     .map((kit) => ({
@@ -527,7 +554,7 @@ export async function GET(request: NextRequest) {
           page,
           pageSize,
           total: ["active", "unqualified", "approved_waiting_kit"].includes(representativeStatus)
-            ? networkCountResult.count ?? team.length
+            ? (networkCountResult.count ?? team.length)
             : 0
         }
       }
@@ -582,16 +609,18 @@ export async function POST(request: NextRequest) {
         );
       }
       if (input.action === "record_sale") {
-        return NextResponse.json(recordDemoRepresentativeSale(session.email, input.items, input.idempotencyKey), {
-          status: 201,
-          headers: noStore
-        });
+        return NextResponse.json(
+          recordDemoRepresentativeSale(session.email, input.items, input.idempotencyKey),
+          {
+            status: 201,
+            headers: noStore
+          }
+        );
       }
       if (input.action === "update_profile") {
-        return NextResponse.json(
-          updateDemoRepresentativeProfile(session.email, input.regionCode),
-          { headers: noStore }
-        );
+        return NextResponse.json(updateDemoRepresentativeProfile(session.email, input.regionCode), {
+          headers: noStore
+        });
       }
       if (input.action === "buy_kit") {
         return NextResponse.json(
@@ -647,6 +676,24 @@ export async function POST(request: NextRequest) {
     }
     const safeValues = { ...input.values };
     delete safeValues.cpf;
+    let representativeTermsVersionId = "";
+    if (input.step === 5 && input.values.termsAccepted) {
+      const termsResponse: unknown = await supabase
+        .from("published_legal_documents")
+        .select("version_id")
+        .eq("slug", "termos-representante")
+        .maybeSingle();
+      const termsResult = readQueryResult(termsResponse);
+      if (termsResult.error) {
+        return NextResponse.json(
+          { message: "Não foi possível confirmar a versão vigente dos termos." },
+          { status: 503, headers: noStore }
+        );
+      }
+      representativeTermsVersionId = isUnknownRecord(termsResult.data)
+        ? readString(termsResult.data, "version_id")
+        : "";
+    }
     let encryptedCpf: string | undefined;
     try {
       if (cpf) encryptedCpf = encryptPII(cpf);
@@ -662,7 +709,12 @@ export async function POST(request: NextRequest) {
       answers: { ...current, [String(input.step)]: safeValues },
       ...(encryptedCpf ? { cpf_ciphertext: encryptedCpf, cpf_last_four: cpf.slice(-4) } : {}),
       ...(input.step === 5 && input.values.termsAccepted
-        ? { terms_version: "representative-terms-v1", terms_accepted_at: new Date().toISOString() }
+        ? {
+            terms_version: representativeTermsVersionId
+              ? `legal:${representativeTermsVersionId}`
+              : "representative-terms-v1",
+            terms_accepted_at: new Date().toISOString()
+          }
         : {})
     };
     const existingId = existing ? readString(existing, "id") : "";
@@ -671,6 +723,19 @@ export async function POST(request: NextRequest) {
       : supabase.from("representative_applications").insert(payload);
     const queryResponse: unknown = await query.select().single();
     const { data, error } = readQueryResult(queryResponse);
+    const legalAcceptance =
+      !error && representativeTermsVersionId
+        ? await supabase.rpc("record_legal_acceptances", {
+            p_context: "representative",
+            p_version_ids: [representativeTermsVersionId]
+          })
+        : { error: null };
+    if (legalAcceptance.error) {
+      return NextResponse.json(
+        { message: "O rascunho foi salvo, mas não foi possível registrar o aceite dos termos." },
+        { status: 503, headers: noStore }
+      );
+    }
     return NextResponse.json(error ? { message: "Não foi possível salvar o rascunho." } : data, {
       status: error ? 409 : 200,
       headers: noStore
@@ -739,8 +804,7 @@ export async function POST(request: NextRequest) {
             id: readString(sale, "id"),
             publicCode: readString(sale, "public_code"),
             status: readString(sale, "status"),
-            warning:
-              "A venda foi registrada, mas os dados complementares não foram aceitos."
+            warning: "A venda foi registrada, mas os dados complementares não foram aceitos."
           },
           { status: 207, headers: noStore }
         );
@@ -763,10 +827,10 @@ export async function POST(request: NextRequest) {
       p_region_code: input.regionCode
     });
     const { data, error } = readQueryResult(rpcResponse);
-    return NextResponse.json(
-      error ? { message: "Não foi possível atualizar o perfil." } : data,
-      { status: error ? 422 : 200, headers: noStore }
-    );
+    return NextResponse.json(error ? { message: "Não foi possível atualizar o perfil." } : data, {
+      status: error ? 422 : 200,
+      headers: noStore
+    });
   }
   if (input.action === "buy_kit") {
     const rpcResponse: unknown = await supabase.rpc("create_representative_kit_order", {
@@ -785,10 +849,10 @@ export async function POST(request: NextRequest) {
       p_reason: input.reason
     });
     const { data, error } = readQueryResult(rpcResponse);
-    return NextResponse.json(
-      error ? { message: "A venda não pode ser cancelada." } : data,
-      { status: error ? 409 : 200, headers: noStore }
-    );
+    return NextResponse.json(error ? { message: "A venda não pode ser cancelada." } : data, {
+      status: error ? 409 : 200,
+      headers: noStore
+    });
   }
 
   const representativeResponse: unknown = await supabase
