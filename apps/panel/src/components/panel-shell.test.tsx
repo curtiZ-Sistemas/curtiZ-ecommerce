@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PanelShell } from "./panel-shell";
+import { PanelShell, panelSearchRoute } from "./panel-shell";
 
 describe("PanelShell multipainel", () => {
   it("mostra a troca no cabeçalho e no menu quando há múltiplos painéis", () => {
@@ -20,5 +20,22 @@ describe("PanelShell multipainel", () => {
     expect(markup).toContain("logo-curtiz.png");
     expect(markup).toContain("Políticas oficiais");
     expect(markup).toContain("Central de Ajuda");
+  });
+
+  it("mostra o nome real e direciona buscas para uma rota existente do perfil", () => {
+    const manager = renderToStaticMarkup(
+      <PanelShell role="gerencia" section="" userName="Maria Silva">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
+    const technical = renderToStaticMarkup(
+      <PanelShell role="tecnico" section="">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
+    expect(manager).toContain("Maria Silva");
+    expect(panelSearchRoute("gerencia")).toBe("/gerencia/pedidos-vendas");
+    expect(panelSearchRoute("tecnico")).toBe("/tecnico/logs");
+    expect(technical).toContain("Técnico");
   });
 });

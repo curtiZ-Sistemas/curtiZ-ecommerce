@@ -157,8 +157,7 @@ async function targets(request: NextRequest) {
     const stock = variants.reduce((sum, variant) => {
       const inventory = objectRows(variant.inventory)[0];
       const available = typeof inventory?.available_quantity === "number" ? inventory.available_quantity : 0;
-      const reserved = typeof inventory?.reserved_quantity === "number" ? inventory.reserved_quantity : 0;
-      return sum + Math.max(available - reserved, 0);
+      return sum + Math.max(available, 0);
     }, 0);
     const price = typeof row.base_price === "number" ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(row.base_price) : "";
     const image = objectRows(row.product_images).sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true)).map((entry) => text(entry, "storage_path"))[0] ?? "";

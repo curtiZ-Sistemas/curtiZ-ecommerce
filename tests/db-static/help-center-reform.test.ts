@@ -44,6 +44,17 @@ describe("help center reform migration", () => {
     expect(sql).toContain("support participants create attachment metadata");
   });
 
+  it("usa somente expressões imutáveis no índice textual", () => {
+    const searchIndex = sql.slice(
+      sql.indexOf("create index help_contents_search_idx"),
+      sql.indexOf("create index help_search_no_result_idx")
+    );
+    expect(searchIndex).toContain("'portuguese'::regconfig");
+    expect(searchIndex).not.toContain("array_to_string");
+    expect(sql).toContain("create index help_contents_keywords_idx");
+    expect(sql).toContain("create index help_contents_synonyms_idx");
+  });
+
   it("mantém decisões sensíveis no servidor e com auditoria", () => {
     expect(sql).toContain("author cannot approve own content");
     expect(sql).toContain("private.require_permission('support_content.publish')");

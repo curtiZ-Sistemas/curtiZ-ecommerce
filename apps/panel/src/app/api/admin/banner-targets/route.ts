@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     const stock = type === "product"
       ? objectRows(item.product_variants).reduce((total, variant) => {
           const inventory = objectRows(variant.inventory)[0];
-          return total + Math.max(numeric(inventory?.available_quantity) - numeric(inventory?.reserved_quantity), 0);
+          return total + Math.max(numeric(inventory?.available_quantity), 0);
         }, 0)
       : null;
     const route = type === "product"

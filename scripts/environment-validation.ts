@@ -249,7 +249,7 @@ const validateSeparateApplications = (
   errors: string[]
 ): void => {
   const deploymentMode =
-    normalize(environment.PANEL_DEPLOYMENT_MODE) || "integrated";
+    normalize(environment.PANEL_DEPLOYMENT_MODE) || "separate";
 
   if (
     !(panelDeploymentModeOptions as readonly string[]).includes(

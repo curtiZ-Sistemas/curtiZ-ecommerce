@@ -6,6 +6,10 @@ const sql = readFileSync(
   resolve(process.cwd(), "supabase/migrations/202608030003_public_storefront_product.sql"),
   "utf8"
 ).toLowerCase();
+const stabilitySql = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/202608080008_catalog_inventory_stability.sql"),
+  "utf8"
+).toLowerCase();
 
 describe("public storefront product migration", () => {
   it("exposes only active catalog data with a fixed search path", () => {
@@ -17,7 +21,7 @@ describe("public storefront product migration", () => {
 
   it("recalculates variant prices and available stock in the database", () => {
     expect(sql).toContain("coalesce(variant.price_override, product.base_price)");
-    expect(sql).toContain("inventory.available_quantity - inventory.reserved_quantity");
+    expect(stabilitySql).toContain("greatest(inventory.available_quantity, 0)");
     expect(sql).toContain(
       "grant execute on function public.get_catalog_product(text) to anon, authenticated"
     );

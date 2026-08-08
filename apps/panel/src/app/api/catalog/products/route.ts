@@ -127,7 +127,7 @@ const serializeProducts = (data: unknown) =>
         active: variant.active === true,
         available,
         reserved,
-        sellable: Math.max(available - reserved, 0)
+        sellable: Math.max(available, 0)
       };
     });
     return {

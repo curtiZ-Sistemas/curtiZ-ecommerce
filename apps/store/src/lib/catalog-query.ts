@@ -109,7 +109,7 @@ export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: str
 export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
   const normalizedQuery = filters.query?.toLocaleLowerCase("pt-BR");
   const categoryFiltered = demoProducts.filter((product) => {
-    if (product.stock <= 0) return false;
+    if (filters.inStock && product.stock <= 0) return false;
     if (
       filters.category &&
       product.category.toLocaleLowerCase("pt-BR") !== filters.category.toLocaleLowerCase("pt-BR")
@@ -159,22 +159,26 @@ export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
   });
 
   const products = [...filtered].sort((first, second) => {
-    if (filters.sort === "price_asc") return first.priceInCents - second.priceInCents;
-    if (filters.sort === "price_desc") return second.priceInCents - first.priceInCents;
+    let comparison = 0;
+    if (filters.sort === "price_asc") comparison = first.priceInCents - second.priceInCents;
+    if (filters.sort === "price_desc") comparison = second.priceInCents - first.priceInCents;
     if (filters.sort === "newest")
-      return Number(Boolean(second.featured)) - Number(Boolean(first.featured));
-    if (filters.sort === "best_sellers") return second.reviews - first.reviews;
-    if (filters.sort === "rating") return second.rating - first.rating;
+      comparison = Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+    if (filters.sort === "best_sellers") comparison = second.reviews - first.reviews;
+    if (filters.sort === "rating") comparison = second.rating - first.rating;
     if (filters.sort === "discount") {
       const discount = (product: Product) =>
         product.compareAtPriceInCents
           ? 1 - product.priceInCents / product.compareAtPriceInCents
           : 0;
-      return discount(second) - discount(first);
+      comparison = discount(second) - discount(first);
     }
-    if (filters.sort === "name_asc") return first.name.localeCompare(second.name, "pt-BR");
-    if (filters.sort === "name_desc") return second.name.localeCompare(first.name, "pt-BR");
-    return Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+    if (filters.sort === "name_asc") comparison = first.name.localeCompare(second.name, "pt-BR");
+    if (filters.sort === "name_desc") comparison = second.name.localeCompare(first.name, "pt-BR");
+    if (filters.sort === "relevant") {
+      comparison = Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+    }
+    return comparison || first.id.localeCompare(second.id);
   });
 
   const start = (filters.page - 1) * filters.pageSize;

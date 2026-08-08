@@ -9,6 +9,8 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     env:
+      APP_ENV: production
+      PANEL_DEPLOYMENT_MODE: separate
       NEXT_PUBLIC_STORE_URL: https://store.example.invalid
       NEXT_PUBLIC_PANEL_URL: https://panel.example.invalid
       NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.co
@@ -27,6 +29,7 @@ jobs:
       PII_ENCRYPTION_KEY: ci-pii-placeholder
       AUDIT_HASH_KEY: ci-audit-placeholder
       ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid
+      AUTH_COOKIE_DOMAIN: example.invalid
       DEMO_MODE: "false"
       REQUIRE_INTERNAL_MFA: "true"
     steps:

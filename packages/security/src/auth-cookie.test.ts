@@ -27,5 +27,21 @@ describe("cookies compartilhados entre aplicações", () => {
       httpOnly: true
     });
   });
-});
 
+  it("preserva as opções de segurança e expiração da sessão", () => {
+    expect(
+      sharedCookieOptions(
+        { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 3600 },
+        "panel.example.com:443",
+        ".example.com"
+      )
+    ).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 3600,
+      domain: ".example.com"
+    });
+  });
+});

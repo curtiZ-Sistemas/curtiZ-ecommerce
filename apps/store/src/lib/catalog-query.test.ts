@@ -45,13 +45,17 @@ describe("catalog query", () => {
     expect(result.products.every((product) => product.compareAtPriceInCents)).toBe(true);
   });
 
-  it("remove produtos sem saldo de todas as listagens públicas", () => {
+  it("mantém publicados sem saldo acessíveis e respeita o filtro de estoque", () => {
     const product = demoProducts[0]!;
     const originalStock = product.stock;
     product.stock = 0;
     try {
-      const result = queryDemoCatalog(parseCatalogFilters(new URLSearchParams()));
-      expect(result.products.some((item) => item.id === product.id)).toBe(false);
+      const allProducts = queryDemoCatalog(parseCatalogFilters(new URLSearchParams()));
+      const inStockProducts = queryDemoCatalog(
+        parseCatalogFilters(new URLSearchParams("estoque=1"))
+      );
+      expect(allProducts.products.some((item) => item.id === product.id)).toBe(true);
+      expect(inStockProducts.products.some((item) => item.id === product.id)).toBe(false);
     } finally {
       product.stock = originalStock;
     }

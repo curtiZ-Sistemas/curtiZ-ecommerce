@@ -330,16 +330,13 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
         const inventory = relation(entry.inventory);
         return (
           entry.active === true &&
-          readNumber(inventory, "available_quantity") -
-            readNumber(inventory, "reserved_quantity") >
-            0
+          readNumber(inventory, "available_quantity") > 0
         );
       }) ?? variants[0] ?? {};
     const inventory = relation(variant.inventory);
     const stock = Math.max(
       0,
-      readNumber(inventory, "available_quantity") -
-        readNumber(inventory, "reserved_quantity")
+      readNumber(inventory, "available_quantity")
     );
     return {
       productId: readString(row, "product_id"),

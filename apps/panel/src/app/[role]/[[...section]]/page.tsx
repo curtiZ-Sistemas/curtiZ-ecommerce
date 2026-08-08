@@ -50,6 +50,7 @@ export default async function RolePage({
     <PanelShell
       role={role}
       section={section}
+      userName={access.fullName}
       canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
     >
       <PageHeading role={role} section={section} />

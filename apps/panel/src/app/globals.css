@@ -3837,18 +3837,16 @@ button:not(:disabled):active,
 /* Centro jurídico e aplicação da marca original nos painéis. */
 .panel-brand img {
   width: 132px;
-  height: 44px;
+  height: auto;
   border-radius: 6px;
-  object-fit: cover;
-  object-position: center;
+  object-fit: contain;
 }
 
 .panel-selector-brand img {
   width: 180px;
-  height: 60px;
+  height: auto;
   border-radius: 8px;
-  object-fit: cover;
-  object-position: center;
+  object-fit: contain;
 }
 
 .legal-center {

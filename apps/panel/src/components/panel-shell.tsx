@@ -160,14 +160,25 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
+const searchRoutes: Record<PanelRole, string> = {
+  operacional: "/operacional/pedidos",
+  administracao: "/administracao/produtos",
+  gerencia: "/gerencia/pedidos-vendas",
+  tecnico: "/tecnico/logs"
+};
+
+export const panelSearchRoute = (role: PanelRole) => searchRoutes[role];
+
 export function PanelShell({
   role,
   section,
+  userName,
   canSwitchPanel = false,
   children
 }: {
   role: PanelRole;
   section: string;
+  userName?: string;
   canSwitchPanel?: boolean;
   children: React.ReactNode;
 }) {
@@ -323,7 +334,7 @@ export function PanelShell({
           </button>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
-              <form action={`/${role}/pedidos`}>
+              <form action={panelSearchRoute(role)}>
                 <label className="sr-only" htmlFor="panel-search">
                   Buscar no painel
                 </label>
@@ -353,9 +364,9 @@ export function PanelShell({
             </Link>
           ) : null}
           <div className="user-chip">
-            <div className="avatar">{roleLabels[role].slice(0, 1)}</div>
+            <div className="avatar">{(userName ?? roleLabels[role]).slice(0, 1)}</div>
             <div>
-              <strong>{roleLabels[role]}</strong>
+              <strong>{userName ?? roleLabels[role]}</strong>
               <small>{roleLabels[role]}</small>
             </div>
           </div>

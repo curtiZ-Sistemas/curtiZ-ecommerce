@@ -226,9 +226,8 @@ function mapDirectProducts(data: unknown): Product[] {
     const variants = readRows(row.product_variants).filter((variant) => variant.active === true);
     const stock = variants.reduce((sum, variant) => {
       const inventory = readRows(variant.inventory)[0];
-      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity") - readNumber(inventory ?? {}, "reserved_quantity"), 0);
+      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity"), 0);
     }, 0);
-    if (stock <= 0) return [];
     const images = readRows(row.product_images).sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true));
     const category = readRows(row.categories)[0] ?? (isUnknownRecord(row.categories) ? row.categories : {});
     const reviews = readRows(row.reviews).filter((review) => readString(review, "status") === "approved");
@@ -279,7 +278,7 @@ export async function queryPublicCatalog(
     p_price_min: null,
     p_price_max: null,
     p_promotion: filters.promotion,
-    p_in_stock: true,
+    p_in_stock: false,
     p_featured: filters.newest,
     p_min_rating: null,
     p_sort: filters.sort,

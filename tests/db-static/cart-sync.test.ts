@@ -6,6 +6,10 @@ const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/202608030002_authenticated_cart_sync.sql"),
   "utf8"
 );
+const stabilityMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/202608080008_catalog_inventory_stability.sql"),
+  "utf8"
+);
 
 describe("authenticated cart synchronization migration", () => {
   it("requires an authenticated user and ignores browser prices", () => {
@@ -25,7 +29,10 @@ describe("authenticated cart synchronization migration", () => {
 
   it("revalidates checkout lines against active variants and available stock", () => {
     expect(migration).toContain("public.validate_checkout_lines");
-    expect(migration).toContain("stock.available_quantity - stock.reserved_quantity");
+    expect(stabilityMigration).toContain(
+      "'greatest(stock.available_quantity - stock.reserved_quantity, 0)'"
+    );
+    expect(stabilityMigration).toContain("'greatest(stock.available_quantity, 0)'");
     expect(migration).toContain(
       "grant execute on function public.validate_checkout_lines(jsonb) to authenticated"
     );

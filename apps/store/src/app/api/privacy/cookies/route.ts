@@ -21,6 +21,30 @@ function allowedOrigin(request: NextRequest) {
   ]).has(origin);
 }
 
+function consentResponse(
+  request: NextRequest,
+  categories: Record<string, boolean>,
+  persisted: boolean
+) {
+  const response = NextResponse.json(
+    {
+      message: persisted
+        ? "Preferências registradas."
+        : "Preferências aplicadas neste dispositivo.",
+      persisted
+    },
+    { headers: { "cache-control": "no-store" } }
+  );
+  response.cookies.set("curtiz-cookie-preferences", JSON.stringify(categories), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol === "https:",
+    path: "/",
+    maxAge: 365 * 24 * 60 * 60
+  });
+  return response;
+}
+
 export async function GET() {
   const supabase = await createServerSupabaseClient();
   if (!supabase)
@@ -60,11 +84,8 @@ export async function POST(request: NextRequest) {
   if (!parsed.success || parsed.data.categories.essential !== true)
     return NextResponse.json({ message: "Preferências inválidas." }, { status: 400 });
   const supabase = await createServerSupabaseClient();
-  if (!supabase)
-    return NextResponse.json(
-      { message: "Não foi possível registrar as preferências." },
-      { status: 503 }
-    );
+  if (!supabase) return consentResponse(request, parsed.data.categories, false);
+
   const result = await supabase.rpc("record_cookie_consent", {
     p_id: parsed.data.id,
     p_policy_version: parsed.data.policyVersion,
@@ -72,21 +93,5 @@ export async function POST(request: NextRequest) {
     p_origin: parsed.data.origin,
     p_revoked: parsed.data.revoked
   });
-  if (result.error)
-    return NextResponse.json(
-      { message: "Não foi possível registrar as preferências." },
-      { status: 503 }
-    );
-  const response = NextResponse.json(
-    { message: "Preferências registradas." },
-    { headers: { "cache-control": "no-store" } }
-  );
-  response.cookies.set("curtiz-cookie-preferences", JSON.stringify(parsed.data.categories), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: request.nextUrl.protocol === "https:",
-    path: "/",
-    maxAge: 365 * 24 * 60 * 60
-  });
-  return response;
+  return consentResponse(request, parsed.data.categories, !result.error);
 }

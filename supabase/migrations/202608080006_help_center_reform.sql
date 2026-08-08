@@ -160,8 +160,10 @@ create table public.help_content_feedback (
 
 create index help_contents_category_status_idx on public.help_contents(category_id,status,priority desc);
 create index help_contents_search_idx on public.help_contents using gin(
-  to_tsvector('portuguese', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(body,'') || ' ' || array_to_string(keywords || synonyms,' '))
+  to_tsvector('portuguese'::regconfig, coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(body,''))
 );
+create index help_contents_keywords_idx on public.help_contents using gin(keywords);
+create index help_contents_synonyms_idx on public.help_contents using gin(synonyms);
 create index help_search_no_result_idx on public.help_search_events(created_at desc) where result_count = 0;
 create index help_feedback_content_idx on public.help_content_feedback(content_id,created_at desc);
 

@@ -23,7 +23,7 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     }
     const allowed = demoDestination(session.role);
     if (`/${role}` !== allowed) redirect(allowed);
-    return { userId: session.email, roles: session.roles, demo: true } as const;
+    return { userId: session.email, roles: session.roles, demo: true, fullName: session.fullName } as const;
   }
 
   const supabase = await createServerSupabaseClient();
@@ -35,7 +35,7 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
   }
 
   const [profileResult, roleResult] = await Promise.all([
-    supabase.from("profiles").select("status").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name,status").eq("id", user.id).maybeSingle(),
     supabase.from("user_roles").select("role").eq("user_id", user.id)
   ]);
   if (profileResult.error || roleResult.error || profileResult.data?.status !== "active") {
@@ -60,7 +60,16 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     }
   }
 
-  return { userId: user.id, roles: assignedRoles, demo: false } as const;
+  const profile = profileResult.data as { full_name?: unknown } | null;
+  return {
+    userId: user.id,
+    roles: assignedRoles,
+    demo: false,
+    fullName:
+      typeof profile?.full_name === "string" && profile.full_name.trim()
+        ? profile.full_name.trim()
+        : undefined
+  } as const;
 }
 
 export async function requirePanelSelectionAccess() {

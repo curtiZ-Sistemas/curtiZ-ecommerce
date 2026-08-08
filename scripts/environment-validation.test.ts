@@ -3,6 +3,7 @@ import { type EnvironmentValues, validateEnvironment } from "./environment-valid
 
 const stagingEnvironment: EnvironmentValues = {
   APP_ENV: "staging",
+  PANEL_DEPLOYMENT_MODE: "separate",
   NEXT_PUBLIC_STORE_URL: "https://store-staging.example.com",
   NEXT_PUBLIC_PANEL_URL: "https://panel-staging.example.com",
   NEXT_PUBLIC_SUPABASE_URL: "https://staging.supabase.co",
@@ -152,5 +153,15 @@ describe("environment validation", () => {
         NEXT_PUBLIC_PANEL_URL: "https://panel.outro-dominio.com"
       }).errors
     ).toContain("NEXT_PUBLIC_PANEL_URL não pertence a AUTH_COOKIE_DOMAIN");
+  });
+
+  it("permite a mesma origem somente quando o modo integrado é explícito", () => {
+    expect(
+      validateEnvironment("staging", {
+        ...stagingEnvironment,
+        PANEL_DEPLOYMENT_MODE: "integrated",
+        NEXT_PUBLIC_PANEL_URL: stagingEnvironment.NEXT_PUBLIC_STORE_URL
+      }).valid
+    ).toBe(true);
   });
 });
