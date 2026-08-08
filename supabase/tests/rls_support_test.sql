@@ -161,9 +161,10 @@ select throws_ok(
 reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is(
-  (select count(*) from public.support_conversations),
-  0::bigint,
+select throws_ok(
+  $$select count(*) from public.support_conversations$$,
+  '42501',
+  null,
   '15. Anônimo não lê conversas sensíveis'
 );
 
