@@ -467,12 +467,15 @@ create policy "support participants create attachment metadata" on public.suppor
 create or replace function private.rate_limit_support_write()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-  if tg_table_name='support_conversations' and (
-    select count(*) from public.support_conversations where customer_id=new.customer_id and created_at>now()-interval '15 minutes'
-  )>=5 then raise exception 'support rate limit exceeded' using errcode='54000'; end if;
-  if tg_table_name='support_messages' and (
-    select count(*) from public.support_messages where sender_id=new.sender_id and created_at>now()-interval '5 minutes'
-  )>=30 then raise exception 'message rate limit exceeded' using errcode='54000'; end if;
+  if tg_table_name='support_conversations' then
+    if (
+      select count(*) from public.support_conversations where customer_id=new.customer_id and created_at>now()-interval '15 minutes'
+    )>=5 then raise exception 'support rate limit exceeded' using errcode='54000'; end if;
+  elsif tg_table_name='support_messages' then
+    if (
+      select count(*) from public.support_messages where sender_id=new.sender_id and created_at>now()-interval '5 minutes'
+    )>=30 then raise exception 'message rate limit exceeded' using errcode='54000'; end if;
+  end if;
   return new;
 end;
 $$;

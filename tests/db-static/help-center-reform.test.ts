@@ -40,6 +40,7 @@ describe("help center reform migration", () => {
     expect(sql).toContain("record_help_search");
     expect(sql).toContain("record_help_feedback");
     expect(sql).toContain("rate_limit_support_write");
+    expect(sql).toContain("elsif tg_table_name='support_messages' then");
     expect(sql).toContain("support participants read attachment files");
     expect(sql).toContain("support participants create attachment metadata");
   });
