@@ -55,6 +55,12 @@ describe("help center reform migration", () => {
     expect(sql).toContain("create index help_contents_synonyms_idx");
   });
 
+  it("usa operadores JSONB validos na busca publicada", () => {
+    expect(sql).not.toMatch(/snapshot#'/u);
+    expect(sql).toContain("snapshot#>'{content,keywords}'");
+    expect(sql).toContain("snapshot#>'{content,audiences}'");
+  });
+
   it("mantém decisões sensíveis no servidor e com auditoria", () => {
     expect(sql).toContain("author cannot approve own content");
     expect(sql).toContain("private.require_permission('support_content.publish')");

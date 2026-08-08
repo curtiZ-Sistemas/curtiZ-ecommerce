@@ -373,14 +373,14 @@ language sql stable security definer set search_path = '' as $$
     select view.id,view.slug,view.content_type,view.snapshot#>>'{content,title}' title,
       view.snapshot#>>'{content,summary}' summary,view.snapshot#>>'{content,body}' body,
       view.category_name,view.category_slug,
-      coalesce(array(select jsonb_array_elements_text(view.snapshot#'{content,keywords}')),'{}') keywords,
-      view.snapshot#'{content,related_action}' related_action,view.snapshot#'{content,media}' media,
+      coalesce(array(select jsonb_array_elements_text(view.snapshot#>'{content,keywords}')),'{}') keywords,
+      view.snapshot#>'{content,related_action}' related_action,view.snapshot#>'{content,media}' media,
       view.snapshot->'related' related,view.version,view.version_created_at updated_at,
       case when trim(p_query)='' then (view.priority::real + least(view.views_count,1000)::real/1000)
         else ts_rank(to_tsvector('portuguese',coalesce(view.snapshot#>>'{content,title}','')||' '||coalesce(view.snapshot#>>'{content,summary}','')||' '||coalesce(view.snapshot#>>'{content,body}','')||' '||coalesce(view.snapshot#>>'{content,keywords}','')||' '||coalesce(view.snapshot#>>'{content,synonyms}','')),
           plainto_tsquery('portuguese',trim(p_query)))::real end rank
     from public.published_help_contents view
-    where p_audience=any(coalesce(array(select jsonb_array_elements_text(view.snapshot#'{content,audiences}')),'{}'))
+    where p_audience=any(coalesce(array(select jsonb_array_elements_text(view.snapshot#>'{content,audiences}')),'{}'))
       and (trim(p_query)='' or to_tsvector('portuguese',coalesce(view.snapshot#>>'{content,title}','')||' '||coalesce(view.snapshot#>>'{content,summary}','')||' '||coalesce(view.snapshot#>>'{content,body}','')||' '||coalesce(view.snapshot#>>'{content,keywords}','')||' '||coalesce(view.snapshot#>>'{content,synonyms}','')) @@ plainto_tsquery('portuguese',trim(p_query))
         or view.snapshot#>>'{content,title}' ilike '%'||trim(p_query)||'%')
   ) select candidates.*,count(*) over() total_count from candidates
