@@ -297,7 +297,7 @@ export function CustomerAccount({
             />
           )}
           {activeSection === "atendimento" && (
-            <SupportCenter accountMode startNew={startNewSupport} />
+            <SupportCenter startNew={startNewSupport} />
           )}
         </section>
       </div>

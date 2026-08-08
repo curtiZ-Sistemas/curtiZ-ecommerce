@@ -2,6 +2,7 @@ import {
   type SupportCategory,
   type SupportConversationView,
   type SupportMessageView,
+  type SupportPriority,
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
@@ -284,6 +285,24 @@ export function setDemoSupportStatus(
     throw new DemoSupportError("Reabra o atendimento antes de alterar seu status.", 409);
   }
   conversation.status = status;
+  conversation.updatedAt = now();
+  return toView(conversation, actor);
+}
+
+export function setDemoSupportPriority(
+  actor: DemoSupportActor,
+  conversationId: string,
+  priority: SupportPriority,
+  reason: string
+) {
+  const conversation = findAccessible(conversationId, actor);
+  if (actor.role !== "manager" && conversation.assignedEmail !== actor.email) {
+    throw new DemoSupportError("Somente o responsÃ¡vel ou a GerÃªncia pode alterar a prioridade.", 403);
+  }
+  if (reason.trim().length < 5) {
+    throw new DemoSupportError("Informe o motivo da alteraÃ§Ã£o.", 400);
+  }
+  conversation.priority = priority;
   conversation.updatedAt = now();
   return toView(conversation, actor);
 }

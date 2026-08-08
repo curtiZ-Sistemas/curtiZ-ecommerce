@@ -32,3 +32,15 @@ Aceites ficam ligados à versão imutável e ao contexto. Preferências de cooki
 identificador aleatório, versão, categorias, origem e revogação; cookies opcionais partem desligados.
 Solicitações de titulares recebem protocolo e exigem verificação de identidade antes de resposta ou
 qualquer providência sobre dados. Exclusões nunca são automáticas quando houver retenção aplicável.
+
+## Central de Ajuda e atendimento
+
+Rascunhos da ajuda são separados do snapshot público imutável. Criação, revisão e publicação usam
+permissões distintas; o autor não aprova o próprio conteúdo. Busca pública consulta apenas versões
+publicadas ou agendadas já vigentes e registra termos sem resultado após remover padrões de e-mail e
+números longos.
+
+Chamados continuam protegidos por propriedade ou atribuição explícita. Anexos ficam no bucket
+privado, aceitam somente JPG, PNG, WebP e PDF de até 10 MB e têm assinatura binária conferida no
+servidor. A URL assinada curta só é emitida depois que `scan_status` estiver como `clean`; arquivos
+pendentes não são entregues. Mensagens e abertura de chamados possuem limite de frequência no banco.

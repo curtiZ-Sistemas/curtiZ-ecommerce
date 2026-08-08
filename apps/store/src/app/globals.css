@@ -7081,6 +7081,499 @@ body:has(.representative-portal-layout) > .demo-banner {
   display: none;
 }
 
+/* Central de Ajuda */
+
+.help-center-v2 {
+  padding-bottom: 96px;
+}
+
+.help-search-hero {
+  padding: 56px max(20px, calc((100vw - 1180px) / 2));
+  color: var(--white);
+  background: var(--brand-950);
+}
+
+.help-search-hero h1 {
+  max-width: 760px;
+  margin: 8px 0;
+  color: inherit;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+}
+
+.help-search-hero > p:not(.eyebrow) {
+  color: var(--brand-100);
+}
+
+.help-main-search {
+  width: min(100%, 760px);
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 0 18px;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--neutral-700);
+}
+
+.help-main-search input {
+  min-width: 0;
+  height: 56px;
+  border: 0;
+  outline: 0;
+  color: var(--neutral-950);
+  font: inherit;
+}
+
+.help-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.help-quick-actions a {
+  padding: 8px 11px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.78rem;
+}
+
+.help-category-section,
+.help-discovery,
+.help-results,
+.help-reader,
+.help-ticket-section {
+  width: min(calc(100% - 40px), 1180px);
+  margin-inline: auto;
+  padding-top: 44px;
+}
+
+.help-discovery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.help-discovery > article {
+  padding: 18px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  background: white;
+}
+
+.help-discovery h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.help-discovery button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--neutral-150);
+  background: transparent;
+  color: var(--neutral-850);
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-discovery button svg {
+  width: 16px;
+  flex: 0 0 auto;
+}
+
+.help-section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.help-section-title h2,
+.help-section-title p {
+  margin: 4px 0 0;
+}
+
+.help-category-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.help-category-grid button {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  background: white;
+  color: var(--neutral-850);
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-category-grid button:hover,
+.help-category-grid button.active {
+  border-color: var(--brand-700);
+  background: var(--brand-50);
+  color: var(--brand-900);
+}
+
+.help-category-grid button svg:last-child {
+  width: 16px;
+}
+
+.help-result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.help-result-grid article {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  background: white;
+}
+
+.help-result-grid article > span {
+  color: var(--brand-700);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.help-result-grid h3 {
+  margin: 10px 0 7px;
+  font-size: 1.05rem;
+}
+
+.help-result-grid p {
+  flex: 1;
+  margin: 0 0 14px;
+  color: var(--neutral-650);
+  line-height: 1.55;
+}
+
+.help-result-grid mark {
+  padding: 0 2px;
+  background: #ffe7a8;
+}
+
+.help-result-skeleton {
+  min-height: 210px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--neutral-100), var(--neutral-50), var(--neutral-100));
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.2s infinite;
+}
+
+.help-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 50px 20px;
+  border: 1px dashed var(--neutral-300);
+  text-align: center;
+}
+
+.help-empty h3,
+.help-empty p {
+  margin: 0;
+}
+
+.help-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.help-pagination button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--neutral-300);
+  background: white;
+}
+
+.help-reader {
+  position: relative;
+  margin-top: 44px;
+  padding: 32px;
+  border: 1px solid var(--neutral-250);
+  border-left: 4px solid var(--brand-700);
+  background: white;
+}
+
+.help-reader-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 0;
+  background: transparent;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.help-reader-summary {
+  color: var(--neutral-650);
+  font-size: 1.05rem;
+}
+
+.help-reader-body {
+  max-width: 780px;
+  line-height: 1.75;
+}
+
+.help-reader footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--neutral-200);
+  font-size: 0.78rem;
+}
+
+.help-related-content {
+  display: grid;
+  gap: 7px;
+  max-width: 780px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--neutral-200);
+}
+
+.help-related-content h3 {
+  margin: 0 0 5px;
+}
+
+.help-related-content button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--neutral-150);
+  background: transparent;
+  color: var(--brand-800);
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-reader footer div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-reader footer button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--neutral-300);
+  border-radius: 6px;
+  background: white;
+}
+
+.help-ticket-section {
+  scroll-margin-top: 100px;
+}
+
+.support-file-field {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 5px 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px dashed var(--neutral-300);
+  border-radius: 6px;
+}
+
+.support-file-field input,
+.support-file-field small {
+  grid-column: 2;
+}
+
+.customer-message a,
+.support-attachment-pending {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 0.72rem;
+}
+
+.customer-message a svg,
+.support-attachment-pending svg {
+  width: 15px;
+}
+
+.support-resolution-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+}
+
+.support-resolution-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.support-resolution-actions > div button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--neutral-250);
+  background: white;
+}
+
+.support-resolution-actions svg {
+  width: 16px;
+}
+
+.help-chat-window {
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+}
+
+.help-chat-quick-actions {
+  display: flex;
+  gap: 6px;
+  padding: 9px 10px;
+  overflow-x: auto;
+  border-top: 1px solid var(--neutral-200);
+  scrollbar-width: thin;
+}
+
+.help-chat-quick-actions button,
+.help-chat-quick-actions a {
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid var(--neutral-250);
+  border-radius: 6px;
+  background: white;
+  color: var(--brand-850);
+  font-size: 0.66rem;
+  cursor: pointer;
+}
+
+.chat-message > div p {
+  margin: 0;
+}
+
+.chat-message > div a {
+  display: block;
+  margin-top: 4px;
+  color: var(--brand-800);
+  font-size: 0.6rem;
+  line-height: 1.35;
+  text-decoration: underline;
+}
+
+@media (max-width: 850px) {
+  .help-category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .help-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .help-discovery {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .help-search-hero {
+    padding: 32px 16px;
+  }
+
+  .help-category-section,
+  .help-discovery,
+  .help-results,
+  .help-reader,
+  .help-ticket-section {
+    width: min(calc(100% - 28px), 1180px);
+  }
+
+  .help-category-grid,
+  .help-result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .help-section-title,
+  .help-reader footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .help-reader {
+    padding: 48px 18px 22px;
+  }
+
+  .support-resolution-actions,
+  .support-resolution-actions > div {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .help-widget {
+    right: 10px;
+    bottom: max(76px, calc(env(safe-area-inset-bottom) + 68px));
+    left: 10px;
+  }
+
+  .help-chat-window {
+    width: 100%;
+    height: min(680px, calc(100dvh - max(92px, env(safe-area-inset-bottom))));
+    border-radius: 10px;
+  }
+
+  .help-launcher span {
+    display: none;
+  }
+
+  .help-launcher {
+    width: 50px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  body:has(.checkout-page) .help-widget,
+  body:has(.cart-page) .help-widget {
+    bottom: max(132px, calc(env(safe-area-inset-bottom) + 124px));
+  }
+}
+
 .representative-portal-layout {
   --portal-brand: #d83c2e;
   display: grid;

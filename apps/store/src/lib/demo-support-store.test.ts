@@ -5,6 +5,7 @@ import {
   createDemoSupport,
   DemoSupportError,
   listDemoSupport,
+  setDemoSupportPriority,
   transferDemoSupport
 } from "./demo-support-store";
 
@@ -93,5 +94,14 @@ describe("demo support authorization and workflow", () => {
     expect(() => addDemoSupportMessage(operational, ticket.id, "Nota proibida.", true)).toThrow(
       DemoSupportError
     );
+  });
+
+  it("persists priority changes instead of simulating success", () => {
+    const ticket = createTicket();
+    claimDemoSupport(admin, ticket.id);
+
+    setDemoSupportPriority(admin, ticket.id, "urgent", "Cliente aguarda uma correÃ§Ã£o imediata.");
+
+    expect(listDemoSupport(admin).find((item) => item.id === ticket.id)?.priority).toBe("urgent");
   });
 });

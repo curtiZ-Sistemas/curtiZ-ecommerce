@@ -10,8 +10,10 @@ import { createBrowserClient } from "@supabase/ssr";
 import {
   ArrowUpRight,
   CircleCheck,
+  FileText,
   Inbox,
   LoaderCircle,
+  Paperclip,
   RefreshCw,
   Search,
   Send,
@@ -26,6 +28,7 @@ type SupportResponse = {
   conversations?: SupportConversationView[];
   team?: SupportTeamMember[];
   message?: string;
+  quickReplies?: Array<{ id: string; title: string; shortcut: string; content: string }>;
 };
 
 const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
@@ -72,6 +75,9 @@ const formatDateTime = (value: string) =>
 export function SupportConsole({ role }: { role: PanelRole }) {
   const [conversations, setConversations] = useState<SupportConversationView[]>([]);
   const [team, setTeam] = useState<SupportTeamMember[]>([]);
+  const [quickReplies, setQuickReplies] = useState<NonNullable<SupportResponse["quickReplies"]>>(
+    []
+  );
   const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | SupportStatus>("all");
@@ -80,6 +86,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [transferOpen, setTransferOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -92,6 +99,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
       if (!response.ok || !result.ok) throw new Error(result.message ?? "support_load_failed");
       setConversations(result.conversations ?? []);
       setTeam(result.team ?? []);
+      setQuickReplies(result.quickReplies ?? []);
       setSelectedId((current) => {
         if (current && result.conversations?.some((item) => item.id === current)) return current;
         return result.conversations?.[0]?.id ?? "";
@@ -188,31 +196,49 @@ export function SupportConsole({ role }: { role: PanelRole }) {
     event.preventDefault();
     if (!selected || processing || !canReply) return;
     const form = new FormData(event.currentTarget);
-    const message = form.get("message");
+    const message = replyText;
     const internal = form.get("internal") === "on";
+    const file = form.get("file");
     setProcessing("message");
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`${storeUrl()}/api/support`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "message",
-          conversationId: selected.id,
-          message,
-          internal
-        })
-      });
+      const hasFile = file instanceof File && file.size > 0;
+      const attachmentBody = new FormData();
+      if (hasFile) {
+        attachmentBody.set("conversationId", selected.id);
+        attachmentBody.set("message", message);
+        attachmentBody.set("internal", String(internal));
+        attachmentBody.set("file", file);
+      }
+      const response = await fetch(
+        `${storeUrl()}${hasFile ? "/api/support/attachments" : "/api/support"}`,
+        {
+          method: "POST",
+          credentials: "include",
+          ...(hasFile
+            ? { body: attachmentBody }
+            : {
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  action: "message",
+                  conversationId: selected.id,
+                  message,
+                  internal
+                })
+              })
+        }
+      );
       const result = (await response.json()) as SupportResponse;
       if (!response.ok || !result.ok) {
         setError(result.message ?? "Não foi possível enviar a mensagem.");
         return;
       }
-      setConversations(result.conversations ?? []);
+      if (hasFile) await load(true);
+      else setConversations(result.conversations ?? []);
       setNotice(internal ? "Nota interna registrada." : "Resposta enviada ao cliente.");
       event.currentTarget.reset();
+      setReplyText("");
     } catch {
       setError("Conexão interrompida. A mensagem não foi enviada.");
     } finally {
@@ -248,9 +274,19 @@ export function SupportConsole({ role }: { role: PanelRole }) {
         <header className="support-section-heading">
           <div>
             <h2>Fila de atendimentos</h2>
-            <p>{role === "operacional" ? "Somente chamados transferidos para você." : "Conversas autorizadas para seu perfil."}</p>
+            <p>
+              {role === "operacional"
+                ? "Somente chamados transferidos para você."
+                : "Conversas autorizadas para seu perfil."}
+            </p>
           </div>
-          <button className="icon-button" type="button" onClick={() => void load()} aria-label="Atualizar fila" disabled={loading}>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void load()}
+            aria-label="Atualizar fila"
+            disabled={loading}
+          >
             <RefreshCw className={loading ? "spin" : ""} />
           </button>
         </header>
@@ -258,24 +294,58 @@ export function SupportConsole({ role }: { role: PanelRole }) {
           <label>
             <span className="sr-only">Buscar chamado</span>
             <Search />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, assunto ou cliente" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Código, assunto ou cliente"
+            />
           </label>
-          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="Filtrar por status">
-            {statusFilters.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value as typeof status)}
+            aria-label="Filtrar por status"
+          >
+            {statusFilters.map((item) => (
+              <option value={item.value} key={item.value}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </div>
         {loading ? (
-          <div className="support-state"><LoaderCircle className="spin" /> Carregando fila…</div>
+          <div className="support-state">
+            <LoaderCircle className="spin" /> Carregando fila…
+          </div>
         ) : error && conversations.length === 0 ? (
-          <div className="support-state support-error"><p>{error}</p><button className="secondary-button" onClick={() => void load()}>Tentar novamente</button></div>
+          <div className="support-state support-error">
+            <p>{error}</p>
+            <button className="secondary-button" onClick={() => void load()}>
+              Tentar novamente
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
-          <div className="support-state"><Inbox /><strong>Nenhum atendimento encontrado</strong><span>A fila será atualizada automaticamente.</span></div>
+          <div className="support-state">
+            <Inbox />
+            <strong>Nenhum atendimento encontrado</strong>
+            <span>A fila será atualizada automaticamente.</span>
+          </div>
         ) : (
           <nav className="conversation-list" aria-label="Atendimentos">
             {filtered.map((conversation) => (
-              <button className={conversation.id === selectedId ? "active" : ""} key={conversation.id} onClick={() => setSelectedId(conversation.id)}>
-                <span><strong>{conversation.subject}</strong><small>{conversation.publicCode} · {conversation.customerName}</small></span>
-                <span className={`status ${conversation.status}`}>{supportStatusLabels[conversation.status]}</span>
+              <button
+                className={conversation.id === selectedId ? "active" : ""}
+                key={conversation.id}
+                onClick={() => setSelectedId(conversation.id)}
+              >
+                <span>
+                  <strong>{conversation.subject}</strong>
+                  <small>
+                    {conversation.publicCode} · {conversation.customerName}
+                  </small>
+                </span>
+                <span className={`status ${conversation.status}`}>
+                  {supportStatusLabels[conversation.status]}
+                </span>
               </button>
             ))}
           </nav>
@@ -284,25 +354,75 @@ export function SupportConsole({ role }: { role: PanelRole }) {
 
       <section className="panel-card support-workspace">
         {!selected ? (
-          <div className="support-state"><Inbox /><strong>Selecione um atendimento</strong><span>As mensagens e ações aparecerão aqui.</span></div>
+          <div className="support-state">
+            <Inbox />
+            <strong>Selecione um atendimento</strong>
+            <span>As mensagens e ações aparecerão aqui.</span>
+          </div>
         ) : (
           <>
             <header className="support-conversation-heading">
-              <div><p className="eyebrow">{selected.publicCode}</p><h2>{selected.subject}</h2><p>{selected.customerName}{selected.relatedOrderCode ? ` · ${selected.relatedOrderCode}` : ""}</p></div>
-              <span className={`status ${selected.status}`}>{supportStatusLabels[selected.status]}</span>
+              <div>
+                <p className="eyebrow">{selected.publicCode}</p>
+                <h2>{selected.subject}</h2>
+                <p>
+                  {selected.customerName}
+                  {selected.relatedOrderCode ? ` · ${selected.relatedOrderCode}` : ""}
+                </p>
+              </div>
+              <span className={`status ${selected.status}`}>
+                {supportStatusLabels[selected.status]}
+              </span>
             </header>
-            {error && <p className="support-feedback error" role="alert">{error}</p>}
-            {notice && <p className="support-feedback success" role="status"><CircleCheck /> {notice}</p>}
+            {error && (
+              <p className="support-feedback error" role="alert">
+                {error}
+              </p>
+            )}
+            {notice && (
+              <p className="support-feedback success" role="status">
+                <CircleCheck /> {notice}
+              </p>
+            )}
             <div className="support-owner-row">
-              <span>{selected.assignedName ? `Responsável: ${selected.assignedName}` : "Aguardando responsável"}</span>
-              {canClaim && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "claim", conversationId: selected.id }, "Atendimento assumido com sucesso.")}>
-                {processing === "claim" ? <LoaderCircle className="spin" /> : <UserRoundCheck />} Assumir
-              </button>}
+              <span>
+                {selected.assignedName
+                  ? `Responsável: ${selected.assignedName}`
+                  : "Aguardando responsável"}
+              </span>
+              {canClaim && (
+                <button
+                  className="secondary-button"
+                  disabled={Boolean(processing)}
+                  onClick={() =>
+                    void update(
+                      { action: "claim", conversationId: selected.id },
+                      "Atendimento assumido com sucesso."
+                    )
+                  }
+                >
+                  {processing === "claim" ? <LoaderCircle className="spin" /> : <UserRoundCheck />}{" "}
+                  Assumir
+                </button>
+              )}
             </div>
             <div className="message-thread" aria-live="polite">
               {selected.messages.map((message) => (
                 <article className={`message ${message.author}`} key={message.id}>
                   <p>{message.content}</p>
+                  {message.attachments?.map((attachment) =>
+                    attachment.available && attachment.url ? (
+                      <a href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
+                        <FileText />
+                        {attachment.name}
+                      </a>
+                    ) : (
+                      <span key={attachment.id}>
+                        <FileText />
+                        {attachment.name} · em verificação
+                      </span>
+                    )
+                  )}
                   <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
                 </article>
               ))}
@@ -310,29 +430,193 @@ export function SupportConsole({ role }: { role: PanelRole }) {
             {canReply ? (
               <form className="support-reply-form" onSubmit={(event) => void sendMessage(event)}>
                 <label htmlFor="support-reply">Responder</label>
-                <textarea id="support-reply" name="message" required maxLength={4000} placeholder="Escreva uma resposta objetiva e segura." />
-                {canAddInternal && <label className="support-internal-toggle"><input type="checkbox" name="internal" /> Registrar como nota interna (invisível ao cliente)</label>}
+                {quickReplies.length > 0 && (
+                  <select
+                    aria-label="Inserir resposta rápida"
+                    defaultValue=""
+                    onChange={(event) => {
+                      const selectedReply = quickReplies.find(
+                        (item) => item.id === event.target.value
+                      );
+                      if (selectedReply) setReplyText(selectedReply.content);
+                      event.target.value = "";
+                    }}
+                  >
+                    <option value="">Usar resposta rápida…</option>
+                    {quickReplies.map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.shortcut} · {item.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <textarea
+                  id="support-reply"
+                  name="message"
+                  required
+                  maxLength={4000}
+                  value={replyText}
+                  onChange={(event) => setReplyText(event.target.value)}
+                  placeholder="Escreva uma resposta objetiva e segura."
+                />
+                <label className="support-file-field">
+                  <Paperclip /> Anexo opcional
+                  <input
+                    name="file"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                  />
+                  <small>JPG, PNG, WebP ou PDF de até 10 MB.</small>
+                </label>
+                {canAddInternal && (
+                  <label className="support-internal-toggle">
+                    <input type="checkbox" name="internal" /> Registrar como nota interna (invisível
+                    ao cliente)
+                  </label>
+                )}
                 <button className="primary-button" disabled={Boolean(processing)}>
-                  {processing === "message" ? <LoaderCircle className="spin" /> : <Send />} {processing === "message" ? "Enviando…" : "Enviar"}
+                  {processing === "message" ? <LoaderCircle className="spin" /> : <Send />}{" "}
+                  {processing === "message" ? "Enviando…" : "Enviar"}
                 </button>
               </form>
             ) : (
-              <p className="support-feedback">Assuma o atendimento ou aguarde uma transferência para responder.</p>
+              <p className="support-feedback">
+                Assuma o atendimento ou aguarde uma transferência para responder.
+              </p>
             )}
             {canManage && (
               <div className="support-actions">
-                {(isAdmin || isManager) && team.length > 0 && <button className="secondary-button" onClick={() => setTransferOpen((current) => !current)}><ArrowUpRight /> Transferir</button>}
-                {!(["resolved", "closed"] as SupportStatus[]).includes(selected.status) && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "resolved", reason: "Solicitação concluída pela equipe" }, "Atendimento marcado como resolvido.")}><CircleCheck /> Resolver</button>}
-                {selected.status === "resolved" && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "closed", reason: "Atendimento encerrado após resolução" }, "Atendimento encerrado.")}>Encerrar</button>}
-                {selected.status === "closed" && isManager && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void update({ action: "status", conversationId: selected.id, status: "reopened", reason: "Atendimento reaberto pela Gerência" }, "Atendimento reaberto.")}>Reabrir</button>}
+                <label>
+                  Prioridade
+                  <select
+                    value={selected.priority}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      const reason = window.prompt("Motivo da alteração de prioridade:");
+                      if (reason)
+                        void update(
+                          {
+                            action: "priority",
+                            conversationId: selected.id,
+                            priority: next,
+                            reason
+                          },
+                          "Prioridade atualizada."
+                        );
+                    }}
+                  >
+                    <option value="low">Baixa</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">Alta</option>
+                    <option value="urgent">Urgente</option>
+                  </select>
+                </label>
+                {(isAdmin || isManager) && team.length > 0 && (
+                  <button
+                    className="secondary-button"
+                    onClick={() => setTransferOpen((current) => !current)}
+                  >
+                    <ArrowUpRight /> Transferir
+                  </button>
+                )}
+                {!(["resolved", "closed"] as SupportStatus[]).includes(selected.status) && (
+                  <button
+                    className="secondary-button"
+                    disabled={Boolean(processing)}
+                    onClick={() =>
+                      void update(
+                        {
+                          action: "status",
+                          conversationId: selected.id,
+                          status: "resolved",
+                          reason: "Solicitação concluída pela equipe"
+                        },
+                        "Atendimento marcado como resolvido."
+                      )
+                    }
+                  >
+                    <CircleCheck /> Resolver
+                  </button>
+                )}
+                {selected.status === "resolved" && (
+                  <button
+                    className="secondary-button"
+                    disabled={Boolean(processing)}
+                    onClick={() =>
+                      void update(
+                        {
+                          action: "status",
+                          conversationId: selected.id,
+                          status: "closed",
+                          reason: "Atendimento encerrado após resolução"
+                        },
+                        "Atendimento encerrado."
+                      )
+                    }
+                  >
+                    Encerrar
+                  </button>
+                )}
+                {selected.status === "closed" && isManager && (
+                  <button
+                    className="secondary-button"
+                    disabled={Boolean(processing)}
+                    onClick={() =>
+                      void update(
+                        {
+                          action: "status",
+                          conversationId: selected.id,
+                          status: "reopened",
+                          reason: "Atendimento reaberto pela Gerência"
+                        },
+                        "Atendimento reaberto."
+                      )
+                    }
+                  >
+                    Reabrir
+                  </button>
+                )}
               </div>
             )}
-            {transferOpen && <form className="support-transfer-form" onSubmit={(event) => void transfer(event)}>
-              <h3>Transferir atendimento</h3>
-              <label>Colaborador<select name="target" required defaultValue=""><option value="" disabled>Selecione</option>{team.map((member) => <option value={member.id} key={member.id}>{member.fullName} · {roleLabels[member.role]}</option>)}</select></label>
-              <label>Motivo<textarea name="reason" required minLength={10} maxLength={500} /></label>
-              <div className="support-actions"><button className="secondary-button" type="button" onClick={() => setTransferOpen(false)}>Cancelar</button><button className="primary-button" disabled={Boolean(processing)}>{processing === "transfer" ? <LoaderCircle className="spin" /> : <ArrowUpRight />} Confirmar transferência</button></div>
-            </form>}
+            {transferOpen && (
+              <form className="support-transfer-form" onSubmit={(event) => void transfer(event)}>
+                <h3>Transferir atendimento</h3>
+                <label>
+                  Colaborador
+                  <select name="target" required defaultValue="">
+                    <option value="" disabled>
+                      Selecione
+                    </option>
+                    {team.map((member) => (
+                      <option value={member.id} key={member.id}>
+                        {member.fullName} · {roleLabels[member.role]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Motivo
+                  <textarea name="reason" required minLength={10} maxLength={500} />
+                </label>
+                <div className="support-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setTransferOpen(false)}
+                  >
+                    Cancelar
+                  </button>
+                  <button className="primary-button" disabled={Boolean(processing)}>
+                    {processing === "transfer" ? (
+                      <LoaderCircle className="spin" />
+                    ) : (
+                      <ArrowUpRight />
+                    )}{" "}
+                    Confirmar transferência
+                  </button>
+                </div>
+              </form>
+            )}
           </>
         )}
       </section>

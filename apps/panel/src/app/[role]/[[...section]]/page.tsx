@@ -15,6 +15,7 @@ import { ManagerResourceManager } from "@/components/manager-resource-manager";
 import { TechnicalOverview } from "@/components/technical-overview";
 import { TechnicalResourceManager } from "@/components/technical-resource-manager";
 import { LegalCenter, OperationalLegalLinks } from "@/components/legal-center";
+import { HelpContentCenter } from "@/components/help-content-center";
 import { requirePanelAccess } from "@/lib/auth";
 import { isAdminResource } from "@/lib/admin-resources";
 import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
@@ -46,9 +47,15 @@ export default async function RolePage({
   ]);
 
   return (
-    <PanelShell role={role} section={section} canSwitchPanel={hasMultipleSelectablePanels(access.roles)}>
+    <PanelShell
+      role={role}
+      section={section}
+      canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
+    >
       <PageHeading role={role} section={section} />
-      {role === "administracao" ? (
+      {section === "central-ajuda" && role !== "tecnico" ? (
+        <HelpContentCenter />
+      ) : role === "administracao" ? (
         <Administration section={section} />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
@@ -113,7 +120,8 @@ function Administration({ section }: { section: string }) {
 }
 
 function Management({ section }: { section: string }) {
-  if (!section || section === "visao-estrategica" || section === "alertas") return <ManagerDashboard />;
+  if (!section || section === "visao-estrategica" || section === "alertas")
+    return <ManagerDashboard />;
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;
@@ -132,7 +140,12 @@ function Management({ section }: { section: string }) {
   const resource = aliases[section] ?? section;
   if (isManagerResource(resource)) return <ManagerResourceManager resource={resource} />;
 
-  return <div className="admin-empty-state"><h2>Área gerencial não encontrada</h2><p>Escolha uma opção disponível no menu.</p></div>;
+  return (
+    <div className="admin-empty-state">
+      <h2>Área gerencial não encontrada</h2>
+      <p>Escolha uma opção disponível no menu.</p>
+    </div>
+  );
 }
 
 function Technical({ section }: { section: string }) {
@@ -146,11 +159,26 @@ function ManagerApprovals() {
       <h2>Central de aprovações</h2>
       <p>As decisões permanecem nos fluxos de origem e são validadas no servidor.</p>
       <div className="manager-approval-links">
-        <Link href="/gerencia/solicitacoes-representantes"><strong>Solicitações de representantes</strong><small>Documentos, análise e decisão justificada</small></Link>
-        <Link href="/gerencia/conteudo-loja"><strong>Conteúdo da loja</strong><small>Publicação, agenda e restauração de versões</small></Link>
-        <Link href="/gerencia/criativos"><strong>Criativos</strong><small>Aprovação simples ou dupla conforme a campanha</small></Link>
-        <Link href="/gerencia/campanhas"><strong>Campanhas</strong><small>Agenda e estados persistidos de publicação</small></Link>
-        <Link href="/gerencia/fechamentos"><strong>Fechamentos de comissão</strong><small>Aprovar, bloquear ou reabrir com auditoria</small></Link>
+        <Link href="/gerencia/solicitacoes-representantes">
+          <strong>Solicitações de representantes</strong>
+          <small>Documentos, análise e decisão justificada</small>
+        </Link>
+        <Link href="/gerencia/conteudo-loja">
+          <strong>Conteúdo da loja</strong>
+          <small>Publicação, agenda e restauração de versões</small>
+        </Link>
+        <Link href="/gerencia/criativos">
+          <strong>Criativos</strong>
+          <small>Aprovação simples ou dupla conforme a campanha</small>
+        </Link>
+        <Link href="/gerencia/campanhas">
+          <strong>Campanhas</strong>
+          <small>Agenda e estados persistidos de publicação</small>
+        </Link>
+        <Link href="/gerencia/fechamentos">
+          <strong>Fechamentos de comissão</strong>
+          <small>Aprovar, bloquear ou reabrir com auditoria</small>
+        </Link>
       </div>
     </section>
   );

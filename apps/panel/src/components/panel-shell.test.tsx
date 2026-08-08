@@ -19,5 +19,6 @@ describe("PanelShell multipainel", () => {
     const markup = renderToStaticMarkup(<PanelShell role="operacional" section=""><p>Conteúdo</p></PanelShell>);
     expect(markup).toContain("logo-curtiz.png");
     expect(markup).toContain("Políticas oficiais");
+    expect(markup).toContain("Central de Ajuda");
   });
 });

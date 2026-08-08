@@ -54,6 +54,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Produtos danificados", "danificados", ShieldCheck],
     ["Ocorrências", "ocorrencias", Wrench],
     ["Atendimento atribuído", "atendimentos", Headphones],
+    ["Central de Ajuda", "central-ajuda", LifeBuoy],
     ["Representantes", "representantes", Users],
     ["Pendências", "pendencias", FileClock],
     ["Relatórios operacionais", "relatorios-operacionais", ChartNoAxesCombined],
@@ -83,6 +84,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Criativos", "criativos", PanelsTopLeft],
     ["Campanhas", "campanhas", Tags],
     ["Avaliações", "avaliacoes", MessageSquareText],
+    ["Central de Ajuda", "central-ajuda", LifeBuoy],
     ["Políticas e documentos legais", "politicas", Scale],
     ["Treinamentos", "treinamentos", FileText],
     ["Contratos", "contratos", FileClock],
@@ -118,7 +120,8 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Simulações", "simulacoes", ChartNoAxesCombined],
     ["Alertas", "alertas", Activity],
     ["Configurações estratégicas", "configuracoes-estrategicas", Settings],
-    ["Atendimentos", "atendimentos", Headphones]
+    ["Atendimentos", "atendimentos", Headphones],
+    ["Central de Ajuda", "central-ajuda", LifeBuoy]
   ],
   tecnico: [
     ["Visão geral", "", Activity],
@@ -286,7 +289,11 @@ export function PanelShell({
           })}
         </nav>
         {canSwitchPanel ? (
-          <Link className="panel-switch-link sidebar-switch-link" href="/selecionar-painel" onClick={() => closeMenu()}>
+          <Link
+            className="panel-switch-link sidebar-switch-link"
+            href="/selecionar-painel"
+            onClick={() => closeMenu()}
+          >
             <PanelsTopLeft size={19} />
             <span>Trocar painel</span>
           </Link>

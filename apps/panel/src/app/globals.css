@@ -4198,3 +4198,380 @@ button:not(:disabled):active,
     grid-template-columns: 1fr;
   }
 }
+
+/* Central de Ajuda interna */
+
+.help-admin-center {
+  display: grid;
+  gap: 18px;
+}
+
+.help-admin-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+
+.help-admin-tabs button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--neutral-250);
+  border-radius: 6px;
+  background: white;
+  color: var(--neutral-700);
+  cursor: pointer;
+}
+
+.help-admin-tabs button.active {
+  color: var(--brand-900);
+  border-color: var(--brand-700);
+  background: var(--brand-50);
+}
+
+.help-admin-tabs svg,
+.help-workflow-actions svg,
+.help-editor-actions svg {
+  width: 17px;
+}
+
+.help-admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.help-admin-kpis article {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.help-admin-kpis strong {
+  grid-column: 2;
+  font-size: 1.8rem;
+}
+
+.help-admin-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.38fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.help-admin-list > header,
+.help-admin-editor > header,
+.help-admin-simple > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.help-admin-list h2,
+.help-admin-list p,
+.help-admin-editor h2,
+.help-admin-simple h2,
+.help-admin-simple p {
+  margin: 0;
+}
+
+.help-admin-list nav {
+  max-height: 660px;
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+.help-admin-list nav button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+}
+
+.help-admin-list nav button.active {
+  border-color: var(--brand-700);
+  background: var(--brand-50);
+}
+
+.help-admin-list nav span,
+.help-admin-list nav strong,
+.help-admin-list nav small {
+  display: block;
+}
+
+.help-admin-list nav i {
+  align-self: start;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--neutral-100);
+  font-size: 0.67rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.help-content-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.help-content-form > label,
+.help-content-form fieldset {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.help-content-form .wide {
+  grid-column: 1 / -1;
+}
+
+.help-content-form input,
+.help-content-form select,
+.help-content-form textarea,
+.help-inline-form input,
+.help-inline-form select,
+.help-inline-form textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--neutral-300);
+  border-radius: 5px;
+  background: white;
+  color: var(--neutral-900);
+  font: inherit;
+}
+
+.help-content-form textarea.content-body {
+  min-height: 230px;
+  resize: vertical;
+}
+
+.help-content-form select[multiple] {
+  min-height: 120px;
+}
+
+.help-content-form fieldset {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 12px;
+  border: 1px solid var(--neutral-200);
+}
+
+.help-content-form label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.help-content-form label.check input {
+  width: 17px;
+  min-height: 17px;
+}
+
+.help-editor-actions,
+.help-workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.help-workflow-actions {
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--neutral-200);
+}
+
+.help-workflow-actions button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--neutral-300);
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+}
+
+.help-workflow-actions button.danger {
+  color: #9b1c1c;
+  border-color: #efb2b2;
+}
+
+.help-version-history {
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--neutral-200);
+}
+
+.help-version-history summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.help-version-history article,
+.help-category-admin-list article,
+.help-reply-list article,
+.help-audit-list article {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--neutral-150);
+}
+
+.help-version-history article {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.help-version-history article p,
+.help-reply-list article p,
+.help-audit-list article p {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.help-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.help-row-actions button {
+  padding: 6px 8px;
+  border: 1px solid var(--neutral-250);
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.help-inline-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--neutral-200);
+}
+
+.help-inline-form h3 {
+  grid-column: 1 / -1;
+}
+
+.help-inline-form.wide-form textarea {
+  grid-column: 1 / -2;
+  min-height: 100px;
+}
+
+.help-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.help-metrics-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.help-metrics-grid article strong {
+  display: block;
+  font-size: 2rem;
+}
+
+.help-metrics-grid li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--neutral-150);
+}
+
+.help-admin-loading {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+
+.support-reply-form .support-file-field {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 5px 8px;
+  padding: 10px;
+  border: 1px dashed var(--neutral-300);
+  border-radius: 6px;
+}
+
+.support-reply-form .support-file-field input,
+.support-reply-form .support-file-field small {
+  grid-column: 2;
+}
+
+.message-thread .message a,
+.message-thread .message > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 0.72rem;
+}
+
+.message-thread .message a svg,
+.message-thread .message > span svg {
+  width: 15px;
+}
+
+.support-actions > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+@media (max-width: 1050px) {
+  .help-admin-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .help-admin-list nav {
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 720px) {
+  .help-admin-kpis,
+  .help-content-form,
+  .help-metrics-grid,
+  .help-inline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .help-content-form .wide,
+  .help-metrics-grid .wide,
+  .help-inline-form h3,
+  .help-inline-form.wide-form textarea {
+    grid-column: auto;
+  }
+
+  .help-content-form fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

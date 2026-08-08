@@ -8,48 +8,17 @@ import {
 } from "@curtiz/domain";
 import { createBrowserClient } from "@supabase/ssr";
 import {
-  CircleCheck,
-  Headphones,
+  FileText,
   LoaderCircle,
   MessageCircle,
+  Paperclip,
   Plus,
   RefreshCw,
+  RotateCcw,
   Send,
-  X
+  Star
 } from "lucide-react";
-import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-
-const quickAnswers = [
-  {
-    question: "Como funciona o frete?",
-    answer:
-      "O valor e o prazo são calculados pelo CEP na página do produto, no carrinho ou no checkout. O prazo começa após a confirmação do pagamento.",
-    action: "Ver formas de envio",
-    href: "/formas-de-envio"
-  },
-  {
-    question: "Como rastrear meu pedido?",
-    answer:
-      "Acesse Minha conta › Pedidos e selecione a compra. Quando houver rastreio, os eventos e a previsão atualizada aparecerão na linha do tempo.",
-    action: "Consultar pedido",
-    href: "/minha-conta/pedidos"
-  },
-  {
-    question: "Meu pagamento foi aprovado?",
-    answer:
-      "O status exibido na sua conta vem da confirmação do servidor. A página de retorno do pagamento, sozinha, nunca altera o pedido para pago.",
-    action: "Ver meus pedidos",
-    href: "/minha-conta/pedidos"
-  },
-  {
-    question: "Como solicitar uma troca?",
-    answer:
-      "Na página do pedido, escolha o item e toque em Solicitar troca. O sistema verificará prazo, quantidade e necessidade de fotos.",
-    action: "Ver política de trocas",
-    href: "/trocas-e-devolucoes"
-  }
-] as const;
 
 type SupportResponse = {
   ok: boolean;
@@ -68,14 +37,7 @@ const formatDateTime = (value: string) =>
 
 const waitingStatuses = new Set(["open", "queued", "reopened"]);
 
-export function SupportCenter({
-  accountMode = false,
-  startNew = false
-}: {
-  accountMode?: boolean;
-  startNew?: boolean;
-}) {
-  const [selectedAnswer, setSelectedAnswer] = useState<(typeof quickAnswers)[number] | null>(null);
+export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<SupportConversationView[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -83,6 +45,7 @@ export function SupportCenter({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [rated, setRated] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(crypto.randomUUID());
 
   const loadConversations = useCallback(async (silent = false) => {
@@ -101,7 +64,9 @@ export function SupportCenter({
       setSelectedId((current) => current || result.conversations?.[0]?.id || "");
       setMessage("");
     } catch {
-      setMessage("Não foi possível carregar os atendimentos. Verifique a conexão e tente novamente.");
+      setMessage(
+        "Não foi possível carregar os atendimentos. Verifique a conexão e tente novamente."
+      );
     } finally {
       if (!silent) setLoading(false);
     }
@@ -197,26 +162,41 @@ export function SupportCenter({
     if (submitting || !selectedId) return;
     const form = new FormData(event.currentTarget);
     const content = form.get("message");
+    const contentText = typeof content === "string" ? content : "";
+    const file = form.get("file");
     setSubmitting(true);
     setMessage("");
     try {
-      const response = await fetch("/api/support", {
+      const hasFile = file instanceof File && file.size > 0;
+      const attachmentBody = new FormData();
+      if (hasFile) {
+        attachmentBody.set("conversationId", selectedId);
+        attachmentBody.set("message", contentText);
+        attachmentBody.set("internal", "false");
+        attachmentBody.set("file", file);
+      }
+      const response = await fetch(hasFile ? "/api/support/attachments" : "/api/support", {
         method: "POST",
         credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "message",
-          conversationId: selectedId,
-          message: content,
-          internal: false
-        })
+        ...(hasFile
+          ? { body: attachmentBody }
+          : {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                action: "message",
+                conversationId: selectedId,
+                message: contentText,
+                internal: false
+              })
+            })
       });
       const result = (await response.json()) as SupportResponse;
       if (!response.ok || !result.ok) {
         setMessage(result.message ?? "Não foi possível enviar a mensagem.");
         return;
       }
-      setConversations(result.conversations ?? []);
+      if (hasFile) await loadConversations(true);
+      else setConversations(result.conversations ?? []);
       event.currentTarget.reset();
     } catch {
       setMessage("Conexão interrompida. Sua mensagem não foi enviada; tente novamente.");
@@ -225,57 +205,42 @@ export function SupportCenter({
     }
   };
 
+  const reopen = async (conversationId: string) => {
+    const reason = window.prompt("Explique por que o atendimento precisa ser reaberto:");
+    if (!reason) return;
+    setSubmitting(true);
+    const response = await fetch("/api/support", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "reopen", conversationId, reason })
+    });
+    const result = (await response.json()) as SupportResponse;
+    setSubmitting(false);
+    if (!response.ok || !result.ok) setMessage(result.message ?? "Não foi possível reabrir.");
+    else setConversations(result.conversations ?? []);
+  };
+
+  const rate = async (conversationId: string, rating: number) => {
+    if (rated[conversationId]) return;
+    setRated((current) => ({ ...current, [conversationId]: true }));
+    const response = await fetch("/api/support", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "rate", conversationId, rating, resolved: rating >= 3 })
+    });
+    if (!response.ok) {
+      setRated((current) => ({ ...current, [conversationId]: false }));
+      setMessage("Não foi possível registrar a avaliação.");
+    }
+  };
+
   const selected = conversations.find((item) => item.id === selectedId) ?? null;
 
   return (
     <>
-      {!accountMode && (
-        <>
-          <div className="help-grid">
-            {quickAnswers.map((item) => (
-              <button
-                className="help-card"
-                type="button"
-                key={item.question}
-                onClick={() => setSelectedAnswer(item)}
-              >
-                <strong>{item.question}</strong>
-                <p>Ver resposta e ações relacionadas →</p>
-              </button>
-            ))}
-          </div>
-          {selectedAnswer && (
-            <section className="help-answer" aria-live="polite">
-              <button
-                className="help-answer-close"
-                type="button"
-                onClick={() => setSelectedAnswer(null)}
-                aria-label="Fechar resposta"
-              >
-                <X />
-              </button>
-              <p className="eyebrow">Resposta rápida</p>
-              <h2>{selectedAnswer.question}</h2>
-              <p>{selectedAnswer.answer}</p>
-              <div className="option-row">
-                <Link className="secondary-button" href={selectedAnswer.href}>
-                  <CircleCheck size={18} /> {selectedAnswer.action}
-                </Link>
-                <button className="primary-button" type="button" onClick={requireCustomerAccount}>
-                  <Headphones size={18} /> Falar com um humano
-                </button>
-              </div>
-            </section>
-          )}
-          {!selectedAnswer && (
-            <button className="primary-button support-human-cta" type="button" onClick={requireCustomerAccount}>
-              <Headphones size={18} /> Falar com atendimento humano
-            </button>
-          )}
-        </>
-      )}
-
-      {(accountMode || authenticated) && (
+      {authenticated !== null && (
         <section className="customer-support" aria-labelledby="customer-support-title">
           <header className="customer-support-heading">
             <div>
@@ -283,12 +248,16 @@ export function SupportCenter({
               <h2 id="customer-support-title">Seus chamados</h2>
               <p>Converse com a equipe e acompanhe cada atualização.</p>
             </div>
-            <button className="primary-button" type="button" onClick={() => setFormOpen(true)}>
+            <button className="primary-button" type="button" onClick={requireCustomerAccount}>
               <Plus size={17} /> Novo chamado
             </button>
           </header>
 
-          {message && <p className="form-message" role="status">{message}</p>}
+          {message && (
+            <p className="form-message" role="status">
+              {message}
+            </p>
+          )}
           {loading ? (
             <div className="support-loading" aria-label="Carregando atendimentos">
               <LoaderCircle className="spin" /> Carregando atendimentos…
@@ -304,7 +273,7 @@ export function SupportCenter({
               <MessageCircle />
               <h3>Nenhum chamado aberto</h3>
               <p>Quando precisar, abra um atendimento e acompanhe tudo por aqui.</p>
-              <button className="primary-button" type="button" onClick={() => setFormOpen(true)}>
+              <button className="primary-button" type="button" onClick={requireCustomerAccount}>
                 Abrir primeiro chamado
               </button>
             </div>
@@ -331,14 +300,15 @@ export function SupportCenter({
                   <header>
                     <div>
                       <h3>{selected.subject}</h3>
-                      <p>{selected.publicCode} · {supportCategoryLabels[selected.category]}</p>
+                      <p>
+                        {selected.publicCode} · {supportCategoryLabels[selected.category]}
+                      </p>
                     </div>
                     <span className="status-pill">{supportStatusLabels[selected.status]}</span>
                   </header>
                   {waitingStatuses.has(selected.status) && !selected.assignedName && (
                     <p className="support-waiting-message" role="status">
-                      Seu chamado foi enviado. Nosso atendimento humano pode levar de 1 a 3 horas
-                      para responder.
+                      Seu chamado foi enviado e aguarda atendimento da equipe.
                     </p>
                   )}
                   {selected.assignedName && (
@@ -350,6 +320,22 @@ export function SupportCenter({
                     {selected.messages.map((item) => (
                       <div className={`customer-message ${item.author}`} key={item.id}>
                         <p>{item.content}</p>
+                        {item.attachments?.map((attachment) =>
+                          attachment.available && attachment.url ? (
+                            <a
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              key={attachment.id}
+                            >
+                              <FileText /> {attachment.name}
+                            </a>
+                          ) : (
+                            <span className="support-attachment-pending" key={attachment.id}>
+                              <FileText /> {attachment.name} · aguardando verificação
+                            </span>
+                          )
+                        )}
                         <time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>
                       </div>
                     ))}
@@ -365,18 +351,57 @@ export function SupportCenter({
                         maxLength={4000}
                         placeholder="Escreva sua mensagem sem incluir senhas ou dados de cartão."
                       />
+                      <label className="support-file-field">
+                        <Paperclip /> Anexo opcional
+                        <input
+                          name="file"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                        />
+                        <small>JPG, PNG, WebP ou PDF de até 10 MB.</small>
+                      </label>
                       <button className="primary-button" disabled={submitting}>
                         {submitting ? <LoaderCircle className="spin" /> : <Send size={17} />}
                         {submitting ? "Enviando…" : "Enviar mensagem"}
                       </button>
                     </form>
                   )}
+                  {(["resolved", "closed"] as string[]).includes(selected.status) && (
+                    <div className="support-resolution-actions">
+                      <div>
+                        <strong>Avalie este atendimento</strong>
+                        {[1, 2, 3, 4, 5].map((value) => (
+                          <button
+                            type="button"
+                            key={value}
+                            disabled={rated[selected.id]}
+                            onClick={() => void rate(selected.id, value)}
+                            aria-label={`${value} estrela${value === 1 ? "" : "s"}`}
+                          >
+                            <Star />
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={submitting}
+                        onClick={() => void reopen(selected.id)}
+                      >
+                        <RotateCcw /> Reabrir atendimento
+                      </button>
+                    </div>
+                  )}
                 </article>
               )}
             </div>
           )}
           {!loading && (
-            <button className="text-link support-refresh" type="button" onClick={() => void loadConversations()}>
+            <button
+              className="text-link support-refresh"
+              type="button"
+              onClick={() => void loadConversations()}
+            >
               <RefreshCw size={15} /> Atualizar chamados
             </button>
           )}
@@ -401,12 +426,16 @@ function SupportForm({
         <label htmlFor="support-category">Categoria</label>
         <select id="support-category" name="category" required defaultValue="order">
           {supportCategories.map((category) => (
-            <option value={category} key={category}>{supportCategoryLabels[category]}</option>
+            <option value={category} key={category}>
+              {supportCategoryLabels[category]}
+            </option>
           ))}
         </select>
       </div>
       <div className="field">
-        <label htmlFor="support-order">Número do pedido <span className="optional-label">opcional</span></label>
+        <label htmlFor="support-order">
+          Número do pedido <span className="optional-label">opcional</span>
+        </label>
         <input id="support-order" name="orderCode" maxLength={40} placeholder="Ex.: CZT-…" />
       </div>
       <div className="field">

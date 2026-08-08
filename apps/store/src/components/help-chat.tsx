@@ -2,35 +2,48 @@
 
 import { Bot, ChevronDown, Headphones, LoaderCircle, MessageCircle, Send, X } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { HelpContent } from "@/lib/help-content";
 
 type ChatMessage = {
   id: number;
   author: "assistant" | "customer";
   text: string;
+  source?: Pick<HelpContent, "title" | "slug" | "updatedAt">;
 };
+
+type HelpResponse = { ok: boolean; contents?: HelpContent[] };
 
 const initialMessage: ChatMessage = {
   id: 1,
   author: "assistant",
-  text: "Olá! Sou o assistente virtual da curti Z. Posso ajudar com pedidos, entregas, trocas e formas de pagamento."
+  text: "Olá! Como podemos ajudar?"
 };
 
-function simulatedReply(message: string) {
-  const normalized = message.toLocaleLowerCase("pt-BR");
-  if (normalized.includes("pedido") || normalized.includes("rastre")) {
-    return "Para acompanhar um pedido, acesse Minha conta › Pedidos. Os eventos exibidos são os confirmados pelo servidor.";
+const safeFallback =
+  "Não encontrei uma resposta segura para essa situação. Posso encaminhar você para o atendimento.";
+
+const quickActions = [
+  "Rastrear pedido",
+  "Problema com entrega",
+  "Troca ou devolução",
+  "Pagamento",
+  "Produto",
+  "Minha conta",
+  "Avaliação",
+  "Representante Curtiz"
+] as const;
+
+function restoreHistory(): ChatMessage[] {
+  try {
+    const stored = sessionStorage.getItem("curtiz-help-chat");
+    const parsed: unknown = stored ? JSON.parse(stored) : null;
+    return Array.isArray(parsed) && parsed.length
+      ? (parsed as ChatMessage[]).slice(-30)
+      : [initialMessage];
+  } catch {
+    return [initialMessage];
   }
-  if (normalized.includes("troca") || normalized.includes("devol")) {
-    return "Você pode iniciar uma troca pela área do pedido. Prazo e elegibilidade são conferidos antes da solicitação.";
-  }
-  if (normalized.includes("frete") || normalized.includes("entrega")) {
-    return "O prazo e o valor do frete são calculados pelo CEP quando o serviço de entrega está disponível.";
-  }
-  if (normalized.includes("pagamento") || normalized.includes("pix")) {
-    return "O pagamento só é confirmado após validação do servidor. A página de retorno nunca aprova um pedido sozinha.";
-  }
-  return "Entendi. Posso orientar sobre pedido, entrega, troca ou pagamento. Para um caso específico, abra um atendimento humano na Central de ajuda.";
 }
 
 export function HelpChat() {
@@ -41,13 +54,26 @@ export function HelpChat() {
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => setMessages(restoreHistory()), []);
+  useEffect(() => {
+    sessionStorage.setItem("curtiz-help-chat", JSON.stringify(messages.slice(-30)));
+  }, [messages]);
   useEffect(() => {
     if (open && !minimized) inputRef.current?.focus();
   }, [minimized, open]);
-
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && open) {
+        setOpen(false);
+        setMinimized(false);
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [open]);
 
   const close = () => {
     setOpen(false);
@@ -55,26 +81,48 @@ export function HelpChat() {
     setTyping(false);
   };
 
+  const ask = useCallback(
+    async (text: string) => {
+      if (typing || !text.trim()) return;
+      const nextId = Date.now();
+      setMessages((current) => [...current, { id: nextId, author: "customer", text: text.trim() }]);
+      setTyping(true);
+      try {
+        const params = new URLSearchParams({ q: text.trim().slice(0, 160), origin: "chat" });
+        const response = await fetch(`/api/help?${params}`, { cache: "no-store" });
+        const result = (await response.json()) as HelpResponse;
+        const source = response.ok && result.ok ? result.contents?.[0] : undefined;
+        setMessages((current) => [
+          ...current,
+          source
+            ? {
+                id: nextId + 1,
+                author: "assistant",
+                text: source.body.length > 420 ? `${source.body.slice(0, 417)}…` : source.body,
+                source: { title: source.title, slug: source.slug, updatedAt: source.updatedAt }
+              }
+            : { id: nextId + 1, author: "assistant", text: safeFallback }
+        ]);
+      } catch {
+        setMessages((current) => [
+          ...current,
+          { id: nextId + 1, author: "assistant", text: safeFallback }
+        ]);
+      } finally {
+        setTyping(false);
+      }
+    },
+    [typing]
+  );
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (typing) return;
     const form = new FormData(event.currentTarget);
     const rawMessage = form.get("message");
     const text = typeof rawMessage === "string" ? rawMessage.trim() : "";
     if (!text) return;
-
-    const nextId = Date.now();
-    setMessages((current) => [...current, { id: nextId, author: "customer", text }]);
     event.currentTarget.reset();
-    setTyping(true);
-
-    window.setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        { id: nextId + 1, author: "assistant", text: simulatedReply(text) }
-      ]);
-      setTyping(false);
-    }, 650);
+    void ask(text);
   };
 
   return (
@@ -91,9 +139,9 @@ export function HelpChat() {
               <Headphones />
             </div>
             <div>
-              <strong id="help-chat-title">Ajuda curti Z</strong>
+              <strong id="help-chat-title">Ajuda Curtiz</strong>
               <span>
-                <i /> Assistente virtual
+                <i /> Conteúdo publicado
               </span>
             </div>
             <button
@@ -114,11 +162,27 @@ export function HelpChat() {
                 {messages.map((message) => (
                   <div className={`chat-message ${message.author}`} key={message.id}>
                     {message.author === "assistant" && <Bot aria-hidden="true" />}
-                    <p>{message.text}</p>
+                    <div>
+                      <p>{message.text}</p>
+                      {message.source && (
+                        <Link
+                          href={`/ajuda?q=${encodeURIComponent(message.source.title)}`}
+                          onClick={close}
+                        >
+                          Fonte: {message.source.title} · atualizado em{" "}
+                          {new Intl.DateTimeFormat("pt-BR", {
+                            timeZone: "America/Sao_Paulo"
+                          }).format(new Date(message.source.updatedAt))}
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 ))}
                 {typing && (
-                  <div className="chat-message assistant typing-indicator" aria-label="Digitando">
+                  <div
+                    className="chat-message assistant typing-indicator"
+                    aria-label="Buscando conteúdo aprovado"
+                  >
                     <Bot aria-hidden="true" />
                     <p>
                       <span />
@@ -128,8 +192,23 @@ export function HelpChat() {
                   </div>
                 )}
               </div>
+              <div className="help-chat-quick-actions" aria-label="Ações rápidas">
+                {quickActions.map((action) => (
+                  <button
+                    type="button"
+                    key={action}
+                    onClick={() => void ask(action)}
+                    disabled={typing}
+                  >
+                    {action}
+                  </button>
+                ))}
+                <Link href="/minha-conta/atendimento?new=1" onClick={close}>
+                  Falar com atendimento
+                </Link>
+              </div>
               <Link className="help-human-link" href="/ajuda" onClick={close}>
-                Precisa de uma pessoa? Abrir Central de ajuda
+                Abrir Central de Ajuda completa
               </Link>
               <form className="help-chat-form" onSubmit={submit}>
                 <label className="sr-only" htmlFor="help-chat-message">
@@ -139,9 +218,9 @@ export function HelpChat() {
                   id="help-chat-message"
                   name="message"
                   ref={inputRef}
-                  placeholder="Digite sua mensagem..."
+                  placeholder="Digite sua dúvida…"
                   autoComplete="off"
-                  maxLength={500}
+                  maxLength={160}
                   disabled={typing}
                 />
                 <button type="submit" disabled={typing} aria-label="Enviar mensagem">
@@ -156,13 +235,7 @@ export function HelpChat() {
       <button
         className={open ? "help-launcher is-open" : "help-launcher"}
         type="button"
-        onClick={() => {
-          if (open) {
-            setMinimized(false);
-          } else {
-            setOpen(true);
-          }
-        }}
+        onClick={() => (open ? setMinimized(false) : setOpen(true))}
         aria-label={open ? "Retomar conversa de ajuda" : "Abrir ajuda"}
         aria-expanded={open}
       >

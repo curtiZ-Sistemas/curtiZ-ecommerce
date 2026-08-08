@@ -7,11 +7,7 @@ import {
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
-import {
-  DEMO_SESSION_COOKIE,
-  sanitizePlainText,
-  verifyDemoSession
-} from "@curtiz/security";
+import { DEMO_SESSION_COOKIE, sanitizePlainText, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -22,6 +18,7 @@ import {
   type DemoSupportActor,
   listDemoSupportTeam,
   listDemoSupport,
+  setDemoSupportPriority,
   setDemoSupportStatus,
   transferDemoSupport
 } from "@/lib/demo-support-store";
@@ -44,6 +41,15 @@ const messageSchema = z.object({
   internal: z.boolean().default(false)
 });
 
+const ratingSchema = z.object({
+  action: z.literal("rate"),
+  conversationId: z.string().uuid(),
+  rating: z.number().int().min(1).max(5),
+  resolved: z.boolean(),
+  reason: z.string().trim().max(500).optional(),
+  comment: z.string().trim().max(1000).optional()
+});
+
 const claimSchema = z.object({
   action: z.literal("claim"),
   conversationId: z.string().uuid()
@@ -64,8 +70,27 @@ const statusSchema = z.object({
   reason: z.string().trim().min(5).max(500)
 });
 
-const writeSchema = z.discriminatedUnion("action", [createSchema, messageSchema]);
-const updateSchema = z.discriminatedUnion("action", [claimSchema, transferSchema, statusSchema]);
+const reopenSchema = z.object({
+  action: z.literal("reopen"),
+  conversationId: z.string().uuid(),
+  reason: z.string().trim().min(5).max(500)
+});
+
+const prioritySchema = z.object({
+  action: z.literal("priority"),
+  conversationId: z.string().uuid(),
+  priority: z.enum(["low", "normal", "high", "urgent"]),
+  reason: z.string().trim().min(5).max(500)
+});
+
+const writeSchema = z.discriminatedUnion("action", [createSchema, messageSchema, ratingSchema]);
+const updateSchema = z.discriminatedUnion("action", [
+  claimSchema,
+  transferSchema,
+  statusSchema,
+  reopenSchema,
+  prioritySchema
+]);
 
 type AppRole = "customer" | "operational" | "admin" | "manager" | "technical";
 
@@ -220,8 +245,58 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
       .is("deleted_at", null)
       .order("created_at", { ascending: true });
     if (messageError) throw new Error("support_messages_read_failed");
-    for (const rawMessage of Array.isArray(messageData) ? messageData : []) {
-      const message = asRecord(rawMessage);
+    const messageRows = Array.isArray(messageData) ? messageData.map(asRecord).filter(Boolean) : [];
+    const messageIds = messageRows.flatMap((message) =>
+      typeof message?.id === "string" ? [message.id] : []
+    );
+    const attachmentsByMessage = new Map<
+      string,
+      NonNullable<SupportConversationView["messages"][number]["attachments"]>
+    >();
+    if (messageIds.length) {
+      const attachmentResponse = await actor.supabase
+        .from("support_attachments")
+        .select(
+          "id,message_id,storage_path,original_name_sanitized,mime_type,size_bytes,scan_status"
+        )
+        .in("message_id", messageIds)
+        .limit(500);
+      if (attachmentResponse.error) throw new Error("support_attachments_read_failed");
+      for (const attachment of (Array.isArray(attachmentResponse.data)
+        ? attachmentResponse.data
+        : []
+      )
+        .map(asRecord)
+        .filter(Boolean)) {
+        if (!attachment || typeof attachment.message_id !== "string") continue;
+        const clean =
+          attachment.scan_status === "clean" && typeof attachment.storage_path === "string";
+        const signed = clean
+          ? await actor.supabase.storage
+              .from("customer-private")
+              .createSignedUrl(String(attachment.storage_path), 300)
+          : null;
+        const current = attachmentsByMessage.get(attachment.message_id) ?? [];
+        current.push({
+          id: typeof attachment.id === "string" ? attachment.id : "",
+          name:
+            typeof attachment.original_name_sanitized === "string"
+              ? attachment.original_name_sanitized
+              : "Anexo",
+          mimeType:
+            typeof attachment.mime_type === "string"
+              ? attachment.mime_type
+              : "application/octet-stream",
+          sizeBytes: typeof attachment.size_bytes === "number" ? attachment.size_bytes : 0,
+          available: Boolean(clean && !signed?.error && signed?.data.signedUrl),
+          ...(clean && !signed?.error && signed?.data.signedUrl
+            ? { url: signed.data.signedUrl }
+            : {})
+        });
+        attachmentsByMessage.set(attachment.message_id, current);
+      }
+    }
+    for (const message of messageRows) {
       if (!message || typeof message.conversation_id !== "string") continue;
       const current = messagesByConversation.get(message.conversation_id) ?? [];
       current.push({
@@ -234,7 +309,9 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
               : "team",
         content: typeof message.content_sanitized === "string" ? message.content_sanitized : "",
         createdAt:
-          typeof message.created_at === "string" ? message.created_at : new Date(0).toISOString()
+          typeof message.created_at === "string" ? message.created_at : new Date(0).toISOString(),
+        attachments:
+          typeof message.id === "string" ? (attachmentsByMessage.get(message.id) ?? []) : []
       });
       messagesByConversation.set(message.conversation_id, current);
     }
@@ -271,10 +348,8 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
         assignedRole,
         assignedToCurrentUser: row.assigned_user_id === actor.userId,
         assignedName: row.assigned_user_id ? "Responsável atribuído" : null,
-        createdAt:
-          typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
-        updatedAt:
-          typeof row.updated_at === "string" ? row.updated_at : new Date(0).toISOString(),
+        createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
+        updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date(0).toISOString(),
         messages: messagesByConversation.get(row.id) ?? []
       } satisfies SupportConversationView
     ];
@@ -282,9 +357,7 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
 }
 
 async function listSupport(actor: SupportActor) {
-  return actor.kind === "demo"
-    ? listDemoSupport(demoActor(actor))
-    : listSupabaseSupport(actor);
+  return actor.kind === "demo" ? listDemoSupport(demoActor(actor)) : listSupabaseSupport(actor);
 }
 
 async function listSupportTeam(actor: SupportActor): Promise<SupportTeamMember[]> {
@@ -308,6 +381,23 @@ async function listSupportTeam(actor: SupportActor): Promise<SupportTeamMember[]
     }
     return [{ id: row.user_id, fullName: row.full_name, role: row.role, demo: false }];
   });
+}
+
+async function listSavedReplies(actor: SupportActor) {
+  if (actor.role === "customer" || actor.kind === "demo" || !actor.supabase) return [];
+  const result = await actor.supabase
+    .from("support_saved_replies")
+    .select("id,title,shortcut,content")
+    .eq("active", true)
+    .order("title")
+    .limit(100);
+  if (result.error) throw new Error("support_replies_read_failed");
+  return readRows(result.data).map((item) => ({
+    id: readString(item, "id"),
+    title: readString(item, "title"),
+    shortcut: readString(item, "shortcut"),
+    content: readString(item, "content")
+  }));
 }
 
 function publicError(request: Request, error: unknown) {
@@ -338,11 +428,12 @@ export async function GET(request: NextRequest) {
     );
   }
   try {
-    const [conversations, team] = await Promise.all([
+    const [conversations, team, quickReplies] = await Promise.all([
       listSupport(actor),
-      listSupportTeam(actor)
+      listSupportTeam(actor),
+      listSavedReplies(actor)
     ]);
-    return json(request, { ok: true, conversations, team });
+    return json(request, { ok: true, conversations, team, quickReplies });
   } catch (error) {
     return publicError(request, error);
   }
@@ -359,7 +450,8 @@ export async function POST(request: NextRequest) {
     );
   }
   const parsed = writeSchema.safeParse(await request.json());
-  if (!parsed.success) return json(request, { ok: false, message: "Revise os dados informados." }, 400);
+  if (!parsed.success)
+    return json(request, { ok: false, message: "Revise os dados informados." }, 400);
 
   try {
     if (parsed.data.action === "create") {
@@ -402,11 +494,29 @@ export async function POST(request: NextRequest) {
         {
           ok: true,
           conversation,
-          message:
-            "Seu chamado foi enviado. Nosso atendimento humano pode levar de 1 a 3 horas para responder."
+          message: "Seu chamado foi enviado e aguarda atendimento da equipe."
         },
         201
       );
+    }
+
+    if (parsed.data.action === "rate") {
+      if (actor.role !== "customer") return json(request, { ok: false }, 403);
+      if (actor.kind === "demo") return json(request, { ok: true }, 201);
+      if (!actor.supabase || !actor.userId) throw new Error("support_rating_unavailable");
+      const { error } = await actor.supabase.from("support_satisfaction").insert({
+        conversation_id: parsed.data.conversationId,
+        customer_id: actor.userId,
+        rating: parsed.data.rating,
+        resolved: parsed.data.resolved,
+        dissatisfaction_reason: parsed.data.reason
+          ? sanitizePlainText(parsed.data.reason, 500)
+          : null,
+        comment: parsed.data.comment ? sanitizePlainText(parsed.data.comment, 1000) : null
+      });
+      return error
+        ? json(request, { ok: false, message: "Este atendimento já foi avaliado." }, 409)
+        : json(request, { ok: true }, 201);
     }
 
     const content = sanitizePlainText(parsed.data.message);
@@ -437,14 +547,32 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (!isAllowedOrigin(request)) return json(request, { ok: false }, 403);
   const actor = await getActor(request);
-  if (!actor || actor.role === "customer") {
+  if (!actor) {
     return json(request, { ok: false, message: "Operação não permitida." }, 403);
   }
   const parsed = updateSchema.safeParse(await request.json());
   if (!parsed.success) return json(request, { ok: false, message: "Revise a operação." }, 400);
 
   try {
-    if (parsed.data.action === "claim") {
+    if (parsed.data.action === "reopen") {
+      if (actor.role !== "customer") return json(request, { ok: false }, 403);
+      if (actor.kind === "demo") {
+        setDemoSupportStatus(
+          demoActor(actor),
+          parsed.data.conversationId,
+          "reopened",
+          parsed.data.reason
+        );
+      } else if (actor.supabase) {
+        const { error } = await actor.supabase.rpc("reopen_own_support_conversation", {
+          p_conversation_id: parsed.data.conversationId,
+          p_reason: sanitizePlainText(parsed.data.reason, 500)
+        });
+        if (error) throw new Error("support_reopen_failed");
+      }
+    } else if (actor.role === "customer") {
+      return json(request, { ok: false, message: "Operação não permitida." }, 403);
+    } else if (parsed.data.action === "claim") {
       if (actor.kind === "demo") {
         claimDemoSupport(demoActor(actor), parsed.data.conversationId);
       } else if (actor.supabase) {
@@ -474,6 +602,22 @@ export async function PATCH(request: NextRequest) {
           p_reason: sanitizePlainText(parsed.data.reason, 500)
         });
         if (error) throw new Error("support_transfer_failed");
+      }
+    } else if (parsed.data.action === "priority") {
+      if (actor.kind === "demo") {
+        setDemoSupportPriority(
+          demoActor(actor),
+          parsed.data.conversationId,
+          parsed.data.priority,
+          parsed.data.reason
+        );
+      } else if (actor.supabase) {
+        const { error } = await actor.supabase.rpc("set_support_priority", {
+          p_conversation_id: parsed.data.conversationId,
+          p_priority: parsed.data.priority,
+          p_reason: sanitizePlainText(parsed.data.reason, 500)
+        });
+        if (error) throw new Error("support_priority_failed");
       }
     } else if (actor.kind === "demo") {
       setDemoSupportStatus(

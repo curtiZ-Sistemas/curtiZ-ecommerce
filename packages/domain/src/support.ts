@@ -45,6 +45,14 @@ export type SupportMessageView = {
   author: "customer" | "team" | "internal";
   content: string;
   createdAt: string;
+  attachments?: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    available: boolean;
+    url?: string;
+  }>;
 };
 
 export type SupportConversationView = {
