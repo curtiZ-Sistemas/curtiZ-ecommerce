@@ -155,6 +155,17 @@ describe("environment validation", () => {
     ).toContain("NEXT_PUBLIC_PANEL_URL não pertence a AUTH_COOKIE_DOMAIN");
   });
 
+  it("rejeita URL do Supabase com caminho da API", () => {
+    expect(
+      validateEnvironment("production", {
+        ...disabledProduction,
+        NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co/rest/v1/"
+      }).errors
+    ).toContain(
+      "NEXT_PUBLIC_SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
+    );
+  });
+
   it("permite a mesma origem somente quando o modo integrado é explícito", () => {
     expect(
       validateEnvironment("staging", {

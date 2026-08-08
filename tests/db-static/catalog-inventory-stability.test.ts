@@ -23,6 +23,11 @@ describe("catalog and inventory stability migration", () => {
   it("ordena a agregação da página com desempate por id", () => {
     expect(stabilitySql).toContain("case when p_sort = ''price_asc'' then price_cents end asc");
     expect(stabilitySql).toContain("featured desc, sold_count desc, created_at desc, id");
+    expect(stabilitySql).toContain("pg_catalog.regexp_replace");
+    expect(stabilitySql).not.toContain("pg_catalog.strpos");
+    expect(stabilitySql).toContain(
+      "if corrected_definition <> function_definition then execute corrected_definition; end if;"
+    );
   });
 
   it("concede somente operações necessárias para a RLS de atendimento", () => {

@@ -100,3 +100,35 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
   }));
   expect(widths.content).toBeLessThanOrEqual(widths.viewport);
 });
+
+test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+  for (const viewport of [
+    { width: 320, height: 720 },
+    { width: 430, height: 880 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+
+    const launcher = page.getByRole("button", { name: "Abrir ajuda" });
+    await expect(launcher.getByText("Posso ajudar?")).toBeHidden();
+    const launcherBox = await launcher.boundingBox();
+    expect(launcherBox).not.toBeNull();
+    expect(
+      viewport.height - (launcherBox?.y ?? 0) - (launcherBox?.height ?? 0)
+    ).toBeLessThanOrEqual(20);
+
+    await launcher.click();
+    const dialog = page.getByRole("dialog", { name: "Ajuda Curtiz" });
+    await expect(dialog).toBeVisible();
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(10);
+    expect((dialogBox?.y ?? 0) + (dialogBox?.height ?? 0)).toBeLessThan(viewport.height);
+  }
+});
