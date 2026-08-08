@@ -49,6 +49,12 @@ describe("professional homepage builder invariants", () => {
     expect(storefront).not.toContain('.from("homepage_sections")');
   });
 
+  it("handles an empty homepage while migrating the published manifest", () => {
+    expect(migration).toContain(
+      "coalesce(jsonb_agg(jsonb_build_object('sectionId',section.id,'versionId',section.current_version_id,'position',section.sort_order) order by section.sort_order),'[]'::jsonb)"
+    );
+  });
+
   it("validates targets, products, media, accessibility and arbitrary content", () => {
     expect(migration).toContain("unsafe homepage configuration");
     expect(migration).toContain("external homepage host is not authorized");

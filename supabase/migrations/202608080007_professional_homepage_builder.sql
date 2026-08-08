@@ -465,7 +465,7 @@ begin
     update public.homepage_sections set current_version_id=version_id where id=section_row.id;
   end loop;
   select id into page_id from public.home_pages where slug='principal';
-  select jsonb_build_object('sections',jsonb_agg(jsonb_build_object('sectionId',section.id,'versionId',section.current_version_id,'position',section.sort_order) order by section.sort_order)) into manifest from public.homepage_sections section where section.home_page_id=page_id and section.status='published';
+  select jsonb_build_object('sections',coalesce(jsonb_agg(jsonb_build_object('sectionId',section.id,'versionId',section.current_version_id,'position',section.sort_order) order by section.sort_order),'[]'::jsonb)) into manifest from public.homepage_sections section where section.home_page_id=page_id and section.status='published';
   if manifest is not null and jsonb_array_length(manifest->'sections')>0 then
     insert into public.home_page_versions(home_page_id,version,status,manifest,reason,published_at,created_by)
     select page_id,1,'published',manifest,'Migração do estado publicado existente',now(),coalesce((select updated_by from public.homepage_sections where home_page_id=page_id and updated_by is not null limit 1),(select id from public.profiles order by created_at limit 1)) returning id into page_version_id;
