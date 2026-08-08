@@ -34,6 +34,7 @@ describe("panel data access stability", () => {
     expect(migration).toContain("grant all privileges on table %i.%i to service_role");
     expect(migration).toContain("alter default privileges for role postgres");
     expect(migration).not.toMatch(/alter default privileges[\s\S]*to authenticated/iu);
+    expect(migration).toContain("notify pgrst, 'reload schema'");
   });
 
   it("disambiguates the direct relationship between orders and shipments", () => {
