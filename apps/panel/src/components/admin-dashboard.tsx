@@ -87,7 +87,7 @@ export function AdminDashboard() {
   }
 
   const metrics = [
-    ["Vendas", money.format(data.metrics.grossRevenueInCents / 100), ShoppingBag],
+    ["Vendas aprovadas", money.format(data.metrics.grossRevenueInCents / 100), ShoppingBag],
     ["Pedidos", data.metrics.orders.toLocaleString("pt-BR"), PackageCheck],
     ["Produtos", data.metrics.products.toLocaleString("pt-BR"), Boxes],
     ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), CircleAlert],

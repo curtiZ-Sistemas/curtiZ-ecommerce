@@ -1521,14 +1521,19 @@ button:not(:disabled):active,
   color: var(--brand);
 }
 
-.product-search {
+.product-list-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 520px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+}
+
+.product-search {
+  min-width: 260px;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .product-search svg {
@@ -1537,7 +1542,27 @@ button:not(:disabled):active,
 
 .product-search input {
   width: 100%;
-  border: 0;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.product-status-filter {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.product-status-filter select {
+  min-width: 180px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
 }
 
 .managed-product-list,
@@ -1575,7 +1600,9 @@ button:not(:disabled):active,
 
 .managed-variant {
   display: grid;
-  grid-template-columns: minmax(160px, 1.5fr) repeat(2, minmax(90px, 0.7fr)) 110px auto;
+  grid-template-columns:
+    minmax(160px, 1.3fr) repeat(2, minmax(90px, 0.6fr))
+    100px minmax(180px, 1fr) auto;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -1624,7 +1651,8 @@ button:not(:disabled):active,
 
 @media (max-width: 800px) {
   .product-management > .page-heading,
-  .managed-product header {
+  .managed-product header,
+  .product-list-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1633,12 +1661,20 @@ button:not(:disabled):active,
     overflow-x: auto;
   }
 
+  .product-search,
+  .product-status-filter,
+  .product-status-filter select {
+    width: 100%;
+    min-width: 0;
+  }
+
   .managed-variant {
     grid-template-columns: 1fr 1fr;
   }
 
   .managed-variant > div,
-  .managed-variant > button {
+  .managed-variant > button,
+  .managed-variant .restock-reason {
     grid-column: 1 / -1;
   }
 }
@@ -2346,6 +2382,26 @@ button:not(:disabled):active,
   width: min(220px, 100%);
 }
 
+.admin-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--brand-50);
+}
+
+.admin-bulk-actions strong {
+  margin-right: auto;
+  font-size: 0.76rem;
+}
+
+.admin-bulk-actions svg {
+  width: 15px;
+}
+
 .icon-button,
 .admin-row-actions button,
 .homepage-actions button,
@@ -2425,6 +2481,29 @@ button:not(:disabled):active,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.admin-user-history {
+  display: grid;
+  gap: 3px;
+  white-space: normal;
+}
+
+.admin-user-history small {
+  color: var(--muted);
+}
+
+.admin-data-table .admin-select-cell {
+  width: 44px;
+  max-width: 44px;
+  overflow: visible;
+  text-align: center;
+}
+
+.admin-select-cell input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-800);
 }
 
 .admin-row-actions {
@@ -2724,7 +2803,8 @@ button:not(:disabled):active,
 
   .admin-toolbar,
   .admin-pagination,
-  .admin-header-actions {
+  .admin-header-actions,
+  .admin-bulk-actions {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2788,6 +2868,16 @@ button:not(:disabled):active,
 
   .admin-data-table .admin-row-actions::before {
     content: "Ações";
+  }
+
+  .admin-data-table .admin-select-cell {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-end;
+  }
+
+  .admin-data-table .admin-select-cell::before {
+    content: "Selecionar";
   }
 
   .admin-form-grid,

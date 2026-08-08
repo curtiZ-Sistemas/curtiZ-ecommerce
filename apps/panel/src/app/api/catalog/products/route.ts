@@ -2,7 +2,6 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { nextAvailableQuantity } from "@/lib/product-management";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +25,8 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("restock"),
     productId: z.string().uuid(),
     variantId: z.string().uuid(),
-    quantity: z.number().int().min(1).max(99_999)
+    quantity: z.number().int().min(1).max(99_999),
+    reason: z.string().trim().min(10).max(500)
   }),
   z.object({
     action: z.literal("archive"),
@@ -151,6 +151,9 @@ const serializeProducts = (data: unknown) =>
     };
   });
 
+const cleanCatalogSearch = (value: string) =>
+  value.replaceAll(/[^\p{L}\p{N}\s@.+-]/gu, " ").trim().slice(0, 80);
+
 export async function GET(request: NextRequest) {
   const supabase = await authorizedClient(request);
   if (!supabase) {
@@ -160,14 +163,110 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [result, categories, models, collections] = await Promise.all([
-    supabase
+  const page = Math.max(
+    1,
+    Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
+  );
+  const pageSize = 20;
+  const queryText = cleanCatalogSearch(request.nextUrl.searchParams.get("q") ?? "");
+  const requestedStatus = request.nextUrl.searchParams.get("status") ?? "";
+  const status = ["draft", "active", "archived"].includes(requestedStatus)
+    ? requestedStatus
+    : "";
+  const outOfStock = request.nextUrl.searchParams.get("stock") === "out";
+  const productSelect =
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))";
+
+  const variantMatches = queryText
+    ? await (async () => {
+        const data: UnknownRecord[] = [];
+        const chunkSize = 1_000;
+        let offset = 0;
+
+        while (true) {
+          const result = await supabase
+            .from("product_variants")
+            .select("product_id")
+            .ilike("sku", `%${queryText}%`)
+            .order("product_id")
+            .range(offset, offset + chunkSize - 1);
+
+          if (result.error) return { data: [], error: result.error };
+          const batch = rows(result.data);
+          data.push(...batch);
+          if (batch.length < chunkSize) return { data, error: null };
+          offset += chunkSize;
+        }
+      })()
+    : null;
+
+  if (variantMatches?.error) {
+    return NextResponse.json(
+      { message: "Não foi possível filtrar os produtos." },
+      { status: 503, headers: noStore }
+    );
+  }
+
+  const matchingProductIds = [
+    ...new Set(rows(variantMatches?.data).map((item) => text(item.product_id)).filter(Boolean))
+  ];
+  const searchClause = queryText
+    ? [
+        `name.ilike.%${queryText}%`,
+        `slug.ilike.%${queryText}%`,
+        matchingProductIds.length ? `id.in.(${matchingProductIds.join(",")})` : ""
+      ]
+        .filter(Boolean)
+        .join(",")
+    : "";
+
+  const loadProductRange = async (from: number, to: number, withCount: boolean) => {
+    let query = supabase
       .from("products")
-      .select(
-        "id,name,slug,short_description,description,category_id,model_id,collection_id,status,featured,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_variants(id,sku,color_name,size,active,inventory(available_quantity,reserved_quantity))"
-      )
-      .order("updated_at", { ascending: false })
-      .limit(500),
+      .select(productSelect, withCount ? { count: "exact" } : {});
+
+    if (searchClause) query = query.or(searchClause);
+    if (status) query = query.eq("status", status);
+
+    return query.order("updated_at", { ascending: false }).range(from, to);
+  };
+
+  const loadProducts = async () => {
+    if (!outOfStock) {
+      const from = (page - 1) * pageSize;
+      const result = await loadProductRange(from, from + pageSize - 1, true);
+      return {
+        data: result.data,
+        error: result.error,
+        total: result.count ?? 0
+      };
+    }
+
+    const allProducts: UnknownRecord[] = [];
+    const chunkSize = 500;
+    let offset = 0;
+
+    while (true) {
+      const result = await loadProductRange(offset, offset + chunkSize - 1, false);
+      if (result.error) return { data: [], error: result.error, total: 0 };
+      const batch = rows(result.data);
+      allProducts.push(...batch);
+      if (batch.length < chunkSize) break;
+      offset += chunkSize;
+    }
+
+    const filtered = serializeProducts(allProducts).filter((product) => product.stock <= 0);
+    const from = (page - 1) * pageSize;
+    return {
+      data: filtered.slice(from, from + pageSize),
+      error: null,
+      total: filtered.length,
+      serialized: true
+    };
+  };
+
+  const [result, categories, models, collections] = await Promise.all([
+    loadProducts(),
     supabase.from("categories").select("id,name").order("name"),
     supabase.from("product_models").select("id,name").order("name"),
     supabase.from("collections").select("id,name").order("name")
@@ -181,7 +280,10 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(
     {
-      products: serializeProducts(result.data),
+      products: "serialized" in result ? result.data : serializeProducts(result.data),
+      total: result.total,
+      page,
+      pageSize,
       categories: rows(categories.data).map((item) => ({
         id: text(item.id),
         name: text(item.name)
@@ -311,52 +413,21 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const variantResult = await supabase
-    .from("product_variants")
-    .select("id,product_id")
-    .eq("id", parsed.data.variantId)
-    .eq("product_id", parsed.data.productId)
-    .maybeSingle();
-  if (variantResult.error || !variantResult.data) {
+  const restockResult = await supabase.rpc("admin_restock_inventory", {
+    p_product_id: parsed.data.productId,
+    p_variant_id: parsed.data.variantId,
+    p_quantity: parsed.data.quantity,
+    p_reason: parsed.data.reason
+  });
+  if (restockResult.error) {
     return NextResponse.json(
-      { message: "Variação não encontrada." },
-      { status: 404, headers: noStore }
-    );
-  }
-
-  const inventoryResult = await supabase
-    .from("inventory")
-    .select("available_quantity,version")
-    .eq("variant_id", parsed.data.variantId)
-    .maybeSingle();
-  if (inventoryResult.error || !inventoryResult.data) {
-    return NextResponse.json(
-      { message: "Registro de estoque não encontrado." },
-      { status: 404, headers: noStore }
-    );
-  }
-
-  const currentQuantity = number(inventoryResult.data.available_quantity);
-  const currentVersion = number(inventoryResult.data.version);
-  const updateResult = await supabase
-    .from("inventory")
-    .update({
-      available_quantity: nextAvailableQuantity(currentQuantity, parsed.data.quantity),
-      version: currentVersion + 1
-    })
-    .eq("variant_id", parsed.data.variantId)
-    .eq("version", currentVersion)
-    .select("variant_id")
-    .maybeSingle();
-  if (updateResult.error || !updateResult.data) {
-    return NextResponse.json(
-      { message: "O estoque mudou durante a atualização. Recarregue e tente novamente." },
-      { status: 409, headers: noStore }
+      { message: "Não foi possível registrar a reposição de estoque." },
+      { status: restockResult.error.code === "42501" ? 403 : 409, headers: noStore }
     );
   }
 
   return NextResponse.json(
-    { ok: true, message: "Estoque atualizado. A disponibilidade pública foi recalculada." },
+    { ok: true, message: "Estoque atualizado com justificativa e auditoria." },
     { headers: noStore }
   );
 }

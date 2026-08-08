@@ -19,9 +19,14 @@ const mutationSchema = z.object({
   values: z.record(z.string(), z.unknown()).default({})
 });
 
+const stateActionSchema = z.object({
+  action: z.enum(["archive", "restore"]),
+  ids: z.array(z.string().uuid()).min(1).max(100)
+});
+
 function cleanSearch(value: string): string {
   return value
-    .replaceAll(/[,%()]/g, " ")
+    .replaceAll(/[^\p{L}\p{N}\s@.+-]/gu, " ")
     .trim()
     .slice(0, 80);
 }
@@ -111,7 +116,9 @@ function normalizeValues(
     }
 
     if (field.type === "datetime" && text) {
-      const date = new Date(text);
+      const date = new Date(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text) ? `${text}:00-03:00` : text
+      );
       if (Number.isNaN(date.getTime())) {
         throw new Error(`Campo inválido: ${field.label}`);
       }
@@ -354,9 +361,62 @@ export async function PATCH(
 
   if (!context.auth) return unauthorizedAdminResponse();
 
+  const body: unknown = await request.json().catch(() => null);
+  const stateAction = stateActionSchema.safeParse(body);
+
+  if (stateAction.success) {
+    const targetValue =
+      stateAction.data.action === "archive"
+        ? context.definition.archiveValue
+        : context.definition.restoreValue;
+
+    if (
+      !context.definition.allowArchive ||
+      !context.definition.archiveField ||
+      targetValue === undefined
+    ) {
+      return NextResponse.json(
+        { message: "Esta área preserva o estado dos registros por integridade histórica." },
+        { status: 405, headers: privateNoStore }
+      );
+    }
+
+    const values: Record<string, unknown> = {
+      [context.definition.archiveField]: targetValue
+    };
+
+    if (context.definition.updatedByField) {
+      values[context.definition.updatedByField] = context.auth.userId;
+    }
+
+    const result = await context.auth.supabase
+      .from(context.definition.table)
+      .update(values)
+      .in("id", stateAction.data.ids)
+      .select("id");
+
+    if (result.error || !result.data?.length) {
+      return NextResponse.json(
+        { message: "Não foi possível atualizar os registros selecionados." },
+        { status: 409, headers: privateNoStore }
+      );
+    }
+
+    const actionLabel = stateAction.data.action === "archive" ? "arquivado" : "restaurado";
+    return NextResponse.json(
+      {
+        message:
+          result.data.length === 1
+            ? `Registro ${actionLabel}.`
+            : `${result.data.length} registros foram atualizados.`
+      },
+      { headers: privateNoStore }
+    );
+  }
+
   const parsed = mutationSchema
     .extend({ id: z.string().uuid() })
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(

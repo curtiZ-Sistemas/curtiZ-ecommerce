@@ -6,6 +6,8 @@ describe("admin resources", () => {
     expect(isAdminResource("categorias")).toBe(true);
     expect(isAdminResource("modelos")).toBe(true);
     expect(isAdminResource("pagina-inicial")).toBe(true);
+    expect(isAdminResource("criativos")).toBe(false);
+    expect(isAdminResource("representantes")).toBe(false);
     expect(isAdminResource("inexistente")).toBe(false);
   });
 
@@ -18,6 +20,7 @@ describe("admin resources", () => {
       );
       if (definition.allowArchive) {
         expect(definition.archiveField).toBeTruthy();
+        expect(definition.restoreValue).not.toBeUndefined();
       }
     }
   });
@@ -26,5 +29,16 @@ describe("admin resources", () => {
     expect(adminResources.pedidos.allowCreate).toBe(false);
     expect(adminResources.clientes.allowCreate).toBe(false);
     expect(adminResources.contratos.allowCreate).toBe(false);
+  });
+
+  it("mantém arquivamento reversível sem excluir o histórico", () => {
+    expect(adminResources.banners).toMatchObject({
+      archiveValue: "archived",
+      restoreValue: "draft"
+    });
+    expect(adminResources.categorias).toMatchObject({
+      archiveValue: false,
+      restoreValue: true
+    });
   });
 });

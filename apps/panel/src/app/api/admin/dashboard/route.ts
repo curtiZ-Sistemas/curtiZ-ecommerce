@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
   if (!auth) return unauthorizedAdminResponse();
 
   const [
-    orders,
+    orderCount,
+    approvedSales,
     products,
     inventory,
     customers,
@@ -28,7 +29,8 @@ export async function GET(request: NextRequest) {
     recentOrders,
     activities
   ] = await Promise.all([
-    auth.supabase.from("orders").select("id,grand_total", { count: "exact" }).limit(500),
+    auth.supabase.from("orders").select("id", { count: "exact", head: true }),
+    auth.supabase.rpc("admin_approved_sales_total_in_cents"),
     auth.supabase.from("products").select("id", { count: "exact", head: true }),
     auth.supabase.from("inventory").select("variant_id,available_quantity,minimum_quantity"),
     auth.supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -58,19 +60,17 @@ export async function GET(request: NextRequest) {
       .limit(6)
   ]);
 
-  const criticalResults = [orders, products, inventory, customers];
+  const criticalResults = [orderCount, approvedSales, products, inventory, customers];
   if (criticalResults.every((result) => result.error)) {
     return NextResponse.json(
       { message: "Os indicadores administrativos não estão disponíveis agora." },
       { status: 503, headers: privateNoStore }
     );
   }
-  const orderRows = objectRows(orders.data);
   const inventoryRows = objectRows(inventory.data);
-  const grossRevenueInCents = orderRows.reduce(
-    (total, row) => total + Math.round(numberValue(row.grand_total) * 100),
-    0
-  );
+  const grossRevenueInCents = approvedSales.error
+    ? 0
+    : Math.round(numberValue(approvedSales.data));
   const lowStock = inventoryRows.filter(
     (row) => numberValue(row.available_quantity) <= numberValue(row.minimum_quantity)
   ).length;
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     {
       metrics: {
         grossRevenueInCents,
-        orders: orders.count ?? orderRows.length,
+        orders: orderCount.count ?? 0,
         products: products.count ?? 0,
         lowStock,
         customers: customers.count ?? 0,
@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
       recentOrders: recentOrders.error ? [] : objectRows(recentOrders.data),
       activities: activities.error ? [] : objectRows(activities.data),
       warnings: [
+        approvedSales.error ? "Vendas indisponíveis" : null,
         products.error ? "Produtos indisponíveis" : null,
         inventory.error ? "Estoque indisponível" : null,
         reviews.error ? "Avaliações indisponíveis" : null,

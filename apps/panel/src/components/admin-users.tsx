@@ -1,6 +1,14 @@
 "use client";
 
-import { LoaderCircle, Pencil, Search, ShieldAlert, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  Pencil,
+  Search,
+  ShieldAlert,
+  X
+} from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 type User = {
@@ -9,18 +17,34 @@ type User = {
   email_snapshot: string;
   status: string;
   roles: string[];
+  editable: boolean;
+  lastAccessChange: {
+    action?: string;
+    reason?: string;
+    created_at?: string;
+  } | null;
 };
 
 type UsersResponse = {
   users?: User[];
   total?: number;
+  pageSize?: number;
   message?: string;
 };
+
+const accessDate = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+  timeZone: "America/Sao_Paulo"
+});
 
 export function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [editing, setEditing] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
@@ -29,19 +53,21 @@ export function AdminUsers() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ page: String(page) });
       if (submitted) params.set("q", submitted);
       const response = await fetch(`/api/admin/users?${params}`, { cache: "no-store" });
       const result = (await response.json()) as UsersResponse;
       if (!response.ok) throw new Error(result.message);
       setUsers(result.users ?? []);
+      setTotal(result.total ?? 0);
+      setPageSize(result.pageSize ?? 20);
       setMessage("");
     } catch {
       setMessage("Não foi possível carregar os usuários.");
     } finally {
       setLoading(false);
     }
-  }, [submitted]);
+  }, [page, submitted]);
 
   useEffect(() => {
     void load();
@@ -65,9 +91,10 @@ export function AdminUsers() {
       });
       const result = (await response.json()) as UsersResponse;
       if (!response.ok) throw new Error(result.message);
-      setMessage(result.message ?? "Acesso atualizado.");
+      const successMessage = result.message ?? "Acesso atualizado.";
       setEditing(null);
       await load();
+      setMessage(successMessage);
     } catch (error) {
       setMessage(
         error instanceof Error && error.message ? error.message : "Não foi possível atualizar."
@@ -76,6 +103,8 @@ export function AdminUsers() {
       setPending(false);
     }
   };
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <section className="panel-card admin-resource">
@@ -89,6 +118,7 @@ export function AdminUsers() {
         className="admin-search standalone"
         onSubmit={(event) => {
           event.preventDefault();
+          setPage(1);
           setSubmitted(query.trim());
         }}
       >
@@ -128,6 +158,7 @@ export function AdminUsers() {
                 <th>E-mail</th>
                 <th>Papéis</th>
                 <th>Status</th>
+                <th>Última alteração</th>
                 <th>Ação</th>
               </tr>
             </thead>
@@ -138,14 +169,37 @@ export function AdminUsers() {
                   <td data-label="E-mail">{user.email_snapshot}</td>
                   <td data-label="Papéis">{user.roles.join(", ") || "Sem papel"}</td>
                   <td data-label="Status">{user.status}</td>
+                  <td data-label="Última alteração">
+                    {user.lastAccessChange?.created_at ? (
+                      <span className="admin-user-history">
+                        <strong>
+                          {user.lastAccessChange.action === "permission_override"
+                            ? "Permissão temporária"
+                            : "Acesso atualizado"}
+                        </strong>
+                        <small>
+                          {accessDate.format(new Date(user.lastAccessChange.created_at))}
+                          {user.lastAccessChange.reason
+                            ? ` · ${user.lastAccessChange.reason}`
+                            : ""}
+                        </small>
+                      </span>
+                    ) : (
+                      "Sem alterações"
+                    )}
+                  </td>
                   <td className="admin-row-actions">
-                    <button
-                      type="button"
-                      onClick={() => setEditing(user)}
-                      aria-label={`Editar acesso de ${user.full_name}`}
-                    >
-                      <Pencil />
-                    </button>
+                    {user.editable ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(user)}
+                        aria-label={`Editar acesso de ${user.full_name}`}
+                      >
+                        <Pencil />
+                      </button>
+                    ) : (
+                      <small>Fluxo protegido</small>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -153,6 +207,32 @@ export function AdminUsers() {
           </table>
         </div>
       )}
+      {!loading && users.length > 0 ? (
+        <footer className="admin-pagination">
+          <span>{total.toLocaleString("pt-BR")} usuários</span>
+          <div>
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => current - 1)}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft />
+            </button>
+            <span>
+              Página {page} de {pages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= pages}
+              onClick={() => setPage((current) => current + 1)}
+              aria-label="Próxima página"
+            >
+              <ChevronRight />
+            </button>
+          </div>
+        </footer>
+      ) : null}
       {editing && (
         <div className="admin-modal-backdrop">
           <section

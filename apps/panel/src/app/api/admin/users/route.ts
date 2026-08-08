@@ -20,9 +20,12 @@ const updateSchema = z.object({
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
-  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page")) || 1);
+  const page = Math.max(
+    1,
+    Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
+  );
   const q = (request.nextUrl.searchParams.get("q") ?? "")
-    .replaceAll(/[,%()]/g, " ")
+    .replaceAll(/[^\p{L}\p{N}\s@.+-]/gu, " ")
     .trim()
     .slice(0, 80);
   const pageSize = 20;
@@ -39,13 +42,37 @@ export async function GET(request: NextRequest) {
       { status: 503, headers: privateNoStore }
     );
   }
-  const users = objectRows(result.data).map((user) => ({
-    ...user,
-    roles: objectRows(user.user_roles)
+  const userRows = objectRows(result.data);
+  const userIds = userRows
+    .map((user) => (typeof user.id === "string" ? user.id : ""))
+    .filter(Boolean);
+  const historyResult = userIds.length
+    ? await auth.supabase
+        .from("audit_logs")
+        .select("entity_id,action,reason,created_at")
+        .eq("entity_type", "profiles")
+        .in("entity_id", userIds)
+        .in("action", ["update_access", "permission_override"])
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+  const historyByUser = new Map<string, Record<string, unknown>>();
+  for (const history of objectRows(historyResult.data)) {
+    const entityId = typeof history.entity_id === "string" ? history.entity_id : "";
+    if (entityId && !historyByUser.has(entityId)) historyByUser.set(entityId, history);
+  }
+  const users = userRows.map((user) => {
+    const roles = objectRows(user.user_roles)
       .map((role) => (typeof role.role === "string" ? role.role : ""))
-      .filter(Boolean),
-    user_roles: undefined
-  }));
+      .filter(Boolean);
+    const userId = typeof user.id === "string" ? user.id : "";
+    return {
+      ...user,
+      roles,
+      editable: Boolean(userId) && userId !== auth.userId && !roles.includes("admin"),
+      lastAccessChange: userId ? (historyByUser.get(userId) ?? null) : null,
+      user_roles: undefined
+    };
+  });
   return NextResponse.json(
     { users, total: result.count ?? 0, page, pageSize },
     { headers: privateNoStore }

@@ -3,6 +3,8 @@
 import {
   Archive,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Eye,
   EyeOff,
@@ -14,14 +16,16 @@ import {
   Search,
   X
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { filterManagedProducts, type ManagedProduct } from "@/lib/product-management";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type ManagedProduct } from "@/lib/product-management";
 
 type CatalogResponse = {
   products?: ManagedProduct[];
   categories?: Array<{ id: string; name: string }>;
   models?: Array<{ id: string; name: string }>;
   collections?: Array<{ id: string; name: string }>;
+  total?: number;
+  pageSize?: number;
   message?: string;
 };
 
@@ -31,7 +35,12 @@ const formatBRL = (value: number) =>
 export function ProductManagement() {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [filter, setFilter] = useState<"all" | "out">("all");
+  const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState("");
   const [message, setMessage] = useState("");
@@ -42,33 +51,36 @@ export function ProductManagement() {
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
+  const reasons = useRef<Record<string, HTMLInputElement | null>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/catalog/products", { cache: "no-store" });
+      const params = new URLSearchParams({ page: String(page) });
+      if (submittedQuery) params.set("q", submittedQuery);
+      if (status) params.set("status", status);
+      if (filter === "out") params.set("stock", "out");
+      const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
       const result = (await response.json()) as CatalogResponse;
       if (!response.ok) throw new Error(result.message);
       setProducts(result.products ?? []);
       setCategories(result.categories ?? []);
       setModels(result.models ?? []);
       setCollections(result.collections ?? []);
-      setMessage("");
+      setTotal(result.total ?? 0);
+      setPageSize(result.pageSize ?? 20);
     } catch {
       setMessage("Não foi possível carregar os produtos agora.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter, page, status, submittedQuery]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const visibleProducts = useMemo(
-    () => filterManagedProducts(products, filter, query),
-    [filter, products, query]
-  );
+  const pages = Math.max(1, Math.ceil(total / pageSize));
 
   const execute = async (body: Record<string, unknown>, key: string) => {
     if (pending) return false;
@@ -154,14 +166,20 @@ export function ProductManagement() {
             <button
               className={filter === "all" ? "secondary-button active" : "secondary-button"}
               type="button"
-              onClick={() => setFilter("all")}
+              onClick={() => {
+                setPage(1);
+                setFilter("all");
+              }}
             >
               Todos
             </button>
             <button
               className={filter === "out" ? "secondary-button active" : "secondary-button"}
               type="button"
-              onClick={() => setFilter("out")}
+              onClick={() => {
+                setPage(1);
+                setFilter("out");
+              }}
             >
               Produtos sem estoque
             </button>
@@ -169,15 +187,45 @@ export function ProductManagement() {
         </div>
       </div>
 
-      <label className="product-search">
-        <Search aria-hidden="true" />
-        <span className="sr-only">Buscar produtos</span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar nome ou SKU"
-        />
-      </label>
+      <div className="product-list-toolbar">
+        <form
+          className="product-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setPage(1);
+            setSubmittedQuery(query.trim());
+          }}
+        >
+          <Search aria-hidden="true" />
+          <label className="sr-only" htmlFor="product-search-input">
+            Buscar produtos
+          </label>
+          <input
+            id="product-search-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar nome, slug ou SKU"
+          />
+          <button className="secondary-button" type="submit">
+            Buscar
+          </button>
+        </form>
+        <label className="product-status-filter">
+          <span>Status</span>
+          <select
+            value={status}
+            onChange={(event) => {
+              setPage(1);
+              setStatus(event.target.value);
+            }}
+          >
+            <option value="">Todos</option>
+            <option value="draft">Rascunhos</option>
+            <option value="active">Publicados</option>
+            <option value="archived">Arquivados</option>
+          </select>
+        </label>
+      </div>
 
       {message && (
         <p className="form-message" role="status">
@@ -189,14 +237,14 @@ export function ProductManagement() {
           <LoaderCircle className="spin" />
           <strong>Carregando produtos</strong>
         </div>
-      ) : visibleProducts.length === 0 ? (
+      ) : products.length === 0 ? (
         <div className="operational-empty">
           <Boxes />
           <strong>Nenhum produto encontrado</strong>
         </div>
       ) : (
         <div className="managed-product-list">
-          {visibleProducts.map((product) => (
+          {products.map((product) => (
             <article className="managed-product" key={product.id}>
               <header>
                 <div>
@@ -315,6 +363,19 @@ export function ProductManagement() {
                         aria-label={`Quantidade para ${variant.sku}`}
                       />
                     </label>
+                    <label className="restock-reason">
+                      <span>Motivo da reposição</span>
+                      <input
+                        ref={(element) => {
+                          reasons.current[variant.id] = element;
+                        }}
+                        type="text"
+                        minLength={10}
+                        maxLength={500}
+                        placeholder="Ex.: entrada da nota 1234"
+                        aria-label={`Motivo da reposição de ${variant.sku}`}
+                      />
+                    </label>
                     <button
                       className="primary-button"
                       type="button"
@@ -327,12 +388,19 @@ export function ProductManagement() {
                           setMessage("Informe uma quantidade inteira maior que zero.");
                           return;
                         }
+                        const reason = reasons.current[variant.id]?.value.trim() ?? "";
+                        if (reason.length < 10) {
+                          setMessage("Informe um motivo de reposição com pelo menos 10 caracteres.");
+                          reasons.current[variant.id]?.focus();
+                          return;
+                        }
                         void execute(
                           {
                             action: "restock",
                             productId: product.id,
                             variantId: variant.id,
-                            quantity
+                            quantity,
+                            reason
                           },
                           variant.id
                         );
@@ -348,6 +416,33 @@ export function ProductManagement() {
           ))}
         </div>
       )}
+
+      {!loading && products.length > 0 ? (
+        <footer className="admin-pagination">
+          <span>{total.toLocaleString("pt-BR")} produtos</span>
+          <div>
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => current - 1)}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft />
+            </button>
+            <span>
+              Página {page} de {pages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= pages}
+              onClick={() => setPage((current) => current + 1)}
+              aria-label="Próxima página"
+            >
+              <ChevronRight />
+            </button>
+          </div>
+        </footer>
+      ) : null}
 
       {archiveTarget && (
         <div className="confirm-backdrop" role="presentation">

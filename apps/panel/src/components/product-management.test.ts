@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterManagedProducts, nextAvailableQuantity } from "../lib/product-management";
+import { filterManagedProducts } from "../lib/product-management";
 
 const products = [
   {
@@ -41,9 +41,5 @@ describe("product management", () => {
   it("busca por nome ou SKU sem alterar a lista original", () => {
     expect(filterManagedProducts(products, "all", "sku-1")).toEqual([products[0]]);
     expect(products).toHaveLength(2);
-  });
-
-  it("reposição faz um produto sem saldo voltar a ter disponibilidade", () => {
-    expect(nextAvailableQuantity(0, 1)).toBe(1);
   });
 });

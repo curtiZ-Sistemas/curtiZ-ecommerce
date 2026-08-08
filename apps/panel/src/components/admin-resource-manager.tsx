@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   X
 } from "lucide-react";
@@ -67,10 +68,67 @@ function scalarToString(value: unknown): string {
   return "";
 }
 
-function displayValue(value: unknown): string {
+const columnLabels: Record<string, string> = {
+  public_code: "Código",
+  customer_email_snapshot: "Cliente",
+  payment_status: "Pagamento",
+  shipment_status: "Envio",
+  grand_total: "Total",
+  full_name: "Nome",
+  email_snapshot: "E-mail",
+  product_id: "Produto",
+  variant_id: "Variação",
+  representative_id: "Representante",
+  current_level_id: "Nível",
+  region_code: "Região",
+  verified_purchase: "Compra verificada",
+  brand_response: "Resposta da curti Z",
+  storage_path: "Arquivo",
+  accepted_at: "Aceito em"
+};
+
+const statusLabels: Record<string, string> = {
+  active: "Ativo",
+  inactive: "Inativo",
+  draft: "Rascunho",
+  pending: "Pendente",
+  pending_review: "Em análise",
+  approved: "Aprovado",
+  published: "Publicado",
+  archived: "Arquivado",
+  rejected: "Rejeitado",
+  reported: "Denunciado",
+  suspended: "Suspenso",
+  cancelled: "Cancelado"
+};
+
+const dateTime = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+  timeZone: "America/Sao_Paulo"
+});
+
+const dateTimeInput = new Intl.DateTimeFormat("sv-SE", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "America/Sao_Paulo"
+});
+
+function displayValue(value: unknown, column: string): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Sim" : "Não";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") {
+    if (statusLabels[value]) return statusLabels[value];
+    if (column.endsWith("_at")) {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return dateTime.format(parsed);
+    }
+    return value;
+  }
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
 
   if (typeof value === "object") {
@@ -84,6 +142,14 @@ function displayValue(value: unknown): string {
   return "—";
 }
 
+function columnLabel(column: string, fields: readonly AdminResourceField[]): string {
+  return (
+    fields.find((field) => field.key === column)?.label ??
+    columnLabels[column] ??
+    column.replaceAll("_", " ")
+  );
+}
+
 function itemId(item: Item): string {
   if (typeof item.id === "string") return item.id;
   if (typeof item.key === "string") return item.key;
@@ -94,7 +160,10 @@ function fieldValue(item: Item, field: AdminResourceField): unknown {
   const value = item[field.key];
 
   if (field.type === "datetime" && typeof value === "string") {
-    return value.slice(0, 16);
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+      ? ""
+      : dateTimeInput.format(parsed).replace(" ", "T");
   }
 
   if (field.type === "json" && value && typeof value === "object") {
@@ -134,7 +203,11 @@ export function AdminResourceManager({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState<Item | "new" | null>(null);
-  const [archiveTarget, setArchiveTarget] = useState<Item | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [stateTarget, setStateTarget] = useState<{
+    items: Item[];
+    action: "archive" | "restore";
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +233,7 @@ export function AdminResourceManager({
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
+      setSelectedIds([]);
     } catch {
       setMessage("Não foi possível carregar os registros agora.");
     } finally {
@@ -185,6 +259,7 @@ export function AdminResourceManager({
   }, [definition.select]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const selectionLabelColumn = columns[0] ?? "id";
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -236,9 +311,10 @@ export function AdminResourceManager({
         throw new Error(result.message || "Não foi possível salvar.");
       }
 
-      setMessage(result.message ?? "Alterações salvas.");
+      const successMessage = result.message ?? "Alterações salvas.";
       setEditing(null);
       await load();
+      setMessage(successMessage);
     } catch (error) {
       setMessage(
         error instanceof Error && error.message
@@ -265,44 +341,63 @@ export function AdminResourceManager({
       }
     }
 
+    if (definition.archiveField && definition.restoreValue !== undefined) {
+      copy[definition.archiveField] = definition.restoreValue;
+    }
+
     setEditing(copy);
   };
 
-  const archive = async (): Promise<void> => {
-    if (!archiveTarget || pending) return;
+  const updateState = async (): Promise<void> => {
+    if (!stateTarget || pending) return;
 
     setPending(true);
     setMessage("");
 
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
-        method: "DELETE",
+        method: "PATCH",
         headers: {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          id: itemId(archiveTarget)
+          action: stateTarget.action,
+          ids: stateTarget.items.map(itemId).filter(Boolean)
         })
       });
       const result = await readListResponse(response);
 
       if (!response.ok) {
-        throw new Error(result.message || "Não foi possível arquivar.");
+        throw new Error(result.message || "Não foi possível atualizar os registros.");
       }
 
-      setMessage(result.message ?? "Registro arquivado.");
-      setArchiveTarget(null);
+      const successMessage = result.message ?? "Registros atualizados.";
+      setStateTarget(null);
       await load();
+      setMessage(successMessage);
     } catch (error) {
       setMessage(
         error instanceof Error && error.message
           ? error.message
-          : "Não foi possível arquivar."
+          : "Não foi possível atualizar os registros."
       );
     } finally {
       setPending(false);
     }
   };
+
+  const isArchived = (item: Item): boolean =>
+    Boolean(
+      definition.archiveField &&
+        item[definition.archiveField] === definition.archiveValue
+    );
+
+  const selectedItems = items.filter((item) => selectedIds.includes(itemId(item)));
+  const selectedArchivedItems = selectedItems.filter(isArchived);
+  const selectedActiveItems = selectedItems.filter((item) => !isArchived(item));
+  const selectableIds = items.map(itemId).filter(Boolean);
+  const allItemsSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
 
   return (
     <section className="panel-card admin-resource">
@@ -369,7 +464,7 @@ export function AdminResourceManager({
             ) : (
               statusField.options?.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {statusLabels[option] ?? option}
                 </option>
               ))
             )}
@@ -386,6 +481,28 @@ export function AdminResourceManager({
           <RefreshCw className={loading ? "spin" : ""} />
         </button>
       </div>
+
+      {definition.allowArchive && selectedItems.length > 0 ? (
+        <div className="admin-bulk-actions" role="toolbar" aria-label="Ações em massa">
+          <strong>{selectedItems.length} selecionado(s)</strong>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={selectedArchivedItems.length === 0}
+            onClick={() => setStateTarget({ items: selectedArchivedItems, action: "restore" })}
+          >
+            <RotateCcw aria-hidden="true" /> Restaurar
+          </button>
+          <button
+            className="secondary-button danger-button"
+            type="button"
+            disabled={selectedActiveItems.length === 0}
+            onClick={() => setStateTarget({ items: selectedActiveItems, action: "archive" })}
+          >
+            <Archive aria-hidden="true" /> Arquivar
+          </button>
+        </div>
+      ) : null}
 
       {message ? (
         <p className="admin-feedback" role="status">
@@ -408,8 +525,20 @@ export function AdminResourceManager({
             <table className="data-table admin-data-table">
               <thead>
                 <tr>
+                  {definition.allowArchive ? (
+                    <th className="admin-select-cell">
+                      <input
+                        type="checkbox"
+                        checked={allItemsSelected}
+                        onChange={(event) =>
+                          setSelectedIds(event.target.checked ? selectableIds : [])
+                        }
+                        aria-label="Selecionar registros desta página"
+                      />
+                    </th>
+                  ) : null}
                   {columns.map((column) => (
-                    <th key={column}>{column.replaceAll("_", " ")}</th>
+                    <th key={column}>{columnLabel(column, definition.fields)}</th>
                   ))}
                   {definition.fields.length > 0 ? <th>Ações</th> : null}
                 </tr>
@@ -418,9 +547,29 @@ export function AdminResourceManager({
               <tbody>
                 {items.map((item, index) => (
                   <tr key={itemId(item) || `item-${index}`}>
+                    {definition.allowArchive ? (
+                      <td className="admin-select-cell" data-label="Selecionar">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(itemId(item))}
+                          onChange={(event) => {
+                            const id = itemId(item);
+                            setSelectedIds((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, id])]
+                                : current.filter((selected) => selected !== id)
+                            );
+                          }}
+                          aria-label={`Selecionar ${displayValue(
+                            item[selectionLabelColumn],
+                            selectionLabelColumn
+                          )}`}
+                        />
+                      </td>
+                    ) : null}
                     {columns.map((column) => (
-                      <td key={column} data-label={column.replaceAll("_", " ")}>
-                        {displayValue(item[column])}
+                      <td key={column} data-label={columnLabel(column, definition.fields)}>
+                        {displayValue(item[column], column)}
                       </td>
                     ))}
 
@@ -444,10 +593,18 @@ export function AdminResourceManager({
                           </button>
                         ) : null}
 
-                        {definition.allowArchive ? (
+                        {definition.allowArchive && isArchived(item) ? (
                           <button
                             type="button"
-                            onClick={() => setArchiveTarget(item)}
+                            onClick={() => setStateTarget({ items: [item], action: "restore" })}
+                            aria-label="Restaurar"
+                          >
+                            <RotateCcw />
+                          </button>
+                        ) : definition.allowArchive ? (
+                          <button
+                            type="button"
+                            onClick={() => setStateTarget({ items: [item], action: "archive" })}
                             aria-label="Arquivar"
                           >
                             <Archive />
@@ -547,7 +704,7 @@ export function AdminResourceManager({
                           <option value="">Selecione</option>
                           {field.options?.map((option) => (
                             <option key={option} value={option}>
-                              {option}
+                              {statusLabels[option] ?? option}
                             </option>
                           ))}
                         </select>
@@ -598,22 +755,29 @@ export function AdminResourceManager({
         </div>
       ) : null}
 
-      {archiveTarget ? (
+      {stateTarget ? (
         <div className="admin-modal-backdrop">
           <section
             className="admin-confirm"
             role="alertdialog"
             aria-modal="true"
-            aria-labelledby="archive-title"
+            aria-labelledby="state-action-title"
           >
-            <h2 id="archive-title">Arquivar registro?</h2>
-            <p>O item deixará de ficar ativo, mas o histórico será preservado.</p>
+            <h2 id="state-action-title">
+              {stateTarget.action === "archive" ? "Arquivar" : "Restaurar"}{" "}
+              {stateTarget.items.length === 1 ? "registro?" : "registros?"}
+            </h2>
+            <p>
+              {stateTarget.action === "archive"
+                ? "Os itens deixarão de ficar ativos, mas o histórico será preservado."
+                : "Os itens voltarão como rascunho ou ativos, conforme o tipo de cadastro."}
+            </p>
 
             <div>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => setArchiveTarget(null)}
+                onClick={() => setStateTarget(null)}
                 disabled={pending}
               >
                 Cancelar
@@ -622,11 +786,11 @@ export function AdminResourceManager({
               <button
                 className="primary-button"
                 type="button"
-                onClick={() => void archive()}
+                onClick={() => void updateState()}
                 disabled={pending}
               >
                 {pending ? <LoaderCircle className="spin" /> : null}
-                Arquivar
+                {stateTarget.action === "archive" ? "Arquivar" : "Restaurar"}
               </button>
             </div>
           </section>

@@ -47,5 +47,3 @@ export const filterManagedProducts = (
           .includes(normalized))
   );
 };
-
-export const nextAvailableQuantity = (current: number, added: number) => current + added;

@@ -22,6 +22,7 @@ export type AdminResourceDefinition = {
   allowArchive: boolean;
   archiveField?: string;
   archiveValue?: string | boolean;
+  restoreValue?: string | boolean;
   orderColumn: string;
   createdByField?: string;
   updatedByField?: string;
@@ -40,12 +41,10 @@ export const adminResourceKeys = [
   "conteudo",
   "marketing",
   "cupons",
-  "representantes",
   "kits",
   "niveis",
   "metas",
   "comissoes",
-  "criativos",
   "campanhas",
   "avaliacoes",
   "treinamentos",
@@ -76,6 +75,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "sort_order"
   },
   modelos: {
@@ -96,6 +96,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "sort_order"
   },
   colecoes: {
@@ -117,6 +118,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "created_at"
   },
   variacoes: {
@@ -140,6 +142,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "updated_at"
   },
   midias: {
@@ -224,6 +227,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "status",
     archiveValue: "archived",
+    restoreValue: "draft",
     orderColumn: "sort_order",
     createdByField: "created_by",
     updatedByField: "updated_by"
@@ -264,6 +268,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "sort_order",
     createdByField: "created_by",
     updatedByField: "updated_by"
@@ -292,6 +297,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "status",
     archiveValue: "archived",
+    restoreValue: "draft",
     orderColumn: "updated_at",
     createdByField: "author_id"
   },
@@ -311,6 +317,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "created_at",
     createdByField: "created_by"
   },
@@ -344,29 +351,9 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "created_at",
     createdByField: "created_by"
-  },
-  representantes: {
-    label: "Representantes",
-    singular: "representante",
-    description: "Acompanhe situação, nível e região sem expor dados estratégicos.",
-    table: "representatives",
-    select:
-      "id,public_code,referral_code,status,current_level_id,region_code,approved_at,updated_at",
-    searchColumns: ["public_code", "referral_code", "region_code"],
-    fields: [
-      {
-        key: "status",
-        label: "Status",
-        type: "select",
-        options: ["approved_waiting_kit", "active", "suspended", "cancelled"]
-      },
-      { key: "region_code", label: "Região", type: "text" }
-    ],
-    allowCreate: false,
-    allowArchive: false,
-    orderColumn: "updated_at"
   },
   kits: {
     label: "Kits",
@@ -388,6 +375,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "updated_at",
     createdByField: "created_by"
   },
@@ -409,6 +397,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "rank"
   },
   metas: {
@@ -431,6 +420,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "created_at",
     createdByField: "created_by"
   },
@@ -455,44 +445,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "active",
     archiveValue: false,
+    restoreValue: true,
     orderColumn: "created_at",
-    createdByField: "created_by"
-  },
-  criativos: {
-    label: "Criativos",
-    singular: "criativo",
-    description: "Gerencie rascunhos, aprovações, publicação e disponibilidade.",
-    table: "creative_assets",
-    select:
-      "id,title,description,asset_type,platform,status,starts_at,expires_at,storage_path,caption_text,created_at,updated_at",
-    searchColumns: ["title", "description", "platform"],
-    fields: [
-      { key: "title", label: "Título", type: "text", required: true },
-      { key: "description", label: "Descrição", type: "textarea" },
-      {
-        key: "asset_type",
-        label: "Tipo",
-        type: "select",
-        required: true,
-        options: ["image", "video", "caption", "document", "package"]
-      },
-      { key: "platform", label: "Canal", type: "text", required: true },
-      { key: "storage_path", label: "Arquivo", type: "text" },
-      { key: "caption_text", label: "Texto do criativo", type: "textarea" },
-      {
-        key: "status",
-        label: "Status",
-        type: "select",
-        options: ["draft", "pending_review", "approved", "published", "archived"]
-      },
-      { key: "starts_at", label: "Início", type: "datetime" },
-      { key: "expires_at", label: "Expiração", type: "datetime" }
-    ],
-    allowCreate: true,
-    allowArchive: true,
-    archiveField: "status",
-    archiveValue: "archived",
-    orderColumn: "updated_at",
     createdByField: "created_by"
   },
   campanhas: {
@@ -519,6 +473,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "status",
     archiveValue: "archived",
+    restoreValue: "draft",
     orderColumn: "updated_at",
     createdByField: "created_by"
   },
@@ -574,6 +529,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     allowArchive: true,
     archiveField: "status",
     archiveValue: "archived",
+    restoreValue: "draft",
     orderColumn: "sort_order",
     createdByField: "created_by",
     updatedByField: "updated_by"
@@ -584,7 +540,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     description: "Acompanhe contratos da rede e seus estados.",
     table: "representative_contracts",
     select: "id,representative_id,version,storage_path,accepted_at",
-    searchColumns: ["version", "status"],
+    searchColumns: ["version"],
     fields: [],
     allowCreate: false,
     allowArchive: false,

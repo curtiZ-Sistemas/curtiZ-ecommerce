@@ -97,6 +97,9 @@ function Administration({ section }: { section: string }) {
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "permissoes") return <AdminPermissions />;
+  if (section === "representantes" || section === "criativos") {
+    return <RepresentativeConsole role="administracao" section={section} />;
+  }
   if (isAdminResource(section)) return <AdminResourceManager resource={section} />;
   return (
     <div className="admin-empty-state">
