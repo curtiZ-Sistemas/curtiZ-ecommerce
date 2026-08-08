@@ -167,7 +167,18 @@ async function resourceContext(
   const resource = (await params).resource;
   if (!isAdminResource(resource)) return null;
 
-  const auth = await authorizeAdminRequest(request);
+  const managerResources = new Set([
+    "pagina-inicial",
+    "banners",
+    "niveis",
+    "metas",
+    "kits",
+    "comissoes"
+  ]);
+  const auth = await authorizeAdminRequest(
+    request,
+    managerResources.has(resource) ? ["admin", "manager"] : ["admin"]
+  );
   if (!auth) {
     return {
       resource,

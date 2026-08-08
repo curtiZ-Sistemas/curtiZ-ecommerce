@@ -6,9 +6,11 @@ import {
   Copy,
   Eye,
   ExternalLink,
+  History,
   LoaderCircle,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   Trash2,
   X
@@ -37,6 +39,17 @@ type ApiResult = {
   item?: HomepageSection;
   message?: string;
 };
+
+type HomepageVersion = {
+  id: string;
+  section_id: string;
+  version: number;
+  created_at: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 const sectionTypes = [
   ["banner_hero", "Banners principais"],
@@ -82,7 +95,7 @@ function getFormNumber(
     : fallback;
 }
 
-export function HomepageBuilder() {
+export function HomepageBuilder({ showVersions = false }: { showVersions?: boolean }) {
   const [sections, setSections] = useState<
     HomepageSection[]
   >([]);
@@ -94,6 +107,26 @@ export function HomepageBuilder() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [versions, setVersions] = useState<HomepageVersion[]>([]);
+
+  const loadVersions = useCallback(async () => {
+    if (!showVersions) return;
+    try {
+      const response = await fetch("/api/manager/homepage-versions", { cache: "no-store" });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isRecord(payload)) return;
+      const items: unknown[] = Array.isArray(payload.items) ? payload.items : [];
+      setVersions(items.filter((item): item is HomepageVersion =>
+        isRecord(item) &&
+        typeof item.id === "string" &&
+        typeof item.section_id === "string" &&
+        typeof item.version === "number" &&
+        typeof item.created_at === "string"
+      ));
+    } catch {
+      setVersions([]);
+    }
+  }, [showVersions]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,7 +162,30 @@ export function HomepageBuilder() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadVersions();
+  }, [load, loadVersions]);
+
+  const restoreVersion = async (version: HomepageVersion) => {
+    const reason = window.prompt("Informe a justificativa para restaurar esta versão:")?.trim();
+    if (!reason || pending) return;
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/manager/homepage-versions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ versionId: version.id, reason })
+      });
+      const payload = (await response.json()) as { message?: string };
+      if (!response.ok) throw new Error(payload.message);
+      setMessage(payload.message ?? "Versão restaurada.");
+      await Promise.all([load(), loadVersions()]);
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível restaurar a versão.");
+    } finally {
+      setPending(false);
+    }
+  };
 
   const mutate = async (
     method: "POST" | "PATCH" | "DELETE",
@@ -562,6 +618,22 @@ export function HomepageBuilder() {
           )}
         </div>
       )}
+
+      {showVersions ? (
+        <section className="homepage-history" aria-labelledby="homepage-history-title">
+          <h3 id="homepage-history-title"><History aria-hidden="true" /> Histórico de versões</h3>
+          {versions.length === 0 ? <p className="admin-empty-copy">Nenhuma versão anterior registrada.</p> : (
+            <div className="admin-compact-list">
+              {versions.slice(0, 12).map((version) => (
+                <div key={version.id}>
+                  <span><strong>Versão {version.version}</strong><small>Seção {version.section_id.slice(0, 8)} · {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(version.created_at))}</small></span>
+                  <button className="secondary-button" type="button" disabled={pending} onClick={() => void restoreVersion(version)}><RotateCcw aria-hidden="true" /> Restaurar</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {editing ? (
         <div className="admin-modal-backdrop">

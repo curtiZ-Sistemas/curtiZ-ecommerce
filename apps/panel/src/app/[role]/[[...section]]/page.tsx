@@ -1,15 +1,12 @@
 import {
-  Activity,
-  BadgeDollarSign,
   Boxes,
   CircleCheck,
   Clock3,
-  RotateCcw,
   Webhook
 } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PanelShell, type PanelRole } from "@/components/panel-shell";
-import { RevenueChart } from "@/components/revenue-chart";
 import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
@@ -19,8 +16,11 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 import { AdminPermissions } from "@/components/admin-permissions";
 import { AdminResourceManager } from "@/components/admin-resource-manager";
 import { AdminUsers } from "@/components/admin-users";
+import { ManagerDashboard } from "@/components/manager-dashboard";
+import { ManagerResourceManager } from "@/components/manager-resource-manager";
 import { requirePanelAccess } from "@/lib/auth";
 import { isAdminResource } from "@/lib/admin-resources";
+import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
 
@@ -53,7 +53,7 @@ export default async function RolePage({
         <Administration section={section} />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
-      ) : representativeSections.has(section) ? (
+      ) : representativeSections.has(section) && role !== "gerencia" ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
         <Operational section={section} />
@@ -110,40 +110,25 @@ function Administration({ section }: { section: string }) {
 }
 
 function Management({ section }: { section: string }) {
-  if (section === "financeiro") return <Financial />;
-  if (section === "aprovacoes") return <Approvals />;
-  return (
-    <>
-      <div className="metric-grid">
-        <Metric
-          label="Faturamento bruto"
-          value="R$ 2,84 mi"
-          trend="+18,7%"
-          icon={<BadgeDollarSign />}
-        />
-        <Metric
-          label="Faturamento líquido"
-          value="R$ 2,45 mi"
-          trend="+16,9%"
-          icon={<CircleCheck />}
-        />
-        <Metric label="Lucro estimado" value="R$ 731 mil" trend="+21,3%" icon={<Activity />} />
-        <Metric label="Reembolsos" value="R$ 49 mil" trend="-8,6%" icon={<RotateCcw />} />
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel-card">
-          <h2>Faturamento ao longo do tempo</h2>
-          <RevenueChart />
-        </section>
-        <section className="panel-card">
-          <h2>Aprovações pendentes</h2>
-          <Compact label="Reembolso elevado" detail="Pedidos aguardando análise" value="2" />
-          <Compact label="Ajuste de estoque" detail="Acima do limite" value="3" />
-          <Compact label="Conta privilegiada" detail="Requer AAL2" value="1" />
-        </section>
-      </div>
-    </>
-  );
+  if (!section || section === "visao-estrategica" || section === "alertas") return <ManagerDashboard />;
+  if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
+  if (section === "aprovacoes") return <ManagerApprovals />;
+  if (section === "solicitacoes-representantes" || section === "criativos") {
+    return <RepresentativeConsole role="gerencia" section={section} />;
+  }
+  if (["niveis", "metas", "kits", "banners"].includes(section)) {
+    return <AdminResourceManager resource={section as "niveis" | "metas" | "kits" | "banners"} />;
+  }
+  if (section === "regras-comissao") return <AdminResourceManager resource="comissoes" />;
+
+  const aliases: Record<string, ManagerResourceKey> = {
+    vendas: "pedidos-vendas",
+    "comissoes-representantes": "comissoes"
+  };
+  const resource = aliases[section] ?? section;
+  if (isManagerResource(resource)) return <ManagerResourceManager resource={resource} />;
+
+  return <div className="admin-empty-state"><h2>Área gerencial não encontrada</h2><p>Escolha uma opção disponível no menu.</p></div>;
 }
 
 function Technical({ section }: { section: string }) {
@@ -207,44 +192,18 @@ function Compact({ label, detail, value }: { label: string; detail: string; valu
   );
 }
 
-function Financial() {
+function ManagerApprovals() {
   return (
-    <div className="dashboard-grid">
-      <section className="panel-card">
-        <h2>Conciliação Mercado Pago</h2>
-        <Compact
-          label="Pagamento conciliado"
-          detail="Bruto R$ 134,80 • Taxa R$ 6,41"
-          value="Conciliado"
-        />
-        <Compact label="Divergência financeira" detail="Diferença de R$ 2,10" value="Revisar" />
-      </section>
-      <section className="panel-card">
-        <h2>Fechamento</h2>
-        <p>
-          Períodos fechados ficam bloqueados. Somente Gerência pode reabrir com motivo auditado.
-        </p>
-        <button className="primary-button">Iniciar fechamento</button>
-      </section>
-    </div>
-  );
-}
-
-function Approvals() {
-  return (
-    <section className="panel-card">
-      <h2>Aprovações pendentes</h2>
-      <Compact
-        label="Reembolso acima do limite"
-        detail="R$ 489,90 • motivo registrado"
-        value="Analisar"
-      />
-      <Compact
-        label="Ajuste de inventário"
-        detail="+42 unidades • sessão INV-03"
-        value="Analisar"
-      />
-      <Compact label="Novo usuário Técnico" detail="AAL2 obrigatório" value="Analisar" />
+    <section className="panel-card manager-approvals">
+      <h2>Central de aprovações</h2>
+      <p>As decisões permanecem nos fluxos de origem e são validadas no servidor.</p>
+      <div className="manager-approval-links">
+        <Link href="/gerencia/solicitacoes-representantes"><strong>Solicitações de representantes</strong><small>Documentos, análise e decisão justificada</small></Link>
+        <Link href="/gerencia/conteudo-loja"><strong>Conteúdo da loja</strong><small>Publicação, agenda e restauração de versões</small></Link>
+        <Link href="/gerencia/criativos"><strong>Criativos</strong><small>Aprovação simples ou dupla conforme a campanha</small></Link>
+        <Link href="/gerencia/campanhas"><strong>Campanhas</strong><small>Agenda e estados persistidos de publicação</small></Link>
+        <Link href="/gerencia/fechamentos"><strong>Fechamentos de comissão</strong><small>Aprovar, bloquear ou reabrir com auditoria</small></Link>
+      </div>
     </section>
   );
 }
