@@ -34,6 +34,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import React, { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import logoCurtiz from "../../public/images/logo-curtiz.png";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -260,7 +261,7 @@ export function PanelShell({
       >
         <div className="sidebar-heading">
           <Link className="panel-brand" href={`/${role}`} onClick={() => closeMenu()}>
-            <Image src="/images/logo-curtiz.png" alt="curti Z" width={150} height={100} priority />
+            <Image src={logoCurtiz} alt="curti Z" width={150} height={100} priority />
           </Link>
           <button
             className="sidebar-close"

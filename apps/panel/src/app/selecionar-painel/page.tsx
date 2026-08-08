@@ -1,6 +1,7 @@
 import { Boxes, ChartNoAxesCombined, ClipboardCheck, PanelsTopLeft } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import logoCurtiz from "../../../public/images/logo-curtiz.png";
 import { PanelSelectorLogout } from "@/components/panel-selector-logout";
 import { requirePanelSelectionAccess } from "@/lib/auth";
 
@@ -19,7 +20,7 @@ export default async function PanelSelectorPage() {
     <main className="panel-selector-page">
       <section className="panel-selector-shell" aria-labelledby="panel-selector-title">
         <header className="panel-selector-header">
-          <div className="panel-selector-brand"><Image src="/images/logo-curtiz.png" alt="curti Z" width={180} height={120} priority /></div>
+          <div className="panel-selector-brand"><Image src={logoCurtiz} alt="curti Z" width={180} height={120} priority /></div>
           <p>Olá, {firstName}.</p>
           <h1 id="panel-selector-title">Escolha o painel que deseja acessar</h1>
           <p>Você pode trocar de painel a qualquer momento sem sair da sua conta.</p>
