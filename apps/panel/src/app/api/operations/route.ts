@@ -214,7 +214,7 @@ export async function GET(request: NextRequest) {
   let orderQuery = supabase
     .from("orders")
     .select(
-      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments(id,status,provider,service,tracking_code,label_path,dispatched_at),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
+      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,tracking_code,label_path,dispatched_at),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
       { count: "exact" }
     )
     .in("status", [...orderStatuses])

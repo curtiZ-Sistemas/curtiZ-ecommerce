@@ -236,6 +236,7 @@ $$;
 revoke all on function public.admin_set_product_status(uuid, public.product_status, text) from public, anon;
 grant execute on function public.admin_set_product_status(uuid, public.product_status, text) to authenticated;
 
+drop policy if exists "product managers remove catalog media" on storage.objects;
 create policy "product managers remove catalog media" on storage.objects
   for delete to authenticated using (
     bucket_id = 'catalog-public'

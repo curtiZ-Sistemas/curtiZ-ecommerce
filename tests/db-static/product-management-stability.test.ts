@@ -31,4 +31,16 @@ describe("product management stability migration", () => {
       "grant execute on function public.admin_set_product_status(uuid, public.product_status, text) to authenticated"
     );
   });
+
+  it("can be repeated after a partial execution", () => {
+    const dropPolicy = migration.indexOf(
+      'drop policy if exists "product managers remove catalog media"'
+    );
+    const createPolicy = migration.indexOf(
+      'create policy "product managers remove catalog media"'
+    );
+
+    expect(dropPolicy).toBeGreaterThanOrEqual(0);
+    expect(createPolicy).toBeGreaterThan(dropPolicy);
+  });
 });
