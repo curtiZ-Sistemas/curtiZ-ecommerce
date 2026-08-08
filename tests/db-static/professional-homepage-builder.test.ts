@@ -62,7 +62,7 @@ describe("professional homepage builder invariants", () => {
     expect(migration).toContain("alternative text is required");
     expect(migration).toContain("homepage media limit exceeded");
     expect(migration).toContain("allowed_mime_types");
-    expect(migration).toContain("owner_id=auth.uid()");
+    expect(migration).toContain("owner_id=auth.uid()::text");
   });
 
   it("uses RLS, fixed search paths, restricted grants and aggregate metrics", () => {
