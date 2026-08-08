@@ -8,10 +8,21 @@ import { useFavorites } from "./favorites-provider";
 
 export function ProductCard({
   product,
-  priority = false
+  priority = false,
+  display
 }: {
   product: Product;
   priority?: boolean;
+  display?: {
+    price?: boolean;
+    rating?: boolean;
+    discount?: boolean;
+    installments?: boolean;
+    favorite?: boolean;
+    stock?: boolean;
+    badge?: boolean;
+    purchase?: boolean;
+  };
 }) {
   const { hydrated, has, toggle } = useFavorites();
   const favorite = hydrated && has(product.id);
@@ -22,7 +33,7 @@ export function ProductCard({
   return (
     <article className="product-card">
       <Link href={`/produto/${product.slug}`} className="product-image">
-        {discount && <span className="discount-badge">-{discount}%</span>}
+        {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
         <Image
           src={product.image}
           alt={product.name}
@@ -32,7 +43,7 @@ export function ProductCard({
           priority={priority}
         />
       </Link>
-      <button
+      {display?.favorite !== false && <button
         className={favorite ? "favorite-button active" : "favorite-button"}
         type="button"
         onClick={() => toggle(product)}
@@ -42,25 +53,27 @@ export function ProductCard({
         aria-pressed={favorite}
       >
         <Heart fill={favorite ? "currentColor" : "none"} />
-      </button>
+      </button>}
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
           <Link href={`/produto/${product.slug}`}>{product.name}</Link>
         </h3>
-        <div
+        {display?.rating !== false && <div
           className="rating"
           aria-label={`${product.rating} de 5, ${product.reviews} avaliações`}
         >
           <Star fill="currentColor" />
           <strong>{product.rating}</strong>
           <span>({product.reviews.toLocaleString("pt-BR")})</span>
-        </div>
-        <div className="price-row">
+        </div>}
+        {display?.price !== false && <div className="price-row">
           <strong>{formatBRL(product.priceInCents)}</strong>
-          {product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
-        </div>
-        <span className="installments">ou 6x sem juros</span>
+          {display?.discount !== false && product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
+        </div>}
+        {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
+        {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
+        {display?.purchase && <Link className="secondary-button compact-button" href={`/produto/${product.slug}`}>Ver opções</Link>}
       </div>
     </article>
   );

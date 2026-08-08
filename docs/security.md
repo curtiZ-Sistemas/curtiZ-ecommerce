@@ -44,3 +44,15 @@ Chamados continuam protegidos por propriedade ou atribuição explícita. Anexos
 privado, aceitam somente JPG, PNG, WebP e PDF de até 10 MB e têm assinatura binária conferida no
 servidor. A URL assinada curta só é emitida depois que `scan_status` estiver como `clean`; arquivos
 pendentes não são entregues. Mensagens e abertura de chamados possuem limite de frequência no banco.
+
+## Construtor da página inicial
+
+O construtor separa o rascunho editável do manifesto público imutável. Criação, edição, revisão,
+publicação, mídia, métricas e auditoria usam permissões independentes e são verificadas no servidor;
+o autor não pode aprovar a própria versão. A loja consulta somente `published_homepage_sections`, que
+remove nomes internos e seleciona uma publicação inteira em uma única versão.
+
+Configurações rejeitam HTML, JavaScript, handlers e URLs perigososas. Produtos, categorias, modelos,
+coleções e arquivos são reconferidos no banco na gravação e antes da publicação. Mídias comerciais
+aceitam somente JPG, PNG, WebP, MP4 e WebM com assinatura binária validada, limites de tamanho e
+pastas controladas. Métricas guardam somente contagens agregadas por versão, item, dia e dispositivo.

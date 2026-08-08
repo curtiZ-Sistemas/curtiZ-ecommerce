@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { HomepageSection, HomepageSectionType, Product } from "@curtiz/domain";
+import type { HomepageSection, HomepageSectionItem, HomepageSectionType, Product } from "@curtiz/domain";
 import { cache } from "react";
 import { z } from "zod";
 import { demoProducts, findProduct } from "./catalog";
@@ -73,19 +73,45 @@ export type PublicCmsPage = {
 
 const sectionTypes = new Set<HomepageSectionType>([
   "banner_hero",
-  "featured_products",
+  "product_carousel",
+  "product_grid",
+  "product_horizontal",
   "categories_grid",
-  "banner_promo",
-  "reviews_carousel",
+  "models_grid",
   "brands_strip",
-  "custom_banner"
+  "collections_grid",
+  "image_links",
+  "image_mosaic",
+  "promotions",
+  "flash_offers",
+  "best_sellers",
+  "launches",
+  "featured_products",
+  "recommended_products",
+  "manual_products",
+  "campaigns",
+  "benefits",
+  "reviews_carousel",
+  "editorial",
+  "video",
+  "image_text",
+  "countdown",
+  "newsletter",
+  "institutional",
+  "quick_links",
+  "safe_component"
 ]);
 
 const defaultSections: HomepageSection[] = [
   {
     id: "default-hero",
     sectionType: "banner_hero",
+    layout: "full_width",
+    visibility: "all",
+    style: {},
+    content: { position: "hero" },
     settings: { position: "hero" },
+    items: [],
     active: true,
     sortOrder: 1
   },
@@ -94,7 +120,12 @@ const defaultSections: HomepageSection[] = [
     sectionType: "categories_grid",
     title: "Para todos os momentos",
     subtitle: "Encontre seu estilo",
+    layout: "content_centered",
+    visibility: "all",
+    style: {},
+    content: {},
     settings: {},
+    items: [],
     active: true,
     sortOrder: 2
   },
@@ -103,15 +134,25 @@ const defaultSections: HomepageSection[] = [
     sectionType: "featured_products",
     title: "Ofertas em destaque",
     subtitle: "Seleção especial",
+    layout: "grid",
+    visibility: "all",
+    style: {},
+    content: { limit: 8, sort: "discount", href: "/ofertas" },
     settings: { limit: 8, sort: "discount", href: "/ofertas" },
+    items: [],
     active: true,
     sortOrder: 3
   },
   {
     id: "default-benefits",
-    sectionType: "brands_strip",
+    sectionType: "benefits",
     title: "Comprar na curti Z é simples",
+    layout: "four_columns",
+    visibility: "all",
+    style: {},
+    content: {},
     settings: {},
+    items: [],
     active: true,
     sortOrder: 4
   }
@@ -144,6 +185,63 @@ const publicImage = (path: string) => {
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
     : "/icon.svg";
 };
+
+const homepageMedia = (path: string) => {
+  if (path.startsWith("/") || path.startsWith("https://")) return path;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return url
+    ? `${url}/storage/v1/object/public/homepage-public/${path.replace(/^homepage-public\//u, "")}`
+    : "/icon.svg";
+};
+
+function mapHomepageItem(value: unknown): HomepageSectionItem | null {
+  if (!isUnknownRecord(value)) return null;
+  const id = readString(value, "id");
+  const internalName = readString(value, "internalName") || readString(value, "title") || "Item";
+  if (!id) return null;
+  const media = Array.isArray(value.media) ? value.media.flatMap((entry) => {
+    if (!isUnknownRecord(entry)) return [];
+    const path = readString(entry, "path");
+    const role = readString(entry, "role") as HomepageSectionItem["media"][number]["role"];
+    if (!path || !["desktop", "tablet", "mobile", "video", "background", "thumbnail"].includes(role)) return [];
+    return [{ id: readString(entry, "id"), role, path: homepageMedia(path), mimeType: readString(entry, "mimeType"), ...(readString(entry, "altText") ? { altText: readString(entry, "altText") } : {}), decorative: entry.decorative === true, ...(readNumber(entry, "width") ? { width: readNumber(entry, "width") } : {}), ...(readNumber(entry, "height") ? { height: readNumber(entry, "height") } : {}) }];
+  }) : [];
+  const targetRoute = readString(value, "targetRoute");
+  const safeRoute = targetRoute.startsWith("/") && !targetRoute.startsWith("//") || targetRoute.startsWith("https://") ? targetRoute : "";
+  return { id, itemType: readString(value, "itemType", "content"), internalName,
+    ...(readString(value, "title") ? { title: readString(value, "title") } : {}),
+    ...(readString(value, "subtitle") ? { subtitle: readString(value, "subtitle") } : {}),
+    ...(readString(value, "description") ? { description: readString(value, "description") } : {}),
+    ...(readString(value, "altText") ? { altText: readString(value, "altText") } : {}),
+    decorative: value.decorative === true, targetType: readString(value, "targetType", "none"),
+    ...(readString(value, "targetId") ? { targetId: readString(value, "targetId") } : {}),
+    ...(safeRoute ? { targetRoute: safeRoute } : {}), sortOrder: readNumber(value, "sortOrder"),
+    config: isUnknownRecord(value.config) ? value.config : {}, media };
+}
+
+const directProductSelect = "id,slug,name,description,base_price,featured,status,categories(name),product_images(storage_path,is_primary),product_variants(color_name,size,active,inventory(available_quantity,reserved_quantity)),reviews(rating,status)";
+
+function mapDirectProducts(data: unknown): Product[] {
+  return readRows(data).flatMap((row): Product[] => {
+    const variants = readRows(row.product_variants).filter((variant) => variant.active === true);
+    const stock = variants.reduce((sum, variant) => {
+      const inventory = readRows(variant.inventory)[0];
+      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity") - readNumber(inventory ?? {}, "reserved_quantity"), 0);
+    }, 0);
+    if (stock <= 0) return [];
+    const images = readRows(row.product_images).sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true));
+    const category = readRows(row.categories)[0] ?? (isUnknownRecord(row.categories) ? row.categories : {});
+    const reviews = readRows(row.reviews).filter((review) => readString(review, "status") === "approved");
+    const rating = reviews.length ? reviews.reduce((sum, review) => sum + readNumber(review, "rating"), 0) / reviews.length : 0;
+    return [{ id: readString(row, "id"), slug: readString(row, "slug"), name: readString(row, "name"),
+      category: productCategory(readString(category, "name")), description: readString(row, "description"),
+      priceInCents: Math.round(readNumber(row, "base_price") * 100), rating, reviews: reviews.length,
+      colors: [...new Set(variants.map((variant) => readString(variant, "color_name")).filter(Boolean))],
+      sizes: [...new Set(variants.map((variant) => readString(variant, "size")).filter(Boolean))],
+      image: publicCatalogImage(readString(images[0] ?? {}, "storage_path"), readString(row, "slug")),
+      featured: row.featured === true, stock }];
+  });
+}
 
 export async function queryPublicCatalog(
   options: {
@@ -218,13 +316,12 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     };
   }
 
-  const [sectionsResponse, bannersResponse, catalog] = await Promise.all([
+  const [sectionsResponse, bannersResponse, bestCatalog, promotionCatalog, newestCatalog] = await Promise.all([
     supabase
-      .from("homepage_sections")
-      .select("id,section_type,title,subtitle,settings,active,starts_at,ends_at,sort_order")
-      .eq("active", true)
-      .order("sort_order")
-      .limit(20),
+      .from("published_homepage_sections")
+      .select("section_version_id,section_id,position,snapshot")
+      .order("position")
+      .limit(40),
     supabase
       .from("banners")
       .select(
@@ -234,27 +331,44 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       .order("priority", { ascending: false })
       .order("sort_order")
       .limit(40),
-    queryPublicCatalog({ sort: "best_sellers", pageSize: 12 })
+    queryPublicCatalog({ sort: "best_sellers", pageSize: 24 }),
+    queryPublicCatalog({ promotion: true, pageSize: 12 }),
+    queryPublicCatalog({ newest: true, pageSize: 12 })
   ]);
 
   const sections = readRows(readQueryResult(sectionsResponse).data)
     .map((row): HomepageSection | null => {
-      const sectionType = readString(row, "section_type") as HomepageSectionType;
+      const snapshot = isUnknownRecord(row.snapshot) ? row.snapshot : null;
+      if (!snapshot) return null;
+      const sectionType = readString(snapshot, "sectionType") as HomepageSectionType;
       if (!sectionTypes.has(sectionType)) return null;
-      const rawSettings = row.settings;
+      const content = isUnknownRecord(snapshot.content) ? snapshot.content : {};
+      const style = isUnknownRecord(snapshot.style) ? snapshot.style : {};
+      const visibilityValue = readString(snapshot, "visibility", "all");
+      const visibility = ["all", "desktop", "tablet", "mobile"].includes(visibilityValue) ? visibilityValue as HomepageSection["visibility"] : "all";
+      const items = Array.isArray(snapshot.items) ? snapshot.items.flatMap((entry) => { const item = mapHomepageItem(entry); return item ? [item] : []; }) : [];
       return {
-        id: readString(row, "id"),
+        id: readString(row, "section_id"),
         sectionType,
-        ...(readString(row, "title") ? { title: readString(row, "title") } : {}),
-        ...(readString(row, "subtitle") ? { subtitle: readString(row, "subtitle") } : {}),
-        settings: isUnknownRecord(rawSettings) ? rawSettings : {},
+        ...(readString(snapshot, "title") ? { title: readString(snapshot, "title") } : {}),
+        ...(readString(snapshot, "subtitle") ? { subtitle: readString(snapshot, "subtitle") } : {}),
+        ...(readString(snapshot, "description") ? { description: readString(snapshot, "description") } : {}),
+        layout: readString(snapshot, "layout", "content_centered"), visibility, style, content,
+        settings: content, items,
+        versionId: readString(row, "section_version_id"),
         active: true,
-        ...(readString(row, "starts_at") ? { startsAt: readString(row, "starts_at") } : {}),
-        ...(readString(row, "ends_at") ? { endsAt: readString(row, "ends_at") } : {}),
-        sortOrder: readNumber(row, "sort_order")
+        ...(readString(snapshot, "startsAt") ? { startsAt: readString(snapshot, "startsAt") } : {}),
+        ...(readString(snapshot, "endsAt") ? { endsAt: readString(snapshot, "endsAt") } : {}),
+        sortOrder: readNumber(row, "position")
       };
     })
     .filter((section): section is HomepageSection => Boolean(section));
+
+  const manualProductIds = [...new Set(sections.flatMap((section) => section.items.filter((item) => item.targetType === "product" && item.targetId).map((item) => item.targetId!)))].slice(0, 24);
+  const manualResponse = manualProductIds.length
+    ? await supabase.from("products").select(directProductSelect).in("id", manualProductIds).eq("status", "active").limit(24)
+    : null;
+  const manualProducts = mapDirectProducts(readQueryResult(manualResponse).data);
 
   const positionCounts = new Map<string, number>();
   const banners = readRows(readQueryResult(bannersResponse).data)
@@ -283,18 +397,29 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     .filter((banner): banner is PublicBanner => Boolean(banner));
 
   const fallbackBannerEnabled = banners.length === 0 && presentationFallback;
-  const fallbackProductsEnabled = !catalog && presentationFallback;
+  const fallbackProductsEnabled = !bestCatalog && !promotionCatalog && !newestCatalog && presentationFallback;
+  const products = [...manualProducts, ...(bestCatalog?.products ?? []), ...(promotionCatalog?.products ?? []), ...(newestCatalog?.products ?? [])]
+    .filter((product, index, list) => list.findIndex((candidate) => candidate.id === product.id) === index);
+  const allowDefaults = presentationFallback || process.env.NODE_ENV !== "production";
 
   return {
-    sections: sections.length ? sections : defaultSections,
+    sections: sections.length ? sections : allowDefaults ? defaultSections : [],
     banners: fallbackBannerEnabled
       ? [fallbackBanner]
       : banners.length || process.env.NODE_ENV === "production"
         ? banners
         : [fallbackBanner],
-    products: fallbackProductsEnabled ? demoProducts : (catalog?.products ?? []),
+    products: fallbackProductsEnabled ? demoProducts : products,
     source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
   };
+});
+
+export const getProductsByModel = cache(async (slug: string): Promise<Product[]> => {
+  if (process.env.DEMO_MODE === "true") return [];
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) return [];
+  const result = await supabase.from("products").select(`${directProductSelect},product_models!inner(slug)`).eq("status", "active").eq("product_models.slug", slug).limit(48);
+  return result.error ? [] : mapDirectProducts(result.data);
 });
 
 const productDetailSchema = z.object({

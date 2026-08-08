@@ -97,6 +97,7 @@ function PageHeading({ role, section }: { role: PanelRole; section: string }) {
 
 function Operational({ section }: { section: string }) {
   if (section === "politicas") return <OperationalLegalLinks />;
+  if (section === "construtor-home") return <HomepageBuilder />;
   return <OperationalConsole section={section} />;
 }
 
