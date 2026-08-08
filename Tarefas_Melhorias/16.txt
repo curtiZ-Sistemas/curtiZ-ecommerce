@@ -208,4 +208,4 @@ export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"
   ]
-};. Também corrija os erros da imagem que os dois tsconfig.json estão dando erro nos mesmos lugares, corrija se necessári
+};. Também corrija os erros da imagem que os dois tsconfig.json estão dando erro nos mesmos lugares, corrija se necessário

@@ -1,0 +1,252 @@
+Trabalhe no monorepo curtiZ-ecommerce e implemente uma Central de Seleção de Painéis para usuários que possuem múltiplas funções internas.
+
+OBJETIVO
+
+Os sócios terão contas individuais, cada um com seu próprio e-mail e senha, mas poderão possuir simultaneamente estas três funções em public.user_roles:
+
+- admin
+- manager
+- operational
+
+Após o login, o sócio deverá escolher qual painel deseja acessar:
+
+- Painel Administrativo → /administracao
+- Painel Operacional → /operacional
+- Painel Gerencial → /gerencia
+
+Não crie uma função nova chamada “socio”.
+Não crie contas compartilhadas.
+Não insira usuários diretamente em auth.users.
+
+MODO DE TRABALHO ECONÔMICO
+
+Para evitar consumo desnecessário:
+
+1. Analise primeiro somente os arquivos diretamente relacionados:
+   - apps/store/src/lib/auth-routing.ts
+   - apps/store/src/app/api/auth/[mode]/route.ts
+   - apps/panel/src/lib/auth.ts
+   - apps/panel/src/lib/panel-roles.ts
+   - apps/panel/src/app/[role]/[[...section]]/page.tsx
+   - apps/panel/src/components/panel-shell.tsx
+   - apps/panel/src/app/globals.css
+   - migrations relacionadas a user_roles
+
+2. Só abra outros arquivos quando realmente necessário.
+3. Não faça refatoração geral.
+4. Não altere dependências.
+5. Não atualize versões.
+6. Não modifique módulos sem relação com esta tarefa.
+7. Não execute deploy, commit ou push.
+8. Não repita testes que já passaram.
+9. Não crie interfaces falsas, dados simulados ou botões sem ação.
+10. Implemente diretamente sem ficar repetindo explicações durante o trabalho.
+
+REGRAS DO LOGIN
+
+Após autenticar, leia todas as funções do usuário em public.user_roles.
+
+Considere como painéis selecionáveis:
+
+- admin
+- manager
+- operational
+
+Aplique esta regra:
+
+- Se tiver duas ou mais dessas funções:
+  redirecionar para a URL absoluta do painel:
+  /selecionar-painel
+
+- Se tiver somente admin:
+  /administracao
+
+- Se tiver somente manager:
+  /gerencia
+
+- Se tiver somente operational:
+  /operacional
+
+- customer e representative devem manter exatamente o comportamento atual.
+
+- technical não deve aparecer nessa Central nesta entrega e deve manter o comportamento atual de redirecionamento para /tecnico.
+
+Use a URL configurada em NEXT_PUBLIC_PANEL_URL, preservando o funcionamento local e em produção.
+
+Não permita que parâmetros next ignorem permissões.
+
+CENTRAL DE SELEÇÃO
+
+Crie:
+
+apps/panel/src/app/selecionar-painel/page.tsx
+
+Preferencialmente como Server Component.
+
+A página deve:
+
+- verificar a sessão no servidor;
+- buscar o perfil do usuário;
+- exigir profiles.status = active;
+- buscar todas as funções em user_roles;
+- exibir apenas painéis realmente autorizados;
+- impedir acesso apenas manipulando a URL;
+- redirecionar para a loja/login quando não autenticado;
+- redirecionar para /403 quando não houver acesso interno válido;
+- redirecionar diretamente ao painel quando existir somente uma função selecionável;
+- nunca exibir funções não atribuídas ao usuário.
+
+INTERFACE
+
+Criar uma página profissional, responsiva e integrada à identidade visual atual da CurtiZ.
+
+Mostrar:
+
+- logo CurtiZ;
+- saudação com o nome real do usuário;
+- título “Escolha o painel que deseja acessar”;
+- texto explicando que é possível trocar de painel sem sair da conta;
+- cards grandes e clicáveis;
+- botão “Sair da conta”.
+
+Cards:
+
+1. Painel Administrativo
+   “Produtos, clientes, marketing, usuários e configurações.”
+
+2. Painel Operacional
+   “Pedidos, estoque, separação, expedição e atendimento.”
+
+3. Painel Gerencial
+   “Financeiro, relatórios, aprovações e visão estratégica.”
+
+Use lucide-react já instalado.
+Não instale bibliotecas.
+Adicione estilos em apps/panel/src/app/globals.css sem quebrar estilos existentes.
+
+LOGOUT
+
+O botão “Sair da conta” da Central deve utilizar a API real existente:
+
+NEXT_PUBLIC_STORE_URL + /api/auth/logout
+
+Requisitos:
+
+- method POST;
+- credentials include;
+- estado de carregamento;
+- impedir múltiplos cliques;
+- mostrar erro quando falhar;
+- ao concluir, redirecionar para /login da loja.
+
+TROCAR DE PAINEL
+
+No PanelShell, adicione um botão real:
+
+“Trocar painel”
+
+Destino:
+
+/selecionar-painel
+
+O botão deve aparecer:
+
+- no cabeçalho desktop;
+- no menu lateral/mobile;
+- apenas quando o usuário possuir pelo menos dois dos painéis selecionáveis.
+
+Não confundir com logout:
+
+- Trocar painel mantém a sessão.
+- Sair encerra completamente a sessão.
+
+Para isso, aproveite o retorno de requirePanelAccess, que já contém as funções atribuídas, e passe ao PanelShell uma informação como canSwitchPanel ou availableRoles.
+
+SEGURANÇA
+
+Mantenha requirePanelAccess como autoridade de autorização.
+
+Mesmo que alguém digite diretamente:
+
+/administracao
+/operacional
+/gerencia
+
+o servidor deve confirmar que o usuário possui respectivamente:
+
+- admin
+- operational
+- manager
+
+A interface nunca deve ser a única proteção.
+
+Centralize os mapeamentos de função, rótulo e rota em apps/panel/src/lib/panel-roles.ts para evitar duplicação.
+
+Não reduza a segurança atual.
+Não desative RLS.
+Não use service role no navegador.
+Não exponha chaves secretas.
+Não altere o sistema de cookies compartilhados entre loja e painel.
+
+BANCO DE DADOS
+
+Primeiro verifique se user_roles já permite várias linhas para o mesmo user_id com funções diferentes.
+
+Se já permitir, não crie migration desnecessária.
+
+Não crie usuários automaticamente.
+
+Ao final, forneça apenas um SQL opcional e seguro para associar admin, manager e operational a contas já existentes, sem inserir diretamente em auth.users e sem apagar outras funções.
+
+TESTES MÍNIMOS
+
+Adicione ou ajuste testes para estes cenários:
+
+- admin + manager + operational → /selecionar-painel
+- admin apenas → /administracao
+- manager apenas → /gerencia
+- operational apenas → /operacional
+- customer → comportamento atual
+- representative → comportamento atual
+- technical → /tecnico
+- Central mostra somente funções autorizadas
+- usuário não pode acessar painel sem a função necessária
+- botão Trocar painel aparece apenas para usuário com múltiplos painéis
+
+Execute somente uma vez os scripts existentes e relevantes de:
+
+- lint do store;
+- typecheck do store;
+- lint do panel;
+- typecheck do panel;
+- testes diretamente relacionados.
+
+Não execute o deploy Cloudflare.
+
+CRITÉRIOS DE CONCLUSÃO
+
+A tarefa só está concluída quando:
+
+- cada sócio pode ter uma conta individual;
+- uma conta pode possuir as três funções;
+- o login direciona usuários com múltiplos painéis para a Central;
+- os três cards abrem os painéis corretos;
+- painéis não autorizados não aparecem;
+- acesso direto continua protegido no servidor;
+- todos os três painéis possuem “Trocar painel”;
+- logout encerra a conta de verdade;
+- desktop e celular funcionam;
+- não existem botões decorativos;
+- lint, typecheck e testes relacionados passam.
+
+ENTREGA FINAL
+
+Responda de forma curta, informando somente:
+
+1. arquivos alterados;
+2. comportamento implementado;
+3. testes executados e resultados;
+4. possíveis pendências reais;
+5. SQL opcional para atribuir as três funções a usuários já existentes.
+
+Não apresente planos longos antes de começar. Analise, implemente, teste e entregue.
