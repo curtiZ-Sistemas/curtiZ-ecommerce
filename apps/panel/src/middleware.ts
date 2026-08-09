@@ -10,7 +10,7 @@ import {
   NextResponse
 } from "next/server";
 
-export async function proxy(
+export async function middleware(
   request: NextRequest
 ) {
   const nonce = crypto

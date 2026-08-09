@@ -39,9 +39,19 @@ Variables and secrets**.
 
 ### Loja
 
-- Build command: `npm run build:worker`
-- Deploy command: `cd apps/store && npx wrangler deploy`
+- Build command obrigatório: `npm run build:worker`
+- Deploy command: `npx wrangler deploy`
 - Dry-run local: `npm run deploy:dry-run`
+
+O `wrangler.jsonc` da raiz aponta explicitamente para os artefatos gerados em `apps/store/.open-next`.
+Isso evita que a detecção automática do Wrangler tente escolher entre as duas aplicações do
+monorepo. O arquivo `apps/store/wrangler.jsonc` continua sendo usado pelos scripts executados dentro
+do workspace da loja.
+
+Não deixe o **Build command** vazio no Workers Builds: o deploy usa
+`apps/store/.open-next/worker.js`, gerado pelo OpenNext nessa etapa. O `wrangler.jsonc` da raiz é
+deliberadamente o alvo de produção da loja; staging continua usando o script específico do
+workspace.
 
 ### Painel
 

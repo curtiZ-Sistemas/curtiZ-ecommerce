@@ -27,7 +27,7 @@ aceitas como destino para evitar loops.
 
 ## Checkout autenticado
 
-`ALLOW_GUEST_CHECKOUT=false` é o padrão. O `proxy.ts` protege `/checkout` e a API repete a
+`ALLOW_GUEST_CHECKOUT=false` é o padrão. O `middleware.ts` protege `/checkout` e a API repete a
 verificação com `auth.getUser()`, portanto esconder um botão não concede acesso. O carrinho
 anônimo permanece no armazenamento local durante login, cadastro e confirmação de e-mail. Após
 uma sessão real, `/api/cart/sync` chama `merge_customer_cart`: variantes iguais são reconciliadas,

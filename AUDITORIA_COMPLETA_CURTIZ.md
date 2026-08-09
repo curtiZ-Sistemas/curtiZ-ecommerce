@@ -532,7 +532,7 @@ Adicionar uma verificação pequena nas rotas críticas, com limiares graduais q
 **Severidade:** P3
 **Área:** Next.js, dependências
 **Confiança:** Alta
-**Status:** Resolvido no código: requisito/CI em Node 22 e `middleware.ts` migrado para `proxy.ts`; build das duas aplicações aprovado. A máquina local ainda usa Node 20.
+**Status:** Resolvido no código: requisito/CI em Node 22. Para compatibilidade com o OpenNext 1.20, as duas aplicações mantêm `middleware.ts` no runtime Edge; o `proxy.ts` do Next 16 usa obrigatoriamente Node.js, ainda não suportado pelo adaptador. A máquina local ainda usa Node 20.
 
 **Problema**
 
@@ -642,7 +642,7 @@ Mover métricas para agregações no banco, paginar coleções e buscar apenas o
 - Tipos Supabase genéricos, tratados em AUD-P2-004.
 - Componentes e handlers grandes, tratados em AUD-P3-002.
 - Consultas/snapshots pouco escaláveis, tratados em AUD-P3-006.
-- Requisito do runtime e convenção Next foram atualizados para Node 22 e `proxy.ts`.
+- Requisito do runtime foi atualizado para Node 22; o interceptador permanece em `middleware.ts` Edge por compatibilidade documentada com o OpenNext 1.20.
 - `docs/design-guidelines.md` e `docs/mobile-ux.md` são citados pelo guia do repositório, mas não existem. Recomenda-se criar somente quando houver conteúdo normativo real, evitando documentação vazia.
 - Execução manual e fora de ordem de migrations em produção não possui runbook verificável; a divergência resultante está em AUD-P1-001.
 
@@ -677,7 +677,7 @@ Mover métricas para agregações no banco, paginar coleções e buscar apenas o
 - `corepack pnpm lint` — passou.
 - `corepack pnpm typecheck` — passou.
 - `corepack pnpm test` — passou.
-- `corepack pnpm build:local` — passou para loja e painel e confirmou `Proxy (Middleware)`; a máquina local ainda emitiu aviso por usar Node 20, enquanto o projeto/CI agora exigem Node 22.
+- `corepack pnpm build:local` — passou para loja e painel; a máquina local ainda emitiu aviso por usar Node 20, enquanto o projeto/CI agora exigem Node 22. O build OpenNext confirmou o middleware Edge e só não concluiu localmente por limitação de symlink no Windows.
 - `corepack pnpm lint` e `corepack pnpm typecheck` — passaram.
 - `corepack pnpm test` — passou; **246 testes** concluídos considerando o teste de regressão adicionado na validação final.
 - Vitest focado das migrations `009`, `010` e painel operacional — 14 testes passaram; teste final da `010` — 4 passaram.

@@ -275,7 +275,7 @@ function redirectToLogin(
   );
 }
 
-export async function proxy(
+export async function middleware(
   request: NextRequest
 ) {
   const supabaseUrl = getSupabaseUrl();
