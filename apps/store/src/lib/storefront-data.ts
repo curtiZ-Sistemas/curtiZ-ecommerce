@@ -11,6 +11,7 @@ import {
   type CatalogSort
 } from "./catalog-query";
 import { parseCatalogRpcResult, productCategory, publicCatalogImage } from "./catalog-result";
+import { selectHomepageSections } from "./homepage-layout";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import { createServerSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
@@ -400,9 +401,15 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
   const products = [...manualProducts, ...(bestCatalog?.products ?? []), ...(promotionCatalog?.products ?? []), ...(newestCatalog?.products ?? [])]
     .filter((product, index, list) => list.findIndex((candidate) => candidate.id === product.id) === index);
   const allowDefaults = presentationFallback || process.env.NODE_ENV !== "production";
+  const homepageSections = selectHomepageSections(
+    sections,
+    defaultSections,
+    banners.length > 0 || products.length > 0,
+    allowDefaults
+  );
 
   return {
-    sections: sections.length ? sections : allowDefaults ? defaultSections : [],
+    sections: homepageSections,
     banners: fallbackBannerEnabled
       ? [fallbackBanner]
       : banners.length || process.env.NODE_ENV === "production"

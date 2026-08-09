@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import type { HomepageSection } from "@curtiz/domain";
+import { selectHomepageSections } from "./homepage-layout";
+
+const section = (id: string): HomepageSection => ({
+  id,
+  sectionType: "benefits",
+  layout: "four_columns",
+  visibility: "all",
+  style: {},
+  content: {},
+  settings: {},
+  items: [],
+  active: true,
+  sortOrder: 1
+});
+
+describe("selectHomepageSections", () => {
+  const published = [section("published")];
+  const defaults = [section("default")];
+
+  it("preserva a publicação válida do construtor", () => {
+    expect(selectHomepageSections(published, defaults, true, false)).toBe(published);
+  });
+
+  it("usa o layout padrão quando existem dados públicos reais", () => {
+    expect(selectHomepageSections([], defaults, true, false)).toBe(defaults);
+  });
+
+  it("mantém indisponível quando não existe publicação nem conteúdo público", () => {
+    expect(selectHomepageSections([], defaults, false, false)).toEqual([]);
+  });
+});
