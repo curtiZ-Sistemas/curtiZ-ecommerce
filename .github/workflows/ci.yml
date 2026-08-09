@@ -32,6 +32,7 @@ jobs:
       AUTH_COOKIE_DOMAIN: example.invalid
       DEMO_MODE: "false"
       REQUIRE_INTERNAL_MFA: "true"
+      AUTH_RATE_LIMIT_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,7 +40,7 @@ jobs:
           version: 10.14.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -56,3 +57,25 @@ jobs:
           version: 2.110.0
       - run: supabase start
       - run: supabase test db
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      DEMO_MODE: "true"
+      DEMO_USERS_PASSWORD: "1234567890"
+      DEMO_SESSION_SECRET: "ci-demo-session-secret-with-at-least-32-characters"
+      NEXT_PUBLIC_STORE_URL: http://localhost:3000
+      NEXT_PUBLIC_PANEL_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

@@ -166,7 +166,15 @@ export function CookiePreferences() {
         })
       });
       const result: unknown = await response.json();
-      if (!response.ok)
+      const persisted =
+        result &&
+        typeof result === "object" &&
+        !Array.isArray(result) &&
+        (result as Record<string, unknown>).persisted === true;
+      const rejectsOptional = !Object.entries(next).some(
+        ([key, enabled]) => key !== "essential" && enabled
+      );
+      if (!response.ok || (!persisted && !rejectsOptional))
         throw new Error(
           result &&
             typeof result === "object" &&

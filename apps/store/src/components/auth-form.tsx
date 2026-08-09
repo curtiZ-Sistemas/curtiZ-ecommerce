@@ -15,7 +15,6 @@ import { type FormEvent, useCallback, useRef, useState } from "react";
 import { TurnstileField } from "./turnstile-field";
 
 type AuthResult = {
-  code?: string;
   message: string;
   redirectTo?: string;
 };
@@ -30,7 +29,6 @@ export function AuthForm({
   turnstileEnabled?: boolean;
 }) {
   const [message, setMessage] = useState("");
-  const [messageCode, setMessageCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
@@ -44,7 +42,6 @@ export function AuthForm({
     isSubmittingRef.current = true;
     setLoading(true);
     setMessage("");
-    setMessageCode("");
 
     try {
       const form = new FormData(event.currentTarget);
@@ -61,11 +58,9 @@ export function AuthForm({
       });
       const result = (await response.json()) as AuthResult;
       setMessage(result.message);
-      setMessageCode(result.code ?? "");
       if (response.ok && result.redirectTo) window.location.assign(result.redirectTo);
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
-      setMessageCode("");
     } finally {
       isSubmittingRef.current = false;
       setLoading(false);
@@ -198,13 +193,7 @@ export function AuthForm({
 
       {message && (
         <p className="form-message auth-form-message" role="status" aria-live="polite">
-          {messageCode === "user_not_found" ? "Esse usuário não existe." : message}
-          {mode === "login" && messageCode === "user_not_found" && (
-            <>
-              {" "}
-              <Link href="/cadastro">Cadastre-se</Link>
-            </>
-          )}
+          {message}
         </p>
       )}
 

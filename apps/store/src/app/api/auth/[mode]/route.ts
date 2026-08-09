@@ -14,7 +14,6 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { resolveLoginDestination, resolveLoginRole } from "@/lib/auth-routing";
-import { findAccountByEmail } from "@/lib/supabase/account-existence";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
@@ -82,8 +81,7 @@ function logSupabaseAuthError(error: SupabaseAuthErrorDetails) {
 
 async function authErrorResponse(
   error: SupabaseAuthErrorDetails,
-  request: Request,
-  email?: string
+  request: Request
 ) {
   const normalizedMessage = error.message.toLowerCase();
   const headers = corsHeaders(request);
@@ -109,16 +107,6 @@ async function authErrorResponse(
   }
 
   if (error.code === "invalid_credentials") {
-    const account = email ? await findAccountByEmail(email) : "unavailable";
-    if (account === "missing") {
-      return NextResponse.json(
-        {
-          code: "user_not_found",
-          message: "Esse usuário não existe. Cadastre-se"
-        },
-        { status: 404, headers }
-      );
-    }
     return NextResponse.json(
       {
         code: error.code,
@@ -388,8 +376,9 @@ export async function POST(
   const supabase = await createServerSupabaseClient();
   const authInput = parsed.data as z.infer<typeof loginSchema>;
 
-  // Desativado por padrão. Só ativa quando AUTH_RATE_LIMIT_ENABLED=true.
-  const authRateLimitEnabled = process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
+  const authRateLimitEnabled =
+    process.env.APP_ENV === "production" ||
+    process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
 
   if (
     authRateLimitEnabled &&
@@ -598,14 +587,14 @@ export async function POST(
   } catch (error) {
     const details = readSupabaseAuthError(error);
     logSupabaseAuthError(details);
-    return authErrorResponse(details, request, login.email);
+    return authErrorResponse(details, request);
   }
 
   const { data, error } = signInResult;
   if (error) {
     const details = readSupabaseAuthError(error);
     logSupabaseAuthError(details);
-    return authErrorResponse(details, request, login.email);
+    return authErrorResponse(details, request);
   }
   if (!data.user) {
     const details: SupabaseAuthErrorDetails = {
@@ -614,7 +603,7 @@ export async function POST(
       message: "Supabase Auth concluiu o login sem retornar o usuário."
     };
     logSupabaseAuthError(details);
-    return authErrorResponse(details, request, login.email);
+    return authErrorResponse(details, request);
   }
 
   let referralClaimed = false;

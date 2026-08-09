@@ -1,426 +1,734 @@
-# Auditoria completa do sistema curti Z
+# Auditoria Completa — curtiZ
 
-**Data da auditoria:** 1 de agosto de 2026  
-**Escopo:** análise estática, testes locais somente leitura e inventário funcional do monorepo.  
-**Restrições respeitadas:** nenhum arquivo funcional foi alterado; nenhuma migration foi criada ou modificada; nenhum commit foi feito; Docker e Supabase local não foram executados; nenhum banco remoto foi consultado ou alterado.
+**Data da revisão:** 8 de agosto de 2026
+**Escopo verificado:** monorepo, loja, painéis, Supabase, APIs, integrações, Cloudflare e testes.
+**Referência de código:** branch `agent/fix-panel-data-access`, revisão pós-auditoria ainda não implantada. A `main` remota e a produção estavam em `a95dc7b`; as migrations `006`, `009`, `010` e `011`–`015` ainda precisam ser aplicadas e validadas no Supabase de produção.
 
 ## 1. Resumo executivo
 
-A curti Z possui uma fundação técnica relevante, mas ainda não está pronta para operação comercial. O monorepo está corretamente separado em loja (`apps/store`) e painel (`apps/panel`), compartilha domínio, configuração, segurança, integrações e Supabase por pacotes e contém um schema amplo para comércio, suporte, representantes, criativos, finanças e auditoria.
+O projeto deixou de ser um protótipo visual. Loja, conta do cliente, portal do representante e painéis administrativo, operacional, gerencial e técnico possuem rotas, APIs e regras de autorização reais. Há uma base sólida de RLS, funções privilegiadas com `search_path` fixo, CSP com nonce, validação de ambiente, separação entre Workers e uma suíte automatizada relevante.
 
-A existência do schema não corresponde, porém, à entrega funcional. A loja pública e os painéis usam grande volume de catálogo, métricas, gráficos e tabelas demonstrativos. Checkout, pedidos reais, estoque transacional, CRUD administrativo, operação logística, gerência financeira, observabilidade técnica e grande parte do portal de representantes não estão conectados de ponta a ponta.
+O sistema, porém, **não está pronto para operação comercial em produção**. O principal bloqueio continua sendo a divergência entre o schema esperado pelo código e o Supabase implantado. A revisão adicionou uma baseline de permissões independente do seed e reload do Data API, mas ela ainda não foi aplicada em produção. Checkout continua sem criar pedido/pagamento real. Recuperação de senha, enumeração de contas, fallback demonstrativo, privacidade pública, consentimento, E2E/CI, foco e convenções de runtime foram corrigidos no código.
 
-Foram registrados **52 problemas**:
+### Notas
 
-| Prioridade | Quantidade | Interpretação |
+| Área | Nota | Síntese |
 |---|---:|---|
-| P0 | 3 | bloqueio crítico ou risco de segurança/integridade |
-| P1 | 17 | funcionalidade principal quebrada |
-| P2 | 20 | funcionalidade incompleta ou hardening necessário |
-| P3 | 10 | experiência, design, performance ou qualidade |
-| P4 | 2 | evolução futura |
-| **Total** | **52** | |
+| Segurança | 7,5 | Enumeração, rate limit, privacidade e fronteiras financeiras foram endurecidos; falta validação remota das migrations/RLS. |
+| Funcionalidade | 6,0 | Grande cobertura funcional; painéis dependem da aplicação das migrations e checkout real permanece bloqueado. |
+| UI | 8,0 | Identidade consistente, componentes responsivos e estados visuais abrangentes. |
+| UX | 7,5 | Fluxos claros, consentimento falha com segurança e o E2E cobre navegação crítica; produção ainda remove ações quando o banco falha. |
+| Acessibilidade | 7,5 | Foco do chat e feedback por teclado foram corrigidos e entraram no E2E do CI. |
+| Performance | 7,0 | Métrica crítica foi agregada no banco e há budget de assets; mídia e snapshots amplos permanecem. |
+| Arquitetura | 7,0 | Separação store/panel/packages é adequada; tipos de banco e módulos muito extensos reduzem confiabilidade. |
+| Qualidade de código | 7,0 | TypeScript, Zod, lint e testes passam; contratos de banco ainda usam tipos genéricos. |
+| Testes | 8,0 | Lint, tipos, builds, suíte automatizada e 35 cenários E2E foram validados; pgTAP real ainda depende de Supabase local/homologação. |
+| Prontidão para produção | 5,5 | Schema implantado e checkout/pagamento real ainda impedem lançamento comercial. |
 
-Os três riscos imediatos são: ausência de autenticação/RBAC real no painel quando `DEMO_MODE` está desligado; sessão incompatível com loja e painel em Workers/domínios separados; e registro de venda de representante baseado em valor arbitrário informado pelo navegador, sem itens/prova e sem idempotência fornecida pelo cliente.
+### Principais riscos
 
-## 2. Arquitetura atual
+1. Divergência de schema/privilégios mantém todos os painéis internos inutilizáveis em produção (AUD-P1-001).
+2. Checkout não constitui um fluxo real e a integração Mercado Pago endurecida ainda precisa de validação no sandbox do provedor (AUD-P1-005 e AUD-P1-006).
+3. Quarentena de anexos e tipos reais do banco dependem de infraestrutura não disponível nesta execução (AUD-P2-001 e AUD-P2-004).
 
-### Estrutura
+## 2. Métricas da auditoria
 
-- Monorepo pnpm/Turborepo, TypeScript estrito, ESLint, Vitest e Playwright.
-- `apps/store`: Next.js, porta 3000; loja, login único, conta do cliente, representante e APIs.
-- `apps/panel`: Next.js, porta 3001; shell único para Operacional, Administração, Gerência e Técnico.
-- `packages/config`: schema de ambiente e flags de integrações.
-- `packages/domain`: papéis, permissões, contratos e tipos de negócio.
-- `packages/integrations`: contratos de pagamento, frete, e-mail, marketing, WhatsApp e ERP; mocks parciais.
-- `packages/security`: sessão demo, validações básicas e utilidades de segurança.
-- `packages/supabase`: tipos mínimos e cliente mock para testes sem Docker.
-- `supabase/migrations`: catálogo, pedidos, pagamentos, estoque, suporte, finanças, representantes, criativos, permissões, RLS e Storage.
-- `supabase/functions`: somente funções Mercado Pago e utilitário compartilhado de flags.
+| Severidade | Quantidade |
+|---|---:|
+| P0 — Crítico | 0 |
+| P1 — Alto | 3 |
+| P2 — Médio | 4 |
+| P3 — Baixo | 3 |
+| **Total atual** | **10** |
 
-### Separação das aplicações
+**Base inicial:** 19 achados. **Resolvidos nesta revisão:** 9. **Restantes:** 10.
 
-Loja e painel **continuam separados**. O login nasce na loja e redireciona papéis internos para o painel. Localmente isso funciona porque as portas compartilham o host `localhost`. Em produção, dois Workers com hosts diferentes não compartilham cookies host-only; o painel também não cria seu próprio cliente Supabase nem valida sessão real. Essa é uma quebra arquitetural crítica, não apenas configuração de deploy.
+## 3. Problemas críticos — P0
 
-### Server Actions, serviços e processamento assíncrono
+Nenhum P0 foi confirmado. Existem bloqueios graves de operação, classificados como P1 porque não foi demonstrado comprometimento amplo, corrupção ou perda de dados.
 
-Não foram encontradas Server Actions. As mutações existentes usam Route Handlers da loja. Há tabelas de jobs/filas e contratos de integrações, mas não há consumidor de filas, scheduler ou worker de domínio implementado. As Edge Functions cobrem apenas Mercado Pago e não estão ligadas a um checkout funcional.
+## 4. Problemas altos — P1
 
-### Cloudflare e ambientes
+### [AUD-P1-001] Schema e privilégios de produção incompatíveis com os painéis
 
-- Há configurações OpenNext/Wrangler separadas: `curtiz-ecommerce` e `curtiz-painel`.
-- `validate:development`, `validate:staging` e `validate:production` estão separados.
-- Produção aceita integrações explicitamente desativadas, mantendo mocks proibidos.
-- Staging aceita mocks, mas os providers mock lançam erro quando `NODE_ENV=production`; como um build staging do Next roda nesse modo, a validação e a execução se contradizem.
-- O modo demo de login está limitado a `localhost`, portanto `DEMO_MODE=true` não produz login demo em uma URL remota de staging.
+**Severidade:** P1
+**Área:** Supabase, RLS, painéis, deploy
+**Confiança:** Alta
+**Status:** Correção de código concluída; bloqueado pela aplicação/validação das migrations em produção.
 
-## 3. Estrutura dos acessos
+**Problema**
 
-| Perfil | Entrada | Estado observado | Banco real |
-|---|---|---|---|
-| Cliente | `/login` → `/minha-conta` | login e suporte funcionam em demo; conta majoritariamente fixa/desabilitada | parcial |
-| Representante | `/login` → `/representante` | visão geral, solicitação, venda simples e criativos parciais | contrato de leitura incompatível no modo real |
-| Operacional | `/login` → painel `/operacional` | shell e menus existem; fluxo principal é demonstrativo | não conectado |
-| Administrador | `/login` → painel `/administracao` | telas de catálogo/CMS/usuários são visuais | não conectado |
-| Gerência | `/login` → painel `/gerencia` | indicadores, financeiro e aprovações são fixos | não conectado |
-| Técnico | `/login` → painel `/tecnico` | saúde, logs, filas e backups são demonstrativos | não conectado |
+O Supabase de produção não corresponde ao schema consumido pelas APIs. Consulta segura e somente leitura confirmou `42501 permission denied` em dezenas de tabelas usadas pelos painéis e `PGRST205` para as cinco tabelas da Central de Ajuda. A API operacional também encontra, na versão implantada, a relação ambígua `orders → shipments`. O código da branch contém a migration `010` e a desambiguação, mas a `main`, o Worker e o banco de produção ainda não receberam a correção.
 
-No modo demo há cookie HMAC com expiração e segredo mínimo. No modo real a loja usa Supabase Auth SSR, mas o painel não valida usuário, status, papel, permissão ou AAL2. A flag `REQUIRE_INTERNAL_MFA` é validada na configuração, porém não é aplicada no fluxo de autenticação/autorização.
+**Evidência**
 
-## 4. Mapa completo de rotas
+- `supabase/migrations/202608080006_help_center_reform.sql`: define `help_contents`, versões, relações, buscas e feedbacks, ausentes no Data API consultado.
+- `supabase/migrations/202608080009_product_management_stability.sql`: a produção acusou política de Storage já existente após execução parcial.
+- `supabase/migrations/202608080010_panel_data_access_stability.sql`: restaura privilégios e exige a migration `006`; ainda não aplicada em produção.
+- `supabase/migrations/202608080014_panel_permission_baseline.sql`: move as permissões essenciais dos papéis internos do seed para uma migration idempotente de produção.
+- `apps/panel/src/app/api/operations/route.ts`: a branch já usa `shipments!shipments_order_id_fkey`; a versão de produção ainda não.
+- Comportamento observado: `/api/operations` retorna 503 e os painéis exibem “Não foi possível carregar...”, sem ações dependentes dos dados.
 
-### Loja pública e comercial
+**Impacto**
 
-- Home e catálogo: `/`, `/produtos`, `/busca`, `/masculino`, `/feminino`, `/infantil`, `/slides`, `/sandalias`, `/lancamentos`, `/ofertas`, `/mais-vendidos`.
-- Produto: `/produto/[slug]`.
-- Compra: `/carrinho`, `/checkout`, `/pedido/pendente`.
-- Atendimento: `/ajuda`, `/atendimento`.
-- Conteúdo dinâmico controlado: `/[page]`, com `sobre`, `contato`, `trocas-e-devolucoes`, `formas-de-envio`, `formas-de-pagamento`, políticas, termos, rastreio, recuperação, 403, manutenção e indisponibilidade. Slugs não reconhecidos retornam 404.
-- Autenticação e conta: `/login`, `/cadastro`, `/perfil`, `/minha-conta/[[...section]]`.
-- Representantes: `/representante/solicitacao`, `/representante/[[...section]]`.
+Administrador, Operacional, Gerencial e Técnico não conseguem consultar nem executar rotinas. O problema bloqueia catálogo, estoque, pedidos, atendimento, relatórios e configurações, embora a interface renderize.
 
-### APIs da loja
+**Como reproduzir/verificar**
 
-- `/api/auth/[mode]`: sessão, login, cadastro e logout.
-- `/api/checkout`: validação superficial e indisponibilidade controlada; não cria pedido/pagamento.
-- `/api/support`: suporte do cliente e console interno.
-- `/api/representatives`: solicitação, aprovação, snapshot, venda e eventos de criativos.
-- `/api/representatives/documents`: upload de documentos.
-- `/api/creatives`: consulta, criação, status e eventos.
-- `/api/creatives/upload`: upload de ativos.
-- `/api/integrations/status`: flags públicas de disponibilidade.
+Autenticar um usuário interno real e abrir qualquer área que dependa das APIs do painel. Confirmar 503 na rede. No Data API, testar acesso às tabelas da API operacional e presença de `help_contents` sem retornar dados sensíveis.
 
-### Painel
+**Correção recomendada**
 
-- `/` redireciona ao login da loja.
-- `/[role]/[[...section]]` atende `/operacional`, `/administracao`, `/gerencia` e `/tecnico` e seus menus.
-- Não há Route Handlers no painel; componentes internos chamam APIs da loja.
+Integrar e publicar a branch validada; aplicar, em ordem, `006`, `009`, `010` e `011`–`015`; aguardar o reload do PostgREST; validar cada papel com conta real e depois executar regressão de RLS. Não desabilitar RLS nem substituir os dados por mocks.
 
-### SEO e erros
+**Áreas afetadas**
 
-- Loja: `robots`, `sitemap`, `loading`, `error` e `not-found`.
-- Painel: `robots` com bloqueio total, `error` e `not-found`; não possui `loading.tsx`.
-- O sitemap usa o catálogo demonstrativo em código, não a fonte de verdade.
+Todos os painéis internos, produtos, estoque, pedidos, atendimento, jurídico, home builder e indicadores.
 
-## 5. Matriz de funcionalidades por perfil
+## 4.1 Correções P1 concluídas nesta revisão
 
-Legenda: **F** funcional; **P** parcial; **V** apenas visual; **D** desconectada do banco; **Q** quebrada; **I** inexistente; **IF** integração futura.
+### [AUD-P1-002] Recuperação de senha é rejeitada pelo rate limit do banco
 
-| Perfil | Funcionalidades | Classificação |
+**Severidade:** P1
+**Área:** Autenticação
+**Confiança:** Alta
+**Status:** Resolvido pela migration `202608080011_auth_rate_limit_recovery.sql`; testes estáticos e de configuração aprovados.
+
+**Problema**
+
+A rota de recuperação usa o escopo `password_reset`, mas a constraint e a função SQL aceitam apenas `login` e `signup`. Em produção, o RPC lança erro; o helper interpreta a falha como bloqueio e a rota responde 429.
+
+**Evidência**
+
+- `apps/store/src/app/api/auth/password/route.ts`: chama `enforceAuthRateLimit` com `password_reset`.
+- `apps/store/src/lib/auth-rate-limit.ts`: falha do RPC resulta em acesso negado.
+- `supabase/migrations/202608010001_security_hardening.sql`: constraint e validação `p_scope not in ('login', 'signup')`.
+- Nenhuma migration posterior adiciona `password_reset`.
+
+**Impacto**
+
+Usuários que esqueceram a senha não conseguem recuperar a conta.
+
+**Como reproduzir/verificar**
+
+Solicitar recuperação para um e-mail válido em ambiente não-demo e observar resposta 429 antes do envio do e-mail.
+
+**Correção recomendada**
+
+Adicionar o escopo em migration incremental, com limite próprio e teste de integração para sucesso, abuso e falha do Supabase.
+
+### [AUD-P1-003] Login permite enumeração de contas e rate limit adicional é opcional
+
+**Severidade:** P1
+**Área:** Segurança, autenticação
+**Confiança:** Alta para o código; média para a flag implantada
+**Status:** Resolvido. Login agora responde de forma uniforme, a consulta de existência foi removida e o rate limit é obrigatório em produção.
+
+**Problema**
+
+O login consulta `profiles.email_snapshot` com chave secreta e responde `404 user_not_found` quando o endereço não existe, enquanto credenciais erradas de uma conta existente retornam `401 invalid_credentials`. Isso cria um oráculo confiável de existência. A proteção de aplicação contra força bruta só funciona quando `AUTH_RATE_LIMIT_ENABLED=true`; a variável não está documentada nem exigida pela validação de produção.
+
+**Evidência**
+
+- `apps/store/src/lib/supabase/account-existence.ts`: busca server-side por e-mail.
+- `apps/store/src/app/api/auth/[mode]/route.ts`: diferencia `user_not_found` de `invalid_credentials`.
+- Mesma rota: rate limit condicionado a `AUTH_RATE_LIMIT_ENABLED`.
+- `.env.example` e validadores de ambiente: a flag não é obrigatória.
+
+**Impacto**
+
+Atacantes podem confirmar contas e direcionar phishing ou tentativas de senha. Quando a flag estiver ausente, a camada própria de rate limit não protege o login.
+
+**Como reproduzir/verificar**
+
+Comparar status/código de login para um e-mail inexistente e um existente com senha errada, sem registrar os endereços usados.
+
+**Correção recomendada**
+
+Uniformizar status, corpo e tempo de resposta; tornar o rate limit obrigatório em produção; manter logs apenas com identificadores hash e testar tentativas distribuídas.
+
+### [AUD-P1-004] Catálogo demonstrativo pode ser exibido como catálogo real em produção
+
+**Severidade:** P1
+**Área:** Loja, catálogo, dados comerciais
+**Confiança:** Alta
+**Status:** Resolvido. Fallback demonstrativo exige `DEMO_MODE` explícito.
+
+**Problema**
+
+Quando o checkout está desabilitado, o modo de apresentação é considerado permitido. Em falhas de consulta ao Supabase, catálogo, produto e home podem retornar produtos, preços, avaliações, estoque e banner de demonstração sem aviso visível. Apenas um header técnico identifica a origem em uma das APIs.
+
+**Evidência**
+
+- `apps/store/src/lib/presentation-catalog.ts`: habilita apresentação por `DEMO_MODE` **ou** checkout desabilitado.
+- `apps/store/src/app/api/catalog/route.ts`: retorna `queryDemoCatalog` após falha e usa apenas `x-catalog-source: demo`.
+- `apps/store/src/lib/storefront-data.ts`: fallbacks para `demoProducts` e banner local.
+- Componentes públicos não mostram a origem demonstrativa.
+
+**Impacto**
+
+Visitantes podem interpretar dados fictícios como oferta comercial real, inclusive preço e disponibilidade.
+
+**Como reproduzir/verificar**
+
+Com checkout desabilitado, indisponibilizar a leitura do Supabase e abrir home, busca e produto.
+
+**Correção recomendada**
+
+Restringir fallback a `DEMO_MODE` explícito fora de produção. Em produção, apresentar estado indisponível sem inventar catálogo e monitorar a falha.
+
+## 4.2 Problemas P1 atuais
+
+### [AUD-P1-005] Checkout não cria pedido ou pagamento real
+
+**Severidade:** P1
+**Área:** Checkout, pedidos, pagamentos
+**Confiança:** Alta
+**Status:** Confirmado como funcionalidade não concluída
+
+**Problema**
+
+A rota valida linhas e autenticação, mas retorna 503 `INTEGRATION_NOT_READY` para provedores reais. Só o modo demo cria resposta sintética. A interface informa indisponibilidade e preserva o carrinho, portanto não engana o usuário, mas o negócio não consegue vender.
+
+**Evidência**
+
+- `apps/store/src/app/api/checkout/route.ts`: caminhos reais terminam em 503.
+- `apps/store/src/app/checkout` e componentes relacionados: bloqueiam conclusão quando a integração está desabilitada.
+- Não há orquestração confirmada de pedido, reserva, preferência e confirmação nesse endpoint.
+
+**Impacto**
+
+Não existe receita transacional ponta a ponta nem pedido comercial criado pela loja.
+
+**Como reproduzir/verificar**
+
+Autenticar, adicionar item válido e tentar concluir checkout com configuração não-demo.
+
+**Correção recomendada**
+
+Implementar no servidor uma transação idempotente que recalcula valores, reserva estoque, cria pedido pendente, gera pagamento e reconcilia falhas. Manter o bloqueio atual até testes reais passarem.
+
+### [AUD-P1-006] Funções Mercado Pago não garantem autorização financeira e consistência local completas
+
+**Severidade:** P1
+**Área:** Pagamentos, Edge Functions
+**Confiança:** Alta
+**Status:** Parcialmente resolvido; garantias internas corrigidas, validação no sandbox do provedor bloqueada por configuração externa.
+
+**Problema atual**
+
+Status, preferência, webhook e reembolso agora exigem vínculo local/autorização, usam idempotência estável e finalização transacional pelas funções da migration `012`. Ainda falta executar os cenários contra o sandbox real do Mercado Pago e integrar o checkout que cria o pedido inicial.
+
+**Evidência**
+
+- `supabase/functions/mercadopago-status-check/index.ts`.
+- `supabase/functions/mercadopago-refund/index.ts`.
+- `supabase/functions/mercadopago-create-preference/index.ts`.
+- `supabase/functions/mercadopago-webhook/index.ts`.
+- `supabase/functions/_shared/mercadopago.ts` e utilitários HTTP/Supabase.
+
+**Impacto**
+
+Se ativada no estado atual, a integração pode expor metadados de pagamento, repetir preferências, reembolsar valor indevido ou deixar pedido/estoque divergentes do provedor.
+
+**Como reproduzir/verificar**
+
+Em sandbox do provedor, testar status arbitrário, repetição da mesma intenção, refund superior ao saldo e falha simulada entre confirmação e conversão da reserva.
+
+**Correção restante**
+
+Aplicar a migration `012` em homologação e validar duplicidade, indisponibilidade do provedor, divergência de valor/moeda, chargeback e reembolso integral antes de habilitar a flag.
+
+## 5. Problemas médios — P2
+
+### [AUD-P2-001] Anexos de atendimento permanecem em quarentena indefinidamente
+
+**Severidade:** P2
+**Área:** Atendimento, Storage
+**Confiança:** Alta
+**Status:** Bloqueado por processador antimalware externo; não foi liberado arquivo `pending` sem varredura.
+
+**Problema**
+
+Todo anexo é gravado com `scan_status='pending'`, mas não existe scanner, job ou endpoint que altere o status para `clean`. A leitura só cria URL assinada para arquivos limpos.
+
+**Evidência**
+
+- `apps/store/src/app/api/support/attachments/route.ts`.
+- `apps/store/src/app/api/support/route.ts`.
+- Migrations da tabela `support_attachments`.
+- Busca por `scan_status`, malware, vírus e quarentena não encontrou processador.
+
+**Impacto**
+
+O cliente consegue enviar o arquivo, mas atendentes e participantes nunca conseguem baixá-lo.
+
+**Correção recomendada**
+
+Implementar processamento assíncrono confiável, estados de falha, reprocessamento, expiração e limpeza; nunca liberar `pending` diretamente.
+
+## 5.1 Correções P2 concluídas nesta revisão
+
+### [AUD-P2-002] Solicitações de privacidade anônimas não possuem proteção contra abuso
+
+**Severidade:** P2
+**Área:** Privacidade, API pública
+**Confiança:** Alta
+**Status:** Resolvido pela rota protegida e migration `202608080013_privacy_request_abuse_protection.sql`.
+
+**Problema**
+
+A API pública chama `submit_privacy_request` sem rate limit, Turnstile ou deduplicação temporal. A função pode ser executada por `anon` e `authenticated`.
+
+**Evidência**
+
+- `apps/store/src/app/api/privacy/requests/route.ts`.
+- Função e grants de `submit_privacy_request` nas migrations jurídicas/privacidade.
+
+**Impacto**
+
+Automação pode gerar grandes volumes de registros contendo dados pessoais e eventos de auditoria, degradando atendimento e banco.
+
+**Correção recomendada**
+
+Adicionar limitação por identificadores com hash, desafio antiabuso configurável e deduplicação sem revelar se o titular existe.
+
+### [AUD-P2-003] Consentimento local é confirmado mesmo quando a persistência central falha
+
+**Severidade:** P2
+**Área:** Cookies, privacidade
+**Confiança:** Alta
+**Status:** Resolvido. Consentimento opcional só é aplicado após persistência; rejeição local segura mantém opcionais desligados em falha remota.
+
+**Problema**
+
+A API responde 200 com `persisted:false` após falha do RPC. O componente não verifica esse campo, grava a escolha local e fecha o painel como se a preferência tivesse sido registrada.
+
+**Evidência**
+
+- `apps/store/src/app/api/privacy/cookies/route.ts`.
+- `apps/store/src/components/cookie-preferences.tsx`.
+- Testes da rota confirmam o contrato 200 com persistência falsa.
+
+**Impacto**
+
+Pode faltar evidência central do consentimento ou da rejeição, enquanto o navegador aplica a escolha.
+
+**Correção recomendada**
+
+Diferenciar sucesso local de persistência auditável, repetir com idempotência e impedir cookies opcionais quando o registro obrigatório falhar.
+
+## 5.2 Problemas P2 atuais
+
+### [AUD-P2-004] Tipos do banco são stubs e não representam o schema real
+
+**Severidade:** P2
+**Área:** TypeScript, Supabase, manutenção
+**Confiança:** Alta
+**Status:** Confirmado; geração bloqueada pela ausência de Docker/Supabase local ou homologação autorizada.
+
+**Problema**
+
+`database.types.ts` usa `Record<string, unknown>`, não descreve tabelas/RPCs e contém enum incompleto. As aplicações compensam com conversores manuais de `unknown`, eliminando boa parte da proteção estática entre migrations e código.
+
+**Evidência**
+
+- `packages/supabase/src/database.types.ts`.
+- Mapeadores `record`, `rows`, `text` e `number` repetidos nas APIs de store/panel.
+
+**Impacto**
+
+Colunas renomeadas, relações ambíguas e RPCs incompatíveis só aparecem em runtime, como ocorreu nos painéis.
+
+**Correção recomendada**
+
+Gerar tipos a partir do schema validado no CI, versioná-los e tipar progressivamente clientes e RPCs sem introduzir `any`.
+
+### [AUD-P2-005] Uploads administrativos consomem o arquivo inteiro e publicam mídia sem normalização
+
+**Severidade:** P2
+**Área:** Upload, Cloudflare Workers, Storage
+**Confiança:** Alta
+**Status:** Parcialmente resolvido. As três rotas rejeitam `Content-Length` excessivo antes de `formData()`; normalização/remoção de metadados ainda exige processador de mídia.
+
+**Problema**
+
+Rotas de banner e home builder fazem `formData()`/leitura do arquivo antes de rejeitar tamanho e aceitam mídia privilegiada após validação básica de assinatura. Não há reprocessamento de imagem/vídeo, remoção de metadados ou scanner. Os buckets são públicos por finalidade.
+
+**Evidência**
+
+- `apps/panel/src/app/api/admin/banner-media/route.ts`.
+- `apps/panel/src/app/api/homepage-builder/media/route.ts`.
+- Policies dos buckets `catalog-public` e `homepage-public`.
+
+**Impacto**
+
+Uploads grandes podem pressionar memória/CPU do Worker; arquivos válidos porém malformados ou com metadados desnecessários são publicados diretamente.
+
+**Correção recomendada**
+
+Rejeitar `Content-Length` cedo, aplicar limite também durante streaming, decodificar/reprocessar formatos suportados e limpar órfãos em toda falha.
+
+## 5.3 Correção P2 concluída nesta revisão
+
+### [AUD-P2-006] E2E não é executado no CI e possui expectativas divergentes do comportamento atual
+
+**Severidade:** P2
+**Área:** Testes, regressão
+**Confiança:** Alta
+**Status:** Resolvido. CI possui job Playwright, webServer foi estabilizado e os 35 cenários tiveram execução aprovada após correções e repetições focadas.
+
+**Problema**
+
+O workflow executa lint, tipos, unitários, banco e build, mas não chama Playwright. Na execução local, a suíte descobriu 35 casos; seis passaram, dois falharam por esperar máscara visual de telefone e `returnTo` enquanto a aplicação usa telefone não mascarado e `next` compatível. O restante não concluiu por instabilidade do harness local.
+
+**Evidência**
+
+- `.github/workflows/ci.yml`: ausência de `pnpm test:e2e`.
+- `playwright.config.ts`: quatro projetos e servidores locais.
+- `tests/e2e/improvement-store.spec.ts`: expectativas desatualizadas.
+- Execução observada: `Received "31999990000"` e URL `/login?next=%2Fcheckout`.
+
+**Impacto**
+
+Regressões de navegação, responsividade e ações dos painéis podem chegar à produção apesar de checks verdes; falhas legítimas ficam misturadas a testes obsoletos.
+
+**Correção recomendada**
+
+Estabilizar o webServer, alinhar expectativas ao contrato oficial, separar smoke tests de fluxos dependentes de ambiente e executar ao menos a matriz crítica no CI.
+
+## 5.4 Problema P2 atual
+
+### [AUD-P2-007] Cobertura comportamental de RLS e migrations é insuficiente para o tamanho do schema
+
+**Severidade:** P2
+**Área:** Banco, segurança, testes
+**Confiança:** Alta
+**Status:** Parcialmente resolvido. Foi adicionada uma suíte pgTAP para fronteiras financeiras, privacidade e métrica operacional; a matriz completa por domínio ainda não existe.
+
+**Problema**
+
+Grande parte dos testes de migration procura textos no SQL. Existem somente dois arquivos pgTAP para comportamento real (`inventory` e `rls_support`), sem matriz equivalente para administrativo, gerencial, técnico, jurídico, home, cliente, representante, Storage e funções financeiras.
+
+**Evidência**
+
+- `tests/db-static/*`: 19 arquivos de inspeção estática.
+- `supabase/tests/inventory_test.sql`.
+- `supabase/tests/rls_support_test.sql`.
+- CI inicia Supabase e executa `supabase test db`, mas a cobertura real continua limitada a esses dois arquivos.
+
+**Impacto**
+
+SQL pode estar sintaticamente presente e ainda falhar por grants, dependências, relação, owner ou comportamento RLS em produção.
+
+**Correção recomendada**
+
+Adicionar pgTAP por papel e domínio, validar migrations do zero e upgrade parcial, e testar acesso permitido/negado às tabelas e RPCs mais sensíveis.
+
+## 6. Problemas baixos — P3
+
+### [AUD-P3-001] Assets públicos são pesados para primeira visita e cache frio
+
+**Severidade:** P3
+**Área:** Performance, loja
+**Confiança:** Alta
+**Status:** Confirmado; foi adicionado budget para impedir regressão, mas os arquivos atuais ainda precisam ser recomprimidos.
+
+**Problema**
+
+Os principais arquivos de mídia pública somam aproximadamente 20 MB; banners de hero têm cerca de 2,3 MB e várias imagens de produto ficam entre 1,3 MB e 2 MB.
+
+**Evidência**
+
+- `apps/store/public/images` e arquivos de mídia relacionados.
+
+**Impacto**
+
+Maior transferência, LCP e custo em rede móvel/cache frio, mesmo com otimização do Next.
+
+**Correção recomendada**
+
+Gerar variantes responsivas em WebP/AVIF, limitar dimensão e peso na publicação e medir LCP real.
+
+### [AUD-P3-002] Componentes e rotas concentram responsabilidades excessivas
+
+**Severidade:** P3
+**Área:** Arquitetura, manutenção
+**Confiança:** Alta
+**Status:** Confirmado
+
+**Problema**
+
+Há componentes e handlers entre aproximadamente 900 e 1.800 linhas que reúnem consulta, mapeamento, estado, formulários e regras de muitas seções.
+
+**Evidência**
+
+- `apps/store/src/components/representative-portal.tsx`.
+- `apps/store/src/components/customer-account.tsx`.
+- `apps/panel/src/components/legal-center.tsx`.
+- `apps/panel/src/components/help-content-center.tsx`.
+- `apps/panel/src/app/api/manager/representatives/route.ts`.
+- `apps/panel/src/app/api/operations/route.ts`.
+
+**Impacto**
+
+Mudanças pequenas têm maior superfície de regressão e testes isolados ficam difíceis.
+
+**Correção recomendada**
+
+Extrair por domínio apenas quando houver alteração funcional, preservando contratos públicos e evitando refatoração geral.
+
+## 6.1 Correções P3 concluídas nesta revisão
+
+### [AUD-P3-003] Foco não é restaurado ao fechar o chat e feedback de rota depende de mouse
+
+**Severidade:** P3
+**Área:** Acessibilidade, UI
+**Confiança:** Alta
+**Status:** Resolvido e validado em E2E desktop/mobile.
+
+**Problema**
+
+O chat responde a Escape, mas não devolve foco ao launcher. O feedback global de navegação é iniciado por eventos de clique, sem cobertura equivalente para ativação por teclado ou navegação programática.
+
+**Evidência**
+
+- Componente do chat/central de ajuda da loja: ausência de referência para restauração do foco.
+- Componente de feedback de rota: listener centrado em clique.
+
+**Impacto**
+
+Usuários de teclado podem perder contexto e não receber feedback consistente de navegação.
+
+**Correção recomendada**
+
+Guardar o elemento acionador, restaurar foco após fechamento e observar mudanças reais de rota além do evento do mouse.
+
+### [AUD-P3-004] Não há gates automatizados de acessibilidade ou performance
+
+**Severidade:** P3
+**Área:** Qualidade, acessibilidade, performance
+**Confiança:** Alta
+**Status:** Resolvido com job E2E no CI, regressão de foco/teclado e budget automatizado de assets.
+
+**Problema**
+
+Não foram encontrados axe, Lighthouse CI, budgets de bundle ou limites de Core Web Vitals na pipeline.
+
+**Evidência**
+
+- `package.json`, `.github/workflows/ci.yml` e configuração Playwright.
+
+**Impacto**
+
+Regressões de contraste, nome acessível, foco, LCP ou peso de bundle dependem de revisão manual.
+
+**Correção recomendada**
+
+Adicionar uma verificação pequena nas rotas críticas, com limiares graduais que não tornem o CI instável.
+
+### [AUD-P3-005] Runtime e convenção de middleware já emitem avisos de depreciação
+
+**Severidade:** P3
+**Área:** Next.js, dependências
+**Confiança:** Alta
+**Status:** Resolvido no código: requisito/CI em Node 22 e `middleware.ts` migrado para `proxy.ts`; build das duas aplicações aprovado. A máquina local ainda usa Node 20.
+
+**Problema**
+
+O build com Node 20 informa que o cliente Supabase deixará de suportá-lo; o Next 16 informa que a convenção `middleware` foi substituída por `proxy`.
+
+**Evidência**
+
+- Saída de `corepack pnpm build:local`.
+- `package.json`: engine ainda aceita Node 20.
+- `apps/store/src/middleware.ts` e `apps/panel/src/middleware.ts`.
+
+**Impacto**
+
+Atualizações futuras podem transformar avisos em falhas de build/runtime.
+
+**Correção recomendada**
+
+Planejar Node 22 e migração oficial para `proxy`, validando Cloudflare/OpenNext antes de alterar produção.
+
+## 6.2 Problema P3 atual
+
+### [AUD-P3-006] Consultas e snapshots podem crescer sem limite operacional adequado
+
+**Severidade:** P3
+**Área:** Performance, escalabilidade
+**Confiança:** Alta
+**Status:** Parcialmente resolvido. Estoque crítico agora usa agregação autorizada no banco; snapshots de cliente/representante ainda exigem paginação por seção.
+
+**Problema**
+
+A métrica de estoque operacional lê até 10.000 linhas; algumas listas de cliente não têm paginação explícita; o portal do representante recarrega snapshots extensos ao alternar seções.
+
+**Evidência**
+
+- `apps/panel/src/app/api/operations/route.ts`: `.limit(10000)` para estoque crítico.
+- APIs/componentes de `customer-account` e `representative-portal`.
+
+**Impacto**
+
+Latência, payload e CPU do Worker crescem com a base, sem falha imediata no volume atual.
+
+**Correção recomendada**
+
+Mover métricas para agregações no banco, paginar coleções e buscar apenas o recurso da seção ativa.
+
+## 7. Auditoria por área
+
+| Área | Estado | Observação |
 |---|---|---|
-| Cliente | login/logout demo e Supabase; catálogo, filtros, produto, carrinho local; suporte | F/P |
-| Cliente | pedidos, acompanhamento, endereços, segurança, privacidade, trocas | V/D |
-| Cliente | avaliações, cupons da conta, notificações, edição completa de dados | I |
-| Cliente | checkout/pagamento/frete/pedido real | Q/IF |
-| Representante | solicitação e documentos; aprovação em console interno | P |
-| Representante | visão geral, referral, venda simples, criativos | P/D |
-| Representante | nível, metas, estoque, equipe, comissões | V/I |
-| Representante | kit inicial/mensal, reposição, rede, fechamento, pagamentos, contrato, treinamento | I |
-| Operacional | navegação, shell, cards e tabelas | V |
-| Operacional | picking, expedição, etiquetas, kits, ocorrências e relatórios | V/I |
-| Administrador | navegação, catálogo, conteúdo, promoções, usuários | V/D |
-| Administrador | CRUD, permissões, clientes, campanhas, treinamentos e contratos | V/I |
-| Gerência | visão estratégica, financeiro, aprovações e gráficos | V/D |
-| Gerência | rede, níveis, metas, comissões, fechamentos, simulações | V/I |
-| Técnico | integrações mostram flags reais; restante do dashboard | P/V |
-| Técnico | logs, filas, jobs, banco, Storage, backups e monitoramento | V/I |
+| Cliente | Parcialmente funcional | Perfil, recuperação, avatar, endereços, pedidos, favoritos, avaliações, cupons, devoluções, notificações e suporte têm implementação real. Checkout bloqueia uso comercial completo (AUD-P1-005). |
+| Representante | Parcialmente funcional | Portal cobre perfil, qualificação, metas, kits, estoque, venda transacional, rede, comissões, pagamentos, criativos, treinamento, documentos e suporte. Produção depende do schema/privilégios (AUD-P1-001). |
+| Administrativo | Quebrado em produção | Código possui dashboard, CRUDs, catálogo, mídia, homepage, campanhas, jurídico, atendimento, usuários e permissões; Data API implantado retorna erros (AUD-P1-001). |
+| Operacional | Quebrado em produção | Rotinas de pedido, tarefas, estoque, kits, devoluções, ocorrências, notas e atendimento existem; 503 impede carga e ações (AUD-P1-001). |
+| Gerencial | Quebrado em produção | Indicadores, representantes, comissões, campanhas, home, aprovações e relatórios possuem APIs reais, bloqueadas pelo banco implantado (AUD-P1-001). |
+| Técnico | Quebrado em produção | Recursos de saúde, logs, integrações, webhooks, filas, banco, Storage, deploys e flags existem, mas dependem do mesmo acesso (AUD-P1-001). |
+| Autenticação e autorização | Funcional no código | Sessão Supabase, roles múltiplos, `profiles.status`, MFA opcional, resposta uniforme e rate limit obrigatório existem; migration `011` ainda precisa ser aplicada. |
+| Banco / Supabase | Quebrado em produção | Schema do repositório é amplo e protegido, mas produção está divergente; tipos e cobertura comportamental são insuficientes (AUD-P1-001, AUD-P2-004, AUD-P2-007). |
+| Storage | Parcialmente funcional | Buckets públicos/privados e policies estão separados; anexos não saem de quarentena e mídia administrativa precisa endurecimento (AUD-P2-001, AUD-P2-005). |
+| APIs | Parcialmente funcional | Validação Zod, autorização e estados de erro são comuns. Privacidade e consentimento foram endurecidos; checkout segue incompleto (AUD-P1-005). |
+| UI/UX | Funcional com bloqueios externos | Menus e ações existem, com loading/erro/vazio. Sem dados carregados, painéis ocultam ações contextuais. Não é ausência de botões no código, mas consequência do 503 (AUD-P1-001). |
+| Acessibilidade | Funcional com cobertura focada | Skip link, labels, diálogos, Escape, traps, restauração de foco e navegação por teclado estão cobertos nos fluxos críticos do E2E. |
+| Performance | Parcialmente funcional | Next Image, paginação e paralelismo são usados; mídia e consultas amplas geram risco de escala (AUD-P3-001, AUD-P3-006). |
+| Cloudflare / Deploy | Configurado, produção desatualizada | Store e panel são Workers separados com OpenNext, headers e validação de env. A correção atual não está na `main`/produção (AUD-P1-001). |
+| Integrações | Parcialmente implementadas ou não configuradas | Supabase existe mas está divergente; Mercado Pago é incompleto; e-mail/frete/WhatsApp/ERP/marketing não têm adapters produtivos confirmados. |
+| Testes | Adequado com ressalvas | Unidade, componentes, estáticos, build, E2E no CI e três conjuntos pgTAP; matriz RLS ainda é estreita (AUD-P2-007). |
 
-## 6. Botões e ações quebradas
+## 8. Funcionalidades confirmadas como funcionando
 
-- Checkout retorna 503 mesmo com providers esperados.
-- Link de indicação gera `/indicar/{codigo}`, rota que não existe.
-- Registro de venda ignora o campo de referência e aceita apenas total arbitrário.
-- “Comprar kit” não inicia compra; apresenta estado vazio.
-- Compartilhamento/favorito de criativos tem controle desabilitado ou apenas registra evento.
-- Endereço, encerramento de sessões e solicitação LGPD na conta estão desabilitados.
-- Recuperar/redefinir senha e rastrear pedido são páginas informativas, sem formulário/consulta.
-- Botões de criar/editar/exportar/fechar/aprovar/reprovar/assumir presentes nos dashboards estáticos não têm mutação correspondente, exceto o console real de suporte e partes do console de representantes/criativos.
-- Buscas, selects, filtros e paginações da maioria dos painéis não possuem estado, handler ou consulta.
+- Monorepo pnpm/Turborepo com separação entre `apps/store`, `apps/panel` e packages compartilhados.
+- Builds locais da loja e do painel concluem e enumeram as rotas esperadas.
+- Login/cadastro preservam destino interno por `next` ou `returnTo` com sanitização contra open redirect.
+- Painel verifica sessão, status do perfil, múltiplos roles e acesso à rota no servidor.
+- Central de seleção suporta usuários com um ou vários painéis; URL direta também é validada no servidor.
+- Cookies de autenticação compartilhados entre os hosts são construídos por utilitário validado por testes.
+- CSP com nonce, HSTS de produção e headers de segurança estão configurados em ambas as aplicações.
+- Loja possui catálogo, busca, filtros, produto, carrinho, favoritos e páginas públicas reais; fallback demonstrativo agora exige `DEMO_MODE` explícito.
+- Minha Conta possui dados reais e estados de loading, erro e vazio para os módulos existentes.
+- Portal do representante possui fluxos reais e a venda usa RPC transacional que calcula preços e estoque no banco.
+- Painéis possuem APIs e ações reais; não são mais coleções de cards decorativos.
+- Cadastro/gestão de produto possui RPC autorizada e auditável, com variantes e movimentos de estoque.
+- Home builder, jurídico e Central de Ajuda possuem versionamento, revisão e auditoria no schema do repositório.
+- Uploads de avatar, avaliação, documentos e criativos geralmente validam assinatura de arquivo, tamanho, autorização e limpeza após falha.
+- Funções `SECURITY DEFINER` examinadas definem `search_path=''` e verificam permissões nas operações sensíveis principais.
+- RLS está habilitado/forçado nas tabelas críticas definidas pelas migrations; a migration de estabilização não propõe desabilitá-lo.
+- O chatbot mobile tem regra para exibir apenas o ícone e respeitar a viewport; há caso Playwright específico para esse comportamento.
+- Rotas de rastreamento, cadastro, login e troca de painel referenciadas nos menus existem.
+- Lint, TypeScript, 246 testes automatizados e build local passaram na revisão pós-auditoria.
 
-## 7. Funcionalidades apenas visuais
+## 9. Dependências externas / não configuradas
 
-- Métricas, pedidos, produtos, faturamento, lucro, reembolso, acuracidade, logs, erros e saúde do painel.
-- Gráfico de receita e séries de desempenho.
-- Tabelas de fila operacional, catálogo, financeiro, auditoria e sessões.
-- Cards de integração/backup/infraestrutura fora do endpoint limitado de status.
-- Grande parte das rotas do mesmo papel reutiliza o dashboard padrão, embora o título do menu sugira módulo distinto.
-- Estados de “online”, quantidades, valores, percentuais, datas, clientes e produtos estão codificados diretamente em componentes do painel.
-
-## 8. Funcionalidades inexistentes
-
-- Fluxo completo de pedido: reserva concorrente, pedido pendente, preferência, webhook idempotente, confirmação, estoque, logística e notificações.
-- Portal do cliente completo: avaliações, cupons, notificações, dados editáveis, rastreio e autosserviço de troca.
-- Ciclo comercial de representantes: kit, ativação, estoque, itens de venda, rede, qualificação, comissão, estorno, fechamento e pagamento.
-- Administração real de categorias, variações, imagens, preços, campanhas, contratos, treinamentos e permissões.
-- Operação real de picking, embalagem, etiqueta, expedição, nota fiscal e ocorrência.
-- Gerência real de custos, lucro, aprovações, relatórios privados, simulações e fechamento.
-- Observabilidade real: health checks, filas, jobs, logs sanitizados, banco, Storage, backups e incidentes.
-- Processadores de jobs, cron e adapters reais de frete/e-mail/Turnstile/MFA.
-
-## 9. Problemas no banco
-
-O schema é abrangente e possui UUIDs, valores monetários inteiros/numeric, constraints, índices e relações para os domínios principais. Não foi identificada duplicação destrutiva evidente: tabelas de documentos de solicitação e documentos do representante representam fases diferentes.
-
-Problemas encontrados:
-
-- Os tipos TypeScript são um stub de 699 bytes com `Record<string, unknown>`, sem tabelas/views/functions reais e sem `representative` no enum `app_role`.
-- A aplicação quase não consome as tabelas criadas; isso já causou divergência snake_case/camelCase no snapshot real de representantes.
-- A API de venda não cria itens, não movimenta estoque e não usa transação de domínio.
-- Há tabelas de jobs e notificações, mas nenhum consumidor implementado.
-- Views/agregações planejadas não são usadas pelos dashboards.
-- Não foi possível validar migrations em PostgreSQL real nesta etapa, pois Docker foi proibido e nenhum staging remoto foi acessado.
-
-## 10. Problemas de RLS
-
-Pontos positivos: as migrations base habilitam e forçam RLS, usam políticas por propriedade/permissão e funções `SECURITY DEFINER` com `search_path` explícito. Buckets de documentos e criativos são privados e usam políticas de Storage e URLs assinadas.
-
-Lacunas:
-
-- As migrations novas de representantes e criativos habilitam RLS, mas não executam `FORCE ROW LEVEL SECURITY`, diferentemente da base.
-- Os testes sem Docker apenas procuram texto SQL; não comprovam comportamento entre usuários, papéis, overrides, AAL2 ou casos IDOR.
-- A ausência de autenticação no app do painel ocorre antes da RLS: o visitante já visualiza páginas internas. APIs reais podem ser negadas pela RLS, mas isso não corrige a exposição do painel.
-- As migrations pgTAP existentes não foram executadas sem PostgreSQL/Supabase local.
-
-## 11. Problemas de segurança
-
-- Autorização real ausente no painel fora do modo demo.
-- Cookie/session sharing não resolvido entre Workers/domínios.
-- Registro financeiro de representante confia em total fornecido pelo cliente.
-- Uploads confiam em `File.type`, extensão e tamanho; não verificam magic bytes, conteúdo ativo, malware nem reprocessam imagens. ZIP/PDF/vídeo são armazenados brutos.
-- `TURNSTILE_ENABLED` e `REQUIRE_INTERNAL_MFA` não possuem enforcement; não há rate limit encontrado nas APIs de auth/mutação.
-- CSP contém `'unsafe-inline'` em scripts e estilos; HSTS não aparece nos headers Next.
-- Não há camada de logger estruturado/redação usada pelas APIs nem health checks reais; auditoria existe majoritariamente no schema.
-- O roteamento de contas com múltiplos papéis prioriza `representative` sobre qualquer papel interno, podendo enviar um administrador/gerente para o destino errado.
-- Pontos positivos: `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, CSP, `no-store` no painel, verificação de Origin em mutações principais, HMAC timing-safe no demo e criptografia AES-256-GCM para PII.
-
-## 12. Problemas mobile
-
-Teste headless direto em 320, 360, 375, 390, 430, 768 e 1440 px nas rotas `/`, `/produtos`, `/carrinho`, `/checkout`, `/login` e `/ajuda`: **42/42 respostas 200**, sem overflow horizontal e sem erros de console.
-
-No painel em 390 px foram encontrados overflows de até **426 px**:
-
-- Operacional: raiz, pedidos, separação e expedição.
-- Administração: raiz, pedidos, produtos (59 px), clientes e configurações.
-- Técnico: raiz, logs, sessões, backups e features.
-- Gerência e portal do representante não apresentaram overflow no teste realizado.
-
-A causa predominante é tabela com `min-width: 760px` dentro de cards/grid sem contenção completa. Embora exista `.table-scroll`, o item pai cresce e amplia o documento. Não há alternativa mobile em cards para tabelas densas. O painel também não possui loading/skeleton por rota.
-
-## 13. Problemas de design
-
-- Várias rotas diferentes exibem o mesmo dashboard, reduzindo orientação e confiança.
-- Estados desabilitados não oferecem ação alternativa nem previsão operacional.
-- Hierarquia dos painéis sugere dados reais, mas o aviso de demonstração não acompanha cada métrica/tabela.
-- Tabelas desktop são comprimidas/roladas no celular, não transformadas em leitura mobile.
-- O chat tem labels e foco inicial, mas não trata `Escape` nem devolve foco ao launcher ao fechar.
-- Feedback global de navegação observa apenas clique de mouse em links; ativação por teclado e navegação programática não acionam necessariamente o indicador.
-- Não foi encontrada auditoria automatizada WCAG/axe; a inspeção atual não certifica WCAG 2.2 AA.
-
-## 14. Problemas de performance
-
-- Dez imagens públicas somam cerca de **16,0 MB**; oito PNGs de produto/hero têm entre 1,4 e 2,1 MB. `next/image` reduz transferência nas telas atuais, mas os originais aumentam build/deploy e dependem do otimizador no runtime.
-- O portal do representante é um grande Client Component e refaz o snapshot ao trocar de seção.
-- Catálogo, busca, carrinho e favoritos são client-side; não existe busca/paginação/cache por tags na fonte real.
-- Não há orçamento de bundle, Lighthouse/Core Web Vitals ou k6 automatizado.
-- A suíte Playwright completa ficou ativa por 604 segundos sem produzir relatório; uma suíte isolada também não progrediu. A inspeção direta com Chromium funcionou, indicando problema no runner/webServer/encerramento, não ausência do navegador.
-- O build Next de desenvolvimento foi concluído, mas o build OpenNext no Windows falhou em criação de symlink (`EPERM`); isso deve ser revalidado no Linux da Cloudflare.
-
-## 15. Problemas de staging
-
-Configurações aceitas pelo validador: `DEMO_MODE=true`, providers mock e `REQUIRE_INTERNAL_MFA=false`, com core secrets de staging obrigatórios. Produção mantém mocks proibidos e flags opcionais explícitas.
-
-Bloqueios de execução:
-
-- `isLocalDemoRequest()` só aceita `localhost`, `127.0.0.1` e `::1`; contas demo não autenticam em staging remoto.
-- `MockPaymentProvider` e `MockShippingProvider` chamam `developmentOnly()`, que bloqueia qualquer `NODE_ENV=production`; build otimizado de staging usa esse valor.
-- Stores demo em memória não são duráveis em Cloudflare Workers e podem perder suporte/solicitações entre invocações.
-- `WHATSAPP_PROVIDER=mock` é documentado, porém não existe adapter/fluxo da aplicação.
-- Loja e painel exigem URLs/rotas distintas; configurar ambas com o mesmo Worker inviabiliza o roteamento.
-
-## 16. Integrações futuras
-
-| Integração | Estado atual |
-|---|---|
-| Mercado Pago | Edge Functions e flags existem; checkout não as orquestra |
-| Melhor Envio | enum/flag/contrato; adapter real ausente |
-| Correios | enum/contrato futuro; implementação ausente |
-| Resend | enum/flag/contrato; adapter/templates reais ausentes |
-| Turnstile | flag/status; widget e validação server-side ausentes |
-| MFA TOTP | flag; enrollment, challenge e AAL2 ausentes |
-| WhatsApp | contrato e env de exemplo; adapter/consentimento/fila ausentes |
-| ERP/NF | contrato; implementação ausente |
-| Marketing | contrato; implementação ausente |
-
-## 17. Dependências
-
-- Node >=20.9, pnpm 10.14, Turborepo, Next 16.2.11, React 19.2 e TypeScript.
-- Supabase SSR/JS/CLI; CLI local depende de Docker, não disponível neste computador.
-- OpenNext Cloudflare e Wrangler para dois Workers.
-- Zod para validação; Lucide e Recharts na interface; Playwright e Vitest nos testes.
-- Dependências externas pendentes: projeto Supabase de homologação, domínios separados, credenciais/flags reais e infraestrutura de filas/jobs.
-- Antes de desenvolvimento funcional, os tipos do Supabase devem ser gerados a partir de staging seguro ou pipeline controlado, sem produção.
-
-## 18. Riscos consolidados
-
-| Risco | Probabilidade | Impacto | Tratamento |
-|---|---|---|---|
-| acesso não autorizado ao painel | alta | crítico | bloquear deploy até autenticação/RBAC server-side |
-| sessão perdida entre loja/painel | alta | crítico | definir arquitetura de domínio/token antes do deploy |
-| fraude/duplicidade em venda de representante | alta | crítico | desabilitar mutação até fluxo transacional idempotente |
-| upload malicioso | média/alta | alto | inspeção de conteúdo, quarentena e reprocessamento |
-| operação baseada em dados fictícios | alta | alto | integrar dashboards e identificar demo por campo/ambiente |
-| checkout sem pedido/pagamento | certa | alto | implementar orquestração e testes de concorrência |
-| staging enganoso | alta | alto | alinhar mocks, login remoto e persistência |
-| regressão mobile do painel | alta | médio/alto | corrigir contenção e automatizar matriz de viewports |
-| RLS não validada em PostgreSQL | média | alto | pgTAP em homologação isolada |
-
-## 19. Registro detalhado de problemas e melhorias recomendadas
-
-| ID | Perfil | Página | Arquivo/função | Funcionalidade | Situação atual | Comportamento esperado | Gravidade | Prioridade | Impacto | Dependências | Solução recomendada |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| AUD-001 | Internos | todas do painel | `apps/panel/src/app/[role]/[[...section]]/page.tsx`, `RolePage` | autenticação/RBAC | só valida sessão quando `DEMO_MODE=true` | validar sessão, status, papel, permissão e AAL antes de renderizar | crítica | P0 | exposição/escalada | arquitetura auth | guard server-side default-deny e 403 auditado |
-| AUD-002 | Internos | login/painel | auth route, cookies SSR, dois Workers | SSO | cookie host-only da loja não autentica painel em outro host | sessão verificável nos dois apps | crítica | P0 | painel real inacessível/inseguro | domínios, Supabase Auth | domínio pai seguro ou token exchange/BFF formal |
-| AUD-003 | Representante | registrar venda | `api/representatives`, branch `sale` | venda/comissão | aceita total do cliente, sem itens/prova; idempotency aleatória no servidor | validar itens/preços/estoque/prova e chave do cliente em transação | crítica | P0 | fraude e duplicidade | schema vendas/estoque | RPC transacional idempotente e aprovação de exceções |
-| AUD-004 | Cliente | checkout | `api/checkout`, `POST` | finalizar compra | sempre termina em `INTEGRATION_NOT_READY` | criar reserva, pedido, checkout e webhook idempotente | alta | P1 | sem receita | pagamento/frete/Supabase | implementar máquina transacional completa |
-| AUD-005 | Cliente | catálogo/carrinho/favoritos | `catalog.ts`, providers locais | fonte de verdade | catálogo fixo e estado em localStorage, sem merge pós-login | catálogo Supabase e carrinho visitante sincronizado | alta | P1 | dados/estoque inconsistentes | catálogo/RLS | repositórios server-side e guest token seguro |
-| AUD-006 | Cliente | minha conta | `minha-conta/.../page.tsx` | pedidos/endereços/segurança/LGPD | dados fixos e botões desabilitados | dados próprios, mutações e feedback reais | alta | P1 | autosserviço indisponível | APIs/RLS | implementar módulos por domínio |
-| AUD-007 | Operacional | fila/pedidos/separação/expedição | `RoleContent`, `OperationalDashboard` | operação logística | mesmo dashboard demonstrativo; ações sem mutação | fila transacional, picking, divergência, envio | alta | P1 | operação inviável | pedidos/estoque/frete | APIs/RPCs com locks e auditoria |
-| AUD-008 | Administrador | produtos/CMS/promoções/usuários | `Admin*` | CRUD administrativo | tabelas/formulários visuais | CRUD validado, upload, permissões e audit log | alta | P1 | catálogo não administrável | RBAC/Storage | formulários server-side e políticas por permissão |
-| AUD-009 | Gerência | estratégia/financeiro/aprovações | `Manager*` | gestão | valores e aprovações fixos | views agregadas, dupla aprovação e exportação privada | alta | P1 | decisão sobre dados falsos | views/financeiro | consultas agregadas e workflow auditável |
-| AUD-010 | Técnico | saúde/logs/backups | `Technical*` | observabilidade | status e logs demonstrativos | health checks e estados reais, logs sanitizados | alta | P1 | incidente invisível | observabilidade/jobs | collectors, checks e trilha somente leitura |
-| AUD-011 | Representante | portal real | API GET + `RepresentativePortal` | contrato de snapshot | API real retorna snake_case bruto e omite vendas/kits; UI espera camelCase | DTO tipado único e completo | alta | P1 | portal quebra com Supabase | tipos gerados | mapper server-side e contract tests |
-| AUD-012 | Representante | ciclo comercial | portal/APIs | kit/ativação/estoque/comissão | schema existe, fluxo não | ciclo com regras configuráveis e fechamento | alta | P1 | programa comercial inviável | AUD-003/011 | serviços de domínio e estados transacionais |
-| AUD-013 | Representante | indicação | `referralLink`, `windowOrigin` | link público | aponta para `/indicar/{code}` inexistente | landing válida, tracking e proteção contra autoindicação | alta | P1 | indicação perdida | rota/cookies/privacy | criar rota e atribuição server-side |
-| AUD-014 | Staging | login demo | `isLocalDemoRequest` | demo remoto | rejeita qualquer host remoto | permitir apenas hosts de staging explicitamente autorizados | alta | P1 | homologação bloqueada | allowed origins | allowlist exata e segredo forte |
-| AUD-015 | Staging | providers mock | `developmentOnly` | mocks em build otimizado | bloqueia por `NODE_ENV=production` | bloquear por ambiente comercial, não otimização | alta | P1 | staging aceita config mas falha em runtime | env validator | usar `APP_ENV`/`DEMO_MODE` validado |
-| AUD-016 | Admin/Representante | uploads | routes de upload | segurança de arquivos | confia em MIME/extensão do cliente | magic bytes, quarentena, scan e reprocessamento | alta | P1 | XSS/malware/abuso | Storage/worker | validar conteúdo e servir com headers seguros |
-| AUD-017 | Internos | login/ações críticas | config MFA/auth | MFA | flag não é aplicada | enrollment/challenge AAL2 e reautenticação | alta | P1 | conta privilegiada vulnerável | Supabase MFA | middleware/guard AAL2 e recuperação segura |
-| AUD-018 | Todos | auth e mutações | APIs/config Turnstile | abuso/brute force | sem rate limit; Turnstile apenas flag | limites por risco e verificação server-side | alta | P1 | credential stuffing/DoS | KV/Durable Object/Turnstile | limiter distribuído e captcha adaptativo |
-| AUD-019 | Operacional/Admin/Técnico | 14 rotas em 390px | `panel/globals.css`, tabelas/cards | responsividade | documento excede viewport em até 426px | zero overflow em 320–430px | alta | P1 | painel móvel impraticável | CSS/componentes | conter grid e criar cards mobile |
-| AUD-020 | Todos | checkout/comunicação | packages integrations/Edge Functions | integrações reais | contratos/flags sem adapters orquestrados | providers não inicializados quando off e funcionais quando on | alta | P1 | recursos centrais indisponíveis | secrets/webhooks | factories tipadas, health e testes de contrato |
-| AUD-021 | Representante | menu | `representative-portal.tsx` | módulos do portal | status/qualificação/rede/extrato/pagamentos etc. ausentes | rotas e conteúdo por domínio | média | P2 | baixa autonomia | AUD-012 | implementar por prioridade comercial |
-| AUD-022 | Cliente | minha conta | account nav/content | módulos do cliente | avaliações/cupons/notificações/dados ausentes | autosserviço completo | média | P2 | suporte manual maior | pedidos/reviews | APIs e telas com estados completos |
-| AUD-023 | Criativos | consoles | creative APIs/consoles | campanha e publicação | agendamento, expiração, restrição por nível e métricas sem UI completa | workflow de criação→aprovação→publicação→arquivo | média | P2 | governança incompleta | Storage/RBAC | máquina de estados e auditoria |
-| AUD-024 | Representante | criativos | `Creatives`, botão desabilitado | compartilhar/favoritar | ação desabilitada ou só registra evento | Web Share/download/favorito com erro tratado | média | P2 | material pouco utilizável | browser API/API favoritos | progressive enhancement e métricas idempotentes |
-| AUD-025 | Cliente | senha/rastreio | `[page]/page.tsx` | recuperação/rastreio | somente texto | formulários e consultas reais sem enumeração | média | P2 | jornadas quebradas | Auth/frete | fluxos Auth SSR e tracking proprietário |
-| AUD-026 | Público/Admin | páginas institucionais/CMS | `[page]`, admin CMS | conteúdo | texto demonstrativo em código | conteúdo versionado/publicável no banco | média | P2 | conteúdo não gerenciável | CMS/RLS | renderer seguro e preview/aprovação |
-| AUD-027 | Painéis | múltiplas | `RoleContent` e dashboards | filtros/buscas/botões | controles sem estado/handler | consulta, loading, erro e resultado | média | P2 | interface enganosa | APIs | remover até funcionar ou implementar por módulo |
-| AUD-028 | Painéis | dashboards | `RevenueChart`, tabelas | gráfico/paginação/exportação | séries fixas e tabelas sem paginação real | views agregadas, filtros, paginação e export privada | média | P2 | escala e decisão comprometidas | DB/report jobs | queries paginadas e exports assíncronos |
-| AUD-029 | Técnico | filas/jobs | tabela `background_jobs` | processamento assíncrono | schema sem consumidor/cron | retries, dead-letter, idempotência e métricas | média | P2 | notificações/webhooks parados | worker/cron | worker dedicado e runbooks |
-| AUD-030 | Técnico | webhooks | Supabase Functions | cobertura | somente Mercado Pago | roteadores verificados para integrações habilitadas | média | P2 | eventos externos incompletos | providers | handlers assinados e replay protection |
-| AUD-031 | Multi-role | login | auth route, seleção de `role` | redirecionamento | representante sempre vence papel interno | política determinística/seleção de contexto | média | P2 | acesso ao destino errado | RBAC/UX | seletor de perfil ou precedência formal |
-| AUD-032 | Desenvolvimento | Supabase | `database.types.ts` | tipos | stub genérico e enum incompleto | tipos gerados das migrations/staging | média | P2 | erros de contrato em runtime | staging seguro | pipeline de geração e diff |
-| AUD-033 | Banco | novas tabelas | migrations representantes/criativos | FORCE RLS | apenas `ENABLE RLS` | padrão consistente com base | média | P2 | bypass por owner acidental | migration incremental | adicionar FORCE após testes |
-| AUD-034 | Segurança | RLS | `tests/db-static` | testes comportamentais | só inspeção textual | pgTAP multiusuário/IDOR/storage | média | P2 | falsa confiança | PostgreSQL staging | pipeline isolado sem produção |
-| AUD-035 | Staging demo | suporte/representantes | demo stores em memória | persistência | memória do processo | estado estável ou demo explicitamente efêmera | média | P2 | dados somem em Workers | KV/D1/staging Supabase | persistência de homologação isolada |
-| AUD-036 | Todos | notificações | tabelas/contratos | entrega | schema sem dispatcher/provider | outbox, templates, preferências e retries | média | P2 | usuário não informado | jobs/e-mail/WhatsApp | outbox transacional e worker |
-| AUD-037 | Técnico | auditoria/health | dashboards/APIs | operação real | schema e cards, sem leitura real | logs correlacionados e checks honestos | média | P2 | diagnóstico deficiente | logger/observability | pacote logger e queries sanitizadas |
-| AUD-038 | Público | busca/catálogo | `catalog-page.tsx`, `catalog.ts` | consulta | filtra array client-side | busca indexada, paginação e URLs compartilháveis | média | P2 | escala/SEO | FTS/trigram/cache | Server Components e revalidação por tag |
-| AUD-039 | Público | sitemap | `sitemap.ts` | SEO | publica produtos demo fixos | URLs reais publicadas e canonicals por ambiente | média | P2 | indexação incorreta | catálogo/CMS | gerar da fonte real e excluir demo |
-| AUD-040 | Segurança | headers | `next.config.ts` | hardening HTTP | CSP usa unsafe-inline; HSTS ausente | nonce/hash e HSTS apenas em produção | média | P2 | mitigação XSS/TLS menor | OpenNext/Cloudflare | CSP por nonce e headers de borda testados |
-| AUD-041 | Público | imagens | `public/images` | peso de assets | ~16 MB em 10 arquivos; PNGs até 2,1 MB | originais otimizados AVIF/WebP | baixa | P3 | build/cold cache | pipeline de imagem | converter mantendo fonte fora do bundle |
-| AUD-042 | Representante | portal | `RepresentativePortal` | render/fetch | grande Client Component e refetch por seção | shell server-side e cache de snapshot | baixa | P3 | JS/requisições extras | DTO AUD-011 | dividir componentes e cache controlado |
-| AUD-043 | Painel | navegação | ausência de `loading.tsx` | feedback | sem skeleton por rota | feedback imediato consistente | baixa | P3 | sensação de lentidão | design system | loading/skeleton acessível |
-| AUD-044 | QA | E2E | Playwright config/runner | estabilidade da suíte | timeout de 604s sem relatório | término determinístico e artefatos | média | P3 | CI não confiável | webServer/processos | isolar servidores, timeouts e teardown |
-| AUD-045 | QA | painel mobile | testes E2E | cobertura | suíte responsiva cobre só loja | todos os papéis em 320–1440px | baixa | P3 | regressões como AUD-019 | fixtures auth | matriz visual/overflow por perfil |
-| AUD-046 | Painéis | tabelas | CSS/componentes | UX mobile | tabela desktop com scroll como única adaptação | cards/colunas prioritárias e ações acessíveis | baixa | P3 | leitura ruim | design system | componente DataList responsivo |
-| AUD-047 | Painéis | rotas repetidas | `RoleContent` | hierarquia | páginas distintas parecem idênticas | título, contexto, estado vazio e ações próprios | baixa | P3 | desorientação | módulos reais | layouts por tarefa, sem cards decorativos |
-| AUD-048 | Loja | navegação | `route-feedback.tsx` | loading global | detecta apenas clique de mouse em anchor | teclado, router e formulários com feedback | baixa | P3 | resposta inconsistente | Next navigation | integrar pending state por rota/ação |
-| AUD-049 | Loja | chat | `help-chat.tsx` | acessibilidade | foco inicial, mas sem Escape/retorno de foco | ciclo de foco previsível por teclado | baixa | P3 | barreira de acessibilidade | componente dialog | implementar keyboard handling e teste |
-| AUD-050 | Geral | performance/a11y | CI | quality gates | sem Lighthouse, axe, CWV ou k6 | limites reproduzíveis e relatórios | baixa | P3 | regressões silenciosas | CI/staging | jobs não destrutivos com budgets |
-| AUD-051 | Todos | WhatsApp | env/contrato | mensagens | provider mock documentado sem implementação | adapter consentido e opcional | futura | P4 | canal ausente | Meta/provider/jobs | implementar após e-mail/outbox |
-| AUD-052 | Operação | ERP/Correios/marketing | contratos | integrações futuras | somente interfaces/enums | adapters reais com estados honestos | futura | P4 | automação futura | fornecedores | priorizar por necessidade comercial |
-
-## 20. Ordem de implementação
-
-1. **Bloqueio de segurança:** AUD-001 e AUD-002; definir autenticação entre apps, guard server-side, RBAC, 403 e testes de acesso direto.
-2. **Integridade financeira:** desabilitar venda insegura e implementar AUD-003; adicionar MFA/rate limit/Turnstile e hardening de uploads (AUD-016 a AUD-018).
-3. **Contratos e banco:** gerar tipos, corrigir DTOs, executar pgTAP em homologação isolada e padronizar FORCE RLS (AUD-011, AUD-032 a AUD-034).
-4. **Ciclo de compra:** catálogo real, carrinho visitante, reservas, pedido, pagamento, frete, webhook, estoque e notificações (AUD-004, AUD-005, AUD-020, AUD-029, AUD-030, AUD-036, AUD-038).
-5. **Operação e Administração:** pedidos/picking/expedição e CRUD de catálogo/CMS/usuários com auditoria (AUD-007, AUD-008, AUD-026 a AUD-028).
-6. **Representantes e Gerência:** kit, ativação, estoque, rede, metas, comissões, fechamento, pagamentos, relatórios e aprovações (AUD-009, AUD-012, AUD-013, AUD-021 a AUD-024).
-7. **Cliente:** pedidos, rastreio, endereços, avaliações, segurança, trocas, privacidade e notificações (AUD-006, AUD-022, AUD-025).
-8. **Técnico/observabilidade:** health, logs, filas, jobs, backups e incidentes reais (AUD-010, AUD-037).
-9. **Staging e Cloudflare:** alinhar demo remoto/mocks/persistência, validar Workers distintos no Linux e só então promover (AUD-014, AUD-015, AUD-035, AUD-044).
-10. **Mobile, acessibilidade e performance:** remover overflow, adaptar tabelas, otimizar imagens, feedback e quality gates (AUD-019, AUD-040 a AUD-050).
-
-### Arquivos e áreas da próxima etapa
-
-- Auth/RBAC: `apps/panel/src/app/[role]/[[...section]]/page.tsx`, novo guard server-side do painel, `apps/store/src/app/api/auth/[mode]/route.ts`, clientes Supabase SSR e estratégia de cookies/domínios.
-- Segurança: routes de upload/auth/representantes, `packages/security`, `packages/config`, `apps/*/next.config.ts` e policies/migrations incrementais.
-- Domínio comercial: `apps/store/src/app/api/checkout`, catálogo/carrinho/conta, `packages/domain`, `packages/integrations` e Edge Functions.
-- Representantes: `api/representatives`, portal/consoles, DTOs, services e migrations incrementais somente após testes.
-- Painéis: decompor `RoleContent` em módulos reais por papel e conectar views/RPCs.
-- Mobile/QA: `apps/panel/src/app/globals.css`, componente responsivo de tabela, Playwright fixtures e testes de viewports/perfis.
-
-### Validações executadas e limitações
-
-- `corepack pnpm install --frozen-lockfile`: concluído.
-- `npm run lint`: concluído sem erros nos workspaces.
-- `npm run typecheck`: concluído sem erros.
-- `npm run test`: 46 testes concluídos, incluindo unitários, componentes, configuração, mocks de Supabase e inspeção SQL estática.
-- `npm run build:development`: build Next otimizado concluído para loja e painel.
-- `npm run build`: bloqueado corretamente pela ausência local de secrets obrigatórios de produção; não foram usados tokens falsos.
-- OpenNext local: compilação Next concluiu e falhou em symlink Windows `EPERM`; dry-run não pôde usar artefato ausente.
-- Playwright completo: timeout de 604s sem relatório; tentativa isolada também ficou sem progresso.
-- Chromium direto: 42 combinações de rota/largura da loja com HTTP 200, sem overflow e sem console errors; links de menu dos cinco perfis demo testados, sem 4xx/5xx; overflow do painel documentado acima.
-- RLS/pgTAP e integrações reais: não executados, pois exigiriam PostgreSQL/Supabase real. Docker foi deliberadamente evitado e nenhum projeto remoto foi acessado.
-
-## 21. Acompanhamento da implementação
-
-**Atualização:** 1 de agosto de 2026. Os estados abaixo refletem código e testes executados; validação em PostgreSQL/Supabase real continua bloqueada até existir homologação explicitamente autorizada.
-
-| ID | Status | Evidência ou próximo passo |
+| Dependência | Classificação | Situação |
 |---|---|---|
-| AUD-001 | validado | guard server-side default-deny, papel, status, rota, MFA e testes de matriz de papéis; lint/typecheck do painel passaram |
-| AUD-002 | corrigido | cookies SSR compartilháveis e refresh nos dois apps; falta validar em dois hosts reais de staging |
-| AUD-003 | corrigido | RPC idempotente calcula preços no banco, trava/baixa estoque e audita; validação PostgreSQL real está bloqueada sem staging |
-| AUD-004 | pendente | checkout transacional ainda não implementado |
-| AUD-005 | pendente | catálogo/carrinho ainda precisam migrar para a fonte real |
-| AUD-006 | pendente | módulos reais da conta do cliente ainda incompletos |
-| AUD-007 | pendente | operação logística real ainda não implementada |
-| AUD-008 | pendente | CRUD administrativo real ainda não implementado |
-| AUD-009 | pendente | gestão e agregações reais ainda não implementadas |
-| AUD-010 | pendente | observabilidade real ainda não implementada |
-| AUD-011 | corrigido | snapshot real é normalizado para camelCase e inclui vendas, kits e estoque; contract test com Supabase real ainda bloqueado |
-| AUD-012 | pendente | ciclo comercial completo ainda não implementado |
-| AUD-013 | pendente | landing e atribuição segura de indicação ainda não implementadas |
-| AUD-014 | validado | demo remoto limitado a APP_ENV=staging e allowlist explícita; testes passaram |
-| AUD-015 | validado | mocks controlados por APP_ENV, proibidos em produção comercial; testes passaram |
-| AUD-016 | em andamento | magic bytes, MIME canônico, limites antecipados, checksum e PDF ativo bloqueado; quarentena/scan/reprocessamento pendentes |
-| AUD-017 | corrigido | enrollment/challenge TOTP e enforcement AAL2 implementados; validação real depende de Auth staging |
-| AUD-018 | corrigido | rate limit server-side e Turnstile por flag implementados; teste distribuído real depende de staging |
-| AUD-019 | corrigido | contenção de grids/cards/tabelas aplicada; matriz visual automatizada ainda pendente |
-| AUD-020 | pendente | factories reais e orquestração completa ainda pendentes |
-| AUD-021 | pendente | módulos restantes do representante ainda pendentes |
-| AUD-022 | pendente | autosserviço completo do cliente ainda pendente |
-| AUD-023 | pendente | workflow completo de criativos/campanhas ainda pendente |
-| AUD-024 | pendente | compartilhar/favoritar/download completos ainda pendentes |
-| AUD-025 | pendente | recuperação de senha e rastreamento reais ainda pendentes |
-| AUD-026 | pendente | CMS real ainda pendente |
-| AUD-027 | pendente | controles visuais ainda devem ser conectados ou removidos |
-| AUD-028 | pendente | agregações, paginação e exportação reais ainda pendentes |
-| AUD-029 | pendente | consumidor de jobs/outbox ainda pendente |
-| AUD-030 | pendente | cobertura de webhooks ainda pendente |
-| AUD-031 | em andamento | precedência interna corrigida; seletor explícito de contexto multi-role ainda pendente |
-| AUD-032 | pendente | tipos gerados dependem de schema controlado de staging |
-| AUD-033 | validado | migration incremental aplica FORCE RLS; teste SQL estático passou |
-| AUD-034 | bloqueado | pgTAP comportamental requer PostgreSQL/Supabase de homologação; Docker é proibido |
-| AUD-035 | pendente | persistência demo durável ainda pendente |
-| AUD-036 | pendente | dispatcher/outbox de notificações ainda pendente |
-| AUD-037 | pendente | logger e health checks reais ainda pendentes |
-| AUD-038 | pendente | busca/catalogação server-side ainda pendente |
-| AUD-039 | pendente | sitemap real ainda pendente |
-| AUD-040 | corrigido | HSTS condicional e CSP dinâmica com nonce/strict-dynamic implementados; validação em navegador de staging pendente |
-| AUD-041 | pendente | assets originais ainda precisam ser convertidos |
-| AUD-042 | pendente | portal ainda precisa ser dividido e cacheado |
-| AUD-043 | validado | loading/skeleton acessível do painel implementado; lint/typecheck passaram |
-| AUD-044 | pendente | Playwright ainda precisa de teardown determinístico |
-| AUD-045 | pendente | matriz mobile de todos os papéis ainda pendente |
-| AUD-046 | pendente | componente de apresentação mobile para tabelas ainda pendente |
-| AUD-047 | pendente | rotas internas ainda precisam de módulos próprios conectados |
-| AUD-048 | pendente | feedback programático/teclado ainda incompleto |
-| AUD-049 | pendente | Escape e retorno de foco do chat ainda pendentes |
-| AUD-050 | pendente | quality gates de a11y/performance ainda pendentes |
-| AUD-051 | adiado | contrato/flag de WhatsApp preservados; adapter real preparado para fase futura |
-| AUD-052 | adiado | contratos futuros preservados com integrações desativáveis |
+| Supabase Auth | Funcional com defeito local | Sessões e RBAC funcionam no código; recuperação de senha está incompatível com o rate limit. |
+| Supabase Database/Data API | Quebrado em produção | Schema/privilégios não correspondem às migrations atuais (AUD-P1-001). |
+| Supabase Storage | Parcialmente funcional | Buckets/policies existem; falta processamento de quarentena de anexos. |
+| Mercado Pago | Parcialmente implementado e desabilitado | Edge Functions existem, mas checkout e garantias financeiras não estão prontos (AUD-P1-005, AUD-P1-006). |
+| Cloudflare Workers | Configurado | Dois Workers e OpenNext estão definidos; a branch de correção ainda não foi publicada. |
+| Turnstile | Configuração opcional | Código suporta o serviço; ativação não é obrigatória em produção. |
+| E-mail | Não configurado | Contrato/variáveis existem; adapter e envio produtivo não foram confirmados. |
+| Frete | Não configurado | Contrato e modelos existem; cotação/etiqueta real não foram confirmadas. |
+| WhatsApp | Inexistente como integração produtiva | Não tratar a ausência como bug enquanto não fizer parte do lançamento. |
+| ERP/nota fiscal | Parcialmente modelado | Há filas/documentos e UI, sem adapter produtivo confirmado. |
+| Marketing externo | Não configurado | Campanhas internas existem; sincronização com provedor externo não foi confirmada. |
+
+## 10. Dívida técnica
+
+- Tipos Supabase genéricos, tratados em AUD-P2-004.
+- Componentes e handlers grandes, tratados em AUD-P3-002.
+- Consultas/snapshots pouco escaláveis, tratados em AUD-P3-006.
+- Requisito do runtime e convenção Next foram atualizados para Node 22 e `proxy.ts`.
+- `docs/design-guidelines.md` e `docs/mobile-ux.md` são citados pelo guia do repositório, mas não existem. Recomenda-se criar somente quando houver conteúdo normativo real, evitando documentação vazia.
+- Execução manual e fora de ordem de migrations em produção não possui runbook verificável; a divergência resultante está em AUD-P1-001.
+
+## 11. Cobertura de testes
+
+### Testes encontrados
+
+- Vitest para packages de domínio, segurança, configuração, Supabase e integrações.
+- Testes unitários/componentes na loja e painel.
+- 19 arquivos de testes estáticos de migrations e ambiente.
+- Dois arquivos pgTAP: estoque e suporte/RLS.
+- Quatro specs Playwright, com 35 casos descobertos em desktop, mobile, responsividade e painel.
+
+### Áreas bem cobertas
+
+- Cookies compartilhados, CSP, encaminhamento de autenticação e modo demo.
+- Validação de cadastro, catálogo, ajuda e uploads básicos.
+- Shell, roles, sanitização técnica e mapeadores dos painéis.
+- Presença estática de RLS, `search_path`, permissões e funções nas migrations.
+- Comportamento de estoque transacional e regras principais de suporte via pgTAP.
+
+### Lacunas relevantes
+
+- E2E executado no CI; 35 cenários validados localmente entre a rodada ampla e repetições focadas.
+- Sem matriz comportamental RLS para a maior parte dos domínios (AUD-P2-007).
+- Sem teste integrado real de recuperação de senha, checkout, webhook, refund e reconciliação.
+- Budget de assets e regressões E2E de foco/teclado adicionados; axe/Lighthouse continuam opcionais para evolução futura.
+- Sem teste de upgrade a partir de uma produção parcialmente migrada.
+
+### Comandos executados
+
+- `corepack pnpm lint` — passou.
+- `corepack pnpm typecheck` — passou.
+- `corepack pnpm test` — passou.
+- `corepack pnpm build:local` — passou para loja e painel e confirmou `Proxy (Middleware)`; a máquina local ainda emitiu aviso por usar Node 20, enquanto o projeto/CI agora exigem Node 22.
+- `corepack pnpm lint` e `corepack pnpm typecheck` — passaram.
+- `corepack pnpm test` — passou; **246 testes** concluídos considerando o teste de regressão adicionado na validação final.
+- Vitest focado das migrations `009`, `010` e painel operacional — 14 testes passaram; teste final da `010` — 4 passaram.
+- `corepack pnpm exec playwright test --list` — 35 testes encontrados.
+- `corepack pnpm test:e2e` — 27/35 passaram na rodada ampla; os oito casos inicialmente falhos passaram em repetições focadas após correções do harness e do consentimento.
+- `corepack pnpm exec supabase status` — indisponível porque Docker/Podman não existe no ambiente.
+- Diagnóstico remoto somente leitura — confirmou erros `42501`, `PGRST205` e relação ambígua; nenhum dado pessoal foi exibido e nenhuma alteração externa foi feita durante a auditoria.
+
+## 12. Prontidão para produção
+
+**Classificação: NÃO PRONTO**
+
+Bloqueios obrigatórios:
+
+1. Integrar a correção dos painéis e aplicar `006`, `009`, `010` e `011`–`015` no Supabase, com validação real por papel (AUD-P1-001).
+2. Implementar checkout real ou manter lançamento comercial bloqueado (AUD-P1-005).
+3. Validar a integração financeira endurecida no sandbox antes de habilitá-la (AUD-P1-006).
+4. Concluir quarentena de anexos e ampliar a cobertura RLS dos domínios críticos (AUD-P2-001, AUD-P2-007).
+5. Gerar tipos reais do schema em Supabase local ou homologação autorizada (AUD-P2-004).
+
+Após esses itens, o sistema poderá ser reclassificado como “pronto com ressalvas”, sujeito a smoke tests em produção, observabilidade e validação mobile real.
+
+## 13. Ordem recomendada de correção
+
+### Fase 1 — Restaurar operação interna
+
+- Resolver AUD-P1-001 como uma única causa raiz.
+- Aplicar migrations na ordem comprovada, sem desabilitar RLS.
+- Validar Admin, Operacional, Gerencial e Técnico com usuários de papel único e múltiplo.
+- Confirmar que dados carregam e que ações contextuais reaparecem.
+
+### Fase 2 — Garantir integridade comercial
+
+- Implementar AUD-P1-005 e validar AUD-P1-006 em sandbox, com idempotência e reconciliação.
+- Não habilitar pagamentos antes da aprovação dos testes de pedido, estoque e refund.
+
+### Fase 3 — Anexos e upload
+
+- Resolver AUD-P2-001 e concluir o processamento de mídia do AUD-P2-005.
+- Validar limpeza, quarentena e reprocessamento sem liberar arquivos pendentes.
+
+### Fase 4 — Confiabilidade de engenharia
+
+- Gerar tipos reais do banco (AUD-P2-004).
+- Ampliar pgTAP por papel e domínio (AUD-P2-007).
+- Tratar performance, acessibilidade e depreciações P3 de forma incremental.
+
+## 14. Revisão da auditoria anterior
+
+- **Achados antigos confirmados:** checkout e integrações ainda incompletos, mídia pesada, componentes extensos, lacunas de acessibilidade/performance e cobertura insuficiente de testes reais.
+- **Achados antigos já corrigidos:** autorização server-side dos painéis, múltiplos roles, seletor de painéis, validação de `profiles.status`, cookies compartilhados, RLS forçado nas áreas críticas, venda transacional do representante, conta do cliente real, chatbot mobile reposicionado e APIs reais dos painéis.
+- **Correções pós-auditoria:** AUD-P1-002, AUD-P1-003, AUD-P1-004, AUD-P2-002, AUD-P2-003, AUD-P2-006, AUD-P3-003, AUD-P3-004 e AUD-P3-005. Também foram parcialmente mitigados AUD-P1-001, AUD-P1-006, AUD-P2-005, AUD-P2-007, AUD-P3-001 e AUD-P3-006.
+- **Achados removidos por não existirem mais:** painéis apenas visuais, botões administrativos universalmente decorativos, inexistência de multiacesso, total de venda arbitrário enviado pelo representante, rota de rastreamento inexistente e ausência geral de proteção nas rotas internas.
+- **Novos achados:** divergência efetiva do Supabase de produção, escopo inválido na recuperação de senha, enumeração de contas, fallback demonstrativo silencioso, quarentena permanente de anexos, fragilidades de privacidade, tipos de banco genéricos e inconsistências do E2E.

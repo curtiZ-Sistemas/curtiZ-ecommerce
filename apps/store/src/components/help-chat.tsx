@@ -55,6 +55,14 @@ export function HelpChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([initialMessage]);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setMinimized(false);
+    setTyping(false);
+    window.requestAnimationFrame(() => launcherRef.current?.focus());
+  }, []);
 
   useEffect(() => setMessages(restoreHistory()), []);
   useEffect(() => {
@@ -69,19 +77,12 @@ export function HelpChat() {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && open) {
-        setOpen(false);
-        setMinimized(false);
+        close();
       }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [open]);
-
-  const close = () => {
-    setOpen(false);
-    setMinimized(false);
-    setTyping(false);
-  };
+  }, [close, open]);
 
   const ask = useCallback(
     async (text: string) => {
@@ -249,6 +250,7 @@ export function HelpChat() {
       )}
 
       <button
+        ref={launcherRef}
         className={open ? "help-launcher is-open" : "help-launcher"}
         type="button"
         onClick={() => (open ? close() : setOpen(true))}

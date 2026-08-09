@@ -57,3 +57,26 @@ export async function enforceAuthRateLimit(input: {
   }
   return response.data;
 }
+
+export async function enforcePrivacyRequestRateLimit(input: {
+  request: Request;
+  email: string;
+  supabase: unknown;
+}): Promise<boolean> {
+  const limit = 3;
+  const windowSeconds = 60 * 60;
+  const scope = "privacy_request";
+  const hash = keyHash(input.request, input.email, scope);
+  if (!input.supabase) return localAllowed(hash, limit, windowSeconds);
+  const response = await (input.supabase as RateLimitClient).rpc("enforce_auth_rate_limit", {
+    p_scope: scope,
+    p_key_hash: hash,
+    p_limit: limit,
+    p_window_seconds: windowSeconds
+  });
+  if (response.error || typeof response.data !== "boolean") {
+    if (process.env.APP_ENV === "production") return false;
+    return localAllowed(hash, limit, windowSeconds);
+  }
+  return response.data;
+}

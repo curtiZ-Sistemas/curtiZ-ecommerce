@@ -31,7 +31,7 @@ describe("cookie preferences API", () => {
     mockedClient.mockReset();
   });
 
-  it("aplica a preferência no dispositivo quando o registro remoto está indisponível", async () => {
+  it("permite somente a rejeição segura quando o registro remoto está indisponível", async () => {
     mockedClient.mockResolvedValue(null);
 
     const response = await POST(request({ essential: true }));
@@ -39,7 +39,7 @@ describe("cookie preferences API", () => {
 
     expect(response.status).toBe(200);
     expect(payload.persisted).toBe(false);
-    expect(payload.message).toContain("neste dispositivo");
+    expect(payload.message).toContain("opcionais permanecem desativados");
     expect(response.headers.get("set-cookie")).toContain("curtiz-cookie-preferences=");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("Secure");
@@ -55,6 +55,24 @@ describe("cookie preferences API", () => {
 
     expect(response.status).toBe(200);
     expect(payload.persisted).toBe(true);
+  });
+
+  it("não grava o cookie quando o RPC falha", async () => {
+    mockedClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ error: { message: "unavailable" } })
+    } as never);
+    const response = await POST(request({ essential: true, analytics: true }));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("mantém a rejeição segura quando o cliente remoto lança erro de rede", async () => {
+    mockedClient.mockResolvedValue({
+      rpc: vi.fn().mockRejectedValue(new Error("network"))
+    } as never);
+    const response = await POST(request({ essential: true, analytics: false }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toContain("curtiz-cookie-preferences=");
   });
 
   it("continua rejeitando preferências sem o cookie essencial", async () => {

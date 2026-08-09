@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   const auth = await authorizeHomepageRequest(request, "homepage.media.manage");
   if (!auth) return unauthorizedAdminResponse();
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 52_428_800 + 65_536)
+    return NextResponse.json({ message: "A requisição excede o limite de 50 MB." }, { status: 413, headers: privateNoStore });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const roleValue = form?.get("role");

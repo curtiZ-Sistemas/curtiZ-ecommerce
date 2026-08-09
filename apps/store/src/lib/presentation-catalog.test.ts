@@ -6,12 +6,12 @@ describe("isPresentationCatalogEnabled", () => {
     expect(isPresentationCatalogEnabled({ DEMO_MODE: "true" })).toBe(true);
   });
 
-  it("enables it when checkout is explicitly disabled", () => {
-    expect(isPresentationCatalogEnabled({ CHECKOUT_ENABLED: "false" })).toBe(true);
+  it("does not enable demo data merely because checkout is disabled", () => {
+    expect(isPresentationCatalogEnabled({ CHECKOUT_ENABLED: "false" })).toBe(false);
   });
 
-  it("uses the safe disabled-checkout default when configuration is missing", () => {
-    expect(isPresentationCatalogEnabled({})).toBe(true);
+  it("keeps presentation data disabled when configuration is missing", () => {
+    expect(isPresentationCatalogEnabled({})).toBe(false);
   });
 
   it("keeps the fallback disabled when checkout is active", () => {

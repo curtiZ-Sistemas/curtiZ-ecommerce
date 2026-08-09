@@ -28,16 +28,38 @@ Deno.serve(async (request) => {
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
+  let attempt = 1;
   const { error: eventError } = await db.from("payment_events").insert({
     provider: "mercadopago",
     provider_event_id: eventId,
     event_type: payload.type ?? "payment",
     payload_hash: payloadHash,
     signature_valid: true,
-    processing_status: "received"
+    processing_status: "received",
+    attempts: attempt
   });
-  if (eventError?.code === "23505")
-    return json({ ok: true, duplicate: true, request_id: correlationId });
+  if (eventError?.code === "23505") {
+    const { data: existingEvent, error: existingError } = await db
+      .from("payment_events")
+      .select("processing_status,attempts,payload_hash")
+      .eq("provider", "mercadopago")
+      .eq("provider_event_id", eventId)
+      .single();
+    if (existingError || !existingEvent || existingEvent.payload_hash !== payloadHash) {
+      return json({ error: "event_conflict", request_id: correlationId }, 409);
+    }
+    if (["processed", "manual_review"].includes(existingEvent.processing_status)) {
+      return json({ ok: true, duplicate: true, request_id: correlationId });
+    }
+    attempt = Number(existingEvent.attempts ?? 0) + 1;
+    const { error: retryError } = await db
+      .from("payment_events")
+      .update({ processing_status: "received", attempts: attempt, error_summary: null })
+      .eq("provider", "mercadopago")
+      .eq("provider_event_id", eventId);
+    if (retryError) return json({ error: "event_persistence_failed", request_id: correlationId }, 503);
+  }
+  if (eventError) return json({ error: "event_persistence_failed", request_id: correlationId }, 503);
 
   const providerResponse = await mercadoPagoRequest(
     `/v1/payments/${encodeURIComponent(paymentId)}`,
@@ -45,46 +67,22 @@ Deno.serve(async (request) => {
       method: "GET"
     }
   );
-  if (!providerResponse.ok)
+  if (!providerResponse.ok) {
+    await db.from("payment_events").update({ processing_status: "retry", attempts: attempt, error_summary: "provider_unavailable" }).eq("provider", "mercadopago").eq("provider_event_id", eventId);
     return json({ error: "provider_unavailable", request_id: correlationId }, 202);
+  }
   const payment = await providerResponse.json();
-
-  const { data: localPayment } = await db
-    .from("payments")
-    .select("id, order_id, amount, currency, external_reference, status")
-    .eq("external_reference", payment.external_reference)
-    .single();
-  if (
-    !localPayment ||
-    Number(localPayment.amount) !== Number(payment.transaction_amount) ||
-    localPayment.currency !== payment.currency_id
-  ) {
-    await db
-      .from("payment_events")
-      .update({ processing_status: "manual_review", processed_at: new Date().toISOString() })
-      .eq("provider_event_id", eventId);
-    return json({ ok: true, review: true, request_id: correlationId });
-  }
-
-  const normalized = payment.status === "approved" ? "approved" : payment.status;
-  await db
-    .from("payments")
-    .update({
-      provider_payment_id: paymentId,
-      status: normalized,
-      paid_at: payment.date_approved
-    })
-    .eq("id", localPayment.id);
-  if (normalized === "approved" && localPayment.status !== "approved") {
-    await db.rpc("convert_order_reservations", { p_order_id: localPayment.order_id });
-    await db
-      .from("orders")
-      .update({ status: "payment_approved", payment_status: "approved" })
-      .eq("id", localPayment.order_id);
-  }
-  await db
-    .from("payment_events")
-    .update({ processing_status: "processed", processed_at: new Date().toISOString() })
-    .eq("provider_event_id", eventId);
-  return json({ ok: true, request_id: correlationId });
+  const normalizedStatus = ["approved", "rejected", "cancelled", "refunded", "charged_back"]
+    .includes(String(payment.status)) ? String(payment.status) : "in_review";
+  const { data: result, error: reconcileError } = await db.rpc("finalize_mercadopago_payment", {
+    p_provider_event_id: eventId,
+    p_provider_payment_id: paymentId,
+    p_external_reference: String(payment.external_reference ?? ""),
+    p_amount: Number(payment.transaction_amount),
+    p_currency: String(payment.currency_id ?? ""),
+    p_status: normalizedStatus,
+    p_paid_at: payment.date_approved ?? null
+  });
+  if (reconcileError) return json({ error: "payment_reconciliation_failed", request_id: correlationId }, 503);
+  return json({ ok: true, review: result === "manual_review", request_id: correlationId });
 });

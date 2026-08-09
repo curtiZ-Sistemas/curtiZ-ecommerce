@@ -25,7 +25,7 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await page.getByRole("button", { name: "Novo chamado" }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]').fill("1234567890");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
@@ -70,7 +70,7 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
 
   await page.goto("/login");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]').fill("1234567890");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
   await page.waitForURL("**/minha-conta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
@@ -86,7 +86,7 @@ test("entrega a área customer sem dados fictícios e sem overflow mobile", asyn
   await expect(page.getByRole("heading", { name: "Entre na sua conta curti Z" })).toBeVisible();
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]').fill("1234567890");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
@@ -108,7 +108,7 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/favoritos");
 
   await expect(page).toHaveURL(/\/favoritos$/);
-  await expect(page.getByRole("heading", { name: "Favoritos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Favoritos", exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "curti Z Flip-Flop Wave Preto" }).first()
   ).toBeVisible();
@@ -116,6 +116,9 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
 
 test("chat flutuante responde a uma saudação e o launcher também fecha", async ({ page }) => {
   await page.goto("/");
+  const rejectCookies = page.getByRole("button", { name: "Rejeitar opcionais" });
+  await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
+  await rejectCookies.click();
   await page.getByRole("button", { name: "Abrir ajuda" }).click();
   await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeVisible();
   await page.getByLabel("Digite sua mensagem").fill("Oi");
@@ -123,6 +126,7 @@ test("chat flutuante responde a uma saudação e o launcher também fecha", asyn
   await expect(page.getByText(/Como posso ajudar você hoje/i)).toBeVisible();
   await page.getByRole("button", { name: "Fechar ajuda" }).click();
   await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Abrir ajuda" })).toBeFocused();
 });
 
 test("preserva o carrinho durante a hidratação", async ({ page }) => {

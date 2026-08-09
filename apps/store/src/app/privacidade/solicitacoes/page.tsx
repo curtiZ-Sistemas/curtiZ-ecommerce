@@ -23,7 +23,7 @@ export default function PrivacyRequestsPage() {
           formulário. A equipe orientará um método seguro de verificação quando necessário.
         </p>
       </aside>
-      <PrivacyRequestForm />
+      <PrivacyRequestForm turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"} />
     </div>
   );
 }

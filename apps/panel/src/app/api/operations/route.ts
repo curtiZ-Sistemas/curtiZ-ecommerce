@@ -203,7 +203,7 @@ export async function GET(request: NextRequest) {
     supabase.from("orders").select("id", { count: "exact", head: true }).in("status", ["payment_approved", "processing", "picking"]),
     supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "ready_to_ship"),
     supabase.from("kit_orders").select("id", { count: "exact", head: true }).in("status", ["paid", "separating", "ready_to_ship"]),
-    supabase.from("inventory").select("available_quantity,minimum_quantity").limit(10000),
+    supabase.rpc("operational_critical_stock_count"),
     supabase.from("returns").select("id", { count: "exact", head: true }).eq("requested_resolution", "exchange").not("status", "in", '("completed","cancelled","rejected")'),
     supabase.from("returns").select("id", { count: "exact", head: true }).not("status", "in", '("completed","cancelled","rejected")'),
     supabase.from("operational_occurrences").select("id", { count: "exact", head: true }).in("status", ["open", "in_progress"]),
@@ -507,11 +507,7 @@ export async function GET(request: NextRequest) {
   }));
 
   const counts = metricResults.map((result, index) =>
-    index === 5
-      ? rows(result.data).filter(
-          (item) => number(item.available_quantity) <= number(item.minimum_quantity)
-        ).length
-      : result.count ?? 0
+    index === 5 ? number(result.data) : result.count ?? 0
   );
   const sectionTotals: Record<string, number> = {
     pedidos: ordersResult.count ?? orders.length,

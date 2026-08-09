@@ -61,6 +61,9 @@ export async function POST(request: NextRequest) {
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024 + 65_536)
+    return NextResponse.json({ message: "Envie uma imagem de até 10 MB." }, { status: 413, headers: privateNoStore });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const parsed = z.object({

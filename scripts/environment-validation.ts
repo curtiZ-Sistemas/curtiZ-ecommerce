@@ -26,7 +26,8 @@ const productionRequired = [
   "PAYMENT_PROVIDER",
   "EMAIL_PROVIDER",
   "SHIPPING_PROVIDER",
-  "REQUIRE_INTERNAL_MFA"
+  "REQUIRE_INTERNAL_MFA",
+  "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
 
 const providerOptions = {
@@ -343,6 +344,7 @@ const validateCommonValues = (
 
   validateBoolean(environment, "DEMO_MODE", errors);
   validateBoolean(environment, "REQUIRE_INTERNAL_MFA", errors);
+  validateBoolean(environment, "AUTH_RATE_LIMIT_ENABLED", errors);
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);
   validateBoolean(environment, "MELHOR_ENVIO_ENABLED", errors);
@@ -365,6 +367,10 @@ const validateCommonValues = (
 const validateProductionRules = (environment: EnvironmentValues, errors: string[]): void => {
   if (enabledBoolean(environment.DEMO_MODE)) {
     errors.push("DEMO_MODE deve ser false em produção");
+  }
+
+  if (!enabledBoolean(environment.AUTH_RATE_LIMIT_ENABLED)) {
+    errors.push("AUTH_RATE_LIMIT_ENABLED deve ser true em produção");
   }
 
   const paymentProvider = normalize(environment.PAYMENT_PROVIDER);

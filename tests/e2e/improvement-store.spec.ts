@@ -8,7 +8,7 @@ test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) =>
 
   await expect(page.getByLabel("Nome completo")).toHaveValue("João-Pedro D'Ávila");
   await expect(page.getByLabel("E-mail")).toHaveValue("rafael@email.com");
-  await expect(page.getByLabel("Telefone")).toHaveValue("(31) 99999-0000");
+  await expect(page.getByLabel("Telefone")).toHaveValue("31999990000");
   await expect(page.getByText("Mínimo de 6 caracteres")).toBeVisible();
   await expect(page.getByRole("link", { name: /Já tenho uma conta/i })).toHaveAttribute(
     "href",
@@ -16,13 +16,20 @@ test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) =>
   );
 });
 
-test("filtra no servidor, mantém URL e permite remover chips", async ({ page }) => {
+test("filtra no servidor, mantém URL e permite remover chips", async ({ page, isMobile }) => {
   await page.goto("/produtos");
   await expect(page.getByText(/produtos encontrados/i)).toBeVisible();
+  const rejectCookies = page.getByRole("button", { name: "Rejeitar opcionais" });
+  await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
+  await rejectCookies.click();
 
-  const desktopFilters = page.getByRole("complementary", { name: "Filtros do catálogo" });
-  await desktopFilters.getByLabel("Preto").click();
+  const filters = isMobile
+    ? page.getByRole("dialog", { name: "Filtros" })
+    : page.getByRole("complementary", { name: "Filtros do catálogo" });
+  if (isMobile) await page.getByRole("button", { name: /Filtrar/i }).click();
+  await filters.getByLabel("Preto").click();
   await expect(page).toHaveURL(/cores=Preto/);
+  if (isMobile) await page.getByRole("button", { name: /Ver \d+ produtos/i }).click();
   const chip = page.getByRole("button", { name: "Preto", exact: true });
   await expect(chip).toBeVisible();
   await chip.click();
@@ -50,7 +57,7 @@ test("checkout direto exige login e preserva o carrinho", async ({ page }) => {
     );
   });
   await page.goto("/checkout");
-  await expect(page).toHaveURL(/\/login\?returnTo=%2Fcheckout/);
+  await expect(page).toHaveURL(/\/login\?next=%2Fcheckout/);
   await page.goto("/carrinho");
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
 });

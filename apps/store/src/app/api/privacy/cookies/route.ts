@@ -30,7 +30,7 @@ function consentResponse(
     {
       message: persisted
         ? "Preferências registradas."
-        : "Preferências aplicadas neste dispositivo.",
+        : "Cookies opcionais permanecem desativados neste dispositivo.",
       persisted
     },
     { headers: { "cache-control": "no-store" } }
@@ -43,6 +43,17 @@ function consentResponse(
     maxAge: 365 * 24 * 60 * 60
   });
   return response;
+}
+
+const hasOptionalConsent = (categories: Record<string, boolean>) =>
+  Object.entries(categories).some(([key, enabled]) => key !== "essential" && enabled);
+
+function persistenceFailure(request: NextRequest, categories: Record<string, boolean>) {
+  if (!hasOptionalConsent(categories)) return consentResponse(request, categories, false);
+  return NextResponse.json(
+    { message: "Não foi possível registrar as preferências.", persisted: false },
+    { status: 503, headers: { "cache-control": "no-store" } }
+  );
 }
 
 export async function GET() {
@@ -84,14 +95,19 @@ export async function POST(request: NextRequest) {
   if (!parsed.success || parsed.data.categories.essential !== true)
     return NextResponse.json({ message: "Preferências inválidas." }, { status: 400 });
   const supabase = await createServerSupabaseClient();
-  if (!supabase) return consentResponse(request, parsed.data.categories, false);
+  if (!supabase) return persistenceFailure(request, parsed.data.categories);
 
-  const result = await supabase.rpc("record_cookie_consent", {
-    p_id: parsed.data.id,
-    p_policy_version: parsed.data.policyVersion,
-    p_categories: parsed.data.categories,
-    p_origin: parsed.data.origin,
-    p_revoked: parsed.data.revoked
-  });
-  return consentResponse(request, parsed.data.categories, !result.error);
+  try {
+    const result = await supabase.rpc("record_cookie_consent", {
+      p_id: parsed.data.id,
+      p_policy_version: parsed.data.policyVersion,
+      p_categories: parsed.data.categories,
+      p_origin: parsed.data.origin,
+      p_revoked: parsed.data.revoked
+    });
+    if (result.error) return persistenceFailure(request, parsed.data.categories);
+  } catch {
+    return persistenceFailure(request, parsed.data.categories);
+  }
+  return consentResponse(request, parsed.data.categories, true);
 }

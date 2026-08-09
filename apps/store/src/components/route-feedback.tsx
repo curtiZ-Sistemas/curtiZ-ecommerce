@@ -15,6 +15,21 @@ function RouteFeedbackInner() {
   }, [pathname, searchParams]);
 
   useEffect(() => {
+    const startLoading = () => {
+      setLoading(true);
+      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = window.setTimeout(() => setLoading(false), 8_000);
+    };
+    const startForAnchor = (anchor: HTMLAnchorElement | null) => {
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (
+        destination.origin !== window.location.origin ||
+        (destination.pathname === window.location.pathname &&
+          destination.search === window.location.search)
+      ) return;
+      startLoading();
+    };
     const start = (event: MouseEvent) => {
       if (
         event.defaultPrevented ||
@@ -29,26 +44,23 @@ function RouteFeedbackInner() {
 
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const anchor = target.closest<HTMLAnchorElement>("a[href]");
-      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
-
-      const destination = new URL(anchor.href, window.location.href);
-      if (
-        destination.origin !== window.location.origin ||
-        (destination.pathname === window.location.pathname &&
-          destination.search === window.location.search)
-      ) {
-        return;
-      }
-
-      setLoading(true);
-      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = window.setTimeout(() => setLoading(false), 8_000);
+      startForAnchor(target.closest<HTMLAnchorElement>("a[href]"));
     };
+    const startFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof Element)
+        startForAnchor(target.closest<HTMLAnchorElement>("a[href]"));
+    };
+    const startFromHistory = () => startLoading();
 
     document.addEventListener("click", start, true);
+    document.addEventListener("keydown", startFromKeyboard, true);
+    window.addEventListener("popstate", startFromHistory);
     return () => {
       document.removeEventListener("click", start, true);
+      document.removeEventListener("keydown", startFromKeyboard, true);
+      window.removeEventListener("popstate", startFromHistory);
       if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     };
   }, []);

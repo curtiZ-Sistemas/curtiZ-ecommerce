@@ -2,11 +2,13 @@
 
 import { type FormEvent, useState } from "react";
 import { CheckCircle2, LoaderCircle, Send } from "lucide-react";
+import { TurnstileField } from "./turnstile-field";
 
-export function PrivacyRequestForm() {
+export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnabled?: boolean }) {
   const [pending, setPending] = useState(false);
   const [protocol, setProtocol] = useState("");
   const [error, setError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending) return;
@@ -21,7 +23,8 @@ export function PrivacyRequestForm() {
           requestType: form.get("requestType"),
           name: form.get("name"),
           email: form.get("email"),
-          details: form.get("details")
+          details: form.get("details"),
+          ...(turnstileEnabled ? { turnstileToken } : {})
         })
       });
       const payload: unknown = await response.json();
@@ -104,7 +107,8 @@ export function PrivacyRequestForm() {
           {error}
         </p>
       )}
-      <button className="primary-button wide" disabled={pending}>
+      <TurnstileField enabled={turnstileEnabled} onToken={setTurnstileToken} />
+      <button className="primary-button wide" disabled={pending || (turnstileEnabled && !turnstileToken)}>
         {pending ? <LoaderCircle className="spin" /> : <Send />} Enviar solicitação
       </button>
     </form>

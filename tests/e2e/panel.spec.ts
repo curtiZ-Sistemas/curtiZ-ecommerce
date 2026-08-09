@@ -15,8 +15,8 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
   await loginAs(page, "tecnico.demo@curtiz.local");
   await page.goto("/tecnico/integracoes");
   await expect(page.getByRole("heading", { name: "Integracoes" })).toBeVisible();
-  await expect(page.getByText("Não configurado").first()).toBeVisible();
-  await expect(page.getByText("Aguardando credenciais")).toBeVisible();
+  await expect(page.getByText("Não configurado").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Aguardando credenciais")).toBeVisible({ timeout: 20_000 });
 });
 
 test("novo suporte aparece na fila administrativa", async ({ page }) => {
@@ -54,6 +54,7 @@ test("preserva o scroll da sidebar ao navegar para um item no fim do menu", asyn
   await page.setViewportSize({ width: 1280, height: 650 });
   await loginAs(page, "admin.demo@curtiz.local");
   const navigation = page.locator(".side-nav");
+  await expect(page.getByRole("link", { name: "Configurações administrativas" })).toBeVisible();
   await navigation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   expect(await navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
   await page.getByRole("link", { name: "Configurações administrativas" }).click();

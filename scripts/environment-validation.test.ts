@@ -28,6 +28,7 @@ const disabledProduction: EnvironmentValues = {
   APP_ENV: "production",
   DEMO_MODE: "false",
   REQUIRE_INTERNAL_MFA: "false",
+  AUTH_RATE_LIMIT_ENABLED: "true",
   CHECKOUT_ENABLED: "false",
   PAYMENT_PROVIDER: "disabled",
   MERCADO_PAGO_ENABLED: "false",
@@ -99,6 +100,15 @@ describe("environment validation", () => {
     expect(
       validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).valid
     ).toBe(true);
+  });
+
+  it("exige rate limit de autenticação em produção", () => {
+    expect(
+      validateEnvironment("production", {
+        ...disabledProduction,
+        AUTH_RATE_LIMIT_ENABLED: "false"
+      }).errors
+    ).toContain("AUTH_RATE_LIMIT_ENABLED deve ser true em produção");
   });
 
   it("exige segredos somente quando a integração é habilitada", () => {

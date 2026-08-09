@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { enforcePrivacyRequestRateLimit } from "@/lib/auth-rate-limit";
+import {
+  createServerSupabaseClient,
+  createServiceSupabaseClient
+} from "@/lib/supabase/server";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 const schema = z.object({
   requestType: z.enum([
@@ -17,7 +22,8 @@ const schema = z.object({
   ]),
   name: z.string().trim().min(3).max(120),
   email: z.string().trim().email().max(254),
-  details: z.string().trim().min(10).max(2000)
+  details: z.string().trim().min(10).max(2000),
+  turnstileToken: z.string().max(4096).optional()
 });
 function allowedOrigin(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -34,14 +40,30 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os dados da solicitação." }, { status: 400 });
-  const supabase = await createServerSupabaseClient();
+  if (!(await verifyTurnstile(request, parsed.data.turnstileToken)))
+    return NextResponse.json({ message: "Verificação de segurança inválida." }, { status: 400 });
+  const publicClient = await createServerSupabaseClient();
+  if (
+    !(await enforcePrivacyRequestRateLimit({
+      request,
+      email: parsed.data.email,
+      supabase: publicClient
+    }))
+  )
+    return NextResponse.json(
+      { message: "Muitas solicitações. Aguarde antes de tentar novamente." },
+      { status: 429 }
+    );
+  const supabase = createServiceSupabaseClient();
   if (!supabase)
     return NextResponse.json({ message: "Canal temporariamente indisponível." }, { status: 503 });
+  const userResult = publicClient ? await publicClient.auth.getUser() : null;
   const result = await supabase.rpc("submit_privacy_request", {
     p_request_type: parsed.data.requestType,
     p_requester_name: parsed.data.name,
     p_requester_email: parsed.data.email,
-    p_details: parsed.data.details
+    p_details: parsed.data.details,
+    p_customer_id: userResult?.data.user?.id ?? null
   });
   if (result.error || typeof result.data !== "string")
     return NextResponse.json(
