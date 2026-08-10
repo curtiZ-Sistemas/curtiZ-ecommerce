@@ -167,6 +167,11 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
+export const panelRoleLabel = (role: PanelRole) => roleLabels[role];
+
+export const panelSectionLabel = (role: PanelRole, section: string) =>
+  menus[role].find(([, route]) => route === section)?.[0] ?? roleLabels[role];
+
 const menuGroups: Record<PanelRole, Record<number, string>> = {
   operacional: { 0: "Visão geral", 1: "Operação", 5: "Estoque", 9: "Pós-venda", 14: "Atendimento", 16: "Conteúdo", 18: "Gestão" },
   administracao: { 0: "Visão geral", 1: "Catálogo", 8: "Comercial", 10: "Conteúdo", 15: "Representantes", 23: "Governança" },
@@ -384,7 +389,7 @@ export function PanelShell({
           </button>
           <div className="topbar-context">
             <small>Painel {roleLabels[role]}</small>
-            <strong>{menus[role].find(([, route]) => route === section)?.[0] ?? roleLabels[role]}</strong>
+            <strong>{panelSectionLabel(role, section)}</strong>
           </div>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (

@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PanelShell, panelSearchRoute } from "./panel-shell";
+import { PanelShell, panelSearchRoute, panelSectionLabel } from "./panel-shell";
 
 describe("PanelShell multipainel", () => {
   it("mostra a troca no cabeçalho e no menu quando há múltiplos painéis", () => {
@@ -34,8 +34,11 @@ describe("PanelShell multipainel", () => {
       </PanelShell>
     );
     expect(manager).toContain("Maria Silva");
+    expect(panelSearchRoute("operacional")).toBe("/operacional/pedidos");
+    expect(panelSearchRoute("administracao")).toBe("/administracao/produtos");
     expect(panelSearchRoute("gerencia")).toBe("/gerencia/pedidos-vendas");
     expect(panelSearchRoute("tecnico")).toBe("/tecnico/logs");
+    expect(panelSectionLabel("administracao", "colecoes")).toBe("Coleções");
     expect(technical).toContain("Técnico");
   });
 });

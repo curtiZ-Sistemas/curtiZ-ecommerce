@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PanelShell, type PanelRole } from "@/components/panel-shell";
+import {
+  PanelShell,
+  panelRoleLabel,
+  panelSectionLabel,
+  type PanelRole
+} from "@/components/panel-shell";
 import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
@@ -25,15 +30,20 @@ import { hasMultipleSelectablePanels } from "@/lib/panel-roles";
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
 
 export default async function RolePage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ role: string; section?: string[] }>;
+  searchParams: Promise<{ q?: string | string[] }>;
 }) {
   const resolved = await params;
+  const resolvedSearch = await searchParams;
   if (!roles.has(resolved.role as PanelRole)) notFound();
   const role = resolved.role as PanelRole;
 
   const section = resolved.section?.[0] ?? "";
+  const rawQuery = Array.isArray(resolvedSearch.q) ? resolvedSearch.q[0] : resolvedSearch.q;
+  const initialQuery = rawQuery?.trim().slice(0, 120) ?? "";
   const currentPath = `/${role}${section ? `/${section}` : ""}`;
   const access = await requirePanelAccess(role, currentPath);
   const representativeSections = new Set([
@@ -53,37 +63,32 @@ export default async function RolePage({
       userName={access.fullName}
       canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
     >
-      <PageHeading role={role} section={section} />
+      {showRouteHeading(role, section) ? <PageHeading role={role} section={section} /> : null}
       {section === "central-ajuda" && role !== "tecnico" ? (
         <HelpContentCenter />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
       ) : role === "administracao" ? (
-        <Administration section={section} />
+        <Administration section={section} initialQuery={initialQuery} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
-        <Operational section={section} />
+        <Operational section={section} initialQuery={initialQuery} />
       ) : role === "gerencia" ? (
-        <Management section={section} />
+        <Management section={section} initialQuery={initialQuery} />
       ) : (
-        <Technical section={section} />
+        <Technical section={section} initialQuery={initialQuery} />
       )}
     </PanelShell>
   );
 }
 
 function PageHeading({ role, section }: { role: PanelRole; section: string }) {
-  const titles: Record<PanelRole, string> = {
-    operacional: section ? titleCase(section) : "Fila operacional",
-    administracao: section ? titleCase(section) : "Gestão comercial",
-    gerencia: section ? titleCase(section) : "Visão estratégica",
-    tecnico: section ? titleCase(section) : "Visão geral técnica"
-  };
+  const title = section ? panelSectionLabel(role, section) : panelRoleLabel(role);
   return (
     <div className="page-heading">
       <div>
-        <h1>{titles[role]}</h1>
+        <h1>{title}</h1>
         <p>
           {role === "operacional"
             ? "Execute as filas diárias com conferência e rastreabilidade."
@@ -96,15 +101,32 @@ function PageHeading({ role, section }: { role: PanelRole; section: string }) {
   );
 }
 
-function Operational({ section }: { section: string }) {
-  if (section === "politicas") return <OperationalLegalLinks />;
-  if (section === "construtor-home") return <HomepageBuilder />;
-  return <OperationalConsole section={section} />;
+function showRouteHeading(role: PanelRole, section: string) {
+  if (!section) return true;
+  if (role === "administracao") {
+    const ownsHeading = ["produtos", "variacoes", "midias", "estoque", "construtor-home", "usuarios", "permissoes"].includes(section) || isAdminResource(section);
+    return !ownsHeading;
+  }
+  if (role === "operacional") return section !== "construtor-home";
+  if (role === "gerencia") {
+    const alias = section === "vendas" ? "pedidos-vendas" : section === "comissoes-representantes" ? "comissoes" : section;
+    const ownsHeading = section === "conteudo-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
+    return !ownsHeading;
+  }
+  return !isTechnicalResource(section);
 }
 
-function Administration({ section }: { section: string }) {
+function Operational({ section, initialQuery }: { section: string; initialQuery: string }) {
+  if (section === "politicas") return <OperationalLegalLinks />;
+  if (section === "construtor-home") return <HomepageBuilder />;
+  return <OperationalConsole key={`${section}:${initialQuery}`} section={section} initialQuery={initialQuery} />;
+}
+
+function Administration({ section, initialQuery }: { section: string; initialQuery: string }) {
   if (!section) return <AdminDashboard />;
-  if (["produtos", "variacoes", "midias", "estoque"].includes(section)) return <ProductManagement />;
+  if (["produtos", "variacoes", "midias", "estoque"].includes(section)) {
+    return <ProductManagement key={`${section}:${initialQuery}`} view={section as "produtos" | "variacoes" | "midias" | "estoque"} initialQuery={initialQuery} />;
+  }
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "permissoes") return <AdminPermissions />;
@@ -121,7 +143,7 @@ function Administration({ section }: { section: string }) {
   );
 }
 
-function Management({ section }: { section: string }) {
+function Management({ section, initialQuery }: { section: string; initialQuery: string }) {
   if (!section || section === "visao-estrategica" || section === "alertas")
     return <ManagerDashboard />;
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
@@ -140,7 +162,7 @@ function Management({ section }: { section: string }) {
     "comissoes-representantes": "comissoes"
   };
   const resource = aliases[section] ?? section;
-  if (isManagerResource(resource)) return <ManagerResourceManager resource={resource} />;
+  if (isManagerResource(resource)) return <ManagerResourceManager key={`${resource}:${initialQuery}`} resource={resource} initialQuery={initialQuery} />;
 
   return (
     <div className="admin-empty-state">
@@ -150,8 +172,8 @@ function Management({ section }: { section: string }) {
   );
 }
 
-function Technical({ section }: { section: string }) {
-  if (isTechnicalResource(section)) return <TechnicalResourceManager resource={section} />;
+function Technical({ section, initialQuery }: { section: string; initialQuery: string }) {
+  if (isTechnicalResource(section)) return <TechnicalResourceManager key={`${section}:${initialQuery}`} resource={section} initialQuery={initialQuery} />;
   return <TechnicalOverview section={section} />;
 }
 
@@ -184,8 +206,4 @@ function ManagerApprovals() {
       </div>
     </section>
   );
-}
-
-function titleCase(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("-", " ");
 }

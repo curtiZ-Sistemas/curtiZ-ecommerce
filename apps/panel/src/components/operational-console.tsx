@@ -223,13 +223,13 @@ const emptyResponse: OperationsResponse = {
   pagination: { page: 1, pageSize: 20, total: 0 }
 };
 
-export function OperationalConsole({ section }: { section: string }) {
+export function OperationalConsole({ section, initialQuery = "" }: { section: string; initialQuery?: string }) {
   const [data, setData] = useState<OperationsResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
 

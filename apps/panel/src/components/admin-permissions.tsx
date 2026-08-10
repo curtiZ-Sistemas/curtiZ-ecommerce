@@ -143,7 +143,7 @@ export function AdminPermissions() {
       <section className="panel-card">
         <header className="admin-resource-header">
           <div>
-            <h2>Permissões</h2>
+            <h1>Permissões</h1>
             <p>Conceda ou negue permissões temporárias sem alterar papéis.</p>
           </div>
         </header>

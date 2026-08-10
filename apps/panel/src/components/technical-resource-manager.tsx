@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Download, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { technicalResources, type TechnicalColumn, type TechnicalResourceKey } from "@/lib/technical-resources";
 
@@ -50,11 +50,11 @@ function display(value: unknown, column: TechnicalColumn): string {
   return scalar(value) || "—";
 }
 
-export function TechnicalResourceManager({ resource }: { resource: TechnicalResourceKey }) {
+export function TechnicalResourceManager({ resource, initialQuery = "" }: { resource: TechnicalResourceKey; initialQuery?: string }) {
   const definition = technicalResources[resource];
   const [items, setItems] = useState<Item[]>([]);
-  const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [submitted, setSubmitted] = useState<Filters>(initialFilters);
+  const [filters, setFilters] = useState<Filters>({ ...initialFilters, q: initialQuery });
+  const [submitted, setSubmitted] = useState<Filters>({ ...initialFilters, q: initialQuery });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -129,7 +129,7 @@ export function TechnicalResourceManager({ resource }: { resource: TechnicalReso
   return (
     <section className="panel-card admin-resource technical-resource">
       <header className="admin-resource-header">
-        <div><h2>{definition.label}</h2><p>{definition.description}</p></div>
+        <div><h1>{definition.label}</h1><p>{definition.description}</p></div>
         {definition.exportAllowed ? <a className="secondary-button" href={`/api/technical/resources/${resource}?${parameters}&format=csv`}><Download aria-hidden="true" /> Exportar sanitizado</a> : null}
       </header>
 
@@ -143,6 +143,7 @@ export function TechnicalResourceManager({ resource }: { resource: TechnicalReso
         {hasUser ? <input aria-label="Usuário" value={filters.user} onChange={(event) => updateFilter("user", event.target.value)} placeholder="ID do usuário" /> : null}
         {hasRequest ? <input aria-label="Correlação" value={filters.request} onChange={(event) => updateFilter("request", event.target.value)} placeholder="ID de correlação" /> : null}
         <button className="primary-button" type="submit" disabled={loading}>Aplicar filtros</button>
+        {Object.values(filters).some(Boolean) || Object.values(submitted).some(Boolean) ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setFilters(initialFilters); setSubmitted(initialFilters); setPage(1); }}><X aria-hidden="true" /> Limpar</button> : null}
         <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "spin" : ""} /></button>
       </form>
 

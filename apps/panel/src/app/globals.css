@@ -1769,6 +1769,21 @@ button:not(:disabled):active,
   box-shadow: 0 18px 48px rgb(20 16 14 / 18%);
 }
 
+.confirm-dialog > label {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.confirm-dialog textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  resize: vertical;
+}
+
 .confirm-dialog > div {
   justify-content: flex-end;
   margin-top: 20px;
@@ -2926,9 +2941,15 @@ button:not(:disabled):active,
   gap: 14px;
 }
 
-.admin-resource-header h2 {
+.admin-resource-header h1,
+.product-management > .page-heading h1 {
   margin-bottom: 5px;
   font-size: 1.2rem;
+}
+
+.admin-resource-header h1,
+.product-management > .page-heading h1 {
+  margin-top: 0;
 }
 
 .admin-resource-header p {
@@ -2957,7 +2978,7 @@ button:not(:disabled):active,
   min-width: 240px;
   flex: 1;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 7px;
 }
@@ -2995,6 +3016,15 @@ button:not(:disabled):active,
 
 .admin-toolbar > select {
   width: min(220px, 100%);
+}
+
+.filter-clear-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.filter-clear-button svg {
+  width: 15px;
 }
 
 .admin-bulk-actions {
@@ -3574,6 +3604,163 @@ button:not(:disabled):active,
   font-size: 0.7rem;
 }
 
+.managed-product > header {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(120px, auto) 90px auto;
+  align-items: center;
+  gap: 18px;
+  background: white;
+}
+
+.managed-product-identity {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  gap: 12px !important;
+}
+
+.managed-product-identity > div {
+  min-width: 0;
+}
+
+.managed-product-identity h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-product-thumbnail {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--canvas);
+}
+
+.managed-product-thumbnail.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.managed-product-thumbnail.placeholder svg {
+  width: 22px;
+}
+
+.managed-product-commercial,
+.managed-product-stock {
+  display: grid;
+  gap: 5px;
+}
+
+.managed-product-commercial > strong,
+.managed-product-stock > strong {
+  font-size: 0.9rem;
+}
+
+.managed-product header .product-status-active { color: #17633a; background: #e8f5ed; }
+.managed-product header .product-status-draft,
+.managed-product header .product-status-pending_review { color: #805207; background: #fff4d7; }
+.managed-product header .product-status-inactive,
+.managed-product header .product-status-out_of_stock { color: #525252; background: #f1f1f1; }
+.managed-product header .product-status-rejected,
+.managed-product header .product-status-archived { color: #8a2828; background: #fbe9e9; }
+
+.product-action-menu {
+  position: relative;
+}
+
+.product-action-menu > summary {
+  min-height: 40px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.product-action-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.product-action-menu > div {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 210px;
+  display: grid !important;
+  gap: 2px !important;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 12px 30px rgb(35 22 18 / 14%);
+}
+
+.product-action-menu > div button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.product-action-menu > div button:hover,
+.product-action-menu > div button:focus-visible {
+  background: var(--canvas);
+}
+
+.product-action-menu .danger-action {
+  color: var(--danger);
+}
+
+.managed-product-details {
+  border-top: 1px solid var(--line);
+}
+
+.managed-product-details > summary {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 16px;
+  color: var(--brand-900);
+  background: var(--canvas);
+  cursor: pointer;
+  list-style: none;
+}
+
+.managed-product-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.managed-product-details > summary small {
+  color: var(--muted);
+}
+
+.managed-product-details > summary svg {
+  width: 17px;
+  transition: transform 160ms ease;
+}
+
+.managed-product-details[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.managed-product-detail-body {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .admin-permission-form {
   margin-top: 18px;
 }
@@ -3736,6 +3923,19 @@ button:not(:disabled):active,
     width: 100%;
   }
 
+  .managed-product > header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .managed-product-identity,
+  .managed-product-actions {
+    grid-column: 1 / -1;
+  }
+
+  .managed-product-actions {
+    justify-content: flex-start;
+  }
+
   .homepage-section-list article {
     grid-template-columns: 34px minmax(0, 1fr) auto;
   }
@@ -3857,6 +4057,57 @@ button:not(:disabled):active,
   .admin-form-grid,
   .admin-permission-form {
     grid-template-columns: 1fr;
+  }
+
+  .product-list-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .product-filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-filter-tabs button {
+    width: 100%;
+  }
+
+  .managed-product > header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 13px;
+  }
+
+  .managed-product-thumbnail {
+    width: 54px;
+    height: 54px;
+    flex-basis: 54px;
+  }
+
+  .managed-product-actions > .primary-button,
+  .product-action-menu,
+  .product-action-menu > summary {
+    flex: 1;
+  }
+
+  .product-action-menu > div {
+    position: fixed;
+    z-index: 130;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    top: auto;
+    width: auto;
+  }
+
+  .managed-product-details > summary {
+    grid-template-columns: 1fr auto;
+  }
+
+  .managed-product-details > summary small {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .banner-destination-field {

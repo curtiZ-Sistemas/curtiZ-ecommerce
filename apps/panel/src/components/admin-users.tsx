@@ -110,7 +110,7 @@ export function AdminUsers() {
     <section className="panel-card admin-resource">
       <header className="admin-resource-header">
         <div>
-          <h2>Usuários</h2>
+          <h1>Usuários</h1>
           <p>Consulte acessos, bloqueie contas e atribua papéis sem escalada para Administrador.</p>
         </div>
       </header>
@@ -135,6 +135,11 @@ export function AdminUsers() {
         <button className="secondary-button" type="submit">
           Buscar
         </button>
+        {query || submitted ? (
+          <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmitted(""); setPage(1); }}>
+            <X aria-hidden="true" /> Limpar
+          </button>
+        ) : null}
       </form>
       {message && (
         <p className="admin-feedback" role="status">
@@ -148,6 +153,7 @@ export function AdminUsers() {
       ) : users.length === 0 ? (
         <div className="admin-empty-state">
           <h3>Nenhum usuário encontrado</h3>
+          <p>Ajuste a busca. Novos acessos administrativos continuam no fluxo protegido de convite e aprovação.</p>
         </div>
       ) : (
         <div className="admin-table-wrap">

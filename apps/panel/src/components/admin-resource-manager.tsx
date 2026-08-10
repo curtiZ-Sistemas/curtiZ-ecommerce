@@ -198,6 +198,7 @@ export function AdminResourceManager({
   resource: AdminResourceKey;
 }) {
   const definition = adminResources[resource];
+  const createLabel = createActionLabel(resource, definition.singular);
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
@@ -416,7 +417,7 @@ export function AdminResourceManager({
     <section className="panel-card admin-resource">
       <header className="admin-resource-header">
         <div>
-          <h2>{definition.label}</h2>
+          <h1>{definition.label}</h1>
           <p>{definition.description}</p>
         </div>
 
@@ -426,7 +427,7 @@ export function AdminResourceManager({
             type="button"
             onClick={() => setEditing("new")}
           >
-            <Plus aria-hidden="true" /> Novo
+            <Plus aria-hidden="true" /> {createLabel}
           </button>
         ) : null}
       </header>
@@ -484,6 +485,21 @@ export function AdminResourceManager({
           </select>
         ) : null}
 
+        {query || submittedQuery || status ? (
+          <button
+            className="secondary-button filter-clear-button"
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSubmittedQuery("");
+              setStatus("");
+              setPage(1);
+            }}
+          >
+            <X aria-hidden="true" /> Limpar filtros
+          </button>
+        ) : null}
+
         <button
           className="icon-button"
           type="button"
@@ -530,7 +546,12 @@ export function AdminResourceManager({
       ) : items.length === 0 ? (
         <div className="admin-empty-state">
           <h3>Nenhum registro encontrado</h3>
-          <p>Ajuste os filtros ou crie o primeiro registro desta área.</p>
+          <p>{definition.allowCreate ? `Cadastre ${definition.singular} para começar nesta área.` : "Não há dados reais para os filtros informados."}</p>
+          {definition.allowCreate ? (
+            <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+              <Plus aria-hidden="true" /> {createLabel}
+            </button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -823,6 +844,27 @@ export function AdminResourceManager({
       ) : null}
     </section>
   );
+}
+
+function createActionLabel(resource: AdminResourceKey, singular: string) {
+  const labels: Partial<Record<AdminResourceKey, string>> = {
+    categorias: "Nova categoria",
+    modelos: "Novo modelo",
+    colecoes: "Nova coleção",
+    variacoes: "Nova variação",
+    midias: "Nova mídia",
+    banners: "Novo banner",
+    conteudo: "Novo conteúdo",
+    marketing: "Novo público",
+    cupons: "Criar cupom",
+    kits: "Novo kit",
+    niveis: "Novo nível",
+    metas: "Nova meta",
+    comissoes: "Nova regra",
+    campanhas: "Nova campanha",
+    treinamentos: "Novo treinamento"
+  };
+  return labels[resource] ?? `Adicionar ${singular}`;
 }
 
 type BannerTarget = { id: string; label: string; detail: string; route: string };

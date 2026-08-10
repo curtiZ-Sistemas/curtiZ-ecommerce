@@ -3,6 +3,7 @@
 import {
   Archive,
   Boxes,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -10,6 +11,7 @@ import {
   EyeOff,
   ImageIcon,
   LoaderCircle,
+  MoreHorizontal,
   PackagePlus,
   Pencil,
   Plus,
@@ -60,12 +62,21 @@ const productStatusLabel = (status: string) => ({
   rejected: "Rejeitado"
 }[status] ?? status);
 
-export function ProductManagement() {
+type ProductManagementView = "produtos" | "variacoes" | "midias" | "estoque";
+
+const productViewCopy: Record<ProductManagementView, { title: string; description: string; detail: string }> = {
+  produtos: { title: "Produtos", description: "Cadastre, publique, duplique e mantenha catálogo, SEO e estoque.", detail: "Estoque, variações e fotos" },
+  variacoes: { title: "Variações", description: "Revise SKUs, cores, tamanhos, preços específicos e disponibilidade por produto.", detail: "Variações do produto" },
+  midias: { title: "Mídias", description: "Envie, ordene e defina as imagens principais dos produtos cadastrados.", detail: "Fotos do produto" },
+  estoque: { title: "Estoque", description: "Consulte saldos por SKU e registre reposições com justificativa auditável.", detail: "Saldo e reposição por variação" }
+};
+
+export function ProductManagement({ view = "produtos", initialQuery = "" }: { view?: ProductManagementView; initialQuery?: string }) {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [filter, setFilter] = useState<"all" | "out">("all");
   const [status, setStatus] = useState("");
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState(20);
@@ -73,6 +84,7 @@ export function ProductManagement() {
   const [pending, setPending] = useState("");
   const [message, setMessage] = useState("");
   const [archiveTarget, setArchiveTarget] = useState<ManagedProduct | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
   const [duplicateTarget, setDuplicateTarget] = useState<ManagedProduct | null>(null);
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
@@ -141,6 +153,8 @@ export function ProductManagement() {
   }, [editing]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const viewCopy = productViewCopy[view];
+  const canCreateProduct = view === "produtos";
 
   const execute = async (body: Record<string, unknown>, key: string) => {
     if (pending) return false;
@@ -316,35 +330,13 @@ export function ProductManagement() {
     <section className="panel-card product-management">
       <div className="page-heading">
         <div>
-          <h2>Produtos</h2>
-          <p>Cadastre, publique, duplique e mantenha catálogo, SEO e estoque.</p>
+          <h1>{viewCopy.title}</h1>
+          <p>{viewCopy.description}</p>
         </div>
         <div className="product-header-actions">
-          <button className="primary-button" type="button" onClick={() => setEditing("new")}>
-            <Plus /> Novo produto
-          </button>
-          <div className="product-filter-tabs" role="group" aria-label="Filtrar produtos">
-            <button
-              className={filter === "all" ? "secondary-button active" : "secondary-button"}
-              type="button"
-              onClick={() => {
-                setPage(1);
-                setFilter("all");
-              }}
-            >
-              Todos
-            </button>
-            <button
-              className={filter === "out" ? "secondary-button active" : "secondary-button"}
-              type="button"
-              onClick={() => {
-                setPage(1);
-                setFilter("out");
-              }}
-            >
-              Produtos sem estoque
-            </button>
-          </div>
+          {canCreateProduct ? <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <Plus /> Adicionar produto
+          </button> : null}
         </div>
       </div>
 
@@ -390,6 +382,43 @@ export function ProductManagement() {
             <option value="archived">Arquivados</option>
           </select>
         </label>
+        <div className="product-filter-tabs" role="group" aria-label="Filtrar disponibilidade">
+          <button
+            className={filter === "all" ? "secondary-button active" : "secondary-button"}
+            type="button"
+            onClick={() => {
+              setPage(1);
+              setFilter("all");
+            }}
+          >
+            Todos
+          </button>
+          <button
+            className={filter === "out" ? "secondary-button active" : "secondary-button"}
+            type="button"
+            onClick={() => {
+              setPage(1);
+              setFilter("out");
+            }}
+          >
+            Sem estoque
+          </button>
+        </div>
+        {query || submittedQuery || status || filter !== "all" ? (
+          <button
+            className="secondary-button filter-clear-button"
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSubmittedQuery("");
+              setStatus("");
+              setFilter("all");
+              setPage(1);
+            }}
+          >
+            <X /> Limpar filtros
+          </button>
+        ) : null}
       </div>
 
       {message && (
@@ -406,81 +435,111 @@ export function ProductManagement() {
         <div className="operational-empty">
           <Boxes />
           <strong>Nenhum produto encontrado</strong>
+          <span>{canCreateProduct ? "Cadastre um produto ou limpe os filtros para visualizar o catálogo." : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}</span>
+          {canCreateProduct ? <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <Plus /> Adicionar produto
+          </button> : null}
         </div>
       ) : (
         <div className="managed-product-list">
           {products.map((product) => (
             <article className="managed-product" key={product.id}>
               <header>
-                <div>
-                  <h3>{product.name}</h3>
-                  <span>
-                    {formatBRL(product.priceInCents)} ·{" "}
-                    {productStatusLabel(product.status)}
-                  </span>
+                <div className="managed-product-identity">
+                  {product.images?.[0] ? (
+                    <Image
+                      className="managed-product-thumbnail"
+                      src={product.images[0].url}
+                      alt=""
+                      width={72}
+                      height={72}
+                      unoptimized
+                    />
+                  ) : (
+                    <span className="managed-product-thumbnail placeholder" aria-hidden="true"><ImageIcon /></span>
+                  )}
+                  <div>
+                    <h3>{product.name}</h3>
+                    <span>{product.variants[0]?.sku ?? "Sem SKU"} · {product.variants.length} variação(ões)</span>
+                  </div>
                 </div>
-                <div>
-                  <strong>{product.stock}</strong>
-                  <span>disponível para venda</span>
+                <div className="managed-product-commercial">
+                  <strong>{formatBRL(product.priceInCents)}</strong>
+                  <span className={`status product-status-${product.status}`}>{productStatusLabel(product.status)}</span>
+                </div>
+                <div className="managed-product-stock">
+                  <strong>{product.stock.toLocaleString("pt-BR")}</strong>
+                  <span>em estoque</span>
                 </div>
                 <div className="managed-product-actions">
                   <button
-                    className="secondary-button"
+                    className="primary-button"
                     type="button"
                     onClick={() => setEditing(product)}
                     disabled={Boolean(pending)}
                   >
-                    <Pencil /> Editar
+                    <Pencil /> {view === "variacoes" ? "Editar variações" : view === "midias" ? "Gerenciar mídias" : view === "estoque" ? "Editar cadastro" : "Editar"}
                   </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => setDuplicateTarget(product)}
-                    disabled={Boolean(pending)}
-                  >
-                    <Copy /> Duplicar
-                  </button>
-                  {product.status === "active" ? (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={Boolean(pending)}
-                      onClick={() => void changeStatus(product, "inactive")}
-                    >
-                      <EyeOff /> Desativar
-                    </button>
-                  ) : product.status === "archived" ? (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={Boolean(pending)}
-                      onClick={() => void changeStatus(product, "draft")}
-                    >
-                      <RotateCcw /> Restaurar
-                    </button>
-                  ) : (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={Boolean(pending)}
-                      onClick={() => void changeStatus(product, "active")}
-                    >
-                      <Eye /> Publicar
-                    </button>
-                  )}
-                  {product.status !== "archived" && (
-                    <button
-                      className="secondary-button danger-button"
-                      type="button"
-                      onClick={() => setArchiveTarget(product)}
-                      disabled={Boolean(pending)}
-                    >
-                      <Archive /> Arquivar produto
-                    </button>
-                  )}
+                  <details className="product-action-menu">
+                    <summary className="secondary-button"><MoreHorizontal /> Mais ações</summary>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setDuplicateTarget(product)}
+                        disabled={Boolean(pending)}
+                      >
+                        <Copy /> Duplicar
+                      </button>
+                      {product.status === "active" ? (
+                        <button
+                          type="button"
+                          disabled={Boolean(pending)}
+                          onClick={() => void changeStatus(product, "inactive")}
+                        >
+                          <EyeOff /> Desativar
+                        </button>
+                      ) : product.status === "archived" ? (
+                        <button
+                          type="button"
+                          disabled={Boolean(pending)}
+                          onClick={() => void changeStatus(product, "draft")}
+                        >
+                          <RotateCcw /> Restaurar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={Boolean(pending)}
+                          onClick={() => void changeStatus(product, "active")}
+                        >
+                          <Eye /> Publicar
+                        </button>
+                      )}
+                      {product.status !== "archived" && (
+                        <button
+                          className="danger-action"
+                          type="button"
+                          onClick={() => {
+                            setArchiveReason("");
+                            setArchiveTarget(product);
+                          }}
+                          disabled={Boolean(pending)}
+                        >
+                          <Archive /> Arquivar produto
+                        </button>
+                      )}
+                    </div>
+                  </details>
                 </div>
               </header>
-              <div className="managed-variant-list">
+                <details className="managed-product-details" open={view !== "produtos" ? true : undefined}>
+                <summary>
+                  <span>{viewCopy.detail}</span>
+                  <small>{product.variants.length} variação(ões) · {product.images?.length ?? 0} imagem(ns)</small>
+                  <ChevronDown aria-hidden="true" />
+                </summary>
+                <div className="managed-product-detail-body">
+              {view !== "midias" ? <div className="managed-variant-list">
                 {product.variants.map((variant) => (
                   <div className="managed-variant" key={variant.id}>
                     <div>
@@ -495,7 +554,7 @@ export function ProductManagement() {
                     <span>
                       Reservado: <strong>{variant.reserved}</strong>
                     </span>
-                    <label>
+                    {view !== "variacoes" ? <label>
                       <span>Adicionar</span>
                       <input
                         ref={(element) => {
@@ -508,8 +567,8 @@ export function ProductManagement() {
                         inputMode="numeric"
                         aria-label={`Quantidade para ${variant.sku}`}
                       />
-                    </label>
-                    <label className="restock-reason">
+                    </label> : null}
+                    {view !== "variacoes" ? <label className="restock-reason">
                       <span>Motivo da reposição</span>
                       <input
                         ref={(element) => {
@@ -521,8 +580,8 @@ export function ProductManagement() {
                         placeholder="Ex.: entrada da nota 1234"
                         aria-label={`Motivo da reposição de ${variant.sku}`}
                       />
-                    </label>
-                    <button
+                    </label> : null}
+                    {view !== "variacoes" ? <button
                       className="primary-button"
                       type="button"
                       disabled={
@@ -554,11 +613,11 @@ export function ProductManagement() {
                     >
                       {pending === variant.id ? <LoaderCircle className="spin" /> : <PackagePlus />}
                       Repor
-                    </button>
+                    </button> : null}
                   </div>
                 ))}
-              </div>
-              <section className="managed-product-media" aria-label={`Mídias de ${product.name}`}>
+              </div> : null}
+              {view !== "variacoes" && view !== "estoque" ? <section className="managed-product-media" aria-label={`Mídias de ${product.name}`}>
                 <header>
                   <div><ImageIcon /><strong>Fotos</strong><span>Envie várias imagens e associe-as à cor selecionada.</span></div>
                   <select
@@ -586,7 +645,9 @@ export function ProductManagement() {
                     </div>
                   </figure>
                 ))}</div> : <p>Nenhuma imagem enviada.</p>}
-              </section>
+              </section> : null}
+                </div>
+              </details>
             </article>
           ))}
         </div>
@@ -632,32 +693,50 @@ export function ProductManagement() {
               {archiveTarget.name} deixará de aparecer na loja. Pedidos antigos continuarão
               preservados.
             </p>
+            <label>
+              <span>Motivo do arquivamento</span>
+              <textarea
+                autoFocus
+                rows={3}
+                required
+                minLength={3}
+                value={archiveReason}
+                onChange={(event) => setArchiveReason(event.target.value)}
+                placeholder="Registre o motivo para a auditoria"
+              />
+            </label>
             <div>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => setArchiveTarget(null)}
+                onClick={() => {
+                  setArchiveTarget(null);
+                  setArchiveReason("");
+                }}
                 disabled={Boolean(pending)}
               >
-                Não
+                Cancelar
               </button>
               <button
                 className="primary-button danger-button"
                 type="button"
-                disabled={Boolean(pending)}
+                disabled={Boolean(pending) || archiveReason.trim().length < 3}
                 onClick={() => {
                   const target = archiveTarget;
-                  const reason = window.prompt("Informe o motivo do arquivamento:")?.trim();
-                  if (!reason) return;
+                  const reason = archiveReason.trim();
+                  if (reason.length < 3) return;
                   void execute({ action: "archive", productId: target.id, reason }, target.id).then(
                     (ok) => {
-                      if (ok) setArchiveTarget(null);
+                      if (ok) {
+                        setArchiveTarget(null);
+                        setArchiveReason("");
+                      }
                     }
                   );
                 }}
               >
                 {pending === archiveTarget.id && <LoaderCircle className="spin" />}
-                Sim
+                Arquivar produto
               </button>
             </div>
           </section>

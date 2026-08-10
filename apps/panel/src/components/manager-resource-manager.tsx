@@ -6,7 +6,8 @@ import {
   Download,
   LoaderCircle,
   RefreshCw,
-  Search
+  Search,
+  X
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -80,11 +81,11 @@ function display(value: unknown, column: ManagerColumn): string {
   return scalar(value) || "—";
 }
 
-export function ManagerResourceManager({ resource }: { resource: ManagerResourceKey }) {
+export function ManagerResourceManager({ resource, initialQuery = "" }: { resource: ManagerResourceKey; initialQuery?: string }) {
   const definition = managerResources[resource];
   const [items, setItems] = useState<Item[]>([]);
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -214,7 +215,7 @@ export function ManagerResourceManager({ resource }: { resource: ManagerResource
   return (
     <section className="panel-card admin-resource manager-resource">
       <header className="admin-resource-header">
-        <div><h2>{definition.label}</h2><p>{definition.description}</p></div>
+        <div><h1>{definition.label}</h1><p>{definition.description}</p></div>
         {definition.exportAllowed ? (
           <a className="secondary-button" href={`/api/manager/resources/${resource}?${parameters}&format=csv`}>
             <Download aria-hidden="true" /> Exportar CSV
@@ -234,6 +235,7 @@ export function ManagerResourceManager({ resource }: { resource: ManagerResource
         {definition.statusColumn && !definition.fixedStatus ? <input aria-label="Filtrar por status" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} placeholder="Status exato" /> : null}
         {definition.dateColumn ? <><input aria-label="Data inicial" type="date" value={from} onChange={(event) => { setPage(1); setFrom(event.target.value); }} /><input aria-label="Data final" type="date" value={to} onChange={(event) => { setPage(1); setTo(event.target.value); }} /></> : null}
         {resource === "auditoria" ? <><input aria-label="Filtrar por usuário" value={auditActor} onChange={(event) => { setPage(1); setAuditActor(event.target.value.trim()); }} placeholder="ID do usuário" /><input aria-label="Filtrar por ação" value={auditAction} onChange={(event) => { setPage(1); setAuditAction(event.target.value); }} placeholder="Ação exata" /><input aria-label="Filtrar por módulo" value={auditModule} onChange={(event) => { setPage(1); setAuditModule(event.target.value); }} placeholder="Módulo exato" /><input aria-label="Filtrar por resultado" value={auditResult} onChange={(event) => { setPage(1); setAuditResult(event.target.value); }} placeholder="Resultado exato" /></> : null}
+        {query || submittedQuery || status || from || to || auditActor || auditAction || auditModule || auditResult ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); setStatus(""); setFrom(""); setTo(""); setAuditActor(""); setAuditAction(""); setAuditModule(""); setAuditResult(""); setPage(1); }}><X aria-hidden="true" /> Limpar filtros</button> : null}
         <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar registros"><RefreshCw className={loading ? "spin" : ""} /></button>
       </div>
 
