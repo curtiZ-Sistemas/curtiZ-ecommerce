@@ -14,6 +14,7 @@ import {
   Upload,
   X
 } from "lucide-react";
+import { publicCatalogMediaUrl } from "@/lib/public-media";
 import {
   type FormEvent,
   useCallback,
@@ -840,12 +841,10 @@ const destinationLabels: Record<string, string> = {
 };
 
 function bannerPublicUrl(path: string) {
-  if (!path) return "";
-  if (path.startsWith("/") || path.startsWith("https://")) return path;
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return supabaseUrl
-    ? `${supabaseUrl}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "";
+  return publicCatalogMediaUrl(path, {
+    storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+  });
 }
 
 function BannerImageField({ field, initialPath }: { field: AdminResourceField; initialPath: string }) {

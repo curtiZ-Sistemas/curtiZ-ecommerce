@@ -379,14 +379,17 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       positionCounts.set(position, count + 1);
       const desktop = readString(row, "image_path_desktop");
       const mobile = readString(row, "image_path_mobile");
-      if (!desktop || !mobile) return null;
+      if (!desktop && !mobile) return null;
+
+      const desktopImage = desktop || mobile;
+      const mobileImage = mobile || desktop;
       return {
         id: readString(row, "id"),
         title: readString(row, "title"),
         altText: readString(row, "alt_text") || readString(row, "title"),
         ...(readString(row, "subtitle") ? { subtitle: readString(row, "subtitle") } : {}),
-        desktopImage: publicImage(desktop),
-        mobileImage: publicImage(mobile),
+        desktopImage: publicImage(desktopImage),
+        mobileImage: publicImage(mobileImage),
         ...(readString(row, "destination_type") === "none"
           ? {}
           : { href: safeDestination(readString(row, "destination_url")) }),

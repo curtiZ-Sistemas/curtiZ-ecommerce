@@ -1,6 +1,7 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { publicCatalogMediaUrl } from "@/lib/public-media";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -226,7 +227,10 @@ export async function GET(request: NextRequest) {
     : "";
   const outOfStock = request.nextUrl.searchParams.get("stock") === "out";
   const mediaUrl = (path: string) =>
-    path ? supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl : "";
+    publicCatalogMediaUrl(path, {
+      storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+    });
   const productSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,inventory(available_quantity,reserved_quantity))";
 
