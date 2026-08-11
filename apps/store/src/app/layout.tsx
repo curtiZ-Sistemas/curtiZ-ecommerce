@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import { connection } from "next/server";
 import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
 import { HelpChat } from "@/components/help-chat";
@@ -26,7 +27,10 @@ export const metadata: Metadata = {
   }
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // A CSP usa um nonce exclusivo por requisição; o HTML não pode ser pré-renderizado sem ele.
+  await connection();
+
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
       <body>

@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { SignupForm } from "@/components/signup-form";
+import { AuthExperienceAside } from "@/components/auth-experience-aside";
 
 export const metadata = { title: "Criar conta", robots: { index: false, follow: false } };
 
@@ -19,7 +20,9 @@ export default async function Page({
   const loginHref = returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login";
   return (
     <div className="auth-page">
-      <section className="auth-card auth-signup-card">
+      <div className="auth-shell auth-signup-shell">
+        <AuthExperienceAside />
+        <section className="auth-card auth-signup-card">
         <Link className="auth-back-link" href={loginHref}>
           <ArrowLeft aria-hidden="true" /> Já tenho uma conta
         </Link>
@@ -53,7 +56,8 @@ export default async function Page({
           returnTo={returnTo}
           turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
         />
-      </section>
+        </section>
+      </div>
     </div>
   );
 }

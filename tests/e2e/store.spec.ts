@@ -61,7 +61,7 @@ test("autentica conta operacional no modo demo local sem Supabase", async ({ pag
   await expect(page).toHaveURL("http://localhost:3001/operacional", {
     timeout: 20_000
   });
-  await expect(page.getByRole("heading", { name: "Fila operacional" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible();
 });
 
 test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {

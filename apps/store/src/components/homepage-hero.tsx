@@ -43,9 +43,9 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   };
 
   const picture = (
-    <picture className="hero-picture">
-      <source className="hero-media-mobile" media="(max-width: 700px)" srcSet={banner.mobileImage} />
-      <img className="hero-media-desktop" src={banner.desktopImage} alt={banner.altText} width={1600} height={560} fetchPriority="high" decoding="async" />
+    <picture className="hero-picture" key={banner.id}>
+      <source media="(max-width: 700px)" srcSet={banner.mobileImage} />
+      <img className="hero-media" src={banner.desktopImage} alt={banner.altText} width={1600} height={560} fetchPriority="high" decoding="async" />
     </picture>
   );
 
@@ -53,6 +53,12 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     <section
       className="hero container homepage-hero"
       aria-label="Destaques da curti Z"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
+      }}
       onPointerDown={(event) => { pointerStart.current = event.clientX; setPaused(true); }}
       onPointerUp={(event) => {
         if (pointerStart.current === null) return;
@@ -60,10 +66,12 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
         pointerStart.current = null;
         if (Math.abs(distance) >= 40) go(distance > 0 ? -1 : 1);
       }}
+      onPointerCancel={() => { pointerStart.current = null; }}
     >
       <h1 className="sr-only">{banner.title}</h1>
+      <p className="sr-only" aria-live="polite">Banner {active + 1} de {slides.length}: {banner.title}</p>
 
-      {banner.href ? <Link className="hero-link" href={banner.href} aria-label={banner.title} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>{picture}</Link> : <div className="hero-link">{picture}</div>}
+      {banner.href ? <Link className="hero-link hero-slide" href={banner.href} aria-label={banner.title} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>{picture}</Link> : <div className="hero-link hero-slide">{picture}</div>}
 
       {slides.length > 1 && (
         <div
@@ -90,6 +98,10 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
               />
             ))}
           </div>
+
+          <span className="hero-slide-count" aria-hidden="true">
+            {String(active + 1).padStart(2, "0")} / {String(slides.length).padStart(2, "0")}
+          </span>
 
           <button
             type="button"

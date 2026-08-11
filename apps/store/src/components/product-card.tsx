@@ -26,20 +26,22 @@ export function ProductCard({
 }) {
   const { hydrated, has, toggle } = useFavorites();
   const favorite = hydrated && has(product.id);
+  const unavailable = product.stock <= 0;
   const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
 
   return (
-    <article className="product-card">
-      <Link href={`/produto/${product.slug}`} className="product-image">
+    <article className={unavailable ? "product-card product-card-unavailable" : "product-card"}>
+      <Link href={`/produto/${product.slug}`} className="product-image" aria-label={`Ver ${product.name}`}>
         {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
+        {display?.badge !== false && unavailable && <span className="availability-badge">Indisponível</span>}
         <Image
           src={product.image}
           alt={product.name}
           width={360}
           height={280}
-          sizes="(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"
+          sizes="(max-width: 520px) 46vw, (max-width: 900px) 31vw, (max-width: 1400px) 24vw, 320px"
           priority={priority}
         />
       </Link>
@@ -71,6 +73,7 @@ export function ProductCard({
           <strong>{formatBRL(product.priceInCents)}</strong>
           {display?.discount !== false && product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
         </div>}
+        {unavailable && <span className="product-unavailable-copy">Indisponível no momento</span>}
         {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
         {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
         {display?.purchase && <Link className="secondary-button compact-button" href={`/produto/${product.slug}`}>Ver opções</Link>}
