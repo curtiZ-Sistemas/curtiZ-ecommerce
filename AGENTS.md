@@ -1,658 +1,575 @@
-# curti Z — regras de desenvolvimento
+Objetivo
 
-## Objetivo
+A curti Z é um e-commerce de sandálias e chinelos voltado principalmente à Geração Z.
 
-A curti Z é um e-commerce multimarcas que deve funcionar como um produto comercial real: seguro, rápido, acessível, responsivo, confiável e visualmente próprio.
+O sistema deve ser tratado como um produto comercial real: seguro, rápido, confiável, responsivo, acessível, profissional e visualmente marcante.
 
-A loja pública tem prioridade mobile. O painel administrativo deve manter clareza operacional, segurança e consistência com o design system do projeto.
+apps/store: loja pública e experiência do cliente.
 
-# Eficiência de contexto, tempo e créditos
+apps/panel: painéis internos.
 
-O agente deve trabalhar de forma econômica, sem reduzir a qualidade, a segurança ou a confiabilidade da implementação.
+packages/*: código compartilhado.
 
-## Princípio geral
+Supabase: fonte de verdade dos dados.
 
-Usar somente o contexto, os arquivos, os comandos e as validações necessários para concluir corretamente a tarefa atual.
+Deploy: Cloudflare Workers + OpenNext.
 
-Economizar créditos nunca justifica:
+Gerenciador de pacotes: pnpm.
 
-* ignorar segurança;
-* deixar erros;
-* evitar testes necessários;
-* entregar implementação incompleta;
-* quebrar regras de negócio;
-* pular validações críticas;
-* reduzir a qualidade da experiência mobile;
-* afirmar que algo foi validado sem ter sido.
+Ambiente local principal: Windows.
 
-## Leitura seletiva do repositório
+Node.js disponível: v24.19.0.
 
-Antes de ler arquivos:
+pnpm esperado pelo projeto: 10.14.0.
 
-1. Identificar o escopo exato da tarefa.
-2. Localizar arquivos por nome, importação, rota, componente ou busca textual.
-3. Ler primeiro os arquivos diretamente relacionados.
-4. Expandir a análise somente quando surgirem dependências relevantes.
-5. Evitar ler o repositório inteiro para tarefas localizadas.
-6. Evitar abrir arquivos gerados, dependências ou artefatos de build.
+Docker NÃO está disponível e não deve ser exigido automaticamente.
 
-Não ler recursivamente, salvo necessidade técnica:
+Preserve a arquitetura existente salvo quando a tarefa exigir mudança.
 
-* `node_modules/`;
-* `.next/`;
-* `dist/`;
-* `build/`;
-* `.git/`;
-* `.turbo/`;
-* `.cache/`;
-* `coverage/`;
-* arquivos de lock completos;
-* arquivos minificados;
-* mapas de source;
-* logs extensos;
-* imagens binárias;
-* artefatos gerados;
-* backups;
-* dumps;
-* arquivos temporários.
+Regra principal
 
-Arquivos de lock podem ser inspecionados somente quando a tarefa envolver dependências, versões, vulnerabilidades ou instalação.
+Trabalhe de forma focada, incremental e econômica.
 
-## Contexto progressivo
+Use somente os arquivos, comandos e contexto necessários para a tarefa atual.
 
-Usar investigação progressiva:
+Não transforme uma correção localizada em auditoria completa.
 
-1. Ler a tarefa.
-2. Consultar `AGENTS.md`.
-3. Localizar os arquivos diretamente envolvidos.
-4. Ler somente as seções necessárias.
-5. Verificar importações e dependências imediatas.
-6. Expandir o contexto apenas quando necessário.
-7. Parar de investigar quando houver informação suficiente para implementar com segurança.
+Economizar contexto nunca justifica:
 
-Não continuar explorando o projeto apenas para produzir uma análise mais longa.
+ignorar segurança;
 
-## Reutilização do contexto já obtido
+deixar bugs no fluxo alterado;
+
+quebrar regras de negócio;
+
+remover validações;
+
+evitar testes necessários;
+
+mascarar erros;
+
+afirmar que algo foi validado sem ter sido.
+
+Antes de alterar código
+
+Entenda exatamente a tarefa.
+
+Execute git status.
+
+Determine se o escopo é store, panel, packages, Supabase ou deploy.
+
+Localize primeiro os arquivos diretamente envolvidos.
+
+Procure implementação existente antes de criar outra.
+
+Leia apenas dependências imediatas necessárias.
+
+Preserve alterações não relacionadas.
+
+Implemente.
+
+Valide proporcionalmente ao risco.
+
+Pare quando a tarefa estiver concluída.
+
+Para tarefas grandes, faça apenas um plano curto.
+
+Economia de contexto e créditos
+
+Não leia o repositório inteiro sem necessidade.
+
+Evite abrir:
+
+node_modules/.next/dist/build/.git/.turbo/.cache/coverage/
+
+Também evite logs extensos, arquivos gerados, source maps, backups, dumps, binários e lockfiles completos sem necessidade.
 
 Durante a mesma tarefa:
 
-* não reler arquivos que não foram alterados;
-* não repetir buscas que já responderam à dúvida;
-* não reconstruir o mesmo diagnóstico;
-* não repetir explicações já registradas;
-* não executar novamente comandos idênticos sem uma alteração relevante;
-* reutilizar os resultados válidos obtidos anteriormente.
+não releia arquivos inalterados;
 
-Reler um arquivo somente quando:
+não repita buscas já resolvidas;
 
-* ele tiver sido alterado;
-* houver dúvida sobre seu conteúdo atual;
-* outra alteração puder ter afetado seu comportamento;
-* a validação exigir confirmação.
+não refaça o mesmo diagnóstico;
 
-## Planejamento proporcional
+não repita comandos sem mudança relevante;
 
-Para tarefas pequenas, produzir apenas um plano curto.
+não produza relatórios extensos;
 
-Não criar:
+não faça refatorações fora do escopo.
 
-* auditoria completa;
-* documento de arquitetura;
-* relatório extenso;
-* lista de todas as páginas;
-* análise de todo o sistema;
+Expanda a investigação somente quando surgir uma dependência real.
 
-quando a tarefa estiver limitada a um componente, correção ou fluxo específico.
+Pare de investigar quando a causa e a solução já estiverem suficientemente claras.
 
-Para tarefas grandes, dividir em fases, mas não repetir o plano inteiro antes de cada fase.
+Prioridades
 
-## Alterações focadas
+Em caso de conflito:
 
-Preferir:
+Segurança.
 
-* modificar apenas os arquivos necessários;
-* fazer alterações localizadas;
-* reutilizar componentes existentes;
-* preservar interfaces públicas;
-* evitar refatorações não solicitadas;
-* evitar reorganizações sem impacto direto;
-* evitar formatação global;
-* evitar mudanças em arquivos não relacionados.
+Integridade de pedidos, pagamentos e estoque.
 
-Não reformular partes estáveis do projeto apenas porque foram encontradas durante outra tarefa.
+Autenticação e autorização.
 
-Problemas fora do escopo devem ser registrados de forma curta, sem serem corrigidos automaticamente, exceto quando representarem risco crítico de segurança, perda de dados ou impedimento direto à tarefa.
+Regras de negócio.
 
-## Uso eficiente de comandos
+Funcionalidade.
 
-Antes de executar um comando:
+Estabilidade de produção.
 
-1. Confirmar que ele ajuda a validar ou concluir a tarefa.
-2. Preferir comandos específicos antes dos comandos globais.
-3. Evitar comandos repetidos sem mudanças relevantes.
-4. Agrupar verificações compatíveis quando possível.
-5. Não manter servidores ou processos rodando sem necessidade.
+UX.
 
-Exemplos de validação progressiva:
+Mobile.
 
-1. teste específico do componente;
-2. typecheck do escopo, quando suportado;
-3. lint dos arquivos alterados, quando suportado;
-4. testes relacionados;
-5. validação global antes da conclusão de mudanças relevantes.
+Acessibilidade.
 
-Não executar o build completo após cada pequena edição.
+Performance.
 
-Executar o build completo:
+UI.
 
-* ao final de uma tarefa relevante;
-* após alteração de configuração;
-* após alteração de dependência;
-* após mudança de rota, renderização ou deploy;
-* quando necessário para reproduzir um erro.
+Manutenibilidade.
 
-## Testes proporcionais ao risco
+Uma melhoria visual nunca pode quebrar funcionalidades existentes.
 
-Para alterações pequenas e isoladas:
+Segurança e Supabase
 
-* testar o fluxo afetado;
-* executar lint relacionado;
-* executar typecheck adequado;
-* verificar regressões próximas.
+Nunca:
 
-Para alterações em áreas críticas, executar validação ampliada.
+exponha senhas, tokens, cookies ou secrets;
 
-Áreas críticas incluem:
+coloque service_role no navegador;
 
-* autenticação;
-* autorização;
-* pagamentos;
-* pedidos;
-* banco de dados;
-* Supabase;
-* RLS;
-* webhooks;
-* variáveis de ambiente;
-* checkout;
-* deploy;
-* segurança;
-* migrações;
-* dados pessoais.
+transforme secret em NEXT_PUBLIC_*;
 
-Não reduzir testes em áreas críticas para economizar créditos.
+desative RLS para corrigir erro;
 
-## Saída concisa
+confie somente no frontend para autorização;
 
-Durante a execução, evitar respostas excessivamente longas.
+invente valores de variáveis secretas;
 
-Informar somente:
+execute seed em produção;
 
-* o que foi identificado;
-* o que será alterado;
-* o resultado da implementação;
-* validações executadas;
-* erros ou pendências reais.
+apague dados para simplificar uma correção.
 
-Não repetir:
+Toda variável NEXT_PUBLIC_* deve ser considerada pública.
 
-* a solicitação do usuário;
-* todo o conteúdo deste arquivo;
-* descrições extensas de arquivos;
-* código completo que já está no repositório;
-* logs completos quando apenas algumas linhas são relevantes;
-* listas de arquivos não alterados.
+Operações sensíveis devem ser validadas no servidor.
 
-Resumir logs e erros, preservando as linhas necessárias para diagnóstico.
+Preços, descontos, estoque, frete e totais devem ser validados ou recalculados no servidor.
 
-## Documentação sob demanda
+Toda mudança de schema deve usar migration incremental nova.
 
-Criar ou atualizar documentação somente quando:
+Não altere migrations já aplicadas.
 
-* a tarefa solicitar;
-* houver mudança arquitetural;
-* houver nova integração;
-* houver alteração de segurança;
-* houver mudança de deploy;
-* houver nova regra de negócio;
-* a informação for necessária para manutenção futura.
+Não execute migrations destrutivas em produção automaticamente.
 
-Não criar vários documentos Markdown para uma correção pequena.
-
-Quando já existir documento adequado, atualizá-lo em vez de criar outro.
-
-## Dependências
-
-Não pesquisar, comparar ou instalar várias bibliotecas quando:
-
-* o projeto já possui solução adequada;
-* uma implementação simples resolve;
-* a tarefa não exige nova dependência.
-
-Ao avaliar dependências, limitar a análise às opções realmente viáveis.
-
-## Navegação externa
-
-Não usar pesquisa externa para decisões que possam ser resolvidas pelo próprio repositório.
-
-Usar documentação externa quando:
-
-* a API ou biblioteca puder ter mudado;
-* houver erro específico de versão;
-* for necessária confirmação oficial;
-* a implementação envolver segurança;
-* não houver informação suficiente no projeto.
-
-Priorizar documentação oficial e evitar consultar várias fontes que repetem a mesma informação.
-
-## Critério de parada
-
-Parar a investigação quando:
-
-* a causa estiver identificada;
-* os arquivos envolvidos estiverem conhecidos;
-* a solução puder ser aplicada com segurança;
-* os critérios de validação estiverem definidos.
-
-Parar a implementação quando:
-
-* a tarefa estiver concluída;
-* os testes necessários tiverem sido executados;
-* não houver regressões relacionadas;
-* as pendências reais estiverem registradas.
-
-Não continuar fazendo melhorias opcionais sem solicitação.
-
-## Relatório final econômico
-
-O relatório final deve conter apenas:
-
-1. resumo das alterações;
-2. arquivos principais modificados;
-3. validações executadas;
-4. resultado dos testes;
-5. pendências reais.
-
-Não gerar relatório detalhado por arquivo, componente ou linha, salvo quando solicitado.
-
-
-## Arquitetura
-
-* Monorepo gerenciado com pnpm e Turborepo.
-* Loja pública em `apps/store`.
-* Painel administrativo em `apps/panel`.
-* Código compartilhado deve permanecer nos pacotes adequados, evitando duplicação entre loja e painel.
-* Supabase é a fonte de verdade.
-* Toda alteração de banco exige migration incremental e versionada.
-* Nunca alterar migrations que já tenham sido aplicadas.
-* Operações sensíveis devem ser validadas no servidor e protegidas por RLS.
-* Ocultar controles no frontend não representa autorização.
-* Integrações usam contratos em `packages/integrations`.
-* Mocks são permitidos somente fora de produção e quando controlados por configuração.
-* Valores monetários de domínio devem usar centavos inteiros.
-* Nunca usar `number` fracionário para cálculos financeiros.
-* Datas devem ser armazenadas em UTC.
-* Datas devem ser apresentadas em `pt-BR`, considerando `America/Sao_Paulo`.
-
-## Ordem de prioridade
-
-Ao tomar decisões, respeite:
-
-1. Segurança e proteção de dados.
-2. Integridade de pedidos, pagamentos e estoque.
-3. Preservação das regras de negócio.
-4. Funcionamento das integrações.
-5. Experiência mobile da loja.
-6. Acessibilidade.
-7. Performance.
-8. Qualidade visual.
-9. Manutenibilidade.
-10. Documentação.
-
-Uma melhoria visual nunca deve quebrar autenticação, autorização, banco, carrinho, pedidos, checkout, avaliações, painel ou deploy.
-
-## Antes de alterar código
-
-Antes de editar:
-
-1. Leia a solicitação atual e determine seu escopo.
-2. Verifique `git status`.
-3. Identifique se a tarefa pertence à loja, ao painel, a um pacote compartilhado ou à infraestrutura.
-4. Localize os arquivos diretamente relacionados.
-5. Procure componentes, hooks, serviços e utilitários existentes antes de criar novos.
-6. Identifique regras de negócio, contratos e integrações afetadas.
-7. Preserve alterações não relacionadas feitas pelo usuário.
-8. Para tarefas grandes, apresente um plano curto antes da implementação.
-
-Não faça uma leitura completa do monorepo quando a tarefa for localizada.
-
-## Eficiência de contexto e créditos
-
-Use apenas os arquivos, comandos e documentos necessários para a tarefa atual.
-
-Não examine recursivamente, salvo necessidade técnica:
-
-* `node_modules/`;
-* `.next/`;
-* `dist/`;
-* `build/`;
-* `.turbo/`;
-* `.git/`;
-* `coverage/`;
-* caches;
-* arquivos minificados;
-* source maps;
-* logs extensos;
-* artefatos gerados.
-
-Durante a mesma tarefa:
-
-* não repita buscas já resolvidas;
-* não releia arquivos inalterados sem motivo;
-* não repita diagnósticos;
-* não execute comandos idênticos sem alteração relevante;
-* não faça refatorações fora do escopo;
-* não crie documentação para mudanças triviais;
-* não produza relatórios extensos sem necessidade.
-
-Investigue de forma progressiva:
-
-1. arquivo diretamente afetado;
-2. importações e dependências imediatas;
-3. componentes compartilhados envolvidos;
-4. expansão do contexto apenas quando necessária.
-
-Economia de contexto nunca justifica ignorar segurança, integridade de dados, testes necessários, acessibilidade ou qualidade.
-
-## Documentação específica
-
-Leia somente os documentos relacionados à tarefa atual:
-
-* Design e aparência: `docs/design-guidelines.md`
-* Experiência mobile: `docs/mobile-ux.md`
-* Segurança e Supabase: `docs/security.md`
-* Cloudflare, build e deploy: `docs/deployment.md`
-* Testes e validações: `docs/testing.md`
-
-Não carregue todos esses documentos automaticamente em tarefas pequenas.
-
-## Segurança
-
-* Nunca registrar senhas, tokens, cookies, chaves, CPF completo, cartões ou payloads pessoais.
-* Nunca importar service role em módulos que possam entrar no bundle do navegador.
-* Toda variável com prefixo `NEXT_PUBLIC_` deve ser considerada pública.
-* Nunca transformar uma variável secreta em `NEXT_PUBLIC_*`.
-* Nunca colocar credenciais reais em `.env.example`, documentação, código, testes ou commits.
-* Funções SQL privilegiadas devem usar `security definer` e definir explicitamente `search_path`.
-* Toda tabela exposta ao Data API deve usar RLS default-deny.
-* Não desativar RLS para corrigir falhas de acesso.
-* Permissões administrativas devem ser verificadas no servidor.
-* Não confiar em papéis, preços, descontos, status ou IDs enviados pelo cliente.
-* Preços, descontos, frete e totais devem ser recalculados no servidor.
-* Notas internas do suporte nunca podem ser retornadas ao cliente.
-* Atendimento humano sempre entra na fila do Administrador.
-* O Operacional só recebe atendimento por transferência explícita.
-
-Para alterações de autenticação, Supabase, RLS, pagamentos, dados pessoais, uploads ou APIs, leia `docs/security.md`.
-
-## Preservação do sistema
+Preservação do sistema
 
 Preserve:
 
-* autenticação;
-* sessões;
-* usuários;
-* permissões;
-* políticas RLS;
-* banco de dados;
-* carrinho;
-* favoritos;
-* estoque;
-* pedidos;
-* checkout;
-* pagamentos;
-* avaliações;
-* atendimento;
-* painel;
-* webhooks;
-* integrações;
-* variáveis de ambiente;
-* modo de demonstração.
+autenticação;
 
-Não:
+sessões;
 
-* remover funcionalidades sem solicitação;
-* substituir integração real por mock;
-* criar botão sem ação;
-* criar filtro falso;
-* mostrar status fictício de integração;
-* apresentar dado demonstrativo como real;
-* inventar preços, avaliações, selos, garantias ou condições comerciais;
-* apagar dados para simplificar uma implementação.
+usuários;
 
-## Design e experiência
+roles e permissões;
 
-A interface deve ser:
+RLS;
 
-* orientada aos produtos;
-* comercial;
-* clara;
-* confiável;
-* consistente;
-* acessível;
-* responsiva;
-* reconhecível como curti Z.
+banco;
 
-Não criar design típico de inteligência artificial.
+produtos;
 
-Evite:
+estoque;
 
-* gradientes neon;
-* glassmorphism;
-* manchas desfocadas;
-* excesso de cards;
-* sombras fortes;
-* arredondamento exagerado;
-* objetos 3D genéricos;
-* slogans abstratos;
-* grandes espaços decorativos;
-* animações desnecessárias;
-* aparência de landing page de SaaS;
-* componentes visualmente desconectados.
+carrinho;
 
-Não invente identidade, conteúdo institucional ou informações comerciais.
+favoritos;
 
-Para qualquer alteração visual, leia `docs/design-guidelines.md`.
+pedidos;
 
-Para alterações que afetem celular ou tablet, leia também `docs/mobile-ux.md`.
+checkout;
 
-## Mobile-first
+pagamentos;
 
-A loja pública deve ser projetada primeiro para celular.
+avaliações;
 
-Não trate o mobile apenas como redução do desktop.
+atendimento;
+
+integrações;
+
+painéis;
+
+variáveis de ambiente.
+
+Não substitua implementação real por mock para esconder um problema.
+
+Não crie botão, filtro, status ou integração falsa.
+
+Não invente preços, avaliações, promoções, estoque ou informações comerciais.
+
+Loja — apps/store
+
+A loja é mobile-first e direcionada principalmente à Geração Z.
+
+A experiência deve ser:
+
+moderna;
+
+visual;
+
+jovem sem ser infantil;
+
+orientada aos produtos;
+
+comercial;
+
+organizada;
+
+dinâmica;
+
+profissional.
+
+Preserve a paleta atual da curti Z salvo solicitação explícita.
+
+Melhore principalmente através de:
+
+composição;
+
+fotografia;
+
+tipografia;
+
+hierarquia;
+
+espaçamento;
+
+grid;
+
+interação;
+
+animações;
+
+UX.
+
+Evite aparência genérica de IA:
+
+glassmorphism excessivo;
+
+gradientes neon;
+
+blobs;
+
+objetos 3D genéricos;
+
+sombras exageradas;
+
+cards em tudo;
+
+arredondamento exagerado;
+
+grandes espaços vazios;
+
+aparência de landing page SaaS.
+
+Use animações com propósito e respeite prefers-reduced-motion.
+
+Não instale biblioteca pesada para animações simples se CSS ou APIs nativas resolverem.
+
+Mobile
+
+Não trate mobile apenas como desktop reduzido.
+
+Considere pelo menos:
+
+320px, 360px, 390px, 430px, 768px, 1024px e desktop.
 
 Não permitir:
 
-* rolagem horizontal;
-* botões pequenos;
-* elementos cortados;
-* campos escondidos pelo teclado;
-* modais maiores que a viewport;
-* chat cobrindo ações;
-* navegação fixa cobrindo conteúdo;
-* imagens deformadas;
-* tabelas desktop comprimidas;
-* layout shift perceptível.
+overflow horizontal;
 
-A experiência mobile deve facilitar:
+conteúdo cortado;
 
-* busca;
-* categorias;
-* conta;
-* favoritos;
-* carrinho;
-* produto;
-* checkout;
-* pedidos;
-* atendimento.
+botões pequenos;
 
-## Qualidade de código
+imagens deformadas;
 
-* Respeite a arquitetura existente.
-* Preserve TypeScript estrito.
-* Evite `any`.
-* Reutilize componentes e pacotes existentes.
-* Evite duplicação entre `apps/store` e `apps/panel`.
-* Separe lógica de negócio da camada visual.
-* Faça alterações pequenas e focadas.
-* Não mova arquivos sem necessidade.
-* Não instale dependências antes de verificar soluções existentes.
-* Não misture gerenciadores de pacotes.
-* Não alterar o lockfile sem necessidade relacionada.
-* Não usar `!important` como solução padrão.
-* Não deixar `console.log`, código morto ou comentários obsoletos.
-* Não silenciar erros, testes ou regras de lint para concluir.
-* Não introduzir warnings de React ou erros de hidratação.
+modais maiores que a viewport;
 
-## Dependências
+elementos fixos cobrindo conteúdo;
 
-Antes de adicionar uma dependência:
+tabelas desktop comprimidas;
 
-1. Verifique se já existe solução no monorepo.
-2. Avalie tamanho e impacto no bundle.
-3. Avalie manutenção e compatibilidade.
-4. Confirme que código simples não resolve.
-5. Instale no workspace correto.
-6. Atualize apenas o lockfile utilizado pelo projeto.
+layout shift perceptível.
 
-Não atualize dependências não relacionadas à tarefa.
+Painéis — apps/panel
 
-## Banco e migrations
+Os painéis são ferramentas de trabalho.
 
-* Toda alteração de schema deve possuir migration nova.
-* Não modificar migration já aplicada.
-* Não apagar tabelas, colunas ou dados sem solicitação explícita.
-* Revisar chaves estrangeiras, funções, triggers e RLS.
-* Evitar mudanças destrutivas.
-* Testar migrations localmente quando o ambiente estiver disponível.
-* Seeds de demonstração não podem ser executados em produção.
+Devem priorizar clareza, produtividade, organização e segurança.
 
-## Arquivos públicos e internos
+O usuário deve entender:
 
-Não copiar para `public/`:
+onde está;
 
-* `AGENTS.md`;
-* arquivos internos de `docs/`;
-* `.env*`;
-* logs;
-* backups;
-* dumps;
-* relatórios;
-* credenciais;
-* scripts internos.
+o que está pendente;
 
-Todo arquivo em `public/` deve ser considerado acessível por qualquer visitante.
+o que pode fazer;
 
-## Deploy
+qual é a ação principal;
 
-Antes de alterar build ou deploy:
+qual foi o resultado da ação.
 
-1. Identifique a aplicação afetada.
-2. Leia os scripts reais do workspace.
-3. Identifique o adaptador e a configuração do Cloudflare.
-4. Verifique variáveis de ambiente.
-5. Reproduza o erro com o comando equivalente.
-6. Corrija a causa, não apenas o sintoma.
+Responsabilidades:
 
-Não alterar simultaneamente runtime, adaptador, comando de build e diretório de saída sem necessidade.
+Administrativo: produtos, clientes, marketing, usuários e gestão comercial.
 
-Para tarefas de Cloudflare, build ou produção, leia `docs/deployment.md`.
+Operacional: pedidos, estoque, separação, envio e atendimento.
 
-## Comandos
+Gerencial: indicadores, financeiro, relatórios, aprovações e estratégia.
 
-Comandos gerais do monorepo:
+Técnico: sistema, logs, segurança, integrações, backups e acessos.
 
-```bash
-pnpm dev
-pnpm supabase:start
-pnpm supabase:reset
-pnpm seed:demo
-pnpm check
-```
+Não transforme todos os painéis no mesmo CRUD.
 
-Comportamento esperado:
+Quando aplicável, telas devem possuir:
 
-* `pnpm dev`: inicia a loja em `3000` e o painel em `3001`.
-* `pnpm supabase:start`: inicia o Supabase local e requer Docker.
-* `pnpm supabase:reset`: reaplica migrations e seed no ambiente local.
-* `pnpm seed:demo`: cria contas de demonstração somente fora de produção.
-* `pnpm check`: executa lint, tipos, testes e build local.
+loading;
 
-Não execute `pnpm supabase:reset` em ambiente com dados que precisem ser preservados.
+erro;
 
-Não execute `pnpm seed:demo` em produção.
+retry;
 
-## Validação proporcional
+estado vazio;
 
-Durante o desenvolvimento:
+busca;
 
-* prefira lint, testes ou build do workspace afetado quando disponíveis;
-* execute testes relacionados antes da validação global;
-* não rode `pnpm check` após cada pequena edição;
-* não repita validações sem alteração relevante.
+filtros;
 
-Antes de concluir uma fase relevante:
+feedback de sucesso/erro;
 
-```bash
-pnpm check
-```
+confirmação de ações destrutivas.
 
-Áreas críticas exigem validação ampliada:
+Não deixe botões ou links sem funcionamento real.
 
-* autenticação;
-* autorização;
-* RLS;
-* pagamentos;
-* pedidos;
-* estoque;
-* checkout;
-* webhooks;
-* migrations;
-* dados pessoais;
-* deploy.
+Uma falha isolada de API não deve derrubar desnecessariamente todo o painel.
 
-Nunca afirme que um comando foi executado quando não foi.
+Não esconda falhas estruturais.
 
-Para critérios detalhados, leia `docs/testing.md`.
+Código
 
-## Critério de conclusão
+Preserve TypeScript estrito.
 
-Uma tarefa só está concluída quando:
+Evite any.
 
-* funciona;
-* preserva regras e integrações;
-* não expõe segredos;
-* trata loading, erro e estado vazio quando aplicável;
-* está responsiva;
-* funciona no mobile;
-* está acessível;
-* não introduz regressões relacionadas;
-* não apresenta erros de console relacionados;
-* não apresenta warnings de React relacionados;
-* não apresenta erros de hidratação;
-* as validações necessárias foram executadas;
-* limitações e pendências reais foram registradas.
+Reutilize componentes existentes.
 
-## Relatório final
+Evite duplicação.
+
+Separe regras de negócio da UI.
+
+Não mova arquivos sem necessidade.
+
+Não use !important como solução padrão.
+
+Não deixe console.log, código morto ou warnings relacionados.
+
+Não silencie lint, TypeScript ou testes para concluir.
+
+Não introduza erros de hidratação.
+
+Antes de instalar dependência, confirme que o projeto não possui solução adequada.
+
+Não atualize dependências sem relação com a tarefa.
+
+Use pnpm.
+
+Ambiente local, Node e Docker
+
+O ambiente local possui:
+
+Node.js v24.19.0
+pnpm 10.14.0
+Windows
+
+O projeto exige Node >=24.19.0, portanto não tente trocar ou reinstalar o Node sem necessidade.
+
+Docker NÃO está disponível.
+
+Não bloqueie tarefas de:
+
+UI;
+
+UX;
+
+Next.js;
+
+store;
+
+panel;
+
+lint;
+
+typecheck;
+
+build;
+
+testes estáticos;
+
+Cloudflare;
+
+análise de código;
+
+somente porque Docker não está instalado.
+
+Docker/Supabase local só devem ser exigidos quando a tarefa realmente depender de execução local do banco.
+
+Se não for possível validar comportamento real de banco sem Docker, continue o que puder ser validado e informe claramente a limitação.
+
+Nunca afirme que migration ou banco real foram validados quando isso não ocorreu.
+
+Cloudflare e deploy
+
+Store e Panel são aplicações diferentes.
+
+Nunca confunda:
+
+apps/store
+
+com:
+
+apps/panel
+
+Antes de alterar deploy:
+
+identifique a aplicação;
+
+confira o package.json;
+
+confira wrangler.jsonc;
+
+confira OpenNext;
+
+confira variáveis;
+
+confira URLs da loja e painel;
+
+reproduza o erro;
+
+corrija a causa.
+
+Não altere simultaneamente runtime, adaptador, build command, root directory e Worker sem necessidade comprovada.
+
+Leia docs/deployment.md apenas para tarefas relacionadas a deploy.
+
+Não faça deploy de produção automaticamente sem solicitação.
+
+Testes
+
+Use validação progressiva:
+
+teste específico;
+
+typecheck do workspace;
+
+lint relevante;
+
+testes relacionados;
+
+build da aplicação quando necessário;
+
+validação global somente quando justificável.
+
+Não execute build completo após cada pequena alteração.
+
+Não rode pnpm check repetidamente sem necessidade.
+
+Áreas críticas exigem validação maior:
+
+autenticação;
+
+autorização;
+
+Supabase/RLS;
+
+pedidos;
+
+estoque;
+
+checkout;
+
+pagamentos;
+
+migrations;
+
+segurança;
+
+deploy.
+
+Nunca diga que executou um teste ou comando que não executou.
+
+Git
+
+Preserve alterações existentes do usuário.
+
+Não execute sem solicitação:
+
+git reset --hard;
+
+force push;
+
+reescrita de histórico;
+
+exclusão de alterações;
+
+commit;
+
+push.
+
+Critério de conclusão
+
+A tarefa termina quando:
+
+o pedido foi implementado;
+
+o fluxo afetado funciona;
+
+segurança e regras foram preservadas;
+
+regressões relacionadas foram verificadas;
+
+estados de loading/erro/vazio foram tratados quando aplicável;
+
+responsividade foi considerada;
+
+validações necessárias foram executadas;
+
+pendências reais foram registradas.
+
+Não continue fazendo melhorias opcionais sem solicitação.
+
+Resposta final
+
+Seja curto.
 
 Informe somente:
 
-1. alterações realizadas;
-2. arquivos principais modificados;
-3. validações executadas;
-4. resultados;
-5. pendências reais.
+Alterações
 
-Não repita a solicitação inteira.
+O que foi feito.
 
-Não reproduza logs completos quando apenas algumas linhas forem relevantes.
+Arquivos
+
+Principais arquivos modificados.
+
+Validação
+
+Testes/comandos realmente executados.
+
+Pendências
+
+Somente problemas ou ações manuais reais.
+
+Não repita a solicitação e não copie logs completos.
