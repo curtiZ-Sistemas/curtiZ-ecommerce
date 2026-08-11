@@ -41,4 +41,17 @@ describe("PanelShell multipainel", () => {
     expect(panelSectionLabel("administracao", "colecoes")).toBe("Coleções");
     expect(technical).toContain("Técnico");
   });
+
+  it("expõe contexto, prioridade e estado ativo sem criar ações decorativas", () => {
+    const markup = renderToStaticMarkup(
+      <PanelShell role="operacional" section="pedidos">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
+
+    expect(markup).toContain("Prioridade do painel");
+    expect(markup).toContain('href="/operacional/pedidos"');
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain('aria-label="Navegação estrutural"');
+  });
 });

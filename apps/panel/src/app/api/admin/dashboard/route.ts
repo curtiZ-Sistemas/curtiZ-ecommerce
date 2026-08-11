@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import {
   authorizeAdminRequest,
   objectRows,
@@ -12,6 +13,31 @@ const numberValue = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
 
 export async function GET(request: NextRequest) {
+  const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
+  if (demoSession?.roles.includes("admin")) {
+    return NextResponse.json(
+      {
+        demo: true,
+        metrics: {
+          grossRevenueInCents: 0,
+          orders: 0,
+          products: 0,
+          lowStock: 0,
+          customers: 0,
+          representatives: 0,
+          kits: 0,
+          pendingReviews: 0,
+          publishedBanners: 0,
+          publishedCampaigns: 0
+        },
+        recentOrders: [],
+        activities: [],
+        warnings: ["Ambiente de demonstração: indicadores reais não são exibidos"]
+      },
+      { headers: privateNoStore }
+    );
+  }
+
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
 

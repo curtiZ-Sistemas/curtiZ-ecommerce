@@ -1,4 +1,4 @@
-import { Boxes, ChartNoAxesCombined, ClipboardCheck, PanelsTopLeft } from "lucide-react";
+import { ArrowRight, Boxes, ChartNoAxesCombined, ClipboardCheck, PanelsTopLeft, ShieldCheck, Wrench } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import logoCurtiz from "../../../public/images/logo-curtiz.png";
@@ -8,7 +8,8 @@ import { requirePanelSelectionAccess } from "@/lib/auth";
 const icons = {
   administracao: Boxes,
   operacional: ClipboardCheck,
-  gerencia: ChartNoAxesCombined
+  gerencia: ChartNoAxesCombined,
+  tecnico: Wrench
 } as const;
 
 export default async function PanelSelectorPage() {
@@ -19,27 +20,41 @@ export default async function PanelSelectorPage() {
   return (
     <main className="panel-selector-page">
       <section className="panel-selector-shell" aria-labelledby="panel-selector-title">
-        <header className="panel-selector-header">
+        <aside className="panel-selector-intro">
           <div className="panel-selector-brand"><Image src={logoCurtiz} alt="curti Z" width={180} height={120} priority /></div>
-          <p>Olá, {firstName}.</p>
+          <span className="panel-selector-eyebrow">Central de trabalho</span>
           <h1 id="panel-selector-title">Escolha o painel que deseja acessar</h1>
-          <p>Você pode trocar de painel a qualquer momento sem sair da sua conta.</p>
-        </header>
+          <p>Cada ambiente organiza as tarefas e decisões específicas da sua função.</p>
+          <div className="panel-selector-security">
+            <ShieldCheck aria-hidden="true" />
+            <span><strong>Acesso protegido por função</strong><small>Você verá somente os painéis atribuídos à sua conta.</small></span>
+          </div>
+        </aside>
 
-        <div className="panel-selector-grid">
-          {access.panels.map((panel) => {
-            const Icon = icons[panel.routeRole as keyof typeof icons] ?? PanelsTopLeft;
-            return (
-              <Link href={panel.href} key={panel.databaseRole} className="panel-selector-card">
-                <span className="panel-selector-icon"><Icon aria-hidden="true" /></span>
-                <span><strong>{panel.label}</strong><small>{panel.description}</small></span>
-                <span aria-hidden="true">Acessar →</span>
-              </Link>
-            );
-          })}
+        <div className="panel-selector-workspace">
+          <header className="panel-selector-header">
+            <div>
+              <span>Olá, {firstName}</span>
+              <h2>{access.panels.length} {access.panels.length === 1 ? "ambiente disponível" : "ambientes disponíveis"}</h2>
+            </div>
+            <p>Você poderá trocar de painel sem encerrar a sessão.</p>
+          </header>
+
+          <div className="panel-selector-grid">
+            {access.panels.map((panel) => {
+              const Icon = icons[panel.routeRole] ?? PanelsTopLeft;
+              return (
+                <Link href={panel.href} key={panel.databaseRole} className="panel-selector-card">
+                  <span className="panel-selector-icon"><Icon aria-hidden="true" /></span>
+                  <span><strong>{panel.label}</strong><small>{panel.description}</small></span>
+                  <span>Acessar <ArrowRight aria-hidden="true" /></span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <PanelSelectorLogout storeUrl={storeUrl} />
         </div>
-
-        <PanelSelectorLogout storeUrl={storeUrl} />
       </section>
     </main>
   );

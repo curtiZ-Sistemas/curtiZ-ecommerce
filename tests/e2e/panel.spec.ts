@@ -1,13 +1,33 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function loginAs(page: Page, email: string) {
-  await page.goto("http://localhost:3000/login");
-  await page.getByLabel("E-mail de acesso").fill(email);
-  await page.getByPlaceholder("Digite sua senha").first().fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
-  const destination = email.startsWith("tecnico") ? "tecnico" : "administracao";
-  await page.waitForURL(`http://localhost:3001/${destination}`, {
-    timeout: 20_000
+  const destinationByAccount = {
+    "admin.demo@curtiz.local": "administracao",
+    "operacional.demo@curtiz.local": "operacional",
+    "gerencia.demo@curtiz.local": "gerencia",
+    "tecnico.demo@curtiz.local": "tecnico"
+  } as const;
+  const destination = destinationByAccount[email as keyof typeof destinationByAccount];
+  if (!destination) throw new Error(`Conta interna de teste não mapeada: ${email}`);
+  const response = await page.request.post("http://localhost:3000/api/auth/login", {
+    data: { email, password: "1234567890" }
+  });
+  if (!response.ok()) throw new Error(`Login demo falhou com HTTP ${response.status()}`);
+  await page.goto(`http://localhost:3001/${destination}`, { waitUntil: "commit" });
+}
+
+for (const account of [
+  { email: "admin.demo@curtiz.local", route: "administracao" },
+  { email: "operacional.demo@curtiz.local", route: "operacional" },
+  { email: "gerencia.demo@curtiz.local", route: "gerencia" },
+  { email: "tecnico.demo@curtiz.local", route: "tecnico" }
+] as const) {
+  test(`abre a rota inicial de ${account.route} sem Server Component crash`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await loginAs(page, account.email);
+    await expect(page).toHaveURL(`http://localhost:3001/${account.route}`);
+    await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
+    await expect(page.locator("main")).toBeVisible();
   });
 }
 

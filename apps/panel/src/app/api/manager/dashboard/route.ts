@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { z } from "zod";
 import {
   authorizeManagerRequest,
@@ -26,6 +27,23 @@ function optional(value: string | null): string | undefined {
 }
 
 export async function GET(request: NextRequest) {
+  const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
+  if (demoSession?.roles.includes("manager")) {
+    return NextResponse.json(
+      {
+        demo: true,
+        metrics: {
+          series: [],
+          pending: {},
+          alerts: {},
+          overview: {}
+        },
+        options: {}
+      },
+      { headers: managerNoStore }
+    );
+  }
+
   const auth = await authorizeManagerRequest(request);
   if (!auth) return unauthorizedManagerResponse();
 

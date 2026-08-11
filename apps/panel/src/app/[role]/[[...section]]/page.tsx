@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  PanelPageHeading,
   PanelShell,
-  panelRoleLabel,
-  panelSectionLabel,
   type PanelRole
 } from "@/components/panel-shell";
 import { SupportConsole } from "@/components/support-console";
@@ -63,7 +62,7 @@ export default async function RolePage({
       userName={access.fullName}
       canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
     >
-      {showRouteHeading(role, section) ? <PageHeading role={role} section={section} /> : null}
+      {showRouteHeading(role, section) ? <PanelPageHeading role={role} section={section} /> : null}
       {section === "central-ajuda" && role !== "tecnico" ? (
         <HelpContentCenter />
       ) : section === "atendimentos" ? (
@@ -80,24 +79,6 @@ export default async function RolePage({
         <Technical section={section} initialQuery={initialQuery} />
       )}
     </PanelShell>
-  );
-}
-
-function PageHeading({ role, section }: { role: PanelRole; section: string }) {
-  const title = section ? panelSectionLabel(role, section) : panelRoleLabel(role);
-  return (
-    <div className="page-heading">
-      <div>
-        <h1>{title}</h1>
-        <p>
-          {role === "operacional"
-            ? "Execute as filas diárias com conferência e rastreabilidade."
-            : role === "tecnico"
-              ? "Monitore serviços e execute ações técnicas autorizadas sem expor segredos."
-              : "Informações internas conforme as permissões do perfil."}
-        </p>
-      </div>
-    </div>
   );
 }
 

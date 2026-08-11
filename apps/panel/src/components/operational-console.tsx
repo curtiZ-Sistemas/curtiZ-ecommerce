@@ -349,18 +349,47 @@ function Dashboard({ metrics, data }: { metrics: OperationMetrics; data: Operati
     ["Atendimentos", metrics.support, "atendimentos", Headphones],
     ["Pendências", metrics.pendingTasks, "pendencias", AlertTriangle]
   ];
+  const priorityCards = cards.slice(0, 4);
+  const queueCards = cards.slice(4);
   return (
     <>
-      <div className="operational-metric-grid">
-        {cards.map(([label, value, route, Icon]) => (
-          <Link href={`/operacional/${route}`} className="operational-metric" key={label}>
-            <Icon />
-            <span>{label}</span>
-            <strong>{value}</strong>
-            <small>Abrir fila <ChevronRight /></small>
-          </Link>
-        ))}
-      </div>
+      <section className="operational-priority" aria-labelledby="operational-priority-title">
+        <header className="dashboard-section-heading">
+          <div>
+            <span>Turno atual</span>
+            <h2 id="operational-priority-title">Prioridades da operação</h2>
+          </div>
+          <p>Comece pelos pedidos atrasados e pelas próximas etapas de expedição.</p>
+        </header>
+        <div className="operational-metric-grid operational-primary-metrics">
+          {priorityCards.map(([label, value, route, Icon]) => (
+            <Link href={`/operacional/${route}`} className="operational-metric" key={label}>
+              <Icon />
+              <span>{label}</span>
+              <strong>{value}</strong>
+              <small>Abrir fila <ChevronRight /></small>
+            </Link>
+          ))}
+        </div>
+      </section>
+      <section className="panel-card operational-queue-overview" aria-labelledby="operational-queues-title">
+        <header className="dashboard-section-heading compact">
+          <div>
+            <span>Fluxos relacionados</span>
+            <h2 id="operational-queues-title">Filas e pendências</h2>
+          </div>
+        </header>
+        <nav className="operational-queue-shortcuts" aria-label="Filas operacionais">
+          {queueCards.map(([label, value, route, Icon]) => (
+            <Link href={`/operacional/${route}`} key={label}>
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+              <strong>{value.toLocaleString("pt-BR")}</strong>
+              <ChevronRight aria-hidden="true" />
+            </Link>
+          ))}
+        </nav>
+      </section>
       <div className="operational-dashboard-grid">
         <section className="panel-card">
           <SectionHeading title="Próximas tarefas" description="Fila ordenada por prioridade e prazo." />

@@ -167,10 +167,53 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
+const roleExperience: Record<PanelRole, { purpose: string; actionLabel: string; actionHref: string }> = {
+  operacional: {
+    purpose: "Execute pedidos e filas do dia com rastreabilidade.",
+    actionLabel: "Abrir pedidos",
+    actionHref: "/operacional/pedidos"
+  },
+  administracao: {
+    purpose: "Mantenha catálogo, clientes e operação comercial organizados.",
+    actionLabel: "Gerenciar produtos",
+    actionHref: "/administracao/produtos"
+  },
+  gerencia: {
+    purpose: "Priorize decisões, aprovações e resultados do negócio.",
+    actionLabel: "Revisar aprovações",
+    actionHref: "/gerencia/aprovacoes"
+  },
+  tecnico: {
+    purpose: "Monitore a plataforma e trate incidentes com segurança.",
+    actionLabel: "Revisar erros",
+    actionHref: "/tecnico/erros"
+  }
+};
+
 export const panelRoleLabel = (role: PanelRole) => roleLabels[role];
 
 export const panelSectionLabel = (role: PanelRole, section: string) =>
   menus[role].find(([, route]) => route === section)?.[0] ?? roleLabels[role];
+
+export function PanelPageHeading({ role, section }: { role: PanelRole; section: string }) {
+  const title = section ? panelSectionLabel(role, section) : panelRoleLabel(role);
+  const experience = roleExperience[role];
+
+  return (
+    <div className="page-heading">
+      <div>
+        <span className="page-heading-eyebrow">Painel {roleLabels[role]}</span>
+        <h1>{title}</h1>
+        <p>{experience.purpose}</p>
+      </div>
+      {!section ? (
+        <Link className="primary-button page-heading-action" href={experience.actionHref}>
+          {experience.actionLabel}
+        </Link>
+      ) : null}
+    </div>
+  );
+}
 
 const menuGroups: Record<PanelRole, Record<number, string>> = {
   operacional: { 0: "Visão geral", 1: "Operação", 5: "Estoque", 9: "Pós-venda", 14: "Atendimento", 16: "Conteúdo", 18: "Gestão" },
@@ -338,6 +381,11 @@ export function PanelShell({
           </button>
         </div>
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
+        <Link className="sidebar-priority" href={roleExperience[role].actionHref} onClick={() => closeMenu()}>
+          <span>Prioridade do painel</span>
+          <strong>{roleExperience[role].actionLabel}</strong>
+          <small>{roleExperience[role].purpose}</small>
+        </Link>
         <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
           {menus[role].map(([label, route, Icon], index) => {
             const href = route ? `/${role}/${route}` : `/${role}`;
@@ -348,6 +396,7 @@ export function PanelShell({
                   className={section === route ? "active" : ""}
                   href={href}
                   onClick={() => closeMenu()}
+                  aria-current={section === route ? "page" : undefined}
                 >
                   <Icon size={19} />
                   <span>{label}</span>
@@ -387,10 +436,11 @@ export function PanelShell({
           >
             <Menu />
           </button>
-          <div className="topbar-context">
-            <small>Painel {roleLabels[role]}</small>
-            <strong>{panelSectionLabel(role, section)}</strong>
-          </div>
+          <nav className="topbar-context" aria-label="Navegação estrutural">
+            <Link href={`/${role}`}>{roleLabels[role]}</Link>
+            {section ? <span aria-hidden="true">/</span> : null}
+            <strong>{section ? panelSectionLabel(role, section) : "Visão geral"}</strong>
+          </nav>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
               <form action={panelSearchRoute(role)}>

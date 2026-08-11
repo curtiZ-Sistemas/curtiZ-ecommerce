@@ -86,39 +86,67 @@ export function AdminDashboard() {
     );
   }
 
-  const metrics = [
+  const primaryMetrics = [
     ["Vendas aprovadas", money.format(data.metrics.grossRevenueInCents / 100), ShoppingBag],
     ["Pedidos", data.metrics.orders.toLocaleString("pt-BR"), PackageCheck],
-    ["Produtos", data.metrics.products.toLocaleString("pt-BR"), Boxes],
     ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), CircleAlert],
-    ["Clientes", data.metrics.customers.toLocaleString("pt-BR"), Users],
-    ["Representantes", data.metrics.representatives.toLocaleString("pt-BR"), Users],
-    ["Kits", data.metrics.kits.toLocaleString("pt-BR"), Tags],
     [
       "Avaliações pendentes",
       data.metrics.pendingReviews.toLocaleString("pt-BR"),
       MessageSquareMore
-    ],
+    ]
+  ] as const;
+  const supportingMetrics = [
+    ["Produtos", data.metrics.products.toLocaleString("pt-BR"), Boxes],
+    ["Clientes", data.metrics.customers.toLocaleString("pt-BR"), Users],
+    ["Representantes", data.metrics.representatives.toLocaleString("pt-BR"), Users],
+    ["Kits", data.metrics.kits.toLocaleString("pt-BR"), Tags],
     ["Banners publicados", data.metrics.publishedBanners.toLocaleString("pt-BR"), Image],
     ["Campanhas publicadas", data.metrics.publishedCampaigns.toLocaleString("pt-BR"), Tags]
   ] as const;
 
   return (
     <div className="admin-dashboard">
-      <div className="admin-metric-grid">
-        {metrics.map(([label, value, Icon]) => (
-          <article className="admin-metric" key={label}>
-            <Icon aria-hidden="true" />
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </article>
-        ))}
-      </div>
+      <section className="admin-dashboard-primary" aria-labelledby="admin-priority-title">
+        <header className="dashboard-section-heading">
+          <div>
+            <span>Agora</span>
+            <h2 id="admin-priority-title">Indicadores prioritários</h2>
+          </div>
+          <p>Vendas e pendências que podem exigir ação administrativa.</p>
+        </header>
+        <div className="admin-metric-grid admin-primary-metrics">
+          {primaryMetrics.map(([label, value, Icon]) => (
+            <article className="admin-metric" key={label}>
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
       {data.warnings.length > 0 && (
         <p className="admin-inline-warning" role="status">
           Dados parciais: {data.warnings.join(", ")}.
         </p>
       )}
+      <section className="panel-card admin-dashboard-supporting" aria-labelledby="admin-structure-title">
+        <header className="dashboard-section-heading compact">
+          <div>
+            <span>Estrutura comercial</span>
+            <h2 id="admin-structure-title">Base administrada</h2>
+          </div>
+        </header>
+        <div className="admin-support-metric-grid">
+          {supportingMetrics.map(([label, value, Icon]) => (
+            <article key={label}>
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
       <div className="admin-dashboard-columns">
         <section className="panel-card">
           <h2>Pedidos recentes</h2>

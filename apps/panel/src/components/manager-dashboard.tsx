@@ -18,6 +18,7 @@ type Option = { id: string; name: string };
 type RepresentativeOption = { id: string; public_code: string; region_code?: string };
 
 type DashboardResponse = {
+  demo?: boolean;
   metrics?: RecordValue;
   options?: {
     products?: Option[];
@@ -92,6 +93,7 @@ export function ManagerDashboard() {
   const [options, setOptions] = useState<NonNullable<DashboardResponse["options"]>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [demo, setDemo] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +109,7 @@ export function ManagerDashboard() {
       if (!response.ok) throw new Error(payload.message);
       setMetrics(isRecord(payload.metrics) ? payload.metrics : {});
       setOptions(payload.options ?? {});
+      setDemo(payload.demo === true);
     } catch {
       setMessage("Não foi possível carregar os indicadores gerenciais agora.");
     } finally {
@@ -174,13 +177,14 @@ export function ManagerDashboard() {
       </form>
 
       {message ? <p className="admin-feedback" role="alert">{message}</p> : null}
+      {demo ? <p className="admin-feedback" role="status">Ambiente de demonstração: indicadores financeiros reais não são exibidos.</p> : null}
 
       <div className="manager-metric-grid" aria-busy={loading}>
-        <ManagerMetric icon={<BadgeDollarSign />} label="Faturamento bruto" value={loading ? "—" : cents(metrics.gross_cents)} detail={trend} />
-        <ManagerMetric icon={<CircleDollarSign />} label="Faturamento líquido" value={loading ? "—" : cents(metrics.net_cents)} detail="Após taxas e custo de frete registrado" />
-        <ManagerMetric icon={<ChartNoAxesCombined />} label="Lucro estimado" value={loading ? "—" : cents(metrics.estimated_profit_cents)} detail="Com custos persistidos nos pedidos" />
-        <ManagerMetric icon={<RotateCcw />} label="Reembolsos" value={loading ? "—" : cents(metrics.refunds_cents)} detail={`${count(alerts, "refunds_in_period")} pedido(s) no período`} />
-        <ManagerMetric icon={<ShoppingBag />} label="Pedidos" value={loading ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${cents(metrics.average_ticket_cents)}`} />
+        <ManagerMetric icon={<BadgeDollarSign />} label="Faturamento bruto" value={loading || demo ? "—" : cents(metrics.gross_cents)} detail={trend} />
+        <ManagerMetric icon={<CircleDollarSign />} label="Faturamento líquido" value={loading || demo ? "—" : cents(metrics.net_cents)} detail="Após taxas e custo de frete registrado" />
+        <ManagerMetric icon={<ChartNoAxesCombined />} label="Lucro estimado" value={loading || demo ? "—" : cents(metrics.estimated_profit_cents)} detail="Com custos persistidos nos pedidos" />
+        <ManagerMetric icon={<RotateCcw />} label="Reembolsos" value={loading || demo ? "—" : cents(metrics.refunds_cents)} detail={`${count(alerts, "refunds_in_period")} pedido(s) no período`} />
+        <ManagerMetric icon={<ShoppingBag />} label="Pedidos" value={loading || demo ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${demo ? "—" : cents(metrics.average_ticket_cents)}`} />
       </div>
 
       <div className="manager-dashboard-columns">
