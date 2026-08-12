@@ -7,6 +7,7 @@ import {
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
+import { postgresUuidSchema } from "@/lib/postgres-uuid";
 
 export const runtime = "nodejs";
 
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const parsed = z.object({
-    productId: z.string().uuid(),
+    productId: postgresUuidSchema,
     color: z.string().trim().max(80).optional(),
     alt: z.string().trim().min(3).max(300),
     primary: z.enum(["true", "false"])
@@ -123,7 +124,7 @@ export async function DELETE(request: NextRequest) {
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
-  const parsed = z.object({ imageId: z.string().uuid() }).safeParse(await request.json().catch(() => null));
+  const parsed = z.object({ imageId: postgresUuidSchema }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ message: "Imagem inválida." }, { status: 400, headers: privateNoStore });
   const image = await auth.supabase.from("product_images").select("id,storage_path").eq("id", parsed.data.imageId).maybeSingle();
   if (image.error || !image.data) return NextResponse.json({ message: "Imagem não encontrada." }, { status: 404, headers: privateNoStore });
@@ -142,8 +143,8 @@ export async function PATCH(request: NextRequest) {
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
   const parsed = z.discriminatedUnion("action", [
-    z.object({ action: z.literal("primary"), imageId: z.string().uuid() }),
-    z.object({ action: z.literal("move"), imageId: z.string().uuid(), direction: z.enum(["before", "after"]) })
+    z.object({ action: z.literal("primary"), imageId: postgresUuidSchema }),
+    z.object({ action: z.literal("move"), imageId: postgresUuidSchema, direction: z.enum(["before", "after"]) })
   ]).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ message: "Ação de mídia inválida." }, { status: 400, headers: privateNoStore });
   const selected = await auth.supabase.from("product_images").select("id,product_id,sort_order").eq("id", parsed.data.imageId).maybeSingle();

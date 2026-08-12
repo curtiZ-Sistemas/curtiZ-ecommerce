@@ -2,6 +2,7 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
+import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
 const noStore = { "cache-control": "private, no-store" };
 const variantSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: postgresUuidSchema.optional(),
   sku: z.string().trim().min(2).max(140),
   color: z.string().trim().min(1).max(80),
   colorHex: z.string().regex(/^#[0-9a-f]{6}$/iu).or(z.literal("")),
@@ -35,25 +36,25 @@ const variantSchema = z.object({
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("restock"),
-    productId: z.string().uuid(),
-    variantId: z.string().uuid(),
+    productId: postgresUuidSchema,
+    variantId: postgresUuidSchema,
     quantity: z.number().int().min(1).max(99_999),
     reason: z.string().trim().min(10).max(500)
   }),
   z.object({
     action: z.literal("archive"),
-    productId: z.string().uuid(),
+    productId: postgresUuidSchema,
     reason: z.string().trim().min(3).max(1000)
   }),
   z.object({
     action: z.literal("status"),
-    productId: z.string().uuid(),
+    productId: postgresUuidSchema,
     status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
     reason: z.string().trim().min(3).max(1000).optional()
   }),
   z.object({
     action: z.literal("duplicate"),
-    productId: z.string().uuid(),
+    productId: postgresUuidSchema,
     name: z.string().trim().min(3).max(160),
     slug: z
       .string()
@@ -63,7 +64,7 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("save"),
-    productId: z.string().uuid().optional(),
+    productId: postgresUuidSchema.optional(),
     name: z.string().trim().min(3).max(160),
     slug: z
       .string()
@@ -72,9 +73,9 @@ const actionSchema = z.discriminatedUnion("action", [
       .max(180),
     shortDescription: z.string().trim().min(3).max(280),
     description: z.string().trim().min(3).max(4_000),
-    categoryId: z.string().uuid(),
-    modelId: z.string().uuid().nullable().optional(),
-    collectionId: z.string().uuid().nullable().optional(),
+    categoryId: postgresUuidSchema,
+    modelId: postgresUuidSchema.nullable().optional(),
+    collectionId: postgresUuidSchema.nullable().optional(),
     status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
     statusReason: z.string().trim().max(1000).optional(),
     featured: z.boolean(),
@@ -239,7 +240,7 @@ export async function GET(request: NextRequest) {
 
   const productIdParam = request.nextUrl.searchParams.get("productId");
   const productId = productIdParam
-    ? z.string().uuid().safeParse(productIdParam)
+    ? postgresUuidSchema.safeParse(productIdParam)
     : null;
   if (productId && !productId.success) {
     return NextResponse.json(
