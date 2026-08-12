@@ -402,8 +402,10 @@ export async function GET(request: NextRequest) {
     archive: !archivePermission.error && archivePermission.data === true
   };
   const capabilityMessage = permissionError
-    ? "N\u00e3o foi poss\u00edvel confirmar as permiss\u00f5es de altera\u00e7\u00e3o. Atualize a p\u00e1gina."
-    : undefined;
+    ? "N\u00e3o foi poss\u00edvel confirmar as permiss\u00f5es de produto. Verifique se as migrations de permiss\u00e3o foram aplicadas."
+    : !capabilities.create
+      ? "Cadastro indispon\u00edvel para este acesso: s\u00e3o necess\u00e1rias as permiss\u00f5es products.create e products.update."
+      : undefined;
   if (permissionError) logCatalogFailure("load_capabilities", permissionError);
 
   if (result.error || categories.error) {

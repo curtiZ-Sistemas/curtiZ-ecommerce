@@ -310,7 +310,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       presentationFallback || process.env.NODE_ENV !== "production";
     return {
       sections: defaultSections,
-      banners: developmentFallback ? [fallbackBanner] : [],
+      banners: [fallbackBanner],
       products: developmentFallback ? demoProducts : [],
       source: "demo"
     };
@@ -399,25 +399,26 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     })
     .filter((banner): banner is PublicBanner => Boolean(banner));
 
-  const fallbackBannerEnabled = banners.length === 0 && presentationFallback;
+  const fallbackBannerEnabled = banners.length === 0;
   const fallbackProductsEnabled = !bestCatalog && !promotionCatalog && !newestCatalog && presentationFallback;
   const products = [...manualProducts, ...(bestCatalog?.products ?? []), ...(promotionCatalog?.products ?? []), ...(newestCatalog?.products ?? [])]
     .filter((product, index, list) => list.findIndex((candidate) => candidate.id === product.id) === index);
   const allowDefaults = presentationFallback || process.env.NODE_ENV !== "production";
-  const homepageSections = selectHomepageSections(
+  const selectedSections = selectHomepageSections(
     sections,
     defaultSections,
-    banners.length > 0 || products.length > 0,
+    banners.length > 0 || products.length > 0 || fallbackBannerEnabled,
     allowDefaults
   );
+  const homepageSections = selectedSections.some(
+    (section) => section.sectionType === "banner_hero"
+  )
+    ? selectedSections
+    : [defaultSections[0]!, ...selectedSections];
 
   return {
     sections: homepageSections,
-    banners: fallbackBannerEnabled
-      ? [fallbackBanner]
-      : banners.length || process.env.NODE_ENV === "production"
-        ? banners
-        : [fallbackBanner],
+    banners: fallbackBannerEnabled ? [fallbackBanner] : banners,
     products: fallbackProductsEnabled ? demoProducts : products,
     source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
   };

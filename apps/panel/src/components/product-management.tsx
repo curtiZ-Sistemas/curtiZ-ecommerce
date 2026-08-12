@@ -92,6 +92,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState("");
   const [message, setMessage] = useState("");
+  const [capabilityNotice, setCapabilityNotice] = useState("");
   const [loadError, setLoadError] = useState("");
   const [openingProductId, setOpeningProductId] = useState("");
   const [archiveTarget, setArchiveTarget] = useState<ManagedProduct | null>(null);
@@ -132,7 +133,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
         adjustStock: result.capabilities?.adjustStock === true,
         archive: result.capabilities?.archive === true
       });
-      if (result.capabilityMessage) setMessage(result.capabilityMessage);
+      setCapabilityNotice(result.capabilityMessage ?? "");
       if (!response.ok) throw new Error(result.message);
       if (!Array.isArray(result.products) || !result.products.every(isManagedProduct)) {
         throw new Error("O catálogo retornou dados de produto inválidos.");
@@ -147,6 +148,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
       setProducts([]);
       setTotal(0);
       setCapabilities({ create: false, update: false, adjustStock: false, archive: false });
+      setCapabilityNotice("");
       setLoadError(
         error instanceof Error && error.message
           ? error.message
@@ -409,6 +411,12 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
         </div>
       </div>
 
+      {!loading && !loadError && view === "produtos" && !canCreateProduct ? (
+        <p className="form-message product-capability-notice" role="status">
+          {capabilityNotice || "Seu acesso atual n\u00e3o possui permiss\u00e3o para cadastrar produtos."}
+        </p>
+      ) : null}
+
       <div className="product-list-toolbar">
         <form
           className="product-search"
@@ -551,7 +559,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                 </div>
                 <div className="managed-product-actions">
                   {canUpdateProduct ? <button
-                    className="primary-button"
+                    className="primary-button product-edit-button"
                     type="button"
                     onClick={() => void openProduct(product)}
                     disabled={Boolean(pending) || Boolean(openingProductId)}

@@ -10,6 +10,9 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [failedBannerIds, setFailedBannerIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const pointerStart = useRef<number | null>(null);
 
   useEffect(() => {
@@ -33,6 +36,13 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   }
 
   const banner = slides[Math.min(active, slides.length - 1)]!;
+  const useFallbackImage = failedBannerIds.has(banner.id);
+  const desktopImage = useFallbackImage
+    ? "/images/hero-curtiz-desktop.png"
+    : banner.desktopImage;
+  const mobileImage = useFallbackImage
+    ? "/images/hero-curtiz-mobile.png"
+    : banner.mobileImage;
 
   const go = (direction: number) => {
     setPaused(true);
@@ -44,8 +54,20 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
   const picture = (
     <picture className="hero-picture">
-      <source className="hero-media-mobile" media="(max-width: 700px)" srcSet={banner.mobileImage} />
-      <img className="hero-media-desktop" src={banner.desktopImage} alt={banner.altText} width={1600} height={560} fetchPriority="high" decoding="async" />
+      <source media="(max-width: 700px)" srcSet={mobileImage} />
+      <img
+        className="hero-media"
+        src={desktopImage}
+        alt={banner.altText}
+        width={1600}
+        height={560}
+        fetchPriority="high"
+        decoding="async"
+        onError={() => {
+          if (useFallbackImage) return;
+          setFailedBannerIds((current) => new Set(current).add(banner.id));
+        }}
+      />
     </picture>
   );
 

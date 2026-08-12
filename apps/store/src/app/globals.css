@@ -8957,7 +8957,12 @@ body:has(.representative-portal-layout) > .demo-banner {
   padding: 0 !important;
 
   background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none !important;
   line-height: 0;
+  object-fit: contain;
+  object-position: center;
 }
 
 .hero-media-desktop {

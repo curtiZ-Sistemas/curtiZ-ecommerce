@@ -39,8 +39,10 @@ describe("public storefront components", () => {
   it("renderiza imagens distintas do hero para desktop e celular", () => {
     const html = renderToStaticMarkup(<HomepageHero banners={banners} />);
 
-    expect(html).toContain("hero-media-desktop");
-    expect(html).toContain("hero-media-mobile");
+    expect(html).toContain('class="hero-media"');
+    expect(html).toContain('media="(max-width: 700px)"');
+    expect(html).toContain('srcSet="/images/hero-curtiz-mobile.png"');
+    expect(html).toContain('src="/images/hero-curtiz-desktop.png"');
     expect(html).toContain('aria-label="Controles dos banners"');
     expect(html).toContain('href="/lancamentos"');
   });

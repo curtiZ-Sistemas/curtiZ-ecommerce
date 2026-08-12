@@ -3604,6 +3604,19 @@ button:not(:disabled):active,
   font-size: 0.7rem;
 }
 
+.managed-product-actions .product-edit-button {
+  color: #fff;
+  border: 1px solid #111;
+  background: #111;
+}
+
+.managed-product-actions .product-edit-button:hover,
+.managed-product-actions .product-edit-button:focus-visible {
+  color: #111;
+  background: #fff;
+  box-shadow: none;
+}
+
 .managed-product > header {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(120px, auto) 90px auto;
