@@ -5,33 +5,12 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
 import { ProductPurchase } from "@/components/product-purchase";
-import { demoProducts } from "@/lib/catalog";
 import { getPublicProduct, queryPublicCatalog } from "@/lib/storefront-data";
-import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 
-export async function generateMetadata({
-  params
-}: {
-  params: Promise<{ slug: string }>;
-}): Promise<Metadata> {
-  const detail = await getPublicProduct((await params).slug);
-  if (!detail) return {};
-  return {
-    title: detail.product.name,
-    description: detail.product.description,
-    alternates: { canonical: `/produto/${detail.product.slug}` },
-    openGraph: {
-      type: "website",
-      images: [{ url: detail.product.image, alt: detail.product.name }]
-    }
-  };
-}
-
-export function generateStaticParams() {
-  return isPresentationCatalogEnabled()
-    ? demoProducts.map((product) => ({ slug: product.slug }))
-    : [];
-}
+export const metadata: Metadata = {
+  title: "Produto",
+  description: "Detalhes, varia\u00e7\u00f5es e disponibilidade dos produtos curti Z."
+};
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const [{ slug }, requestHeaders] = await Promise.all([params, headers()]);
