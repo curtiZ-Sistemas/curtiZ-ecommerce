@@ -93,13 +93,131 @@ const actionSchema = z.discriminatedUnion("action", [
   })
 ]);
 
-function logCatalogFailure(operation: string, error: { code?: string; message?: string } | null) {
+type CatalogError = {
+  code?: string;
+  message?: string;
+} | null;
+
+function logCatalogFailure(operation: string, error: CatalogError) {
   console.error("[panel-catalog-api] operation failed", {
     requestId: crypto.randomUUID(),
     operation,
     code: error?.code ?? "unknown",
     message: error?.message?.slice(0, 180) ?? "unknown"
   });
+}
+
+const normalizedErrorMessage = (error: CatalogError) =>
+  error?.message?.trim().toLowerCase() ?? "";
+
+function statusMutationError(
+  error: CatalogError,
+  status: string
+): { message: string; statusCode: number } {
+  if (error?.code === "42501") {
+    return {
+      message: "Você não possui permissão para alterar o status deste produto.",
+      statusCode: 403
+    };
+  }
+
+  const message = normalizedErrorMessage(error);
+
+  if (
+    status === "active" &&
+    message.includes("an active product requires at least one active variant")
+  ) {
+    return {
+      message: "Cadastre e ative pelo menos uma variação antes de publicar o produto.",
+      statusCode: 409
+    };
+  }
+
+  if (message.includes("a status reason is required")) {
+    return {
+      message: "Informe o motivo da alteração de status.",
+      statusCode: 400
+    };
+  }
+
+  if (message.includes("product not found")) {
+    return {
+      message: "Produto não encontrado.",
+      statusCode: 404
+    };
+  }
+
+  return {
+    message: "Não foi possível alterar o status do produto.",
+    statusCode: 409
+  };
+}
+
+function saveProductError(
+  error: CatalogError
+): { message: string; statusCode: number } {
+  if (error?.code === "42501") {
+    return {
+      message: "Você não possui permissão para salvar produtos.",
+      statusCode: 403
+    };
+  }
+
+  const message = normalizedErrorMessage(error);
+
+  if (message.includes("an active product requires at least one active variant")) {
+    return {
+      message: "Mantenha pelo menos uma variação ativa antes de publicar.",
+      statusCode: 409
+    };
+  }
+
+  if (message.includes("invalid product payload")) {
+    return {
+      message: "Os dados do produto estão incompletos ou inválidos.",
+      statusCode: 400
+    };
+  }
+
+  if (message.includes("invalid product variant")) {
+    return {
+      message: "Existe uma variação com dados inválidos. Revise SKU, cor, tamanho e estoque.",
+      statusCode: 400
+    };
+  }
+
+  if (message.includes("variant does not belong to product")) {
+    return {
+      message: "Uma das variações informadas não pertence a este produto.",
+      statusCode: 409
+    };
+  }
+
+  if (message.includes("product not found")) {
+    return {
+      message: "Produto não encontrado.",
+      statusCode: 404
+    };
+  }
+
+  if (error?.code === "23505") {
+    return {
+      message: "Já existe um produto ou variação com um valor único informado, como slug ou SKU.",
+      statusCode: 409
+    };
+  }
+
+  if (error?.code === "23503") {
+    return {
+      message: "Categoria, modelo, coleção ou outro vínculo informado não existe mais.",
+      statusCode: 409
+    };
+  }
+
+  return {
+    message: "Não foi possível salvar o produto.",
+    statusCode: 409
+  };
 }
 
 const safeOrigin = (request: NextRequest) => {
@@ -495,18 +613,23 @@ export async function PATCH(request: NextRequest) {
     });
     if (result.error || typeof result.data !== "string") {
       logCatalogFailure("set_product_status", result.error);
+      const mappedError = statusMutationError(result.error, status);
+
       return NextResponse.json(
-        { message: "Não foi possível alterar o status do produto." },
-        { status: result.error?.code === "42501" ? 403 : 409, headers: noStore }
+        { message: mappedError.message },
+        { status: mappedError.statusCode, headers: noStore }
       );
     }
+
     return NextResponse.json(
       {
         ok: true,
         message:
-          status === "archived"
-            ? "Produto arquivado sem apagar o histórico de pedidos."
-            : "Status do produto atualizado."
+          status === "active"
+            ? "Produto publicado com sucesso."
+            : status === "archived"
+              ? "Produto arquivado sem apagar o histórico de pedidos."
+              : "Status do produto atualizado."
       },
       { headers: noStore }
     );
@@ -553,12 +676,17 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
-    const result = await supabase.rpc("admin_save_product_authorized", { p_payload: parsed.data });
+    const result = await supabase.rpc("admin_save_product_authorized", {
+      p_payload: parsed.data
+    });
+
     if (result.error || typeof result.data !== "string") {
       logCatalogFailure("save_product", result.error);
+      const mappedError = saveProductError(result.error);
+
       return NextResponse.json(
-        { message: "Não foi possível salvar o produto." },
-        { status: result.error?.code === "42501" ? 403 : 409, headers: noStore }
+        { message: mappedError.message },
+        { status: mappedError.statusCode, headers: noStore }
       );
     }
     return NextResponse.json(

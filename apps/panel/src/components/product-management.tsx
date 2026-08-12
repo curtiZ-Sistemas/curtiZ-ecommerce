@@ -282,13 +282,43 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
     if (success) setEditing(null);
   };
 
-  const changeStatus = async (product: ManagedProduct, nextStatus: string) => {
-    const needsReason = ["inactive", "archived", "rejected"].includes(nextStatus);
+  const changeStatus = async (
+    product: ManagedProduct,
+    nextStatus: string
+  ) => {
+    if (
+      nextStatus === "active" &&
+      !product.variants.some((variant) => variant.active)
+    ) {
+      setMessage(
+        `Não é possível publicar "${product.name}". Cadastre e ative pelo menos uma variação antes de publicar.`
+      );
+      return;
+    }
+
+    const needsReason = [
+      "inactive",
+      "archived",
+      "rejected"
+    ].includes(nextStatus);
+
     const reason = needsReason
-      ? window.prompt(`Informe o motivo para alterar o status para ${productStatusLabel(nextStatus)}:`)?.trim()
+      ? window.prompt(
+          `Informe o motivo para alterar o status para ${productStatusLabel(nextStatus)}:`
+        )?.trim()
       : undefined;
+
     if (needsReason && !reason) return;
-    await execute({ action: "status", productId: product.id, status: nextStatus, reason }, product.id);
+
+    await execute(
+      {
+        action: "status",
+        productId: product.id,
+        status: nextStatus,
+        reason
+      },
+      product.id
+    );
   };
 
   const duplicateProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -595,7 +625,15 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                       ) : (
                         <button
                           type="button"
-                          disabled={Boolean(pending)}
+                          disabled={
+                            Boolean(pending) ||
+                            !product.variants.some((variant) => variant.active)
+                          }
+                          title={
+                            !product.variants.some((variant) => variant.active)
+                              ? "Cadastre e ative pelo menos uma variação antes de publicar."
+                              : "Publicar produto"
+                          }
                           onClick={() => void changeStatus(product, "active")}
                         >
                           <Eye /> Publicar
