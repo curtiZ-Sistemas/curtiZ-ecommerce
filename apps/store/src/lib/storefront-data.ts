@@ -13,7 +13,7 @@ import {
 import { parseCatalogRpcResult, productCategory, publicCatalogImage } from "./catalog-result";
 import { selectHomepageSections } from "./homepage-layout";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
-import { createServerSupabaseClient } from "./supabase/server";
+import { createPublicSupabaseClient, createServerSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
 
 export type PublicBanner = {
@@ -478,7 +478,7 @@ const productDetailSchema = z.object({
 
 const demoProductDetail = (slug: string): ProductDetailData | null => {
   const product = findProduct(slug);
-  if (!product || product.stock <= 0) return null;
+  if (!product) return null;
   const variants = product.colors.flatMap((color) =>
     product.sizes.map((size) => ({
       id: `${product.id}:${color}:${size}`,
@@ -502,7 +502,7 @@ const demoProductDetail = (slug: string): ProductDetailData | null => {
 export const getPublicProduct = cache(async (slug: string): Promise<ProductDetailData | null> => {
   if (process.env.DEMO_MODE === "true") return demoProductDetail(slug);
   const presentationFallback = isPresentationCatalogEnabled();
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
   if (!supabase) {
     return presentationFallback || process.env.NODE_ENV !== "production"
       ? demoProductDetail(slug)
@@ -514,7 +514,6 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
-  if (parsed.data.stock <= 0) return null;
   const firstImage = parsed.data.images[0]?.path;
   const colors = [...new Set(parsed.data.variants.map((variant) => variant.color))];
   const sizes = [...new Set(parsed.data.variants.map((variant) => variant.size))];
