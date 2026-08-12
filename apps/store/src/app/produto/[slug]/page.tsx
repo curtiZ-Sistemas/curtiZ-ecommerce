@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Star } from "lucide-react";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
 import { ProductPurchase } from "@/components/product-purchase";
@@ -33,13 +34,20 @@ export function generateStaticParams() {
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const detail = await getPublicProduct((await params).slug);
+  const [{ slug }, requestHeaders] = await Promise.all([params, headers()]);
+  const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
   const relatedResult = await queryPublicCatalog({
     category: product.category,
     sort: "best_sellers",
     pageSize: 5
+  }).catch((error: unknown) => {
+    console.error(
+      "[product-page] N\u00e3o foi poss\u00edvel carregar produtos relacionados.",
+      error instanceof Error ? error.message : "Erro desconhecido."
+    );
+    return null;
   });
   const related = (relatedResult?.products ?? [])
     .filter((item) => item.id !== product.id)
@@ -74,6 +82,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     <div className="container page-shell">
       <script
         type="application/ld+json"
+        nonce={requestHeaders.get("x-nonce") ?? undefined}
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c")
         }}

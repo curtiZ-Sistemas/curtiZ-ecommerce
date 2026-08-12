@@ -6,6 +6,7 @@ const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/202608100001_initial_editable_catalog.sql"),
   "utf8"
 );
+const seed = readFileSync(resolve(process.cwd(), "supabase/seed.sql"), "utf8");
 
 const productSlugs = [
   "flip-flop-wave-preto",
@@ -33,5 +34,12 @@ describe("initial editable catalog migration", () => {
     expect(migration).toContain("'/images/hero-curtiz-mobile.png'");
     expect(migration).toContain("where not exists (");
     expect(migration).not.toContain("disable row level security");
+  });
+
+  it("keeps deterministic test variants distinct from catalog migration combinations", () => {
+    expect(seed).toContain("'CZT-FW-PRE-40', 'Preto', '#171717', '40', true");
+    expect(seed).toContain("'CZT-FS-COR-38', 'Coral', '#CF6853', '38', true");
+    expect(seed).not.toContain("'CZT-FW-PRE-40', 'Preto', '#171717', '39/40', true");
+    expect(seed).not.toContain("'CZT-FS-COR-38', 'Coral', '#CF6853', '37/38', true");
   });
 });
