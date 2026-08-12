@@ -133,13 +133,13 @@ const defaultSections: HomepageSection[] = [
   {
     id: "default-featured",
     sectionType: "featured_products",
-    title: "Destaques curti Z",
-    subtitle: "Escolhas para todos os estilos",
+    title: "Ofertas em destaque",
+    subtitle: "Seleção especial",
     layout: "grid",
     visibility: "all",
     style: {},
-    content: { limit: 8, href: "/produtos" },
-    settings: { limit: 8, href: "/produtos" },
+    content: { limit: 8, sort: "discount", href: "/ofertas" },
+    settings: { limit: 8, sort: "discount", href: "/ofertas" },
     items: [],
     active: true,
     sortOrder: 3

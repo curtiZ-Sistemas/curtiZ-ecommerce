@@ -26,7 +26,7 @@ const sectionClass = (section: HomepageSection) => {
   const spacingTop = styleToken(section, "spacingTop", ["none", "small", "medium", "large"], "medium");
   const spacingBottom = styleToken(section, "spacingBottom", ["none", "small", "medium", "large"], "medium");
   const background = styleToken(section, "background", ["default", "subtle", "brand", "dark"], "default");
-  return `home-builder-section home-section-${section.sectionType} home-layout-${section.layout} home-visible-${section.visibility} home-space-top-${spacingTop} home-space-bottom-${spacingBottom} home-background-${background}`;
+  return `home-builder-section home-layout-${section.layout} home-visible-${section.visibility} home-space-top-${spacingTop} home-space-bottom-${spacingBottom} home-background-${background}`;
 };
 const mediaFor = (item: HomepageSectionItem, role: string) => item.media.find((media) => media.role === role) ?? item.media.find((media) => media.role === "desktop") ?? item.media[0];
 

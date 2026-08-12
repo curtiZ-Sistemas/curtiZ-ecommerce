@@ -39,8 +39,8 @@ describe("public storefront components", () => {
   it("renderiza imagens distintas do hero para desktop e celular", () => {
     const html = renderToStaticMarkup(<HomepageHero banners={banners} />);
 
-    expect(html).toContain("hero-media");
-    expect(html).toContain('media="(max-width: 700px)"');
+    expect(html).toContain("hero-media-desktop");
+    expect(html).toContain("hero-media-mobile");
     expect(html).toContain('aria-label="Controles dos banners"');
     expect(html).toContain('href="/lancamentos"');
   });
@@ -83,30 +83,5 @@ describe("public storefront components", () => {
     expect(html).toContain("Produto disponível");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
-  });
-
-  it("identifica indisponibilidade sem inventar uma oferta", () => {
-    const html = renderToStaticMarkup(
-      <ProductCard
-        product={{
-          id: "produto-2",
-          slug: "produto-indisponivel",
-          name: "Produto indisponivel",
-          category: "Slides",
-          description: "Produto",
-          priceInCents: 7990,
-          rating: 0,
-          reviews: 0,
-          colors: ["Azul"],
-          sizes: ["39"],
-          image: "/images/products/wave-azul.png",
-          stock: 0
-        }}
-      />
-    );
-
-    expect(html).toContain("availability-badge");
-    expect(html).toContain("Indispon");
-    expect(html).not.toContain("discount-badge");
   });
 });

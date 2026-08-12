@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 type CategoryItem = {
   name: string;
@@ -22,21 +22,11 @@ export function CategoryCarousel({
 }: CategoryCarouselProps) {
   const autoplay = useRef(
     Autoplay({
-      delay: 4200,
-      stopOnInteraction: true,
+      delay: 2000,
+      stopOnInteraction: false,
       stopOnMouseEnter: true
     })
   );
-
-  useEffect(() => {
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateAutoplay = () => {
-      if (reducedMotion.matches) autoplay.current.stop();
-    };
-    updateAutoplay();
-    reducedMotion.addEventListener("change", updateAutoplay);
-    return () => reducedMotion.removeEventListener("change", updateAutoplay);
-  }, []);
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {

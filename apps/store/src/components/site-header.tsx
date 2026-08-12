@@ -96,15 +96,6 @@ export function SiteHeader() {
   return (
     <>
       <header className="site-header">
-        <div className="store-utility-bar">
-          <div className="container">
-            <span>curti Z · loja exclusivamente online</span>
-            <nav aria-label="Links rápidos">
-              <Link href="/rastrear-pedido">Rastrear pedido</Link>
-              <Link href="/ajuda">Central de ajuda</Link>
-            </nav>
-          </div>
-        </div>
         <div className="header-main container">
           <button
             ref={menuButtonRef}
@@ -176,7 +167,7 @@ export function SiteHeader() {
             Início
           </Link>
           {navigation.map(([label, href]) => (
-            <Link className={pathname === href ? "active" : ""} data-accent={href === "/ofertas" ? "true" : undefined} href={href} key={href}>
+            <Link className={pathname === href ? "active" : ""} href={href} key={href}>
               {label}
             </Link>
           ))}
@@ -216,10 +207,6 @@ export function SiteHeader() {
               >
                 <X />
               </button>
-            </div>
-            <div className="mobile-drawer-intro">
-              <span>Explore a curti Z</span>
-              <strong>Seu próximo par começa aqui.</strong>
             </div>
             <nav>
               <Link href="/">Início</Link>

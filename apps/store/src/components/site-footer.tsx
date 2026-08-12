@@ -1,19 +1,8 @@
 import Link from "next/link";
-import { Headphones, PackageCheck, ShieldCheck } from "lucide-react";
 import { BrandLogo } from "./brand-logo";
 import { CookieSettingsButton } from "./cookie-preferences";
 
 const groups = [
-  {
-    title: "Comprar",
-    links: [
-      ["Todos os produtos", "/produtos"],
-      ["Lançamentos", "/lancamentos"],
-      ["Mais vendidos", "/mais-vendidos"],
-      ["Ofertas", "/ofertas"],
-      ["Favoritos", "/favoritos"]
-    ]
-  },
   {
     title: "Institucional",
     links: [
@@ -50,13 +39,6 @@ const groups = [
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div className="footer-trust">
-        <div className="container">
-          <div className="footer-trust-item"><ShieldCheck aria-hidden="true" /><span><strong>Compra protegida</strong>Preço e estoque validados</span></div>
-          <div className="footer-trust-item"><PackageCheck aria-hidden="true" /><span><strong>Acompanhe seus pedidos</strong>Tudo organizado na sua conta</span></div>
-          <div className="footer-trust-item"><Headphones aria-hidden="true" /><span><strong>Atendimento centralizado</strong>Ajuda antes e depois da compra</span></div>
-        </div>
-      </div>
       <div className="container footer-grid">
         <div className="footer-brand">
           <BrandLogo />
