@@ -15,6 +15,8 @@ export type AdminResourceDefinition = {
   singular: string;
   description: string;
   table: string;
+  readPermission: string;
+  writePermission?: string;
   select: string;
   searchColumns: readonly string[];
   fields: readonly AdminResourceField[];
@@ -60,6 +62,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "categoria",
     description: "Organize a navegação, hierarquia e SEO do catálogo.",
     table: "categories",
+    readPermission: "catalog.taxonomy.manage",
+    writePermission: "catalog.taxonomy.manage",
     select: "id,name,slug,description,active,sort_order,seo_title,seo_description,updated_at",
     searchColumns: ["name", "slug"],
     fields: [
@@ -83,6 +87,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "modelo",
     description: "Agrupe produtos que compartilham construção e identidade comercial.",
     table: "product_models",
+    readPermission: "catalog.taxonomy.manage",
+    writePermission: "catalog.taxonomy.manage",
     select: "id,name,slug,description,active,sort_order,updated_at",
     searchColumns: ["name", "slug"],
     fields: [
@@ -104,6 +110,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "coleção",
     description: "Defina agrupamentos editoriais e períodos de publicação.",
     table: "collections",
+    readPermission: "catalog.taxonomy.manage",
+    writePermission: "catalog.taxonomy.manage",
     select: "id,name,slug,description,starts_at,ends_at,active,created_at",
     searchColumns: ["name", "slug"],
     fields: [
@@ -126,6 +134,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "variação",
     description: "Gerencie SKUs, cores, tamanhos e códigos de barras.",
     table: "product_variants",
+    readPermission: "products.read",
+    writePermission: "products.update",
     select: "id,product_id,sku,color_name,color_hex,size,barcode,price_override,active,updated_at",
     searchColumns: ["sku", "color_name", "size", "barcode"],
     fields: [
@@ -150,6 +160,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "mídia",
     description: "Associe imagens otimizadas a produtos e variações.",
     table: "product_images",
+    readPermission: "products.read",
+    writePermission: "products.update",
     select:
       "id,product_id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height,created_at",
     searchColumns: ["storage_path", "alt_text"],
@@ -172,8 +184,9 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "pedido",
     description: "Consulte pedidos sem contornar o fluxo transacional de status.",
     table: "orders",
+    readPermission: "orders.read_all",
     select:
-      "id,public_code,customer_email_snapshot,status,payment_status,shipment_status,grand_total,created_at",
+      "id,public_code,customer_email_snapshot,status,payment_status,grand_total,created_at",
     searchColumns: ["public_code", "customer_email_snapshot"],
     fields: [],
     allowCreate: false,
@@ -185,6 +198,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "cliente",
     description: "Consulte cadastros com dados limitados ao necessário.",
     table: "profiles",
+    readPermission: "users.read",
     select: "id,full_name,email_snapshot,status,created_at,updated_at",
     searchColumns: ["full_name", "email_snapshot"],
     fields: [],
@@ -197,6 +211,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "banner",
     description: "Publique imagens desktop e mobile com destino e agendamento.",
     table: "banners",
+    readPermission: "banners.update",
+    writePermission: "banners.update",
     select:
       "id,internal_title,title,subtitle,description,image_path_desktop,image_path_mobile,alt_text,button_text,destination_type,destination_id,destination_url,open_new_tab,position,status,starts_at,ends_at,sort_order,priority,overlay_color,content_alignment,created_by,updated_by,updated_at",
     searchColumns: ["internal_title", "title", "position", "destination_url"],
@@ -253,6 +269,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "seção",
     description: "Reordene, agende e publique as seções da página inicial.",
     table: "homepage_sections",
+    readPermission: "content.manage",
+    writePermission: "content.manage",
     select:
       "id,section_type,title,subtitle,settings,active,starts_at,ends_at,sort_order,updated_at",
     searchColumns: ["title", "subtitle", "section_type"],
@@ -294,6 +312,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "página",
     description: "Mantenha páginas institucionais e metadados de busca.",
     table: "cms_pages",
+    readPermission: "content.manage",
+    writePermission: "content.manage",
     select: "id,title,slug,summary,status,seo_title,seo_description,revision,updated_at",
     searchColumns: ["title", "slug", "summary"],
     fields: [
@@ -322,6 +342,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "segmento",
     description: "Organize públicos e critérios de comunicação.",
     table: "marketing_segments",
+    readPermission: "content.manage",
+    writePermission: "content.manage",
     select: "id,name,definition,active,created_at",
     searchColumns: ["name"],
     fields: [
@@ -342,6 +364,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "cupom",
     description: "Configure regras comerciais calculadas no servidor.",
     table: "coupons",
+    readPermission: "promotions.advanced_manage",
+    writePermission: "promotions.advanced_manage",
     select:
       "id,code,name,discount_type,discount_value,minimum_order_value,usage_limit,combinable,starts_at,ends_at,active,created_at",
     searchColumns: ["code", "name"],
@@ -376,6 +400,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "kit",
     description: "Gerencie kits comerciais e regras de ativação.",
     table: "kits",
+    readPermission: "representatives.read_all",
+    writePermission: "representatives.rules.manage",
     select:
       "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at",
     searchColumns: ["name", "slug"],
@@ -400,6 +426,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "nível",
     description: "Defina a progressão dos representantes.",
     table: "representative_levels",
+    readPermission: "representatives.read_all",
+    writePermission: "representatives.rules.manage",
     select: "id,name,slug,rank,description,active,updated_at",
     searchColumns: ["name", "slug"],
     fields: [
@@ -421,6 +449,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "meta",
     description: "Acompanhe metas individuais ou por nível.",
     table: "representative_goals",
+    readPermission: "representatives.read_all",
+    writePermission: "representatives.rules.manage",
     select: "id,representative_id,level_id,title,period_start,period_end,target,active,created_at",
     searchColumns: ["title"],
     fields: [
@@ -445,6 +475,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "regra",
     description: "Configure regras versionadas de comissão.",
     table: "commission_rules",
+    readPermission: "representatives.commissions.read_all",
+    writePermission: "representatives.rules.manage",
     select:
       "id,name,version,basis_points,maximum_in_cents,active,effective_from,effective_until,created_at",
     searchColumns: ["name"],
@@ -470,6 +502,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "campanha",
     description: "Planeje campanhas e seu período de veiculação.",
     table: "creative_campaigns",
+    readPermission: "creatives.manage",
+    writePermission: "creatives.manage",
     select: "id,name,slug,description,status,starts_at,ends_at,updated_at",
     searchColumns: ["name", "slug", "description"],
     fields: [
@@ -498,6 +532,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "avaliação",
     description: "Modere avaliações, denúncias, mídias e respostas da curti Z.",
     table: "reviews",
+    readPermission: "reviews.manage",
+    writePermission: "reviews.manage",
     select:
       "id,customer_id,product_id,order_item_id,variant_id,rating,title,content,status,verified_purchase,moderation_reason,brand_response,moderated_by,created_at,edited_at,responded_at",
     searchColumns: ["title", "content"],
@@ -524,6 +560,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "treinamento",
     description: "Publique materiais de capacitação para a rede.",
     table: "training_contents",
+    readPermission: "training.manage",
+    writePermission: "training.manage",
     select: "id,title,description,content_type,storage_path,status,sort_order,updated_at",
     searchColumns: ["title", "description"],
     fields: [
@@ -559,6 +597,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "contrato",
     description: "Acompanhe contratos da rede e seus estados.",
     table: "representative_contracts",
+    readPermission: "representatives.read_all",
     select: "id,representative_id,version,storage_path,accepted_at",
     searchColumns: ["version"],
     fields: [],
@@ -571,6 +610,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     singular: "configuração",
     description: "Mantenha parâmetros não secretos da operação.",
     table: "system_settings",
+    readPermission: "content.manage",
     select: "key,value,is_public,version,updated_at",
     searchColumns: ["key"],
     fields: [],

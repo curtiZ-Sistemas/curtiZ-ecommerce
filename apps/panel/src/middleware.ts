@@ -1,5 +1,6 @@
 import { sharedCookieOptions } from "@curtiz/security/auth-cookie";
 import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
+import { publicCatalogMediaOrigins } from "@/lib/public-media";
 
 import {
   createServerClient,
@@ -28,12 +29,21 @@ export async function middleware(
     }
   })();
 
+  const mediaOrigins = publicCatalogMediaOrigins({
+    storeUrl: storeOrigin,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+  });
+
+  const localDevelopment =
+    process.env.NODE_ENV === "development" ||
+    ["localhost", "127.0.0.1", "::1"].includes(request.nextUrl.hostname);
+
   const csp =
     buildNonceContentSecurityPolicy({
       nonce,
 
       imageSources: [
-        "https://*.supabase.co"
+        ...mediaOrigins
       ],
 
       connectSources: [
@@ -46,8 +56,7 @@ export async function middleware(
           : [])
       ],
 
-      development:
-        process.env.NODE_ENV === "development"
+      development: localDevelopment
     });
 
   const requestHeaders = new Headers(

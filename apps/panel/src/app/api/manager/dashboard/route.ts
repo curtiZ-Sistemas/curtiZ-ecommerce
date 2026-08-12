@@ -125,6 +125,14 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       metrics: metricData,
+      warnings: [
+        products.error ? "produtos" : null,
+        categories.error ? "categorias" : null,
+        models.error ? "modelos" : null,
+        representatives.error ? "representantes" : null,
+        levels.error ? "níveis" : null,
+        campaigns.error ? "campanhas" : null
+      ].filter((item): item is string => item !== null),
       options: {
         products: managerRows(products.data),
         categories: managerRows(categories.data),

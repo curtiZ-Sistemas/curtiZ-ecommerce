@@ -188,15 +188,20 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
       seoTitle: text(product.seo_title),
       seoDescription: text(product.seo_description),
       images: rows(product.product_images)
-        .map((image) => ({
-          id: text(image.id),
-          path: text(image.storage_path),
-          url: mediaUrl(text(image.storage_path)),
-          alt: text(image.alt_text),
-          primary: image.is_primary === true,
-          sortOrder: number(image.sort_order),
-          variantId: text(image.variant_id) || undefined
-        }))
+        .flatMap((image) => {
+          const url = mediaUrl(text(image.storage_path));
+          return url
+            ? [{
+                id: text(image.id),
+                path: text(image.storage_path),
+                url,
+                alt: text(image.alt_text),
+                primary: image.is_primary === true,
+                sortOrder: number(image.sort_order),
+                variantId: text(image.variant_id) || undefined
+              }]
+            : [];
+        })
         .sort((left, right) => Number(right.primary) - Number(left.primary) || left.sortOrder - right.sortOrder),
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
@@ -212,6 +217,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { message: "Acesso não autorizado ou catálogo indisponível." },
       { status: 401, headers: noStore }
+    );
+  }
+
+  const readPermission = await supabase.rpc("has_permission", {
+    permission_code: "products.read"
+  });
+  if (readPermission.error) {
+    logCatalogFailure("authorize_read", readPermission.error);
+    return NextResponse.json(
+      { message: "Não foi possível confirmar a permissão de leitura do catálogo." },
+      { status: 503, headers: noStore }
+    );
+  }
+  if (readPermission.data !== true) {
+    return NextResponse.json(
+      { message: "Você não possui permissão para consultar produtos." },
+      { status: 403, headers: noStore }
+    );
+  }
+
+  const productIdParam = request.nextUrl.searchParams.get("productId");
+  const productId = productIdParam
+    ? z.string().uuid().safeParse(productIdParam)
+    : null;
+  if (productId && !productId.success) {
+    return NextResponse.json(
+      { message: "Identificador de produto inválido." },
+      { status: 400, headers: noStore }
     );
   }
 
@@ -290,6 +323,20 @@ export async function GET(request: NextRequest) {
   };
 
   const loadProducts = async () => {
+    if (productId?.success) {
+      const result = await supabase
+        .from("products")
+        .select(productSelect)
+        .eq("id", productId.data)
+        .maybeSingle();
+      return {
+        data: result.data ? [result.data] : [],
+        error: result.error,
+        total: result.data ? 1 : 0,
+        productNotFound: !result.error && !result.data
+      };
+    }
+
     if (!outOfStock) {
       const from = (page - 1) * pageSize;
       const result = await loadProductRange(from, from + pageSize - 1, true);
@@ -323,17 +370,63 @@ export async function GET(request: NextRequest) {
     };
   };
 
-  const [result, categories, models, collections] = await Promise.all([
+  const [
+    result,
+    categories,
+    models,
+    collections,
+    createPermission,
+    updatePermission,
+    stockPermission,
+    archivePermission
+  ] = await Promise.all([
     loadProducts(),
     supabase.from("categories").select("id,name").order("name"),
     supabase.from("product_models").select("id,name").order("name"),
-    supabase.from("collections").select("id,name").order("name")
+    supabase.from("collections").select("id,name").order("name"),
+    supabase.rpc("has_permission", { permission_code: "products.create" }),
+    supabase.rpc("has_permission", { permission_code: "products.update" }),
+    supabase.rpc("has_permission", { permission_code: "inventory.adjust" }),
+    supabase.rpc("has_permission", { permission_code: "products.archive" })
   ]);
+  const permissionError =
+    createPermission.error ?? updatePermission.error ?? stockPermission.error ?? archivePermission.error;
+  const capabilities = {
+    create:
+      !createPermission.error &&
+      createPermission.data === true &&
+      !updatePermission.error &&
+      updatePermission.data === true,
+    update: !updatePermission.error && updatePermission.data === true,
+    adjustStock: !stockPermission.error && stockPermission.data === true,
+    archive: !archivePermission.error && archivePermission.data === true
+  };
+  const capabilityMessage = permissionError
+    ? "N\u00e3o foi poss\u00edvel confirmar as permiss\u00f5es de altera\u00e7\u00e3o. Atualize a p\u00e1gina."
+    : undefined;
+  if (permissionError) logCatalogFailure("load_capabilities", permissionError);
+
   if (result.error || categories.error) {
-    logCatalogFailure("load_products", result.error ?? categories.error);
+    logCatalogFailure(productId?.success ? "load_product" : "load_products", result.error ?? categories.error);
     return NextResponse.json(
-      { message: "Não foi possível carregar os produtos." },
+      {
+        message: productId?.success
+          ? "Não foi possível carregar o produto."
+          : "Não foi possível carregar os produtos.",
+        capabilities,
+        capabilityMessage
+      },
       { status: 503, headers: noStore }
+    );
+  }
+  if ("productNotFound" in result && result.productNotFound) {
+    return NextResponse.json(
+      {
+        message: "Produto não encontrado.",
+        capabilities,
+        capabilityMessage
+      },
+      { status: 404, headers: noStore }
     );
   }
 
@@ -352,7 +445,9 @@ export async function GET(request: NextRequest) {
         : rows(models.data).map((item) => ({ id: text(item.id), name: text(item.name) })),
       collections: collections.error
         ? []
-        : rows(collections.data).map((item) => ({ id: text(item.id), name: text(item.name) }))
+        : rows(collections.data).map((item) => ({ id: text(item.id), name: text(item.name) })),
+      capabilities,
+      capabilityMessage
     },
     { headers: noStore }
   );
@@ -390,7 +485,7 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
-    const result = await supabase.rpc("admin_set_product_status", {
+    const result = await supabase.rpc("admin_set_product_status_authorized", {
       p_product_id: parsed.data.productId,
       p_status: status,
       p_reason: reason
@@ -399,7 +494,7 @@ export async function PATCH(request: NextRequest) {
       logCatalogFailure("set_product_status", result.error);
       return NextResponse.json(
         { message: "Não foi possível alterar o status do produto." },
-        { status: 409, headers: noStore }
+        { status: result.error?.code === "42501" ? 403 : 409, headers: noStore }
       );
     }
     return NextResponse.json(
@@ -424,7 +519,7 @@ export async function PATCH(request: NextRequest) {
       logCatalogFailure("duplicate_product", result.error);
       return NextResponse.json(
         { message: "Não foi possível duplicar o produto." },
-        { status: 409, headers: noStore }
+        { status: result.error?.code === "42501" ? 403 : 409, headers: noStore }
       );
     }
     return NextResponse.json(
@@ -455,12 +550,12 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
-    const result = await supabase.rpc("admin_save_product", { p_payload: parsed.data });
+    const result = await supabase.rpc("admin_save_product_authorized", { p_payload: parsed.data });
     if (result.error || typeof result.data !== "string") {
       logCatalogFailure("save_product", result.error);
       return NextResponse.json(
         { message: "Não foi possível salvar o produto." },
-        { status: 409, headers: noStore }
+        { status: result.error?.code === "42501" ? 403 : 409, headers: noStore }
       );
     }
     return NextResponse.json(

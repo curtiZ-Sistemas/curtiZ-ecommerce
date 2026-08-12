@@ -194,6 +194,21 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     await act({ action: "publish", reason, ...(scheduledAt ? { scheduledAt } : {}) }, scheduled ? "Publicação agendada." : "Página publicada.");
   };
 
+  if (!loading && !data && error) {
+    return (
+      <section className="panel-card homepage-professional">
+        <header className="homepage-builder-header">
+          <div><p className="eyebrow">Conteúdo</p><h1>Construtor da Página Inicial</h1><p>Monte, revise e publique a home por snapshots atômicos, sem editar código.</p></div>
+        </header>
+        <div className="admin-empty-state" role="alert">
+          <h2>Construtor indisponível</h2>
+          <p>{error}</p>
+          <button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="panel-card homepage-professional">
       <header className="homepage-builder-header">

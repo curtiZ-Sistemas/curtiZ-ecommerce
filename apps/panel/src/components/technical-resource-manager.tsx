@@ -5,6 +5,8 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { technicalResources, type TechnicalColumn, type TechnicalResourceKey } from "@/lib/technical-resources";
 
 type Item = Record<string, unknown>;
+type TechnicalCapabilities = { export: boolean; manageLogs: boolean; manageJobs: boolean; manageWebhooks: boolean; manageFeatures: boolean };
+const noCapabilities: TechnicalCapabilities = { export: false, manageLogs: false, manageJobs: false, manageWebhooks: false, manageFeatures: false };
 type Filters = { q: string; status: string; severity: string; source: string; route: string; from: string; to: string; user: string; request: string };
 
 const initialFilters: Filters = { q: "", status: "", severity: "", source: "", route: "", from: "", to: "", user: "", request: "" };
@@ -60,6 +62,8 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [capabilities, setCapabilities] = useState<TechnicalCapabilities>(noCapabilities);
 
   const parameters = useMemo(() => {
     const params = new URLSearchParams({ page: String(page) });
@@ -69,15 +73,25 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
 
   const load = useCallback(async () => {
     setLoading(true);
-    setMessage("");
+    setLoadError("");
     try {
       const response = await fetch(`/api/technical/resources/${resource}?${parameters}`, { cache: "no-store" });
       const payload: unknown = await response.json();
       if (!response.ok || !isItem(payload)) throw new Error("load_failed");
       setItems(Array.isArray(payload.items) ? payload.items.filter(isItem) : []);
       setTotal(numberValue(payload.total));
+      setCapabilities(isItem(payload.capabilities) ? {
+        export: payload.capabilities.export === true,
+        manageLogs: payload.capabilities.manageLogs === true,
+        manageJobs: payload.capabilities.manageJobs === true,
+        manageWebhooks: payload.capabilities.manageWebhooks === true,
+        manageFeatures: payload.capabilities.manageFeatures === true
+      } : noCapabilities);
     } catch {
-      setMessage("Não foi possível carregar os registros técnicos.");
+      setItems([]);
+      setTotal(0);
+      setCapabilities(noCapabilities);
+      setLoadError("Não foi possível carregar os registros técnicos.");
     } finally {
       setLoading(false);
     }
@@ -125,12 +139,13 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
   const hasRoute = ["logs", "erros", "performance"].includes(resource);
   const hasUser = ["logs", "erros", "seguranca", "acessos-tecnicos", "auditoria-tecnica", "performance"].includes(resource);
   const hasRequest = ["logs", "erros", "seguranca", "acessos-tecnicos", "auditoria-tecnica"].includes(resource);
+  const canAct = actionAllowed(resource, capabilities);
 
   return (
     <section className="panel-card admin-resource technical-resource">
       <header className="admin-resource-header">
         <div><h1>{definition.label}</h1><p>{definition.description}</p></div>
-        {definition.exportAllowed ? <a className="secondary-button" href={`/api/technical/resources/${resource}?${parameters}&format=csv`}><Download aria-hidden="true" /> Exportar sanitizado</a> : null}
+        {capabilities.export ? <a className="secondary-button" href={`/api/technical/resources/${resource}?${parameters}&format=csv`}><Download aria-hidden="true" /> Exportar sanitizado</a> : null}
       </header>
 
       <form className="technical-filters" onSubmit={(event: FormEvent) => { event.preventDefault(); setPage(1); setSubmitted(filters); }}>
@@ -148,15 +163,15 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
       </form>
 
       {message ? <p className="admin-feedback" role="status">{message}</p> : null}
-      {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando</div> : items.length === 0 ? <div className="admin-empty-state"><h3>Nenhum registro encontrado</h3><p>Não há dados reais para os filtros informados.</p></div> : (
+      {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando</div> : loadError ? <div className="admin-empty-state" role="alert"><h3>Consulta técnica indisponível</h3><p>{loadError}</p><button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button></div> : items.length === 0 ? <div className="admin-empty-state"><h3>Nenhum registro encontrado</h3><p>Não há dados reais para os filtros informados.</p></div> : (
         <div className="admin-table-wrap">
           <table className="data-table admin-data-table">
-            <thead><tr>{definition.columns.map((column) => <th key={column.key}>{column.label}</th>)}<th>Detalhes</th>{supportsActions(resource) ? <th>Ações</th> : null}</tr></thead>
+            <thead><tr>{definition.columns.map((column) => <th key={column.key}>{column.label}</th>)}<th>Detalhes</th>{canAct ? <th>Ações</th> : null}</tr></thead>
             <tbody>{items.map((item, index) => (
               <tr key={typeof item.id === "string" ? item.id : typeof item.key === "string" ? item.key : `${resource}-${index}`}>
                 {definition.columns.map((column) => <td key={column.key} data-label={column.label}>{display(item[column.key], column)}</td>)}
                 <td data-label="Detalhes"><TechnicalDetails item={item} /></td>
-                {supportsActions(resource) ? <td data-label="Ações" className="technical-row-actions"><TechnicalActions resource={resource} item={item} disabled={pending} reasonedAction={reasonedAction} resolveEvent={resolveEvent} /></td> : null}
+                {canAct ? <td data-label="Ações" className="technical-row-actions"><TechnicalActions resource={resource} item={item} disabled={pending} reasonedAction={reasonedAction} resolveEvent={resolveEvent} /></td> : null}
               </tr>
             ))}</tbody>
           </table>
@@ -168,8 +183,12 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
   );
 }
 
-function supportsActions(resource: TechnicalResourceKey): boolean {
-  return ["logs", "erros", "webhooks", "filas", "jobs", "falhas", "feature-flags"].includes(resource);
+function actionAllowed(resource: TechnicalResourceKey, capabilities: TechnicalCapabilities): boolean {
+  if (["logs", "erros"].includes(resource)) return capabilities.manageLogs;
+  if (["filas", "jobs", "falhas"].includes(resource)) return capabilities.manageJobs;
+  if (resource === "webhooks") return capabilities.manageWebhooks;
+  if (resource === "feature-flags") return capabilities.manageFeatures;
+  return false;
 }
 
 function TechnicalDetails({ item }: { item: Item }) {

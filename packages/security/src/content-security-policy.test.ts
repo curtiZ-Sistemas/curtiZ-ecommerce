@@ -12,7 +12,19 @@ describe("nonce content security policy", () => {
     expect(scriptDirective).toContain("'nonce-0123456789abcdef0123456789abcdef'");
     expect(scriptDirective).toContain("'strict-dynamic'");
     expect(scriptDirective).not.toContain("'unsafe-inline'");
+    const styleDirective = policy.split("; ").find((part) => part.startsWith("style-src "));
+    expect(styleDirective).not.toContain("'unsafe-inline'");
     expect(policy).toContain("style-src-attr 'unsafe-inline'");
+  });
+
+  it("allows the inline styles required by the local Next.js development runtime only", () => {
+    const policy = buildNonceContentSecurityPolicy({
+      nonce: "0123456789abcdef0123456789abcdef",
+      development: true
+    });
+    const styleDirective = policy.split("; ").find((part) => part.startsWith("style-src "));
+    expect(styleDirective).toContain("'unsafe-inline'");
+    expect(styleDirective).not.toContain("'nonce-");
   });
 
   it("rejects attacker-controlled nonce syntax", () => {

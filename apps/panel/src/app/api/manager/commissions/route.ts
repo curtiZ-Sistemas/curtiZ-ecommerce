@@ -58,9 +58,10 @@ export async function POST(request: NextRequest) {
         });
 
   if (result.error) {
+    const forbidden = result.error.code === "42501";
     return NextResponse.json(
-      { message: "A ação não é permitida para o estado atual do fechamento." },
-      { status: 409, headers: managerNoStore }
+      { message: forbidden ? "Sua permissão não permite esta ação." : "A ação não é permitida para o estado atual do fechamento." },
+      { status: forbidden ? 403 : result.error.code === "P0002" ? 404 : 409, headers: managerNoStore }
     );
   }
 

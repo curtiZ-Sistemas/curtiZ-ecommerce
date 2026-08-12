@@ -15,9 +15,13 @@ describe("admin resources", () => {
     for (const definition of Object.values(adminResources)) {
       expect(definition.table).toMatch(/^[a-z_]+$/);
       expect(definition.select).toContain(definition.table === "system_settings" ? "key" : "id");
+      expect(definition.readPermission).toMatch(/^[a-z_]+(?:\.[a-z_]+)+$/);
       expect(new Set(definition.fields.map((field) => field.key)).size).toBe(
         definition.fields.length
       );
+      if (definition.allowCreate || definition.allowArchive) {
+        expect(definition.writePermission).toMatch(/^[a-z_]+(?:\.[a-z_]+)+$/);
+      }
       if (definition.allowArchive) {
         expect(definition.archiveField).toBeTruthy();
         expect(definition.restoreValue).not.toBeUndefined();
@@ -29,6 +33,11 @@ describe("admin resources", () => {
     expect(adminResources.pedidos.allowCreate).toBe(false);
     expect(adminResources.clientes.allowCreate).toBe(false);
     expect(adminResources.contratos.allowCreate).toBe(false);
+  });
+
+  it("consulta somente colunas reais da tabela de pedidos", () => {
+    expect(adminResources.pedidos.select).toContain("payment_status");
+    expect(adminResources.pedidos.select).not.toContain("shipment_status");
   });
 
   it("mantém arquivamento reversível sem excluir o histórico", () => {

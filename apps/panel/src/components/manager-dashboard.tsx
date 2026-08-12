@@ -30,6 +30,7 @@ type DashboardResponse = {
     regions?: string[];
   };
   message?: string;
+  warnings?: string[];
 };
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -94,6 +95,7 @@ export function ManagerDashboard() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [demo, setDemo] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,7 +112,12 @@ export function ManagerDashboard() {
       setMetrics(isRecord(payload.metrics) ? payload.metrics : {});
       setOptions(payload.options ?? {});
       setDemo(payload.demo === true);
+      setWarnings(Array.isArray(payload.warnings) ? payload.warnings.filter((item): item is string => typeof item === "string") : []);
     } catch {
+      setMetrics({});
+      setOptions({});
+      setDemo(false);
+      setWarnings([]);
       setMessage("Não foi possível carregar os indicadores gerenciais agora.");
     } finally {
       setLoading(false);
@@ -145,6 +152,7 @@ export function ManagerDashboard() {
   const pending = metrics.pending;
   const alerts = metrics.alerts;
   const overview = metrics.overview;
+  const hasLoadError = Boolean(message);
 
   return (
     <div className="manager-dashboard">
@@ -176,34 +184,37 @@ export function ManagerDashboard() {
         </button>
       </form>
 
-      {message ? <p className="admin-feedback" role="alert">{message}</p> : null}
+      {message ? <div className="admin-empty-state" role="alert"><p>{message}</p><button className="secondary-button" type="button" onClick={() => void load()}><RotateCcw aria-hidden="true" /> Tentar novamente</button></div> : null}
       {demo ? <p className="admin-feedback" role="status">Ambiente de demonstração: indicadores financeiros reais não são exibidos.</p> : null}
+      {warnings.length ? <p className="admin-feedback" role="alert">Filtros parcialmente indisponíveis: {warnings.join(", ")}.</p> : null}
 
       <div className="manager-metric-grid" aria-busy={loading}>
-        <ManagerMetric icon={<BadgeDollarSign />} label="Faturamento bruto" value={loading || demo ? "—" : cents(metrics.gross_cents)} detail={trend} />
-        <ManagerMetric icon={<CircleDollarSign />} label="Faturamento líquido" value={loading || demo ? "—" : cents(metrics.net_cents)} detail="Após taxas e custo de frete registrado" />
-        <ManagerMetric icon={<ChartNoAxesCombined />} label="Lucro estimado" value={loading || demo ? "—" : cents(metrics.estimated_profit_cents)} detail="Com custos persistidos nos pedidos" />
-        <ManagerMetric icon={<RotateCcw />} label="Reembolsos" value={loading || demo ? "—" : cents(metrics.refunds_cents)} detail={`${count(alerts, "refunds_in_period")} pedido(s) no período`} />
-        <ManagerMetric icon={<ShoppingBag />} label="Pedidos" value={loading || demo ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${demo ? "—" : cents(metrics.average_ticket_cents)}`} />
+        <ManagerMetric icon={<BadgeDollarSign />} label="Faturamento bruto" value={loading || demo || hasLoadError ? "—" : cents(metrics.gross_cents)} detail={trend} />
+        <ManagerMetric icon={<CircleDollarSign />} label="Faturamento líquido" value={loading || demo || hasLoadError ? "—" : cents(metrics.net_cents)} detail="Após taxas e custo de frete registrado" />
+        <ManagerMetric icon={<ChartNoAxesCombined />} label="Lucro estimado" value={loading || demo || hasLoadError ? "—" : cents(metrics.estimated_profit_cents)} detail="Com custos persistidos nos pedidos" />
+        <ManagerMetric icon={<RotateCcw />} label="Reembolsos" value={loading || demo || hasLoadError ? "—" : cents(metrics.refunds_cents)} detail={hasLoadError ? "Dados indisponíveis" : `${count(alerts, "refunds_in_period")} pedido(s) no período`} />
+        <ManagerMetric icon={<ShoppingBag />} label="Pedidos" value={loading || demo || hasLoadError ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${demo || hasLoadError ? "—" : cents(metrics.average_ticket_cents)}`} />
       </div>
 
       <div className="manager-dashboard-columns">
         <section className="panel-card">
           <h2>Faturamento ao longo do tempo</h2>
-          {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Consolidando dados</div> : <RevenueChart data={series} />}
+          {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Consolidando dados</div> : hasLoadError ? <p className="admin-empty-copy">Série indisponível.</p> : <RevenueChart data={series} />}
         </section>
         <section className="panel-card">
           <h2>Aprovações pendentes</h2>
-          <DashboardLink href="/gerencia/solicitacoes-representantes" label="Representantes" value={count(pending, "applications")} />
-          <DashboardLink href="/gerencia/criativos" label="Criativos" value={count(pending, "creatives")} />
-          <DashboardLink href="/gerencia/campanhas" label="Campanhas" value={count(pending, "campaigns")} />
-          <DashboardLink href="/gerencia/fechamentos" label="Fechamentos" value={count(pending, "closings")} />
+          {hasLoadError ? <p className="admin-empty-copy">Filas indisponíveis.</p> : <>
+            <DashboardLink href="/gerencia/solicitacoes-representantes" label="Representantes" value={count(pending, "applications")} />
+            <DashboardLink href="/gerencia/criativos" label="Criativos" value={count(pending, "creatives")} />
+            <DashboardLink href="/gerencia/campanhas" label="Campanhas" value={count(pending, "campaigns")} />
+            <DashboardLink href="/gerencia/fechamentos" label="Fechamentos" value={count(pending, "closings")} />
+          </>}
         </section>
       </div>
 
       <section className="panel-card manager-overview">
         <h2>Visão estratégica</h2>
-        <div className="manager-overview-grid">
+        {hasLoadError ? <p className="admin-empty-copy">Indicadores estratégicos indisponíveis.</p> : <div className="manager-overview-grid">
           <Overview label="Novos clientes" value={count(overview, "customers")} />
           <Overview label="Representantes ativos" value={count(overview, "active_representatives")} />
           <Overview label="Crescimento da rede" value={count(overview, "network_growth")} detail="novos no período" />
@@ -214,16 +225,16 @@ export function ManagerDashboard() {
           <Overview label="Níveis ativos" value={count(overview, "active_levels")} />
           <Overview label="Campanhas ativas" value={count(overview, "active_campaigns")} />
           <Overview label="Eventos de marketing/home" value={count(overview, "homepage_events")} detail="eventos registrados" />
-        </div>
+        </div>}
       </section>
 
       <section className="panel-card manager-alerts">
         <h2><TriangleAlert aria-hidden="true" /> Alertas gerenciais</h2>
-        <div className="admin-compact-list">
+        {hasLoadError ? <p className="admin-empty-copy">Alertas indisponíveis.</p> : <div className="admin-compact-list">
           <div><span>Divergências de conciliação<small>Registros financeiros ainda não resolvidos</small></span><strong>{count(alerts, "reconciliation_divergences")}</strong></div>
           <div><span>Pagamentos de comissão com falha<small>Exigem conferência antes de nova tentativa</small></span><strong>{count(alerts, "failed_commission_payments")}</strong></div>
           <div><span>Estoque crítico<small>Variações no estoque mínimo ou abaixo dele</small></span><strong>{count(alerts, "critical_stock")}</strong></div>
-        </div>
+        </div>}
       </section>
     </div>
   );

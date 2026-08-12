@@ -37,6 +37,19 @@ type ListResponse = {
   page?: number;
   pageSize?: number;
   message?: string;
+  capabilities?: ResourceCapabilities;
+};
+
+type ResourceCapabilities = {
+  create: boolean;
+  update: boolean;
+  archive: boolean;
+};
+
+const noCapabilities: ResourceCapabilities = {
+  create: false,
+  update: false,
+  archive: false
 };
 
 function isRecord(value: unknown): value is Item {
@@ -50,12 +63,21 @@ function readNumber(value: unknown): number | undefined {
 function parseListResponse(value: unknown): ListResponse {
   if (!isRecord(value)) return {};
 
+  const capabilities = isRecord(value.capabilities)
+    ? {
+        create: value.capabilities.create === true,
+        update: value.capabilities.update === true,
+        archive: value.capabilities.archive === true
+      }
+    : undefined;
+
   return {
     items: Array.isArray(value.items) ? value.items.filter(isRecord) : undefined,
     total: readNumber(value.total),
     page: readNumber(value.page),
     pageSize: readNumber(value.pageSize),
-    message: typeof value.message === "string" ? value.message : undefined
+    message: typeof value.message === "string" ? value.message : undefined,
+    capabilities
   };
 }
 
@@ -209,6 +231,9 @@ export function AdminResourceManager({
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [capabilities, setCapabilities] =
+    useState<ResourceCapabilities>(noCapabilities);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [stateTarget, setStateTarget] = useState<{
@@ -218,7 +243,7 @@ export function AdminResourceManager({
 
   const load = useCallback(async () => {
     setLoading(true);
-    setMessage("");
+    setLoadError("");
 
     const params = new URLSearchParams({
       page: String(page)
@@ -240,9 +265,17 @@ export function AdminResourceManager({
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
+      setCapabilities(result.capabilities ?? noCapabilities);
       setSelectedIds([]);
-    } catch {
-      setMessage("Não foi possível carregar os registros agora.");
+    } catch (error) {
+      setItems([]);
+      setTotal(0);
+      setCapabilities(noCapabilities);
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível carregar os registros agora."
+      );
     } finally {
       setLoading(false);
     }
@@ -267,6 +300,9 @@ export function AdminResourceManager({
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const selectionLabelColumn = columns[0] ?? "id";
+  const canCreate = definition.allowCreate && capabilities.create;
+  const canUpdate = definition.allowCreate && capabilities.update;
+  const canArchive = definition.allowArchive && capabilities.archive;
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -421,7 +457,7 @@ export function AdminResourceManager({
           <p>{definition.description}</p>
         </div>
 
-        {definition.allowCreate ? (
+        {canCreate ? (
           <button
             className="primary-button"
             type="button"
@@ -511,7 +547,7 @@ export function AdminResourceManager({
         </button>
       </div>
 
-      {definition.allowArchive && selectedItems.length > 0 ? (
+      {canArchive && selectedItems.length > 0 ? (
         <div className="admin-bulk-actions" role="toolbar" aria-label="Ações em massa">
           <strong>{selectedItems.length} selecionado(s)</strong>
           <button
@@ -543,11 +579,19 @@ export function AdminResourceManager({
         <div className="admin-loading" role="status">
           <LoaderCircle className="spin" aria-hidden="true" /> Carregando
         </div>
+      ) : loadError ? (
+        <div className="admin-empty-state" role="alert">
+          <h3>Não foi possível carregar os registros</h3>
+          <p>{loadError}</p>
+          <button className="secondary-button" type="button" onClick={() => void load()}>
+            <RefreshCw aria-hidden="true" /> Tentar novamente
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <div className="admin-empty-state">
           <h3>Nenhum registro encontrado</h3>
-          <p>{definition.allowCreate ? `Cadastre ${definition.singular} para começar nesta área.` : "Não há dados reais para os filtros informados."}</p>
-          {definition.allowCreate ? (
+          <p>{canCreate ? `Cadastre ${definition.singular} para começar nesta área.` : "Não há dados reais para os filtros informados."}</p>
+          {canCreate ? (
             <button className="primary-button" type="button" onClick={() => setEditing("new")}>
               <Plus aria-hidden="true" /> {createLabel}
             </button>
@@ -559,7 +603,7 @@ export function AdminResourceManager({
             <table className="data-table admin-data-table">
               <thead>
                 <tr>
-                  {definition.allowArchive ? (
+                  {canArchive ? (
                     <th className="admin-select-cell">
                       <input
                         type="checkbox"
@@ -574,14 +618,16 @@ export function AdminResourceManager({
                   {columns.map((column) => (
                     <th key={column}>{columnLabel(column, definition.fields)}</th>
                   ))}
-                  {definition.fields.length > 0 ? <th>Ações</th> : null}
+                  {definition.fields.length > 0 && (canUpdate || canCreate || canArchive) ? (
+                    <th>Ações</th>
+                  ) : null}
                 </tr>
               </thead>
 
               <tbody>
                 {items.map((item, index) => (
                   <tr key={itemId(item) || `item-${index}`}>
-                    {definition.allowArchive ? (
+                    {canArchive ? (
                       <td className="admin-select-cell" data-label="Selecionar">
                         <input
                           type="checkbox"
@@ -607,17 +653,19 @@ export function AdminResourceManager({
                       </td>
                     ))}
 
-                    {definition.fields.length > 0 ? (
+                    {definition.fields.length > 0 && (canUpdate || canCreate || canArchive) ? (
                       <td className="admin-row-actions">
-                        <button
-                          type="button"
-                          onClick={() => setEditing(item)}
-                          aria-label="Editar"
-                        >
-                          <Pencil />
-                        </button>
+                        {canUpdate ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditing(item)}
+                            aria-label="Editar"
+                          >
+                            <Pencil />
+                          </button>
+                        ) : null}
 
-                        {definition.allowCreate ? (
+                        {canCreate ? (
                           <button
                             type="button"
                             onClick={() => duplicate(item)}
@@ -627,7 +675,7 @@ export function AdminResourceManager({
                           </button>
                         ) : null}
 
-                        {definition.allowArchive && isArchived(item) ? (
+                        {canArchive && isArchived(item) ? (
                           <button
                             type="button"
                             onClick={() => setStateTarget({ items: [item], action: "restore" })}
@@ -635,7 +683,7 @@ export function AdminResourceManager({
                           >
                             <RotateCcw />
                           </button>
-                        ) : definition.allowArchive ? (
+                        ) : canArchive ? (
                           <button
                             type="button"
                             onClick={() => setStateTarget({ items: [item], action: "archive" })}

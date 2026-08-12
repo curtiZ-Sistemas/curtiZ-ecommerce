@@ -179,12 +179,30 @@ export async function GET(
     );
   }
 
+  const [canExport, canManageClosings, canManageRepresentatives, canManageCreatives, canApproveCreatives, canPublishCreatives] =
+    await Promise.all([
+      auth.supabase.rpc("has_permission", { permission_code: "reports.export" }),
+      auth.supabase.rpc("has_permission", { permission_code: "representatives.commissions.close" }),
+      auth.supabase.rpc("has_permission", { permission_code: "representatives.manage" }),
+      auth.supabase.rpc("has_permission", { permission_code: "creatives.manage" }),
+      auth.supabase.rpc("has_permission", { permission_code: "creatives.approve" }),
+      auth.supabase.rpc("has_permission", { permission_code: "creatives.publish" })
+    ]);
+
   return NextResponse.json(
     {
       items: result.data ?? [],
       total: result.count ?? 0,
       page,
-      pageSize
+      pageSize,
+      capabilities: {
+        export: definition.exportAllowed && canExport.data === true && !canExport.error,
+        manageClosings: canManageClosings.data === true && !canManageClosings.error,
+        manageRepresentatives: canManageRepresentatives.data === true && !canManageRepresentatives.error,
+        manageCreatives: canManageCreatives.data === true && !canManageCreatives.error,
+        approveCreatives: canApproveCreatives.data === true && !canApproveCreatives.error,
+        publishCreatives: canPublishCreatives.data === true && !canPublishCreatives.error
+      }
     },
     { headers: managerNoStore }
   );

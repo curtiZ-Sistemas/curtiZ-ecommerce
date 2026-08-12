@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, ShieldCheck } from "lucide-react";
+import { LoaderCircle, RefreshCw, ShieldCheck } from "lucide-react";
 import {
   type FormEvent,
   useCallback,
@@ -50,9 +50,11 @@ export function AdminPermissions() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
 
     try {
       const response = await fetch("/api/admin/permissions", {
@@ -65,9 +67,13 @@ export function AdminPermissions() {
       }
 
       setData(result);
-      setMessage("");
-    } catch {
-      setMessage("Não foi possível carregar as permissões.");
+    } catch (error) {
+      setData({});
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível carregar as permissões."
+      );
     } finally {
       setLoading(false);
     }
@@ -158,6 +164,14 @@ export function AdminPermissions() {
           <div className="admin-loading">
             <LoaderCircle className="spin" /> Carregando
           </div>
+        ) : loadError ? (
+          <div className="admin-empty-state" role="alert">
+            <h3>Não foi possível carregar as permissões</h3>
+            <p>{loadError}</p>
+            <button className="secondary-button" type="button" onClick={() => void load()}>
+              <RefreshCw aria-hidden="true" /> Tentar novamente
+            </button>
+          </div>
         ) : (
           <form
             className="admin-permission-form"
@@ -228,7 +242,9 @@ export function AdminPermissions() {
       <section className="panel-card">
         <h2>Alterações recentes</h2>
 
-        <div className="admin-compact-list">
+        {loadError ? (
+          <p className="admin-empty-copy">Histórico indisponível enquanto a consulta falhar.</p>
+        ) : <div className="admin-compact-list">
           {data.overrides?.length ? (
             data.overrides.map((override, index) => {
               const permission =
@@ -251,7 +267,7 @@ export function AdminPermissions() {
               Nenhuma alteração temporária registrada.
             </p>
           )}
-        </div>
+        </div>}
       </section>
     </div>
   );

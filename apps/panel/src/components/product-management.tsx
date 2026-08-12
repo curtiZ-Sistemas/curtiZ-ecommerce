@@ -15,6 +15,7 @@ import {
   PackagePlus,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Star,
@@ -27,6 +28,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import {
   type EditableVariant,
   generateVariantCombinations,
+  isManagedProduct,
   type ManagedProduct
 } from "@/lib/product-management";
 
@@ -39,6 +41,13 @@ type CatalogResponse = {
   pageSize?: number;
   message?: string;
   productId?: string;
+  capabilities?: {
+    create?: boolean;
+    update?: boolean;
+    adjustStock?: boolean;
+    archive?: boolean;
+  };
+  capabilityMessage?: string;
 };
 
 const formatBRL = (value: number) =>
@@ -83,6 +92,8 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState("");
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [openingProductId, setOpeningProductId] = useState("");
   const [archiveTarget, setArchiveTarget] = useState<ManagedProduct | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
@@ -90,16 +101,24 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
+  const [capabilities, setCapabilities] = useState({
+    create: false,
+    update: false,
+    adjustStock: false,
+    archive: false
+  });
   const [editableVariants, setEditableVariants] = useState<EditableVariant[]>([]);
   const [variantColors, setVariantColors] = useState("");
   const [variantSizes, setVariantSizes] = useState("");
   const [variantSkuPrefix, setVariantSkuPrefix] = useState("");
   const [mediaColors, setMediaColors] = useState<Record<string, string>>( {} );
+  const pendingActionRef = useRef(false);
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
   const reasons = useRef<Record<string, HTMLInputElement | null>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const params = new URLSearchParams({ page: String(page) });
       if (submittedQuery) params.set("q", submittedQuery);
@@ -107,15 +126,32 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
       if (filter === "out") params.set("stock", "out");
       const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
       const result = (await response.json()) as CatalogResponse;
+      setCapabilities({
+        create: result.capabilities?.create === true,
+        update: result.capabilities?.update === true,
+        adjustStock: result.capabilities?.adjustStock === true,
+        archive: result.capabilities?.archive === true
+      });
+      if (result.capabilityMessage) setMessage(result.capabilityMessage);
       if (!response.ok) throw new Error(result.message);
-      setProducts(result.products ?? []);
+      if (!Array.isArray(result.products) || !result.products.every(isManagedProduct)) {
+        throw new Error("O catálogo retornou dados de produto inválidos.");
+      }
+      setProducts(result.products);
       setCategories(result.categories ?? []);
       setModels(result.models ?? []);
       setCollections(result.collections ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
-    } catch {
-      setMessage("Não foi possível carregar os produtos agora.");
+    } catch (error) {
+      setProducts([]);
+      setTotal(0);
+      setCapabilities({ create: false, update: false, adjustStock: false, archive: false });
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível carregar os produtos agora."
+      );
     } finally {
       setLoading(false);
     }
@@ -154,10 +190,38 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const viewCopy = productViewCopy[view];
-  const canCreateProduct = view === "produtos";
+  const canCreateProduct = view === "produtos" && capabilities.create;
+  const canUpdateProduct = capabilities.update;
+  const canAdjustStock = capabilities.adjustStock;
+
+  const openProduct = async (product: ManagedProduct) => {
+    if (openingProductId || pending) return;
+    setOpeningProductId(product.id);
+    setMessage("");
+    try {
+      const params = new URLSearchParams({ productId: product.id });
+      const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
+      const result = (await response.json()) as CatalogResponse;
+      const selected = result.products?.[0];
+      if (!response.ok || !isManagedProduct(selected)) {
+        setMessage(result.message ?? "Produto não encontrado.");
+        return;
+      }
+      setEditing(selected);
+    } catch (error) {
+      setMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível abrir o produto agora."
+      );
+    } finally {
+      setOpeningProductId("");
+    }
+  };
 
   const execute = async (body: Record<string, unknown>, key: string) => {
-    if (pending) return false;
+    if (pendingActionRef.current) return false;
+    pendingActionRef.current = true;
     setPending(key);
     setMessage("");
     try {
@@ -174,6 +238,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
       setMessage("Não foi possível concluir a alteração agora.");
       return false;
     } finally {
+      pendingActionRef.current = false;
       setPending("");
     }
   };
@@ -292,7 +357,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
   };
 
   const deleteMedia = async (imageId: string) => {
-    if (pending) return;
+    if (pending || !window.confirm("Remover esta imagem do produto?")) return;
     setPending(`image-${imageId}`);
     try {
       const response = await fetch("/api/catalog/products/media", {
@@ -303,6 +368,8 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
       const result = (await response.json()) as CatalogResponse;
       setMessage(result.message ?? (response.ok ? "Imagem removida." : "Falha ao remover imagem."));
       if (response.ok) await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível remover a imagem.");
     } finally {
       setPending("");
     }
@@ -321,6 +388,8 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
       const result = (await response.json()) as CatalogResponse;
       setMessage(result.message ?? (response.ok ? "Mídia atualizada." : "Falha ao atualizar mídia."));
       if (response.ok) await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar a mídia.");
     } finally {
       setPending("");
     }
@@ -335,7 +404,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? <button className="primary-button" type="button" onClick={() => setEditing("new")}>
-            <Plus /> Adicionar produto
+            <Plus /> Cadastrar produto
           </button> : null}
         </div>
       </div>
@@ -431,13 +500,22 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
           <LoaderCircle className="spin" />
           <strong>Carregando produtos</strong>
         </div>
+      ) : loadError ? (
+        <div className="operational-empty" role="alert">
+          <Boxes />
+          <strong>Não foi possível carregar os produtos</strong>
+          <span>{loadError}</span>
+          <button className="secondary-button" type="button" onClick={() => void load()}>
+            <RefreshCw aria-hidden="true" /> Tentar novamente
+          </button>
+        </div>
       ) : products.length === 0 ? (
         <div className="operational-empty">
           <Boxes />
           <strong>Nenhum produto encontrado</strong>
           <span>{canCreateProduct ? "Cadastre um produto ou limpe os filtros para visualizar o catálogo." : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}</span>
           {canCreateProduct ? <button className="primary-button" type="button" onClick={() => setEditing("new")}>
-            <Plus /> Adicionar produto
+            <Plus /> Cadastrar produto
           </button> : null}
         </div>
       ) : (
@@ -446,7 +524,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
             <article className="managed-product" key={product.id}>
               <header>
                 <div className="managed-product-identity">
-                  {product.images?.[0] ? (
+                  {product.images?.[0]?.url ? (
                     <Image
                       className="managed-product-thumbnail"
                       src={product.images[0].url}
@@ -472,24 +550,24 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                   <span>em estoque</span>
                 </div>
                 <div className="managed-product-actions">
-                  <button
+                  {canUpdateProduct ? <button
                     className="primary-button"
                     type="button"
-                    onClick={() => setEditing(product)}
-                    disabled={Boolean(pending)}
+                    onClick={() => void openProduct(product)}
+                    disabled={Boolean(pending) || Boolean(openingProductId)}
                   >
-                    <Pencil /> {view === "variacoes" ? "Editar variações" : view === "midias" ? "Gerenciar mídias" : view === "estoque" ? "Editar cadastro" : "Editar"}
-                  </button>
-                  <details className="product-action-menu">
+                    {openingProductId === product.id ? <LoaderCircle className="spin" /> : <Pencil />} {view === "variacoes" ? "Editar variações" : view === "midias" ? "Gerenciar mídias" : view === "estoque" ? "Editar cadastro" : "Editar"}
+                  </button> : null}
+                  {canUpdateProduct ? <details className="product-action-menu">
                     <summary className="secondary-button"><MoreHorizontal /> Mais ações</summary>
                     <div>
-                      <button
+                      {capabilities.create ? <button
                         type="button"
                         onClick={() => setDuplicateTarget(product)}
                         disabled={Boolean(pending)}
                       >
                         <Copy /> Duplicar
-                      </button>
+                      </button> : null}
                       {product.status === "active" ? (
                         <button
                           type="button"
@@ -515,7 +593,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                           <Eye /> Publicar
                         </button>
                       )}
-                      {product.status !== "archived" && (
+                      {product.status !== "archived" && capabilities.archive && (
                         <button
                           className="danger-action"
                           type="button"
@@ -529,7 +607,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                         </button>
                       )}
                     </div>
-                  </details>
+                  </details> : null}
                 </div>
               </header>
                 <details className="managed-product-details" open={view !== "produtos" ? true : undefined}>
@@ -554,7 +632,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                     <span>
                       Reservado: <strong>{variant.reserved}</strong>
                     </span>
-                    {view !== "variacoes" ? <label>
+                    {view !== "variacoes" && canAdjustStock ? <label>
                       <span>Adicionar</span>
                       <input
                         ref={(element) => {
@@ -568,7 +646,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                         aria-label={`Quantidade para ${variant.sku}`}
                       />
                     </label> : null}
-                    {view !== "variacoes" ? <label className="restock-reason">
+                    {view !== "variacoes" && canAdjustStock ? <label className="restock-reason">
                       <span>Motivo da reposição</span>
                       <input
                         ref={(element) => {
@@ -581,7 +659,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                         aria-label={`Motivo da reposição de ${variant.sku}`}
                       />
                     </label> : null}
-                    {view !== "variacoes" ? <button
+                    {view !== "variacoes" && canAdjustStock ? <button
                       className="primary-button"
                       type="button"
                       disabled={
@@ -620,7 +698,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
               {view !== "variacoes" && view !== "estoque" ? <section className="managed-product-media" aria-label={`Mídias de ${product.name}`}>
                 <header>
                   <div><ImageIcon /><strong>Fotos</strong><span>Envie várias imagens e associe-as à cor selecionada.</span></div>
-                  <select
+                  {canUpdateProduct ? <><select
                     aria-label={`Cor das novas imagens de ${product.name}`}
                     value={mediaColors[product.id] ?? ""}
                     onChange={(event) => setMediaColors((current) => ({ ...current, [product.id]: event.target.value }))}
@@ -631,18 +709,18 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                   <label className="secondary-button product-media-upload">
                     <Upload /> {pending === `media-${product.id}` ? "Enviando…" : "Enviar imagens"}
                     <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={Boolean(pending)} onChange={(event) => void uploadMedia(product, event.target.files)} />
-                  </label>
+                  </label></> : null}
                 </header>
                 {product.images?.length ? <div className="managed-media-grid">{product.images.map((media) => (
                   <figure key={media.id}>
                     <Image src={media.url} alt={media.alt} width={120} height={120} unoptimized />
                     <figcaption>{media.primary ? "Principal" : `Ordem ${media.sortOrder + 1}`}</figcaption>
-                    <div className="managed-media-actions">
+                    {canUpdateProduct ? <div className="managed-media-actions">
                       {!media.primary && <button type="button" aria-label={`Definir ${media.alt} como principal`} disabled={Boolean(pending)} onClick={() => void updateMedia({ action: "primary", imageId: media.id })}><Star /></button>}
                       <button type="button" aria-label={`Mover ${media.alt} para antes`} disabled={Boolean(pending)} onClick={() => void updateMedia({ action: "move", imageId: media.id, direction: "before" })}><ChevronLeft /></button>
                       <button type="button" aria-label={`Mover ${media.alt} para depois`} disabled={Boolean(pending)} onClick={() => void updateMedia({ action: "move", imageId: media.id, direction: "after" })}><ChevronRight /></button>
                       <button type="button" aria-label={`Remover ${media.alt}`} disabled={Boolean(pending)} onClick={() => void deleteMedia(media.id)}><Trash2 /></button>
-                    </div>
+                    </div> : null}
                   </figure>
                 ))}</div> : <p>Nenhuma imagem enviada.</p>}
               </section> : null}
@@ -847,7 +925,9 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                     <option value="inactive">Inativo</option>
                     <option value="out_of_stock">Sem estoque</option>
                     <option value="rejected">Rejeitado</option>
-                    <option value="archived">Arquivado</option>
+                    {capabilities.archive || (editing !== "new" && editing.status === "archived") ? (
+                      <option value="archived">Arquivado</option>
+                    ) : null}
                   </select>
                 </label>
                 <label className="wide">
@@ -910,7 +990,7 @@ export function ProductManagement({ view = "produtos", initialQuery = "" }: { vi
                       <label><span>Cor visual</span><input type="color" value={variant.colorHex || "#000000"} onChange={(event) => updateEditableVariant(index, { colorHex: event.target.value })} /></label>
                       <label><span>Tamanho *</span><input required value={variant.size} onChange={(event) => updateEditableVariant(index, { size: event.target.value })} /></label>
                       <label><span>Preço próprio (R$)</span><input type="number" min="0" step="0.01" value={variant.priceInCents === null ? "" : variant.priceInCents / 100} onChange={(event) => updateEditableVariant(index, { priceInCents: event.target.value ? Math.round(Number(event.target.value) * 100) : null })} /></label>
-                      <label><span>Estoque disponível *</span><input required type="number" min="0" step="1" value={variant.stock} onChange={(event) => updateEditableVariant(index, { stock: Math.max(0, Number(event.target.value) || 0) })} /></label>
+                      <label><span>Estoque disponível *</span><input required disabled={!canAdjustStock} type="number" min="0" step="1" value={variant.stock} onChange={(event) => updateEditableVariant(index, { stock: Math.max(0, Number(event.target.value) || 0) })} /></label>
                       <label className="admin-checkbox"><input type="checkbox" checked={variant.active} onChange={(event) => updateEditableVariant(index, { active: event.target.checked })} /><span>Ativa</span></label>
                       <button className="icon-button danger-button" type="button" aria-label={`Remover ${variant.sku}`} onClick={() => setEditableVariants((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 /></button>
                     </article>

@@ -151,23 +151,39 @@ export async function GET(request: NextRequest) {
   const serviceNames = new Set(environmentServices.map((service) => service.name.toLocaleLowerCase("pt-BR")));
   const services = [...environmentServices, ...persistedServices.filter((service) => !serviceNames.has(service.name.toLocaleLowerCase("pt-BR")))];
   const storageData: unknown = storage.data;
+  const unavailable = [
+    integrations.error ? "integrações" : null,
+    recentErrors.error ? "erros recentes" : null,
+    openErrors.error ? "erros abertos" : null,
+    pendingJobs.error ? "jobs pendentes" : null,
+    runningJobs.error ? "jobs em execução" : null,
+    failedJobs.error ? "jobs falhos" : null,
+    failedWebhooks.error ? "webhooks" : null,
+    securityEvents.error ? "eventos de segurança" : null,
+    flags.error ? "feature flags" : null,
+    storage.error ? "storage" : null,
+    database.error ? "banco" : null
+  ].filter((item): item is string => item !== null);
 
   return NextResponse.json(
     {
       services: sanitizeTechnicalValue(services),
+      unavailable,
       metrics: {
-        recentErrors: recentErrors.count ?? 0,
-        openErrors: openErrors.count ?? 0,
-        pendingJobs: pendingJobs.count ?? 0,
-        runningJobs: runningJobs.count ?? 0,
-        failedJobs: failedJobs.count ?? 0,
-        failedWebhooks: failedWebhooks.count ?? 0,
-        recentSecurityEvents: securityEvents.count ?? 0,
-        featureFlags: flags.count ?? 0,
-        enabledFeatureFlags: technicalRows(flags.data).filter((item) => item.enabled === true).length
+        recentErrors: recentErrors.error ? null : recentErrors.count ?? 0,
+        openErrors: openErrors.error ? null : openErrors.count ?? 0,
+        pendingJobs: pendingJobs.error ? null : pendingJobs.count ?? 0,
+        runningJobs: runningJobs.error ? null : runningJobs.count ?? 0,
+        failedJobs: failedJobs.error ? null : failedJobs.count ?? 0,
+        failedWebhooks: failedWebhooks.error ? null : failedWebhooks.count ?? 0,
+        recentSecurityEvents: securityEvents.error ? null : securityEvents.count ?? 0,
+        featureFlags: flags.error ? null : flags.count ?? 0,
+        enabledFeatureFlags: flags.error
+          ? null
+          : technicalRows(flags.data).filter((item) => item.enabled === true).length
       },
-      storage: sanitizeTechnicalValue(storageData),
-      database: sanitizeTechnicalValue(database.data),
+      storage: storage.error ? null : sanitizeTechnicalValue(storageData),
+      database: database.error ? null : sanitizeTechnicalValue(database.data),
       runtime: {
         environment: process.env.APP_ENV ?? "não configurado",
         version: process.env.APP_VERSION ?? "não configurada",

@@ -25,6 +25,31 @@ const stateActionSchema = z.object({
   reason: z.string().trim().min(3).max(1000).optional()
 });
 
+type AdminClient = NonNullable<
+  Awaited<ReturnType<typeof authorizeAdminRequest>>
+>["supabase"];
+
+async function permissionGranted(supabase: AdminClient, permissionCode: string) {
+  const result = await supabase.rpc("has_permission", {
+    permission_code: permissionCode
+  });
+  return { allowed: result.data === true, error: result.error };
+}
+
+function forbiddenPermissionResponse() {
+  return NextResponse.json(
+    { message: "Sua permissÃ£o nÃ£o permite esta operaÃ§Ã£o." },
+    { status: 403, headers: privateNoStore }
+  );
+}
+
+function permissionCheckFailureResponse() {
+  return NextResponse.json(
+    { message: "NÃ£o foi possÃ­vel confirmar suas permissÃµes agora." },
+    { status: 503, headers: privateNoStore }
+  );
+}
+
 function cleanSearch(value: string): string {
   return value
     .replaceAll(/[^\p{L}\p{N}\s@.+-]/gu, " ")
@@ -37,6 +62,21 @@ function primitiveToString(value: unknown): string | null {
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return null;
+}
+
+function logResourceQueryFailure(
+  resource: string,
+  table: string,
+  error: { code?: string; message?: string; details?: string } | null
+): void {
+  console.error("[panel-admin-resource-api] query failed", {
+    requestId: crypto.randomUUID(),
+    resource,
+    table,
+    code: error?.code ?? "unknown",
+    message: error?.message?.slice(0, 180) ?? "unknown",
+    details: error?.details?.slice(0, 180) ?? undefined
+  });
 }
 
 function normalizeValues(
@@ -241,6 +281,17 @@ export async function GET(
 
   if (!context.auth) return unauthorizedAdminResponse();
 
+  const [readPermission, writePermission] = await Promise.all([
+    permissionGranted(context.auth.supabase, context.definition.readPermission),
+    context.definition.writePermission
+      ? permissionGranted(context.auth.supabase, context.definition.writePermission)
+      : Promise.resolve({ allowed: false, error: null })
+  ]);
+  if (readPermission.error || writePermission.error) {
+    return permissionCheckFailureResponse();
+  }
+  if (!readPermission.allowed) return forbiddenPermissionResponse();
+
   const page = Math.max(
     1,
     Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
@@ -281,6 +332,11 @@ export async function GET(
     .range(from, to);
 
   if (result.error) {
+    logResourceQueryFailure(
+      context.resource,
+      context.definition.table,
+      result.error
+    );
     return NextResponse.json(
       { message: "Não foi possível carregar os registros desta área." },
       { status: 503, headers: privateNoStore }
@@ -292,7 +348,12 @@ export async function GET(
       items: result.data ?? [],
       total: result.count ?? 0,
       page,
-      pageSize
+      pageSize,
+      capabilities: {
+        create: context.definition.allowCreate && writePermission.allowed,
+        update: context.definition.allowCreate && writePermission.allowed,
+        archive: context.definition.allowArchive && writePermission.allowed
+      }
     },
     { headers: privateNoStore }
   );
@@ -319,6 +380,19 @@ export async function POST(
   }
 
   if (!context.auth) return unauthorizedAdminResponse();
+
+  if (!context.definition.writePermission) {
+    return NextResponse.json(
+      { message: "Esta Ã¡rea Ã© somente leitura." },
+      { status: 405, headers: privateNoStore }
+    );
+  }
+  const writePermission = await permissionGranted(
+    context.auth.supabase,
+    context.definition.writePermission
+  );
+  if (writePermission.error) return permissionCheckFailureResponse();
+  if (!writePermission.allowed) return forbiddenPermissionResponse();
 
   if (!context.definition.allowCreate) {
     return NextResponse.json(
@@ -411,6 +485,19 @@ export async function PATCH(
   }
 
   if (!context.auth) return unauthorizedAdminResponse();
+
+  if (!context.definition.writePermission) {
+    return NextResponse.json(
+      { message: "Esta Ã¡rea Ã© somente leitura." },
+      { status: 405, headers: privateNoStore }
+    );
+  }
+  const writePermission = await permissionGranted(
+    context.auth.supabase,
+    context.definition.writePermission
+  );
+  if (writePermission.error) return permissionCheckFailureResponse();
+  if (!writePermission.allowed) return forbiddenPermissionResponse();
 
   const body: unknown = await request.json().catch(() => null);
   const stateAction = stateActionSchema.safeParse(body);
@@ -558,6 +645,19 @@ export async function DELETE(
   }
 
   if (!context.auth) return unauthorizedAdminResponse();
+
+  if (!context.definition.writePermission) {
+    return NextResponse.json(
+      { message: "Esta Ã¡rea Ã© somente leitura." },
+      { status: 405, headers: privateNoStore }
+    );
+  }
+  const writePermission = await permissionGranted(
+    context.auth.supabase,
+    context.definition.writePermission
+  );
+  if (writePermission.error) return permissionCheckFailureResponse();
+  if (!writePermission.allowed) return forbiddenPermissionResponse();
 
   if (
     !context.definition.allowArchive ||

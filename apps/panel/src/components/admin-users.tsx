@@ -5,6 +5,8 @@ import {
   ChevronRight,
   LoaderCircle,
   Pencil,
+  Plus,
+  RefreshCw,
   Search,
   ShieldAlert,
   X
@@ -30,6 +32,7 @@ type UsersResponse = {
   total?: number;
   pageSize?: number;
   message?: string;
+  capabilities?: { manage?: boolean; invite?: boolean };
 };
 
 const accessDate = new Intl.DateTimeFormat("pt-BR", {
@@ -46,12 +49,16 @@ export function AdminUsers() {
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState(20);
   const [editing, setEditing] = useState<User | null>(null);
+  const [inviting, setInviting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [capabilities, setCapabilities] = useState({ manage: false, invite: false });
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const params = new URLSearchParams({ page: String(page) });
       if (submitted) params.set("q", submitted);
@@ -61,9 +68,19 @@ export function AdminUsers() {
       setUsers(result.users ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
-      setMessage("");
-    } catch {
-      setMessage("Não foi possível carregar os usuários.");
+      setCapabilities({
+        manage: result.capabilities?.manage === true,
+        invite: result.capabilities?.invite === true
+      });
+    } catch (error) {
+      setUsers([]);
+      setTotal(0);
+      setCapabilities({ manage: false, invite: false });
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível carregar os usuários."
+      );
     } finally {
       setLoading(false);
     }
@@ -106,6 +123,35 @@ export function AdminUsers() {
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
+  const invite = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fullName: form.get("fullName"),
+          email: form.get("email"),
+          role: form.get("role"),
+          reason: form.get("reason")
+        })
+      });
+      const result = (await response.json()) as UsersResponse;
+      if (!response.ok) throw new Error(result.message);
+      setInviting(false);
+      await load();
+      setMessage(result.message ?? "Convite enviado.");
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível enviar o convite.");
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <section className="panel-card admin-resource">
       <header className="admin-resource-header">
@@ -113,6 +159,7 @@ export function AdminUsers() {
           <h1>Usuários</h1>
           <p>Consulte acessos, bloqueie contas e atribua papéis sem escalada para Administrador.</p>
         </div>
+        {capabilities.invite ? <button className="primary-button" type="button" onClick={() => setInviting(true)}><Plus aria-hidden="true" /> Novo usuário</button> : null}
       </header>
       <form
         className="admin-search standalone"
@@ -149,6 +196,14 @@ export function AdminUsers() {
       {loading ? (
         <div className="admin-loading">
           <LoaderCircle className="spin" /> Carregando usuários
+        </div>
+      ) : loadError ? (
+        <div className="admin-empty-state" role="alert">
+          <h3>Não foi possível carregar os usuários</h3>
+          <p>{loadError}</p>
+          <button className="secondary-button" type="button" onClick={() => void load()}>
+            <RefreshCw aria-hidden="true" /> Tentar novamente
+          </button>
         </div>
       ) : users.length === 0 ? (
         <div className="admin-empty-state">
@@ -302,6 +357,23 @@ export function AdminUsers() {
           </section>
         </div>
       )}
+      {inviting ? (
+        <div className="admin-modal-backdrop">
+          <section className="admin-modal compact" role="dialog" aria-modal="true" aria-labelledby="invite-user-title">
+            <header><div><span>Acesso interno</span><h2 id="invite-user-title">Convidar usuário</h2></div><button type="button" onClick={() => setInviting(false)} aria-label="Fechar"><X /></button></header>
+            <form onSubmit={(event) => void invite(event)}>
+              <p className="admin-access-alert"><ShieldAlert /> O convite nunca concede acesso de Administrador.</p>
+              <div className="admin-form-grid">
+                <label className="wide"><span>Nome completo *</span><input name="fullName" minLength={3} maxLength={120} required /></label>
+                <label className="wide"><span>E-mail *</span><input name="email" type="email" autoComplete="email" maxLength={254} required /></label>
+                <label><span>Papel *</span><select name="role" defaultValue="operational"><option value="operational">Operacional</option><option value="manager">Gerência</option><option value="technical">Técnico</option></select></label>
+                <label className="wide"><span>Justificativa *</span><textarea name="reason" minLength={10} maxLength={500} required rows={4} /></label>
+              </div>
+              <footer><button className="secondary-button" type="button" onClick={() => setInviting(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={pending}>{pending ? <LoaderCircle className="spin" /> : <Plus />} Enviar convite</button></footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -38,6 +38,15 @@ type MetricName =
   | "support"
   | "pendingTasks";
 type OperationMetrics = Record<MetricName, number>;
+type OperationCapabilities = {
+  executeTasks: boolean;
+  fulfillKits: boolean;
+  createOccurrences: boolean;
+  resolveOccurrences: boolean;
+  requestAdjustments: boolean;
+  inspectReturns: boolean;
+  addOrderNotes: boolean;
+};
 type OperationItem = {
   id: string;
   productName: string;
@@ -147,6 +156,8 @@ type OperationsResponse = {
   ok: boolean;
   demo: boolean;
   message?: string;
+  warning?: string;
+  capabilities: OperationCapabilities;
   metrics: OperationMetrics;
   orders: OperationOrder[];
   tasks: OperationTask[];
@@ -207,9 +218,10 @@ const emptyMetrics: OperationMetrics = {
   pendingTasks: 0
 };
 const emptyResponse: OperationsResponse = {
-  ok: true,
+  ok: false,
   demo: false,
   metrics: emptyMetrics,
+  capabilities: { executeTasks: false, fulfillKits: false, createOccurrences: false, resolveOccurrences: false, requestAdjustments: false, inspectReturns: false, addOrderNotes: false },
   orders: [],
   tasks: [],
   inventory: [],
@@ -223,14 +235,14 @@ const emptyResponse: OperationsResponse = {
   pagination: { page: 1, pageSize: 20, total: 0 }
 };
 
-export function OperationalConsole({ section, initialQuery = "" }: { section: string; initialQuery?: string }) {
+export function OperationalConsole({ section, initialQuery = "", initialStatus = "" }: { section: string; initialQuery?: string; initialStatus?: string }) {
   const [data, setData] = useState<OperationsResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState(initialQuery);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(initialStatus);
   const [page, setPage] = useState(1);
 
   const load = useCallback(
@@ -250,7 +262,9 @@ export function OperationalConsole({ section, initialQuery = "" }: { section: st
           throw new Error(result.message ?? "Não foi possível carregar a operação.");
         }
         setData(result);
+        setError(result.warning ?? "");
       } catch (reason) {
+        setData(emptyResponse);
         setError(reason instanceof Error ? reason.message : "Falha inesperada.");
       } finally {
         setLoading(false);
@@ -261,6 +275,7 @@ export function OperationalConsole({ section, initialQuery = "" }: { section: st
 
   useEffect(() => {
     setPage(1);
+    setData(emptyResponse);
     void load(1);
   }, [section]);
 
@@ -327,6 +342,7 @@ export function OperationalConsole({ section, initialQuery = "" }: { section: st
             setPage(next);
             void load(next);
           }}
+          capabilities={data.capabilities}
         />
       ) : (
         <Dashboard metrics={data.metrics} data={data} />
@@ -342,7 +358,7 @@ function Dashboard({ metrics, data }: { metrics: OperationMetrics; data: Operati
     ["Aguardando separação", metrics.waitingSeparation, "separacao", ClipboardCheck],
     ["Aguardando envio", metrics.waitingShipping, "envio", Truck],
     ["Kits pendentes", metrics.pendingKits, "montagem-kits", PackageCheck],
-    ["Estoque crítico", metrics.criticalStock, "estoque?status=critical", Boxes],
+    ["Estoque crítico", metrics.criticalStock, "reposicao", Boxes],
     ["Trocas", metrics.exchanges, "trocas", RotateCcw],
     ["Devoluções", metrics.returns, "devolucoes", RotateCcw],
     ["Ocorrências", metrics.occurrences, "ocorrencias", ShieldAlert],
@@ -414,7 +430,8 @@ function Section({
   setStatus,
   search,
   run,
-  changePage
+  changePage,
+  capabilities
 }: {
   section: string;
   data: OperationsResponse;
@@ -426,6 +443,7 @@ function Section({
   search: () => void;
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   changePage: (page: number) => void;
+  capabilities: OperationCapabilities;
 }) {
   if (["pedidos"].includes(section)) {
     return (
@@ -440,6 +458,7 @@ function Section({
         run={run}
         pagination={data.pagination}
         changePage={changePage}
+        capabilities={capabilities}
       />
     );
   }
@@ -455,6 +474,7 @@ function Section({
           tasks={data.tasks.filter((task) => task.taskType === taskType)}
           run={run}
           processing={processing}
+          canExecute={capabilities.executeTasks}
         />
         <Pagination pagination={data.pagination} changePage={changePage} />
       </>
@@ -474,21 +494,22 @@ function Section({
         adjustments={data.adjustments}
         run={run}
         processing={processing}
+        canRequest={capabilities.requestAdjustments}
       />
     );
   }
   if (["kits", "montagem-kits"].includes(section)) {
-    return <Kits kits={data.kitOrders} run={run} processing={processing} />;
+    return <Kits kits={data.kitOrders} run={run} processing={processing} canExecute={capabilities.executeTasks && capabilities.fulfillKits} />;
   }
   if (["trocas", "devolucoes"].includes(section)) {
     const list =
       section === "trocas"
         ? data.returns.filter((item) => item.requestedResolution === "exchange")
         : data.returns;
-    return <Returns records={list} run={run} processing={processing} />;
+    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} />;
   }
   if (section === "ocorrencias") {
-    return <Occurrences occurrences={data.occurrences} run={run} processing={processing} />;
+    return <Occurrences occurrences={data.occurrences} run={run} processing={processing} canCreate={capabilities.createOccurrences} canResolve={capabilities.resolveOccurrences} />;
   }
   if (section === "notas-fiscais") return <Invoices invoices={data.invoices} />;
   if (section === "representantes") return <Representatives representatives={data.representatives} />;
@@ -496,7 +517,7 @@ function Section({
     return (
       <>
         <SectionHeading title="Pendências operacionais" description="Tarefas bloqueadas, atrasadas e ocorrências abertas." />
-        <TaskList tasks={data.tasks.filter((task) => task.status !== "completed")} run={run} processing={processing} />
+        <TaskList tasks={data.tasks.filter((task) => task.status !== "completed")} run={run} processing={processing} canExecute={capabilities.executeTasks} />
         <OccurrenceList occurrences={data.occurrences.filter((item) => !["resolved", "rejected"].includes(item.status))} />
       </>
     );
@@ -523,7 +544,8 @@ function Orders({
   search,
   run,
   pagination,
-  changePage
+  changePage,
+  capabilities
 }: {
   orders: OperationOrder[];
   query: string;
@@ -535,6 +557,7 @@ function Orders({
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   pagination: OperationsResponse["pagination"];
   changePage: (page: number) => void;
+  capabilities: OperationCapabilities;
 }) {
   const [selected, setSelected] = useState("");
   const selectedOrder = orders.find((order) => order.id === selected) ?? null;
@@ -568,12 +591,12 @@ function Orders({
               </span>
               <div className="operational-actions">
                 <button className="secondary-button" onClick={() => setSelected(order.id)}>Detalhes</button>
-                {order.paymentConfirmed && ["payment_approved", "processing", "picking"].includes(order.status) && (
+                {capabilities.executeTasks && order.paymentConfirmed && ["payment_approved", "processing", "picking"].includes(order.status) && (
                   <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_separation", orderId: order.id }, "Separação iniciada.")}>
                     <ClipboardCheck /> Separar
                   </button>
                 )}
-                {order.status === "ready_to_ship" && (
+                {capabilities.executeTasks && order.status === "ready_to_ship" && (
                   <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_dispatch", orderId: order.id, taskType: "expedition" }, "Expedição iniciada.")}>
                     <Truck /> Expedir
                   </button>
@@ -584,7 +607,7 @@ function Orders({
         </div>
       ) : <Empty icon={Inbox} title="Nenhum pedido encontrado" />}
       <Pagination pagination={pagination} changePage={changePage} />
-      {selectedOrder && <OrderDetail order={selectedOrder} close={() => setSelected("")} run={run} />}
+      {selectedOrder && <OrderDetail order={selectedOrder} close={() => setSelected("")} run={run} canAddNote={capabilities.addOrderNotes} />}
     </>
   );
 }
@@ -592,11 +615,13 @@ function Orders({
 function OrderDetail({
   order,
   close,
-  run
+  run,
+  canAddNote
 }: {
   order: OperationOrder;
   close: () => void;
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  canAddNote: boolean;
 }) {
   const note = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -616,10 +641,10 @@ function OrderDetail({
         <div><h3>Envio</h3>{order.shipments.length ? order.shipments.map((shipment) => <p key={shipment.id}>{shipment.provider} · {shipment.service} · {label(shipment.status)} {shipment.trackingCode ? `· ${shipment.trackingCode}` : ""}</p>) : <p>Remessa ainda não criada.</p>}</div>
         <div><h3>Histórico</h3>{order.history.length ? order.history.slice(0, 8).map((entry) => <p key={`${entry.createdAt}-${entry.status}`}>{formatDateTime(entry.createdAt)} · {label(entry.status)} · {entry.reason}</p>) : <p>Sem movimentações.</p>}</div>
       </div>
-      <form className="operational-note-form" onSubmit={(event) => void note(event)}>
+      {canAddNote ? <form className="operational-note-form" onSubmit={(event) => void note(event)}>
         <label>Observação operacional<textarea name="note" minLength={3} maxLength={1000} required /></label>
         <button className="primary-button"><Send /> Registrar</button>
-      </form>
+      </form> : null}
       {order.notes.map((item) => <p className="operational-note" key={item.id}>{formatDateTime(item.createdAt)} · {item.content}</p>)}
     </section>
   );
@@ -629,12 +654,14 @@ function TaskList({
   tasks,
   run,
   processing = "",
-  compact = false
+  compact = false,
+  canExecute = false
 }: {
   tasks: OperationTask[];
   run?: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing?: string;
   compact?: boolean;
+  canExecute?: boolean;
 }) {
   const [selected, setSelected] = useState("");
   const selectedTask = tasks.find((task) => task.id === selected);
@@ -650,14 +677,14 @@ function TaskList({
             {!compact && <span>{task.assignedToCurrentUser ? "Minha tarefa" : task.assigned ? "Atribuída" : "Sem responsável"}</span>}
             {!compact && run && (
               <div className="operational-actions">
-                {!task.assigned && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "claim_task", taskId: task.id }, "Tarefa assumida.")}>Assumir</button>}
+                {canExecute && !task.assigned && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "claim_task", taskId: task.id }, "Tarefa assumida.")}>Assumir</button>}
                 <button className="secondary-button" onClick={() => setSelected(task.id)}>Conferir</button>
               </div>
             )}
           </article>
         ))}
       </div>
-      {selectedTask && run && <TaskDetail task={selectedTask} close={() => setSelected("")} run={run} processing={processing} />}
+      {selectedTask && run && <TaskDetail task={selectedTask} close={() => setSelected("")} run={run} processing={processing} canExecute={canExecute} />}
     </>
   );
 }
@@ -666,17 +693,21 @@ function TaskDetail({
   task,
   close,
   run,
-  processing
+  processing,
+  canExecute
 }: {
   task: OperationTask;
   close: () => void;
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing: string;
+  canExecute: boolean;
 }) {
   return (
     <section className="operational-detail panel-card">
       <header><div><small>{label(task.taskType)}</small><h2>{task.sourceCode || task.publicCode}</h2></div><button className="secondary-button" onClick={close}>Fechar</button></header>
-      {!task.assignedToCurrentUser ? (
+      {!canExecute ? (
+        <p className="operational-feedback">Seu perfil possui acesso somente para consulta desta tarefa.</p>
+      ) : !task.assignedToCurrentUser ? (
         <p className="operational-feedback">Assuma a tarefa antes de registrar a conferência.</p>
       ) : (
         <>
@@ -733,13 +764,15 @@ function Inventory({
   movements,
   adjustments,
   run,
-  processing
+  processing,
+  canRequest
 }: {
   items: InventoryItem[];
   movements: OperationsResponse["movements"];
   adjustments: OperationsResponse["adjustments"];
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing: string;
+  canRequest: boolean;
 }) {
   const request = (item: InventoryItem) => {
     const quantity = window.prompt("Informe a diferença de quantidade (positiva ou negativa):");
@@ -760,7 +793,7 @@ function Inventory({
           <span>Reservado <strong>{item.reserved}</strong></span>
           <span>Danificado <strong>{item.damaged}</strong></span>
           <span>Mínimo <strong>{item.minimum}</strong></span>
-          <button className="secondary-button" disabled={Boolean(processing)} onClick={() => request(item)}>Solicitar ajuste</button>
+          {canRequest ? <button className="secondary-button" disabled={Boolean(processing)} onClick={() => request(item)}>Solicitar ajuste</button> : null}
         </article>
       ))}</div> : <Empty icon={Boxes} title="Nenhum item encontrado" />}
       <div className="operational-dashboard-grid">
@@ -774,11 +807,13 @@ function Inventory({
 function Kits({
   kits,
   run,
-  processing
+  processing,
+  canExecute
 }: {
   kits: KitOrder[];
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing: string;
+  canExecute: boolean;
 }) {
   return (
     <>
@@ -789,7 +824,7 @@ function Kits({
           <span className={`status ${statusTone(kit.status)}`}>{label(kit.status)}</span>
           <span>{kit.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0)} itens</span>
           <span>{formatDateTime(kit.createdAt)}</span>
-          <div className="operational-actions">{["paid", "separating"].includes(kit.status) && <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_kit", kitOrderId: kit.id }, "Montagem do kit iniciada.")}><PackageCheck /> Montar</button>}</div>
+          <div className="operational-actions">{canExecute && ["paid", "separating"].includes(kit.status) && <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_kit", kitOrderId: kit.id }, "Montagem do kit iniciada.")}><PackageCheck /> Montar</button>}</div>
         </article>
       ))}</div> : <Empty icon={PackageCheck} title="Nenhum kit pendente" />}
     </>
@@ -799,11 +834,13 @@ function Kits({
 function Returns({
   records,
   run,
-  processing
+  processing,
+  canInspect
 }: {
   records: ReturnRecord[];
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing: string;
+  canInspect: boolean;
 }) {
   const inspect = (item: ReturnRecord["items"][number]) => {
     const condition = window.prompt("Descreva a condição física do produto:");
@@ -822,7 +859,7 @@ function Returns({
           <header><div><strong>{record.publicCode}</strong><small>Pedido {record.orderCode}</small></div><span className={`status ${statusTone(record.status)}`}>{label(record.status)}</span></header>
           <p><strong>Solicitação:</strong> {label(record.requestedResolution)}</p>
           <p>{record.reason} · {record.description}</p>
-          {record.items.map((item) => <div className="return-item" key={item.id}><span><strong>{item.quantity}× {item.productName}</strong><small>{item.sku} · {item.condition ?? "Aguardando inspeção"}</small></span>{["received", "inspection"].includes(record.status) && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => inspect(item)}>Inspecionar</button>}</div>)}
+          {record.items.map((item) => <div className="return-item" key={item.id}><span><strong>{item.quantity}× {item.productName}</strong><small>{item.sku} · {item.condition ?? "Aguardando inspeção"}</small></span>{canInspect && ["received", "inspection"].includes(record.status) && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => inspect(item)}>Inspecionar</button>}</div>)}
         </article>
       ))}</div> : <Empty icon={RotateCcw} title="Nenhuma solicitação nesta fila" />}
     </>
@@ -832,11 +869,15 @@ function Returns({
 function Occurrences({
   occurrences,
   run,
-  processing
+  processing,
+  canCreate,
+  canResolve
 }: {
   occurrences: Occurrence[];
   run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
   processing: string;
+  canCreate: boolean;
+  canResolve: boolean;
 }) {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -853,15 +894,15 @@ function Occurrences({
   };
   return (
     <div className="operational-occurrence-layout">
-      <form className="panel-card operational-occurrence-form" onSubmit={(event) => void submit(event)}>
+      {canCreate ? <form className="panel-card operational-occurrence-form" onSubmit={(event) => void submit(event)}>
         <SectionHeading title="Nova ocorrência" description="Registre somente dados necessários à operação." />
         <label>Categoria<select name="category" required defaultValue="divergence"><option value="divergence">Divergência</option><option value="damaged_product">Produto danificado</option><option value="missing_item">Item ausente</option><option value="shipping">Envio</option><option value="invoice">Nota fiscal</option><option value="return">Devolução</option><option value="exchange">Troca</option><option value="kit">Kit</option><option value="inventory">Estoque</option><option value="customer_service">Atendimento</option><option value="other">Outra</option></select></label>
         <label>Prioridade<select name="priority" defaultValue="normal"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
         <label>Título<input name="title" minLength={5} maxLength={120} required /></label>
         <label>Descrição<textarea name="description" minLength={5} maxLength={2000} required /></label>
         <button className="primary-button" disabled={Boolean(processing)}>{processing ? <LoaderCircle className="spin" /> : <ShieldAlert />} Registrar</button>
-      </form>
-      <section className="panel-card"><SectionHeading title="Histórico de ocorrências" description="Fila por prioridade e status." /><OccurrenceList occurrences={occurrences} resolve={resolve} /></section>
+      </form> : null}
+      <section className="panel-card"><SectionHeading title="Histórico de ocorrências" description="Fila por prioridade e status." /><OccurrenceList occurrences={occurrences} resolve={canResolve ? resolve : undefined} /></section>
     </div>
   );
 }

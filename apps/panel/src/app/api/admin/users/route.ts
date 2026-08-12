@@ -7,6 +7,7 @@ import {
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +18,44 @@ const updateSchema = z.object({
   reason: z.string().trim().min(10).max(500)
 });
 
+const inviteSchema = z.object({
+  fullName: z.string().trim().min(3).max(120),
+  email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
+  role: z.enum(["operational", "manager", "technical"]),
+  reason: z.string().trim().min(10).max(500)
+});
+
+async function hasPermission(
+  supabase: NonNullable<Awaited<ReturnType<typeof authorizeAdminRequest>>>["supabase"],
+  permissionCode: string
+) {
+  const result = await supabase.rpc("has_permission", { permission_code: permissionCode });
+  return { allowed: result.data === true, error: result.error };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse();
+  const [readPermission, managePermission, rolesPermission, createPermission] = await Promise.all([
+    hasPermission(auth.supabase, "users.read"),
+    hasPermission(auth.supabase, "users.manage"),
+    hasPermission(auth.supabase, "users.roles.manage"),
+    hasPermission(auth.supabase, "users.create_internal")
+  ]);
+  if (readPermission.error || managePermission.error || rolesPermission.error || createPermission.error) {
+    return NextResponse.json(
+      { message: "Não foi possível confirmar as permissões de usuários." },
+      { status: 503, headers: privateNoStore }
+    );
+  }
+  if (!readPermission.allowed) {
+    return NextResponse.json(
+      { message: "Sua permissão não permite consultar usuários." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const canManage = managePermission.allowed && rolesPermission.allowed;
+  const canInvite = createPermission.allowed && managePermission.allowed && rolesPermission.allowed;
   const page = Math.max(
     1,
     Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
@@ -68,14 +104,88 @@ export async function GET(request: NextRequest) {
     return {
       ...user,
       roles,
-      editable: Boolean(userId) && userId !== auth.userId && !roles.includes("admin"),
+      editable: canManage && Boolean(userId) && userId !== auth.userId && !roles.includes("admin"),
       lastAccessChange: userId ? (historyByUser.get(userId) ?? null) : null,
       user_roles: undefined
     };
   });
   return NextResponse.json(
-    { users, total: result.count ?? 0, page, pageSize },
+    { users, total: result.count ?? 0, page, pageSize, capabilities: { manage: canManage, invite: canInvite } },
     { headers: privateNoStore }
+  );
+}
+
+export async function POST(request: NextRequest) {
+  if (!safePanelOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const auth = await authorizeAdminRequest(request);
+  if (!auth) return unauthorizedAdminResponse();
+  const [createPermission, managePermission, rolesPermission] = await Promise.all([
+    hasPermission(auth.supabase, "users.create_internal"),
+    hasPermission(auth.supabase, "users.manage"),
+    hasPermission(auth.supabase, "users.roles.manage")
+  ]);
+  if (createPermission.error || managePermission.error || rolesPermission.error) {
+    return NextResponse.json(
+      { message: "Não foi possível confirmar sua permissão agora." },
+      { status: 503, headers: privateNoStore }
+    );
+  }
+  if (!createPermission.allowed || !managePermission.allowed || !rolesPermission.allowed) {
+    return NextResponse.json(
+      { message: "Sua permissão não permite convidar usuários internos." },
+      { status: 403, headers: privateNoStore }
+    );
+  }
+  const parsed = inviteSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Informe nome, e-mail, papel e justificativa válidos." },
+      { status: 400, headers: privateNoStore }
+    );
+  }
+  const service = createServiceSupabaseClient();
+  if (!service) {
+    return NextResponse.json(
+      { message: "O serviço de convites internos não está configurado." },
+      { status: 503, headers: privateNoStore }
+    );
+  }
+  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL;
+  const redirectTo = storeUrl
+    ? new URL("/auth/callback?next=/minha-conta", storeUrl).toString()
+    : undefined;
+  const invitation = await service.auth.admin.inviteUserByEmail(parsed.data.email, {
+    data: { full_name: parsed.data.fullName, internal_invite: true },
+    ...(redirectTo ? { redirectTo } : {})
+  });
+  const invitedUser = invitation.data.user;
+  if (invitation.error || !invitedUser) {
+    return NextResponse.json(
+      { message: "Não foi possível enviar o convite. Confirme se o e-mail já possui acesso." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
+  const access = await auth.supabase.rpc("admin_update_user_access", {
+    p_user_id: invitedUser.id,
+    p_status: "active",
+    p_role: parsed.data.role,
+    p_reason: parsed.data.reason
+  });
+  if (access.error) {
+    await service.auth.admin.deleteUser(invitedUser.id);
+    return NextResponse.json(
+      { message: "O convite foi cancelado porque o acesso não pôde ser configurado." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
+  return NextResponse.json(
+    { message: "Convite enviado e acesso interno configurado." },
+    { status: 201, headers: privateNoStore }
   );
 }
 

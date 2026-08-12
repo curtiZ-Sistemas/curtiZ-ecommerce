@@ -149,6 +149,15 @@ const demoSnapshot = (section: string, page: number, pageSize: number) => ({
   ok: true,
   demo: true,
   section,
+  capabilities: {
+    executeTasks: false,
+    fulfillKits: false,
+    createOccurrences: false,
+    resolveOccurrences: false,
+    requestAdjustments: false,
+    inspectReturns: false,
+    addOrderNotes: false
+  },
   metrics: {
     newOrders: 0,
     overdueOrders: 0,
@@ -242,11 +251,17 @@ export async function GET(request: NextRequest) {
     taskQuery = taskQuery.eq("task_type", taskTypeForSection[section]);
   }
 
-  const inventoryQuery = supabase
-    .from("inventory")
-    .select("variant_id,available_quantity,reserved_quantity,damaged_quantity,minimum_quantity,ideal_quantity,updated_at,product_variants(sku,color_name,size,products(name))", { count: "exact" })
-    .order("updated_at", { ascending: false })
-    .range(from, to);
+  const inventoryFilter = section === "reposicao"
+    ? "critical"
+    : section === "danificados"
+      ? "damaged"
+      : "all";
+  const inventoryQuery = supabase.rpc("operational_inventory_page", {
+    p_query: search,
+    p_filter: inventoryFilter,
+    p_offset: from,
+    p_limit: pageSize
+  });
   const movementsQuery = supabase
     .from("inventory_movements")
     .select("id,variant_id,movement_type,quantity,previous_quantity,new_quantity,reason,created_at")
@@ -311,8 +326,27 @@ export async function GET(request: NextRequest) {
     adjustmentQuery
   ]);
 
+  const sectionErrors: Record<string, Array<unknown>> = {
+    pedidos: [ordersResult.error],
+    separacao: [tasksResult.error],
+    expedicao: [tasksResult.error],
+    envio: [tasksResult.error],
+    estoque: [inventoryResult.error],
+    reposicao: [inventoryResult.error],
+    danificados: [inventoryResult.error],
+    kits: [kitsResult.error],
+    "montagem-kits": [kitsResult.error, tasksResult.error],
+    trocas: [returnsResult.error],
+    devolucoes: [returnsResult.error],
+    ocorrencias: [occurrencesResult.error],
+    "notas-fiscais": [invoicesResult.error],
+    representantes: [representativesResult.error],
+    pendencias: [tasksResult.error, occurrencesResult.error]
+  };
+  const metricErrors = metricResults.map((result) => result.error).filter(Boolean);
   const criticalError =
-    ordersResult.error ?? tasksResult.error ?? inventoryResult.error ?? returnsResult.error;
+    sectionErrors[section]?.find(Boolean) ??
+    (section === "relatorios-operacionais" ? metricErrors[0] : null);
   if (criticalError) {
     return NextResponse.json(
       { ok: false, message: "Não foi possível carregar a operação." },
@@ -414,19 +448,17 @@ export async function GET(request: NextRequest) {
     };
   });
   const inventory = rows(inventoryResult.data).map((entry) => {
-    const variant = record(entry.product_variants);
-    const product = record(variant?.products);
     return {
       variantId: text(entry.variant_id),
-      productName: text(product?.name, "Produto"),
-      sku: text(variant?.sku),
-      variant: [text(variant?.color_name), text(variant?.size)].filter(Boolean).join(" · "),
+      productName: text(entry.product_name, "Produto"),
+      sku: text(entry.sku),
+      variant: [text(entry.color_name), text(entry.size)].filter(Boolean).join(" · "),
       available: number(entry.available_quantity),
       reserved: number(entry.reserved_quantity),
       damaged: number(entry.damaged_quantity),
       minimum: number(entry.minimum_quantity),
       ideal: number(entry.ideal_quantity),
-      critical: number(entry.available_quantity) <= number(entry.minimum_quantity)
+      critical: entry.critical === true
     };
   });
   const kitOrders = rows(kitsResult.data).map((kit) => ({
@@ -506,20 +538,61 @@ export async function GET(request: NextRequest) {
     createdAt: text(item.created_at)
   }));
 
+  const permissionCodes = [
+    "operations.tasks.execute",
+    "representatives.kits.fulfill",
+    "operations.occurrences.create",
+    "operations.occurrences.resolve",
+    "operations.inventory.request_adjustment",
+    "returns.inspect",
+    "orders.update_operational_status"
+  ] as const;
+  const permissionResults = await Promise.all(
+    permissionCodes.map((permissionCode) =>
+      supabase.rpc("has_permission", { permission_code: permissionCode })
+    )
+  );
+  const permission = (index: number) =>
+    permissionResults[index]?.data === true && !permissionResults[index]?.error;
+  const capabilities = {
+    executeTasks: permission(0),
+    fulfillKits: permission(1),
+    createOccurrences: permission(2),
+    resolveOccurrences: permission(3),
+    requestAdjustments: permission(4),
+    inspectReturns: permission(5),
+    addOrderNotes: permission(6)
+  };
   const counts = metricResults.map((result, index) =>
     index === 5 ? number(result.data) : result.count ?? 0
   );
+  const inventoryTotal = number(rows(inventoryResult.data)[0]?.total_count);
+  const partialFailures = [
+    ...metricErrors,
+    ordersResult.error,
+    tasksResult.error,
+    inventoryResult.error,
+    movementsResult.error,
+    kitsResult.error,
+    returnsResult.error,
+    occurrencesResult.error,
+    invoicesResult.error,
+    representativesResult.error,
+    adjustmentsResult.error,
+    ...permissionResults.map((result) => result.error)
+  ].filter(Boolean);
   const sectionTotals: Record<string, number> = {
     pedidos: ordersResult.count ?? orders.length,
     separacao: tasksResult.count ?? tasks.length,
     expedicao: tasksResult.count ?? tasks.length,
     envio: tasksResult.count ?? tasks.length,
-    estoque: inventoryResult.count ?? inventory.length,
+    estoque: inventoryTotal,
+    reposicao: inventoryTotal,
+    danificados: inventoryTotal,
     kits: kitsResult.count ?? kitOrders.length,
     "montagem-kits": kitsResult.count ?? kitOrders.length,
     trocas: returnsResult.count ?? returns.length,
     devolucoes: returnsResult.count ?? returns.length,
-    danificados: returnsResult.count ?? returns.length,
     ocorrencias: occurrencesResult.count ?? occurrences.length,
     "notas-fiscais": invoicesResult.count ?? invoices.length,
     representantes: representativesResult.count ?? representatives.length
@@ -529,6 +602,10 @@ export async function GET(request: NextRequest) {
       ok: true,
       demo: false,
       section,
+      capabilities,
+      warning: partialFailures.length > 0
+        ? "Alguns dados não puderam ser atualizados. Os blocos disponíveis continuam utilizáveis."
+        : undefined,
       metrics: {
         newOrders: counts[0],
         overdueOrders: counts[1],
@@ -641,9 +718,11 @@ export async function POST(request: NextRequest) {
   const result = record(response);
   const error = record(result?.error);
   if (error) {
+    const code = text(error.code);
+    const forbidden = code === "42501";
     return NextResponse.json(
-      { ok: false, message: "A operação não pôde ser concluída no estado atual." },
-      { status: 409, headers: noStore }
+      { ok: false, message: forbidden ? "Sua permissão não permite esta operação." : "A operação não pôde ser concluída no estado atual." },
+      { status: forbidden ? 403 : code === "P0002" ? 404 : 409, headers: noStore }
     );
   }
   return NextResponse.json({ ok: true, data: result?.data ?? null }, { headers: noStore });

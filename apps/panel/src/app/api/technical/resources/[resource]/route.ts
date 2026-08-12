@@ -205,12 +205,26 @@ export async function GET(
   const rows = technicalRows(result.data);
   const jobRows = ["filas", "jobs", "falhas"].includes(resource) ? withJobDuration(rows) : rows;
   const responseRows = resource === "erros" ? withPageFrequency(jobRows) : jobRows;
+  const [canExport, canManageLogs, canManageJobs, canManageWebhooks, canManageFeatures] = await Promise.all([
+    auth.supabase.rpc("has_permission", { permission_code: "technical.logs.export" }),
+    auth.supabase.rpc("has_permission", { permission_code: "technical.logs.manage" }),
+    auth.supabase.rpc("has_permission", { permission_code: "technical.jobs.manage" }),
+    auth.supabase.rpc("has_permission", { permission_code: "technical.webhooks.manage" }),
+    auth.supabase.rpc("has_permission", { permission_code: "technical.features.manage" })
+  ]);
   return NextResponse.json(
     {
       items: responseRows.map((item) => sanitizeTechnicalValue(item)),
       total: result.count ?? 0,
       page,
-      pageSize
+      pageSize,
+      capabilities: {
+        export: definition.exportAllowed && canExport.data === true && !canExport.error,
+        manageLogs: canManageLogs.data === true && !canManageLogs.error,
+        manageJobs: canManageJobs.data === true && !canManageJobs.error,
+        manageWebhooks: canManageWebhooks.data === true && !canManageWebhooks.error,
+        manageFeatures: canManageFeatures.data === true && !canManageFeatures.error
+      }
     },
     { headers: technicalNoStore }
   );

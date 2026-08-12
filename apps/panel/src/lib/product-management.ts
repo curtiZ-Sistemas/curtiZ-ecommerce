@@ -58,6 +58,64 @@ export type EditableVariant = {
   active: boolean;
 };
 
+const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu;
+
+export function isManagedProduct(value: unknown): value is ManagedProduct {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const product = value as Record<string, unknown>;
+  if (
+    typeof product.id !== "string" ||
+    !uuidPattern.test(product.id) ||
+    typeof product.name !== "string" ||
+    typeof product.slug !== "string" ||
+    typeof product.status !== "string" ||
+    typeof product.priceInCents !== "number" ||
+    !Number.isFinite(product.priceInCents) ||
+    typeof product.stock !== "number" ||
+    !Number.isFinite(product.stock) ||
+    !Array.isArray(product.variants) ||
+    (product.images !== undefined && !Array.isArray(product.images))
+  ) {
+    return false;
+  }
+
+  const variantsAreValid = product.variants.every((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const variant = value as Record<string, unknown>;
+    return (
+      typeof variant.id === "string" &&
+      uuidPattern.test(variant.id) &&
+      typeof variant.sku === "string" &&
+      typeof variant.color === "string" &&
+      typeof variant.size === "string" &&
+      typeof variant.active === "boolean" &&
+      typeof variant.available === "number" &&
+      Number.isFinite(variant.available) &&
+      typeof variant.reserved === "number" &&
+      Number.isFinite(variant.reserved) &&
+      typeof variant.sellable === "number" &&
+      Number.isFinite(variant.sellable)
+    );
+  });
+  if (!variantsAreValid) return false;
+
+  return (product.images ?? []).every((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const image = value as Record<string, unknown>;
+    return (
+      typeof image.id === "string" &&
+      uuidPattern.test(image.id) &&
+      typeof image.path === "string" &&
+      typeof image.url === "string" &&
+      image.url.length > 0 &&
+      typeof image.alt === "string" &&
+      typeof image.primary === "boolean" &&
+      typeof image.sortOrder === "number" &&
+      Number.isFinite(image.sortOrder)
+    );
+  });
+}
+
 const tokens = (value: string) =>
   [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
 

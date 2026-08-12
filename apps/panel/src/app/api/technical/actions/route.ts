@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (result.error) {
-    return NextResponse.json({ message: "A ação não é permitida para o estado atual." }, { status: 409, headers: technicalNoStore });
+    const forbidden = result.error.code === "42501";
+    return NextResponse.json({ message: forbidden ? "Sua permissão não permite esta ação técnica." : "A ação não é permitida para o estado atual." }, { status: forbidden ? 403 : result.error.code === "P0002" ? 404 : 409, headers: technicalNoStore });
   }
   return NextResponse.json({ message: "Ação executada e registrada na auditoria." }, { headers: technicalNoStore });
 }

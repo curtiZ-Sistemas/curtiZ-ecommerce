@@ -1,5 +1,8 @@
+import "server-only";
+
 import { sharedCookieOptions } from "@curtiz/security";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 
 export async function createServerSupabaseClient() {
@@ -26,3 +29,12 @@ export async function createServerSupabaseClient() {
   });
 }
 
+export function createServiceSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secretKey) return null;
+
+  return createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+}

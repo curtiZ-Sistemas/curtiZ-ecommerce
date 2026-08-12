@@ -15,6 +15,10 @@ function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function metricValue(value: unknown): number | string {
+  return typeof value === "number" && Number.isFinite(value) ? value : "—";
+}
+
 function textValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -55,10 +59,12 @@ export function TechnicalOverview({ section }: { section: string }) {
   const [runtime, setRuntime] = useState<RecordValue>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [warning, setWarning] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setMessage("");
+    setWarning("");
     try {
       const response = await fetch("/api/technical/overview", { cache: "no-store" });
       const payload: unknown = await response.json();
@@ -68,7 +74,17 @@ export function TechnicalOverview({ section }: { section: string }) {
       setStorage(parseStorage(payload.storage));
       setDatabase(isRecord(payload.database) ? payload.database : {});
       setRuntime(isRecord(payload.runtime) ? payload.runtime : {});
+      setWarning(
+        Array.isArray(payload.unavailable) && payload.unavailable.length > 0
+          ? `Dados temporariamente indisponíveis: ${payload.unavailable.filter((item): item is string => typeof item === "string").join(", ")}.`
+          : ""
+      );
     } catch {
+      setServices([]);
+      setMetrics({});
+      setStorage([]);
+      setDatabase({});
+      setRuntime({});
       setMessage("Não foi possível verificar os serviços técnicos agora.");
     } finally {
       setLoading(false);
@@ -92,20 +108,21 @@ export function TechnicalOverview({ section }: { section: string }) {
         </button>
       </div>
       {message ? <p className="admin-feedback" role="alert">{message}</p> : null}
+      {warning ? <p className="admin-feedback" role="alert">{warning}</p> : null}
 
       <div className="technical-metric-grid" aria-busy={loading}>
-        <TechnicalMetric icon={<ShieldAlert />} label="Erros nas últimas 24h" value={loading ? "—" : numberValue(metrics.recentErrors)} />
-        <TechnicalMetric icon={<Activity />} label="Erros abertos" value={loading ? "—" : numberValue(metrics.openErrors)} />
-        <TechnicalMetric icon={<Boxes />} label="Jobs pendentes" value={loading ? "—" : numberValue(metrics.pendingJobs)} />
-        <TechnicalMetric icon={<Boxes />} label="Jobs falhos" value={loading ? "—" : numberValue(metrics.failedJobs)} />
-        <TechnicalMetric icon={<Webhook />} label="Webhooks falhos" value={loading ? "—" : numberValue(metrics.failedWebhooks)} />
-        <TechnicalMetric icon={<ShieldAlert />} label="Eventos de segurança 24h" value={loading ? "—" : numberValue(metrics.recentSecurityEvents)} />
+        <TechnicalMetric icon={<ShieldAlert />} label="Erros nas últimas 24h" value={loading ? "—" : metricValue(metrics.recentErrors)} />
+        <TechnicalMetric icon={<Activity />} label="Erros abertos" value={loading ? "—" : metricValue(metrics.openErrors)} />
+        <TechnicalMetric icon={<Boxes />} label="Jobs pendentes" value={loading ? "—" : metricValue(metrics.pendingJobs)} />
+        <TechnicalMetric icon={<Boxes />} label="Jobs falhos" value={loading ? "—" : metricValue(metrics.failedJobs)} />
+        <TechnicalMetric icon={<Webhook />} label="Webhooks falhos" value={loading ? "—" : metricValue(metrics.failedWebhooks)} />
+        <TechnicalMetric icon={<ShieldAlert />} label="Eventos de segurança 24h" value={loading ? "—" : metricValue(metrics.recentSecurityEvents)} />
       </div>
 
       {showServices ? (
         <section className="panel-card technical-section">
           <h2>Saúde dos serviços</h2>
-          {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Verificando</div> : services.length === 0 ? <p className="admin-empty-copy">Nenhum estado de serviço disponível.</p> : (
+          {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Verificando</div> : services.length === 0 ? <p className="admin-empty-copy">{message ? "Consulta de serviços indisponível." : "Nenhum estado de serviço disponível."}</p> : (
             <div className="technical-service-grid">
               {services.map((service) => (
                 <article key={service.name}>
@@ -122,7 +139,7 @@ export function TechnicalOverview({ section }: { section: string }) {
       {showStorage ? (
         <section className="panel-card technical-section">
           <h2><Database aria-hidden="true" /> Storage</h2>
-          {storage.length === 0 ? <p className="admin-empty-copy">Resumo indisponível ou nenhum bucket criado.</p> : (
+          {storage.length === 0 ? <p className="admin-empty-copy">{message || warning.includes("storage") ? "Resumo de storage indisponível." : "Nenhum bucket criado."}</p> : (
             <div className="admin-compact-list">{storage.map((bucket) => <div key={bucket.bucket_id}><span><strong>{bucket.bucket_id}</strong><small>{bucket.object_count.toLocaleString("pt-BR")} arquivo(s)</small></span><strong>{bytes.format(bucket.total_bytes)}</strong></div>)}</div>
           )}
           <p className="technical-note">Somente totais agregados são exibidos; caminhos e arquivos privados não são expostos.</p>
@@ -156,13 +173,13 @@ export function TechnicalOverview({ section }: { section: string }) {
       {showRuntime ? (
         <section className="panel-card technical-section">
           <h2>Runtime, deploy e manutenção</h2>
-          <div className="technical-runtime-grid">
+          {message ? <p className="admin-empty-copy">Configuração de runtime indisponível.</p> : <div className="technical-runtime-grid">
             <Runtime label="Ambiente" value={textValue(runtime.environment) || "Não configurado"} />
             <Runtime label="Versão" value={textValue(runtime.version) || "Não configurada"} />
             <Runtime label="Commit" value={textValue(runtime.commit) || "Não disponibilizado pelo runtime"} />
             <Runtime label="Backups" value={textValue(runtime.backup) || "Não configurado"} />
-          </div>
-          <p className="technical-note">{textValue(runtime.databaseDiagnostics)}</p>
+          </div>}
+          {!message ? <p className="technical-note">{textValue(runtime.databaseDiagnostics)}</p> : null}
         </section>
       ) : null}
     </div>

@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
     p_reason: parsed.data.reason
   });
   if (result.error) {
-    return NextResponse.json({ message: "A transição não é permitida para o estado atual." }, { status: 409, headers: managerNoStore });
+    const forbidden = result.error.code === "42501";
+    return NextResponse.json({ message: forbidden ? "Sua permissão não permite esta transição." : "A transição não é permitida para o estado atual." }, { status: forbidden ? 403 : result.error.code === "P0002" ? 404 : 409, headers: managerNoStore });
   }
   return NextResponse.json({ message: "Campanha atualizada conforme a aprovação configurada." }, { headers: managerNoStore });
 }

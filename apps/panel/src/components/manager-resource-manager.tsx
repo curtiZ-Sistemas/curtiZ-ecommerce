@@ -17,6 +17,15 @@ import {
 } from "@/lib/manager-resources";
 
 type Item = Record<string, unknown>;
+type ManagerCapabilities = {
+  export: boolean;
+  manageClosings: boolean;
+  manageRepresentatives: boolean;
+  manageCreatives: boolean;
+  approveCreatives: boolean;
+  publishCreatives: boolean;
+};
+const noCapabilities: ManagerCapabilities = { export: false, manageClosings: false, manageRepresentatives: false, manageCreatives: false, approveCreatives: false, publishCreatives: false };
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const date = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" });
@@ -98,6 +107,8 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [capabilities, setCapabilities] = useState<ManagerCapabilities>(noCapabilities);
 
   const parameters = useMemo(() => {
     const params = new URLSearchParams({ page: String(page) });
@@ -116,15 +127,26 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
 
   const load = useCallback(async () => {
     setLoading(true);
-    setMessage("");
+    setLoadError("");
     try {
       const response = await fetch(`/api/manager/resources/${resource}?${parameters}`, { cache: "no-store" });
       const payload: unknown = await response.json();
       if (!isItem(payload) || !response.ok) throw new Error("load_failed");
       setItems(Array.isArray(payload.items) ? payload.items.filter(isItem) : []);
       setTotal(numberValue(payload.total));
+      setCapabilities(isItem(payload.capabilities) ? {
+        export: payload.capabilities.export === true,
+        manageClosings: payload.capabilities.manageClosings === true,
+        manageRepresentatives: payload.capabilities.manageRepresentatives === true,
+        manageCreatives: payload.capabilities.manageCreatives === true,
+        approveCreatives: payload.capabilities.approveCreatives === true,
+        publishCreatives: payload.capabilities.publishCreatives === true
+      } : noCapabilities);
     } catch {
-      setMessage("Não foi possível carregar os registros desta área.");
+      setItems([]);
+      setTotal(0);
+      setCapabilities(noCapabilities);
+      setLoadError("Não foi possível carregar os registros desta área.");
     } finally {
       setLoading(false);
     }
@@ -135,9 +157,9 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   }, [load]);
 
   const pages = Math.max(1, Math.ceil(total / 20));
-  const hasCommissionWorkflow = resource === "fechamentos" || resource === "simulacoes";
-  const hasRepresentativeWorkflow = resource === "representantes";
-  const hasCampaignWorkflow = resource === "campanhas";
+  const hasCommissionWorkflow = (resource === "fechamentos" || resource === "simulacoes") && capabilities.manageClosings;
+  const hasRepresentativeWorkflow = resource === "representantes" && capabilities.manageRepresentatives;
+  const hasCampaignWorkflow = resource === "campanhas" && (capabilities.manageCreatives || capabilities.approveCreatives || capabilities.publishCreatives);
 
   const commissionAction = async (action: string, item?: Item, period?: { start: string; end: string }) => {
     let reason: string | undefined;
@@ -216,7 +238,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
     <section className="panel-card admin-resource manager-resource">
       <header className="admin-resource-header">
         <div><h1>{definition.label}</h1><p>{definition.description}</p></div>
-        {definition.exportAllowed ? (
+        {capabilities.export ? (
           <a className="secondary-button" href={`/api/manager/resources/${resource}?${parameters}&format=csv`}>
             <Download aria-hidden="true" /> Exportar CSV
           </a>
@@ -240,7 +262,9 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
       </div>
 
       {message ? <p className="admin-feedback" role="status">{message}</p> : null}
-      {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando</div> : items.length === 0 ? (
+      {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando</div> : loadError ? (
+        <div className="admin-empty-state" role="alert"><h3>Consulta indisponível</h3><p>{loadError}</p><button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button></div>
+      ) : items.length === 0 ? (
         <div className="admin-empty-state"><h3>Nenhum registro encontrado</h3><p>Não há dados reais para os filtros informados.</p></div>
       ) : (
         <div className="admin-table-wrap">
@@ -251,7 +275,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
                 {definition.columns.map((column) => <td key={column.key} data-label={column.label}>{display(item[column.key], column)}</td>)}
                 {hasCommissionWorkflow ? <td className="manager-row-actions" data-label="Ações"><ClosingActions item={item} disabled={pending} run={(action) => void commissionAction(action, item)} /></td> : null}
                 {hasRepresentativeWorkflow ? <td className="manager-row-actions" data-label="Ações"><RepresentativeActions item={item} disabled={pending} run={(action) => void representativeAction(action, item)} /></td> : null}
-                {hasCampaignWorkflow ? <td className="manager-row-actions" data-label="Ações"><CampaignActions item={item} disabled={pending} run={(status) => void campaignAction(status, item)} /></td> : null}
+                {hasCampaignWorkflow ? <td className="manager-row-actions" data-label="Ações"><CampaignActions item={item} disabled={pending} capabilities={capabilities} run={(status) => void campaignAction(status, item)} /></td> : null}
               </tr>
             ))}</tbody>
           </table>
@@ -288,12 +312,12 @@ function RepresentativeActions({ item, disabled, run }: { item: Item; disabled: 
   return <span>—</span>;
 }
 
-function CampaignActions({ item, disabled, run }: { item: Item; disabled: boolean; run: (status: string) => void }) {
+function CampaignActions({ item, disabled, capabilities, run }: { item: Item; disabled: boolean; capabilities: ManagerCapabilities; run: (status: string) => void }) {
   const status = scalar(item.status);
-  if (status === "draft") return <button className="secondary-button" type="button" disabled={disabled} onClick={() => run("pending_review")}>Enviar à revisão</button>;
-  if (status === "pending_review") return <div className="manager-action-group"><button className="primary-button" type="button" disabled={disabled} onClick={() => run("approved")}>Aprovar</button><button className="secondary-button danger-button" type="button" disabled={disabled} onClick={() => run("rejected")}>Rejeitar</button></div>;
-  if (status === "approved") return <div className="manager-action-group"><button className="secondary-button" type="button" disabled={disabled} onClick={() => run("scheduled")}>Agendar</button><button className="primary-button" type="button" disabled={disabled} onClick={() => run("published")}>Publicar</button></div>;
-  if (status === "scheduled") return <button className="primary-button" type="button" disabled={disabled} onClick={() => run("published")}>Publicar</button>;
-  if (status === "published") return <button className="secondary-button" type="button" disabled={disabled} onClick={() => run("archived")}>Arquivar</button>;
+  if (status === "draft" && capabilities.manageCreatives) return <button className="secondary-button" type="button" disabled={disabled} onClick={() => run("pending_review")}>Enviar à revisão</button>;
+  if (status === "pending_review" && capabilities.approveCreatives) return <div className="manager-action-group"><button className="primary-button" type="button" disabled={disabled} onClick={() => run("approved")}>Aprovar</button><button className="secondary-button danger-button" type="button" disabled={disabled} onClick={() => run("rejected")}>Rejeitar</button></div>;
+  if (status === "approved" && capabilities.publishCreatives) return <div className="manager-action-group"><button className="secondary-button" type="button" disabled={disabled} onClick={() => run("scheduled")}>Agendar</button><button className="primary-button" type="button" disabled={disabled} onClick={() => run("published")}>Publicar</button></div>;
+  if (status === "scheduled" && capabilities.publishCreatives) return <button className="primary-button" type="button" disabled={disabled} onClick={() => run("published")}>Publicar</button>;
+  if (status === "published" && capabilities.publishCreatives) return <button className="secondary-button" type="button" disabled={disabled} onClick={() => run("archived")}>Arquivar</button>;
   return <span>—</span>;
 }

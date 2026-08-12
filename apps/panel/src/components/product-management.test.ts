@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { filterManagedProducts, generateVariantCombinations } from "../lib/product-management";
+import {
+  filterManagedProducts,
+  generateVariantCombinations,
+  isManagedProduct
+} from "../lib/product-management";
 
 const products = [
   {
-    id: "1",
+    id: "20000000-0000-4000-8000-000000000001",
     name: "Produto disponível",
     slug: "produto-disponivel",
     status: "active",
@@ -11,7 +15,7 @@ const products = [
     stock: 1,
     variants: [
       {
-        id: "v1",
+        id: "30000000-0000-4000-8000-000000000001",
         sku: "SKU-1",
         color: "Preto",
         size: "40",
@@ -23,7 +27,7 @@ const products = [
     ]
   },
   {
-    id: "2",
+    id: "20000000-0000-4000-8000-000000000002",
     name: "Produto sem saldo",
     slug: "produto-sem-saldo",
     status: "active",
@@ -52,5 +56,24 @@ describe("product management", () => {
       ])
     );
     expect(variants).toHaveLength(4);
+  });
+
+  it("rejeita produto incompleto antes de abrir o editor", () => {
+    expect(isManagedProduct(products[0])).toBe(true);
+    expect(isManagedProduct({ ...products[0], id: "produto-invalido" })).toBe(false);
+    expect(isManagedProduct({ ...products[0], variants: null })).toBe(false);
+    expect(isManagedProduct({ ...products[0], stock: Number.NaN })).toBe(false);
+    expect(
+      isManagedProduct({
+        ...products[0],
+        variants: [{ ...products[0]!.variants[0]!, available: undefined }]
+      })
+    ).toBe(false);
+    expect(
+      isManagedProduct({
+        ...products[0],
+        images: [{ id: crypto.randomUUID(), path: "invalida.webp", url: "", alt: "", primary: true, sortOrder: 0 }]
+      })
+    ).toBe(false);
   });
 });

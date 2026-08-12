@@ -21,7 +21,10 @@ export const buildNonceContentSecurityPolicy = ({
   return [
     "default-src 'self'",
     `img-src ${sources(["'self'", "data:", "blob:", ...imageSources])}`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    `style-src ${sources([
+      "'self'",
+      development ? "'unsafe-inline'" : `'nonce-${nonce}'`
+    ])}`,
     "style-src-attr 'unsafe-inline'",
     `script-src ${sources([
       "'self'",

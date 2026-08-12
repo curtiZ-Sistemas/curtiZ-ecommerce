@@ -33,7 +33,7 @@ export default async function RolePage({
   searchParams
 }: {
   params: Promise<{ role: string; section?: string[] }>;
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<{ q?: string | string[]; status?: string | string[] }>;
 }) {
   const resolved = await params;
   const resolvedSearch = await searchParams;
@@ -43,6 +43,8 @@ export default async function RolePage({
   const section = resolved.section?.[0] ?? "";
   const rawQuery = Array.isArray(resolvedSearch.q) ? resolvedSearch.q[0] : resolvedSearch.q;
   const initialQuery = rawQuery?.trim().slice(0, 120) ?? "";
+  const rawStatus = Array.isArray(resolvedSearch.status) ? resolvedSearch.status[0] : resolvedSearch.status;
+  const initialStatus = rawStatus?.trim().slice(0, 40) ?? "";
   const currentPath = `/${role}${section ? `/${section}` : ""}`;
   const access = await requirePanelAccess(role, currentPath);
   const representativeSections = new Set([
@@ -72,7 +74,7 @@ export default async function RolePage({
       ) : representativeSections.has(section) && role !== "gerencia" ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
-        <Operational section={section} initialQuery={initialQuery} />
+        <Operational section={section} initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : role === "gerencia" ? (
         <Management section={section} initialQuery={initialQuery} />
       ) : (
@@ -97,10 +99,10 @@ function showRouteHeading(role: PanelRole, section: string) {
   return !isTechnicalResource(section);
 }
 
-function Operational({ section, initialQuery }: { section: string; initialQuery: string }) {
+function Operational({ section, initialQuery, initialStatus }: { section: string; initialQuery: string; initialStatus: string }) {
   if (section === "politicas") return <OperationalLegalLinks />;
   if (section === "construtor-home") return <HomepageBuilder />;
-  return <OperationalConsole key={`${section}:${initialQuery}`} section={section} initialQuery={initialQuery} />;
+  return <OperationalConsole key={`${section}:${initialQuery}:${initialStatus}`} section={section} initialQuery={initialQuery} initialStatus={initialStatus} />;
 }
 
 function Administration({ section, initialQuery }: { section: string; initialQuery: string }) {

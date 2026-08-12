@@ -72,28 +72,45 @@ type Creative = {
   demo?: true;
 };
 
+type InternalCapabilities = Record<string, boolean>;
+
+async function loadInternalCapabilities(): Promise<InternalCapabilities> {
+  const response = await fetch("/api/internal-capabilities", { cache: "no-store" });
+  const payload = (await response.json()) as { capabilities?: InternalCapabilities; message?: string };
+  if (!response.ok) throw new Error(payload.message ?? "Não foi possível confirmar as permissões.");
+  return payload.capabilities ?? {};
+}
+
 function CreativeManager({ role }: { role: PanelRole }) {
   const [items, setItems] = useState<Creative[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [capabilities, setCapabilities] = useState<InternalCapabilities>({});
   const allowed = role === "administracao" || role === "gerencia";
+  const canCreate = allowed && capabilities["creatives.manage"] === true;
 
   const load = () => {
     setLoading(true);
-    void fetch(`${storeOrigin()}/api/creatives?scope=internal`, {
-      credentials: "include",
-      cache: "no-store"
-    })
-      .then(async (response) => {
+    setLoadError("");
+    void Promise.all([
+      fetch(`${storeOrigin()}/api/creatives?scope=internal`, {
+        credentials: "include",
+        cache: "no-store"
+      }).then(async (response) => {
         const result = (await response.json()) as { creatives?: Creative[]; message?: string };
         if (!response.ok) throw new Error(result.message ?? "Falha ao carregar criativos.");
         return result.creatives ?? [];
+      }),
+      loadInternalCapabilities()
+    ])
+      .then(([creatives, nextCapabilities]) => { setItems(creatives); setCapabilities(nextCapabilities); })
+      .catch((reason: unknown) => {
+        setItems([]);
+        setCapabilities({});
+        setLoadError(reason instanceof Error ? reason.message : "Falha inesperada.");
       })
-      .then(setItems)
-      .catch((reason: unknown) =>
-        setMessage(reason instanceof Error ? reason.message : "Falha inesperada.")
-      )
       .finally(() => setLoading(false));
   };
 
@@ -101,7 +118,7 @@ function CreativeManager({ role }: { role: PanelRole }) {
 
   const create = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pending || !allowed) return;
+    if (pending || !canCreate) return;
     setPending(true);
     setMessage("");
     const form = new FormData(event.currentTarget);
@@ -202,7 +219,7 @@ function CreativeManager({ role }: { role: PanelRole }) {
               accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf,application/zip"
             />
           </label>
-          <button className="panel-primary-button" disabled={pending || !allowed}>
+          <button className="panel-primary-button" disabled={pending || !canCreate}>
             {pending ? <LoaderCircle className="spin" /> : <FileImage />} Salvar rascunho
           </button>
         </form>
@@ -224,6 +241,10 @@ function CreativeManager({ role }: { role: PanelRole }) {
           <div className="panel-loading">
             <LoaderCircle className="spin" />
           </div>
+        ) : loadError ? (
+          <div className="panel-error" role="alert"><ShieldAlert /><p>{loadError}</p><button type="button" onClick={load}>Tentar novamente</button></div>
+        ) : items.length === 0 ? (
+          <div className="admin-empty-state"><FileImage /><h3>Nenhum criativo encontrado</h3><p>A biblioteca será atualizada quando houver materiais reais.</p></div>
         ) : (
           <div className="creative-manager-list">
             {items.map((item) => (
@@ -237,12 +258,12 @@ function CreativeManager({ role }: { role: PanelRole }) {
                 </div>
                 <span className={`status ${item.status}`}>{label(item.status)}</span>
                 <div className="review-actions">
-                  {item.status === "draft" && (
+                  {item.status === "draft" && capabilities["creatives.manage"] === true && (
                     <button onClick={() => void transition(item.id, "pending_review")}>
                       Enviar à revisão
                     </button>
                   )}
-                  {item.status === "pending_review" && (
+                  {item.status === "pending_review" && capabilities["creatives.approve"] === true && (
                     <>
                       <button
                         className="approve"
@@ -258,7 +279,7 @@ function CreativeManager({ role }: { role: PanelRole }) {
                       </button>
                     </>
                   )}
-                  {item.status === "approved" && (
+                  {item.status === "approved" && capabilities["creatives.publish"] === true && (
                     <button
                       className="approve"
                       onClick={() => void transition(item.id, "published")}
@@ -266,7 +287,7 @@ function CreativeManager({ role }: { role: PanelRole }) {
                       Publicar
                     </button>
                   )}
-                  {item.status === "published" && (
+                  {item.status === "published" && capabilities["creatives.publish"] === true && (
                     <button onClick={() => void transition(item.id, "archived")}>Arquivar</button>
                   )}
                 </div>
@@ -284,27 +305,37 @@ function Applications({ role }: { role: PanelRole }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<string | null>(null);
-  const canReview = role === "administracao" || role === "gerencia";
+  const [capabilities, setCapabilities] = useState<InternalCapabilities>({});
+  const canReview =
+    (role === "administracao" || role === "gerencia") &&
+    capabilities["representatives.manage"] === true;
 
   const load = () => {
     setLoading(true);
     setError("");
-    void fetch(`${storeOrigin()}/api/representatives?scope=internal`, {
-      credentials: "include",
-      cache: "no-store"
-    })
-      .then(async (response) => {
+    void Promise.all([
+      fetch(`${storeOrigin()}/api/representatives?scope=internal`, {
+        credentials: "include",
+        cache: "no-store"
+      }).then(async (response) => {
         const result = (await response.json()) as {
           applications?: Application[];
           message?: string;
         };
         if (!response.ok) throw new Error(result.message ?? "Não foi possível carregar a fila.");
         return result.applications ?? [];
+      }),
+      loadInternalCapabilities()
+    ])
+      .then(([applications, nextCapabilities]) => {
+        setItems(applications);
+        setCapabilities(nextCapabilities);
       })
-      .then(setItems)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Falha inesperada.")
-      )
+      .catch((reason: unknown) => {
+        setItems([]);
+        setCapabilities({});
+        setError(reason instanceof Error ? reason.message : "Falha inesperada.");
+      })
       .finally(() => setLoading(false));
   };
 

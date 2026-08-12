@@ -24,4 +24,16 @@ describe("sanitizeTechnicalValue", () => {
     expect(result).toMatchObject({ text: "a".repeat(4_000) });
     expect((result as { values: unknown[] }).values).toHaveLength(100);
   });
+
+  it("remove credenciais embutidas em mensagens sem depender do nome da chave", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMzQ1In0.signature123456789";
+    const result = sanitizeTechnicalValue({
+      message: `Falha token=${jwt} url=postgresql://admin:senha@db.example.com/app sk-live=sk_live_1234567890abcdef`
+    }) as { message: string };
+
+    expect(result.message).not.toContain("senha");
+    expect(result.message).not.toContain("eyJ");
+    expect(result.message).not.toContain("sk_live_");
+    expect(result.message).toContain("[CONNECTION_URL]");
+  });
 });
