@@ -39,6 +39,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { type CSSProperties, type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/components/logout-button";
+import { UserAvatar } from "@/components/user-avatar";
 import { readString } from "@/lib/unknown-data";
 
 type Snapshot = {
@@ -50,6 +51,7 @@ type Snapshot = {
     levelName: string | null;
     levelDescription?: string | null;
     fullName?: string;
+    avatarUrl?: string;
     email?: string;
     phone?: string | null;
     regionCode: string;
@@ -383,9 +385,16 @@ export function RepresentativePortal({ section }: { section: string }) {
           >
             <Menu />
           </button>
-          <div>
-            <small>Portal profissional</small>
-            <strong>{snapshot.representative.publicCode}</strong>
+          <div className="representative-topbar-identity">
+            <UserAvatar
+              name={snapshot.representative.fullName || "Representante curti Z"}
+              src={snapshot.representative.avatarUrl}
+              size="small"
+            />
+            <div>
+              <small>Portal profissional</small>
+              <strong>{snapshot.representative.fullName || snapshot.representative.publicCode}</strong>
+            </div>
           </div>
           <Link className="representative-notification-link" href="/representante/notificacoes">
             <Bell />
@@ -633,7 +642,11 @@ function Profile({
       />
       <div className="representative-profile-grid">
         <article className="representative-card representative-identity-card">
-          <UserRound />
+          <UserAvatar
+            name={representative.fullName || "Representante curti Z"}
+            src={representative.avatarUrl}
+            size="large"
+          />
           <div>
             <small>Nome</small>
             <strong>{representative.fullName || "Não informado"}</strong>

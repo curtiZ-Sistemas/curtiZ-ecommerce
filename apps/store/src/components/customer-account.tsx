@@ -43,6 +43,8 @@ import { LogoutButton } from "./logout-button";
 import { SupportCenter } from "./support-center";
 import { FavoritesPanel } from "./favorites-panel";
 import { customerStatusLabel } from "../lib/customer-account-presentation";
+import { ProfileAvatarManager } from "./profile-avatar-manager";
+import { UserAvatar } from "./user-avatar";
 
 type Props = {
   snapshot: CustomerAccountSnapshot;
@@ -142,45 +144,15 @@ export function CustomerAccount({
     return result;
   };
 
-  const uploadAvatar = async (file: File) => {
-    if (pending) return;
-    setMessage("");
-    setError("");
-    const form = new FormData();
-    form.set("file", file);
-    const response = await fetch("/api/customer/avatar", {
-      method: "POST",
-      body: form
-    });
-    const result = (await response.json().catch(() => ({}))) as {
-      message?: string;
-      simulated?: boolean;
-    };
-    if (!response.ok) {
-      setError(result.message ?? "Não foi possível atualizar o avatar.");
-      return;
-    }
-    setMessage(result.message ?? "Avatar atualizado.");
-    startTransition(() => router.refresh());
-  };
-
   return (
     <main className="container page-shell customer-account-page">
       <header className="customer-account-header">
         <div className="customer-profile-heading">
-          <span className="customer-avatar" aria-hidden="true">
-            {snapshot.profile.avatarUrl ? (
-              <Image
-                src={snapshot.profile.avatarUrl}
-                alt=""
-                fill
-                sizes="64px"
-                unoptimized
-              />
-            ) : (
-              snapshot.profile.fullName.slice(0, 1).toUpperCase()
-            )}
-          </span>
+          <UserAvatar
+            name={snapshot.profile.fullName}
+            src={snapshot.profile.avatarUrl}
+            className="customer-avatar"
+          />
           <div>
             <p className="eyebrow">Área do cliente</p>
             <h1>Olá, {snapshot.profile.fullName.split(" ")[0]}</h1>
@@ -230,7 +202,6 @@ export function CustomerAccount({
             <Profile
               snapshot={snapshot}
               runAction={runAction}
-              uploadAvatar={uploadAvatar}
               pending={pending}
             />
           )}
@@ -439,12 +410,10 @@ type RunAction = (
 function Profile({
   snapshot,
   runAction,
-  uploadAvatar,
   pending
 }: {
   snapshot: CustomerAccountSnapshot;
   runAction: RunAction;
-  uploadAvatar: (file: File) => Promise<void>;
   pending: boolean;
 }) {
   const address = snapshot.addresses.find((item) => item.isDefault);
@@ -471,31 +440,11 @@ function Profile({
       <form className="customer-panel customer-form" onSubmit={submit}>
         <div className="customer-profile-card">
           <div className="customer-avatar-control">
-            <span className="customer-avatar large" aria-hidden="true">
-              {snapshot.profile.avatarUrl ? (
-                <Image
-                  src={snapshot.profile.avatarUrl}
-                  alt=""
-                  fill
-                  sizes="68px"
-                  unoptimized
-                />
-              ) : (
-                snapshot.profile.fullName.slice(0, 1).toUpperCase()
-              )}
-            </span>
-            <label className="customer-avatar-upload">
-              <span>Alterar foto</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={pending}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void uploadAvatar(file);
-                }}
-              />
-            </label>
+            <ProfileAvatarManager
+              fullName={snapshot.profile.fullName}
+              avatarUrl={snapshot.profile.avatarUrl}
+              compact
+            />
           </div>
           <div>
             <strong>{snapshot.profile.fullName}</strong>
@@ -1154,17 +1103,63 @@ function Returns({
 
 function Representative({ representative }: { representative: CustomerAccountSnapshot["representative"] }) {
   const hasApplication = Boolean(representative.applicationStatus);
+  const isSuspended =
+    representative.applicationStatus === "suspended" ||
+    representative.representativeStatus === "suspended";
+  const isRejected = ["rejected", "cancelled"].includes(representative.applicationStatus);
+  const isDraft = representative.applicationStatus === "draft";
+  const isPending = ["submitted", "under_review", "documents_pending"].includes(
+    representative.applicationStatus
+  );
+
+  let title = "Quero ser representante";
+  let description =
+    "Conheça os requisitos e preencha sua solicitação por etapas. O rascunho fica salvo.";
+  let actionLabel = "Iniciar solicitação";
+  let actionHref = "/representante/solicitacao";
+
+  if (isSuspended) {
+    title = "Acesso de representante suspenso";
+    description =
+      "Seu perfil de cliente continua ativo. Fale com o atendimento para consultar o motivo e os próximos passos.";
+    actionLabel = "Falar com atendimento";
+    actionHref = "/minha-conta/atendimento?novo=1";
+  } else if (representative.approved) {
+    title = "Você já é representante curti Z";
+    description = `Status profissional: ${customerStatusLabel(representative.representativeStatus)}. Acesse seu ambiente de trabalho sem perder o vínculo com esta conta.`;
+    actionLabel = "Acessar painel de controle";
+    actionHref = "/representante";
+  } else if (isRejected) {
+    title = "Solicitação não aprovada";
+    description =
+      "Sua conta de cliente permanece disponível. Consulte o atendimento antes de iniciar uma nova solicitação.";
+    actionLabel = "Falar com atendimento";
+    actionHref = "/minha-conta/atendimento?novo=1";
+  } else if (isPending) {
+    title = `Solicitação #${representative.applicationCode}`;
+    description = `Status atual: ${customerStatusLabel(representative.applicationStatus)}${representative.applicationSubmittedAt ? ` · enviada em ${formatDate(representative.applicationSubmittedAt)}` : ""}.`;
+    actionLabel = "Acompanhar solicitação";
+  } else if (isDraft) {
+    title = `Solicitação #${representative.applicationCode} em rascunho`;
+    description = `Última atualização em ${formatDate(representative.applicationUpdatedAt)}. Continue de onde parou.`;
+    actionLabel = "Continuar solicitação";
+  } else if (hasApplication) {
+    title = `Solicitação #${representative.applicationCode}`;
+    description = `Status atual: ${customerStatusLabel(representative.applicationStatus)}.`;
+    actionLabel = "Consultar solicitação";
+  }
+
   return (
     <div className="customer-section-stack">
       <SectionTitle eyebrow="Oportunidade curti Z" title="Representante curti Z" description="Envie sua solicitação, documentos e acompanhe a análise sem sair da sua conta." />
-      <article className="customer-panel customer-representative-card">
+      <article className={`customer-panel customer-representative-card ${isSuspended ? "is-suspended" : ""}`.trim()}>
         <UserRoundCheck aria-hidden="true" />
         <div>
-          <h3>{representative.approved ? "Você já é representante curti Z" : hasApplication ? `Solicitação #${representative.applicationCode}` : "Quero ser representante"}</h3>
-          <p>{representative.approved ? "Acesse seu ambiente profissional separado para consultar materiais, vendas e rede." : hasApplication ? `Status atual: ${customerStatusLabel(representative.applicationStatus)}. Abra a solicitação para acompanhar ou corrigir pendências.` : "Conheça os requisitos e preencha sua solicitação por etapas. O rascunho fica salvo."}</p>
+          <h3>{title}</h3>
+          <p>{description}</p>
         </div>
-        <Link className="primary-button" href={representative.approved ? "/representante" : "/representante/solicitacao"}>
-          {representative.approved ? "Abrir Portal do Representante" : hasApplication ? "Acompanhar solicitação" : "Iniciar solicitação"}
+        <Link className="primary-button" href={actionHref}>
+          {actionLabel}
         </Link>
       </article>
     </div>

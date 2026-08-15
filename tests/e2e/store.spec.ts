@@ -120,12 +120,12 @@ test("chat flutuante responde a uma saudação e o launcher também fecha", asyn
   await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
   await rejectCookies.click();
   await page.getByRole("button", { name: "Abrir ajuda" }).click();
-  await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toBeVisible();
   await page.getByLabel("Digite sua mensagem").fill("Oi");
   await page.getByRole("button", { name: "Enviar mensagem" }).click();
   await expect(page.getByText(/Como posso ajudar você hoje/i)).toBeVisible();
   await page.getByRole("button", { name: "Fechar ajuda" }).click();
-  await expect(page.getByRole("dialog", { name: "Ajuda Curtiz" })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Abrir ajuda" })).toBeFocused();
 });
 

@@ -100,5 +100,68 @@ export async function POST(request: NextRequest) {
     await supabase.storage.from("customer-private").remove([oldPath]);
   }
   revalidatePath("/minha-conta", "layout");
+  revalidatePath("/perfil");
+  return NextResponse.json({ ok: true }, { headers: noStore });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não autorizada." },
+      { status: 403, headers: noStore }
+    );
+  }
+
+  const demo =
+    process.env.DEMO_MODE === "true"
+      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
+      : null;
+  if (demo) {
+    return NextResponse.json(
+      { ok: true, simulated: true, message: "Remoção de avatar validada." },
+      { headers: noStore }
+    );
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const userResult = supabase ? await supabase.auth.getUser() : null;
+  const user = userResult?.data.user;
+  if (!supabase || !user) {
+    return NextResponse.json(
+      { message: "Entre para continuar." },
+      { status: 401, headers: noStore }
+    );
+  }
+
+  const currentResponse = await supabase
+    .from("profiles")
+    .select("avatar_path")
+    .eq("id", user.id)
+    .maybeSingle();
+  const current = readQueryResult(currentResponse).data;
+  const oldPath = isUnknownRecord(current) ? readString(current, "avatar_path") : "";
+  if (currentResponse.error) {
+    return NextResponse.json(
+      { message: "Não foi possível consultar o avatar." },
+      { status: 503, headers: noStore }
+    );
+  }
+
+  const updated = await supabase
+    .from("profiles")
+    .update({ avatar_path: null, updated_at: new Date().toISOString() })
+    .eq("id", user.id);
+  if (updated.error) {
+    return NextResponse.json(
+      { message: "Não foi possível remover o avatar." },
+      { status: 409, headers: noStore }
+    );
+  }
+
+  if (oldPath && oldPath.startsWith(`${user.id}/avatar/`)) {
+    await supabase.storage.from("customer-private").remove([oldPath]);
+  }
+  revalidatePath("/minha-conta", "layout");
+  revalidatePath("/perfil");
   return NextResponse.json({ ok: true }, { headers: noStore });
 }

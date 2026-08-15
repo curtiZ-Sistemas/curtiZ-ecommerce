@@ -244,12 +244,14 @@ export function PanelShell({
   role,
   section,
   userName,
+  avatarUrl,
   canSwitchPanel = false,
   children
 }: {
   role: PanelRole;
   section: string;
   userName?: string;
+  avatarUrl?: string;
   canSwitchPanel?: boolean;
   children: React.ReactNode;
 }) {
@@ -511,13 +513,29 @@ export function PanelShell({
               <PanelsTopLeft aria-hidden="true" /> Trocar painel
             </Link>
           ) : null}
-          <div className="user-chip">
-            <div className="avatar">{(userName ?? roleLabels[role]).slice(0, 1)}</div>
+          <a
+            className="user-chip"
+            href={`${configuredStoreUrl.replace(/\/$/, "")}/perfil`}
+            title="Abrir meu perfil"
+          >
+            <div className="avatar">
+              {avatarUrl ? (
+                <Image
+                  src={avatarUrl}
+                  alt=""
+                  fill
+                  sizes="38px"
+                  unoptimized
+                />
+              ) : (
+                (userName ?? roleLabels[role]).slice(0, 1).toUpperCase()
+              )}
+            </div>
             <div>
               <strong>{userName ?? roleLabels[role]}</strong>
               <small>{roleLabels[role]}</small>
             </div>
-          </div>
+          </a>
           <button
             className="panel-logout"
             type="button"

@@ -62,6 +62,7 @@ export default async function RolePage({
       role={role}
       section={section}
       userName={access.fullName}
+      avatarUrl={access.avatarUrl}
       canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
     >
       {showRouteHeading(role, section) ? <PanelPageHeading role={role} section={section} /> : null}

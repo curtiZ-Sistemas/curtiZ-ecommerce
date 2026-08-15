@@ -3,8 +3,9 @@ import { BadgeCheck, LockKeyhole, UserRound } from "lucide-react";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import { isUnknownRecord, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 import { RepresentativeAccessCard } from "@/components/representative-access-card";
+import { ProfileAvatarManager } from "@/components/profile-avatar-manager";
 
 export const metadata = { title: "Perfil", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -14,15 +15,34 @@ export default async function ProfilePage() {
   const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
   let fullName = demoSession?.fullName ?? null;
   let roles: string[] = demoSession ? [...demoSession.roles] : [];
+  let avatarUrl = "";
 
   if (!demoSession) {
     const supabase = await createServerSupabaseClient();
     const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     if (data.user && supabase) {
-      fullName =
-        typeof data.user.user_metadata.full_name === "string"
-          ? data.user.user_metadata.full_name
-          : "Cliente curti Z";
+      const profileResponse = await supabase
+        .from("profiles")
+        .select("full_name,avatar_path")
+        .eq("id", data.user.id)
+        .maybeSingle();
+      const profile = readQueryResult(profileResponse).data;
+      fullName = isUnknownRecord(profile)
+        ? readString(profile, "full_name")
+        : "";
+      if (!fullName) {
+        fullName =
+          typeof data.user.user_metadata.full_name === "string"
+            ? data.user.user_metadata.full_name
+            : "Cliente curti Z";
+      }
+      const avatarPath = isUnknownRecord(profile) ? readString(profile, "avatar_path") : "";
+      if (avatarPath) {
+        const signed = await supabase.storage
+          .from("customer-private")
+          .createSignedUrl(avatarPath, 300);
+        avatarUrl = signed.data?.signedUrl ?? "";
+      }
       const roleResponse: unknown = await supabase
         .from("user_roles")
         .select("role")
@@ -61,12 +81,15 @@ export default async function ProfilePage() {
   }
 
   const isRepresentative = roles.includes("representative");
+  const hasInternalRole = roles.some((role) =>
+    ["admin", "manager", "operational", "technical"].includes(role)
+  );
+  const panelUrl = process.env.NEXT_PUBLIC_PANEL_URL?.trim() || "http://localhost:3001";
+  const returnUrl = hasInternalRole ? `${panelUrl.replace(/\/$/, "")}/selecionar-painel` : "/minha-conta";
   return (
     <main className="container page-shell profile-page">
       <header className="profile-identity">
-        <span className="account-avatar" aria-hidden="true">
-          {fullName.slice(0, 1).toUpperCase()}
-        </span>
+        <ProfileAvatarManager fullName={fullName} avatarUrl={avatarUrl} compact />
         <div>
           <p className="eyebrow">Perfil curti Z</p>
           <h1>{fullName}</h1>
@@ -91,8 +114,8 @@ export default async function ProfilePage() {
               <dd>Protegido</dd>
             </div>
           </dl>
-          <Link className="secondary-button" href="/minha-conta">
-            Gerenciar perfil
+          <Link className="secondary-button" href={returnUrl}>
+            {hasInternalRole ? "Voltar aos painéis" : "Voltar à área do cliente"}
           </Link>
         </section>
         <RepresentativeAccessCard active={isRepresentative} />

@@ -185,7 +185,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       .order("redeemed_at", { ascending: false }),
     supabase
       .from("representative_applications")
-      .select("public_code,status")
+      .select("public_code,status,submitted_at,updated_at")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase
@@ -436,8 +436,12 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
     representative: {
       applicationStatus: readString(application, "status"),
       applicationCode: readString(application, "public_code"),
+      applicationSubmittedAt: readString(application, "submitted_at"),
+      applicationUpdatedAt: readString(application, "updated_at"),
       representativeStatus: readString(representative, "status"),
-      approved: Boolean(readString(representative, "status"))
+      approved: ["approved_waiting_kit", "active", "unqualified"].includes(
+        readString(representative, "status")
+      )
     },
     warning: hasError
       ? "Alguns dados não puderam ser carregados agora. Tente atualizar a página."

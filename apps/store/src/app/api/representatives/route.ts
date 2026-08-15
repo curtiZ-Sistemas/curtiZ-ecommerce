@@ -391,6 +391,14 @@ export async function GET(request: NextRequest) {
     ? representativeRecord.representative_levels
     : null;
   const profile = isUnknownRecord(profileResult.data) ? profileResult.data : null;
+  let avatarUrl = "";
+  const avatarPath = profile ? readString(profile, "avatar_path") : "";
+  if (avatarPath) {
+    const signedAvatar = await supabase.storage
+      .from("customer-private")
+      .createSignedUrl(avatarPath, 300);
+    avatarUrl = signedAvatar.data?.signedUrl ?? "";
+  }
   const availableKits = readRows(availableKitsResult.data)
     .filter((kit) => {
       const rules = readRows(kit.kit_level_rules);
@@ -528,6 +536,7 @@ export async function GET(request: NextRequest) {
         levelName: level ? readString(level, "name") : null,
         levelDescription: level ? readString(level, "description") : null,
         fullName: profile ? readString(profile, "full_name") : "",
+        avatarUrl,
         email: profile ? readString(profile, "email_snapshot") : "",
         phone: profile ? readString(profile, "phone") || null : null,
         regionCode: readString(representativeRecord, "region_code"),

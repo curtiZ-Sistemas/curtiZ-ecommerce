@@ -6,6 +6,8 @@ describe("customer account presentation", () => {
     expect(customerStatusLabel("pending_payment")).toBe("Aguardando pagamento");
     expect(customerStatusLabel("ready_to_ship")).toBe("Pronto para envio");
     expect(customerStatusLabel("return_requested")).toBe("Devolução solicitada");
+    expect(customerStatusLabel("approved_waiting_kit")).toBe("Aprovado · kit pendente");
+    expect(customerStatusLabel("suspended")).toBe("Suspenso");
   });
 
   it("keeps unknown provider states readable without inventing a status", () => {

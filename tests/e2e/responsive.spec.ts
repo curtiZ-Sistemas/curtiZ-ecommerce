@@ -124,7 +124,7 @@ test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page 
     ).toBeLessThanOrEqual(20);
 
     await launcher.click();
-    const dialog = page.getByRole("dialog", { name: "Ajuda Curtiz" });
+    const dialog = page.getByRole("dialog", { name: "Ajuda curti Z" });
     await expect(dialog).toBeVisible();
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox).not.toBeNull();

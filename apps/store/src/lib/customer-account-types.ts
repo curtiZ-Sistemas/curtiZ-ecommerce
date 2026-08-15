@@ -157,6 +157,8 @@ export type CustomerAccountSnapshot = {
   representative: {
     applicationStatus: string;
     applicationCode: string;
+    applicationSubmittedAt: string;
+    applicationUpdatedAt: string;
     representativeStatus: string;
     approved: boolean;
   };
@@ -193,6 +195,8 @@ export const emptyCustomerAccount = (
   representative: {
     applicationStatus: "",
     applicationCode: "",
+    applicationSubmittedAt: "",
+    applicationUpdatedAt: "",
     representativeStatus: "",
     approved: false
   },

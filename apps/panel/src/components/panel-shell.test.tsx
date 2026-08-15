@@ -42,6 +42,23 @@ describe("PanelShell multipainel", () => {
     expect(technical).toContain("Técnico");
   });
 
+  it("mostra o avatar único e oferece acesso ao perfil autenticado", () => {
+    const markup = renderToStaticMarkup(
+      <PanelShell
+        role="administracao"
+        section=""
+        userName="Maria Silva"
+        avatarUrl="https://example.supabase.co/storage/avatar-assinado"
+      >
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
+
+    expect(markup).toContain('href="http://localhost:3000/perfil"');
+    expect(markup).toContain("avatar-assinado");
+    expect(markup).toContain("Abrir meu perfil");
+  });
+
   it("expõe contexto, prioridade e estado ativo sem criar ações decorativas", () => {
     const markup = renderToStaticMarkup(
       <PanelShell role="operacional" section="pedidos">

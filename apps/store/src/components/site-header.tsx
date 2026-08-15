@@ -22,6 +22,7 @@ const navigation = [
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [accountName, setAccountName] = useState<string>();
   const pathname = usePathname();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -50,6 +51,13 @@ export function SiteHeader() {
     setMenuOpen(false);
     setSearchOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const update = () => setCompact(window.scrollY > 28);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -95,7 +103,7 @@ export function SiteHeader() {
 
   return (
     <>
-      <header className="site-header">
+      <header className={compact ? "site-header is-compact" : "site-header"}>
         <div className="header-main container">
           <button
             ref={menuButtonRef}
@@ -163,18 +171,18 @@ export function SiteHeader() {
         )}
 
         <nav className="desktop-nav container" aria-label="Categorias principais">
-          <Link className={pathname === "/" ? "active" : ""} href="/">
+          <Link className={pathname === "/" ? "active" : ""} href="/" aria-current={pathname === "/" ? "page" : undefined}>
             Início
           </Link>
           {navigation.map(([label, href]) => (
-            <Link className={pathname === href ? "active" : ""} href={href} key={href}>
+            <Link className={pathname === href ? "active" : ""} href={href} aria-current={pathname === href ? "page" : undefined} key={href}>
               {label}
             </Link>
           ))}
-          <Link className={pathname === "/rastrear-pedido" ? "active" : ""} href="/rastrear-pedido">
+          <Link className={pathname === "/rastrear-pedido" ? "active" : ""} href="/rastrear-pedido" aria-current={pathname === "/rastrear-pedido" ? "page" : undefined}>
             Rastrear pedido
           </Link>
-          <Link className={pathname === "/ajuda" ? "active" : ""} href="/ajuda">
+          <Link className={pathname === "/ajuda" ? "active" : ""} href="/ajuda" aria-current={pathname === "/ajuda" ? "page" : undefined}>
             Atendimento
           </Link>
         </nav>

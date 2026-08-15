@@ -20,7 +20,11 @@ const statusLabels: Record<string, string> = {
   requested: "Solicitada",
   under_review: "Em análise",
   documents_pending: "Documentos pendentes",
-  active: "Ativo"
+  approved_waiting_kit: "Aprovado · kit pendente",
+  active: "Ativo",
+  inactive: "Inativo",
+  unqualified: "Ativo · qualificação pendente",
+  suspended: "Suspenso"
 };
 
 export const customerStatusLabel = (status: string) =>
