@@ -1,4 +1,4 @@
-# Design system — Curtiz
+# Design system — curti Z
 
 ## Tokens
 

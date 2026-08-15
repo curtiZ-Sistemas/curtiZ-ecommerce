@@ -7,10 +7,23 @@ import { ProductCard } from "@/components/product-card";
 import { ProductPurchase } from "@/components/product-purchase";
 import { getPublicProduct, queryPublicCatalog } from "@/lib/storefront-data";
 
-export const metadata: Metadata = {
-  title: "Produto",
-  description: "Detalhes, varia\u00e7\u00f5es e disponibilidade dos produtos curti Z."
-};
+const productDescription = "Detalhes, variações e disponibilidade dos produtos curti Z.";
+
+export async function generateMetadata({
+  params
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const url = `/produto/${encodeURIComponent(slug)}`;
+  return {
+    title: "Produto",
+    description: productDescription,
+    alternates: { canonical: url },
+    openGraph: { title: "Produto curti Z", description: productDescription, url },
+    twitter: { card: "summary", title: "Produto curti Z", description: productDescription }
+  };
+}
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const [{ slug }, requestHeaders] = await Promise.all([params, headers()]);

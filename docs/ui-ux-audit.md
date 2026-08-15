@@ -1,4 +1,4 @@
-# Auditoria de UI/UX — Curtiz
+# Auditoria de UI/UX — curti Z
 
 ## Escopo e estado encontrado
 

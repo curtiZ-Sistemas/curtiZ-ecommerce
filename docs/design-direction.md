@@ -1,4 +1,4 @@
-# Direção visual — Curtiz
+# Direção visual — curti Z
 
 ## Alternativas avaliadas
 

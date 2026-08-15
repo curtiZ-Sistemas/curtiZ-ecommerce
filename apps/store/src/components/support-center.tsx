@@ -315,7 +315,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
                   )}
                   {selected.assignedName && (
                     <p className="support-assigned-message">
-                      Atendimento assumido pela equipe Curtiz.
+                      Atendimento assumido pela equipe curti Z.
                     </p>
                   )}
                   <div className="customer-message-thread" aria-live="polite">

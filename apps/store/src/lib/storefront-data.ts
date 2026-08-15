@@ -161,8 +161,8 @@ const defaultSections: HomepageSection[] = [
 
 const fallbackBanner: PublicBanner = {
   id: "default-hero-banner",
-  title: "Conheça os lançamentos da Curtiz",
-  altText: "Conheça os lançamentos da Curtiz",
+  title: "Conheça os lançamentos da curti Z",
+  altText: "Conheça os lançamentos da curti Z",
   desktopImage: "/images/hero-curtiz-desktop.png",
   mobileImage: "/images/hero-curtiz-mobile.png",
   href: "/lancamentos",

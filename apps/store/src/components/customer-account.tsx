@@ -356,7 +356,7 @@ function Overview({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
       <SectionTitle
         eyebrow="Visão geral"
         title="Sua conta em resumo"
-        description="Informações atualizadas a partir da sua conta Curtiz."
+        description="Informações atualizadas a partir da sua conta curti Z."
       />
       <div className="customer-metric-grid">
         {cards.map(([label, value, slug, Icon]) => (
@@ -406,14 +406,14 @@ function Overview({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
           <div className="customer-shortcuts">
             <Link href="/minha-conta/enderecos"><MapPin />Gerenciar endereços<ChevronRight /></Link>
             <Link href="/minha-conta/seguranca"><ShieldCheck />Segurança da conta<ChevronRight /></Link>
-            <Link href="/minha-conta/representante"><UserRoundCheck />Representante Curtiz<ChevronRight /></Link>
+            <Link href="/minha-conta/representante"><UserRoundCheck />Representante curti Z<ChevronRight /></Link>
             <Link href="/minha-conta/atendimento?new=1"><ClipboardCheck />Falar com atendimento<ChevronRight /></Link>
           </div>
         </article>
       </div>
       <article className="customer-panel customer-representative-summary">
         <div>
-          <p className="eyebrow">Representante Curtiz</p>
+          <p className="eyebrow">Representante curti Z</p>
           <h3>
             {snapshot.representative.approved
               ? "Seu Portal do Representante está disponível"

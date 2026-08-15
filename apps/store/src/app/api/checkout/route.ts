@@ -4,6 +4,7 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "@/lib/catalog";
+import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -36,6 +37,12 @@ const schema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) {
+    return NextResponse.json(
+      { ok: false, message: "Origem não permitida." },
+      { status: 403, headers: { "cache-control": "no-store" } }
+    );
+  }
   const integrations = getIntegrationConfig();
   const supabase = await createServerSupabaseClient();
   const { data: authData } = supabase

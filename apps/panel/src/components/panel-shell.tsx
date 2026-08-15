@@ -19,6 +19,8 @@ import {
   MessageSquareText,
   PackageCheck,
   PackagePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelsTopLeft,
   Search,
   Scale,
@@ -253,6 +255,7 @@ export function PanelShell({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -263,6 +266,18 @@ export function PanelShell({
     if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
   };
   const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+
+  useEffect(() => {
+    setSidebarCollapsed(window.localStorage.getItem("curtiz:panel-sidebar-collapsed") === "true");
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("curtiz:panel-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
 
   const browserStoreUrl = () => {
     const configured = new URL(configuredStoreUrl);
@@ -352,7 +367,10 @@ export function PanelShell({
   };
 
   return (
-    <div className="panel-layout">
+    <div className={sidebarCollapsed ? "panel-layout sidebar-collapsed" : "panel-layout"}>
+      <a className="skip-link" href="#panel-content">
+        Pular para o conteúdo
+      </a>
       {menuOpen && (
         <button
           className="panel-backdrop"
@@ -370,15 +388,27 @@ export function PanelShell({
           <Link className="panel-brand" href={`/${role}`} onClick={() => closeMenu()}>
             <Image src={logoCurtiz} alt="curti Z" width={150} height={100} priority />
           </Link>
-          <button
-            className="sidebar-close"
-            type="button"
-            onClick={() => closeMenu(true)}
-            aria-label="Fechar menu"
-            autoFocus={menuOpen}
-          >
-            <X />
-          </button>
+          <div className="sidebar-heading-actions">
+            <button
+              className="sidebar-collapse"
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+              aria-pressed={sidebarCollapsed}
+              title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+            </button>
+            <button
+              className="sidebar-close"
+              type="button"
+              onClick={() => closeMenu(true)}
+              aria-label="Fechar menu"
+              autoFocus={menuOpen}
+            >
+              <X />
+            </button>
+          </div>
         </div>
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
         <Link className="sidebar-priority" href={roleExperience[role].actionHref} onClick={() => closeMenu()}>
@@ -397,6 +427,7 @@ export function PanelShell({
                   href={href}
                   onClick={() => closeMenu()}
                   aria-current={section === route ? "page" : undefined}
+                  title={sidebarCollapsed ? label : undefined}
                 >
                   <Icon size={19} />
                   <span>{label}</span>
@@ -415,7 +446,12 @@ export function PanelShell({
             <span>Trocar painel</span>
           </Link>
         ) : null}
-        <Link className="support-card" href={`/${role}/atendimentos`}>
+        <Link
+          className="support-card"
+          href={`/${role}/atendimentos`}
+          aria-label="Abrir suporte interno"
+          title={sidebarCollapsed ? "Suporte interno" : undefined}
+        >
           <LifeBuoy size={20} />
           <span>
             <strong>Precisa de ajuda?</strong>
@@ -504,7 +540,7 @@ export function PanelShell({
             </span>
           )}
         </header>
-        <main className="panel-content">{children}</main>
+        <main className="panel-content" id="panel-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

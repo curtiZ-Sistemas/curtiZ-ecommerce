@@ -30,7 +30,7 @@ const quickActions = [
   ["Troca ou devolução", "/politicas/trocas-e-devolucoes"],
   ["Pagamento", "/politicas/pagamento"],
   ["Minha conta", "/minha-conta"],
-  ["Representante Curtiz", "/representante"]
+  ["Representante curti Z", "/representante"]
 ] as const;
 
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -149,7 +149,7 @@ export function HelpCenter() {
   return (
     <div className="help-center-v2">
       <section className="help-search-hero" aria-labelledby="help-search-title">
-        <p className="eyebrow">Central de Ajuda Curtiz</p>
+        <p className="eyebrow">Central de Ajuda curti Z</p>
         <h1 id="help-search-title">Olá! Como podemos ajudar?</h1>
         <p>Pesquise conteúdos revisados ou acompanhe um chamado com a equipe.</p>
         <label className="help-main-search">

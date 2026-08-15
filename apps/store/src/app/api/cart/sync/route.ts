@@ -1,6 +1,8 @@
 import type { CartLine } from "@curtiz/domain";
+import { postgresUuidSchema } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -25,9 +27,9 @@ const requestSchema = z.object({
 });
 
 const remoteLineSchema = z.object({
-  productId: z.string().uuid(),
+  productId: postgresUuidSchema,
   slug: z.string(),
-  variantId: z.string().uuid(),
+  variantId: postgresUuidSchema,
   name: z.string(),
   imagePath: z.string().nullable().optional(),
   color: z.string(),
@@ -52,6 +54,12 @@ function publicCatalogImage(path: string | null | undefined) {
 }
 
 export async function POST(request: Request) {
+  if (!isAllowedRequestOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: { "cache-control": "no-store" } }
+    );
+  }
   const payload: unknown = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(payload);
   if (!parsed.success) {

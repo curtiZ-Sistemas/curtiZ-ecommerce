@@ -233,7 +233,7 @@ export const getDemoRepresentativeSnapshot = (email: string) => {
       ? [
           {
             id: "20000000-0000-4000-8000-000000000001",
-            name: "Kit demonstrativo Curtiz",
+            name: "Kit demonstrativo curti Z",
             description: "Oferta fictícia para validar o fluxo de compra em ambiente demo.",
             priceInCents: 19990,
             requiredForActivation: false,

@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   RotateCcw,
   ShoppingBag,
+  SlidersHorizontal,
   TriangleAlert
 } from "lucide-react";
 import Link from "next/link";
@@ -131,6 +132,31 @@ export function ManagerDashboard() {
   const update = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
   };
+  const advancedFilterCount = [
+    filters.region,
+    filters.product,
+    filters.category,
+    filters.model,
+    filters.representative,
+    filters.level,
+    filters.campaign
+  ].filter(Boolean).length;
+  const filtersChanged =
+    advancedFilterCount > 0 || filters.from !== dates.from || filters.to !== dates.to;
+  const clearFilters = () => {
+    const next = {
+      ...dates,
+      region: "",
+      product: "",
+      category: "",
+      model: "",
+      representative: "",
+      level: "",
+      campaign: ""
+    };
+    setFilters(next);
+    setSubmitted(next);
+  };
   const series: RevenuePoint[] = Array.isArray(metrics.series)
     ? metrics.series.flatMap((item) => {
         if (!isRecord(item) || typeof item.day !== "string") return [];
@@ -163,25 +189,42 @@ export function ManagerDashboard() {
           setSubmitted(filters);
         }}
       >
-        <label>
-          De
-          <input type="date" value={filters.from} onChange={(event) => update("from", event.target.value)} required />
-        </label>
-        <label>
-          Até
-          <input type="date" value={filters.to} onChange={(event) => update("to", event.target.value)} required />
-        </label>
-        <Filter label="Região" value={filters.region} onChange={(value) => update("region", value)} options={(options.regions ?? []).map((region) => ({ id: region, name: region }))} />
-        <Filter label="Produto" value={filters.product} onChange={(value) => update("product", value)} options={options.products ?? []} />
-        <Filter label="Categoria" value={filters.category} onChange={(value) => update("category", value)} options={options.categories ?? []} />
-        <Filter label="Modelo" value={filters.model} onChange={(value) => update("model", value)} options={options.models ?? []} />
-        <Filter label="Representante" value={filters.representative} onChange={(value) => update("representative", value)} options={(options.representatives ?? []).map((item) => ({ id: item.id, name: item.public_code }))} />
-        <Filter label="Nível" value={filters.level} onChange={(value) => update("level", value)} options={options.levels ?? []} />
-        <Filter label="Campanha" value={filters.campaign} onChange={(value) => update("campaign", value)} options={options.campaigns ?? []} />
-        <button className="primary-button" type="submit" disabled={loading}>
-          {loading ? <LoaderCircle className="spin" aria-hidden="true" /> : <ChartNoAxesCombined aria-hidden="true" />}
-          Aplicar
-        </button>
+        <div className="manager-filter-primary">
+          <label>
+            De
+            <input type="date" value={filters.from} onChange={(event) => update("from", event.target.value)} required />
+          </label>
+          <label>
+            Até
+            <input type="date" value={filters.to} onChange={(event) => update("to", event.target.value)} required />
+          </label>
+          <div className="manager-filter-actions">
+            {filtersChanged ? (
+              <button className="secondary-button" type="button" onClick={clearFilters} disabled={loading}>
+                <RotateCcw aria-hidden="true" /> Limpar
+              </button>
+            ) : null}
+            <button className="primary-button" type="submit" disabled={loading}>
+              {loading ? <LoaderCircle className="spin" aria-hidden="true" /> : <ChartNoAxesCombined aria-hidden="true" />}
+              {advancedFilterCount ? "Aplicar filtros" : "Aplicar período"}
+            </button>
+          </div>
+        </div>
+        <details className="manager-advanced-filters">
+          <summary>
+            <span><SlidersHorizontal aria-hidden="true" /> Filtros avançados</span>
+            <small>{advancedFilterCount ? `${advancedFilterCount} ativo(s)` : "Produto, região, rede e campanha"}</small>
+          </summary>
+          <div>
+            <Filter label="Região" value={filters.region} onChange={(value) => update("region", value)} options={(options.regions ?? []).map((region) => ({ id: region, name: region }))} />
+            <Filter label="Produto" value={filters.product} onChange={(value) => update("product", value)} options={options.products ?? []} />
+            <Filter label="Categoria" value={filters.category} onChange={(value) => update("category", value)} options={options.categories ?? []} />
+            <Filter label="Modelo" value={filters.model} onChange={(value) => update("model", value)} options={options.models ?? []} />
+            <Filter label="Representante" value={filters.representative} onChange={(value) => update("representative", value)} options={(options.representatives ?? []).map((item) => ({ id: item.id, name: item.public_code }))} />
+            <Filter label="Nível" value={filters.level} onChange={(value) => update("level", value)} options={options.levels ?? []} />
+            <Filter label="Campanha" value={filters.campaign} onChange={(value) => update("campaign", value)} options={options.campaigns ?? []} />
+          </div>
+        </details>
       </form>
 
       {message ? <div className="admin-empty-state" role="alert"><p>{message}</p><button className="secondary-button" type="button" onClick={() => void load()}><RotateCcw aria-hidden="true" /> Tentar novamente</button></div> : null}

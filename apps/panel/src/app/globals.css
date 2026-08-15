@@ -1398,6 +1398,50 @@ textarea:focus-visible {
   min-height: 110px;
 }
 
+.operational-action-dialog form > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.operational-dialog-fields {
+  display: grid;
+  gap: 13px;
+  margin-top: 16px;
+}
+
+.operational-dialog-fields label {
+  display: grid;
+  gap: 6px;
+  color: #4d4845;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.operational-dialog-fields input,
+.operational-dialog-fields select,
+.operational-dialog-fields textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: white;
+}
+
+.operational-dialog-fields textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.operational-dialog-fields small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
 .operational-record {
   margin: 0;
   padding: 10px 0;
@@ -2302,42 +2346,22 @@ button:not(:disabled):active,
 .panel-loading {
   min-height: 100vh;
   display: grid;
-  align-content: start;
-  gap: 18px;
+  place-items: center;
   padding: 32px;
   background: var(--canvas);
 }
 
-.panel-loading-heading,
-.panel-loading-card,
-.panel-loading-table {
-  border-radius: var(--radius);
-  background: linear-gradient(90deg, #f1ece9 25%, #faf7f5 50%, #f1ece9 75%);
-  background-size: 200% 100%;
-  animation: panel-skeleton 1.2s ease-in-out infinite;
+.panel-loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--neutral-200);
+  border-top-color: var(--brand-700);
+  border-radius: 50%;
+  animation: panel-spin 750ms linear infinite;
 }
 
-.panel-loading-heading {
-  width: min(360px, 80%);
-  height: 52px;
-}
-
-.panel-loading-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.panel-loading-card {
-  height: 128px;
-}
-
-.panel-loading-table {
-  height: 360px;
-}
-
-@keyframes panel-skeleton {
-  to { background-position: -200% 0; }
+@keyframes panel-spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 800px) {
@@ -2345,16 +2369,16 @@ button:not(:disabled):active,
     padding: 20px 14px;
   }
 
-  .panel-loading-grid {
-    grid-template-columns: 1fr 1fr;
+  .panel-loading-spinner {
+    width: 40px;
+    height: 40px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel-loading-heading,
-  .panel-loading-card,
-  .panel-loading-table {
+  .panel-loading-spinner {
     animation: none;
+    border-right-color: var(--brand-700);
   }
 }
 
@@ -2600,9 +2624,57 @@ button:not(:disabled):active,
 
 .manager-filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(130px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.manager-filter-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 220px)) minmax(250px, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.manager-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.manager-advanced-filters {
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.manager-advanced-filters summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--brand-900);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.manager-advanced-filters summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.manager-advanced-filters summary small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.manager-advanced-filters > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  padding-top: 12px;
 }
 
 .manager-filters label,
@@ -2626,10 +2698,6 @@ button:not(:disabled):active,
   border-radius: 6px;
   background: white;
   color: var(--ink);
-}
-
-.manager-filters .primary-button {
-  align-self: end;
 }
 
 .manager-filters svg,
@@ -2799,20 +2867,44 @@ button:not(:disabled):active,
 }
 
 @media (max-width: 1100px) {
-  .manager-filters,
   .manager-metric-grid,
   .manager-overview-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .manager-advanced-filters > div {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
 }
 
 @media (max-width: 800px) {
-  .manager-filters,
   .manager-metric-grid,
   .manager-overview-grid,
   .manager-dashboard-columns,
   .manager-approval-links {
     grid-template-columns: 1fr;
+  }
+
+  .manager-filter-primary,
+  .manager-advanced-filters > div {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-filter-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .manager-filter-actions .primary-button,
+  .manager-filter-actions .secondary-button {
+    width: 100%;
+  }
+
+  .manager-advanced-filters summary {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
   }
 
   .manager-simulation,
@@ -2879,6 +2971,23 @@ button:not(:disabled):active,
   margin-top: 5px;
   font-size: 1.28rem;
   text-overflow: ellipsis;
+}
+
+.admin-metric-link {
+  color: inherit;
+}
+
+.admin-metric-link small {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.admin-metric-link:hover {
+  border-color: var(--brand-100);
+  background: var(--brand-50);
+  transform: translateY(-2px);
 }
 
 .admin-dashboard-columns,
@@ -4155,6 +4264,16 @@ button:not(:disabled):active,
     width: 100%;
     max-height: 94dvh;
     border-radius: 10px 10px 0 0;
+  }
+
+  .operational-action-dialog form > footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .operational-action-dialog form > footer .primary-button,
+  .operational-action-dialog form > footer .secondary-button {
+    width: 100%;
   }
 
   .homepage-section-list article {
@@ -5593,6 +5712,131 @@ button:not(:disabled):active,
   .sidebar-priority,
   .panel-selector-card,
   .operational-queue-shortcuts a {
+    transition: none;
+  }
+}
+
+/* Navegação de trabalho: acesso por teclado e sidebar compacta no desktop. */
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 10px;
+  left: 10px;
+  padding: 10px 14px;
+  border-radius: 7px;
+  color: white;
+  background: var(--brand-950);
+  font-size: 0.78rem;
+  font-weight: 850;
+  transform: translateY(-160%);
+  transition: transform 140ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.panel-content:focus {
+  outline: none;
+}
+
+.sidebar-heading-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sidebar-collapse {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: white;
+  cursor: pointer;
+}
+
+.sidebar-collapse:hover {
+  border-color: var(--brand-100);
+  color: var(--brand-900);
+  background: var(--brand-50);
+}
+
+.sidebar-collapse svg {
+  width: 18px;
+}
+
+@media (min-width: 801px) {
+  .panel-layout,
+  .sidebar {
+    transition: grid-template-columns 180ms ease, padding 180ms ease;
+  }
+
+  .panel-layout.sidebar-collapsed {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .sidebar-collapsed .sidebar {
+    padding-inline: 10px;
+  }
+
+  .sidebar-collapsed .sidebar-heading {
+    align-items: center;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sidebar-collapsed .panel-brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar-collapsed .panel-brand img {
+    width: 52px;
+  }
+
+  .sidebar-collapsed .sidebar-context,
+  .sidebar-collapsed .sidebar-priority,
+  .sidebar-collapsed .side-nav a span,
+  .sidebar-collapsed .sidebar-switch-link span,
+  .sidebar-collapsed .support-card span {
+    display: none;
+  }
+
+  .sidebar-collapsed .side-nav-group {
+    height: 1px;
+    margin: 12px 7px 5px;
+    padding: 0;
+    overflow: hidden;
+    background: var(--line);
+    color: transparent;
+  }
+
+  .sidebar-collapsed .side-nav a,
+  .sidebar-collapsed .sidebar-switch-link,
+  .sidebar-collapsed .support-card {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar-collapsed .side-nav a.active::before {
+    left: 1px;
+  }
+}
+
+@media (max-width: 800px) {
+  .sidebar-collapse {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link,
+  .panel-layout,
+  .sidebar {
     transition: none;
   }
 }

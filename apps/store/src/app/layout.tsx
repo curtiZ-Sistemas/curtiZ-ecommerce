@@ -11,6 +11,7 @@ import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
+const storeDescription = "Chinelos, slides e sandálias curti Z com conforto, design e compra segura.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"),
@@ -18,12 +19,20 @@ export const metadata: Metadata = {
     default: "curti Z — conforto e estilo para todos os momentos",
     template: "%s — curti Z"
   },
-  description: "Chinelos, slides e sandálias curti Z com conforto, design e compra segura.",
+  description: storeDescription,
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     locale: "pt_BR",
-    siteName: "curti Z"
+    siteName: "curti Z",
+    title: "curti Z — conforto e estilo para todos os momentos",
+    description: storeDescription,
+    url: "/"
+  },
+  twitter: {
+    card: "summary",
+    title: "curti Z — conforto e estilo para todos os momentos",
+    description: storeDescription
   }
 };
 

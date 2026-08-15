@@ -19,11 +19,12 @@ import {
   ShieldAlert,
   Truck,
   UserRound,
-  Wrench
+  Wrench,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import React from "react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type MetricName =
   | "newOrders"
@@ -774,14 +775,22 @@ function Inventory({
   processing: string;
   canRequest: boolean;
 }) {
-  const request = (item: InventoryItem) => {
-    const quantity = window.prompt("Informe a diferença de quantidade (positiva ou negativa):");
-    const reason = window.prompt("Informe o motivo detalhado do ajuste:");
-    if (!quantity || !reason) return;
-    void run(
-      { action: "request_adjustment", variantId: item.variantId, quantityDelta: Number(quantity), reason },
-      "Solicitação de ajuste registrada para aprovação."
-    );
+  const [adjustmentTarget, setAdjustmentTarget] = useState<InventoryItem | null>(null);
+  const request = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adjustmentTarget) return;
+    const form = new FormData(event.currentTarget);
+    const quantityDelta = Number(formText(form.get("quantityDelta")));
+    const reason = formText(form.get("reason"));
+    if (!Number.isInteger(quantityDelta) || quantityDelta === 0 || !reason) return;
+    if (
+      await run(
+        { action: "request_adjustment", variantId: adjustmentTarget.variantId, quantityDelta, reason },
+        "Solicitação de ajuste registrada para aprovação."
+      )
+    ) {
+      setAdjustmentTarget(null);
+    }
   };
   return (
     <>
@@ -793,13 +802,41 @@ function Inventory({
           <span>Reservado <strong>{item.reserved}</strong></span>
           <span>Danificado <strong>{item.damaged}</strong></span>
           <span>Mínimo <strong>{item.minimum}</strong></span>
-          {canRequest ? <button className="secondary-button" disabled={Boolean(processing)} onClick={() => request(item)}>Solicitar ajuste</button> : null}
+          {canRequest ? <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => setAdjustmentTarget(item)}>Solicitar ajuste</button> : null}
         </article>
       ))}</div> : <Empty icon={Boxes} title="Nenhum item encontrado" />}
       <div className="operational-dashboard-grid">
         <section className="panel-card"><SectionHeading title="Movimentações recentes" description="Trilha registrada pelo estoque." />{movements.slice(0, 10).map((item) => <p className="operational-record" key={item.id}>{formatDateTime(item.createdAt)} · {item.reason} · {item.quantity > 0 ? "+" : ""}{item.quantity} · {item.previous} → {item.current}</p>)}</section>
         <section className="panel-card"><SectionHeading title="Ajustes solicitados" description="O Operacional não aprova o próprio ajuste." />{adjustments.length ? adjustments.map((item) => <p className="operational-record" key={item.id}>{item.publicCode} · {item.quantityDelta > 0 ? "+" : ""}{item.quantityDelta} · {label(item.status)}</p>) : <p className="operational-muted">Nenhuma solicitação.</p>}</section>
       </div>
+      {adjustmentTarget ? (
+        <OperationalActionDialog
+          title="Solicitar ajuste de estoque"
+          description={`${adjustmentTarget.productName} · ${adjustmentTarget.sku}`}
+          submitLabel="Enviar para aprovação"
+          pending={Boolean(processing)}
+          onClose={() => setAdjustmentTarget(null)}
+          onSubmit={(event) => void request(event)}
+        >
+          <label>
+            Diferença de quantidade
+            <input
+              name="quantityDelta"
+              type="number"
+              step="1"
+              required
+              autoFocus
+              placeholder="Ex.: 3 ou -2"
+              onInput={(event) => event.currentTarget.setCustomValidity(event.currentTarget.value === "0" ? "Informe uma diferença diferente de zero." : "")}
+            />
+            <small>Use valor positivo para entrada e negativo para saída.</small>
+          </label>
+          <label>
+            Motivo detalhado
+            <textarea name="reason" minLength={5} maxLength={500} required placeholder="Explique a origem do ajuste solicitado." />
+          </label>
+        </OperationalActionDialog>
+      ) : null}
     </>
   );
 }
@@ -842,14 +879,18 @@ function Returns({
   processing: string;
   canInspect: boolean;
 }) {
-  const inspect = (item: ReturnRecord["items"][number]) => {
-    const condition = window.prompt("Descreva a condição física do produto:");
-    if (!condition) return;
-    const destination = window.prompt("Destino: sellable, damaged, discard ou supplier:", "damaged");
-    if (!destination || !["sellable", "damaged", "discard", "supplier"].includes(destination)) return;
-    const result = window.prompt("Registre o resultado da conferência:");
-    if (!result) return;
-    void run({ action: "inspect_return", returnItemId: item.id, condition, destination, result }, "Inspeção registrada.");
+  const [inspectionTarget, setInspectionTarget] = useState<ReturnRecord["items"][number] | null>(null);
+  const inspect = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!inspectionTarget) return;
+    const form = new FormData(event.currentTarget);
+    const condition = formText(form.get("condition"));
+    const destination = formText(form.get("destination"));
+    const result = formText(form.get("result"));
+    if (!condition || !result || !["sellable", "damaged", "discard", "supplier"].includes(destination)) return;
+    if (await run({ action: "inspect_return", returnItemId: inspectionTarget.id, condition, destination, result }, "Inspeção registrada.")) {
+      setInspectionTarget(null);
+    }
   };
   return (
     <>
@@ -859,9 +900,37 @@ function Returns({
           <header><div><strong>{record.publicCode}</strong><small>Pedido {record.orderCode}</small></div><span className={`status ${statusTone(record.status)}`}>{label(record.status)}</span></header>
           <p><strong>Solicitação:</strong> {label(record.requestedResolution)}</p>
           <p>{record.reason} · {record.description}</p>
-          {record.items.map((item) => <div className="return-item" key={item.id}><span><strong>{item.quantity}× {item.productName}</strong><small>{item.sku} · {item.condition ?? "Aguardando inspeção"}</small></span>{canInspect && ["received", "inspection"].includes(record.status) && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => inspect(item)}>Inspecionar</button>}</div>)}
+          {record.items.map((item) => <div className="return-item" key={item.id}><span><strong>{item.quantity}× {item.productName}</strong><small>{item.sku} · {item.condition ?? "Aguardando inspeção"}</small></span>{canInspect && ["received", "inspection"].includes(record.status) && <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => setInspectionTarget(item)}>Inspecionar</button>}</div>)}
         </article>
       ))}</div> : <Empty icon={RotateCcw} title="Nenhuma solicitação nesta fila" />}
+      {inspectionTarget ? (
+        <OperationalActionDialog
+          title="Registrar inspeção"
+          description={`${inspectionTarget.productName} · ${inspectionTarget.sku}`}
+          submitLabel="Salvar inspeção"
+          pending={Boolean(processing)}
+          onClose={() => setInspectionTarget(null)}
+          onSubmit={(event) => void inspect(event)}
+        >
+          <label>
+            Condição física
+            <input name="condition" minLength={3} maxLength={300} required autoFocus placeholder="Descreva o estado recebido." />
+          </label>
+          <label>
+            Destino do item
+            <select name="destination" defaultValue="damaged" required>
+              <option value="sellable">Retornar ao estoque disponível</option>
+              <option value="damaged">Estoque danificado</option>
+              <option value="discard">Descarte</option>
+              <option value="supplier">Devolver ao fornecedor</option>
+            </select>
+          </label>
+          <label>
+            Resultado da conferência
+            <textarea name="result" minLength={5} maxLength={1000} required placeholder="Registre o resultado e as evidências da inspeção." />
+          </label>
+        </OperationalActionDialog>
+      ) : null}
     </>
   );
 }
@@ -879,6 +948,7 @@ function Occurrences({
   canCreate: boolean;
   canResolve: boolean;
 }) {
+  const [resolutionTarget, setResolutionTarget] = useState<Occurrence | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -887,10 +957,14 @@ function Occurrences({
       event.currentTarget.reset();
     }
   };
-  const resolve = (item: Occurrence) => {
-    const resolution = window.prompt("Descreva a resolução da ocorrência:");
+  const resolve = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!resolutionTarget) return;
+    const resolution = formText(new FormData(event.currentTarget).get("resolution"));
     if (!resolution) return;
-    void run({ action: "resolve_occurrence", occurrenceId: item.id, resolution, resolutionStatus: "resolved" }, "Ocorrência resolvida.");
+    if (await run({ action: "resolve_occurrence", occurrenceId: resolutionTarget.id, resolution, resolutionStatus: "resolved" }, "Ocorrência resolvida.")) {
+      setResolutionTarget(null);
+    }
   };
   return (
     <div className="operational-occurrence-layout">
@@ -902,7 +976,22 @@ function Occurrences({
         <label>Descrição<textarea name="description" minLength={5} maxLength={2000} required /></label>
         <button className="primary-button" disabled={Boolean(processing)}>{processing ? <LoaderCircle className="spin" /> : <ShieldAlert />} Registrar</button>
       </form> : null}
-      <section className="panel-card"><SectionHeading title="Histórico de ocorrências" description="Fila por prioridade e status." /><OccurrenceList occurrences={occurrences} resolve={canResolve ? resolve : undefined} /></section>
+      <section className="panel-card"><SectionHeading title="Histórico de ocorrências" description="Fila por prioridade e status." /><OccurrenceList occurrences={occurrences} resolve={canResolve ? setResolutionTarget : undefined} /></section>
+      {resolutionTarget ? (
+        <OperationalActionDialog
+          title="Resolver ocorrência"
+          description={`${resolutionTarget.publicCode} · ${resolutionTarget.title}`}
+          submitLabel="Confirmar resolução"
+          pending={Boolean(processing)}
+          onClose={() => setResolutionTarget(null)}
+          onSubmit={(event) => void resolve(event)}
+        >
+          <label>
+            Resolução aplicada
+            <textarea name="resolution" minLength={5} maxLength={2000} required autoFocus placeholder="Descreva o que foi feito e o resultado obtido." />
+          </label>
+        </OperationalActionDialog>
+      ) : null}
     </div>
   );
 }
@@ -975,6 +1064,106 @@ function Pagination({
   );
 }
 
+function OperationalActionDialog({
+  title,
+  description,
+  submitLabel,
+  pending,
+  onClose,
+  onSubmit,
+  children
+}: {
+  title: string;
+  description: string;
+  submitLabel: string;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  children: React.ReactNode;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  const pendingRef = useRef(pending);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    pendingRef.current = pending;
+  }, [onClose, pending]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const keepFocusInside = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !pendingRef.current) {
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!controls?.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", keepFocusInside);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", keepFocusInside);
+      previousFocus?.focus();
+    };
+  }, []);
+
+  return (
+    <div
+      className="admin-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target && !pending) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="admin-modal compact operational-action-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="operational-dialog-title"
+        aria-describedby="operational-dialog-description"
+      >
+        <header>
+          <div>
+            <span>Ação operacional auditável</span>
+            <h2 id="operational-dialog-title">{title}</h2>
+          </div>
+          <button type="button" onClick={onClose} disabled={pending} aria-label="Fechar formulário">
+            <X aria-hidden="true" />
+          </button>
+        </header>
+        <form onSubmit={onSubmit}>
+          <p id="operational-dialog-description">{description}</p>
+          <div className="operational-dialog-fields">{children}</div>
+          <footer>
+            <button className="secondary-button" type="button" onClick={onClose} disabled={pending}>
+              Cancelar
+            </button>
+            <button className="primary-button" type="submit" disabled={pending}>
+              {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
+              {pending ? "Processando" : submitLabel}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function SectionHeading({ title, description }: { title: string; description: string }) {
   return <header className="operational-section-heading"><div><h2>{title}</h2><p>{description}</p></div></header>;
 }
@@ -997,6 +1186,8 @@ function HonestState({
 function OperationalLoading() {
   return <div className="operational-loading" aria-label="Carregando operação"><div /><div /><div /><div /></div>;
 }
+
+const formText = (value: FormDataEntryValue | null) => typeof value === "string" ? value.trim() : "";
 
 const formatDateTime = (value: string) =>
   value

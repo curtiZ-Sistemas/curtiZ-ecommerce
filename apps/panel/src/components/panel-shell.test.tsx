@@ -53,5 +53,8 @@ describe("PanelShell multipainel", () => {
     expect(markup).toContain('href="/operacional/pedidos"');
     expect(markup).toContain('aria-current="page"');
     expect(markup).toContain('aria-label="Navegação estrutural"');
+    expect(markup).toContain('href="#panel-content"');
+    expect(markup).toContain('aria-label="Recolher menu lateral"');
+    expect(markup).toContain('id="panel-content"');
   });
 });

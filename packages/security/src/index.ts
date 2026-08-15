@@ -16,6 +16,7 @@ export {
 } from "./auth-cookie";
 export { buildNonceContentSecurityPolicy } from "./content-security-policy";
 export type { ContentSecurityPolicyOptions } from "./content-security-policy";
+export { postgresUuidSchema } from "./postgres-uuid";
 export {
   REFERRAL_ATTRIBUTION_COOKIE,
   createReferralAttribution,

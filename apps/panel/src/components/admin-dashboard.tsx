@@ -11,6 +11,7 @@ import {
   Tags,
   Users
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type DashboardData = {
@@ -87,12 +88,14 @@ export function AdminDashboard() {
   }
 
   const primaryMetrics = [
-    ["Vendas aprovadas", money.format(data.metrics.grossRevenueInCents / 100), ShoppingBag],
-    ["Pedidos", data.metrics.orders.toLocaleString("pt-BR"), PackageCheck],
-    ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), CircleAlert],
+    ["Vendas aprovadas", money.format(data.metrics.grossRevenueInCents / 100), "Receita bruta registrada", "/administracao/pedidos", ShoppingBag],
+    ["Pedidos", data.metrics.orders.toLocaleString("pt-BR"), "Acompanhar operação comercial", "/administracao/pedidos", PackageCheck],
+    ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), "Variações no mínimo ou abaixo", "/administracao/estoque", CircleAlert],
     [
       "Avaliações pendentes",
       data.metrics.pendingReviews.toLocaleString("pt-BR"),
+      "Aguardando moderação",
+      "/administracao/avaliacoes",
       MessageSquareMore
     ]
   ] as const;
@@ -116,12 +119,13 @@ export function AdminDashboard() {
           <p>Vendas e pendências que podem exigir ação administrativa.</p>
         </header>
         <div className="admin-metric-grid admin-primary-metrics">
-          {primaryMetrics.map(([label, value, Icon]) => (
-            <article className="admin-metric" key={label}>
+          {primaryMetrics.map(([label, value, detail, href, Icon]) => (
+            <Link className="admin-metric admin-metric-link" href={href} key={label}>
               <Icon aria-hidden="true" />
               <span>{label}</span>
               <strong>{value}</strong>
-            </article>
+              <small>{detail}</small>
+            </Link>
           ))}
         </div>
       </section>

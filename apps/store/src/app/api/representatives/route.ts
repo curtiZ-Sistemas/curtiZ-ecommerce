@@ -361,7 +361,7 @@ export async function GET(request: NextRequest) {
     return {
       id: readString(order, "id"),
       publicCode: readString(order, "public_code"),
-      kitName: kit ? readString(kit, "name", "Kit Curtiz") : "Kit Curtiz",
+      kitName: kit ? readString(kit, "name", "Kit curti Z") : "Kit curti Z",
       totalInCents: readNumber(order, "total_in_cents"),
       status: readString(order, "status"),
       createdAt: readString(order, "created_at"),

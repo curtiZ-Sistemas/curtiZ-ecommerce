@@ -387,7 +387,7 @@ export function SignupForm({
       )}
       <label className="check-row">
         <input name="marketing" type="checkbox" />
-        <span>Quero receber novidades e ofertas da Curtiz.</span>
+        <span>Quero receber novidades e ofertas da curti Z.</span>
       </label>
 
       {errors.form && <p className="form-message error" role="alert">{errors.form}</p>}

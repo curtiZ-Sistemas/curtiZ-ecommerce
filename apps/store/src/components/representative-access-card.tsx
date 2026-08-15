@@ -5,7 +5,7 @@ export function RepresentativeAccessCard({ active }: { active: boolean }) {
   return (
     <article className="representative-account-card">
       <div>
-        <p className="eyebrow">Representante Curtiz</p>
+        <p className="eyebrow">Representante curti Z</p>
         <h2>{active ? "Área profissional ativa" : "Solicite sua participação"}</h2>
         <p>
           {active

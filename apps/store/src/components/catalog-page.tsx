@@ -372,7 +372,7 @@ export function CatalogPage({
     <div className="container page-shell catalog-page">
       <header className="section-heading catalog-heading">
         <div>
-          <p className="eyebrow">Catálogo Curtiz</p>
+          <p className="eyebrow">Catálogo curti Z</p>
           <h1>{title}</h1>
           <p>{description}</p>
         </div>

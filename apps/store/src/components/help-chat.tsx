@@ -33,7 +33,7 @@ const quickActions = [
   "Produto",
   "Minha conta",
   "Avaliação",
-  "Representante Curtiz"
+  "Representante curti Z"
 ] as const;
 
 function restoreHistory(): ChatMessage[] {
@@ -151,7 +151,7 @@ export function HelpChat() {
               <Headphones />
             </div>
             <div>
-              <strong id="help-chat-title">Ajuda Curtiz</strong>
+              <strong id="help-chat-title">Ajuda curti Z</strong>
               <span>
                 <i /> Conteúdo publicado
               </span>

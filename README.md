@@ -10,8 +10,8 @@ E-commerce e plataforma operacional da curti Z. O repositório contém uma loja 
 
 ## Requisitos
 
-- Node.js 20.9 ou superior.
-- pnpm 10.
+- Node.js 24.19.0 ou superior dentro da linha 24.
+- pnpm 10.14.0.
 - Docker Desktop é opcional e necessário somente para executar o Supabase local.
 - Supabase CLI é usada somente nos fluxos de banco local.
 

@@ -1,14 +1,14 @@
 export default function Loading() {
   return (
-    <main className="panel-loading" aria-busy="true" aria-label="Carregando painel">
-      <div className="panel-loading-heading" />
-      <div className="panel-loading-grid">
-        {Array.from({ length: 4 }, (_, index) => (
-          <div className="panel-loading-card" key={index} />
-        ))}
-      </div>
-      <div className="panel-loading-table" />
+    <main
+      className="panel-loading"
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+      aria-label="Carregando painel"
+    >
+      <span className="panel-loading-spinner" aria-hidden="true" />
+      <span className="sr-only">Carregando painel…</span>
     </main>
   );
 }
-

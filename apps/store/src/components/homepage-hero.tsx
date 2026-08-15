@@ -61,7 +61,8 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
         alt={banner.altText}
         width={1600}
         height={560}
-        fetchPriority="high"
+        fetchPriority={active === 0 ? "high" : "auto"}
+        loading={active === 0 ? "eager" : "lazy"}
         decoding="async"
         onError={() => {
           if (useFallbackImage) return;

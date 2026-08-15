@@ -5,7 +5,7 @@ import { getPublicLegalDocuments } from "@/lib/legal-data";
 
 export const metadata: Metadata = {
   title: "Políticas e documentos legais",
-  description: "Documentos oficiais publicados e vigentes da Curtiz."
+  description: "Documentos oficiais publicados e vigentes da curti Z."
 };
 
 export default async function PoliciesPage() {
