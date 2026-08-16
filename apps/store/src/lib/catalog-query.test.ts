@@ -60,4 +60,11 @@ describe("catalog query", () => {
       product.stock = originalStock;
     }
   });
+
+  it("tolera acentos e erros curtos de digitação sem dependência adicional", () => {
+    const typo = queryDemoCatalog(parseCatalogFilters(new URLSearchParams("q=sandlia")));
+    const color = queryDemoCatalog(parseCatalogFilters(new URLSearchParams("q=marínho")));
+    expect(typo.products.some((product) => product.category === "Sandálias")).toBe(true);
+    expect(color.products.some((product) => product.colors.includes("Marinho"))).toBe(true);
+  });
 });

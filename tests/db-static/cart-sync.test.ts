@@ -10,6 +10,10 @@ const stabilityMigration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/202608080008_catalog_inventory_stability.sql"),
   "utf8"
 );
+const exactSyncMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/202608160001_exact_customer_cart_sync.sql"),
+  "utf8"
+);
 
 describe("authenticated cart synchronization migration", () => {
   it("requires an authenticated user and ignores browser prices", () => {
@@ -35,6 +39,18 @@ describe("authenticated cart synchronization migration", () => {
     expect(stabilityMigration).toContain("'greatest(stock.available_quantity, 0)'");
     expect(migration).toContain(
       "grant execute on function public.validate_checkout_lines(jsonb) to authenticated"
+    );
+  });
+
+  it("propagates remoções somente depois da primeira mesclagem autenticada", () => {
+    expect(exactSyncMigration).toContain("p_source_cart_id = cart_id");
+    expect(exactSyncMigration).toContain("delete from public.cart_items");
+    expect(exactSyncMigration).toContain("set search_path = ''");
+    expect(exactSyncMigration).toContain(
+      "revoke all on function public.merge_customer_cart(jsonb, uuid) from authenticated"
+    );
+    expect(exactSyncMigration).toContain(
+      "grant execute on function public.sync_customer_cart(jsonb, uuid) to authenticated"
     );
   });
 });

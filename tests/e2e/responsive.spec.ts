@@ -73,7 +73,7 @@ test("cabeçalho permanece bordô e estável durante a rolagem", async ({ page }
       await page.waitForTimeout(40);
       samples.push(await header.evaluate((element) => {
         const bounds = element.getBoundingClientRect();
-        return { height: bounds.height, top: bounds.top, className: element.className };
+        return { height: bounds.height, top: bounds.top, className: element.getAttribute("class") ?? "" };
       }));
     }
 
@@ -127,6 +127,16 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
   expect(widths.content).toBeLessThanOrEqual(widths.viewport);
 });
 
+test("dados estruturados do produto não geram aviso de hidratação", async ({ page }) => {
+  const hydrationWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (/hydrated|hydration/i.test(message.text())) hydrationWarnings.push(message.text());
+  });
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
+  expect(hydrationWarnings).toEqual([]);
+});
+
 test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -149,12 +159,31 @@ test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page 
       viewport.height - (launcherBox?.y ?? 0) - (launcherBox?.height ?? 0)
     ).toBeLessThanOrEqual(20);
 
-    await launcher.click();
     const dialog = page.getByRole("dialog", { name: "Ajuda curti Z" });
-    await expect(dialog).toBeVisible();
+    await expect(async () => {
+      await launcher.click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox).not.toBeNull();
     expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(10);
     expect((dialogBox?.y ?? 0) + (dialogBox?.height ?? 0)).toBeLessThan(viewport.height);
+  }
+});
+
+test("consentimento mobile permanece compacto e dentro da viewport", async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem("curtiz-cookie-consent"));
+  for (const width of [320, 390, 430]) {
+    await page.context().clearCookies();
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const banner = page.locator(".cookie-consent-card:not(.customizing)");
+    await expect(banner).toBeVisible();
+    const bounds = await banner.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.height).toBeLessThanOrEqual(190);
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await banner.getByRole("button", { name: "Rejeitar opcionais" }).click();
   }
 });

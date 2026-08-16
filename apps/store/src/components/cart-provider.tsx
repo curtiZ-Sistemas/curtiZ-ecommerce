@@ -21,25 +21,62 @@ type CartContextValue = {
   remove: (variantId: string) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
   clear: () => void;
+  reconcile: (lines: CartLine[]) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
+const cartStorageKey = "curtiz-cart";
+const legacyCartStorageKey = "curtiz-demo-cart";
+
+const isCartLine = (value: unknown): value is CartLine => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const line = value as Record<string, unknown>;
+  return (
+    typeof line.productId === "string" &&
+    typeof line.variantId === "string" &&
+    typeof line.name === "string" &&
+    typeof line.image === "string" &&
+    typeof line.color === "string" &&
+    typeof line.size === "string" &&
+    Number.isInteger(line.quantity) &&
+    Number(line.quantity) > 0 &&
+    Number(line.quantity) <= 99 &&
+    Number.isInteger(line.unitPriceInCents) &&
+    Number(line.unitPriceInCents) >= 0
+  );
+};
+
+const cartSignature = (lines: CartLine[]) =>
+  JSON.stringify(
+    lines.map((line) => [
+      line.productId,
+      line.variantId,
+      line.quantity,
+      line.unitPriceInCents,
+      line.maxQuantity
+    ])
+  );
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
-  const hydratedLinesRef = useRef<CartLine[]>([]);
+  const lastSyncedSignatureRef = useRef("");
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("curtiz-demo-cart");
-      const restored = stored ? (JSON.parse(stored) as CartLine[]) : [];
-      hydratedLinesRef.current = restored;
+      const stored =
+        localStorage.getItem(cartStorageKey) ?? localStorage.getItem(legacyCartStorageKey);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      const restored = Array.isArray(parsed) ? parsed.filter(isCartLine) : [];
       setLines(restored);
+      if (localStorage.getItem(legacyCartStorageKey)) {
+        localStorage.setItem(cartStorageKey, JSON.stringify(restored));
+        localStorage.removeItem(legacyCartStorageKey);
+      }
     } catch {
-      localStorage.removeItem("curtiz-demo-cart");
-      hydratedLinesRef.current = [];
+      localStorage.removeItem(cartStorageKey);
+      localStorage.removeItem(legacyCartStorageKey);
     } finally {
       setHydrated(true);
     }
@@ -47,47 +84,58 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("curtiz-demo-cart", JSON.stringify(lines));
+    localStorage.setItem(cartStorageKey, JSON.stringify(lines));
   }, [hydrated, lines]);
 
   useEffect(() => {
     if (!hydrated) return;
     const controller = new AbortController();
-    const syncCartId = localStorage.getItem("curtiz-cart-sync-id") ?? undefined;
-    void fetch("/api/cart/sync", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lines: hydratedLinesRef.current, syncCartId }),
-      signal: controller.signal
-    })
-      .then(async (response) => {
-        const result = (await response.json()) as {
-          items?: CartLine[];
-          cartId?: string;
-          adjustmentMessage?: string;
-          message?: string;
-        };
-        if (response.status === 401) return;
-        if (!response.ok || !result.items || !result.cartId) {
-          setSyncMessage(
-            result.message ??
-              "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
-          );
-          return;
-        }
-        setLines(result.items);
-        localStorage.setItem("curtiz-cart-sync-id", result.cartId);
-        setSyncMessage(result.adjustmentMessage ?? "");
+    const signature = cartSignature(lines);
+    if (lastSyncedSignatureRef.current === signature) return;
+    const timer = window.setTimeout(() => {
+      const syncCartId = localStorage.getItem("curtiz-cart-sync-id") ?? undefined;
+      void fetch("/api/cart/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines, syncCartId }),
+        signal: controller.signal
       })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setSyncMessage(
-            "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
-          );
-        }
-      });
-    return () => controller.abort();
-  }, [hydrated]);
+        .then(async (response) => {
+          if (response.status === 401 || response.status === 204) return null;
+          const result = (await response.json()) as {
+            items?: CartLine[];
+            cartId?: string;
+            adjustmentMessage?: string;
+            message?: string;
+          };
+          if (!response.ok || !result.items || !result.cartId) {
+            setSyncMessage(
+              result.message ??
+                "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
+            );
+            return null;
+          }
+          const safeItems = result.items.filter(isCartLine);
+          const remoteSignature = cartSignature(safeItems);
+          lastSyncedSignatureRef.current = remoteSignature;
+          if (remoteSignature !== signature) setLines(safeItems);
+          localStorage.setItem("curtiz-cart-sync-id", result.cartId);
+          setSyncMessage(result.adjustmentMessage ?? "");
+          return null;
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setSyncMessage(
+              "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
+            );
+          }
+        });
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [hydrated, lines]);
 
   const value = useMemo<CartContextValue>(
     () => ({
@@ -97,6 +145,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       add(product, color, size, options) {
         const variantId = options?.variantId ?? `${product.id}:${color}:${size}`;
         const stock = Math.max(0, options?.stock ?? product.stock);
+        if (stock < 1) return;
         setLines((current) => {
           const found = current.find((line) => line.variantId === variantId);
           if (found) {
@@ -140,6 +189,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       },
       clear() {
         setLines([]);
+      },
+      reconcile(nextLines) {
+        const safeLines = nextLines.filter(isCartLine);
+        lastSyncedSignatureRef.current = cartSignature(safeLines);
+        setLines(safeLines);
       }
     }),
     [hydrated, lines, syncMessage]

@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         role: demo.role === "representative" ? "customer" : demo.role
       },
       parsed.data.conversationId,
-      `${message}\n[Anexo de demonstração validado: ${safeName}]`,
+      `${message}\n[Anexo validado: ${safeName}]`,
       parsed.data.internal === "true"
     );
     return response(request, { ok: true, demo: true }, 201);

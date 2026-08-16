@@ -99,8 +99,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       ...snapshot,
       authenticated: true,
       demo: true,
-      warning:
-        "Ambiente de demonstração: a conta está ativa, mas nenhum pedido ou benefício fictício é apresentado."
+      warning: ""
     };
   }
 

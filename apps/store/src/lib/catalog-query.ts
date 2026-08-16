@@ -107,7 +107,28 @@ export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: str
 };
 
 export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
-  const normalizedQuery = filters.query?.toLocaleLowerCase("pt-BR");
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/gu, "")
+      .toLocaleLowerCase("pt-BR")
+      .trim();
+  const editDistance = (left: string, right: string) => {
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+      const current = [leftIndex];
+      for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+        current[rightIndex] = Math.min(
+          (current[rightIndex - 1] ?? 0) + 1,
+          (previous[rightIndex] ?? 0) + 1,
+          (previous[rightIndex - 1] ?? 0) + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+        );
+      }
+      previous.splice(0, previous.length, ...current);
+    }
+    return previous[right.length] ?? right.length;
+  };
+  const normalizedQuery = filters.query ? normalize(filters.query) : undefined;
   const categoryFiltered = demoProducts.filter((product) => {
     if (filters.inStock && product.stock <= 0) return false;
     if (
@@ -116,13 +137,15 @@ export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
     ) {
       return false;
     }
-    if (
-      normalizedQuery &&
-      !`${product.name} ${product.category} ${product.colors.join(" ")} ${product.description}`
-        .toLocaleLowerCase("pt-BR")
-        .includes(normalizedQuery)
-    ) {
-      return false;
+    if (normalizedQuery) {
+      const haystack = normalize(
+        `${product.name} ${product.category} ${product.colors.join(" ")} ${product.description}`
+      );
+      const words = haystack.split(/\s+/u);
+      const matches = haystack.includes(normalizedQuery) || normalizedQuery
+        .split(/\s+/u)
+        .every((term) => words.some((word) => word.includes(term) || (term.length >= 4 && editDistance(term, word) <= 2)));
+      if (!matches) return false;
     }
     if (filters.collection) return false;
     return true;

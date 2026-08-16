@@ -231,7 +231,19 @@ export function SearchAutocomplete({
                     ? "Sugestões"
                     : "Nenhum resultado encontrado"}
             </strong>
-            {!loading && query.trim().length >= 2 && <span>{options.length} opções</span>}
+            {!loading && query.trim().length >= 2 ? <span>{options.length} opções</span> : null}
+            {!loading && query.trim().length < 2 && recent.length ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setRecent([]);
+                  localStorage.removeItem(recentSearchesKey);
+                }}
+              >
+                Limpar
+              </button>
+            ) : null}
           </div>
           {options.map((option, index) => (
             <button

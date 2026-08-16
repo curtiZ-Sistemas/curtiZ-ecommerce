@@ -210,8 +210,8 @@ export function CookiePreferences() {
           <div>
             <h2>Cookies e privacidade</h2>
             <p>
-              Usamos cookies essenciais para sessão e segurança. Cookies opcionais permanecem
-              desligados até sua escolha.
+              Usamos cookies essenciais para segurança. Os opcionais só serão ativados com sua
+              escolha.
             </p>
           </div>
           {customizing && (

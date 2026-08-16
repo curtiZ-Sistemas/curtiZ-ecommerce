@@ -75,6 +75,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       <script
         type="application/ld+json"
         nonce={requestHeaders.get("x-nonce") ?? undefined}
+        suppressHydrationWarning
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c")
         }}

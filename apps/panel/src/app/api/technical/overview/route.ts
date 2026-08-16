@@ -21,6 +21,23 @@ function configured(condition: boolean): ServiceState {
   return condition ? "configured" : "not_configured";
 }
 
+function deploymentMetadata(app: "store" | "panel") {
+  const appEnvironment = app === "store" ? process.env.STORE_APP_ENV : process.env.PANEL_APP_ENV;
+  const appCommit = app === "store" ? process.env.STORE_GIT_COMMIT_SHA : process.env.PANEL_GIT_COMMIT_SHA;
+  const appBuild = app === "store" ? process.env.STORE_BUILD_ID : process.env.PANEL_BUILD_ID;
+  const appBuiltAt = app === "store" ? process.env.STORE_BUILD_TIMESTAMP : process.env.PANEL_BUILD_TIMESTAMP;
+  return {
+    environment: appEnvironment ?? process.env.APP_ENV ?? process.env.NODE_ENV ?? null,
+    commit:
+      appCommit ??
+      process.env.GIT_COMMIT_SHA ??
+      process.env.CF_PAGES_COMMIT_SHA ??
+      null,
+    build: appBuild ?? process.env.BUILD_ID ?? process.env.CF_PAGES_BUILD_ID ?? null,
+    builtAt: appBuiltAt ?? process.env.BUILD_TIMESTAMP ?? null
+  };
+}
+
 async function checkStore(): Promise<Service> {
   const rawUrl = process.env.NEXT_PUBLIC_STORE_URL;
   if (!rawUrl) return { name: "Loja", state: "not_configured", detail: "URL da loja ausente" };
@@ -77,6 +94,10 @@ export async function GET(request: NextRequest) {
         },
         storage: null,
         database: null,
+        deployments: {
+          store: deploymentMetadata("store"),
+          panel: deploymentMetadata("panel")
+        },
         runtime: {
           environment: "demonstração",
           version: process.env.APP_VERSION ?? "não configurada",
@@ -184,6 +205,10 @@ export async function GET(request: NextRequest) {
       },
       storage: storage.error ? null : sanitizeTechnicalValue(storageData),
       database: database.error ? null : sanitizeTechnicalValue(database.data),
+      deployments: sanitizeTechnicalValue({
+        store: deploymentMetadata("store"),
+        panel: deploymentMetadata("panel")
+      }),
       runtime: {
         environment: process.env.APP_ENV ?? "não configurado",
         version: process.env.APP_VERSION ?? "não configurada",

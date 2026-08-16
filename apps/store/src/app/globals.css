@@ -767,6 +767,17 @@ select:disabled {
   font-size: 0.68rem;
 }
 
+.search-suggestions-heading button {
+  padding: 3px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-800);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 .search-suggestion {
   min-height: 62px;
   display: grid;
@@ -10401,5 +10412,573 @@ body {
 
   .representative-content {
     padding: 18px 12px 30px;
+  }
+}
+
+/* Refinamento do portal profissional: mesma escala visual dos painéis internos. */
+.representative-sidebar {
+  overflow: hidden;
+}
+
+.representative-sidebar nav {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 2px 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #c9c9c9 transparent;
+}
+
+.representative-nav-section {
+  display: grid;
+  gap: 2px;
+}
+
+.representative-nav-section + .representative-nav-section {
+  margin-top: 16px;
+}
+
+.representative-nav-group {
+  padding: 0 9px 5px;
+  color: #797979;
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.representative-sidebar-footer {
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.representative-customer-link {
+  border-top: 0;
+}
+
+.representative-topbar {
+  gap: 16px;
+}
+
+.representative-topbar-profile,
+.representative-topbar-identity,
+.representative-topbar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.representative-topbar > .representative-topbar-profile {
+  display: flex;
+  min-width: 0;
+  gap: 16px;
+}
+
+.representative-topbar-identity {
+  min-width: 0;
+  gap: 10px;
+}
+
+.representative-topbar-identity > div {
+  min-width: 0;
+}
+
+.representative-topbar-identity strong {
+  display: block;
+  overflow: hidden;
+  max-width: min(32vw, 360px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.representative-topbar-actions {
+  gap: 8px;
+  margin-left: auto;
+}
+
+.representative-account-link,
+.representative-notification-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid #dedede;
+  border-radius: 3px;
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.representative-account-link {
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.representative-account-link:hover,
+.representative-notification-link:hover {
+  border-color: #c9a7a2;
+  background: var(--brand-50);
+  color: var(--brand-900);
+}
+
+.representative-account-link svg,
+.representative-notification-link svg {
+  width: 17px;
+  height: 17px;
+}
+
+.representative-notification-link {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+
+.representative-status {
+  flex: 0 0 auto;
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.representative-content {
+  min-width: 0;
+}
+
+.representative-content > section,
+.representative-content > div {
+  min-width: 0;
+}
+
+.representative-page-title {
+  margin-bottom: 28px;
+}
+
+.representative-page-title h1 {
+  line-height: 1.16;
+}
+
+.representative-referral-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  width: min(100%, 620px);
+  min-height: 0;
+  margin-bottom: 28px;
+  padding: 16px 20px;
+}
+
+.representative-referral-card > div {
+  min-width: 0;
+}
+
+.representative-referral-card strong {
+  overflow: hidden;
+  font-size: clamp(1.1rem, 1.7vw, 1.35rem);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.representative-metric-section + .representative-metric-section {
+  margin-top: 28px;
+}
+
+.representative-metric-section > header {
+  margin-bottom: 12px;
+}
+
+.representative-metric-section > header .eyebrow {
+  margin-bottom: 4px;
+}
+
+.representative-metric-section > header h2 {
+  margin: 0;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  line-height: 1.25;
+}
+
+.representative-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.representative-metrics article {
+  min-width: 0;
+  min-height: 122px;
+  padding: 22px;
+}
+
+.representative-metrics small,
+.representative-metrics strong {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.representative-metrics strong {
+  font-size: clamp(1.08rem, 1.6vw, 1.38rem);
+  line-height: 1.22;
+  text-wrap: balance;
+}
+
+.representative-dashboard-grid {
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.representative-card,
+.creative-card {
+  min-width: 0;
+  padding: 22px;
+}
+
+.representative-profile-grid,
+.representative-form-grid,
+.representative-record-grid,
+.representative-network,
+.representative-notifications,
+.creative-grid {
+  gap: 16px;
+}
+
+.representative-record-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+.representative-table-wrap {
+  border-color: #d8d8d8;
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+@media (max-width: 1180px) {
+  .representative-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .representative-sidebar {
+    overflow-y: hidden;
+  }
+
+  .representative-topbar {
+    min-height: 68px;
+  }
+
+  .representative-topbar > .representative-topbar-profile {
+    flex: 1;
+  }
+
+  .representative-topbar-identity strong {
+    max-width: min(34vw, 280px);
+  }
+}
+
+@media (max-width: 700px) {
+  .representative-topbar {
+    gap: 8px;
+    padding-block: 8px;
+  }
+
+  .representative-topbar > .representative-topbar-profile {
+    display: grid;
+    gap: 3px;
+  }
+
+  .representative-topbar-profile .representative-status {
+    justify-self: start;
+    margin-left: 44px;
+    padding-block: 3px;
+    font-size: 0.61rem;
+  }
+
+  .representative-account-link {
+    width: 38px;
+    padding: 0;
+  }
+
+  .representative-account-link > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 620px) {
+  .representative-page-title {
+    margin-bottom: 24px;
+  }
+
+  .representative-referral-card {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .representative-referral-card button {
+    width: 100%;
+  }
+
+  .representative-metrics {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .representative-metrics article {
+    min-height: 104px;
+    padding: 20px;
+  }
+
+  .representative-metric-section + .representative-metric-section {
+    margin-top: 24px;
+  }
+
+  .representative-dashboard-grid {
+    margin-top: 28px;
+  }
+
+  .representative-card,
+  .creative-card {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 430px) {
+  .representative-topbar-identity strong {
+    max-width: 32vw;
+  }
+}
+
+@media (max-width: 380px) {
+  .representative-topbar > .representative-topbar-profile {
+    display: grid;
+  }
+
+  .representative-topbar-identity {
+    display: flex;
+  }
+
+  .representative-topbar-identity > div {
+    display: none;
+  }
+
+  .representative-topbar-profile .representative-status {
+    margin-left: 0;
+  }
+}
+
+/* As rotas de autenticação compõem header, conteúdo e footer sem margem estrutural vazia. */
+body:has(> #main-content > .auth-page) {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+body:has(> #main-content > .auth-page) > #main-content {
+  min-height: 0;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  background: var(--neutral-50);
+}
+
+body:has(> #main-content > .auth-page) > #main-content > .auth-page {
+  width: 100%;
+  flex: 1 0 auto;
+}
+
+body:has(> #main-content > .auth-page) .site-footer {
+  margin-top: 0;
+}
+
+/* Carrinho e checkout: ações compactas e confirmação final segura. */
+.cart-heading-actions,
+.checkout-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.cart-clear-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  color: var(--brand-700);
+}
+
+.cart-clear-button svg {
+  width: 17px;
+}
+
+.shipping-progress small {
+  display: block;
+  margin-top: 4px;
+  color: var(--neutral-600);
+  line-height: 1.4;
+}
+
+.checkout-payment-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-50);
+}
+
+.checkout-saved-addresses {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px 14px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-50);
+}
+
+.checkout-saved-addresses label {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.checkout-saved-addresses select {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--radius-sm);
+  background: white;
+  font: inherit;
+}
+
+.checkout-saved-addresses a {
+  color: var(--brand-800);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.checkout-payment-summary svg {
+  width: 18px;
+  flex: 0 0 18px;
+  color: var(--success-700);
+}
+
+.checkout-payment-summary p {
+  margin: 0;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.checkout-dialog-backdrop {
+  position: fixed;
+  z-index: 220;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 13 12 / 62%);
+}
+
+.checkout-dialog {
+  width: min(100%, 480px);
+  padding: 26px;
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--radius-md);
+  background: white;
+}
+
+.checkout-dialog h2 {
+  margin: 18px 0 8px;
+}
+
+.checkout-dialog p {
+  margin: 0;
+  color: var(--neutral-700);
+  line-height: 1.55;
+}
+
+.checkout-dialog small {
+  display: block;
+  margin-top: 12px;
+  color: var(--neutral-600);
+}
+
+.checkout-dialog-actions {
+  margin-top: 22px;
+}
+
+@media (max-width: 580px) {
+  .cookie-consent-card:not(.customizing) {
+    padding: 10px;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-heading {
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-heading > svg {
+    width: 20px;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-heading h2 {
+    font-size: 0.95rem;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-heading p {
+    margin-top: 2px;
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-actions .primary-button {
+    grid-row: 1;
+    grid-column: 1 / -1;
+  }
+
+  .cookie-consent-card:not(.customizing) .cookie-consent-actions button {
+    min-height: 36px;
+    padding: 7px 9px;
+    font-size: 0.76rem;
+  }
+
+  .checkout-dialog {
+    padding: 20px;
+  }
+
+  .checkout-saved-addresses {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .checkout-dialog-actions > * {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .cart-heading-actions {
+    width: 100%;
   }
 }

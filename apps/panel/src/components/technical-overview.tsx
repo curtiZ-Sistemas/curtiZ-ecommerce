@@ -57,6 +57,7 @@ export function TechnicalOverview({ section }: { section: string }) {
   const [storage, setStorage] = useState<StorageSummary[]>([]);
   const [database, setDatabase] = useState<RecordValue>({});
   const [runtime, setRuntime] = useState<RecordValue>({});
+  const [deployments, setDeployments] = useState<RecordValue>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
@@ -74,6 +75,7 @@ export function TechnicalOverview({ section }: { section: string }) {
       setStorage(parseStorage(payload.storage));
       setDatabase(isRecord(payload.database) ? payload.database : {});
       setRuntime(isRecord(payload.runtime) ? payload.runtime : {});
+      setDeployments(isRecord(payload.deployments) ? payload.deployments : {});
       setWarning(
         Array.isArray(payload.unavailable) && payload.unavailable.length > 0
           ? `Dados temporariamente indisponíveis: ${payload.unavailable.filter((item): item is string => typeof item === "string").join(", ")}.`
@@ -85,6 +87,7 @@ export function TechnicalOverview({ section }: { section: string }) {
       setStorage([]);
       setDatabase({});
       setRuntime({});
+      setDeployments({});
       setMessage("Não foi possível verificar os serviços técnicos agora.");
     } finally {
       setLoading(false);
@@ -173,10 +176,15 @@ export function TechnicalOverview({ section }: { section: string }) {
       {showRuntime ? (
         <section className="panel-card technical-section">
           <h2>Runtime, deploy e manutenção</h2>
+          {!message ? (
+            <div className="technical-deploy-grid">
+              <DeploymentCard label="Loja" value={deployments.store} />
+              <DeploymentCard label="Painel" value={deployments.panel} />
+            </div>
+          ) : null}
           {message ? <p className="admin-empty-copy">Configuração de runtime indisponível.</p> : <div className="technical-runtime-grid">
             <Runtime label="Ambiente" value={textValue(runtime.environment) || "Não configurado"} />
             <Runtime label="Versão" value={textValue(runtime.version) || "Não configurada"} />
-            <Runtime label="Commit" value={textValue(runtime.commit) || "Não disponibilizado pelo runtime"} />
             <Runtime label="Backups" value={textValue(runtime.backup) || "Não configurado"} />
           </div>}
           {!message ? <p className="technical-note">{textValue(runtime.databaseDiagnostics)}</p> : null}
@@ -192,4 +200,19 @@ function TechnicalMetric({ icon, label, value }: { icon: React.ReactNode; label:
 
 function Runtime({ label, value }: { label: string; value: string }) {
   return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function DeploymentCard({ label, value }: { label: string; value: unknown }) {
+  const deployment = isRecord(value) ? value : {};
+  return (
+    <article>
+      <h3>{label}</h3>
+      <dl>
+        <div><dt>Ambiente</dt><dd>{textValue(deployment.environment) || "Não informado"}</dd></div>
+        <div><dt>Commit</dt><dd>{textValue(deployment.commit) || "Não informado"}</dd></div>
+        <div><dt>Build</dt><dd>{textValue(deployment.build) || "Não informado"}</dd></div>
+        <div><dt>Gerado em</dt><dd>{textValue(deployment.builtAt) || "Não informado"}</dd></div>
+      </dl>
+    </article>
+  );
 }

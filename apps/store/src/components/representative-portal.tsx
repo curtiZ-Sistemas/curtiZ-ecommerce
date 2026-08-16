@@ -188,26 +188,51 @@ type Snapshot = {
 };
 
 const navigation = [
-  ["Visão geral", "", House],
-  ["Meu perfil", "perfil", UserRound],
-  ["Meu nível", "nivel", BriefcaseBusiness],
-  ["Qualificação", "qualificacao", ShieldCheck],
-  ["Metas", "metas", Goal],
-  ["Meus kits", "kits", PackageCheck],
-  ["Comprar kit", "comprar-kit", ShoppingBag],
-  ["Meu estoque", "estoque", Boxes],
-  ["Movimentações", "movimentacoes", History],
-  ["Registrar venda", "registrar-venda", ReceiptText],
-  ["Minhas vendas", "vendas", ClipboardList],
-  ["Link de indicação", "indicacao", Link2],
-  ["Minha equipe", "equipe", UsersRound],
-  ["Comissões", "comissoes", BadgeDollarSign],
-  ["Pagamentos", "pagamentos", WalletCards],
-  ["Criativos", "criativos", FileImage],
-  ["Treinamentos", "treinamentos", BookOpen],
-  ["Documentos", "documentos", FileText],
-  ["Notificações", "notificacoes", Bell],
-  ["Atendimento", "atendimento", LifeBuoy]
+  {
+    label: "Painel",
+    items: [
+      ["Visão geral", "", House],
+      ["Meu perfil", "perfil", UserRound]
+    ]
+  },
+  {
+    label: "Evolução profissional",
+    items: [
+      ["Meu nível", "nivel", BriefcaseBusiness],
+      ["Qualificação", "qualificacao", ShieldCheck],
+      ["Metas", "metas", Goal]
+    ]
+  },
+  {
+    label: "Operação",
+    items: [
+      ["Meus kits", "kits", PackageCheck],
+      ["Comprar kit", "comprar-kit", ShoppingBag],
+      ["Meu estoque", "estoque", Boxes],
+      ["Movimentações", "movimentacoes", History],
+      ["Registrar venda", "registrar-venda", ReceiptText],
+      ["Minhas vendas", "vendas", ClipboardList]
+    ]
+  },
+  {
+    label: "Rede e ganhos",
+    items: [
+      ["Link de indicação", "indicacao", Link2],
+      ["Minha equipe", "equipe", UsersRound],
+      ["Comissões", "comissoes", BadgeDollarSign],
+      ["Pagamentos", "pagamentos", WalletCards]
+    ]
+  },
+  {
+    label: "Conteúdo e suporte",
+    items: [
+      ["Criativos", "criativos", FileImage],
+      ["Treinamentos", "treinamentos", BookOpen],
+      ["Documentos", "documentos", FileText],
+      ["Notificações", "notificacoes", Bell],
+      ["Atendimento", "atendimento", LifeBuoy]
+    ]
+  }
 ] as const;
 
 export function RepresentativePortal({ section }: { section: string }) {
@@ -357,16 +382,21 @@ export function RepresentativePortal({ section }: { section: string }) {
           </button>
         </header>
         <nav aria-label="Portal da representante">
-          {navigation.map(([label, route, Icon]) => (
-            <Link
-              className={route === section ? "active" : ""}
-              href={route ? `/representante/${route}` : "/representante"}
-              onClick={() => setMenuOpen(false)}
-              key={label}
-            >
-              <Icon />
-              <span>{label}</span>
-            </Link>
+          {navigation.map((group) => (
+            <div className="representative-nav-section" key={group.label}>
+              <span className="representative-nav-group">{group.label}</span>
+              {group.items.map(([label, route, Icon]) => (
+                <Link
+                  className={route === section ? "active" : ""}
+                  href={route ? `/representante/${route}` : "/representante"}
+                  onClick={() => setMenuOpen(false)}
+                  key={label}
+                >
+                  <Icon />
+                  <span>{label}</span>
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="representative-sidebar-footer">
@@ -385,27 +415,35 @@ export function RepresentativePortal({ section }: { section: string }) {
           >
             <Menu />
           </button>
-          <div className="representative-topbar-identity">
-            <UserAvatar
-              name={snapshot.representative.fullName || "Representante curti Z"}
-              src={snapshot.representative.avatarUrl}
-              size="small"
-            />
-            <div>
-              <small>Portal profissional</small>
-              <strong>{snapshot.representative.fullName || snapshot.representative.publicCode}</strong>
+          <div className="representative-topbar-profile">
+            <div className="representative-topbar-identity">
+              <UserAvatar
+                name={snapshot.representative.fullName || "Representante curti Z"}
+                src={snapshot.representative.avatarUrl}
+                size="small"
+              />
+              <div>
+                <small>Portal profissional</small>
+                <strong>{snapshot.representative.fullName || snapshot.representative.publicCode}</strong>
+              </div>
             </div>
+            <span className={`representative-status ${snapshot.representative.status}`}>
+              {statusLabel(snapshot.representative.status)}
+            </span>
           </div>
-          <Link className="representative-notification-link" href="/representante/notificacoes">
-            <Bell />
-            {(snapshot.notifications ?? []).filter((item) => !item.readAt).length > 0 && (
-              <span>{(snapshot.notifications ?? []).filter((item) => !item.readAt).length}</span>
-            )}
-            <span className="sr-only">Notificações</span>
-          </Link>
-          <span className={`representative-status ${snapshot.representative.status}`}>
-            {statusLabel(snapshot.representative.status)}
-          </span>
+          <nav className="representative-topbar-actions" aria-label="Conta profissional">
+            <Link className="representative-account-link" href="/minha-conta">
+              <UserRound />
+              <span>Minha conta</span>
+            </Link>
+            <Link className="representative-notification-link" href="/representante/notificacoes">
+              <Bell />
+              {(snapshot.notifications ?? []).filter((item) => !item.readAt).length > 0 && (
+                <span>{(snapshot.notifications ?? []).filter((item) => !item.readAt).length}</span>
+              )}
+              <span className="sr-only">Notificações</span>
+            </Link>
+          </nav>
         </header>
         <main className="representative-content">
           {["suspended", "cancelled", "inactive"].includes(snapshot.representative.status) && (
@@ -560,25 +598,39 @@ function Overview({ snapshot }: { snapshot: Snapshot }) {
           label="Copiar link"
         />
       </section>
-      <div className="representative-metrics">
-        <Metric label="Nível atual" value={representative.levelName ?? "Não atribuído"} />
-        <Metric
-          label="Qualificação"
-          value={
-            currentQualification
-              ? currentQualification.qualified
-                ? "Qualificada"
-                : "Não qualificada"
-              : "Não avaliada"
-          }
-        />
-        <Metric label="Comissão disponível" value={formatBRL(availableCommission)} />
-        <Metric label="Equipe" value={String(snapshot.pagination?.team.total ?? snapshot.team?.length ?? 0)} />
-        <Metric label="Status comercial" value={statusLabel(representative.status)} />
-        <Metric label="Vendas no histórico" value={String(snapshot.pagination?.sales.total ?? sales.length)} />
-        <Metric label="Volume confirmado" value={formatBRL(total)} />
-        <Metric label="Kits adquiridos" value={String(snapshot.kitOrders?.length ?? 0)} />
-      </div>
+      <section className="representative-metric-section">
+        <header>
+          <p className="eyebrow">Desempenho</p>
+          <h2>Indicadores principais</h2>
+        </header>
+        <div className="representative-metrics representative-primary-metrics">
+          <Metric label="Comissão disponível" value={formatBRL(availableCommission)} />
+          <Metric label="Vendas no histórico" value={String(snapshot.pagination?.sales.total ?? sales.length)} />
+          <Metric label="Volume confirmado" value={formatBRL(total)} />
+          <Metric label="Equipe" value={String(snapshot.pagination?.team.total ?? snapshot.team?.length ?? 0)} />
+        </div>
+      </section>
+      <section className="representative-metric-section">
+        <header>
+          <p className="eyebrow">Perfil comercial</p>
+          <h2>Situação do representante</h2>
+        </header>
+        <div className="representative-metrics representative-situation-metrics">
+          <Metric label="Nível atual" value={representative.levelName ?? "Não atribuído"} />
+          <Metric
+            label="Qualificação"
+            value={
+              currentQualification
+                ? currentQualification.qualified
+                  ? "Qualificada"
+                  : "Não qualificada"
+                : "Não avaliada"
+            }
+          />
+          <Metric label="Kits adquiridos" value={String(snapshot.kitOrders?.length ?? 0)} />
+          <Metric label="Status comercial" value={statusLabel(representative.status)} />
+        </div>
+      </section>
       <div className="representative-dashboard-grid">
         <section className="representative-card">
           <h2>Vendas recentes</h2>

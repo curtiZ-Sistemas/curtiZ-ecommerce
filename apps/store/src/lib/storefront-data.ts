@@ -316,6 +316,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     };
   }
 
+  const now = new Date().toISOString();
   const [sectionsResponse, bannersResponse, bestCatalog, promotionCatalog, newestCatalog] = await Promise.all([
     supabase
       .from("published_homepage_sections")
@@ -325,9 +326,11 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     supabase
       .from("banners")
       .select(
-        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,open_new_tab,position,priority,sort_order"
+        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,open_new_tab,position,priority,sort_order,starts_at,ends_at"
       )
       .in("status", ["published", "scheduled"])
+      .or(`starts_at.is.null,starts_at.lte.${now}`)
+      .or(`ends_at.is.null,ends_at.gt.${now}`)
       .order("priority", { ascending: false })
       .order("sort_order")
       .limit(40),

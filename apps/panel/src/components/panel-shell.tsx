@@ -44,6 +44,7 @@ import {
   readSidebarScroll,
   writeSidebarScroll
 } from "../lib/sidebar-scroll";
+import { PanelGlobalSearch } from "./panel-global-search";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -325,6 +326,15 @@ export function PanelShell({
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!searchOpen) return;
+    const closeSearch = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setSearchOpen(false);
+    };
+    document.addEventListener("keydown", closeSearch);
+    return () => document.removeEventListener("keydown", closeSearch);
+  }, [searchOpen]);
+
   useLayoutEffect(() => {
     const navigation = navRef.current;
     if (!navigation) return;
@@ -484,17 +494,7 @@ export function PanelShell({
           </nav>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
-              <form action={panelSearchRoute(role)}>
-                <label className="sr-only" htmlFor="panel-search">
-                  Buscar no painel
-                </label>
-                <input
-                  id="panel-search"
-                  name="q"
-                  placeholder="Pedido, cliente ou produto…"
-                  autoFocus
-                />
-              </form>
+              <PanelGlobalSearch role={role} onNavigate={() => setSearchOpen(false)} />
             )}
             <button
               type="button"

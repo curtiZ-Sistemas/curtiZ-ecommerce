@@ -43,6 +43,16 @@ for (const account of [
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".topbar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".side-nav a.active")).toHaveCSS("background-color", "rgb(249, 227, 224)");
+    const switchLink = page.locator(".sidebar-switch-link");
+    if (await switchLink.count()) {
+      const switchBox = await switchLink.boundingBox();
+      const supportBox = await page.locator(".support-card").boundingBox();
+      expect(switchBox).not.toBeNull();
+      expect(supportBox).not.toBeNull();
+      const gap = supportBox!.y - (switchBox!.y + switchBox!.height);
+      expect(gap).toBeGreaterThanOrEqual(12);
+      expect(gap).toBeLessThanOrEqual(16);
+    }
     expect(consoleErrors).toEqual([]);
   });
 }
@@ -53,6 +63,32 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
   await expect(page.getByRole("heading", { name: /Integra/ })).toBeVisible();
   await expect(page.getByText("Não configurado").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Aguardando credenciais")).toBeVisible({ timeout: 20_000 });
+});
+
+test("painel técnico separa os metadados de deploy da loja e do painel", async ({ page }) => {
+  await loginAs(page, "tecnico.demo@curtiz.local");
+  await page.goto("/tecnico/deploys");
+  const deploys = page.locator(".technical-deploy-grid");
+  await expect(deploys.getByRole("heading", { name: "Loja" })).toBeVisible();
+  await expect(deploys.getByRole("heading", { name: "Painel" })).toBeVisible();
+  await expect(deploys.getByText("Commit")).toHaveCount(2);
+  await expect(deploys).not.toContainText(/token|secret|senha/i);
+});
+
+test("busca global abre com teclado e mantém resultados protegidos por função", async ({ page }) => {
+  await loginAs(page, "admin.demo@curtiz.local");
+  const searchButton = page.locator(".topbar-search > button");
+  await expect(async () => {
+    await searchButton.click();
+    await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  const search = page.getByLabel("Buscar no painel");
+  await expect(search).toBeFocused();
+  await search.fill("produto");
+  await expect(page.locator("#panel-search-results")).toBeVisible();
+  await expect(page.getByText("Nenhum resultado encontrado.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(search).toBeHidden();
 });
 
 test("novo suporte aparece na fila administrativa", async ({ page }) => {

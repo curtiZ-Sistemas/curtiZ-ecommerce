@@ -13,18 +13,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
-import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export default function CartPage() {
-  const { hydrated, lines, syncMessage, changeQuantity, remove } = useCart();
-  const integrationStatus = useIntegrationStatus();
+  const { hydrated, lines, syncMessage, changeQuantity, remove, clear } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const releaseRef = useRef<number | null>(null);
   const subtotal = calculateSubtotal(lines);
   const itemCount = lines.reduce((total, line) => total + line.quantity, 0);
-  const qualifiesForFreeShipping = subtotal >= 14_900;
-  const remainingForFreeShipping = Math.max(0, 14_900 - subtotal);
 
   useEffect(
     () => () => {
@@ -54,9 +50,22 @@ export default function CartPage() {
           <p>{itemCount === 1 ? "1 item selecionado" : `${itemCount} itens selecionados`}</p>
         </div>
         {hydrated && lines.length > 0 && (
-          <Link className="secondary-button compact-button" href="/produtos">
-            <ArrowLeft /> Continuar comprando
-          </Link>
+          <div className="cart-heading-actions">
+            <Link className="secondary-button compact-button" href="/produtos">
+              <ArrowLeft /> Continuar comprando
+            </Link>
+            <button
+              className="text-button cart-clear-button"
+              type="button"
+              onClick={() => {
+                if (!window.confirm("Remover todos os itens da sacola?")) return;
+                clear();
+                setFeedback("Sacola esvaziada.");
+              }}
+            >
+              <Trash2 /> Limpar sacola
+            </button>
+          </div>
         )}
       </div>
 
@@ -72,11 +81,11 @@ export default function CartPage() {
       ) : lines.length === 0 ? (
         <div className="empty-state cart-empty-state">
           <span className="empty-state-icon"><ShoppingBag /></span>
-          <p className="eyebrow">Seu carrinho está esperando</p>
-          <h2>Escolha algo que combine com você</h2>
+          <p className="eyebrow">Sua seleção</p>
+          <h2>Sua sacola está vazia.</h2>
           <p>Explore a coleção curti Z e adicione seus modelos favoritos para continuar.</p>
           <Link className="primary-button" href="/produtos">
-            Explorar produtos
+            Continuar comprando
           </Link>
         </div>
       ) : (
@@ -182,32 +191,17 @@ export default function CartPage() {
               <strong>{formatBRL(subtotal)}</strong>
             </div>
 
-            <div className={qualifiesForFreeShipping ? "shipping-progress complete" : "shipping-progress"}>
+            <div className="shipping-progress">
               <Truck aria-hidden="true" />
               <div>
-                <strong>
-                  {qualifiesForFreeShipping
-                    ? "Você ganhou frete grátis"
-                    : `Faltam ${formatBRL(remainingForFreeShipping)} para o frete grátis`}
-                </strong>
-                <span><i style={{ width: `${Math.min(100, (subtotal / 14_900) * 100)}%` }} /></span>
+                <strong>Entrega calculada no checkout</strong>
+                <small>O prazo e o valor dependem do endereço informado.</small>
               </div>
             </div>
 
-            {integrationStatus?.checkoutEnabled ? (
-              <Link className="primary-button full-button checkout-button" href="/checkout">
-                Continuar para o checkout
-              </Link>
-            ) : (
-              <button className="primary-button full-button checkout-button" type="button" disabled>
-                Finalização indisponível
-              </button>
-            )}
-            {integrationStatus && !integrationStatus.checkoutEnabled && (
-              <p className="integration-notice" role="status">
-                A finalização de compras estará disponível em breve. Seus itens continuam salvos.
-              </p>
-            )}
+            <Link className="primary-button full-button checkout-button" href="/checkout">
+              Continuar para o checkout
+            </Link>
           </aside>
         </div>
       )}

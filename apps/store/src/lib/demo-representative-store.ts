@@ -164,11 +164,11 @@ const state = (): DemoState => {
       {
         id: "creative-demo-1",
         title: "Apresentação da coleção",
-        campaign: "Coleção demonstrativa",
+        campaign: "Coleção curti Z",
         type: "caption",
         platform: "Instagram",
         status: "published",
-        caption: "Conheça a seleção curti Z disponível para demonstração.",
+        caption: "Conheça a seleção curti Z disponível nesta coleção.",
         publishedAt: now(),
         demo: true
       },
@@ -179,7 +179,7 @@ const state = (): DemoState => {
         type: "image",
         platform: "WhatsApp",
         status: "published",
-        caption: "Material visual demonstrativo; substitua pelo ativo aprovado antes de publicar.",
+        caption: "Material visual sujeito à aprovação antes da publicação.",
         publishedAt: now(),
         demo: true
       }
@@ -189,8 +189,8 @@ const state = (): DemoState => {
       {
         id: "notification-demo-1",
         representativeId: "demo-representative",
-        title: "Portal demonstrativo disponível",
-        body: "Os dados desta conta são fictícios e servem apenas para validação do fluxo.",
+        title: "Portal profissional disponível",
+        body: "Consulte sua situação comercial, materiais e solicitações em um só lugar.",
         actionPath: null,
         readAt: null,
         createdAt: now()
@@ -233,8 +233,8 @@ export const getDemoRepresentativeSnapshot = (email: string) => {
       ? [
           {
             id: "20000000-0000-4000-8000-000000000001",
-            name: "Kit demonstrativo curti Z",
-            description: "Oferta fictícia para validar o fluxo de compra em ambiente demo.",
+            name: "Kit inicial curti Z",
+            description: "Seleção de materiais para apoiar o início das atividades comerciais.",
             priceInCents: 19990,
             requiredForActivation: false,
             demo: true as const
@@ -368,7 +368,7 @@ export const recordDemoRepresentativeSale = (
       (entry) => entry.representativeId === representative.id && entry.variantId === item.variantId
     );
     if (!inventory || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > inventory.quantity) {
-      throw new DemoRepresentativeError("Item indisponível no estoque demonstrativo.", 409);
+      throw new DemoRepresentativeError("Item indisponível no estoque atual.", 409);
     }
     totalInCents += inventory.priceInCents * item.quantity;
     return { inventory, quantity: item.quantity };
@@ -423,13 +423,13 @@ export const createDemoKitOrder = (email: string, kitId: string, idempotencyKey:
   );
   if (existing) return existing;
   if (kitId !== "20000000-0000-4000-8000-000000000001") {
-    throw new DemoRepresentativeError("Kit demonstrativo indisponível.", 404);
+    throw new DemoRepresentativeError("Kit indisponível.", 404);
   }
   const order = {
     id: idempotencyKey,
     publicCode: code("KIT"),
     representativeId: representative.id,
-    kitName: "Kit demonstrativo curti Z",
+    kitName: "Kit inicial curti Z",
     status: "paid",
     totalInCents: 19990
   };

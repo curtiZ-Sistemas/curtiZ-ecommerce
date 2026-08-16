@@ -3,6 +3,7 @@ import { postgresUuidSchema } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
+import { demoProducts } from "@/lib/catalog";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -70,9 +71,41 @@ export async function POST(request: Request) {
   }
 
   if (process.env.DEMO_MODE === "true") {
+    const items = parsed.data.lines.flatMap((line): CartLine[] => {
+      const product = demoProducts.find((candidate) => candidate.id === line.productId);
+      if (
+        !product ||
+        line.variantId !== `${product.id}:${line.color}:${line.size}` ||
+        !product.colors.includes(line.color) ||
+        !product.sizes.includes(line.size) ||
+        product.stock < 1
+      ) return [];
+      return [{
+        productId: product.id,
+        slug: product.slug,
+        variantId: line.variantId,
+        name: product.name,
+        image: product.image,
+        color: line.color,
+        size: line.size,
+        quantity: Math.min(line.quantity, product.stock, 10),
+        maxQuantity: Math.min(product.stock, 10),
+        unitPriceInCents: product.priceInCents
+      }];
+    });
+    const changed = items.length !== parsed.data.lines.length || items.some((line) => {
+      const local = parsed.data.lines.find((candidate) => candidate.variantId === line.variantId);
+      return !local || local.quantity !== line.quantity || local.unitPriceInCents !== line.unitPriceInCents;
+    });
     return NextResponse.json(
-      { message: "Carrinho salvo neste dispositivo." },
-      { headers: { "cache-control": "no-store", "x-demo-mode": "true" } }
+      {
+        items,
+        cartId: parsed.data.syncCartId ?? crypto.randomUUID(),
+        adjustmentMessage: changed
+          ? "Preço, disponibilidade ou quantidade foram atualizados conforme o catálogo atual."
+          : ""
+      },
+      { headers: { "cache-control": "no-store" } }
     );
   }
 
@@ -87,11 +120,11 @@ export async function POST(request: Request) {
   if (!authData.user) {
     return NextResponse.json(
       { message: "Entre para sincronizar o carrinho." },
-      { headers: { "cache-control": "no-store" } }
+      { status: 401, headers: { "cache-control": "no-store" } }
     );
   }
 
-  const rpcResponse: unknown = await supabase.rpc("merge_customer_cart", {
+  const rpcResponse: unknown = await supabase.rpc("sync_customer_cart", {
     p_source_cart_id: parsed.data.syncCartId ?? null,
     p_lines: parsed.data.lines.map((line) => ({
       product_id: line.productId,

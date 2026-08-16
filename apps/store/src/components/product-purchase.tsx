@@ -91,6 +91,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             width={720}
             height={560}
             sizes="(max-width: 900px) 100vw, 56vw"
+            loading="eager"
             priority
           />
         </div>
