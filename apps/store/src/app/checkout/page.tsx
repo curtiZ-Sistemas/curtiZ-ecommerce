@@ -7,11 +7,71 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import {
+  CPF_FORMATTED_MAX_LENGTH,
+  CUSTOMER_EMAIL_MAX_LENGTH,
+  formatBrazilianPhone,
+  formatCpf,
+  isValidBrazilianPhone,
+  isValidCpf,
+  isValidCustomerEmail,
+  phoneDigits,
+  PHONE_FORMATTED_MAX_LENGTH,
+  sanitizeCpf
+} from "@/lib/personal-data";
 
 const states = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
   "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
+
+const checkoutSteps = ["Conta", "Dados", "Endereço", "Entrega", "Pagamento", "Revisão", "Confirmação"] as const;
+const currentCheckoutStep = 2;
+
+type PersonalField = "email" | "phone" | "cpf";
+
+function CheckoutProgress() {
+  const currentLabel = checkoutSteps[currentCheckoutStep - 1];
+  return (
+    <nav className="checkout-progress" aria-label="Progresso do checkout">
+      <ol className="checkout-steps">
+        {checkoutSteps.map((label, index) => {
+          const number = index + 1;
+          const completed = number < currentCheckoutStep;
+          const current = number === currentCheckoutStep;
+          return (
+            <li
+              className={completed ? "completed" : current ? "active" : undefined}
+              aria-current={current ? "step" : undefined}
+              key={label}
+            >
+              <span>
+                {completed ? <Check aria-hidden="true" /> : number}
+                {completed && <i className="sr-only">Etapa concluída:</i>}
+              </span>
+              <strong>{label}</strong>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="checkout-progress-mobile">
+        <div>
+          <span>Etapa {currentCheckoutStep} de {checkoutSteps.length}</span>
+          <strong>{currentLabel}</strong>
+        </div>
+        <progress
+          aria-label={`Etapa ${currentCheckoutStep} de ${checkoutSteps.length}: ${currentLabel}`}
+          max={checkoutSteps.length}
+          value={currentCheckoutStep}
+        />
+        <p>
+          <span>Anterior: {checkoutSteps[currentCheckoutStep - 2]}</span>
+          <span>Próxima: {checkoutSteps[currentCheckoutStep]}</span>
+        </p>
+      </div>
+    </nav>
+  );
+}
 
 type SavedAddress = {
   id: string;
@@ -39,6 +99,7 @@ export default function CheckoutPage() {
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const formRef = useRef<HTMLFormElement>(null);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<PersonalField, string>>>({});
   const subtotal = calculateSubtotal(lines);
 
   const setFieldIfEmpty = useCallback((name: string, value: string) => {
@@ -79,7 +140,7 @@ export default function CheckoutPage() {
         if (!payload) return;
         setFieldIfEmpty("name", payload.profile?.fullName ?? "");
         setFieldIfEmpty("email", payload.profile?.email ?? "");
-        setFieldIfEmpty("phone", payload.profile?.phone ?? "");
+        setFieldIfEmpty("phone", formatBrazilianPhone(payload.profile?.phone ?? ""));
         const addresses = Array.isArray(payload.addresses) ? payload.addresses : [];
         setSavedAddresses(addresses);
         const preferred = addresses.find((address) => address.isDefault) ?? addresses[0];
@@ -130,9 +191,33 @@ export default function CheckoutPage() {
       return;
     }
 
-    setLoading(true);
     setMessage("");
     const form = new FormData(event.currentTarget);
+    const formString = (name: string) => {
+      const value = form.get(name);
+      return typeof value === "string" ? value : "";
+    };
+    const email = formString("email");
+    const phone = formString("phone");
+    const cpf = formString("cpf");
+    const errors: Partial<Record<PersonalField, string>> = {};
+    if (!isValidCustomerEmail(email)) errors.email = "Informe um e-mail válido.";
+    if (!isValidBrazilianPhone(phone)) errors.phone = "Informe um telefone válido com DDD.";
+    if (!isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
+    setFieldErrors(errors);
+    const firstInvalid = (Object.keys(errors) as PersonalField[])[0];
+    if (firstInvalid) {
+      setMessage("Revise os dados de identificação informados.");
+      const invalidField = formRef.current?.elements.namedItem(firstInvalid);
+      if (invalidField instanceof HTMLElement) invalidField.focus();
+      return;
+    }
+    if (!event.currentTarget.checkValidity()) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const response = await fetch("/api/checkout", {
@@ -142,9 +227,9 @@ export default function CheckoutPage() {
           idempotencyKey: idempotencyKeyRef.current,
           customer: {
             name: form.get("name"),
-            email: form.get("email"),
-            phone: form.get("phone"),
-            cpf: form.get("cpf")
+            email,
+            phone: phoneDigits(phone),
+            cpf: sanitizeCpf(cpf)
           },
           address: {
             postalCode: form.get("postalCode"),
@@ -225,42 +310,75 @@ export default function CheckoutPage() {
       </nav>
       <div className="section-heading checkout-heading">
         <div>
-          <p className="eyebrow"><LockKeyhole /> Ambiente protegido</p>
           <h1>Finalizar compra</h1>
           <p>Revise seus dados. Preço, estoque e entrega serão confirmados no servidor.</p>
         </div>
       </div>
 
-      <ol className="checkout-steps" aria-label="Etapas do checkout">
-        <li className="completed"><span><Check aria-hidden="true" /></span>Conta</li>
-        <li className="active" aria-current="step"><span>2</span>Dados</li>
-        <li><span>3</span>Endereço</li>
-        <li><span>4</span>Entrega</li>
-        <li><span>5</span>Pagamento</li>
-        <li><span>6</span>Revisão</li>
-        <li><span>7</span>Confirmação</li>
-      </ol>
+      <CheckoutProgress />
 
-      <form ref={formRef} className="checkout-layout" onSubmit={(event) => void submit(event)}>
+      <form ref={formRef} className="checkout-layout" noValidate onSubmit={(event) => void submit(event)}>
         <div className="checkout-form-column">
           <section className="form-card checkout-section">
             <header><span><UserRound /></span><div><h2>Identificação</h2><p>Dados de quem receberá as atualizações do pedido.</p></div></header>
             <div className="form-grid">
               <div className="field field-wide">
                 <label htmlFor="name">Nome completo</label>
-                <input id="name" name="name" autoComplete="name" required minLength={3} placeholder="Nome e sobrenome" />
+                <input id="name" name="name" autoComplete="name" required minLength={3} maxLength={120} placeholder="Nome e sobrenome" />
               </div>
               <div className="field">
                 <label htmlFor="email">E-mail</label>
-                <input id="email" name="email" type="email" autoComplete="email" required placeholder="voce@exemplo.com.br" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={fieldErrors.email ? "checkout-email-error" : undefined}
+                  onInput={() => setFieldErrors((current) => ({ ...current, email: undefined }))}
+                  required
+                  placeholder="voce@exemplo.com.br"
+                />
+                {fieldErrors.email && <p className="field-error" id="checkout-email-error" role="alert">{fieldErrors.email}</p>}
               </div>
               <div className="field">
                 <label htmlFor="phone">Telefone</label>
-                <input id="phone" name="phone" inputMode="tel" autoComplete="tel" required placeholder="(11) 99999-9999" />
+                <input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={PHONE_FORMATTED_MAX_LENGTH}
+                  aria-invalid={Boolean(fieldErrors.phone)}
+                  aria-describedby={fieldErrors.phone ? "checkout-phone-error" : undefined}
+                  onInput={(event) => {
+                    event.currentTarget.value = formatBrazilianPhone(event.currentTarget.value);
+                    setFieldErrors((current) => ({ ...current, phone: undefined }));
+                  }}
+                  required
+                  placeholder="(11) 99999-9999"
+                />
+                {fieldErrors.phone && <p className="field-error" id="checkout-phone-error" role="alert">{fieldErrors.phone}</p>}
               </div>
               <div className="field">
                 <label htmlFor="cpf">CPF para o pedido</label>
-                <input id="cpf" name="cpf" inputMode="numeric" required placeholder="000.000.000-00" />
+                <input
+                  id="cpf"
+                  name="cpf"
+                  inputMode="numeric"
+                  maxLength={CPF_FORMATTED_MAX_LENGTH}
+                  aria-invalid={Boolean(fieldErrors.cpf)}
+                  aria-describedby={fieldErrors.cpf ? "checkout-cpf-error" : undefined}
+                  onInput={(event) => {
+                    event.currentTarget.value = formatCpf(event.currentTarget.value);
+                    setFieldErrors((current) => ({ ...current, cpf: undefined }));
+                  }}
+                  required
+                  placeholder="000.000.000-00"
+                />
+                {fieldErrors.cpf && <p className="field-error" id="checkout-cpf-error" role="alert">{fieldErrors.cpf}</p>}
               </div>
             </div>
           </section>
@@ -286,27 +404,27 @@ export default function CheckoutPage() {
             <div className="form-grid address-grid">
               <div className="field">
                 <label htmlFor="postalCode">CEP</label>
-                <input id="postalCode" name="postalCode" inputMode="numeric" autoComplete="postal-code" required placeholder="00000-000" />
+                <input id="postalCode" name="postalCode" inputMode="numeric" autoComplete="postal-code" maxLength={9} required placeholder="00000-000" />
               </div>
               <div className="field field-street">
                 <label htmlFor="street">Endereço</label>
-                <input id="street" name="street" autoComplete="address-line1" required />
+                <input id="street" name="street" autoComplete="address-line1" maxLength={160} required />
               </div>
               <div className="field">
                 <label htmlFor="number">Número</label>
-                <input id="number" name="number" required />
+                <input id="number" name="number" maxLength={20} required />
               </div>
               <div className="field">
                 <label htmlFor="complement">Complemento <span className="optional-label">(opcional)</span></label>
-                <input id="complement" name="complement" autoComplete="address-line2" />
+                <input id="complement" name="complement" autoComplete="address-line2" maxLength={120} />
               </div>
               <div className="field">
                 <label htmlFor="district">Bairro</label>
-                <input id="district" name="district" required />
+                <input id="district" name="district" maxLength={100} required />
               </div>
               <div className="field">
                 <label htmlFor="city">Cidade</label>
-                <input id="city" name="city" autoComplete="address-level2" required />
+                <input id="city" name="city" autoComplete="address-level2" maxLength={100} required />
               </div>
               <div className="field">
                 <label htmlFor="state">Estado</label>
@@ -329,7 +447,7 @@ export default function CheckoutPage() {
           </section>
 
           <section className="form-card checkout-section">
-            <header><span><LockKeyhole /></span><div><h2>Pagamento</h2><p>Confira o resumo e avance para o pagamento online com segurança.</p></div></header>
+            <header><span><LockKeyhole /></span><div><h2>Pagamento</h2><p>Confira o resumo antes de avançar para o pagamento online.</p></div></header>
             <div className="checkout-payment-summary">
               <Check aria-hidden="true" />
               <p>Preço, variante, estoque, descontos e entrega serão validados novamente pelo servidor.</p>

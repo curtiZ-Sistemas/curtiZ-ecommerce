@@ -2,6 +2,14 @@
 
 import { ArrowLeft, ArrowRight, Check, FileCheck2, LoaderCircle, Save } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import {
+  CPF_FORMATTED_MAX_LENGTH,
+  formatBrazilianPhone,
+  formatCpf,
+  isValidBrazilianPhone,
+  isValidCpf,
+  PHONE_FORMATTED_MAX_LENGTH
+} from "@/lib/personal-data";
 
 const steps = [
   "Dados pessoais",
@@ -60,7 +68,7 @@ export function RepresentativeApplicationWizard() {
       });
       const result = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(result.message ?? "Não foi possível salvar.");
-      setMessage("Rascunho salvo com segurança.");
+      setMessage("Rascunho salvo.");
       if (move) setStep((current) => Math.min(6, current + 1));
       return true;
     } catch (error) {
@@ -73,6 +81,22 @@ export function RepresentativeApplicationWizard() {
 
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (step === 1) {
+      const cpf = event.currentTarget.elements.namedItem("cpf");
+      const phone = event.currentTarget.elements.namedItem("phone");
+      if (cpf instanceof HTMLInputElement) {
+        cpf.setCustomValidity(isValidCpf(cpf.value) ? "" : "Informe um CPF válido.");
+      }
+      if (phone instanceof HTMLInputElement) {
+        phone.setCustomValidity(
+          isValidBrazilianPhone(phone.value) ? "" : "Informe um telefone válido com DDD."
+        );
+      }
+      if (!event.currentTarget.checkValidity()) {
+        event.currentTarget.reportValidity();
+        return;
+      }
+    }
     const values = Object.fromEntries(new FormData(event.currentTarget));
     void save(
       Object.fromEntries(
@@ -183,12 +207,27 @@ export function RepresentativeApplicationWizard() {
               name="cpf"
               inputMode="numeric"
               placeholder="Somente números"
-              minLength={11}
-              maxLength={14}
+              maxLength={CPF_FORMATTED_MAX_LENGTH}
+              onInput={(event) => {
+                event.currentTarget.value = formatCpf(event.currentTarget.value);
+                event.currentTarget.setCustomValidity("");
+              }}
               required
             />
             <Field label="Data de nascimento" name="birthDate" type="date" required />
-            <Field label="Telefone" name="phone" autoComplete="tel" required />
+            <Field
+              label="Telefone"
+              name="phone"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={PHONE_FORMATTED_MAX_LENGTH}
+              onInput={(event) => {
+                event.currentTarget.value = formatBrazilianPhone(event.currentTarget.value);
+                event.currentTarget.setCustomValidity("");
+              }}
+              required
+            />
           </StepForm>
         )}
         {step === 2 && (

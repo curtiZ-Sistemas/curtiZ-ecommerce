@@ -42,8 +42,7 @@ export default async function AccountPage({
           <p className="eyebrow">Área do cliente</p>
           <h1>Entre na sua conta curti Z</h1>
           <p>
-            Consulte pedidos, favoritos, endereços, avaliações e atendimentos em um
-            ambiente protegido.
+            Consulte pedidos, favoritos, endereços, avaliações e atendimentos em um só lugar.
           </p>
           <div className="customer-entry-actions">
             <Link className="primary-button" href={`/login?next=${encodeURIComponent(returnTo)}`}>

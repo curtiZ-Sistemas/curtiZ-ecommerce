@@ -1,7 +1,7 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { helpCategories, searchDemoHelp, type HelpContent } from "@/lib/help-content";
+import { helpCategories, searchBuiltInHelp, type HelpContent } from "@/lib/help-content";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
@@ -30,6 +30,20 @@ const headersFor = (request: Request) => ({
   "cache-control": "private, no-store",
   ...corsHeadersFor(request)
 });
+
+function builtInResponse(request: NextRequest, query: string, category: string, page: number) {
+  const pageSize = 12;
+  const all = searchBuiltInHelp(query, category || undefined);
+  return NextResponse.json(
+    {
+      ok: true,
+      contents: all.slice((page - 1) * pageSize, page * pageSize),
+      total: all.length,
+      categories: helpCategories
+    },
+    { headers: headersFor(request) }
+  );
+}
 
 function safeAction(value: unknown): HelpContent["relatedAction"] {
   if (!isUnknownRecord(value)) return undefined;
@@ -109,16 +123,7 @@ export async function GET(request: NextRequest) {
   const pageSize = 12;
   const demo = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (process.env.DEMO_MODE === "true" || demo) {
-    const all = searchDemoHelp(query, category || undefined);
-    return NextResponse.json(
-      {
-        ok: true,
-        contents: all.slice((page - 1) * pageSize, page * pageSize),
-        total: all.length,
-        categories: helpCategories
-      },
-      { headers: headersFor(request) }
-    );
+    return builtInResponse(request, query, category, page);
   }
 
   const actor = await audienceFor(request);
@@ -127,16 +132,7 @@ export async function GET(request: NextRequest) {
       requestId: crypto.randomUUID(),
       reason: "supabase_client_unavailable"
     });
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "A busca está temporariamente indisponível.",
-        contents: [],
-        total: 0,
-        categories: helpCategories
-      },
-      { status: 503, headers: headersFor(request) }
-    );
+    return builtInResponse(request, query, category, page);
   }
   const [response, categoryResponse] = await Promise.all([
     actor.supabase.rpc("search_published_help", {
@@ -159,16 +155,7 @@ export async function GET(request: NextRequest) {
       searchCode: safeErrorCode(result.error),
       categoryCode: safeErrorCode(categoryResponse.error)
     });
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "A busca está temporariamente indisponível.",
-        contents: [],
-        total: 0,
-        categories: helpCategories
-      },
-      { status: 503, headers: headersFor(request) }
-    );
+    return builtInResponse(request, query, category, page);
   }
   let contents = readRows(result.data).flatMap((row) => {
     const item = mapRow(row);
@@ -176,6 +163,7 @@ export async function GET(request: NextRequest) {
   });
   if (category) contents = contents.filter((item) => item.categorySlug === category);
   const total = readRows(result.data)[0] ? readNumber(readRows(result.data)[0]!, "total_count") : 0;
+  if (total === 0) return builtInResponse(request, query, category, page);
   if (query) {
     await actor.supabase.rpc("record_help_search", {
       p_query: query,
@@ -200,7 +188,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false }, { status: 403 });
-  const parsed = writeSchema.safeParse(await request.json());
+  const parsed = writeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ ok: false, message: "Feedback inválido." }, { status: 400 });
   if (process.env.DEMO_MODE === "true") return NextResponse.json({ ok: true });

@@ -24,6 +24,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  formatBrazilianPhone,
+  PHONE_FORMATTED_MAX_LENGTH
+} from "@/lib/personal-data";
+import {
   type FormEvent,
   type ReactNode,
   useMemo,
@@ -455,16 +459,25 @@ function Profile({
         <div className="customer-form-grid">
           <label className="customer-field">
             <span>Nome completo</span>
-            <input name="fullName" defaultValue={snapshot.profile.fullName} minLength={3} required />
+            <input name="fullName" defaultValue={snapshot.profile.fullName} minLength={3} maxLength={120} required />
           </label>
           <label className="customer-field">
             <span>E-mail</span>
             <input value={snapshot.profile.email} readOnly aria-describedby="email-help" />
-            <small id="email-help">O e-mail de acesso é protegido pelo Auth.</small>
+            <small id="email-help">Este é o e-mail usado para acessar a conta.</small>
           </label>
           <label className="customer-field">
             <span>Telefone</span>
-            <input name="phone" defaultValue={snapshot.profile.phone} inputMode="tel" maxLength={24} />
+            <input
+              name="phone"
+              defaultValue={formatBrazilianPhone(snapshot.profile.phone)}
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={PHONE_FORMATTED_MAX_LENGTH}
+              onInput={(event) => {
+                event.currentTarget.value = formatBrazilianPhone(event.currentTarget.value);
+              }}
+            />
           </label>
           <label className="customer-field">
             <span>Data de nascimento</span>
@@ -969,7 +982,7 @@ function Addresses({
         state: form.get("state"),
         isDefault: form.get("isDefault") === "on"
       },
-      "Endereço salvo com segurança."
+      "Endereço salvo."
     ).then(() => setEditing(null));
   };
   const current = editing && editing !== "new" ? editing : null;
@@ -981,13 +994,13 @@ function Addresses({
           <h3>{current ? "Editar endereço" : "Novo endereço"}</h3>
           <div className="customer-form-grid">
             <label className="customer-field"><span>Identificação</span><input name="label" defaultValue={current?.label ?? "Casa"} minLength={2} maxLength={40} required /></label>
-            <label className="customer-field"><span>Destinatário</span><input name="recipientName" defaultValue={current?.recipientName ?? profileName} minLength={3} required /></label>
-            <label className="customer-field"><span>CEP</span><input name="postalCode" defaultValue={current?.postalCode} pattern="\d{5}-?\d{3}" inputMode="numeric" placeholder="00000-000" required /></label>
-            <label className="customer-field"><span>Rua / avenida</span><input name="street" defaultValue={current?.street} required /></label>
-            <label className="customer-field"><span>Número</span><input name="number" defaultValue={current?.number} required /></label>
-            <label className="customer-field"><span>Complemento</span><input name="complement" defaultValue={current?.complement} /></label>
-            <label className="customer-field"><span>Bairro</span><input name="district" defaultValue={current?.district} required /></label>
-            <label className="customer-field"><span>Cidade</span><input name="city" defaultValue={current?.city} required /></label>
+            <label className="customer-field"><span>Destinatário</span><input name="recipientName" defaultValue={current?.recipientName ?? profileName} minLength={3} maxLength={120} required /></label>
+            <label className="customer-field"><span>CEP</span><input name="postalCode" defaultValue={current?.postalCode} pattern="\d{5}-?\d{3}" inputMode="numeric" maxLength={9} placeholder="00000-000" required /></label>
+            <label className="customer-field"><span>Rua / avenida</span><input name="street" defaultValue={current?.street} maxLength={160} required /></label>
+            <label className="customer-field"><span>Número</span><input name="number" defaultValue={current?.number} maxLength={20} required /></label>
+            <label className="customer-field"><span>Complemento</span><input name="complement" defaultValue={current?.complement} maxLength={100} /></label>
+            <label className="customer-field"><span>Bairro</span><input name="district" defaultValue={current?.district} maxLength={100} required /></label>
+            <label className="customer-field"><span>Cidade</span><input name="city" defaultValue={current?.city} maxLength={100} required /></label>
             <label className="customer-field"><span>UF</span><input name="state" defaultValue={current?.state} maxLength={2} pattern="[A-Za-z]{2}" required /></label>
             <label className="customer-check"><input type="checkbox" name="isDefault" defaultChecked={current?.isDefault ?? addresses.length === 0} />Definir como endereço principal</label>
           </div>

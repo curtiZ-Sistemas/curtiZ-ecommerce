@@ -7,7 +7,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 
 const requestSchema = z.object({
   action: z.literal("request"),
-  email: z.string().trim().email().max(254),
+  email: z.string().trim().email().max(120),
   turnstileToken: z.string().max(4096).optional()
 });
 const updateSchema = z

@@ -32,7 +32,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   },
   "formas-de-pagamento": {
     title: "Formas de pagamento",
-    lead: "Pagamento seguro com valores recalculados no servidor.",
+    lead: "Valores de pagamento recalculados no servidor.",
     body: [
       "Quando habilitado, o pagamento é processado pelo provedor configurado. A curti Z não armazena CVV."
     ]

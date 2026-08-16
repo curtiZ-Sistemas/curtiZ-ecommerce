@@ -449,7 +449,7 @@ export async function POST(request: NextRequest) {
       401
     );
   }
-  const parsed = writeSchema.safeParse(await request.json());
+  const parsed = writeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return json(request, { ok: false, message: "Revise os dados informados." }, 400);
 
@@ -550,7 +550,7 @@ export async function PATCH(request: NextRequest) {
   if (!actor) {
     return json(request, { ok: false, message: "Operação não permitida." }, 403);
   }
-  const parsed = updateSchema.safeParse(await request.json());
+  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return json(request, { ok: false, message: "Revise a operação." }, 400);
 
   try {

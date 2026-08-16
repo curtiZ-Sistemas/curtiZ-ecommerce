@@ -93,7 +93,7 @@ export default async function ProfilePage() {
         <div>
           <p className="eyebrow">Perfil curti Z</p>
           <h1>{fullName}</h1>
-          <p>Conta verificada · dados pessoais protegidos</p>
+          <p>Gerencie seus dados e acessos.</p>
         </div>
         <BadgeCheck aria-label="Conta verificada" />
       </header>
@@ -111,7 +111,7 @@ export default async function ProfilePage() {
             </div>
             <div>
               <dt>Contato</dt>
-              <dd>Protegido</dd>
+              <dd>Disponível na área do cliente</dd>
             </div>
           </dl>
           <Link className="secondary-button" href={returnUrl}>

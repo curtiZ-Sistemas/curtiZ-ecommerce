@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/*881a15 e ac1c16*/
+
 :root {
   --brand-950: #4a0c09;
   --brand-900: #62130f;
@@ -2343,35 +2345,46 @@ select:disabled {
 /* Checkout */
 
 .checkout-heading {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
+}
+
+.checkout-heading h1 {
+  margin-top: 0;
+}
+
+.checkout-progress {
+  margin-bottom: 30px;
 }
 
 .checkout-steps {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin: 0 0 28px;
-  padding: 0;
+  margin: 0;
+  padding: 0 10px;
   list-style: none;
 }
 
 .checkout-steps li {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
   color: var(--neutral-500);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .checkout-steps li::before {
   position: absolute;
-  z-index: -1;
-  top: 15px;
-  right: 50%;
-  left: -50%;
-  height: 1px;
+  top: 16px;
+  right: calc(50% + 20px);
+  left: calc(-50% + 20px);
+  height: 2px;
   content: "";
   background: var(--neutral-300);
 }
@@ -2381,13 +2394,21 @@ select:disabled {
 }
 
 .checkout-steps li span {
-  width: 30px;
-  height: 30px;
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   border: 1px solid var(--neutral-300);
   border-radius: 99px;
   background: var(--white);
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.checkout-steps li strong {
+  overflow-wrap: anywhere;
+  font: inherit;
 }
 
 .checkout-steps li.active {
@@ -2417,6 +2438,16 @@ select:disabled {
 .checkout-steps li.completed svg {
   width: 15px;
   height: 15px;
+}
+
+.checkout-progress-mobile {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkout-steps li span {
+    transition: none;
+  }
 }
 
 .checkout-layout {
@@ -4462,12 +4493,71 @@ select:disabled {
 
   /* Checkout */
 
-  .checkout-steps li {
+  .checkout-progress {
+    margin-bottom: 22px;
+  }
+
+  .checkout-steps {
+    display: none;
+  }
+
+  .checkout-progress-mobile {
     display: grid;
-    justify-items: center;
-    gap: 5px;
-    text-align: center;
-    font-size: 0.61rem;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid var(--neutral-200);
+    border-radius: var(--radius-md);
+    background: var(--white);
+  }
+
+  .checkout-progress-mobile > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .checkout-progress-mobile > div span,
+  .checkout-progress-mobile p {
+    color: var(--neutral-600);
+    font-size: 0.72rem;
+  }
+
+  .checkout-progress-mobile > div strong {
+    color: var(--brand-900);
+    font-size: 0.98rem;
+  }
+
+  .checkout-progress-mobile progress {
+    width: 100%;
+    height: 6px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 99px;
+    background: var(--neutral-200);
+    color: var(--brand-800);
+  }
+
+  .checkout-progress-mobile progress::-webkit-progress-bar {
+    border-radius: 99px;
+    background: var(--neutral-200);
+  }
+
+  .checkout-progress-mobile progress::-webkit-progress-value {
+    border-radius: 99px;
+    background: var(--brand-800);
+  }
+
+  .checkout-progress-mobile progress::-moz-progress-bar {
+    border-radius: 99px;
+    background: var(--brand-800);
+  }
+
+  .checkout-progress-mobile p {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
   }
 
   .checkout-section {
@@ -7459,6 +7549,29 @@ body:has(.representative-portal-layout) > .demo-banner {
   outline: 0;
   color: var(--neutral-950);
   font: inherit;
+}
+
+.help-search-clear {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--neutral-700);
+  cursor: pointer;
+}
+
+.help-search-clear:hover,
+.help-search-clear:focus-visible {
+  background: var(--neutral-150);
+  color: var(--brand-800);
+}
+
+.help-reader:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand-700) 45%, transparent);
+  outline-offset: 4px;
 }
 
 .help-quick-actions {

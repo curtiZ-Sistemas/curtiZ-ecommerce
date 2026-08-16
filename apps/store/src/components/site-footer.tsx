@@ -43,7 +43,7 @@ export function SiteFooter() {
         <div className="footer-brand">
           <BrandLogo />
           <p>
-            Conforto e estilo para todos os momentos, com uma experiência de compra clara e segura.
+            Conforto e estilo para todos os momentos, com uma experiência de compra clara e organizada.
           </p>
           <span>Loja exclusivamente online.</span>
         </div>

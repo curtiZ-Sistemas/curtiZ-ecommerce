@@ -3,6 +3,7 @@
 import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useState } from "react";
+import { CUSTOMER_EMAIL_MAX_LENGTH } from "@/lib/personal-data";
 import { TurnstileField } from "./turnstile-field";
 
 type PasswordResult = { message?: string; redirectTo?: string };
@@ -64,6 +65,7 @@ export function PasswordRecoveryForm({
               name="email"
               type="email"
               autoComplete="email"
+              maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
               placeholder="voce@exemplo.com.br"
               required
             />

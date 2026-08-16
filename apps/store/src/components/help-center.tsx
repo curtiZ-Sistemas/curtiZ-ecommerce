@@ -10,7 +10,8 @@ import {
   LoaderCircle,
   Search,
   ThumbsDown,
-  ThumbsUp
+  ThumbsUp,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +33,13 @@ const quickActions = [
   ["Minha conta", "/minha-conta"],
   ["Representante curti Z", "/representante"]
 ] as const;
+
+const contentTypeLabels: Record<string, string> = {
+  article: "Artigo",
+  faq: "Pergunta frequente",
+  step_by_step: "Passo a passo",
+  tutorial: "Tutorial"
+};
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const term = query.trim();
@@ -62,6 +70,7 @@ export function HelpCenter() {
   const [retryToken, setRetryToken] = useState(0);
   const [feedback, setFeedback] = useState<Record<string, boolean>>({});
   const sessionId = useRef("");
+  const readerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     sessionId.current = sessionStorage.getItem("curtiz-help-session") ?? crypto.randomUUID();
@@ -69,6 +78,10 @@ export function HelpCenter() {
     const initialQuery = new URLSearchParams(window.location.search).get("q")?.slice(0, 160);
     if (initialQuery) setQuery(initialQuery);
   }, []);
+
+  useEffect(() => {
+    if (selected) readerRef.current?.focus();
+  }, [selected]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -105,12 +118,17 @@ export function HelpCenter() {
   const visibleCategories = useMemo(() => {
     const primary = new Set([
       "conta-cadastro",
+      "compras",
       "pedidos",
       "pagamentos",
       "entregas-rastreamento",
       "produtos-tamanhos",
+      "carrinho",
+      "cupons",
       "trocas-devolucoes",
-      "representante-curtiz"
+      "representante-curtiz",
+      "seguranca-privacidade",
+      "atendimento"
     ]);
     return categories.filter((item) => primary.has(item.slug) || item.slug === category);
   }, [categories, category]);
@@ -139,6 +157,7 @@ export function HelpCenter() {
 
   const openContent = (content: HelpContent) => {
     setSelected(content);
+    if (content.feedbackEnabled === false) return;
     void fetch("/api/help", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -165,6 +184,19 @@ export function HelpCenter() {
             placeholder="Busque por pedido, entrega, troca, conta…"
             autoComplete="off"
           />
+          {query && !loading && (
+            <button
+              type="button"
+              className="help-search-clear"
+              onClick={() => {
+                setQuery("");
+                setPage(1);
+              }}
+              aria-label="Limpar busca"
+            >
+              <X aria-hidden="true" />
+            </button>
+          )}
           {loading && <LoaderCircle className="spin" aria-label="Pesquisando" />}
         </label>
         <div className="help-quick-actions" aria-label="Atalhos">
@@ -297,7 +329,7 @@ export function HelpCenter() {
             {contents.map((content) => (
               <article key={content.id}>
                 <span>
-                  {content.categoryName} · {content.type.replaceAll("_", " ")}
+                  {content.categoryName} · {contentTypeLabels[content.type] ?? "Conteúdo"}
                 </span>
                 <h3>
                   <Highlight text={content.title} query={query} />
@@ -305,11 +337,7 @@ export function HelpCenter() {
                 <p>
                   <Highlight text={content.summary} query={query} />
                 </p>
-                <button
-                  type="button"
-                  className="text-link"
-                  onClick={() => openContent(content)}
-                >
+                <button type="button" className="text-link" onClick={() => openContent(content)}>
                   Ler conteúdo <ArrowRight />
                 </button>
               </article>
@@ -340,7 +368,12 @@ export function HelpCenter() {
       </section>
 
       {selected && (
-        <section className="help-reader" aria-labelledby="help-reader-title">
+        <section
+          className="help-reader"
+          aria-labelledby="help-reader-title"
+          ref={readerRef}
+          tabIndex={-1}
+        >
           <button type="button" className="help-reader-close" onClick={() => setSelected(null)}>
             Fechar
           </button>
@@ -398,23 +431,25 @@ export function HelpCenter() {
                 timeZone: "America/Sao_Paulo"
               }).format(new Date(selected.updatedAt))}
             </span>
-            <div>
-              <strong>Esta informação ajudou?</strong>
-              <button
-                disabled={feedback[selected.id] !== undefined}
-                onClick={() => void registerFeedback(selected, true)}
-                aria-label="Sim, ajudou"
-              >
-                <ThumbsUp />
-              </button>
-              <button
-                disabled={feedback[selected.id] !== undefined}
-                onClick={() => void registerFeedback(selected, false)}
-                aria-label="Não ajudou"
-              >
-                <ThumbsDown />
-              </button>
-            </div>
+            {selected.feedbackEnabled !== false && (
+              <div>
+                <strong>Esta informação ajudou?</strong>
+                <button
+                  disabled={feedback[selected.id] !== undefined}
+                  onClick={() => void registerFeedback(selected, true)}
+                  aria-label="Sim, ajudou"
+                >
+                  <ThumbsUp />
+                </button>
+                <button
+                  disabled={feedback[selected.id] !== undefined}
+                  onClick={() => void registerFeedback(selected, false)}
+                  aria-label="Não ajudou"
+                >
+                  <ThumbsDown />
+                </button>
+              </div>
+            )}
           </footer>
         </section>
       )}

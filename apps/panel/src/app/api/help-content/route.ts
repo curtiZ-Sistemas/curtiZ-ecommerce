@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!safePanelOrigin(request))
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
-  const parsed = createSchema.safeParse(await request.json());
+  const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os campos informados." }, { status: 400 });
   const permission: SupportContentPermission =
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (!safePanelOrigin(request))
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
-  const parsed = updateSchema.safeParse(await request.json());
+  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os campos informados." }, { status: 400 });
   const auth = await authorizeSupportContentRequest(
@@ -369,7 +369,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
   const parsed = z
     .object({ id: z.string().uuid(), confirmation: z.literal("EXCLUIR") })
-    .safeParse(await request.json());
+    .safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ message: "Confirmação inválida." }, { status: 400 });
   const auth = await authorizeSupportContentRequest(request, "support_content.edit");

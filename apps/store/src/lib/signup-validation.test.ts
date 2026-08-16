@@ -89,6 +89,12 @@ describe("signup validation", () => {
     expect(parseSignupInput({ ...validPayload, confirmPassword: "Outra92" }).success).toBe(false);
   });
 
+  it("rejeita e-mail recebido por API acima de 120 caracteres", () => {
+    const email = `${"a".repeat(110)}@example.com.br`;
+    expect(email.length).toBeGreaterThan(120);
+    expect(parseSignupInput({ ...validPayload, email }).success).toBe(false);
+  });
+
   it("não permite que o cadastro público envie uma role privilegiada", () => {
     expect(parseSignupInput({ ...validPayload, role: "admin" }).success).toBe(false);
   });

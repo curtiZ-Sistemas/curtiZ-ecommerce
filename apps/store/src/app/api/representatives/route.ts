@@ -20,6 +20,12 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { encryptPII } from "@/lib/pii";
 import {
+  cpfDigits,
+  isValidBrazilianPhone,
+  isValidCpf,
+  normalizeBrazilianPhone
+} from "@/lib/personal-data";
+import {
   isUnknownRecord,
   readNumber,
   readQueryResult,
@@ -589,13 +595,24 @@ export async function POST(request: NextRequest) {
     try {
       const input = parsed.data;
       if (input.action === "save_draft") {
-        const cpf =
-          typeof input.values.cpf === "string" ? input.values.cpf.replace(/\D/gu, "") : "";
+        const rawCpf = typeof input.values.cpf === "string" ? input.values.cpf : "";
+        const rawPhone = typeof input.values.phone === "string" ? input.values.phone : "";
+        if (
+          input.step === 1 &&
+          (!isValidCpf(rawCpf) || !isValidBrazilianPhone(rawPhone))
+        ) {
+          return NextResponse.json(
+            { message: !isValidCpf(rawCpf) ? "Informe um CPF válido." : "Informe um telefone válido com DDD." },
+            { status: 422, headers: noStore }
+          );
+        }
+        const cpf = cpfDigits(rawCpf);
         const safeValues = { ...input.values };
         if (cpf) {
           delete safeValues.cpf;
           safeValues.cpfLastFour = cpf.slice(-4);
         }
+        if (rawPhone) safeValues.phone = normalizeBrazilianPhone(rawPhone) ?? "";
         return NextResponse.json(saveDemoRepresentativeDraft(session, input.step, safeValues), {
           headers: responseHeaders(request)
         });
@@ -679,12 +696,18 @@ export async function POST(request: NextRequest) {
     const existingData = readQueryResult(existingResponse).data;
     const existing = isUnknownRecord(existingData) ? existingData : null;
     const current = existing && isUnknownRecord(existing.answers) ? existing.answers : {};
-    const cpf = typeof input.values.cpf === "string" ? input.values.cpf.replace(/\D/gu, "") : "";
-    if (cpf && cpf.length !== 11) {
-      return NextResponse.json({ message: "CPF inválido." }, { status: 422, headers: noStore });
+    const rawCpf = typeof input.values.cpf === "string" ? input.values.cpf : "";
+    const rawPhone = typeof input.values.phone === "string" ? input.values.phone : "";
+    if (input.step === 1 && (!isValidCpf(rawCpf) || !isValidBrazilianPhone(rawPhone))) {
+      return NextResponse.json(
+        { message: !isValidCpf(rawCpf) ? "Informe um CPF válido." : "Informe um telefone válido com DDD." },
+        { status: 422, headers: noStore }
+      );
     }
+    const cpf = cpfDigits(rawCpf);
     const safeValues = { ...input.values };
     delete safeValues.cpf;
+    if (rawPhone) safeValues.phone = normalizeBrazilianPhone(rawPhone) ?? "";
     let representativeTermsVersionId = "";
     if (input.step === 5 && input.values.termsAccepted) {
       const termsResponse: unknown = await supabase

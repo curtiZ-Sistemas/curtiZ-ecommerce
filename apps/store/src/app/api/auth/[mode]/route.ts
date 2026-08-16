@@ -24,7 +24,7 @@ const loginSchema = z.object({
     .string()
     .trim()
     .email()
-    .max(254)
+    .max(120)
     .transform((value) => value.toLocaleLowerCase("pt-BR")),
   password: z.string().min(6).max(256),
   remember: z.string().optional(),
@@ -37,7 +37,7 @@ const resendSchema = z.object({
     .string()
     .trim()
     .email()
-    .max(254)
+    .max(120)
     .transform((value) => value.toLocaleLowerCase("pt-BR")),
   next: z.string().max(300).optional()
 });

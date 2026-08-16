@@ -43,6 +43,9 @@ describe("help center reform migration", () => {
     expect(sql).toContain("elsif tg_table_name='support_messages' then");
     expect(sql).toContain("support participants read attachment files");
     expect(sql).toContain("support participants create attachment metadata");
+    expect(sql).toContain("customer_id=auth.uid()");
+    expect(sql).toContain("private.can_access_support(conversation)");
+    expect(sql).toContain("message.sender_id=auth.uid()");
   });
 
   it("usa somente expressões imutáveis no índice textual", () => {

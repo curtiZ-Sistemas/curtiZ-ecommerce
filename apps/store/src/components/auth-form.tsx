@@ -12,6 +12,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useCallback, useRef, useState } from "react";
+import {
+  CUSTOMER_EMAIL_MAX_LENGTH,
+  formatBrazilianPhone,
+  PHONE_FORMATTED_MAX_LENGTH
+} from "@/lib/personal-data";
 import { TurnstileField } from "./turnstile-field";
 
 type AuthResult = {
@@ -100,6 +105,7 @@ export function AuthForm({
             name="email"
             type="email"
             autoComplete="email"
+            maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
             placeholder={mode === "login" ? "voce@exemplo.com.br" : "seu melhor e-mail"}
             required
           />
@@ -115,7 +121,11 @@ export function AuthForm({
             id="signup-phone"
             name="phone"
             autoComplete="tel"
-            inputMode="tel"
+            inputMode="numeric"
+            maxLength={PHONE_FORMATTED_MAX_LENGTH}
+            onInput={(event) => {
+              event.currentTarget.value = formatBrazilianPhone(event.currentTarget.value);
+            }}
             placeholder="(11) 99999-9999"
           />
         </div>

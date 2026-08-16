@@ -21,7 +21,7 @@ const schema = z.object({
     "other"
   ]),
   name: z.string().trim().min(3).max(120),
-  email: z.string().trim().email().max(254),
+  email: z.string().trim().email().max(120),
   details: z.string().trim().min(10).max(2000),
   turnstileToken: z.string().max(4096).optional()
 });

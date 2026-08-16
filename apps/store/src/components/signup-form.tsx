@@ -16,10 +16,12 @@ import Link from "next/link";
 import { type FormEvent, useMemo, useRef, useState } from "react";
 import {
   assessPassword,
+  formatBrazilianPhone,
   normalizeEmail,
   normalizeFullName,
   parseSignupInput
 } from "@/lib/signup-validation";
+import { CUSTOMER_EMAIL_MAX_LENGTH, PHONE_FORMATTED_MAX_LENGTH } from "@/lib/personal-data";
 import { TurnstileField } from "./turnstile-field";
 
 type SignupResult = {
@@ -81,7 +83,9 @@ export function SignupForm({
         ? normalizeFullName(value)
         : field === "email"
           ? normalizeEmail(value)
-          : value;
+          : field === "phone"
+            ? formatBrazilianPhone(value)
+            : value;
     setFields((current) => ({ ...current, [field]: nextValue }));
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   };
@@ -262,6 +266,7 @@ export function SignupForm({
             type="email"
             inputMode="email"
             autoComplete="email"
+            maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
             value={fields.email}
             onChange={(event) => updateField("email", event.target.value)}
             placeholder="voce@exemplo.com.br"
@@ -281,12 +286,12 @@ export function SignupForm({
             id="signup-phone"
             name="phone"
             type="tel"
-            inputMode="tel"
+            inputMode="numeric"
             autoComplete="tel"
             value={fields.phone}
             onChange={(event) => updateField("phone", event.target.value)}
             placeholder="(31) 99999-0000"
-            maxLength={24}
+            maxLength={PHONE_FORMATTED_MAX_LENGTH}
             aria-invalid={Boolean(errors.phone)}
             aria-describedby={errors.phone ? "signup-phone-error" : "signup-phone-help"}
             required

@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { CheckCircle2, LoaderCircle, Send } from "lucide-react";
+import { CUSTOMER_EMAIL_MAX_LENGTH } from "@/lib/personal-data";
 import { TurnstileField } from "./turnstile-field";
 
 export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnabled?: boolean }) {
@@ -90,7 +91,13 @@ export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnab
       </label>
       <label>
         E-mail para verificação
-        <input name="email" type="email" autoComplete="email" required />
+        <input
+          name="email"
+          type="email"
+          autoComplete="email"
+          maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
+          required
+        />
       </label>
       <label className="wide">
         Detalhes

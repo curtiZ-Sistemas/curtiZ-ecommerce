@@ -5,6 +5,7 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
+import { isValidBrazilianPhone, normalizeBrazilianPhone } from "@/lib/personal-data";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
 
 export const runtime = "nodejs";
@@ -17,7 +18,12 @@ const schemas = {
   profile_update: base.extend({
     action: z.literal("profile_update"),
     fullName: z.string().trim().min(3).max(120),
-    phone: z.string().trim().max(24),
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .refine((value) => !value || isValidBrazilianPhone(value), "Informe um telefone válido com DDD.")
+      .transform((value) => (value ? normalizeBrazilianPhone(value) : "")),
     birthDate: z
       .union([z.iso.date(), z.literal("")])
       .refine((value) => !value || value <= new Date().toISOString().slice(0, 10))

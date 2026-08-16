@@ -11,7 +11,7 @@ import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
-const storeDescription = "Chinelos, slides e sandálias curti Z com conforto, design e compra segura.";
+const storeDescription = "Chinelos, slides e sandálias curti Z com conforto, design e compra organizada.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"),

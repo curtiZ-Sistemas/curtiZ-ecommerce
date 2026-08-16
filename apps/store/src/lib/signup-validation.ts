@@ -1,16 +1,13 @@
 import { z } from "zod";
+import {
+  CUSTOMER_EMAIL_MAX_LENGTH,
+  formatBrazilianPhone,
+  isValidBrazilianPhone,
+  normalizeBrazilianPhone,
+  phoneDigits
+} from "./personal-data";
 
-const validBrazilianAreaCodes = new Set([
-  "11", "12", "13", "14", "15", "16", "17", "18", "19",
-  "21", "22", "24", "27", "28",
-  "31", "32", "33", "34", "35", "37", "38",
-  "41", "42", "43", "44", "45", "46", "47", "48", "49",
-  "51", "53", "54", "55",
-  "61", "62", "63", "64", "65", "66", "67", "68", "69",
-  "71", "73", "74", "75", "77", "79",
-  "81", "82", "83", "84", "85", "86", "87", "88", "89",
-  "91", "92", "93", "94", "95", "96", "97", "98", "99"
-]);
+export { formatBrazilianPhone, isValidBrazilianPhone, normalizeBrazilianPhone, phoneDigits };
 
 const commonPasswords = new Set([
   "123456",
@@ -50,34 +47,6 @@ export const normalizeFullName = (value: string) =>
 
 export const normalizeEmail = (value: string) =>
   value.replace(/\s+/gu, "").trim().toLocaleLowerCase("pt-BR");
-
-export const phoneDigits = (value: string) => {
-  const digits = value.replace(/\D/gu, "");
-  return digits.length === 12 || digits.length === 13 ? digits.replace(/^55/u, "") : digits;
-};
-
-export const formatBrazilianPhone = (value: string) => {
-  const digits = phoneDigits(value);
-  if (digits.length <= 2) return digits ? `(${digits}` : "";
-  const areaCode = digits.slice(0, 2);
-  const local = digits.slice(2);
-  if (local.length <= 4) return `(${areaCode}) ${local}`;
-  if (local.length <= 8) return `(${areaCode}) ${local.slice(0, 4)}-${local.slice(4)}`;
-  return `(${areaCode}) ${local.slice(0, 5)}-${local.slice(5)}`;
-};
-
-export const normalizeBrazilianPhone = (value: string) => {
-  const digits = phoneDigits(value);
-  return digits.length === 10 || digits.length === 11 ? `+55${digits}` : null;
-};
-
-export const isValidBrazilianPhone = (value: string) => {
-  const digits = phoneDigits(value);
-  if (/\p{L}/u.test(value)) return false;
-  if (digits.length !== 10 && digits.length !== 11) return false;
-  if (!validBrazilianAreaCodes.has(digits.slice(0, 2))) return false;
-  return digits.length === 10 || digits[2] === "9";
-};
 
 const compactIdentityValue = (value: string) =>
   value
@@ -142,8 +111,8 @@ export const assessPassword = (
 
 const signupRawSchema = z.object({
   name: z.string().max(120),
-  email: z.string().max(254),
-  phone: z.string().max(24),
+  email: z.string().max(CUSTOMER_EMAIL_MAX_LENGTH),
+  phone: z.string().max(20),
   password: z.string().min(6).max(256),
   confirmPassword: z.string().max(256),
   terms: z.literal("on"),

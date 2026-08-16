@@ -4,6 +4,13 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "@/lib/catalog";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
+import {
+  CUSTOMER_EMAIL_MAX_LENGTH,
+  isValidBrazilianPhone,
+  isValidCpf,
+  phoneDigits,
+  sanitizeCpf
+} from "@/lib/personal-data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -11,9 +18,18 @@ const schema = z.object({
   idempotencyKey: z.string().uuid(),
   customer: z.object({
     name: z.string().trim().min(3).max(120),
-    email: z.string().email(),
-    phone: z.string().trim().min(8).max(20),
-    cpf: z.string().regex(/^\D*\d(?:\D*\d){10}\D*$/)
+    email: z.string().trim().email().max(CUSTOMER_EMAIL_MAX_LENGTH),
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .refine(isValidBrazilianPhone, "Informe um telefone válido com DDD.")
+      .transform(phoneDigits),
+    cpf: z
+      .string()
+      .max(20)
+      .refine(isValidCpf, "Informe um CPF válido.")
+      .transform(sanitizeCpf)
   }),
   address: z.object({
     postalCode: z.string().regex(/^\D*\d(?:\D*\d){7}\D*$/),
