@@ -49,9 +49,11 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
     await page.setViewportSize({ width, height: 800 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("button", { name: "Abrir menu" })).toBeVisible();
-    await expect(
-      page.getByRole("banner").getByRole("link", { name: /curti Z — página inicial/i })
-    ).toBeVisible();
+    const brand = page.getByRole("banner").getByRole("link", { name: /curti Z — página inicial/i });
+    await expect(brand).toBeVisible();
+    expect(
+      await brand.evaluate((element) => element.getBoundingClientRect().width)
+    ).toBeGreaterThanOrEqual(width <= 380 ? 112 : 120);
     await expect(page.getByRole("link", { name: /Entrar na minha conta/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Carrinho com/i })).toBeVisible();
   }
@@ -71,14 +73,23 @@ test("cabeçalho permanece bordô e estável durante a rolagem", async ({ page }
     for (const scrollY of [0, 20, 40, 120, 360, 40, 0]) {
       await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollY);
       await page.waitForTimeout(40);
-      samples.push(await header.evaluate((element) => {
-        const bounds = element.getBoundingClientRect();
-        return { height: bounds.height, top: bounds.top, className: element.getAttribute("class") ?? "" };
-      }));
+      samples.push(
+        await header.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return {
+            height: bounds.height,
+            top: bounds.top,
+            className: element.getAttribute("class") ?? ""
+          };
+        })
+      );
     }
 
     expect(new Set(samples.map((sample) => sample.className))).toEqual(new Set(["site-header"]));
-    expect(Math.max(...samples.map((sample) => sample.height)) - Math.min(...samples.map((sample) => sample.height))).toBeLessThan(1);
+    expect(
+      Math.max(...samples.map((sample) => sample.height)) -
+        Math.min(...samples.map((sample) => sample.height))
+    ).toBeLessThan(1);
     expect(samples.every((sample) => Math.abs(sample.top) < 1)).toBe(true);
   }
 });

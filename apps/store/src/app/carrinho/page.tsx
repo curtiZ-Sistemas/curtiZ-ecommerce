@@ -1,21 +1,14 @@
 "use client";
 
 import { calculateSubtotal, formatBRL } from "@curtiz/domain";
-import {
-  ArrowLeft,
-  Minus,
-  Plus,
-  ShoppingBag,
-  Trash2,
-  Truck
-} from "lucide-react";
+import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2, Truck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 
 export default function CartPage() {
-  const { hydrated, lines, syncMessage, changeQuantity, remove, clear } = useCart();
+  const { hydrated, lines, syncMessage, retrySync, changeQuantity, remove, clear } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const releaseRef = useRef<number | null>(null);
@@ -40,7 +33,9 @@ export default function CartPage() {
   return (
     <div className="container page-shell cart-page">
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
-        <Link href="/">Início</Link><span>/</span><span>Carrinho</span>
+        <Link href="/">Início</Link>
+        <span>/</span>
+        <span>Carrinho</span>
       </nav>
 
       <div className="section-heading cart-heading">
@@ -69,18 +64,25 @@ export default function CartPage() {
         )}
       </div>
 
-      <p className="sr-only" role="status" aria-live="polite">{feedback}</p>
+      <p className="sr-only" role="status" aria-live="polite">
+        {feedback}
+      </p>
       {syncMessage && (
-        <p className="form-message cart-sync-message" role="status">
-          {syncMessage}
-        </p>
+        <div className="cart-sync-notice" role="status">
+          <span>{syncMessage}</span>
+          <button type="button" onClick={retrySync}>
+            Tentar novamente
+          </button>
+        </div>
       )}
 
       {!hydrated ? (
         <CartSkeleton />
       ) : lines.length === 0 ? (
         <div className="empty-state cart-empty-state">
-          <span className="empty-state-icon"><ShoppingBag /></span>
+          <span className="empty-state-icon">
+            <ShoppingBag />
+          </span>
           <p className="eyebrow">Sua seleção</p>
           <h2>Sua sacola está vazia.</h2>
           <p>Explore a coleção curti Z e adicione seus modelos favoritos para continuar.</p>
@@ -100,8 +102,14 @@ export default function CartPage() {
             {lines.map((line) => {
               const isPending = pendingId === line.variantId;
               return (
-                <article className={isPending ? "cart-item is-updating" : "cart-item"} key={line.variantId}>
-                  <Link className="cart-item-image" href={line.slug ? `/produto/${line.slug}` : "/produtos"}>
+                <article
+                  className={isPending ? "cart-item is-updating" : "cart-item"}
+                  key={line.variantId}
+                >
+                  <Link
+                    className="cart-item-image"
+                    href={line.slug ? `/produto/${line.slug}` : "/produtos"}
+                  >
                     <Image
                       src={line.image}
                       alt={line.name}
@@ -114,8 +122,14 @@ export default function CartPage() {
                   <div className="cart-item-info">
                     <h2>{line.name}</h2>
                     <dl className="cart-variations">
-                      <div><dt>Cor</dt><dd>{line.color}</dd></div>
-                      <div><dt>Tamanho</dt><dd>{line.size}</dd></div>
+                      <div>
+                        <dt>Cor</dt>
+                        <dd>{line.color}</dd>
+                      </div>
+                      <div>
+                        <dt>Tamanho</dt>
+                        <dd>{line.size}</dd>
+                      </div>
                     </dl>
                     <span className="cart-unit-price">{formatBRL(line.unitPriceInCents)} cada</span>
                   </div>
@@ -137,7 +151,9 @@ export default function CartPage() {
                       >
                         <Minus />
                       </button>
-                      <output aria-label={`Quantidade atual: ${line.quantity}`}>{line.quantity}</output>
+                      <output aria-label={`Quantidade atual: ${line.quantity}`}>
+                        {line.quantity}
+                      </output>
                       <button
                         type="button"
                         onClick={() =>
@@ -179,7 +195,9 @@ export default function CartPage() {
           <aside className="summary-card cart-summary">
             <h2>Resumo do pedido</h2>
             <div className="summary-line">
-              <span>Subtotal ({itemCount} {itemCount === 1 ? "item" : "itens"})</span>
+              <span>
+                Subtotal ({itemCount} {itemCount === 1 ? "item" : "itens"})
+              </span>
               <strong>{formatBRL(subtotal)}</strong>
             </div>
             <div className="summary-line">
@@ -205,7 +223,6 @@ export default function CartPage() {
           </aside>
         </div>
       )}
-
     </div>
   );
 }

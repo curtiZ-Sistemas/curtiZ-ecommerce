@@ -108,7 +108,7 @@ export function SiteHeader() {
             <Menu />
           </button>
 
-          <BrandLogo />
+          <BrandLogo priority />
 
           <SearchAutocomplete idPrefix="desktop" className="desktop-search" />
 
@@ -163,18 +163,35 @@ export function SiteHeader() {
         )}
 
         <nav className="desktop-nav container" aria-label="Categorias principais">
-          <Link className={pathname === "/" ? "active" : ""} href="/" aria-current={pathname === "/" ? "page" : undefined}>
+          <Link
+            className={pathname === "/" ? "active" : ""}
+            href="/"
+            aria-current={pathname === "/" ? "page" : undefined}
+          >
             Início
           </Link>
           {navigation.map(([label, href]) => (
-            <Link className={pathname === href ? "active" : ""} href={href} aria-current={pathname === href ? "page" : undefined} key={href}>
+            <Link
+              className={pathname === href ? "active" : ""}
+              href={href}
+              aria-current={pathname === href ? "page" : undefined}
+              key={href}
+            >
               {label}
             </Link>
           ))}
-          <Link className={pathname === "/rastrear-pedido" ? "active" : ""} href="/rastrear-pedido" aria-current={pathname === "/rastrear-pedido" ? "page" : undefined}>
+          <Link
+            className={pathname === "/rastrear-pedido" ? "active" : ""}
+            href="/rastrear-pedido"
+            aria-current={pathname === "/rastrear-pedido" ? "page" : undefined}
+          >
             Rastrear pedido
           </Link>
-          <Link className={pathname === "/ajuda" ? "active" : ""} href="/ajuda" aria-current={pathname === "/ajuda" ? "page" : undefined}>
+          <Link
+            className={pathname === "/ajuda" ? "active" : ""}
+            href="/ajuda"
+            aria-current={pathname === "/ajuda" ? "page" : undefined}
+          >
             Atendimento
           </Link>
         </nav>

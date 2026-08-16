@@ -7,6 +7,7 @@ type CartContextValue = {
   lines: CartLine[];
   hydrated: boolean;
   syncMessage: string;
+  retrySync: () => void;
   add: (
     product: Product,
     color: string,
@@ -27,6 +28,7 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 const cartStorageKey = "curtiz-cart";
 const legacyCartStorageKey = "curtiz-demo-cart";
+type AuthenticationState = "authenticated" | "unknown" | "visitor";
 
 const isCartLine = (value: unknown): value is CartLine => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -61,7 +63,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const [syncRetry, setSyncRetry] = useState(0);
+  const [authentication, setAuthentication] = useState<AuthenticationState>("unknown");
   const lastSyncedSignatureRef = useRef("");
+  const latestRequestedSignatureRef = useRef("");
+  const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     try {
@@ -90,58 +96,82 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     const controller = new AbortController();
+    void fetch("/api/auth/session", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return { authenticated: false };
+        return (await response.json()) as { authenticated?: boolean };
+      })
+      .then((session) => setAuthentication(session.authenticated ? "authenticated" : "visitor"))
+      .catch(() => {
+        if (!controller.signal.aborted) setAuthentication("visitor");
+      });
+    return () => controller.abort();
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || authentication !== "authenticated") return;
     const signature = cartSignature(lines);
     if (lastSyncedSignatureRef.current === signature) return;
+    latestRequestedSignatureRef.current = signature;
     const timer = window.setTimeout(() => {
-      const syncCartId = localStorage.getItem("curtiz-cart-sync-id") ?? undefined;
-      void fetch("/api/cart/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lines, syncCartId }),
-        signal: controller.signal
-      })
-        .then(async (response) => {
-          if (response.status === 401 || response.status === 204) return null;
-          const result = (await response.json()) as {
-            items?: CartLine[];
-            cartId?: string;
-            adjustmentMessage?: string;
-            message?: string;
-          };
-          if (!response.ok || !result.items || !result.cartId) {
+      const snapshot = lines;
+      syncQueueRef.current = syncQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const syncCartId = localStorage.getItem("curtiz-cart-sync-id") ?? undefined;
+          try {
+            const response = await fetch("/api/cart/sync", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ lines: snapshot, syncCartId })
+            });
+            if (response.status === 401) {
+              setAuthentication("visitor");
+              return;
+            }
+            const result = (await response.json()) as {
+              items?: CartLine[];
+              cartId?: string;
+              adjustmentMessage?: string;
+              message?: string;
+            };
+            if (!response.ok || !result.items || !result.cartId) {
+              if (latestRequestedSignatureRef.current === signature) {
+                setSyncMessage(
+                  result.message ??
+                    "O carrinho continua salvo neste dispositivo, mas não foi sincronizado."
+                );
+              }
+              return;
+            }
+            const safeItems = result.items.filter(isCartLine);
+            const remoteSignature = cartSignature(safeItems);
+            localStorage.setItem("curtiz-cart-sync-id", result.cartId);
+            if (latestRequestedSignatureRef.current !== signature) return;
+            lastSyncedSignatureRef.current = remoteSignature;
+            if (remoteSignature !== signature) setLines(safeItems);
+            setSyncMessage(result.adjustmentMessage ?? "");
+          } catch {
+            if (latestRequestedSignatureRef.current !== signature) return;
             setSyncMessage(
-              result.message ??
-                "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
-            );
-            return null;
-          }
-          const safeItems = result.items.filter(isCartLine);
-          const remoteSignature = cartSignature(safeItems);
-          lastSyncedSignatureRef.current = remoteSignature;
-          if (remoteSignature !== signature) setLines(safeItems);
-          localStorage.setItem("curtiz-cart-sync-id", result.cartId);
-          setSyncMessage(result.adjustmentMessage ?? "");
-          return null;
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setSyncMessage(
-              "O carrinho continua salvo neste dispositivo, mas não foi sincronizado com a conta."
+              "O carrinho continua salvo neste dispositivo, mas não foi sincronizado."
             );
           }
         });
     }, 350);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [hydrated, lines]);
+    return () => window.clearTimeout(timer);
+  }, [authentication, hydrated, lines, syncRetry]);
 
   const value = useMemo<CartContextValue>(
     () => ({
       lines,
       hydrated,
       syncMessage,
+      retrySync() {
+        lastSyncedSignatureRef.current = "";
+        setSyncMessage("");
+        setSyncRetry((current) => current + 1);
+      },
       add(product, color, size, options) {
         const variantId = options?.variantId ?? `${product.id}:${color}:${size}`;
         const stock = Math.max(0, options?.stock ?? product.stock);

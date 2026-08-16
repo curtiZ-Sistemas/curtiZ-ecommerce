@@ -14,6 +14,14 @@ const exactSyncMigration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/202608160001_exact_customer_cart_sync.sql"),
   "utf8"
 );
+const exactQuantityMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/202608160003_exact_cart_quantity_sync.sql"),
+  "utf8"
+);
+const syncRoute = readFileSync(
+  resolve(process.cwd(), "apps/store/src/app/api/cart/sync/route.ts"),
+  "utf8"
+);
 
 describe("authenticated cart synchronization migration", () => {
   it("requires an authenticated user and ignores browser prices", () => {
@@ -52,5 +60,20 @@ describe("authenticated cart synchronization migration", () => {
     expect(exactSyncMigration).toContain(
       "grant execute on function public.sync_customer_cart(jsonb, uuid) to authenticated"
     );
+  });
+
+  it("reduz quantidades exatamente e rejeita payloads adulterados no servidor", () => {
+    expect(exactQuantityMigration).toContain("p_source_cart_id = cart_id");
+    expect(exactQuantityMigration).toContain("set quantity = resolved.quantity");
+    expect(exactQuantityMigration).toContain("delete from public.cart_items");
+    expect(exactQuantityMigration).toContain("not between 1 and 99");
+    expect(exactQuantityMigration).toContain("invalid_cart_line");
+    expect(exactQuantityMigration).toContain("set search_path = ''");
+    expect(exactQuantityMigration).toContain(
+      "grant execute on function public.sync_customer_cart(jsonb, uuid) to authenticated"
+    );
+    expect(syncRoute).toContain("productId: postgresUuidSchema");
+    expect(syncRoute).toContain("variantId: postgresUuidSchema");
+    expect(syncRoute).toContain("quantity: z.number().int().min(1).max(99)");
   });
 });

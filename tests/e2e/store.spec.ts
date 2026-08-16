@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
+  const cartSyncRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/cart/sync")) cartSyncRequests.push(request.url());
+  });
   await page.goto("/");
   await expect(page.locator(".homepage-hero")).toBeVisible();
   await Promise.all([
@@ -16,6 +20,9 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Meu carrinho" })).toBeVisible({
     timeout: 15_000
   });
+  await page.waitForTimeout(700);
+  expect(cartSyncRequests).toHaveLength(0);
+  await expect(page.locator(".cart-sync-notice")).toHaveCount(0);
 });
 
 test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedido", async ({
@@ -425,4 +432,62 @@ test("preserva o carrinho durante a hidratação", async ({ page }) => {
   await page.goto("/carrinho");
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
   await expect(page.getByText("R$ 59,90").first()).toBeVisible();
+});
+
+test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ page }) => {
+  test.setTimeout(90_000);
+  const syncStatuses: number[] = [];
+  page.on("response", (response) => {
+    if (response.url().includes("/api/cart/sync")) syncStatuses.push(response.status());
+  });
+
+  await page.goto("/produto/flip-flop-wave-preto");
+  await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
+  await page.goto("/login?next=%2Fcarrinho");
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+  await expect(page).toHaveURL(/\/carrinho$/, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
+  await expect.poll(() => syncStatuses.length).toBeGreaterThan(0);
+  expect(syncStatuses).not.toContain(503);
+
+  await page
+    .getByRole("button", { name: /Aumentar quantidade de curti Z Flip-Flop Wave Preto/i })
+    .click();
+  await expect(page.getByLabel("Quantidade atual: 2")).toBeVisible();
+  await expect.poll(() => syncStatuses.length).toBeGreaterThan(1);
+  expect(syncStatuses).not.toContain(503);
+
+  await page.reload();
+  await expect(page.getByLabel("Quantidade atual: 2")).toBeVisible();
+  await page.waitForTimeout(700);
+  expect(syncStatuses).not.toContain(503);
+  expect(syncStatuses.length).toBeLessThanOrEqual(4);
+  await expect(page.locator(".cart-sync-notice")).toHaveCount(0);
+});
+
+test("rejeita quantidades inválidas na sincronização", async ({ page }) => {
+  for (const quantity of [-1, 0, 100_000, "NaN"]) {
+    const response = await page.request.post("http://localhost:3000/api/cart/sync", {
+      headers: { origin: "http://localhost:3000" },
+      data: {
+        lines: [
+          {
+            productId: "wave-preto",
+            variantId: "wave-preto:Preto:39/40",
+            name: "curti Z Flip-Flop Wave Preto",
+            image: "/images/products/wave-preto.png",
+            color: "Preto",
+            size: "39/40",
+            quantity,
+            maxQuantity: 10,
+            unitPriceInCents: 5990
+          }
+        ]
+      }
+    });
+    expect(response.status()).toBe(400);
+  }
 });
