@@ -369,7 +369,10 @@ export function PanelShell({
   };
 
   return (
-    <div className={sidebarCollapsed ? "panel-layout sidebar-collapsed" : "panel-layout"}>
+    <div
+      className={sidebarCollapsed ? "panel-layout sidebar-collapsed" : "panel-layout"}
+      data-panel-role={role}
+    >
       <a className="skip-link" href="#panel-content">
         Pular para o conteúdo
       </a>

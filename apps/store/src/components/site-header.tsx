@@ -22,7 +22,6 @@ const navigation = [
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [compact, setCompact] = useState(false);
   const [accountName, setAccountName] = useState<string>();
   const pathname = usePathname();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -51,13 +50,6 @@ export function SiteHeader() {
     setMenuOpen(false);
     setSearchOpen(false);
   }, [pathname]);
-
-  useEffect(() => {
-    const update = () => setCompact(window.scrollY > 28);
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    return () => window.removeEventListener("scroll", update);
-  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -103,7 +95,7 @@ export function SiteHeader() {
 
   return (
     <>
-      <header className={compact ? "site-header is-compact" : "site-header"}>
+      <header className="site-header">
         <div className="header-main container">
           <button
             ref={menuButtonRef}

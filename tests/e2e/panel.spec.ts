@@ -38,6 +38,11 @@ for (const account of [
     await expect(page).toHaveURL(`http://localhost:3001/${account.route}`);
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
     await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
+    await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
+    await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.locator(".topbar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.locator(".side-nav a.active")).toHaveCSS("background-color", "rgb(249, 227, 224)");
     expect(consoleErrors).toEqual([]);
   });
 }

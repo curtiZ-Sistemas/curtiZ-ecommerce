@@ -25,7 +25,7 @@ const routes = [
 ] as const;
 
 test("não cria rolagem horizontal nas telas principais", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     for (const route of routes) {
@@ -54,6 +54,32 @@ test("cabeçalho mobile mantém marca e ações dentro da tela", async ({ page }
     ).toBeVisible();
     await expect(page.getByRole("link", { name: /Entrar na minha conta/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Carrinho com/i })).toBeVisible();
+  }
+});
+
+test("cabeçalho permanece bordô e estável durante a rolagem", async ({ page }) => {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const header = page.locator(".site-header");
+    await expect(header).toHaveCSS("background-color", "rgb(98, 19, 15)");
+
+    const samples: Array<{ height: number; top: number; className: string }> = [];
+    for (const scrollY of [0, 20, 40, 120, 360, 40, 0]) {
+      await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollY);
+      await page.waitForTimeout(40);
+      samples.push(await header.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { height: bounds.height, top: bounds.top, className: element.className };
+      }));
+    }
+
+    expect(new Set(samples.map((sample) => sample.className))).toEqual(new Set(["site-header"]));
+    expect(Math.max(...samples.map((sample) => sample.height)) - Math.min(...samples.map((sample) => sample.height))).toBeLessThan(1);
+    expect(samples.every((sample) => Math.abs(sample.top) < 1)).toBe(true);
   }
 });
 

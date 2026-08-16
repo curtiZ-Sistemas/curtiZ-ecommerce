@@ -102,6 +102,30 @@ test("entrega a área customer sem dados fictícios e sem overflow mobile", asyn
   expect(hasPageOverflow).toBe(false);
 });
 
+test("portal da representante mantém a identidade visual da área do cliente", async ({ page }) => {
+  test.setTimeout(120_000);
+  const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  await page.goto("/representante", { waitUntil: "domcontentloaded" });
+
+  await expect(page.locator(".representative-portal-layout")).toHaveCSS(
+    "background-color",
+    "rgb(238, 238, 238)"
+  );
+  await expect(page.locator(".representative-sidebar")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)"
+  );
+  await expect(page.locator(".representative-topbar")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)"
+  );
+  await expect(page.getByRole("link", { name: /Voltar à área de cliente/i })).toBeAttached();
+  await expect(page.locator(".representative-topbar-identity .user-avatar")).toBeVisible();
+});
+
 test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" }).click();
