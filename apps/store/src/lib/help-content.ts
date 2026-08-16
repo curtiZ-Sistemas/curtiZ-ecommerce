@@ -84,6 +84,20 @@ export const builtInHelpContents: HelpContent[] = [
     updatedAt: UPDATED_AT
   },
   {
+    id: "51000000-0000-0000-0000-000000000015",
+    slug: "escolher-variacao-do-produto",
+    type: "article",
+    title: "Como escolher uma variação do produto?",
+    summary: "Confira cor, tamanho e disponibilidade antes de adicionar à sacola.",
+    body: "Na página do produto, escolha uma combinação disponível de cor e tamanho. As opções podem mudar de acordo com o estoque. Confira a seleção mostrada na tela antes de adicionar o item à sacola.",
+    categoryName: "Produtos e tamanhos",
+    categorySlug: "produtos-tamanhos",
+    keywords: ["produto", "tamanho", "cor", "variação", "estoque"],
+    relatedAction: { label: "Explorar produtos", href: "/produtos" },
+    version: 1,
+    updatedAt: UPDATED_AT
+  },
+  {
     id: "51000000-0000-0000-0000-000000000004",
     slug: "criar-e-acessar-conta",
     type: "step_by_step",

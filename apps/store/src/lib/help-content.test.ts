@@ -22,6 +22,7 @@ describe("built-in help content", () => {
       "pedidos",
       "pagamentos",
       "entregas-rastreamento",
+      "produtos-tamanhos",
       "trocas-devolucoes",
       "representante-curtiz",
       "seguranca-privacidade",
