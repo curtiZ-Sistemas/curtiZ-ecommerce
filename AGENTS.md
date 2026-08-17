@@ -1,3 +1,5 @@
+Você está na batata de um notebook ruim de 4gb de RAM pense sempre nisso e faça tudo perfeito msia sem passar os limites na execuções devido a isso
+
 Objetivo
 
 A curti Z é um e-commerce de sandálias e chinelos voltado principalmente à Geração Z.

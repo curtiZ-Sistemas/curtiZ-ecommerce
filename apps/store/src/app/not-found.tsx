@@ -1,23 +1,35 @@
-import { ArrowLeft, SearchX } from "lucide-react";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
 import Link from "next/link";
+import { headers } from "next/headers";
+import { ErrorPageShell } from "@/components/error-page-shell";
+import { ErrorRecommendations } from "@/components/error-recommendations";
+import ProductNotFound from "./produto/[slug]/not-found";
 
-export default function NotFound() {
+export default async function NotFound() {
+  const requestHeaders = await headers();
+
+  if (requestHeaders.get("x-curtiz-not-found-kind") === "product") {
+    return <ProductNotFound />;
+  }
+
   return (
-    <div className="container page-shell status-page">
-      <div className="empty-state">
-        <SearchX aria-hidden="true" />
-        <p className="eyebrow">Página não encontrada</p>
-        <h1>Não encontramos este endereço</h1>
-        <p>O conteúdo pode ter mudado ou o link pode estar incompleto.</p>
-        <div className="status-page-actions">
-          <Link className="primary-button" href="/produtos">
-            Ver produtos
-          </Link>
-          <Link className="secondary-button" href="/">
+    <ErrorPageShell
+      code="404"
+      eyebrow="Página não encontrada"
+      title="Não encontramos esta página."
+      description="O endereço pode ter mudado, estar incorreto ou não existir mais."
+      actions={
+        <>
+          <Link className="primary-button" href="/">
             <ArrowLeft aria-hidden="true" /> Voltar ao início
           </Link>
-        </div>
-      </div>
-    </div>
+          <Link className="secondary-button" href="/produtos">
+            <ShoppingBag aria-hidden="true" /> Continuar comprando
+          </Link>
+        </>
+      }
+    >
+      <ErrorRecommendations />
+    </ErrorPageShell>
   );
 }

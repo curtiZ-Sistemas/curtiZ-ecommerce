@@ -71,7 +71,7 @@ export function SearchAutocomplete({
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void fetch(`/api/catalog?q=${encodeURIComponent(normalized)}&pagina=1`, {
+      void fetch(`/api/catalog?q=${encodeURIComponent(normalized)}&pagina=1&limite=5`, {
         cache: "no-store",
         signal: controller.signal
       })

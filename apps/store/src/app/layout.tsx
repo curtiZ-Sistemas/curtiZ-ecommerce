@@ -20,7 +20,6 @@ export const metadata: Metadata = {
     template: "%s — curti Z"
   },
   description: storeDescription,
-  robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     locale: "pt_BR",

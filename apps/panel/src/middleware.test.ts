@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { middleware } from "./middleware";
+import { config, middleware } from "./middleware";
 
 vi.mock("@/lib/public-media", () => ({
   publicCatalogMediaOrigins: () => []
@@ -21,5 +21,9 @@ describe("panel security headers", () => {
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("permissions-policy")).toContain("camera=()");
     expect(response.headers.get("strict-transport-security")).toContain("max-age=31536000");
+  });
+
+  it("não duplica autenticação nas APIs que autorizam a própria requisição", () => {
+    expect(config.matcher[0]).toContain("?!api|");
   });
 });

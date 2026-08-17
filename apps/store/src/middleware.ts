@@ -5,6 +5,65 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const DEMO_SESSION_COOKIE = "curtiz-demo-session";
 const MAX_RETURN_PATH_LENGTH = 300;
+const PRODUCT_NOT_FOUND_HEADER = "x-curtiz-not-found-kind";
+const DEMO_PRODUCT_SLUGS = new Set([
+  "flip-flop-wave-preto",
+  "flip-flop-slim-coral",
+  "slide-bold-marinho",
+  "sandalia-comfort-areia",
+  "infantil-joy-rosa",
+  "slide-soft-preto",
+  "flip-flop-classic-preto",
+  "slide-comfort-bege"
+]);
+const PUBLIC_ROOT_ROUTES = new Set([
+  "_not-found",
+  "ajuda",
+  "atendimento",
+  "auth",
+  "busca",
+  "cadastro",
+  "carrinho",
+  "checkout",
+  "confirmar-email",
+  "contato",
+  "esqueci-senha",
+  "favoritos",
+  "feminino",
+  "formas-de-envio",
+  "formas-de-pagamento",
+  "indicar",
+  "indisponivel",
+  "infantil",
+  "lancamentos",
+  "login",
+  "mais-vendidos",
+  "manutencao",
+  "manifest.webmanifest",
+  "masculino",
+  "mfa",
+  "minha-conta",
+  "modelos",
+  "ofertas",
+  "pedido",
+  "perfil",
+  "politica-de-cookies",
+  "politica-de-privacidade",
+  "politicas",
+  "privacidade",
+  "produto",
+  "produtos",
+  "rastrear-pedido",
+  "redefinir-senha",
+  "representante",
+  "sandalias",
+  "sitemap.xml",
+  "slides",
+  "sobre",
+  "termos-de-uso",
+  "trocas-e-devolucoes",
+  "403"
+]);
 
 type DemoSessionPayload = {
   expiresAt: number;
@@ -151,6 +210,54 @@ function copyResponseCookies(source: NextResponse, destination: NextResponse): v
   }
 }
 
+function readSingleRootSlug(pathname: string): string | null {
+  const segments = pathname.split("/").filter(Boolean);
+
+  if (segments.length !== 1) return null;
+
+  try {
+    return decodeURIComponent(segments[0] ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function readProductSlug(pathname: string): string | null {
+  const match = /^\/produto\/([^/]+)\/?$/u.exec(pathname);
+  if (!match?.[1]) return null;
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
+}
+
+function rewriteToNativeNotFound(
+  request: NextRequest,
+  currentResponse: NextResponse,
+  requestHeaders: Headers,
+  csp: string,
+  kind?: "product"
+): NextResponse {
+  const destination = request.nextUrl.clone();
+  destination.pathname = "/_not-found";
+  destination.search = "";
+
+  const forwardedHeaders = new Headers(requestHeaders);
+  if (kind === "product") forwardedHeaders.set(PRODUCT_NOT_FOUND_HEADER, kind);
+
+  const response = NextResponse.rewrite(destination, {
+    status: 404,
+    request: { headers: forwardedHeaders }
+  });
+
+  copyResponseCookies(currentResponse, response);
+  response.headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+
+  return applySecurityHeaders(response, csp);
+}
+
 function redirectToLogin(
   request: NextRequest,
   currentResponse: NextResponse,
@@ -256,20 +363,39 @@ export async function middleware(request: NextRequest) {
 
   let response = createNextResponse();
 
+  const productSlug = readProductSlug(request.nextUrl.pathname);
+  const rootSlug = readSingleRootSlug(request.nextUrl.pathname);
+  const unknownRootSlug = rootSlug !== null && !PUBLIC_ROOT_ROUTES.has(rootSlug);
+  const checkoutRequest = isCheckoutRoute(request.nextUrl.pathname);
   const demoSession =
-    process.env.DEMO_MODE === "true"
+    checkoutRequest && process.env.DEMO_MODE === "true"
       ? await hasValidDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
       : false;
+
+  if (process.env.DEMO_MODE === "true") {
+    if (productSlug !== null && !DEMO_PRODUCT_SLUGS.has(productSlug)) {
+      return rewriteToNativeNotFound(request, response, requestHeaders, csp, "product");
+    }
+
+    if (unknownRootSlug) {
+      return rewriteToNativeNotFound(request, response, requestHeaders, csp);
+    }
+  }
 
   /*
    * Falha de configuração não deve liberar checkout
    * para uma sessão inexistente.
    */
   if (!hasValidSupabaseConfiguration || !supabaseUrl || !supabasePublishableKey) {
-    if (isCheckoutRoute(request.nextUrl.pathname) && !demoSession) {
+    if (checkoutRequest && !demoSession) {
       return redirectToLogin(request, response, csp);
     }
 
+    return response;
+  }
+
+  // Rotas públicas conhecidas precisam apenas dos cabeçalhos de segurança.
+  if (!checkoutRequest && productSlug === null && !unknownRootSlug) {
     return response;
   }
 
@@ -308,6 +434,36 @@ export async function middleware(request: NextRequest) {
     }
   });
 
+  if (process.env.DEMO_MODE !== "true" && productSlug !== null) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id")
+      .eq("slug", productSlug)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && !data) {
+      return rewriteToNativeNotFound(request, response, requestHeaders, csp, "product");
+    }
+  }
+
+  if (process.env.DEMO_MODE !== "true" && unknownRootSlug) {
+    const { data, error } = await supabase
+      .from("cms_pages")
+      .select("id")
+      .eq("slug", rootSlug)
+      .eq("status", "published")
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && !data) {
+      return rewriteToNativeNotFound(request, response, requestHeaders, csp);
+    }
+  }
+
+  if (!checkoutRequest) return response;
+
   let authenticatedUser = false;
 
   try {
@@ -322,7 +478,7 @@ export async function middleware(request: NextRequest) {
     authenticatedUser = false;
   }
 
-  if (isCheckoutRoute(request.nextUrl.pathname) && !authenticatedUser && !demoSession) {
+  if (!authenticatedUser && !demoSession) {
     return redirectToLogin(request, response, csp);
   }
 

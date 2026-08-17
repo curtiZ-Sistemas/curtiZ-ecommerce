@@ -99,6 +99,8 @@ export async function generateMetadata({ params }: { params: Promise<{ page: str
   const cmsPage = await getPublicCmsPage(slug);
   const fallback = pages[slug];
 
+  if (!cmsPage && !fallback) notFound();
+
   if (cmsPage) {
     return {
       title: cmsPage.seoTitle ?? cmsPage.title,
@@ -106,7 +108,7 @@ export async function generateMetadata({ params }: { params: Promise<{ page: str
     };
   }
 
-  return fallback ? { title: fallback.title, description: fallback.lead } : {};
+  return { title: fallback!.title, description: fallback!.lead };
 }
 
 export default async function ContentPage({ params }: { params: Promise<{ page: string }> }) {

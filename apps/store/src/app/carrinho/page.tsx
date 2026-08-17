@@ -1,11 +1,12 @@
 "use client";
 
 import { calculateSubtotal, formatBRL } from "@curtiz/domain";
-import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2, Truck } from "lucide-react";
+import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { CartRecommendations } from "@/components/cart-recommendations";
 
 export default function CartPage() {
   const { hydrated, lines, syncMessage, retrySync, changeQuantity, remove, clear } = useCart();
@@ -92,20 +93,21 @@ export default function CartPage() {
         </div>
       ) : (
         <div className="cart-layout">
-          <section className="cart-list" aria-label="Produtos no carrinho">
-            <div className="cart-list-header">
-              <span>Produto</span>
-              <span>Quantidade</span>
-              <span>Subtotal</span>
-            </div>
+          <div className="cart-main-column">
+            <section className="cart-list" aria-label="Produtos no carrinho">
+              <div className="cart-list-header">
+                <span>Produto</span>
+                <span>Quantidade</span>
+                <span>Subtotal</span>
+              </div>
 
-            {lines.map((line) => {
-              const isPending = pendingId === line.variantId;
-              return (
-                <article
-                  className={isPending ? "cart-item is-updating" : "cart-item"}
-                  key={line.variantId}
-                >
+              {lines.map((line) => {
+                const isPending = pendingId === line.variantId;
+                return (
+                  <article
+                    className={isPending ? "cart-item is-updating" : "cart-item"}
+                    key={line.variantId}
+                  >
                   <Link
                     className="cart-item-image"
                     href={line.slug ? `/produto/${line.slug}` : "/produtos"}
@@ -187,10 +189,13 @@ export default function CartPage() {
                     <span className="mobile-field-label">Subtotal</span>
                     <strong>{formatBRL(line.unitPriceInCents * line.quantity)}</strong>
                   </div>
-                </article>
-              );
-            })}
-          </section>
+                  </article>
+                );
+              })}
+            </section>
+
+            <CartRecommendations lines={lines} />
+          </div>
 
           <aside className="summary-card cart-summary">
             <h2>Resumo do pedido</h2>
@@ -209,18 +214,20 @@ export default function CartPage() {
               <strong>{formatBRL(subtotal)}</strong>
             </div>
 
-            <div className="shipping-progress">
-              <Truck aria-hidden="true" />
-              <div>
-                <strong>Entrega calculada no checkout</strong>
-                <small>O prazo e o valor dependem do endereço informado.</small>
-              </div>
-            </div>
-
             <Link className="primary-button full-button checkout-button" href="/checkout">
               Continuar para o checkout
             </Link>
           </aside>
+
+          <div className="cart-mobile-summary" aria-label="Resumo do carrinho">
+            <div>
+              <span>Total</span>
+              <strong>{formatBRL(subtotal)}</strong>
+            </div>
+            <Link className="primary-button" href="/checkout">
+              Comprar
+            </Link>
+          </div>
         </div>
       )}
     </div>

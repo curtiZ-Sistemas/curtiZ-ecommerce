@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     orderCount,
     approvedSales,
     products,
-    inventory,
+    criticalStock,
     customers,
     representatives,
     kits,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     auth.supabase.from("orders").select("id", { count: "exact", head: true }),
     auth.supabase.rpc("admin_approved_sales_total_in_cents"),
     auth.supabase.from("products").select("id", { count: "exact", head: true }),
-    auth.supabase.from("inventory").select("variant_id,available_quantity,minimum_quantity"),
+    auth.supabase.rpc("operational_critical_stock_count"),
     auth.supabase.from("profiles").select("id", { count: "exact", head: true }),
     auth.supabase.from("representatives").select("id", { count: "exact", head: true }),
     auth.supabase.from("kits").select("id", { count: "exact", head: true }),
@@ -86,20 +86,17 @@ export async function GET(request: NextRequest) {
       .limit(6)
   ]);
 
-  const criticalResults = [orderCount, approvedSales, products, inventory, customers];
+  const criticalResults = [orderCount, approvedSales, products, criticalStock, customers];
   if (criticalResults.every((result) => result.error)) {
     return NextResponse.json(
       { message: "Os indicadores administrativos não estão disponíveis agora." },
       { status: 503, headers: privateNoStore }
     );
   }
-  const inventoryRows = objectRows(inventory.data);
   const grossRevenueInCents = approvedSales.error
     ? 0
     : Math.round(numberValue(approvedSales.data));
-  const lowStock = inventoryRows.filter(
-    (row) => numberValue(row.available_quantity) <= numberValue(row.minimum_quantity)
-  ).length;
+  const lowStock = criticalStock.error ? 0 : Math.round(numberValue(criticalStock.data));
 
   return NextResponse.json(
     {
@@ -120,7 +117,7 @@ export async function GET(request: NextRequest) {
       warnings: [
         approvedSales.error ? "Vendas indisponíveis" : null,
         products.error ? "Produtos indisponíveis" : null,
-        inventory.error ? "Estoque indisponível" : null,
+        criticalStock.error ? "Estoque indisponível" : null,
         reviews.error ? "Avaliações indisponíveis" : null,
         activities.error ? "Auditoria indisponível" : null
       ].filter(Boolean)

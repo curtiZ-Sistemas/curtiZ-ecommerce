@@ -9,10 +9,12 @@ import { useFavorites } from "./favorites-provider";
 export function ProductCard({
   product,
   priority = false,
-  display
+  display,
+  imageSizes
 }: {
   product: Product;
   priority?: boolean;
+  imageSizes?: string;
   display?: {
     price?: boolean;
     rating?: boolean;
@@ -39,7 +41,7 @@ export function ProductCard({
           alt={product.name}
           width={360}
           height={280}
-          sizes="(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"
+          sizes={imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"}
           priority={priority}
         />
       </Link>

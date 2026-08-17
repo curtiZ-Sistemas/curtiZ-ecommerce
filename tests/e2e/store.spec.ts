@@ -25,6 +25,22 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(page.locator(".cart-sync-notice")).toHaveCount(0);
 });
 
+test("catálogo e busca carregam somente resultados paginados", async ({ page }) => {
+  const catalogResponse = await page.goto("/produtos");
+  expect(catalogResponse?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Todos os produtos" })).toBeVisible();
+  const catalogProducts = await page.locator(".product-card").count();
+  expect(catalogProducts).toBeGreaterThan(0);
+  expect(catalogProducts).toBeLessThanOrEqual(12);
+
+  const searchResponse = await page.goto("/busca?q=Wave");
+  expect(searchResponse?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: /Busca/ })).toBeVisible();
+  const visibleProducts = await page.locator(".product-card").count();
+  expect(visibleProducts).toBeGreaterThan(0);
+  expect(visibleProducts).toBeLessThanOrEqual(12);
+});
+
 test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedido", async ({
   page
 }) => {
@@ -490,4 +506,136 @@ test("rejeita quantidades inválidas na sincronização", async ({ page }) => {
     });
     expect(response.status()).toBe(400);
   }
+});
+
+test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  const addToCart = page.getByRole("button", { name: /Adicionar ao carrinho/i });
+  const cartWithItem = page.getByRole("link", { name: /Carrinho com 1 itens/i });
+  await expect(async () => {
+    if ((await cartWithItem.count()) === 0) await addToCart.click();
+    await expect(cartWithItem).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await cartWithItem.click();
+  await expect(page).toHaveURL(/\/carrinho$/u, { timeout: 30_000 });
+
+  const recommendations = page.locator(".cart-recommendation-grid .product-card");
+  await expect(page.getByRole("heading", { name: "Você também pode gostar" })).toBeVisible();
+  await expect.poll(() => recommendations.count()).toBeGreaterThan(0);
+  await expect(
+    recommendations.locator('a[href="/produto/flip-flop-wave-preto"]')
+  ).toHaveCount(0);
+  const recommendedLink = recommendations.first().locator("h3 a");
+  const recommendedHref = await recommendedLink.getAttribute("href");
+  expect(recommendedHref).toMatch(/^\/produto\//u);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileSummary = page.locator(".cart-mobile-summary");
+  await expect(mobileSummary).toBeVisible();
+  await expect(page.locator(".cart-summary")).toBeHidden();
+  await expect(mobileSummary.getByText("R$ 59,90")).toBeVisible();
+  await expect(mobileSummary.getByRole("link", { name: "Comprar" })).toHaveAttribute(
+    "href",
+    "/checkout"
+  );
+  await page
+    .getByRole("button", { name: /Aumentar quantidade de curti Z Flip-Flop Wave Preto/i })
+    .click();
+  await expect(mobileSummary.getByText("R$ 119,80")).toBeVisible();
+  await expect(page.getByText("Entrega calculada no checkout")).toHaveCount(0);
+
+  await recommendedLink.click();
+  await expect(page).toHaveURL(new RegExp(`${recommendedHref?.replaceAll("/", "\\/")}$`, "u"));
+});
+
+test("galeria do produto abre lightbox acessível e restaura o foco", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  const trigger = page.getByRole("button", {
+    name: "Ampliar imagem de curti Z Flip-Flop Wave Preto"
+  });
+  await expect(trigger).toBeVisible();
+  await expect(trigger.locator("img")).toHaveCSS("object-fit", "cover");
+
+  await trigger.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Visualização ampliada de curti Z Flip-Flop Wave Preto"
+  });
+  await expect(dialog).toBeVisible();
+  const close = dialog.getByRole("button", { name: "Fechar imagem ampliada" });
+  await expect(close).toBeFocused();
+  await expect(dialog.locator(".product-lightbox-image img")).toHaveCSS("object-fit", "contain");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await close.click();
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
+test("404 preserva status, recuperação e recomendações reais", async ({ page }) => {
+  test.setTimeout(90_000);
+  const response = await page.goto("/pagina-inexistente-curtiz", {
+    waitUntil: "domcontentloaded"
+  });
+
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "Não encontramos esta página." })).toBeVisible();
+  await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
+  await expect(page.getByRole("link", { name: /Voltar ao início/i })).toHaveAttribute("href", "/");
+  await expect(page.getByRole("link", { name: /Continuar comprando/i })).toHaveAttribute(
+    "href",
+    "/produtos"
+  );
+  const recommendations = page.locator(".error-recommendation-grid .product-card");
+  await expect.poll(() => recommendations.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect(recommendations.first().locator("h3 a")).toHaveAttribute("href", /^\/produto\//u);
+
+  await page.getByRole("link", { name: /Voltar ao início/i }).click();
+  await expect(page).toHaveURL(/\/$/u, { timeout: 20_000 });
+});
+
+test("404 continua utilizável quando as recomendações falham sem repetir requisições", async ({
+  page
+}) => {
+  let catalogRequests = 0;
+  await page.route("**/api/catalog**", async (route) => {
+    catalogRequests += 1;
+    await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+  });
+  const response = await page.goto("/outra-pagina-inexistente-curtiz", {
+    waitUntil: "domcontentloaded"
+  });
+
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "Não encontramos esta página." })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Voltar ao início/i })).toBeVisible();
+  await expect.poll(() => catalogRequests, { timeout: 15_000 }).toBe(1);
+  await expect(page.locator(".error-recommendations")).toHaveCount(0);
+  await page.waitForTimeout(500);
+  expect(catalogRequests).toBe(3);
+});
+
+test("produto inexistente usa 404 específica sem expor detalhes", async ({ page }) => {
+  const response = await page.goto("/produto/produto-que-nao-existe", {
+    waitUntil: "domcontentloaded"
+  });
+
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "Produto não encontrado." })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Ver outros produtos/i })).toHaveAttribute(
+    "href",
+    "/produtos"
+  );
+  await expect(page.getByText(/supabase|sql|exception|stack|token/iu)).toHaveCount(0);
 });

@@ -4,6 +4,7 @@ import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 import { BrandLogo } from "./brand-logo";
 import { useCart } from "./cart-provider";
 import { SearchAutocomplete } from "./search-autocomplete";
@@ -30,20 +31,15 @@ export function SiteHeader() {
   const { hydrated, lines } = useCart();
   const items = lines.reduce((total, line) => total + line.quantity, 0);
   useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/api/auth/session", {
-      cache: "no-store",
-      signal: controller.signal
-    })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json()) as { authenticated: boolean; fullName?: string };
-      })
+    let active = true;
+    void fetchPublicAuthSession()
       .then((result) => {
-        if (result?.authenticated && result.fullName) setAccountName(result.fullName);
+        if (active && result.authenticated && result.fullName) setAccountName(result.fullName);
       })
       .catch(() => undefined);
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

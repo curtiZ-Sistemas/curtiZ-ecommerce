@@ -205,20 +205,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(demoSnapshot(section, page, pageSize), { headers: noStore });
   }
   const supabase = authorized.supabase;
-
-  const metricQueries = [
-    supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "payment_approved"),
-    supabase.from("operational_tasks").select("id", { count: "exact", head: true }).lt("due_at", new Date().toISOString()).in("status", ["queued", "in_progress", "blocked"]),
-    supabase.from("orders").select("id", { count: "exact", head: true }).in("status", ["payment_approved", "processing", "picking"]),
-    supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "ready_to_ship"),
-    supabase.from("kit_orders").select("id", { count: "exact", head: true }).in("status", ["paid", "separating", "ready_to_ship"]),
-    supabase.rpc("operational_critical_stock_count"),
-    supabase.from("returns").select("id", { count: "exact", head: true }).eq("requested_resolution", "exchange").not("status", "in", '("completed","cancelled","rejected")'),
-    supabase.from("returns").select("id", { count: "exact", head: true }).not("status", "in", '("completed","cancelled","rejected")'),
-    supabase.from("operational_occurrences").select("id", { count: "exact", head: true }).in("status", ["open", "in_progress"]),
-    supabase.from("support_conversations").select("id", { count: "exact", head: true }).eq("assigned_user_id", authorized.userId).in("status", ["assigned", "in_progress", "waiting_customer", "waiting_internal", "reopened"]),
-    supabase.from("operational_tasks").select("id", { count: "exact", head: true }).in("status", ["queued", "in_progress", "blocked"])
-  ];
+  const dashboard = section === "";
+  const needsMetrics = dashboard || section === "relatorios-operacionais";
+  const needsOrders = section === "pedidos";
+  const needsTasks =
+    dashboard || ["separacao", "expedicao", "envio", "pendencias"].includes(section);
+  const needsInventory = ["estoque", "reposicao", "danificados"].includes(section);
+  const needsKits = ["kits", "montagem-kits"].includes(section);
+  const needsReturns = ["trocas", "devolucoes"].includes(section);
+  const needsOccurrences = dashboard || ["ocorrencias", "pendencias"].includes(section);
+  const needsInvoices = section === "notas-fiscais";
+  const needsRepresentatives = section === "representantes";
+  const emptyResult = () => Promise.resolve({ data: [], error: null, count: null });
+  const metricsQuery = needsMetrics
+    ? supabase.rpc("operational_dashboard_metrics")
+    : Promise.resolve({ data: null, error: null });
 
   let orderQuery = supabase
     .from("orders")
@@ -300,8 +301,27 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(50);
 
+  const capabilityCodes = [
+    ...(["pedidos", "separacao", "expedicao", "envio", "kits", "montagem-kits", "pendencias"].includes(section)
+      ? ["operations.tasks.execute"]
+      : []),
+    ...(section === "pedidos" ? ["orders.update_operational_status"] : []),
+    ...(needsKits ? ["representatives.kits.fulfill"] : []),
+    ...(needsInventory ? ["operations.inventory.request_adjustment"] : []),
+    ...(needsReturns ? ["returns.inspect"] : []),
+    ...(section === "ocorrencias"
+      ? ["operations.occurrences.create", "operations.occurrences.resolve"]
+      : [])
+  ];
+  const permissionPromise = Promise.all(
+    capabilityCodes.map(async (permissionCode) => ({
+      permissionCode,
+      result: await supabase.rpc("has_permission", { permission_code: permissionCode })
+    }))
+  );
+
   const [
-    metricResults,
+    metricsResult,
     ordersResult,
     tasksResult,
     inventoryResult,
@@ -311,19 +331,21 @@ export async function GET(request: NextRequest) {
     occurrencesResult,
     invoicesResult,
     representativesResult,
-    adjustmentsResult
+    adjustmentsResult,
+    permissionResults
   ] = await Promise.all([
-    Promise.all(metricQueries),
-    orderQuery,
-    taskQuery,
-    inventoryQuery,
-    movementsQuery,
-    kitQuery,
-    returnQuery,
-    occurrenceQuery,
-    invoiceQuery,
-    representativeQuery,
-    adjustmentQuery
+    metricsQuery,
+    needsOrders ? orderQuery : emptyResult(),
+    needsTasks ? taskQuery : emptyResult(),
+    needsInventory ? inventoryQuery : emptyResult(),
+    needsInventory ? movementsQuery : emptyResult(),
+    needsKits ? kitQuery : emptyResult(),
+    needsReturns ? returnQuery : emptyResult(),
+    needsOccurrences ? occurrenceQuery : emptyResult(),
+    needsInvoices ? invoiceQuery : emptyResult(),
+    needsRepresentatives ? representativeQuery : emptyResult(),
+    needsInventory ? adjustmentQuery : emptyResult(),
+    permissionPromise
   ]);
 
   const sectionErrors: Record<string, Array<unknown>> = {
@@ -343,7 +365,7 @@ export async function GET(request: NextRequest) {
     representantes: [representativesResult.error],
     pendencias: [tasksResult.error, occurrencesResult.error]
   };
-  const metricErrors = metricResults.map((result) => result.error).filter(Boolean);
+  const metricErrors = metricsResult.error ? [metricsResult.error] : [];
   const criticalError =
     sectionErrors[section]?.find(Boolean) ??
     (section === "relatorios-operacionais" ? metricErrors[0] : null);
@@ -538,34 +560,22 @@ export async function GET(request: NextRequest) {
     createdAt: text(item.created_at)
   }));
 
-  const permissionCodes = [
-    "operations.tasks.execute",
-    "representatives.kits.fulfill",
-    "operations.occurrences.create",
-    "operations.occurrences.resolve",
-    "operations.inventory.request_adjustment",
-    "returns.inspect",
-    "orders.update_operational_status"
-  ] as const;
-  const permissionResults = await Promise.all(
-    permissionCodes.map((permissionCode) =>
-      supabase.rpc("has_permission", { permission_code: permissionCode })
-    )
+  const grantedCapabilities = new Set(
+    permissionResults
+      .filter(({ result }) => result.data === true && !result.error)
+      .map(({ permissionCode }) => permissionCode)
   );
-  const permission = (index: number) =>
-    permissionResults[index]?.data === true && !permissionResults[index]?.error;
+  const permission = (code: string) => grantedCapabilities.has(code);
   const capabilities = {
-    executeTasks: permission(0),
-    fulfillKits: permission(1),
-    createOccurrences: permission(2),
-    resolveOccurrences: permission(3),
-    requestAdjustments: permission(4),
-    inspectReturns: permission(5),
-    addOrderNotes: permission(6)
+    executeTasks: permission("operations.tasks.execute"),
+    fulfillKits: permission("representatives.kits.fulfill"),
+    createOccurrences: permission("operations.occurrences.create"),
+    resolveOccurrences: permission("operations.occurrences.resolve"),
+    requestAdjustments: permission("operations.inventory.request_adjustment"),
+    inspectReturns: permission("returns.inspect"),
+    addOrderNotes: permission("orders.update_operational_status")
   };
-  const counts = metricResults.map((result, index) =>
-    index === 5 ? number(result.data) : result.count ?? 0
-  );
+  const metrics = record(metricsResult.data);
   const inventoryTotal = number(rows(inventoryResult.data)[0]?.total_count);
   const partialFailures = [
     ...metricErrors,
@@ -579,7 +589,7 @@ export async function GET(request: NextRequest) {
     invoicesResult.error,
     representativesResult.error,
     adjustmentsResult.error,
-    ...permissionResults.map((result) => result.error)
+    ...permissionResults.map(({ result }) => result.error)
   ].filter(Boolean);
   const sectionTotals: Record<string, number> = {
     pedidos: ordersResult.count ?? orders.length,
@@ -607,17 +617,17 @@ export async function GET(request: NextRequest) {
         ? "Alguns dados não puderam ser atualizados. Os blocos disponíveis continuam utilizáveis."
         : undefined,
       metrics: {
-        newOrders: counts[0],
-        overdueOrders: counts[1],
-        waitingSeparation: counts[2],
-        waitingShipping: counts[3],
-        pendingKits: counts[4],
-        criticalStock: counts[5],
-        exchanges: counts[6],
-        returns: counts[7],
-        occurrences: counts[8],
-        support: counts[9],
-        pendingTasks: counts[10]
+        newOrders: number(metrics?.newOrders),
+        overdueOrders: number(metrics?.overdueOrders),
+        waitingSeparation: number(metrics?.waitingSeparation),
+        waitingShipping: number(metrics?.waitingShipping),
+        pendingKits: number(metrics?.pendingKits),
+        criticalStock: number(metrics?.criticalStock),
+        exchanges: number(metrics?.exchanges),
+        returns: number(metrics?.returns),
+        occurrences: number(metrics?.occurrences),
+        support: number(metrics?.support),
+        pendingTasks: number(metrics?.pendingTasks)
       },
       orders,
       tasks,

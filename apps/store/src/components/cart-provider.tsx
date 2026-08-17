@@ -2,6 +2,7 @@
 
 import type { CartLine, Product } from "@curtiz/domain";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 
 type CartContextValue = {
   lines: CartLine[];
@@ -95,17 +96,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    const controller = new AbortController();
-    void fetch("/api/auth/session", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) return { authenticated: false };
-        return (await response.json()) as { authenticated?: boolean };
-      })
-      .then((session) => setAuthentication(session.authenticated ? "authenticated" : "visitor"))
-      .catch(() => {
-        if (!controller.signal.aborted) setAuthentication("visitor");
-      });
-    return () => controller.abort();
+    let active = true;
+    void fetchPublicAuthSession().then((session) => {
+      if (active) setAuthentication(session.authenticated ? "authenticated" : "visitor");
+    });
+    return () => {
+      active = false;
+    };
   }, [hydrated]);
 
   useEffect(() => {
@@ -144,7 +141,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               }
               return;
             }
-            const safeItems = result.items.filter(isCartLine);
+            const localCategories = new Map(
+              snapshot.flatMap((line) =>
+                line.category ? ([[line.productId, line.category]] as const) : []
+              )
+            );
+            const safeItems = result.items.filter(isCartLine).map((line) => {
+              const category = localCategories.get(line.productId);
+              return category ? { ...line, category } : line;
+            });
             const remoteSignature = cartSignature(safeItems);
             localStorage.setItem("curtiz-cart-sync-id", result.cartId);
             if (latestRequestedSignatureRef.current !== signature) return;
@@ -190,6 +195,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             {
               productId: product.id,
               slug: product.slug,
+              category: product.category,
               variantId,
               name: product.name,
               image: options?.image ?? product.image,

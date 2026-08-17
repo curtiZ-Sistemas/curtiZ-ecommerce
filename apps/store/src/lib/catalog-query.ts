@@ -102,7 +102,7 @@ export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: str
       : undefined,
     sort,
     page: Math.max(1, Math.min(500, Number(params.get("pagina")) || 1)),
-    pageSize: 12
+    pageSize: Math.max(1, Math.min(24, Number(params.get("limite")) || 12))
   };
 };
 

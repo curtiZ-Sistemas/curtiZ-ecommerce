@@ -500,9 +500,9 @@ export async function GET(request: NextRequest) {
     archivePermission
   ] = await Promise.all([
     loadProducts(),
-    supabase.from("categories").select("id,name").order("name"),
-    supabase.from("product_models").select("id,name").order("name"),
-    supabase.from("collections").select("id,name").order("name"),
+    supabase.from("categories").select("id,name").order("name").limit(500),
+    supabase.from("product_models").select("id,name").order("name").limit(500),
+    supabase.from("collections").select("id,name").order("name").limit(500),
     supabase.rpc("has_permission", { permission_code: "products.create" }),
     supabase.rpc("has_permission", { permission_code: "products.update" }),
     supabase.rpc("has_permission", { permission_code: "inventory.adjust" }),

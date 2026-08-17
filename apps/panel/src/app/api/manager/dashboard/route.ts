@@ -79,6 +79,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const includeOptions = request.nextUrl.searchParams.get("includeOptions") !== "0";
+  const emptyOptions = () => Promise.resolve({ data: [], error: null });
+
   const [metrics, products, categories, models, representatives, levels, campaigns] =
     await Promise.all([
       auth.supabase.rpc("manager_dashboard_metrics", {
@@ -92,16 +95,28 @@ export async function GET(request: NextRequest) {
         p_level_id: parsed.data.level ?? null,
         p_campaign_id: parsed.data.campaign ?? null
       }),
-      auth.supabase.from("products").select("id,name").order("name").limit(300),
-      auth.supabase.from("categories").select("id,name").order("name").limit(200),
-      auth.supabase.from("product_models").select("id,name").order("name").limit(200),
-      auth.supabase
-        .from("representatives")
-        .select("id,public_code,region_code,current_level_id")
-        .order("public_code")
-        .limit(500),
-      auth.supabase.from("representative_levels").select("id,name,rank").order("rank").limit(100),
-      auth.supabase.from("creative_campaigns").select("id,name").order("name").limit(200)
+      includeOptions
+        ? auth.supabase.from("products").select("id,name").order("name").limit(300)
+        : emptyOptions(),
+      includeOptions
+        ? auth.supabase.from("categories").select("id,name").order("name").limit(200)
+        : emptyOptions(),
+      includeOptions
+        ? auth.supabase.from("product_models").select("id,name").order("name").limit(200)
+        : emptyOptions(),
+      includeOptions
+        ? auth.supabase
+            .from("representatives")
+            .select("id,public_code,region_code,current_level_id")
+            .order("public_code")
+            .limit(500)
+        : emptyOptions(),
+      includeOptions
+        ? auth.supabase.from("representative_levels").select("id,name,rank").order("rank").limit(100)
+        : emptyOptions(),
+      includeOptions
+        ? auth.supabase.from("creative_campaigns").select("id,name").order("name").limit(200)
+        : emptyOptions()
     ]);
 
   if (metrics.error) {
@@ -133,15 +148,19 @@ export async function GET(request: NextRequest) {
         levels.error ? "níveis" : null,
         campaigns.error ? "campanhas" : null
       ].filter((item): item is string => item !== null),
-      options: {
-        products: managerRows(products.data),
-        categories: managerRows(categories.data),
-        models: managerRows(models.data),
-        representatives: representativeRows,
-        levels: managerRows(levels.data),
-        campaigns: managerRows(campaigns.data),
-        regions
-      }
+      ...(includeOptions
+        ? {
+            options: {
+              products: managerRows(products.data),
+              categories: managerRows(categories.data),
+              models: managerRows(models.data),
+              representatives: representativeRows,
+              levels: managerRows(levels.data),
+              campaigns: managerRows(campaigns.data),
+              regions
+            }
+          }
+        : {})
     },
     { headers: managerNoStore }
   );

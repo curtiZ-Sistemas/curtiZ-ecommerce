@@ -11,7 +11,7 @@ import {
   TriangleAlert
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RevenueChart, type RevenuePoint } from "@/components/revenue-chart";
 
 type RecordValue = Record<string, unknown>;
@@ -97,6 +97,7 @@ export function ManagerDashboard() {
   const [message, setMessage] = useState("");
   const [demo, setDemo] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const optionsLoaded = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,18 +106,21 @@ export function ManagerDashboard() {
     Object.entries(submitted).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
+    if (optionsLoaded.current) params.set("includeOptions", "0");
 
     try {
       const response = await fetch(`/api/manager/dashboard?${params}`, { cache: "no-store" });
       const payload = parseResponse(await response.json());
       if (!response.ok) throw new Error(payload.message);
       setMetrics(isRecord(payload.metrics) ? payload.metrics : {});
-      setOptions(payload.options ?? {});
+      if (payload.options) {
+        setOptions(payload.options);
+        optionsLoaded.current = true;
+      }
       setDemo(payload.demo === true);
       setWarnings(Array.isArray(payload.warnings) ? payload.warnings.filter((item): item is string => typeof item === "string") : []);
     } catch {
       setMetrics({});
-      setOptions({});
       setDemo(false);
       setWarnings([]);
       setMessage("Não foi possível carregar os indicadores gerenciais agora.");

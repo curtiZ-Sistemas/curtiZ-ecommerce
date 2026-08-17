@@ -21,6 +21,7 @@ export type Product = {
 export type CartLine = {
   productId: string;
   slug?: string;
+  category?: Product["category"];
   variantId: string;
   name: string;
   image: string;

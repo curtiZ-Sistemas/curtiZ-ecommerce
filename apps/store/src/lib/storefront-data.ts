@@ -13,7 +13,7 @@ import {
 import { parseCatalogRpcResult, productCategory, publicCatalogImage } from "./catalog-result";
 import { selectHomepageSections } from "./homepage-layout";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
-import { createPublicSupabaseClient, createServerSupabaseClient } from "./supabase/server";
+import { createPublicSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
 
 export type PublicBanner = {
@@ -264,7 +264,7 @@ export async function queryPublicCatalog(
   if (process.env.DEMO_MODE === "true") return queryDemoCatalog(filters);
   const presentationFallback = isPresentationCatalogEnabled();
 
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
   if (!supabase) {
     return presentationFallback || process.env.NODE_ENV !== "production"
       ? queryDemoCatalog(filters)
@@ -304,7 +304,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     };
   }
   const presentationFallback = isPresentationCatalogEnabled();
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
   if (!supabase) {
     const developmentFallback =
       presentationFallback || process.env.NODE_ENV !== "production";
@@ -429,7 +429,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
 
 export const getProductsByModel = cache(async (slug: string): Promise<Product[]> => {
   if (process.env.DEMO_MODE === "true") return [];
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
   if (!supabase) return [];
   const result = await supabase.from("products").select(`${directProductSelect},product_models!inner(slug)`).eq("status", "active").eq("product_models.slug", slug).limit(48);
   return result.error ? [] : mapDirectProducts(result.data);
@@ -584,7 +584,7 @@ const cmsParagraphs = (value: unknown): string[] => {
 
 export const getPublicCmsPage = cache(async (slug: string): Promise<PublicCmsPage | null> => {
   if (process.env.DEMO_MODE === "true") return null;
-  const supabase = await createServerSupabaseClient();
+  const supabase = createPublicSupabaseClient();
   if (!supabase) return null;
   const response = await supabase
     .from("cms_pages")

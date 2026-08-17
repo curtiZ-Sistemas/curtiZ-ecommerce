@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
 import { SearchAutocomplete } from "./search-autocomplete";
+import ErrorPage from "../app/error";
+import GlobalError from "../app/global-error";
 import type { PublicBanner } from "@/lib/storefront-data";
 
 vi.mock("next/navigation", () => ({
@@ -85,5 +87,16 @@ describe("public storefront components", () => {
     expect(html).toContain("Produto disponível");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
+  });
+
+  it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {
+    const pageError = renderToStaticMarkup(<ErrorPage reset={vi.fn()} />);
+    const globalError = renderToStaticMarkup(<GlobalError reset={vi.fn()} />);
+    const html = `${pageError}${globalError}`;
+
+    expect(html).toContain("Algo não saiu como esperado.");
+    expect(html).toContain("Não foi possível carregar a loja agora.");
+    expect(html).toContain("Tentar novamente");
+    expect(html).not.toMatch(/stack|supabase|sql|exception|token|service_role/iu);
   });
 });

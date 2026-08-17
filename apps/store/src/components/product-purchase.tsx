@@ -1,10 +1,10 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
-import { Check, Heart, ShoppingBag, Star } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Expand, Heart, ShoppingBag, Star, X } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
@@ -21,7 +21,12 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
   const [selectedImage, setSelectedImage] = useState(
     initial?.image ?? gallery[0]?.src ?? product.image
   );
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const galleryTriggerRef = useRef<HTMLButtonElement>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
+  const closeLightboxRef = useRef<HTMLButtonElement>(null);
+  const touchStartRef = useRef<number | null>(null);
   const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
   const router = useRouter();
@@ -36,14 +41,74 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
   const favorite = hydrated && has(product.id);
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
   const currentStock = selectedVariant?.stock ?? 0;
-  const images = [
-    ...(selectedVariant?.image
-      ? [{ id: `${selectedVariant.id}-variant`, src: selectedVariant.image, alt: product.name }]
-      : []),
-    ...gallery
-  ].filter(
-    (image, index, list) => list.findIndex((candidate) => candidate.src === image.src) === index
+  const images = useMemo(
+    () =>
+      [
+        ...(selectedVariant?.image
+          ? [{ id: `${selectedVariant.id}-variant`, src: selectedVariant.image, alt: product.name }]
+          : []),
+        ...gallery
+      ].filter(
+        (image, index, list) =>
+          list.findIndex((candidate) => candidate.src === image.src) === index
+      ),
+    [gallery, product.name, selectedVariant?.id, selectedVariant?.image]
   );
+  const activeImageIndex = Math.max(
+    0,
+    images.findIndex((image) => image.src === selectedImage)
+  );
+
+  const selectRelativeImage = useCallback(
+    (offset: number) => {
+      setSelectedImage((current) => {
+        const currentIndex = Math.max(
+          0,
+          images.findIndex((image) => image.src === current)
+        );
+        const nextIndex = (currentIndex + offset + images.length) % images.length;
+        return images[nextIndex]?.src ?? current;
+      });
+    },
+    [images]
+  );
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    closeLightboxRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightboxOpen(false);
+      if (event.key === "ArrowLeft" && images.length > 1) selectRelativeImage(-1);
+      if (event.key === "ArrowRight" && images.length > 1) selectRelativeImage(1);
+      if (event.key !== "Tab") return;
+      const focusable = lightboxRef.current?.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
+      window.setTimeout(() => galleryTriggerRef.current?.focus(), 0);
+    };
+  }, [images.length, lightboxOpen, selectRelativeImage]);
 
   const chooseColor = (nextColor: string) => {
     const nextVariant =
@@ -85,15 +150,26 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       <div className="product-gallery">
         {product.compareAtPriceInCents && <span className="gallery-offer">Oferta</span>}
         <div className="product-gallery-main">
-          <Image
-            src={selectedImage}
-            alt={product.name}
-            width={720}
-            height={560}
-            sizes="(max-width: 900px) 100vw, 56vw"
-            loading="eager"
-            priority
-          />
+          <button
+            ref={galleryTriggerRef}
+            className="product-gallery-trigger"
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label={`Ampliar imagem de ${product.name}`}
+          >
+            <Image
+              src={selectedImage}
+              alt={product.name}
+              width={900}
+              height={720}
+              sizes="(max-width: 900px) 100vw, 58vw"
+              loading="eager"
+              priority
+            />
+            <span className="product-gallery-zoom-hint" aria-hidden="true">
+              <Expand /> Ampliar
+            </span>
+          </button>
         </div>
         {images.length > 1 && (
           <div className="product-thumbnails" role="list" aria-label="Imagens do produto">
@@ -113,6 +189,74 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
           </div>
         )}
       </div>
+
+      {lightboxOpen && (
+        <div
+          ref={lightboxRef}
+          className="product-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Visualização ampliada de ${product.name}`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setLightboxOpen(false);
+          }}
+        >
+          <button
+            ref={closeLightboxRef}
+            className="product-lightbox-close"
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            aria-label="Fechar imagem ampliada"
+          >
+            <X />
+          </button>
+          {images.length > 1 && (
+            <button
+              className="product-lightbox-navigation previous"
+              type="button"
+              onClick={() => selectRelativeImage(-1)}
+              aria-label="Imagem anterior"
+            >
+              <ChevronLeft />
+            </button>
+          )}
+          <div
+            className="product-lightbox-image"
+            onTouchStart={(event) => {
+              touchStartRef.current = event.changedTouches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={(event) => {
+              const start = touchStartRef.current;
+              const end = event.changedTouches[0]?.clientX;
+              touchStartRef.current = null;
+              if (start === null || end === undefined || Math.abs(end - start) < 48) return;
+              selectRelativeImage(end < start ? 1 : -1);
+            }}
+          >
+            <Image
+              src={selectedImage}
+              alt={`${product.name}, imagem ${activeImageIndex + 1} de ${images.length}`}
+              fill
+              sizes="90vw"
+            />
+          </div>
+          {images.length > 1 && (
+            <button
+              className="product-lightbox-navigation next"
+              type="button"
+              onClick={() => selectRelativeImage(1)}
+              aria-label="Próxima imagem"
+            >
+              <ChevronRight />
+            </button>
+          )}
+          {images.length > 1 && (
+            <span className="product-lightbox-counter" aria-live="polite">
+              {activeImageIndex + 1} / {images.length}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="product-summary">
         <div className="product-summary-heading">

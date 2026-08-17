@@ -15,13 +15,29 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
+  const detail = await getPublicProduct(slug);
+  if (!detail) notFound();
   const url = `/produto/${encodeURIComponent(slug)}`;
+  const title = detail.product.name;
+  const description = detail.product.description || productDescription;
+  const image = detail.gallery[0]?.src;
+
   return {
-    title: "Produto",
-    description: productDescription,
+    title,
+    description,
     alternates: { canonical: url },
-    openGraph: { title: "Produto curti Z", description: productDescription, url },
-    twitter: { card: "summary", title: "Produto curti Z", description: productDescription }
+    openGraph: {
+      title,
+      description,
+      url,
+      ...(image ? { images: [{ url: image, alt: title }] } : {})
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title,
+      description,
+      ...(image ? { images: [image] } : {})
+    }
   };
 }
 

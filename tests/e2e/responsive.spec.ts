@@ -198,3 +198,119 @@ test("consentimento mobile permanece compacto e dentro da viewport", async ({ pa
     await banner.getByRole("button", { name: "Rejeitar opcionais" }).click();
   }
 });
+
+test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conteúdo", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("show-cart-cookie-banner") === "true") {
+      localStorage.removeItem("curtiz-cookie-consent");
+    } else {
+      localStorage.setItem(
+        "curtiz-cookie-consent",
+        JSON.stringify({ categories: { essential: true } })
+      );
+    }
+    localStorage.setItem(
+      "curtiz-cart",
+      JSON.stringify([
+        {
+          productId: "wave-preto",
+          slug: "flip-flop-wave-preto",
+          category: "Masculino",
+          variantId: "wave-preto:Preto:39/40",
+          name: "curti Z Flip-Flop Wave Preto",
+          image: "/images/products/wave-preto.png",
+          color: "Preto",
+          size: "39/40",
+          quantity: 1,
+          maxQuantity: 10,
+          unitPriceInCents: 5990
+        }
+      ])
+    );
+  });
+
+  for (const width of [320, 375, 390, 430, 768]) {
+    await page.setViewportSize({ width, height: width === 768 ? 1024 : 844 });
+    await page.goto("/carrinho", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Você também pode gostar" })).toBeVisible();
+    const mobileSummary = page.locator(".cart-mobile-summary");
+    if (width <= 700) {
+      await expect(mobileSummary).toBeVisible();
+      await expect(page.locator(".cart-summary")).toBeHidden();
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      const bounds = await page.evaluate(() => {
+        const summary = document.querySelector<HTMLElement>(".cart-mobile-summary");
+        const pageShell = document.querySelector<HTMLElement>(".cart-page");
+        if (!summary || !pageShell) throw new Error("Carrinho mobile incompleto.");
+        return {
+          summaryTop: summary.getBoundingClientRect().top,
+          pageBottom: pageShell.getBoundingClientRect().bottom,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
+        };
+      });
+      expect(bounds.pageBottom).toBeLessThanOrEqual(bounds.summaryTop + 1);
+      expect(bounds.overflow).toBeLessThanOrEqual(1);
+    } else {
+      await expect(mobileSummary).toBeHidden();
+      await expect(page.locator(".cart-summary")).toBeVisible();
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    sessionStorage.setItem("show-cart-cookie-banner", "true");
+    localStorage.removeItem("curtiz-cookie-consent");
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const cookieBanner = page.locator(".cookie-consent-card:not(.customizing)");
+  await expect(cookieBanner).toBeVisible();
+  await expect(page.locator(".help-widget")).toBeHidden();
+  const positions = await Promise.all([
+    cookieBanner.boundingBox(),
+    page.locator(".cart-mobile-summary").boundingBox()
+  ]);
+  expect(positions[0]).not.toBeNull();
+  expect(positions[1]).not.toBeNull();
+  expect((positions[0]?.y ?? 0) + (positions[0]?.height ?? 0)).toBeLessThanOrEqual(
+    positions[1]?.y ?? 0
+  );
+});
+
+test("404 mantém ações e recomendações acessíveis no mobile", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    const response = await page.goto(`/pagina-inexistente-${width}`, {
+      waitUntil: "domcontentloaded"
+    });
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { name: "Não encontramos esta página." })).toBeVisible();
+    const actions = page.locator(".error-actions a");
+    await expect(actions).toHaveCount(2);
+    for (const action of await actions.all()) {
+      const bounds = await action.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.locator(".error-recommendation-grid .product-card").first()).toBeVisible({
+      timeout: 20_000
+    });
+    const layout = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+      recommendationOverflow:
+        (document.querySelector<HTMLElement>(".error-recommendation-grid")?.scrollWidth ?? 0) >
+        (document.querySelector<HTMLElement>(".error-recommendation-grid")?.clientWidth ?? 0)
+    }));
+    expect(layout.content).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.recommendationOverflow).toBe(true);
+  }
+});

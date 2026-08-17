@@ -9,6 +9,10 @@ const metrics = readFileSync(
   "supabase/migrations/202608080015_operational_metrics_scaling.sql",
   "utf8"
 ).toLowerCase();
+const dashboardMetrics = readFileSync(
+  "supabase/migrations/202608170001_worker_resource_optimization.sql",
+  "utf8"
+).toLowerCase();
 const operations = readFileSync("apps/panel/src/app/api/operations/route.ts", "utf8");
 
 describe("panel production baseline", () => {
@@ -26,7 +30,9 @@ describe("panel production baseline", () => {
     expect(metrics).toContain("perform private.require_permission('inventory.read')");
     expect(metrics).toContain("select count(*)");
     expect(metrics).toContain("set search_path = ''");
-    expect(operations).toContain('supabase.rpc("operational_critical_stock_count")');
+    expect(dashboardMetrics).toContain("perform private.require_permission('operations.dashboard.read')");
+    expect(dashboardMetrics).toContain("available_quantity <= minimum_quantity");
+    expect(operations).toContain('supabase.rpc("operational_dashboard_metrics")');
     expect(operations).not.toContain('.limit(10000)');
   });
 });
