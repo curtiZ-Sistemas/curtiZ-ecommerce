@@ -12,9 +12,14 @@ export default function CartPage() {
   const { hydrated, lines, syncMessage, retrySync, changeQuantity, remove, clear } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const releaseRef = useRef<number | null>(null);
   const subtotal = calculateSubtotal(lines);
   const itemCount = lines.reduce((total, line) => total + line.quantity, 0);
+  const selectedVariantIds = lines
+    .filter((line) => selectedIds.has(line.variantId))
+    .map((line) => line.variantId);
 
   useEffect(
     () => () => {
@@ -31,6 +36,41 @@ export default function CartPage() {
     releaseRef.current = window.setTimeout(() => setPendingId(null), 280);
   };
 
+  const leaveSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelection = (variantId: string, selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(variantId);
+      else next.delete(variantId);
+      return next;
+    });
+  };
+
+  const removeSelected = () => {
+    if (pendingId || selectedVariantIds.length === 0) return;
+    const ids = selectedVariantIds;
+    setPendingId("bulk-selection");
+    ids.forEach(remove);
+    setFeedback(
+      ids.length === 1
+        ? "1 produto removido do carrinho."
+        : `${ids.length} produtos removidos do carrinho.`
+    );
+    leaveSelectionMode();
+    releaseRef.current = window.setTimeout(() => setPendingId(null), 280);
+  };
+
+  const clearCart = () => {
+    if (!window.confirm("Remover todos os itens da sacola?")) return;
+    clear();
+    leaveSelectionMode();
+    setFeedback("Sacola esvaziada.");
+  };
+
   return (
     <div className="container page-shell cart-page">
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
@@ -39,31 +79,62 @@ export default function CartPage() {
         <span>Carrinho</span>
       </nav>
 
-      <div className="section-heading cart-heading">
-        <div>
-          <p className="eyebrow">Sua seleção</p>
+      <header className="cart-heading">
+        <div className="cart-heading-toolbar">
+          <Link className="cart-continue-link" href="/produtos">
+            <ArrowLeft aria-hidden="true" /> Continuar comprando
+          </Link>
+          {hydrated && lines.length > 0 && (
+            <button
+              className="cart-manage-button"
+              type="button"
+              onClick={() => {
+                if (selectionMode) return;
+                setSelectionMode(true);
+                setSelectedIds(new Set());
+                setFeedback("Selecione os produtos que deseja remover.");
+              }}
+              aria-label="Selecionar produtos para remover"
+              aria-pressed={selectionMode}
+              title="Selecionar produtos para remover"
+            >
+              <Trash2 aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        <div className="cart-heading-title">
           <h1>Meu carrinho</h1>
           <p>{itemCount === 1 ? "1 item selecionado" : `${itemCount} itens selecionados`}</p>
         </div>
-        {hydrated && lines.length > 0 && (
-          <div className="cart-heading-actions">
-            <Link className="secondary-button compact-button" href="/produtos">
-              <ArrowLeft /> Continuar comprando
-            </Link>
+      </header>
+
+      {selectionMode && lines.length > 0 && (
+        <div className="cart-selection-toolbar" role="group" aria-label="Ações de seleção">
+          <span>
+            {selectedVariantIds.length === 0
+              ? "Selecione os produtos"
+              : selectedVariantIds.length === 1
+                ? "1 produto selecionado"
+                : `${selectedVariantIds.length} produtos selecionados`}
+          </span>
+          <div>
             <button
-              className="text-button cart-clear-button"
+              className="cart-remove-selected"
               type="button"
-              onClick={() => {
-                if (!window.confirm("Remover todos os itens da sacola?")) return;
-                clear();
-                setFeedback("Sacola esvaziada.");
-              }}
+              onClick={removeSelected}
+              disabled={selectedVariantIds.length === 0 || pendingId !== null}
             >
-              <Trash2 /> Limpar sacola
+              Remover selecionados
+            </button>
+            <button className="cart-clear-all" type="button" onClick={clearCart}>
+              Limpar tudo
+            </button>
+            <button className="cart-cancel-selection" type="button" onClick={leaveSelectionMode}>
+              Cancelar
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <p className="sr-only" role="status" aria-live="polite">
         {feedback}
@@ -84,7 +155,6 @@ export default function CartPage() {
           <span className="empty-state-icon">
             <ShoppingBag />
           </span>
-          <p className="eyebrow">Sua seleção</p>
           <h2>Sua sacola está vazia.</h2>
           <p>Explore a coleção curti Z e adicione seus modelos favoritos para continuar.</p>
           <Link className="primary-button" href="/produtos">
@@ -94,7 +164,10 @@ export default function CartPage() {
       ) : (
         <div className="cart-layout">
           <div className="cart-main-column">
-            <section className="cart-list" aria-label="Produtos no carrinho">
+            <section
+              className={selectionMode ? "cart-list is-selecting" : "cart-list"}
+              aria-label="Produtos no carrinho"
+            >
               <div className="cart-list-header">
                 <span>Produto</span>
                 <span>Quantidade</span>
@@ -102,93 +175,125 @@ export default function CartPage() {
               </div>
 
               {lines.map((line) => {
-                const isPending = pendingId === line.variantId;
+                const selected = selectedIds.has(line.variantId);
+                const isPending =
+                  pendingId === line.variantId || (pendingId === "bulk-selection" && selected);
+                const itemClassName = [
+                  "cart-item",
+                  selectionMode ? "is-selecting" : "",
+                  selected ? "is-selected" : "",
+                  isPending ? "is-updating" : ""
+                ]
+                  .filter(Boolean)
+                  .join(" ");
                 return (
-                  <article
-                    className={isPending ? "cart-item is-updating" : "cart-item"}
-                    key={line.variantId}
-                  >
-                  <Link
-                    className="cart-item-image"
-                    href={line.slug ? `/produto/${line.slug}` : "/produtos"}
-                  >
-                    <Image
-                      src={line.image}
-                      alt={line.name}
-                      width={150}
-                      height={120}
-                      sizes="(max-width: 560px) 92px, 128px"
-                    />
-                  </Link>
+                  <article className={itemClassName} key={line.variantId}>
+                    {selectionMode && (
+                      <label className="cart-selection-control">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(event) =>
+                            toggleSelection(line.variantId, event.currentTarget.checked)
+                          }
+                          disabled={isPending}
+                        />
+                        <span className="sr-only">Selecionar {line.name}</span>
+                      </label>
+                    )}
+                    <Link
+                      className="cart-item-image"
+                      href={line.slug ? `/produto/${line.slug}` : "/produtos"}
+                    >
+                      <Image
+                        src={line.image}
+                        alt={line.name}
+                        width={150}
+                        height={120}
+                        sizes="(max-width: 560px) 92px, 128px"
+                      />
+                    </Link>
 
-                  <div className="cart-item-info">
-                    <h2>{line.name}</h2>
-                    <dl className="cart-variations">
-                      <div>
-                        <dt>Cor</dt>
-                        <dd>{line.color}</dd>
-                      </div>
-                      <div>
-                        <dt>Tamanho</dt>
-                        <dd>{line.size}</dd>
-                      </div>
-                    </dl>
-                    <span className="cart-unit-price">{formatBRL(line.unitPriceInCents)} cada</span>
-                  </div>
+                    <div className="cart-item-info">
+                      <h2>{line.name}</h2>
+                      <dl className="cart-variations">
+                        <div>
+                          <dt>Cor</dt>
+                          <dd>{line.color}</dd>
+                        </div>
+                        <div>
+                          <dt>Tamanho</dt>
+                          <dd>{line.size}</dd>
+                        </div>
+                      </dl>
+                      <span className="cart-unit-price">
+                        {formatBRL(line.unitPriceInCents)} cada
+                      </span>
+                    </div>
 
-                  <div className="cart-item-quantity">
-                    <span className="mobile-field-label">Quantidade</span>
-                    <div className="quantity-control">
+                    <div className="cart-item-quantity">
+                      <span className="mobile-field-label">Quantidade</span>
+                      <div className="quantity-control">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            completeAction(
+                              line.variantId,
+                              `Quantidade de ${line.name} atualizada para ${Math.max(1, line.quantity - 1)}.`,
+                              () => changeQuantity(line.variantId, line.quantity - 1)
+                            )
+                          }
+                          disabled={isPending || line.quantity <= 1}
+                          aria-label={`Diminuir quantidade de ${line.name}`}
+                        >
+                          <Minus />
+                        </button>
+                        <output aria-label={`Quantidade atual: ${line.quantity}`}>
+                          {line.quantity}
+                        </output>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            completeAction(
+                              line.variantId,
+                              `Quantidade de ${line.name} atualizada para ${line.quantity + 1}.`,
+                              () => changeQuantity(line.variantId, line.quantity + 1)
+                            )
+                          }
+                          disabled={isPending || line.quantity >= (line.maxQuantity ?? 10)}
+                          aria-label={`Aumentar quantidade de ${line.name}`}
+                        >
+                          <Plus />
+                        </button>
+                      </div>
                       <button
+                        className="remove-button"
                         type="button"
                         onClick={() =>
                           completeAction(
                             line.variantId,
-                            `Quantidade de ${line.name} atualizada para ${Math.max(1, line.quantity - 1)}.`,
-                            () => changeQuantity(line.variantId, line.quantity - 1)
+                            `${line.name} removido do carrinho.`,
+                            () => {
+                              remove(line.variantId);
+                              setSelectedIds((current) => {
+                                const next = new Set(current);
+                                next.delete(line.variantId);
+                                return next;
+                              });
+                              if (lines.length === 1) setSelectionMode(false);
+                            }
                           )
                         }
-                        disabled={isPending || line.quantity <= 1}
-                        aria-label={`Diminuir quantidade de ${line.name}`}
+                        disabled={isPending}
                       >
-                        <Minus />
-                      </button>
-                      <output aria-label={`Quantidade atual: ${line.quantity}`}>
-                        {line.quantity}
-                      </output>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          completeAction(
-                            line.variantId,
-                            `Quantidade de ${line.name} atualizada para ${line.quantity + 1}.`,
-                            () => changeQuantity(line.variantId, line.quantity + 1)
-                          )
-                        }
-                        disabled={isPending || line.quantity >= (line.maxQuantity ?? 10)}
-                        aria-label={`Aumentar quantidade de ${line.name}`}
-                      >
-                        <Plus />
+                        <Trash2 /> Remover
                       </button>
                     </div>
-                    <button
-                      className="remove-button"
-                      type="button"
-                      onClick={() =>
-                        completeAction(line.variantId, `${line.name} removido do carrinho.`, () =>
-                          remove(line.variantId)
-                        )
-                      }
-                      disabled={isPending}
-                    >
-                      <Trash2 /> Remover
-                    </button>
-                  </div>
 
-                  <div className="cart-item-total">
-                    <span className="mobile-field-label">Subtotal</span>
-                    <strong>{formatBRL(line.unitPriceInCents * line.quantity)}</strong>
-                  </div>
+                    <div className="cart-item-total">
+                      <span className="mobile-field-label">Subtotal</span>
+                      <strong>{formatBRL(line.unitPriceInCents * line.quantity)}</strong>
+                    </div>
                   </article>
                 );
               })}

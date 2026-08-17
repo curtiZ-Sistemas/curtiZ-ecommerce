@@ -199,8 +199,10 @@ test("consentimento mobile permanece compacto e dentro da viewport", async ({ pa
   }
 });
 
-test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conteúdo", async ({ page }) => {
-  test.setTimeout(120_000);
+test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conteúdo", async ({
+  page
+}) => {
+  test.setTimeout(300_000);
   await page.addInitScript(() => {
     if (sessionStorage.getItem("show-cart-cookie-banner") === "true") {
       localStorage.removeItem("curtiz-cookie-consent");
@@ -234,10 +236,20 @@ test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conte
     await page.setViewportSize({ width, height: width === 768 ? 1024 : 844 });
     await page.goto("/carrinho", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Você também pode gostar" })).toBeVisible();
+    await page.getByRole("button", { name: "Selecionar produtos para remover" }).click();
+    await expect(page.getByRole("checkbox")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remover selecionados" })).toBeDisabled();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    ).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Cancelar" }).click();
     const mobileSummary = page.locator(".cart-mobile-summary");
     if (width <= 700) {
       await expect(mobileSummary).toBeVisible();
       await expect(page.locator(".cart-summary")).toBeHidden();
+      await expect(page.locator(".help-widget")).toBeHidden();
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       const bounds = await page.evaluate(() => {
         const summary = document.querySelector<HTMLElement>(".cart-mobile-summary");
@@ -254,6 +266,7 @@ test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conte
     } else {
       await expect(mobileSummary).toBeHidden();
       await expect(page.locator(".cart-summary")).toBeVisible();
+      await expect(page.locator(".help-widget")).toBeVisible();
     }
   }
 
