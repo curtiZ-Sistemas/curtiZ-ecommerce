@@ -433,6 +433,11 @@ test("portal da representante mantém a identidade visual da área do cliente", 
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);
+
+  // Este teste valida todos os breakpoints abaixo por conta própria.
+  // Começar em desktop evita que asserts de identidade visual desktop
+  // dependam do viewport inicial do projeto Playwright (store-desktop/store-mobile).
+  await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/representante", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator(".representative-portal-layout")).toHaveCSS(
@@ -718,7 +723,7 @@ test("404 continua utilizável quando as recomendações falham sem repetir requ
   await expect.poll(() => catalogRequests, { timeout: 15_000 }).toBe(1);
   await expect(page.locator(".error-recommendations")).toHaveCount(0);
   await page.waitForTimeout(500);
-  expect(catalogRequests).toBe(3);
+  expect(catalogRequests).toBe(1);
 });
 
 test("produto inexistente usa 404 específica sem expor detalhes", async ({ page }) => {
