@@ -43,6 +43,7 @@ describe("PanelShell multipainel", () => {
   });
 
   it("mostra o avatar único e oferece acesso ao perfil autenticado", () => {
+    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
     const markup = renderToStaticMarkup(
       <PanelShell
         role="administracao"
@@ -54,7 +55,7 @@ describe("PanelShell multipainel", () => {
       </PanelShell>
     );
 
-    expect(markup).toContain('href="http://localhost:3000/perfil"');
+    expect(markup).toContain(`href="${storeUrl}/perfil"`);
     expect(markup).toContain("avatar-assinado");
     expect(markup).toContain("Abrir meu perfil");
   });
