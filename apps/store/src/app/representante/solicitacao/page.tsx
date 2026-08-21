@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function RepresentativeApplicationPage() {
   return (
-    <main className="container page-shell representative-application-page">
+    <main className="container page-shell representative-application-page account-experience-page">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Programa curti Z</p>

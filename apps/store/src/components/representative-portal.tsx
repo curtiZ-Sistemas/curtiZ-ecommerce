@@ -318,7 +318,7 @@ export function RepresentativePortal({ section }: { section: string }) {
 
   if (error)
     return (
-      <main className="container page-shell">
+      <main className="container page-shell account-experience-page">
         <div className="error-state">
           <h1>Portal indisponível</h1>
           <p>{error}</p>
@@ -330,14 +330,14 @@ export function RepresentativePortal({ section }: { section: string }) {
     );
   if (!snapshot)
     return (
-      <main className="representative-loading">
+      <main className="representative-loading account-experience-page">
         <LoaderCircle className="spin" />
         <span>Carregando portal</span>
       </main>
     );
   if (!snapshot.representative) {
     return (
-      <main className="container page-shell">
+      <main className="container page-shell account-experience-page">
         <section className="application-status-state">
           <span>
             <ClipboardList />
@@ -360,7 +360,7 @@ export function RepresentativePortal({ section }: { section: string }) {
   }
 
   return (
-    <div className="representative-portal-layout">
+    <div className="representative-portal-layout account-experience-page">
       {menuOpen && (
         <button
           className="representative-backdrop"

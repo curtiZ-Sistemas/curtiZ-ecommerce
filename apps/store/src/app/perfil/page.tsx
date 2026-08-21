@@ -53,7 +53,7 @@ export default async function ProfilePage() {
 
   if (!fullName) {
     return (
-      <main className="container page-shell profile-entry-page">
+      <main className="container page-shell profile-entry-page account-experience-page">
         <section className="profile-empty-state">
           <span className="profile-empty-icon">
             <UserRound />
@@ -87,7 +87,7 @@ export default async function ProfilePage() {
   const panelUrl = process.env.NEXT_PUBLIC_PANEL_URL?.trim() || "http://localhost:3001";
   const returnUrl = hasInternalRole ? `${panelUrl.replace(/\/$/, "")}/selecionar-painel` : "/minha-conta";
   return (
-    <main className="container page-shell profile-page">
+    <main className="container page-shell profile-page account-experience-page">
       <header className="profile-identity">
         <ProfileAvatarManager fullName={fullName} avatarUrl={avatarUrl} compact />
         <div>

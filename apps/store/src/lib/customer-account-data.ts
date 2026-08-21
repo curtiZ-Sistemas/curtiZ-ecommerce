@@ -99,6 +99,13 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       ...snapshot,
       authenticated: true,
       demo: true,
+      representative: {
+        ...snapshot.representative,
+        representativeStatus: demoSession.roles.includes("representative")
+          ? "active"
+          : "",
+        approved: demoSession.roles.includes("representative")
+      },
       warning: ""
     };
   }

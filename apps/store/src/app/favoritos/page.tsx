@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function FavoritesPage() {
   return (
-    <div className="container page-shell">
+    <div className="container page-shell favorites-page account-experience-page">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Sua seleção</p>

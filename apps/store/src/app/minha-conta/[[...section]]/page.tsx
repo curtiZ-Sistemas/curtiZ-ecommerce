@@ -34,7 +34,7 @@ export default async function AccountPage({
   if (!snapshot.authenticated) {
     const returnTo = `/minha-conta${section === "visao-geral" ? "" : `/${section}`}`;
     return (
-      <main className="container page-shell customer-entry-page">
+      <main className="container page-shell customer-entry-page account-experience-page">
         <section className="customer-entry-card">
           <span className="customer-entry-icon" aria-hidden="true">
             <UserRound />

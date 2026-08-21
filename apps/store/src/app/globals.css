@@ -7538,8 +7538,12 @@ body:has(.representative-portal-layout) > main {
 
 body:has(.representative-portal-layout) .site-header,
 body:has(.representative-portal-layout) .site-footer,
-body:has(.representative-portal-layout) .help-widget,
 body:has(.representative-portal-layout) > .demo-banner {
+  display: none;
+}
+
+/* Uma única regra contextual evita renderização e cliques no chat em áreas de conta. */
+body:has(.account-experience-page) .help-widget {
   display: none;
 }
 
@@ -12488,5 +12492,258 @@ body:has(> #main-content > .auth-page) .site-footer {
 @media (prefers-reduced-motion: reduce) {
   .product-lightbox-transform {
     transition: none;
+  }
+}
+
+/* Central da conta mobile */
+.account-mobile-home,
+.account-mobile-subpage-header {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .customer-account-page {
+    width: 100%;
+    max-width: 560px;
+    padding-inline: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+
+  .customer-account-desktop-header,
+  .customer-account-nav {
+    display: none;
+  }
+
+  .customer-account-page.is-overview .customer-account-layout {
+    display: none;
+  }
+
+  .account-mobile-home {
+    display: grid;
+    gap: 18px;
+    padding-bottom: max(28px, env(safe-area-inset-bottom));
+  }
+
+  .account-mobile-profile {
+    display: grid;
+    justify-items: center;
+    padding: 4px 8px 2px;
+    text-align: center;
+  }
+
+  .account-mobile-profile .eyebrow {
+    margin-bottom: 12px;
+  }
+
+  .account-mobile-profile .customer-avatar {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 11px;
+    font-size: 1.25rem;
+  }
+
+  .account-mobile-profile h1 {
+    margin: 0;
+    color: var(--brand-900);
+    font-size: clamp(1.35rem, 7vw, 1.65rem);
+    line-height: 1.15;
+  }
+
+  .account-mobile-profile p:not(.eyebrow) {
+    max-width: min(100%, 320px);
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+    color: var(--muted);
+    font-size: 0.77rem;
+  }
+
+  .account-mobile-profile small {
+    display: block;
+    margin-top: 6px;
+    color: var(--neutral-500);
+    font-size: 0.68rem;
+    font-weight: 720;
+    letter-spacing: 0.04em;
+  }
+
+  .account-mobile-menu {
+    border-top: 1px solid var(--customer-border);
+    border-bottom: 1px solid var(--customer-border);
+  }
+
+  .account-mobile-menu > a {
+    display: grid;
+    min-height: 64px;
+    grid-template-columns: 38px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--customer-border);
+    color: var(--neutral-800);
+  }
+
+  .account-mobile-menu > a:last-child {
+    border-bottom: 0;
+  }
+
+  .account-mobile-menu > a:hover,
+  .account-mobile-menu > a:focus-visible {
+    color: var(--brand-900);
+    background: var(--brand-50);
+  }
+
+  .account-mobile-menu > a:focus-visible {
+    outline: 2px solid var(--brand-800);
+    outline-offset: -2px;
+  }
+
+  .account-mobile-menu-icon {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    color: var(--brand-800);
+    background: var(--brand-50);
+    border-radius: 50%;
+  }
+
+  .account-mobile-menu-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .account-mobile-menu-copy {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .account-mobile-menu-copy strong {
+    font-size: 0.86rem;
+    line-height: 1.25;
+  }
+
+  .account-mobile-menu-copy small {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.69rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-mobile-menu > a > svg {
+    width: 17px;
+    height: 17px;
+    color: var(--neutral-400);
+  }
+
+  .account-mobile-menu > a.is-opportunity {
+    color: var(--brand-900);
+  }
+
+  .account-mobile-menu > a.is-opportunity .account-mobile-menu-icon {
+    color: var(--white);
+    background: var(--brand-800);
+  }
+
+  .account-mobile-home > .logout-control {
+    width: 100%;
+  }
+
+  .account-mobile-logout {
+    display: flex;
+    width: 100%;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--customer-border);
+    color: var(--danger);
+    background: transparent;
+    font-weight: 750;
+    cursor: pointer;
+  }
+
+  .account-mobile-logout svg {
+    width: 17px;
+  }
+
+  .account-mobile-subpage-header {
+    display: grid;
+    min-height: 58px;
+    grid-template-columns: minmax(74px, auto) minmax(0, 1fr) minmax(74px, auto);
+    align-items: center;
+    border-bottom: 1px solid var(--customer-border);
+  }
+
+  .account-mobile-subpage-header a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 4px;
+    color: var(--brand-900);
+    font-size: 0.78rem;
+    font-weight: 760;
+  }
+
+  .account-mobile-subpage-header a span {
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .account-mobile-subpage-header h1 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--brand-900);
+    font-size: 1rem;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .customer-account-page.is-subpage .customer-account-layout {
+    display: block;
+    margin-top: 16px;
+  }
+
+  .customer-account-page.is-subpage .customer-section-title {
+    min-height: 0;
+  }
+
+  .customer-account-page.is-subpage .customer-section-title > div {
+    display: none;
+  }
+
+  .customer-account-page.is-subpage
+    .customer-section-title:not(:has(> button, > a)) {
+    display: none;
+  }
+
+  .customer-account-page.is-subpage .customer-panel {
+    padding: 16px;
+  }
+
+  .customer-account-page .customer-favorite-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 340px) {
+  .customer-account-page {
+    padding-inline: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+
+  .account-mobile-menu > a {
+    grid-template-columns: 34px minmax(0, 1fr) 16px;
+    gap: 9px;
+  }
+
+  .account-mobile-menu-icon {
+    width: 34px;
+    height: 34px;
   }
 }

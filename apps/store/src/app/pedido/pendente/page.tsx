@@ -6,7 +6,7 @@ export const metadata = { title: "Pedido pendente", robots: { index: false, foll
 export default async function Page({ searchParams }: { searchParams: Promise<{ pedido?: string }> }) {
   const { pedido } = await searchParams;
   return (
-    <div className="container page-shell">
+    <div className="container page-shell account-experience-page">
       <div className="empty-state">
         <Clock3 size={48} />
         <p className="eyebrow">Pedido {pedido ?? "em processamento"}</p>

@@ -4,7 +4,6 @@ import { formatBRL, type Product } from "@curtiz/domain";
 import {
   Bell,
   ChevronRight,
-  CircleUserRound,
   ClipboardCheck,
   Heart,
   LoaderCircle,
@@ -49,6 +48,15 @@ import { FavoritesPanel } from "./favorites-panel";
 import { customerStatusLabel } from "../lib/customer-account-presentation";
 import { ProfileAvatarManager } from "./profile-avatar-manager";
 import { UserAvatar } from "./user-avatar";
+import {
+  customerAccountHref,
+  customerAccountNavigation,
+  isCustomerAccountSection
+} from "../lib/customer-account-navigation";
+import {
+  AccountMobileHome,
+  AccountMobileSubpageHeader
+} from "./account-mobile-home";
 
 type Props = {
   snapshot: CustomerAccountSnapshot;
@@ -57,21 +65,6 @@ type Props = {
   startNewSupport: boolean;
   signupComplete: boolean;
 };
-
-const nav = [
-  ["Visão geral", "visao-geral", ShoppingBag],
-  ["Perfil", "perfil", CircleUserRound],
-  ["Pedidos", "pedidos", PackageCheck],
-  ["Favoritos", "favoritos", Heart],
-  ["Avaliações", "avaliacoes", Star],
-  ["Cupons", "cupons", Tag],
-  ["Endereços", "enderecos", MapPin],
-  ["Segurança", "seguranca", ShieldCheck],
-  ["Trocas", "trocas", RotateCcw],
-  ["Representante", "representante", UserRoundCheck],
-  ["Notificações", "notificacoes", Bell],
-  ["Atendimento", "atendimento", ClipboardCheck]
-] as const;
 
 const formatDate = (value: string) =>
   value
@@ -93,11 +86,16 @@ export function CustomerAccount({
   startNewSupport,
   signupComplete
 }: Props) {
-  const activeSection = nav.some(([, slug]) => slug === section) ? section : "visao-geral";
+  const activeSection = isCustomerAccountSection(section) ? section : "visao-geral";
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const localFavorites = useFavorites();
+  const favoriteCount =
+    snapshot.demo && localFavorites.hydrated
+      ? localFavorites.products.length
+      : snapshot.favorites.length;
 
   const runAction = async (
     body: Record<string, unknown>,
@@ -149,8 +147,12 @@ export function CustomerAccount({
   };
 
   return (
-    <main className="container page-shell customer-account-page">
-      <header className="customer-account-header">
+    <main
+      className={`container page-shell customer-account-page account-experience-page ${
+        activeSection === "visao-geral" ? "is-overview" : "is-subpage"
+      }`}
+    >
+      <header className="customer-account-header customer-account-desktop-header">
         <div className="customer-profile-heading">
           <UserAvatar
             name={snapshot.profile.fullName}
@@ -185,12 +187,18 @@ export function CustomerAccount({
         </p>
       )}
 
+      {activeSection === "visao-geral" ? (
+        <AccountMobileHome snapshot={snapshot} favoriteCount={favoriteCount} />
+      ) : (
+        <AccountMobileSubpageHeader section={activeSection} />
+      )}
+
       <div className="customer-account-layout">
         <nav className="customer-account-nav" aria-label="Menu da área do cliente">
-          {nav.map(([label, slug, Icon]) => (
+          {customerAccountNavigation.map(({ label, slug, Icon }) => (
             <Link
               key={slug}
-              href={slug === "visao-geral" ? "/minha-conta" : `/minha-conta/${slug}`}
+              href={customerAccountHref(slug)}
               aria-current={activeSection === slug ? "page" : undefined}
             >
               <Icon aria-hidden="true" />
@@ -201,7 +209,9 @@ export function CustomerAccount({
         </nav>
 
         <section className="customer-account-content" aria-live="polite">
-          {activeSection === "visao-geral" && <Overview snapshot={snapshot} />}
+          {activeSection === "visao-geral" && (
+            <Overview snapshot={snapshot} favoriteCount={favoriteCount} />
+          )}
           {activeSection === "perfil" && (
             <Profile
               snapshot={snapshot}
@@ -303,8 +313,13 @@ function SectionTitle({
   );
 }
 
-function Overview({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
-  const localFavorites = useFavorites();
+function Overview({
+  snapshot,
+  favoriteCount
+}: {
+  snapshot: CustomerAccountSnapshot;
+  favoriteCount: number;
+}) {
   const inProgress = snapshot.orders.filter((order) =>
     [
       "pending_payment",
@@ -320,7 +335,7 @@ function Overview({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
   const cards = [
     ["Pedidos em andamento", inProgress, "pedidos", Truck],
     ["Pedidos entregues", delivered, "pedidos", PackageCheck],
-    ["Favoritos", snapshot.demo && localFavorites.hydrated ? localFavorites.products.length : snapshot.favorites.length, "favoritos", Heart],
+    ["Favoritos", favoriteCount, "favoritos", Heart],
     ["Avaliações pendentes", snapshot.pendingReviews.length, "avaliacoes", Star],
     ["Trocas abertas", snapshot.returns.filter((item) => !["completed", "refunded", "exchange_sent", "rejected", "cancelled"].includes(item.status)).length, "trocas", RotateCcw],
     ["Notificações novas", unread, "notificacoes", Bell]

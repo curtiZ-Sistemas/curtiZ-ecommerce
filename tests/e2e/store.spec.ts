@@ -456,7 +456,8 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("entrega a área customer sem dados fictícios e sem overflow mobile", async ({ page }) => {
+test("entrega a Central da Conta mobile responsiva sem dados fictícios", async ({ page }) => {
+  test.setTimeout(180_000);
   await page.goto("/minha-conta");
   await expect(page.getByRole("heading", { name: "Entre na sua conta curti Z" })).toBeVisible();
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
@@ -465,16 +466,79 @@ test("entrega a área customer sem dados fictícios e sem overflow mobile", asyn
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
-  await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();
   await expect(page.getByText("#CZT-DEMO01")).toHaveCount(0);
-  await page.getByRole("link", { name: "Perfil", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Dados pessoais" })).toBeVisible();
-  await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
 
-  const hasPageOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
-  );
-  expect(hasPageOverflow).toBe(false);
+  for (const width of [320, 360, 375, 390, 412, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator(".account-mobile-home")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Olá, Cliente" })).toBeVisible();
+    await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
+    await expect(page.locator(".customer-account-nav")).toBeHidden();
+    await expect(
+      page.locator(".account-mobile-menu-copy strong", {
+        hasText: "Seja um representante"
+      })
+    ).toHaveText("Seja um representante");
+    await expect(
+      page
+        .locator(".account-mobile-menu")
+        .getByText("Conheça o programa de representantes", { exact: true })
+    ).toBeVisible();
+    await expect(page.locator(".help-widget")).toBeHidden();
+    await expect(page.locator(".site-header")).toBeVisible();
+    await expect(page.locator(".cart-link")).toBeVisible();
+
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    expect(pageOverflow).toBeLessThanOrEqual(1);
+  }
+
+  await page.getByRole("link", { name: /Meu perfil/ }).click();
+  await expect(page).toHaveURL(/\/minha-conta\/perfil$/);
+  await expect(page.locator(".account-mobile-subpage-header")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Perfil", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await expect(page).toHaveURL(/\/minha-conta$/);
+
+  for (const width of [768, 1366]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.locator(".account-mobile-home")).toBeHidden();
+    await expect(page.locator(".customer-account-desktop-header")).toBeVisible();
+    await expect(page.locator(".customer-account-nav")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();
+  }
+
+  await page.goto("/perfil");
+  await expect(page.locator(".help-widget")).toBeHidden();
+  await page.goto("/favoritos");
+  await expect(page.locator(".help-widget")).toBeHidden();
+  await page.goto("/");
+  await expect(page.locator(".help-widget")).toBeVisible();
+});
+
+test("oferece o Painel do representante sem remover a conta de cliente", async ({ page }) => {
+  test.setTimeout(90_000);
+  const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/minha-conta", { waitUntil: "domcontentloaded" });
+  const representativeAccess = page.locator(".account-mobile-menu-copy strong", {
+    hasText: "Painel do representante"
+  });
+  await expect(representativeAccess).toHaveText("Painel do representante");
+  await expect(page.getByText("Painel da representante", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Portal do representante", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".help-widget")).toBeHidden();
+  await page.getByRole("link", { name: "Painel do representante", exact: true }).click();
+  await expect(page).toHaveURL(/\/representante$/, { timeout: 30_000 });
+  await expect(page.locator(".representative-portal-layout")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: /Voltar à área de cliente/i })).toBeAttached();
+  await expect(page.locator(".help-widget")).toBeHidden();
 });
 
 test("portal da representante mantém a identidade visual da área do cliente", async ({ page }) => {
