@@ -14,6 +14,7 @@ import React, {
   useState
 } from "react";
 import type { CatalogResult, FacetOption } from "@/lib/catalog-query";
+import { trackIntelligence } from "../lib/intelligence-client";
 
 const recentSearchesKey = "curtiz-recent-searches";
 
@@ -83,6 +84,8 @@ export function SearchAutocomplete({
           if (requestSequence.current !== sequence) return;
           setProducts(result.products.slice(0, 5));
           setCategories(result.facets.categories.slice(0, 3));
+          trackIntelligence({ type: "search", query: normalized, resultCount: result.total });
+          if (result.total === 0) trackIntelligence({ type: "search_no_results", query: normalized, resultCount: 0 });
         })
         .catch(() => {
           if (!controller.signal.aborted && requestSequence.current === sequence) {
@@ -137,6 +140,8 @@ export function SearchAutocomplete({
   };
 
   const navigate = (option: SearchOption) => {
+    const normalizedQuery = query.trim();
+    if (option.type === "product" && normalizedQuery.length >= 2) trackIntelligence({ type: "search_result_click", query: normalizedQuery, productId: option.product.id });
     if (option.type !== "category") saveRecent(option.label);
     setFocused(false);
     onNavigate?.();

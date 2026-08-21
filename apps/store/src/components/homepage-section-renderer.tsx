@@ -7,6 +7,7 @@ import { HomepageCountdown, HomepageMetric } from "./homepage-section-runtime";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
 import { TestimonialCarousel, type TestimonialCardData } from "./testimonial-carousel";
+import { IntelligenceShelf, type IntelligenceSource } from "./intelligence-shelf";
 import type { HomepageData, PublicBanner } from "@/lib/storefront-data";
 
 const categoryRoutes = new Map([["Masculino", "/masculino"], ["Feminino", "/feminino"], ["Infantil", "/infantil"], ["Slides", "/slides"], ["Sandálias", "/sandalias"]]);
@@ -80,6 +81,12 @@ export function HomepageSectionRenderer({ data, section, priority }: { data: Hom
     const categories = [...categoryRoutes.entries()].map(([name, href]) => ({ name, href, product: data.products.find((product) => product.category === name) })).filter((category) => category.product);
     if (!categories.length) return null;
     return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Encontre seu estilo"} title={section.title ?? "Para todos os momentos"} /><CategoryCarousel categories={categories.map(({ name, href, product }) => ({ name, href, image: product!.image }))} /></section></HomepageMetric>;
+  }
+  if (section.sectionType === "recommended_products") {
+    const allowed: IntelligenceSource[] = ["personalized","trending","most_wanted","most_viewed","discovery","newest","price_range","recently_viewed","because_you_viewed"];
+    const configured = settingString(section, "source", "personalized") as IntelligenceSource;
+    const source = allowed.includes(configured) ? configured : "personalized";
+    return <HomepageMetric versionId={section.versionId}><div className={sectionClass(section)}><IntelligenceShelf source={source} title={section.title} subtitle={section.subtitle} limit={Math.min(24,Math.max(1,settingNumber(section,"limit",8)))} category={settingString(section,"category")||undefined} infinite={source==="discovery"}/></div></HomepageMetric>;
   }
   if (productTypes.has(section.sectionType)) {
     const products = section.sectionType === "best_sellers"

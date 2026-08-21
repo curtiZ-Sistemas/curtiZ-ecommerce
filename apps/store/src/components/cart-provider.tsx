@@ -3,6 +3,7 @@
 import type { CartLine, Product } from "@curtiz/domain";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicAuthSession } from "@/lib/auth-session-client";
+import { trackIntelligence } from "../lib/intelligence-client";
 
 type CartContextValue = {
   lines: CartLine[];
@@ -181,6 +182,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const variantId = options?.variantId ?? `${product.id}:${color}:${size}`;
         const stock = Math.max(0, options?.stock ?? product.stock);
         if (stock < 1) return;
+        trackIntelligence({ type: "cart_add", productId: product.id, variantId });
         setLines((current) => {
           const found = current.find((line) => line.variantId === variantId);
           if (found) {
@@ -209,6 +211,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         });
       },
       remove(variantId) {
+        const line = lines.find((item) => item.variantId === variantId);
+        if (line) trackIntelligence({ type: "cart_remove", productId: line.productId, variantId });
         setLines((current) => current.filter((line) => line.variantId !== variantId));
       },
       changeQuantity(variantId, quantity) {

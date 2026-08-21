@@ -20,6 +20,7 @@ import { TechnicalOverview } from "@/components/technical-overview";
 import { TechnicalResourceManager } from "@/components/technical-resource-manager";
 import { LegalCenter, OperationalLegalLinks } from "@/components/legal-center";
 import { HelpContentCenter } from "@/components/help-content-center";
+import { StoreIntelligence } from "@/components/store-intelligence";
 import { requirePanelAccess } from "@/lib/auth";
 import { isAdminResource } from "@/lib/admin-resources";
 import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
@@ -94,7 +95,7 @@ function showRouteHeading(role: PanelRole, section: string) {
   if (role === "operacional") return section !== "construtor-home";
   if (role === "gerencia") {
     const alias = section === "vendas" ? "pedidos-vendas" : section === "comissoes-representantes" ? "comissoes" : section;
-    const ownsHeading = section === "conteudo-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
+    const ownsHeading = section === "conteudo-loja" || section === "inteligencia-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
     return !ownsHeading;
   }
   return !isTechnicalResource(section);
@@ -131,6 +132,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
   if (!section || section === "visao-estrategica" || section === "alertas")
     return <ManagerDashboard />;
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
+  if (section === "inteligencia-loja") return <StoreIntelligence />;
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;
   if (section === "solicitacoes-representantes" || section === "criativos") {

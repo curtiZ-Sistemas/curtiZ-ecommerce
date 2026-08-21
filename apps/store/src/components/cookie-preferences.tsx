@@ -192,6 +192,7 @@ export function CookiePreferences() {
           recordedAt: new Date().toISOString()
         })
       );
+      window.dispatchEvent(new Event("curtiz-consent-changed"));
       setChoices({ ...next, essential: true });
       setOpen(false);
       setCustomizing(false);

@@ -3,6 +3,7 @@
 import type { Product } from "@curtiz/domain";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { demoProducts } from "@/lib/catalog";
+import { trackIntelligence } from "../lib/intelligence-client";
 
 type FavoritesContextValue = {
   ids: string[];
@@ -92,6 +93,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
         setProducts((current) => {
           const removing = current.some((item) => item.id === product.id);
           syncFavorite(removing ? "favorite_remove" : "favorite_save", product.id);
+          trackIntelligence({ type: removing ? "favorite_remove" : "favorite_add", productId: product.id });
           return removing
             ? current.filter((item) => item.id !== product.id)
             : [...current, product].slice(-50);
@@ -99,6 +101,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
       },
       remove(productId) {
         syncFavorite("favorite_remove", productId);
+        trackIntelligence({ type: "favorite_remove", productId });
         setProducts((current) => current.filter((item) => item.id !== productId));
       }
     }),

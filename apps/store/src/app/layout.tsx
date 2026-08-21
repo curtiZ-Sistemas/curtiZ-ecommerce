@@ -8,6 +8,7 @@ import { RouteFeedback } from "@/components/route-feedback";
 import { CookiePreferences } from "@/components/cookie-preferences";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
@@ -48,6 +49,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               Ir para o conteúdo principal
             </a>
             <RouteFeedback />
+            <IntelligenceBootstrap />
             <SiteHeader />
             <main id="main-content">{children}</main>
             <SiteFooter />

@@ -19,6 +19,7 @@ import {
   PHONE_FORMATTED_MAX_LENGTH,
   sanitizeCpf
 } from "@/lib/personal-data";
+import { trackIntelligence } from "../../lib/intelligence-client";
 
 const states = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
@@ -98,9 +99,16 @@ export default function CheckoutPage() {
   const paymentDialogRef = useRef<HTMLElement>(null);
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const formRef = useRef<HTMLFormElement>(null);
+  const trackedCheckoutRef = useRef(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<PersonalField, string>>>({});
   const subtotal = calculateSubtotal(lines);
+
+  useEffect(() => {
+    if (!hydrated || lines.length === 0 || trackedCheckoutRef.current) return;
+    trackedCheckoutRef.current = true;
+    trackIntelligence({ type: "checkout_start" });
+  }, [hydrated, lines.length]);
 
   const setFieldIfEmpty = useCallback((name: string, value: string) => {
     const field = formRef.current?.elements.namedItem(name);

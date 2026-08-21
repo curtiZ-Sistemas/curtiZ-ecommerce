@@ -47,6 +47,16 @@
   --line-soft: var(--neutral-150);
 }
 
+.intelligence-shelf { content-visibility: auto; contain-intrinsic-size: 720px; }
+.intelligence-skeleton { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.intelligence-skeleton i { display:block; aspect-ratio:4/5; border-radius:var(--radius-sm); background:linear-gradient(90deg,var(--neutral-100),var(--white),var(--neutral-100)); background-size:200% 100%; animation:intelligence-loading 1.3s linear infinite; }
+.intelligence-sentinel,.intelligence-empty { min-height:96px; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:10px; text-align:center; color:var(--neutral-700); }
+.intelligence-empty { min-height:220px; flex-direction:column; }
+.intelligence-empty svg { color:var(--brand-700); }
+@keyframes intelligence-loading { to { background-position:-200% 0; } }
+@media (max-width:700px) { .intelligence-skeleton { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (prefers-reduced-motion:reduce) { .intelligence-skeleton i { animation:none; } }
+
 /* Seções publicadas pelo construtor da página inicial */
 .home-builder-section {
   overflow: clip;

@@ -109,6 +109,10 @@ function editorForSectionType(editor: Editor, sectionType: string): Editor {
     subtitle: editor.subtitle || "Os favoritos dos nossos clientes", layout: "carousel",
     content: { ...editor.content, source: "automatic", limit: 8, salesPeriod: "90d", rankingMetric: "units", fillEmptySlots: true, excludeOutOfStock: true, desktopEnabled: true, mobileEnabled: true }
   };
+  if (sectionType === "recommended_products") return {
+    ...editor, sectionType, title: editor.title || "Escolhas para você", layout: "grid",
+    content: { ...editor.content, source: "personalized", limit: 8, desktopEnabled: true, mobileEnabled: true }
+  };
   return { ...editor, sectionType };
 }
 const targetImage = (path?: string): CSSProperties | undefined => path && process.env.NEXT_PUBLIC_SUPABASE_URL ? { backgroundImage: `url(${JSON.stringify(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/catalog-public/${path}`)})` } : undefined;
@@ -345,7 +349,7 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
           <label><span>Estrutura</span><select value={value.layout} onChange={(event) => update("layout", event.target.value)}>{layouts.map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
           <label><span>Visibilidade</span><select value={value.visibility} onChange={(event) => update("visibility", event.target.value)}><option value="all">Todos</option><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Celular</option></select></label>
           <div className="homepage-switch-grid"><label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "desktopEnabled", true)} onChange={(event) => content("desktopEnabled", event.target.checked)} /><span>Desktop/tablet</span></label><label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "mobileEnabled", value.sectionType !== "benefits")} onChange={(event) => content("mobileEnabled", event.target.checked)} /><span>Celular</span></label></div>
-          <label><span>Origem do conteúdo</span><select value={configString(value.content, "source", "automatic")} onChange={(event) => content("source", event.target.value)}><option value="automatic">Automática, com dados reais</option><option value="manual">Seleção manual</option></select></label>
+          <label><span>Origem do conteúdo</span><select value={configString(value.content, "source", value.sectionType === "recommended_products" ? "personalized" : "automatic")} onChange={(event) => content("source", event.target.value)}>{value.sectionType === "recommended_products" ? <><option value="personalized">Para você</option><option value="trending">Em alta</option><option value="most_wanted">Mais desejados</option><option value="most_viewed">Mais vistos</option><option value="discovery">Descoberta contínua</option><option value="newest">Novidades</option><option value="recently_viewed">Vistos recentemente</option><option value="because_you_viewed">Porque você viu</option><option value="price_range">Faixa de preço</option></> : <><option value="automatic">Automática, com dados reais</option><option value="manual">Seleção manual</option></>}</select></label>
           <label><span>Quantidade de itens</span><input type="number" min={1} max={value.sectionType === "benefits" ? 4 : value.sectionType === "reviews_carousel" ? 12 : 24} value={Number(value.content.limit ?? 8)} onChange={(event) => content("limit", Number(event.target.value))} /></label>
           <label><span>Colunas no desktop</span><select value={Number(value.content.columns ?? 4)} onChange={(event) => content("columns", Number(event.target.value))}>{[1,2,3,4].map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
           {value.sectionType === "reviews_carousel" && <>

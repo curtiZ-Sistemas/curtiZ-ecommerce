@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Tags,
   Users,
   Wrench,
@@ -109,6 +110,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Visão estratégica", "visao-estrategica", ChartNoAxesCombined],
     ["Financeiro", "financeiro", BadgeDollarSign],
     ["Pedidos e vendas", "pedidos-vendas", ShoppingBag],
+    ["Inteligência da loja", "inteligencia-loja", Sparkles],
     ["Clientes", "clientes", Users],
     ["Rede de representantes", "representantes", Users],
     ["Solicitações", "solicitacoes-representantes", ClipboardCheck],
@@ -221,7 +223,7 @@ export function PanelPageHeading({ role, section }: { role: PanelRole; section: 
 const menuGroups: Record<PanelRole, Record<number, string>> = {
   operacional: { 0: "Visão geral", 1: "Operação", 5: "Estoque", 9: "Pós-venda", 14: "Atendimento", 16: "Conteúdo", 18: "Gestão" },
   administracao: { 0: "Visão geral", 1: "Catálogo", 8: "Comercial", 10: "Conteúdo", 15: "Representantes", 23: "Governança" },
-  gerencia: { 0: "Visão geral", 2: "Resultados", 5: "Representantes", 12: "Financeiro", 16: "Conteúdo", 20: "Governança", 27: "Atendimento" },
+  gerencia: { 0: "Visão geral", 2: "Resultados", 6: "Representantes", 13: "Financeiro", 17: "Conteúdo", 21: "Governança", 28: "Atendimento" },
   tecnico: { 0: "Monitoramento", 2: "Diagnóstico", 5: "Segurança", 6: "Integrações", 8: "Processamento", 11: "Dados", 15: "Plataforma", 23: "Atendimento" }
 };
 

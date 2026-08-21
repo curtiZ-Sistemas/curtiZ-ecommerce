@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
+import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-client";
 
 export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
   const { product, variants, gallery } = detail;
@@ -30,6 +31,11 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
   const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
   const router = useRouter();
+
+  useEffect(() => {
+    rememberViewedProduct(product.id);
+    trackIntelligence({ type: "product_view", productId: product.id });
+  }, [product.id]);
 
   const colors = [...new Set(variants.map((variant) => variant.color))];
   const sizes = [
@@ -118,6 +124,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       variants.find((variant) => variant.color === nextColor && variant.stock > 0) ??
       variants.find((variant) => variant.color === nextColor);
     setColor(nextColor);
+    trackIntelligence({ type: "variant_select", productId: product.id, variantId: nextVariant?.id });
     if (nextVariant) {
       setSize(nextVariant.size);
       setSelectedImage(nextVariant.image ?? gallery[0]?.src ?? product.image);
@@ -129,6 +136,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       (variant) => variant.color === color && variant.size === nextSize
     );
     setSize(nextSize);
+    trackIntelligence({ type: "variant_select", productId: product.id, variantId: nextVariant?.id });
     if (nextVariant?.image) setSelectedImage(nextVariant.image);
   };
 
@@ -155,6 +163,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             className="product-gallery-trigger"
             type="button"
             onClick={() => setLightboxOpen(true)}
+            onPointerUp={() => trackIntelligence({ type: "image_interaction", productId: product.id })}
             aria-label={`Ampliar imagem de ${product.name}`}
           >
             <Image
@@ -353,6 +362,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             type="button"
             onClick={() => {
               if (addSelected()) router.push("/checkout?origem=comprar-agora");
+              trackIntelligence({ type: "checkout_start", productId: product.id, variantId: selectedVariant?.id });
             }}
             disabled={!selectedVariant || currentStock <= 0 || busy}
           >
