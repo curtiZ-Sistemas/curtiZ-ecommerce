@@ -2,6 +2,7 @@ export type PublicAuthSession = {
   authenticated: boolean;
   fullName?: string;
   roles?: string[];
+  persistent?: boolean;
 };
 
 let pendingSession: Promise<PublicAuthSession> | null = null;
@@ -22,7 +23,8 @@ export function fetchPublicAuthSession(): Promise<PublicAuthSession> {
         ...(typeof session.fullName === "string" ? { fullName: session.fullName } : {}),
         ...(Array.isArray(session.roles)
           ? { roles: session.roles.filter((role): role is string => typeof role === "string") }
-          : {})
+          : {}),
+        ...(typeof session.persistent === "boolean" ? { persistent: session.persistent } : {})
       };
     })
     .catch(() => ({ authenticated: false }))

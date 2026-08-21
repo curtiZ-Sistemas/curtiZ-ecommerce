@@ -18,6 +18,7 @@ import {
   PHONE_FORMATTED_MAX_LENGTH
 } from "@/lib/personal-data";
 import { TurnstileField } from "./turnstile-field";
+import { setClientAuthPersistence } from "@/lib/session-persistence-client";
 
 type AuthResult = {
   message: string;
@@ -51,6 +52,7 @@ export function AuthForm({
     try {
       const form = new FormData(event.currentTarget);
       const payload = Object.fromEntries(form);
+      const remember = mode === "login" && payload.remember === "on";
       if (typeof payload.email === "string") {
         payload.email = payload.email.trim().toLocaleLowerCase("pt-BR");
       }
@@ -63,7 +65,10 @@ export function AuthForm({
       });
       const result = (await response.json()) as AuthResult;
       setMessage(result.message);
-      if (response.ok && result.redirectTo) window.location.assign(result.redirectTo);
+      if (response.ok && result.redirectTo) {
+        if (mode === "login") setClientAuthPersistence(remember);
+        window.location.assign(result.redirectTo);
+      }
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
     } finally {

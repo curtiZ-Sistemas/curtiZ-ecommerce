@@ -10,10 +10,12 @@ export {
 } from "./demo-auth";
 export type { DemoAccount, DemoRole, DemoSession } from "./demo-auth";
 export {
-  cookieDomainMatchesHost,
-  normalizeCookieDomain,
-  sharedCookieOptions
-} from "./auth-cookie";
+  AUTH_PERSISTENCE_COOKIE,
+  applyAuthCookiePersistence,
+  readAuthPersistence
+} from "./auth-persistence";
+export type { AuthPersistence } from "./auth-persistence";
+export { cookieDomainMatchesHost, normalizeCookieDomain, sharedCookieOptions } from "./auth-cookie";
 export { buildNonceContentSecurityPolicy } from "./content-security-policy";
 export type { ContentSecurityPolicyOptions } from "./content-security-policy";
 export { postgresUuidSchema } from "./postgres-uuid";

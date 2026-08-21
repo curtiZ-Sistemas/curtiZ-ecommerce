@@ -1,13 +1,14 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
-import { Check, ChevronLeft, ChevronRight, Expand, Heart, ShoppingBag, Star, X } from "lucide-react";
+import { Check, Heart, ShoppingBag, Star } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
+import { ProductImageViewer } from "./product-image-viewer";
 import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-client";
 
 export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
@@ -25,9 +26,6 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const galleryTriggerRef = useRef<HTMLButtonElement>(null);
-  const lightboxRef = useRef<HTMLDivElement>(null);
-  const closeLightboxRef = useRef<HTMLButtonElement>(null);
-  const touchStartRef = useRef<number | null>(null);
   const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
   const router = useRouter();
@@ -55,8 +53,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
           : []),
         ...gallery
       ].filter(
-        (image, index, list) =>
-          list.findIndex((candidate) => candidate.src === image.src) === index
+        (image, index, list) => list.findIndex((candidate) => candidate.src === image.src) === index
       ),
     [gallery, product.name, selectedVariant?.id, selectedVariant?.image]
   );
@@ -78,43 +75,9 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
     },
     [images]
   );
-
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const previousPaddingRight = document.body.style.paddingRight;
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
-    closeLightboxRef.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxOpen(false);
-      if (event.key === "ArrowLeft" && images.length > 1) selectRelativeImage(-1);
-      if (event.key === "ArrowRight" && images.length > 1) selectRelativeImage(1);
-      if (event.key !== "Tab") return;
-      const focusable = lightboxRef.current?.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"
-      );
-      if (!focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      document.body.style.paddingRight = previousPaddingRight;
-      window.setTimeout(() => galleryTriggerRef.current?.focus(), 0);
-    };
-  }, [images.length, lightboxOpen, selectRelativeImage]);
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+  const selectPreviousImage = useCallback(() => selectRelativeImage(-1), [selectRelativeImage]);
+  const selectNextImage = useCallback(() => selectRelativeImage(1), [selectRelativeImage]);
 
   const chooseColor = (nextColor: string) => {
     const nextVariant =
@@ -124,7 +87,11 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       variants.find((variant) => variant.color === nextColor && variant.stock > 0) ??
       variants.find((variant) => variant.color === nextColor);
     setColor(nextColor);
-    trackIntelligence({ type: "variant_select", productId: product.id, variantId: nextVariant?.id });
+    trackIntelligence({
+      type: "variant_select",
+      productId: product.id,
+      variantId: nextVariant?.id
+    });
     if (nextVariant) {
       setSize(nextVariant.size);
       setSelectedImage(nextVariant.image ?? gallery[0]?.src ?? product.image);
@@ -136,7 +103,11 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       (variant) => variant.color === color && variant.size === nextSize
     );
     setSize(nextSize);
-    trackIntelligence({ type: "variant_select", productId: product.id, variantId: nextVariant?.id });
+    trackIntelligence({
+      type: "variant_select",
+      productId: product.id,
+      variantId: nextVariant?.id
+    });
     if (nextVariant?.image) setSelectedImage(nextVariant.image);
   };
 
@@ -163,8 +134,10 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             className="product-gallery-trigger"
             type="button"
             onClick={() => setLightboxOpen(true)}
-            onPointerUp={() => trackIntelligence({ type: "image_interaction", productId: product.id })}
-            aria-label={`Ampliar imagem de ${product.name}`}
+            onPointerUp={() =>
+              trackIntelligence({ type: "image_interaction", productId: product.id })
+            }
+            aria-label={`Abrir visualização de ${product.name}`}
           >
             <Image
               src={selectedImage}
@@ -175,9 +148,6 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
               loading="eager"
               priority
             />
-            <span className="product-gallery-zoom-hint" aria-hidden="true">
-              <Expand /> Ampliar
-            </span>
           </button>
         </div>
         {images.length > 1 && (
@@ -200,71 +170,16 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       </div>
 
       {lightboxOpen && (
-        <div
-          ref={lightboxRef}
-          className="product-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Visualização ampliada de ${product.name}`}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setLightboxOpen(false);
-          }}
-        >
-          <button
-            ref={closeLightboxRef}
-            className="product-lightbox-close"
-            type="button"
-            onClick={() => setLightboxOpen(false)}
-            aria-label="Fechar imagem ampliada"
-          >
-            <X />
-          </button>
-          {images.length > 1 && (
-            <button
-              className="product-lightbox-navigation previous"
-              type="button"
-              onClick={() => selectRelativeImage(-1)}
-              aria-label="Imagem anterior"
-            >
-              <ChevronLeft />
-            </button>
-          )}
-          <div
-            className="product-lightbox-image"
-            onTouchStart={(event) => {
-              touchStartRef.current = event.changedTouches[0]?.clientX ?? null;
-            }}
-            onTouchEnd={(event) => {
-              const start = touchStartRef.current;
-              const end = event.changedTouches[0]?.clientX;
-              touchStartRef.current = null;
-              if (start === null || end === undefined || Math.abs(end - start) < 48) return;
-              selectRelativeImage(end < start ? 1 : -1);
-            }}
-          >
-            <Image
-              src={selectedImage}
-              alt={`${product.name}, imagem ${activeImageIndex + 1} de ${images.length}`}
-              fill
-              sizes="90vw"
-            />
-          </div>
-          {images.length > 1 && (
-            <button
-              className="product-lightbox-navigation next"
-              type="button"
-              onClick={() => selectRelativeImage(1)}
-              aria-label="Próxima imagem"
-            >
-              <ChevronRight />
-            </button>
-          )}
-          {images.length > 1 && (
-            <span className="product-lightbox-counter" aria-live="polite">
-              {activeImageIndex + 1} / {images.length}
-            </span>
-          )}
-        </div>
+        <ProductImageViewer
+          src={selectedImage}
+          alt={product.name}
+          imageIndex={activeImageIndex}
+          imageCount={images.length}
+          onClose={closeLightbox}
+          onPrevious={selectPreviousImage}
+          onNext={selectNextImage}
+          returnFocusRef={galleryTriggerRef}
+        />
       )}
 
       <div className="product-summary">
@@ -362,7 +277,11 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             type="button"
             onClick={() => {
               if (addSelected()) router.push("/checkout?origem=comprar-agora");
-              trackIntelligence({ type: "checkout_start", productId: product.id, variantId: selectedVariant?.id });
+              trackIntelligence({
+                type: "checkout_start",
+                productId: product.id,
+                variantId: selectedVariant?.id
+              });
             }}
             disabled={!selectedVariant || currentStock <= 0 || busy}
           >

@@ -1,4 +1,9 @@
 import { sharedCookieOptions } from "@curtiz/security/auth-cookie";
+import {
+  AUTH_PERSISTENCE_COOKIE,
+  applyAuthCookiePersistence,
+  readAuthPersistence
+} from "@curtiz/security/auth-persistence";
 import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
@@ -428,7 +433,17 @@ export async function middleware(request: NextRequest) {
         response = createNextResponse();
 
         for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, sharedCookieOptions(options, request.nextUrl.hostname));
+          response.cookies.set(
+            name,
+            value,
+            sharedCookieOptions(
+              applyAuthCookiePersistence(
+                options,
+                readAuthPersistence(request.cookies.get(AUTH_PERSISTENCE_COOKIE)?.value)
+              ),
+              request.nextUrl.hostname
+            )
+          );
         }
       }
     }

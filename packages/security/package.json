@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./auth-persistence": "./src/auth-persistence.ts",
     "./auth-cookie": "./src/auth-cookie.ts",
     "./content-security-policy": "./src/content-security-policy.ts"
   },

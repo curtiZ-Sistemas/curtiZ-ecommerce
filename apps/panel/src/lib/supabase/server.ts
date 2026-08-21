@@ -1,6 +1,11 @@
 import "server-only";
 
-import { sharedCookieOptions } from "@curtiz/security";
+import {
+  AUTH_PERSISTENCE_COOKIE,
+  applyAuthCookiePersistence,
+  readAuthPersistence,
+  sharedCookieOptions
+} from "@curtiz/security";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
@@ -13,13 +18,18 @@ export async function createServerSupabaseClient() {
   const cookieStore = await cookies();
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const persistence = readAuthPersistence(cookieStore.get(AUTH_PERSISTENCE_COOKIE)?.value);
   return createServerClient(url, key, {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll(items: Array<{ name: string; value: string; options: CookieOptions }>) {
         for (const { name, value, options } of items) {
           try {
-            cookieStore.set({ name, value, ...sharedCookieOptions(options, host) });
+            cookieStore.set({
+              name,
+              value,
+              ...sharedCookieOptions(applyAuthCookiePersistence(options, persistence), host)
+            });
           } catch {
             // O proxy persiste cookies quando o render é somente leitura.
           }

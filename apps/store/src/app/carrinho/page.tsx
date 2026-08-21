@@ -243,7 +243,7 @@ export default function CartPage() {
                               () => changeQuantity(line.variantId, line.quantity - 1)
                             )
                           }
-                          disabled={isPending || line.quantity <= 1}
+                          disabled={pendingId !== null || line.quantity <= 1}
                           aria-label={`Diminuir quantidade de ${line.name}`}
                         >
                           <Minus />
@@ -260,7 +260,7 @@ export default function CartPage() {
                               () => changeQuantity(line.variantId, line.quantity + 1)
                             )
                           }
-                          disabled={isPending || line.quantity >= (line.maxQuantity ?? 10)}
+                          disabled={pendingId !== null || line.quantity >= (line.maxQuantity ?? 10)}
                           aria-label={`Aumentar quantidade de ${line.name}`}
                         >
                           <Plus />
@@ -284,7 +284,7 @@ export default function CartPage() {
                             }
                           )
                         }
-                        disabled={isPending}
+                        disabled={pendingId !== null}
                       >
                         <Trash2 /> Remover
                       </button>

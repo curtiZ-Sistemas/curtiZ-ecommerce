@@ -326,6 +326,66 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
   );
 });
 
+test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
+  await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Carrinho com 1 itens/i })).toBeVisible();
+  await page.goto("/login", { waitUntil: "networkidle" });
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
+  await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 20_000 });
+
+  const sessionCookies = await context.cookies();
+  expect(sessionCookies.find((cookie) => cookie.name === "curtiz-demo-session")?.expires).toBe(-1);
+  expect(sessionCookies.find((cookie) => cookie.name === "curtiz-auth-persistence")?.expires).toBe(
+    -1
+  );
+  const cartStorage = await page.evaluate(() => ({
+    persistent: localStorage.getItem("curtiz-cart"),
+    session: JSON.parse(sessionStorage.getItem("curtiz-session-cart") ?? "[]") as Array<{
+      productId?: string;
+    }>
+  }));
+  expect(cartStorage.persistent).toBeNull();
+  expect(cartStorage.session.map((line) => line.productId)).toEqual(["wave-preto"]);
+
+  await page.getByRole("button", { name: "Sair da conta" }).first().click();
+  await expect(page).toHaveURL(/\/login$/u, { timeout: 20_000 });
+  const logoutState = await page.evaluate(() => ({
+    persistent: JSON.parse(localStorage.getItem("curtiz-cart") ?? "[]") as unknown[],
+    session: sessionStorage.getItem("curtiz-session-cart")
+  }));
+  expect(logoutState).toEqual({ persistent: [], session: null });
+  expect((await context.cookies()).some((cookie) => cookie.name === "curtiz-demo-session")).toBe(
+    false
+  );
+
+  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
+  await page.locator('input[name="password"]:visible').fill("1234567890");
+  await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
+  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 20_000 });
+  const persistentCookies = await context.cookies();
+  const nowInSeconds = Date.now() / 1_000;
+  expect(
+    persistentCookies.find((cookie) => cookie.name === "curtiz-demo-session")?.expires ?? -1
+  ).toBeGreaterThan(nowInSeconds);
+  expect(
+    persistentCookies.find((cookie) => cookie.name === "curtiz-auth-persistence")?.expires ?? -1
+  ).toBeGreaterThan(nowInSeconds);
+});
+
 test("login encontra o footer sem faixa estrutural vazia", async ({ page }) => {
   for (const viewport of [
     { width: 1920, height: 1080 },
@@ -619,6 +679,7 @@ test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho"
     );
   });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
   const addToCart = page.getByRole("button", { name: /Adicionar ao carrinho/i });
   const cartWithItem = page.getByRole("link", { name: /Carrinho com 1 itens/i });
   await expect(async () => {
@@ -630,13 +691,21 @@ test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho"
 
   const recommendations = page.locator(".cart-recommendation-grid .product-card");
   await expect(page.getByRole("heading", { name: "Você também pode gostar" })).toBeVisible();
-  await expect.poll(() => recommendations.count()).toBeGreaterThan(0);
+  await expect.poll(() => recommendations.locator("h3 a").count()).toBeGreaterThan(0);
   await expect(recommendations.locator('a[href="/produto/flip-flop-wave-preto"]')).toHaveCount(0);
   const recommendedLink = recommendations.first().locator("h3 a");
   const recommendedHref = await recommendedLink.getAttribute("href");
   expect(recommendedHref).toMatch(/^\/produto\//u);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page
+      .locator(".cart-recommendation-grid")
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)
+  ).toBe(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
   const mobileSummary = page.locator(".cart-mobile-summary");
   await expect(mobileSummary).toBeVisible();
   await expect(page.locator(".cart-summary")).toBeHidden();
@@ -658,20 +727,48 @@ test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho"
 test("galeria do produto abre lightbox acessível e restaura o foco", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
   const trigger = page.getByRole("button", {
-    name: "Ampliar imagem de curti Z Flip-Flop Wave Preto"
+    name: "Abrir visualização de curti Z Flip-Flop Wave Preto"
   });
-  await expect(trigger).toBeVisible();
+  await expect(trigger).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Ampliar", { exact: true })).toHaveCount(0);
   await expect(trigger.locator("img")).toHaveCSS("object-fit", "cover");
+  const selectedSource = await trigger.locator("img").getAttribute("src");
 
   await trigger.click();
   const dialog = page.getByRole("dialog", {
     name: "Visualização ampliada de curti Z Flip-Flop Wave Preto"
   });
   await expect(dialog).toBeVisible();
-  const close = dialog.getByRole("button", { name: "Fechar imagem ampliada" });
+  const close = dialog.getByRole("button", { name: "Fechar visualização ampliada" });
   await expect(close).toBeFocused();
   await expect(dialog.locator(".product-lightbox-image img")).toHaveCSS("object-fit", "contain");
+  expect(await dialog.locator(".product-lightbox-image img").getAttribute("src")).toBe(
+    selectedSource
+  );
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+
+  const viewport = dialog.locator(".product-lightbox-image");
+  await viewport.hover();
+  await page.mouse.wheel(0, -600);
+  await expect
+    .poll(() =>
+      dialog.locator(".product-lightbox-transform").evaluate((element) => {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+        return matrix.a;
+      })
+    )
+    .toBeGreaterThan(1);
+  await dialog.getByRole("button", { name: "Redefinir zoom" }).click();
+  await expect
+    .poll(() =>
+      dialog.locator(".product-lightbox-transform").evaluate((element) => {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+        return matrix.a;
+      })
+    )
+    .toBe(1);
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -681,6 +778,30 @@ test("galeria do produto abre lightbox acessível e restaura o foco", async ({ p
   await close.click();
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
+});
+
+test("vitrines mobile mantêm duas colunas sem overflow", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".homepage-hero:visible").first()).toBeVisible({ timeout: 30_000 });
+  const shelves = page.locator(".home-product-row, .product-grid");
+  await expect.poll(() => shelves.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+
+  for (const width of [320, 360, 375, 390, 412, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    const columns = await shelves.evaluateAll((elements) =>
+      elements
+        .filter((element) => element.getBoundingClientRect().width > 0)
+        .map((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)
+    );
+    expect(columns.length).toBeGreaterThan(0);
+    expect(columns.every((count) => count === 2)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
+      )
+    ).toBe(true);
+  }
 });
 
 test("404 preserva status, recuperação e recomendações reais", async ({ page }) => {
@@ -698,8 +819,19 @@ test("404 preserva status, recuperação e recomendações reais", async ({ page
     "/produtos"
   );
   const recommendations = page.locator(".error-recommendation-grid .product-card");
-  await expect.poll(() => recommendations.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect
+    .poll(() => recommendations.locator("h3 a").count(), { timeout: 20_000 })
+    .toBeGreaterThan(0);
   await expect(recommendations.first().locator("h3 a")).toHaveAttribute("href", /^\/produto\//u);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page
+      .locator(".error-recommendation-grid")
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)
+  ).toBe(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
 
   await page.getByRole("link", { name: /Voltar ao início/i }).click();
   await expect(page).toHaveURL(/\/$/u, { timeout: 20_000 });

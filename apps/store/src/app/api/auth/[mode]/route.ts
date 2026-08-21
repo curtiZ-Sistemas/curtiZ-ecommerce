@@ -1,11 +1,13 @@
 import {
   DEMO_SESSION_COOKIE,
+  AUTH_PERSISTENCE_COOKIE,
   REFERRAL_ATTRIBUTION_COOKIE,
   authenticateDemoAccount,
   createDemoSession,
   demoDestination,
   isLocalDemoRequest,
   safeInternalPath,
+  readAuthPersistence,
   sharedCookieOptions,
   verifyReferralAttribution,
   verifyDemoSession
@@ -45,6 +47,21 @@ const resendSchema = z.object({
 const profileSchema = z.object({ status: z.string() }).nullable();
 const roleSchema = z.object({ role: z.string() }).nullable();
 
+function setPersistenceCookie(response: NextResponse, request: Request, persistent: boolean) {
+  response.cookies.set(AUTH_PERSISTENCE_COOKIE, persistent ? "persistent" : "session", {
+    ...sharedCookieOptions(
+      {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        secure: new URL(request.url).protocol === "https:",
+        path: "/",
+        ...(persistent ? { maxAge: 365 * 24 * 60 * 60 } : {})
+      },
+      new URL(request.url).hostname
+    )
+  });
+}
+
 type SupabaseAuthErrorDetails = {
   code: string;
   status: number;
@@ -79,10 +96,7 @@ function logSupabaseAuthError(error: SupabaseAuthErrorDetails) {
   });
 }
 
-async function authErrorResponse(
-  error: SupabaseAuthErrorDetails,
-  request: Request
-) {
+async function authErrorResponse(error: SupabaseAuthErrorDetails, request: Request) {
   const normalizedMessage = error.message.toLowerCase();
   const headers = corsHeaders(request);
 
@@ -142,7 +156,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (demoSession) {
     return NextResponse.json(
-      { authenticated: true, fullName: demoSession.fullName, roles: demoSession.roles },
+      {
+        authenticated: true,
+        fullName: demoSession.fullName,
+        roles: demoSession.roles,
+        persistent:
+          readAuthPersistence(request.cookies.get(AUTH_PERSISTENCE_COOKIE)?.value) === "persistent"
+      },
       { headers: { "cache-control": "no-store" } }
     );
   }
@@ -154,7 +174,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const metadataName: unknown = data.user.user_metadata.full_name;
       const fullName = typeof metadataName === "string" ? metadataName : "Cliente z";
       return NextResponse.json(
-        { authenticated: true, fullName },
+        {
+          authenticated: true,
+          fullName,
+          persistent:
+            readAuthPersistence(request.cookies.get(AUTH_PERSISTENCE_COOKIE)?.value) ===
+            "persistent"
+        },
         { headers: { "cache-control": "no-store" } }
       );
     }
@@ -166,21 +192,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 function panelBaseUrl(request: Request): string {
   const requestUrl = new URL(request.url);
 
-  if (
-    ["localhost", "127.0.0.1", "::1"].includes(
-      requestUrl.hostname
-    )
-  ) {
+  if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) {
     return `${requestUrl.protocol}//${requestUrl.hostname}:3001`;
   }
 
-  const configuredPanelUrl =
-    process.env.NEXT_PUBLIC_PANEL_URL?.trim();
+  const configuredPanelUrl = process.env.NEXT_PUBLIC_PANEL_URL?.trim();
 
   if (configuredPanelUrl) {
     try {
-      const configuredOrigin =
-        new URL(configuredPanelUrl).origin;
+      const configuredOrigin = new URL(configuredPanelUrl).origin;
 
       // Impede que uma configuração errada envie o painel
       // para o mesmo Worker da loja.
@@ -256,6 +276,7 @@ function demoLoginResponse(
       new URL(request.url).hostname
     )
   });
+  setPersistenceCookie(response, request, login.remember === "on");
   return response;
 }
 
@@ -345,6 +366,18 @@ export async function POST(
         new URL(request.url).hostname
       )
     });
+    response.cookies.set(AUTH_PERSISTENCE_COOKIE, "", {
+      ...sharedCookieOptions(
+        {
+          httpOnly: true,
+          sameSite: "lax" as const,
+          secure: new URL(request.url).protocol === "https:",
+          path: "/",
+          maxAge: 0
+        },
+        new URL(request.url).hostname
+      )
+    });
     return response;
   }
 
@@ -373,8 +406,10 @@ export async function POST(
     );
   }
 
-  const supabase = await createServerSupabaseClient();
   const authInput = parsed.data as z.infer<typeof loginSchema>;
+  const supabase = await createServerSupabaseClient({
+    persistence: mode === "login" && authInput.remember === "on" ? "persistent" : "session"
+  });
 
   const authRateLimitEnabled =
     process.env.APP_ENV === "production" ||
@@ -499,8 +534,11 @@ export async function POST(
       .from("published_legal_documents")
       .select("version_id")
       .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
-    const legalVersionIds = z.array(z.object({ version_id: z.string().uuid() }))
-      .safeParse(legalVersions.data).data?.map((item) => item.version_id) ?? [];
+    const legalVersionIds =
+      z
+        .array(z.object({ version_id: z.string().uuid() }))
+        .safeParse(legalVersions.data)
+        .data?.map((item) => item.version_id) ?? [];
     const [profileUpdate, consentInsert] = await Promise.all([
       supabase
         .from("profiles")
@@ -520,7 +558,12 @@ export async function POST(
           p_version_ids: legalVersionIds
         })
       : { error: null };
-    if (legalVersions.error || profileUpdate.error || consentInsert.error || legalAcceptance.error) {
+    if (
+      legalVersions.error ||
+      profileUpdate.error ||
+      consentInsert.error ||
+      legalAcceptance.error
+    ) {
       const details = readSupabaseAuthError(
         legalVersions.error ?? profileUpdate.error ?? consentInsert.error ?? legalAcceptance.error
       );
@@ -680,7 +723,10 @@ export async function POST(
   if (!destination) {
     await supabase.auth.signOut();
     return NextResponse.json(
-      { code: "identity_roles_unavailable", message: "Não foi possível determinar o destino desta conta." },
+      {
+        code: "identity_roles_unavailable",
+        message: "Não foi possível determinar o destino desta conta."
+      },
       { status: 503, headers: corsHeaders(request) }
     );
   }
@@ -708,6 +754,7 @@ export async function POST(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
     { headers: { "cache-control": "no-store" } }
   );
+  setPersistenceCookie(response, request, login.remember === "on");
   if (referralClaimed) {
     response.cookies.set(REFERRAL_ATTRIBUTION_COOKIE, "", {
       httpOnly: true,

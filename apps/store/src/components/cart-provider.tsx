@@ -4,6 +4,15 @@ import type { CartLine, Product } from "@curtiz/domain";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 import { trackIntelligence } from "../lib/intelligence-client";
+import {
+  PERSISTENT_CART_KEY,
+  PERSISTENT_CART_SYNC_KEY,
+  SESSION_CART_KEY,
+  SESSION_CART_SYNC_KEY,
+  readClientPersistence,
+  setClientAuthPersistence,
+  type ClientPersistence
+} from "@/lib/session-persistence-client";
 
 type CartContextValue = {
   lines: CartLine[];
@@ -28,7 +37,6 @@ type CartContextValue = {
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
-const cartStorageKey = "curtiz-cart";
 const legacyCartStorageKey = "curtiz-demo-cart";
 type AuthenticationState = "authenticated" | "unknown" | "visitor";
 
@@ -67,23 +75,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [syncMessage, setSyncMessage] = useState("");
   const [syncRetry, setSyncRetry] = useState(0);
   const [authentication, setAuthentication] = useState<AuthenticationState>("unknown");
+  const [persistence, setPersistence] = useState<ClientPersistence>(() =>
+    typeof window === "undefined" ? "persistent" : readClientPersistence()
+  );
   const lastSyncedSignatureRef = useRef("");
   const latestRequestedSignatureRef = useRef("");
   const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     try {
-      const stored =
-        localStorage.getItem(cartStorageKey) ?? localStorage.getItem(legacyCartStorageKey);
+      const activePersistence = readClientPersistence();
+      setPersistence(activePersistence);
+      const storage = activePersistence === "session" ? sessionStorage : localStorage;
+      const storageKey = activePersistence === "session" ? SESSION_CART_KEY : PERSISTENT_CART_KEY;
+      const stored = storage.getItem(storageKey) ?? localStorage.getItem(legacyCartStorageKey);
       const parsed: unknown = stored ? JSON.parse(stored) : [];
       const restored = Array.isArray(parsed) ? parsed.filter(isCartLine) : [];
       setLines(restored);
       if (localStorage.getItem(legacyCartStorageKey)) {
-        localStorage.setItem(cartStorageKey, JSON.stringify(restored));
+        storage.setItem(storageKey, JSON.stringify(restored));
         localStorage.removeItem(legacyCartStorageKey);
       }
     } catch {
-      localStorage.removeItem(cartStorageKey);
+      localStorage.removeItem(PERSISTENT_CART_KEY);
+      sessionStorage.removeItem(SESSION_CART_KEY);
       localStorage.removeItem(legacyCartStorageKey);
     } finally {
       setHydrated(true);
@@ -91,15 +106,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const updatePersistence = () => setPersistence(readClientPersistence());
+    const clearSessionState = () => {
+      setLines([]);
+      setAuthentication("visitor");
+      setPersistence(readClientPersistence());
+      lastSyncedSignatureRef.current = "[]";
+      latestRequestedSignatureRef.current = "session-cleared";
+      setSyncMessage("");
+    };
+    window.addEventListener("curtiz-auth-persistence-changed", updatePersistence);
+    window.addEventListener("curtiz-session-state-cleared", clearSessionState);
+    return () => {
+      window.removeEventListener("curtiz-auth-persistence-changed", updatePersistence);
+      window.removeEventListener("curtiz-session-state-cleared", clearSessionState);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(cartStorageKey, JSON.stringify(lines));
-  }, [hydrated, lines]);
+    const storage = persistence === "session" ? sessionStorage : localStorage;
+    const storageKey = persistence === "session" ? SESSION_CART_KEY : PERSISTENT_CART_KEY;
+    storage.setItem(storageKey, JSON.stringify(lines));
+  }, [hydrated, lines, persistence]);
 
   useEffect(() => {
     if (!hydrated) return;
     let active = true;
     void fetchPublicAuthSession().then((session) => {
-      if (active) setAuthentication(session.authenticated ? "authenticated" : "visitor");
+      if (!active) return;
+      setAuthentication(session.authenticated ? "authenticated" : "visitor");
+      if (session.authenticated) setClientAuthPersistence(session.persistent === true);
     });
     return () => {
       active = false;
@@ -116,7 +153,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       syncQueueRef.current = syncQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          const syncCartId = localStorage.getItem("curtiz-cart-sync-id") ?? undefined;
+          const syncStorage = persistence === "session" ? sessionStorage : localStorage;
+          const syncKey =
+            persistence === "session" ? SESSION_CART_SYNC_KEY : PERSISTENT_CART_SYNC_KEY;
+          const syncCartId = syncStorage.getItem(syncKey) ?? undefined;
           try {
             const response = await fetch("/api/cart/sync", {
               method: "POST",
@@ -152,7 +192,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               return category ? { ...line, category } : line;
             });
             const remoteSignature = cartSignature(safeItems);
-            localStorage.setItem("curtiz-cart-sync-id", result.cartId);
+            syncStorage.setItem(syncKey, result.cartId);
             if (latestRequestedSignatureRef.current !== signature) return;
             lastSyncedSignatureRef.current = remoteSignature;
             if (remoteSignature !== signature) setLines(safeItems);
@@ -166,7 +206,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [authentication, hydrated, lines, syncRetry]);
+  }, [authentication, hydrated, lines, persistence, syncRetry]);
 
   const value = useMemo<CartContextValue>(
     () => ({

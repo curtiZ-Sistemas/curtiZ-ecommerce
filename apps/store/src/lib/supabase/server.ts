@@ -2,10 +2,16 @@ import "server-only";
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { sharedCookieOptions } from "@curtiz/security";
+import {
+  AUTH_PERSISTENCE_COOKIE,
+  applyAuthCookiePersistence,
+  readAuthPersistence,
+  sharedCookieOptions,
+  type AuthPersistence
+} from "@curtiz/security";
 import { cookies, headers } from "next/headers";
 
-export async function createServerSupabaseClient() {
+export async function createServerSupabaseClient(options?: { persistence?: AuthPersistence }) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
@@ -14,18 +20,22 @@ export async function createServerSupabaseClient() {
   const cookieStore = await cookies();
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const persistence =
+    options?.persistence ?? readAuthPersistence(cookieStore.get(AUTH_PERSISTENCE_COOKIE)?.value);
 
   return createServerClient(url, publishableKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(
-        cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>
-      ) {
+      setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
         for (const { name, value, options } of cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...sharedCookieOptions(options, host) });
+            cookieStore.set({
+              name,
+              value,
+              ...sharedCookieOptions(applyAuthCookiePersistence(options, persistence), host)
+            });
           } catch {
             // Server Components não podem persistir refresh; o proxy o fará.
           }
