@@ -236,15 +236,19 @@ test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conte
     await page.setViewportSize({ width, height: width === 768 ? 1024 : 844 });
     await page.goto("/carrinho", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Você também pode gostar" })).toBeVisible();
-    await page.getByRole("button", { name: "Selecionar produtos para remover" }).click();
-    await expect(page.getByRole("checkbox")).toBeVisible();
+    const itemSelection = page.getByRole("checkbox", {
+      name: "Selecionar curti Z Flip-Flop Wave Preto"
+    });
+    await expect(itemSelection).toBeVisible();
+    const selectAll = page.getByRole("checkbox", { name: "Selecionar todos" }).first();
+    await selectAll.uncheck();
     await expect(page.getByRole("button", { name: "Remover selecionados" })).toBeDisabled();
+    await selectAll.check();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       )
     ).toBeLessThanOrEqual(1);
-    await page.getByRole("button", { name: "Cancelar" }).click();
     const mobileSummary = page.locator(".cart-mobile-summary");
     if (width <= 700) {
       await expect(mobileSummary).toBeVisible();

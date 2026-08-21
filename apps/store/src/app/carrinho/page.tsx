@@ -9,17 +9,28 @@ import { useCart } from "@/components/cart-provider";
 import { CartRecommendations } from "@/components/cart-recommendations";
 
 export default function CartPage() {
-  const { hydrated, lines, syncMessage, retrySync, changeQuantity, remove, clear } = useCart();
+  const {
+    hydrated,
+    lines,
+    selectedLines,
+    selectedVariantIds,
+    syncMessage,
+    retrySync,
+    changeQuantity,
+    remove,
+    removeMany,
+    setSelected,
+    setAllSelected,
+    clear
+  } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const releaseRef = useRef<number | null>(null);
-  const subtotal = calculateSubtotal(lines);
-  const itemCount = lines.reduce((total, line) => total + line.quantity, 0);
-  const selectedVariantIds = lines
-    .filter((line) => selectedIds.has(line.variantId))
-    .map((line) => line.variantId);
+  const selectedIdSet = new Set(selectedVariantIds);
+  const subtotal = calculateSubtotal(selectedLines);
+  const selectedCount = selectedLines.length;
+  const allSelected = lines.length > 0 && selectedCount === lines.length;
+  const someSelected = selectedCount > 0 && !allSelected;
 
   useEffect(
     () => () => {
@@ -36,38 +47,28 @@ export default function CartPage() {
     releaseRef.current = window.setTimeout(() => setPendingId(null), 280);
   };
 
-  const leaveSelectionMode = () => {
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelection = (variantId: string, selected: boolean) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (selected) next.add(variantId);
-      else next.delete(variantId);
-      return next;
-    });
-  };
-
   const removeSelected = () => {
-    if (pendingId || selectedVariantIds.length === 0) return;
+    if (pendingId || selectedCount === 0) return;
+    const confirmed = window.confirm(
+      selectedCount === 1
+        ? "Remover o produto selecionado do carrinho?"
+        : `Remover os ${selectedCount} produtos selecionados do carrinho?`
+    );
+    if (!confirmed) return;
     const ids = selectedVariantIds;
     setPendingId("bulk-selection");
-    ids.forEach(remove);
+    removeMany(ids);
     setFeedback(
       ids.length === 1
         ? "1 produto removido do carrinho."
         : `${ids.length} produtos removidos do carrinho.`
     );
-    leaveSelectionMode();
     releaseRef.current = window.setTimeout(() => setPendingId(null), 280);
   };
 
   const clearCart = () => {
     if (!window.confirm("Remover todos os itens da sacola?")) return;
     clear();
-    leaveSelectionMode();
     setFeedback("Sacola esvaziada.");
   };
 
@@ -84,53 +85,41 @@ export default function CartPage() {
           <Link className="cart-continue-link" href="/produtos">
             <ArrowLeft aria-hidden="true" /> Continuar comprando
           </Link>
-          {hydrated && lines.length > 0 && (
-            <button
-              className="cart-manage-button"
-              type="button"
-              onClick={() => {
-                if (selectionMode) return;
-                setSelectionMode(true);
-                setSelectedIds(new Set());
-                setFeedback("Selecione os produtos que deseja remover.");
-              }}
-              aria-label="Selecionar produtos para remover"
-              aria-pressed={selectionMode}
-              title="Selecionar produtos para remover"
-            >
-              <Trash2 aria-hidden="true" />
-            </button>
-          )}
         </div>
         <div className="cart-heading-title">
           <h1>Meu carrinho</h1>
-          <p>{itemCount === 1 ? "1 item selecionado" : `${itemCount} itens selecionados`}</p>
+          {hydrated && lines.length > 0 && (
+            <p>
+              {lines.length === 1
+                ? "1 produto no carrinho"
+                : `${lines.length} produtos no carrinho`}
+            </p>
+          )}
         </div>
       </header>
 
-      {selectionMode && lines.length > 0 && (
-        <div className="cart-selection-toolbar" role="group" aria-label="Ações de seleção">
-          <span>
-            {selectedVariantIds.length === 0
-              ? "Selecione os produtos"
-              : selectedVariantIds.length === 1
-                ? "1 produto selecionado"
-                : `${selectedVariantIds.length} produtos selecionados`}
+      {hydrated && lines.length > 0 && (
+        <div className="cart-selection-toolbar" role="group" aria-label="Seleção do carrinho">
+          <CartSelectAll
+            allSelected={allSelected}
+            someSelected={someSelected}
+            onChange={setAllSelected}
+          />
+          <span aria-live="polite">
+            {selectedCount} de {lines.length}{" "}
+            {lines.length === 1 ? "produto selecionado" : "produtos selecionados"}
           </span>
-          <div>
+          <div className="cart-selection-actions">
             <button
               className="cart-remove-selected"
               type="button"
               onClick={removeSelected}
-              disabled={selectedVariantIds.length === 0 || pendingId !== null}
+              disabled={selectedCount === 0 || pendingId !== null}
             >
               Remover selecionados
             </button>
             <button className="cart-clear-all" type="button" onClick={clearCart}>
-              Limpar tudo
-            </button>
-            <button className="cart-cancel-selection" type="button" onClick={leaveSelectionMode}>
-              Cancelar
+              Limpar carrinho
             </button>
           </div>
         </div>
@@ -164,43 +153,41 @@ export default function CartPage() {
       ) : (
         <div className="cart-layout">
           <div className="cart-main-column">
-            <section
-              className={selectionMode ? "cart-list is-selecting" : "cart-list"}
-              aria-label="Produtos no carrinho"
-            >
+            <section className="cart-list" aria-label="Produtos no carrinho">
               <div className="cart-list-header">
-                <span>Produto</span>
+                <span>Selecionar e produto</span>
                 <span>Quantidade</span>
                 <span>Subtotal</span>
               </div>
 
               {lines.map((line) => {
-                const selected = selectedIds.has(line.variantId);
+                const selected = selectedIdSet.has(line.variantId);
                 const isPending =
                   pendingId === line.variantId || (pendingId === "bulk-selection" && selected);
                 const itemClassName = [
                   "cart-item",
-                  selectionMode ? "is-selecting" : "",
                   selected ? "is-selected" : "",
                   isPending ? "is-updating" : ""
                 ]
                   .filter(Boolean)
                   .join(" ");
                 return (
-                  <article className={itemClassName} key={line.variantId}>
-                    {selectionMode && (
-                      <label className="cart-selection-control">
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={(event) =>
-                            toggleSelection(line.variantId, event.currentTarget.checked)
-                          }
-                          disabled={isPending}
-                        />
-                        <span className="sr-only">Selecionar {line.name}</span>
-                      </label>
-                    )}
+                  <article
+                    className={itemClassName}
+                    data-testid="cart-item"
+                    key={line.variantId}
+                  >
+                    <label className="cart-selection-control">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(event) =>
+                          setSelected(line.variantId, event.currentTarget.checked)
+                        }
+                        disabled={isPending}
+                      />
+                      <span className="sr-only">Selecionar {line.name}</span>
+                    </label>
                     <Link
                       className="cart-item-image"
                       href={line.slug ? `/produto/${line.slug}` : "/produtos"}
@@ -273,15 +260,7 @@ export default function CartPage() {
                           completeAction(
                             line.variantId,
                             `${line.name} removido do carrinho.`,
-                            () => {
-                              remove(line.variantId);
-                              setSelectedIds((current) => {
-                                const next = new Set(current);
-                                next.delete(line.variantId);
-                                return next;
-                              });
-                              if (lines.length === 1) setSelectionMode(false);
-                            }
+                            () => remove(line.variantId)
                           )
                         }
                         disabled={pendingId !== null}
@@ -305,10 +284,12 @@ export default function CartPage() {
           <aside className="summary-card cart-summary">
             <h2>Resumo do pedido</h2>
             <div className="summary-line">
-              <span>
-                Subtotal ({itemCount} {itemCount === 1 ? "item" : "itens"})
-              </span>
-              <strong>{formatBRL(subtotal)}</strong>
+              <span>Produtos selecionados</span>
+              <strong>{selectedCount}</strong>
+            </div>
+            <div className="summary-line">
+              <span>Subtotal</span>
+              <strong data-testid="selected-subtotal">{formatBRL(subtotal)}</strong>
             </div>
             <div className="summary-line">
               <span>Frete</span>
@@ -319,23 +300,74 @@ export default function CartPage() {
               <strong>{formatBRL(subtotal)}</strong>
             </div>
 
-            <Link className="primary-button full-button checkout-button" href="/checkout">
-              Continuar para o checkout
-            </Link>
+            {selectedCount > 0 ? (
+              <Link className="primary-button full-button checkout-button" href="/checkout">
+                Continuar para o checkout
+              </Link>
+            ) : (
+              <button className="primary-button full-button checkout-button" type="button" disabled>
+                Selecione um produto
+              </button>
+            )}
+            {selectedCount === 0 && (
+              <p className="cart-selection-hint">Selecione pelo menos um produto para continuar.</p>
+            )}
           </aside>
 
           <div className="cart-mobile-summary" aria-label="Resumo do carrinho">
-            <div>
+            <CartSelectAll
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onChange={setAllSelected}
+              compact
+            />
+            <div className="cart-mobile-total">
               <span>Total</span>
-              <strong>{formatBRL(subtotal)}</strong>
+              <strong data-testid="mobile-selected-total">{formatBRL(subtotal)}</strong>
             </div>
-            <Link className="primary-button" href="/checkout">
-              Comprar
-            </Link>
+            {selectedCount > 0 ? (
+              <Link className="primary-button" href="/checkout">
+                Comprar ({selectedCount})
+              </Link>
+            ) : (
+              <button className="primary-button" type="button" disabled>
+                Comprar (0)
+              </button>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function CartSelectAll({
+  allSelected,
+  someSelected,
+  onChange,
+  compact = false
+}: {
+  allSelected: boolean;
+  someSelected: boolean;
+  onChange: (selected: boolean) => void;
+  compact?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  return (
+    <label className={compact ? "cart-select-all is-compact" : "cart-select-all"}>
+      <input
+        ref={inputRef}
+        type="checkbox"
+        checked={allSelected}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+      />
+      <span>Selecionar todos</span>
+    </label>
   );
 }
 

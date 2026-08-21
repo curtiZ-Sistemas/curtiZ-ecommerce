@@ -12,6 +12,8 @@ test("home profissional respeita breakpoints sem overflow ou aviso de hidrata√ß√
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const benefits = page.locator(".home-benefits");
   await expect(benefits).toHaveCount(1);
+  await expect(page.getByText("Para todos os momentos", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Encontre seu estilo", { exact: true })).toHaveCount(0);
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: width <= 430 ? 844 : 900 });
@@ -23,6 +25,16 @@ test("home profissional respeita breakpoints sem overflow ou aviso de hidrata√ß√
     expect(layout.content, `Home excedeu ${width}px`).toBeLessThanOrEqual(layout.viewport);
     if (width <= 700) await expect(benefits).toBeHidden();
     else await expect(benefits).toBeVisible();
+    if (width === 390) {
+      await expect(page.locator(".site-footer .footer-group")).toHaveCount(3);
+      await expect(page.locator(".site-footer .footer-group[open]")).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Quem somos" })).toBeHidden();
+      await page.locator(".site-footer summary", { hasText: "Institucional" }).click();
+      await expect(page.getByRole("link", { name: "Quem somos" })).toBeVisible();
+    }
+    if (width === 1024) {
+      await expect(page.getByRole("link", { name: "Quem somos" })).toBeVisible();
+    }
   }
 
   expect(hydrationWarnings).toEqual([]);

@@ -80,7 +80,7 @@ export function HomepageSectionRenderer({ data, section, priority }: { data: Hom
   if (section.sectionType === "categories_grid" && section.items.length === 0) {
     const categories = [...categoryRoutes.entries()].map(([name, href]) => ({ name, href, product: data.products.find((product) => product.category === name) })).filter((category) => category.product);
     if (!categories.length) return null;
-    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Encontre seu estilo"} title={section.title ?? "Para todos os momentos"} /><CategoryCarousel categories={categories.map(({ name, href, product }) => ({ name, href, image: product!.image }))} /></section></HomepageMetric>;
+    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} home-categories-minimal container`} aria-label="Categorias de produtos"><CategoryCarousel categories={categories.map(({ name, href, product }) => ({ name, href, image: product!.image }))} /></section></HomepageMetric>;
   }
   if (section.sectionType === "recommended_products") {
     const allowed: IntelligenceSource[] = ["personalized","trending","most_wanted","most_viewed","discovery","newest","price_range","recently_viewed","because_you_viewed"];

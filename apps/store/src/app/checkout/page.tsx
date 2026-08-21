@@ -88,7 +88,7 @@ type SavedAddress = {
 };
 
 export default function CheckoutPage() {
-  const { hydrated, lines, clear } = useCart();
+  const { hydrated, lines, selectedLines, removeMany } = useCart();
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -102,13 +102,13 @@ export default function CheckoutPage() {
   const trackedCheckoutRef = useRef(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<PersonalField, string>>>({});
-  const subtotal = calculateSubtotal(lines);
+  const subtotal = calculateSubtotal(selectedLines);
 
   useEffect(() => {
-    if (!hydrated || lines.length === 0 || trackedCheckoutRef.current) return;
+    if (!hydrated || selectedLines.length === 0 || trackedCheckoutRef.current) return;
     trackedCheckoutRef.current = true;
     trackIntelligence({ type: "checkout_start" });
-  }, [hydrated, lines.length]);
+  }, [hydrated, selectedLines.length]);
 
   const setFieldIfEmpty = useCallback((name: string, value: string) => {
     const field = formRef.current?.elements.namedItem(name);
@@ -134,7 +134,7 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !lines.length) return;
+    if (!hydrated || !selectedLines.length) return;
     const controller = new AbortController();
     void fetch("/api/checkout/profile", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -156,7 +156,7 @@ export default function CheckoutPage() {
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [applyAddress, hydrated, lines.length, setFieldIfEmpty]);
+  }, [applyAddress, hydrated, selectedLines.length, setFieldIfEmpty]);
 
   useEffect(() => {
     if (!paymentUnavailable) return;
@@ -194,8 +194,8 @@ export default function CheckoutPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loading) return;
-    if (!lines.length) {
-      setMessage("Adicione um produto antes de finalizar.");
+    if (!selectedLines.length) {
+      setMessage("Selecione pelo menos um produto no carrinho antes de finalizar.");
       return;
     }
 
@@ -248,7 +248,7 @@ export default function CheckoutPage() {
             city: form.get("city"),
             state: form.get("state")
           },
-          lines: lines.map((line) => ({
+          lines: selectedLines.map((line) => ({
             productId: line.productId,
             variantId: line.variantId,
             color: line.color,
@@ -278,7 +278,7 @@ export default function CheckoutPage() {
         setMessage(result.message ?? "Não foi possível iniciar o pagamento.");
         return;
       }
-      clear();
+      removeMany(selectedLines.map((line) => line.variantId));
       router.push(`/pedido/pendente?pedido=${encodeURIComponent(result.orderCode)}`);
     } catch {
       setMessage("Não foi possível conectar ao checkout. Seus itens continuam no carrinho.");
@@ -306,6 +306,19 @@ export default function CheckoutPage() {
           <h1>Seu carrinho está vazio</h1>
           <p>Adicione um produto antes de iniciar o checkout.</p>
           <Link className="primary-button" href="/produtos">Ver produtos</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selectedLines.length) {
+    return (
+      <div className="container page-shell">
+        <div className="empty-state cart-empty-state">
+          <span className="empty-state-icon"><ShoppingBag /></span>
+          <h1>Nenhum produto selecionado</h1>
+          <p>Seus produtos continuam salvos. Selecione o que deseja comprar agora.</p>
+          <Link className="primary-button" href="/carrinho">Voltar ao carrinho</Link>
         </div>
       </div>
     );
@@ -468,7 +481,7 @@ export default function CheckoutPage() {
         <aside className="summary-card checkout-summary">
           <h2>Resumo do pedido</h2>
           <div className="checkout-products">
-            {lines.map((line) => (
+            {selectedLines.map((line) => (
               <div className="checkout-product" key={line.variantId}>
                 <span className="checkout-product-image">
                   <Image src={line.image} alt="" width={72} height={58} />

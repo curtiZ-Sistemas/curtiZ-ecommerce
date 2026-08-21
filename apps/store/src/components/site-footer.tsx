@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { BrandLogo } from "./brand-logo";
 import { CookieSettingsButton } from "./cookie-preferences";
 
@@ -48,13 +49,20 @@ export function SiteFooter() {
           <span>Loja exclusivamente online.</span>
         </div>
         {groups.map((group) => (
-          <nav aria-label={group.title} key={group.title}>
-            <h2>{group.title}</h2>
-            {group.links.map(([label, href]) => (
-              <Link href={href} key={href}>
-                {label}
-              </Link>
-            ))}
+          <nav className="footer-navigation" aria-label={group.title} key={group.title}>
+            <details className="footer-group">
+              <summary>
+                <h2>{group.title}</h2>
+                <ChevronDown aria-hidden="true" />
+              </summary>
+              <div className="footer-group-links">
+                {group.links.map(([label, href]) => (
+                  <Link href={href} key={href}>
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </details>
           </nav>
         ))}
       </div>

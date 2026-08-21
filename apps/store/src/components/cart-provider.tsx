@@ -1,13 +1,23 @@
 "use client";
 
 import type { CartLine, Product } from "@curtiz/domain";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 import { trackIntelligence } from "../lib/intelligence-client";
 import {
   PERSISTENT_CART_KEY,
+  PERSISTENT_CART_SELECTION_KEY,
   PERSISTENT_CART_SYNC_KEY,
   SESSION_CART_KEY,
+  SESSION_CART_SELECTION_KEY,
   SESSION_CART_SYNC_KEY,
   readClientPersistence,
   setClientAuthPersistence,
@@ -16,6 +26,8 @@ import {
 
 type CartContextValue = {
   lines: CartLine[];
+  selectedLines: CartLine[];
+  selectedVariantIds: string[];
   hydrated: boolean;
   syncMessage: string;
   retrySync: () => void;
@@ -31,7 +43,10 @@ type CartContextValue = {
     }
   ) => void;
   remove: (variantId: string) => void;
+  removeMany: (variantIds: string[]) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
+  setSelected: (variantId: string, selected: boolean) => void;
+  setAllSelected: (selected: boolean) => void;
   clear: () => void;
   reconcile: (lines: CartLine[]) => void;
 };
@@ -71,6 +86,9 @@ const cartSignature = (lines: CartLine[]) =>
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
+  const [selectedVariantIds, setSelectedVariantIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [hydrated, setHydrated] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncRetry, setSyncRetry] = useState(0);
@@ -81,6 +99,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const lastSyncedSignatureRef = useRef("");
   const latestRequestedSignatureRef = useRef("");
   const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const persistSelection = useCallback(
+    (selection: Set<string>) => {
+      if (typeof window === "undefined") return;
+      const storage = persistence === "session" ? sessionStorage : localStorage;
+      const selectionKey =
+        persistence === "session"
+          ? SESSION_CART_SELECTION_KEY
+          : PERSISTENT_CART_SELECTION_KEY;
+      storage.setItem(selectionKey, JSON.stringify([...selection]));
+    },
+    [persistence]
+  );
 
   useEffect(() => {
     try {
@@ -88,17 +118,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setPersistence(activePersistence);
       const storage = activePersistence === "session" ? sessionStorage : localStorage;
       const storageKey = activePersistence === "session" ? SESSION_CART_KEY : PERSISTENT_CART_KEY;
+      const selectionKey =
+        activePersistence === "session"
+          ? SESSION_CART_SELECTION_KEY
+          : PERSISTENT_CART_SELECTION_KEY;
       const stored = storage.getItem(storageKey) ?? localStorage.getItem(legacyCartStorageKey);
       const parsed: unknown = stored ? JSON.parse(stored) : [];
       const restored = Array.isArray(parsed) ? parsed.filter(isCartLine) : [];
+      const storedSelection = storage.getItem(selectionKey);
+      let parsedSelection: unknown = null;
+      try {
+        parsedSelection = storedSelection ? JSON.parse(storedSelection) : null;
+      } catch {
+        storage.removeItem(selectionKey);
+      }
+      const availableIds = new Set(restored.map((line) => line.variantId));
+      const restoredSelection = Array.isArray(parsedSelection)
+        ? parsedSelection.filter(
+            (value): value is string =>
+              typeof value === "string" && availableIds.has(value)
+          )
+        : restored.map((line) => line.variantId);
       setLines(restored);
+      setSelectedVariantIds(new Set(restoredSelection));
       if (localStorage.getItem(legacyCartStorageKey)) {
         storage.setItem(storageKey, JSON.stringify(restored));
         localStorage.removeItem(legacyCartStorageKey);
       }
     } catch {
       localStorage.removeItem(PERSISTENT_CART_KEY);
+      localStorage.removeItem(PERSISTENT_CART_SELECTION_KEY);
       sessionStorage.removeItem(SESSION_CART_KEY);
+      sessionStorage.removeItem(SESSION_CART_SELECTION_KEY);
       localStorage.removeItem(legacyCartStorageKey);
     } finally {
       setHydrated(true);
@@ -109,6 +160,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const updatePersistence = () => setPersistence(readClientPersistence());
     const clearSessionState = () => {
       setLines([]);
+      setSelectedVariantIds(new Set());
       setAuthentication("visitor");
       setPersistence(readClientPersistence());
       lastSyncedSignatureRef.current = "[]";
@@ -129,6 +181,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const storageKey = persistence === "session" ? SESSION_CART_KEY : PERSISTENT_CART_KEY;
     storage.setItem(storageKey, JSON.stringify(lines));
   }, [hydrated, lines, persistence]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const storage = persistence === "session" ? sessionStorage : localStorage;
+    const selectionKey =
+      persistence === "session"
+        ? SESSION_CART_SELECTION_KEY
+        : PERSISTENT_CART_SELECTION_KEY;
+    storage.setItem(selectionKey, JSON.stringify([...selectedVariantIds]));
+  }, [hydrated, persistence, selectedVariantIds]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -195,7 +257,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             syncStorage.setItem(syncKey, result.cartId);
             if (latestRequestedSignatureRef.current !== signature) return;
             lastSyncedSignatureRef.current = remoteSignature;
-            if (remoteSignature !== signature) setLines(safeItems);
+            if (remoteSignature !== signature) {
+              const snapshotIds = new Set(snapshot.map((line) => line.variantId));
+              setLines(safeItems);
+              setSelectedVariantIds((current) => {
+                const next = new Set(
+                  safeItems
+                    .filter(
+                      (line) =>
+                        current.has(line.variantId) || !snapshotIds.has(line.variantId)
+                    )
+                    .map((line) => line.variantId)
+                );
+                persistSelection(next);
+                return next;
+              });
+            }
             setSyncMessage(result.adjustmentMessage ?? "");
           } catch {
             if (latestRequestedSignatureRef.current !== signature) return;
@@ -206,11 +283,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [authentication, hydrated, lines, persistence, syncRetry]);
+  }, [authentication, hydrated, lines, persistSelection, persistence, syncRetry]);
 
   const value = useMemo<CartContextValue>(
     () => ({
       lines,
+      selectedLines: lines.filter((line) => selectedVariantIds.has(line.variantId)),
+      selectedVariantIds: lines
+        .filter((line) => selectedVariantIds.has(line.variantId))
+        .map((line) => line.variantId),
       hydrated,
       syncMessage,
       retrySync() {
@@ -223,6 +304,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const stock = Math.max(0, options?.stock ?? product.stock);
         if (stock < 1) return;
         trackIntelligence({ type: "cart_add", productId: product.id, variantId });
+        setSelectedVariantIds((current) => {
+          const next = new Set(current).add(variantId);
+          persistSelection(next);
+          return next;
+        });
         setLines((current) => {
           const found = current.find((line) => line.variantId === variantId);
           if (found) {
@@ -254,6 +340,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const line = lines.find((item) => item.variantId === variantId);
         if (line) trackIntelligence({ type: "cart_remove", productId: line.productId, variantId });
         setLines((current) => current.filter((line) => line.variantId !== variantId));
+        setSelectedVariantIds((current) => {
+          const next = new Set(current);
+          next.delete(variantId);
+          persistSelection(next);
+          return next;
+        });
+      },
+      removeMany(variantIds) {
+        const removedIds = new Set(variantIds);
+        if (removedIds.size === 0) return;
+        for (const line of lines) {
+          if (removedIds.has(line.variantId)) {
+            trackIntelligence({
+              type: "cart_remove",
+              productId: line.productId,
+              variantId: line.variantId
+            });
+          }
+        }
+        setLines((current) =>
+          current.filter((line) => !removedIds.has(line.variantId))
+        );
+        setSelectedVariantIds((current) => {
+          const next = new Set(
+            [...current].filter((variantId) => !removedIds.has(variantId))
+          );
+          persistSelection(next);
+          return next;
+        });
       },
       changeQuantity(variantId, quantity) {
         setLines((current) =>
@@ -267,16 +382,49 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           )
         );
       },
+      setSelected(variantId, selected) {
+        if (!lines.some((line) => line.variantId === variantId)) return;
+        setSelectedVariantIds((current) => {
+          const next = new Set(current);
+          if (selected) next.add(variantId);
+          else next.delete(variantId);
+          persistSelection(next);
+          return next;
+        });
+      },
+      setAllSelected(selected) {
+        const next = selected
+          ? new Set(lines.map((line) => line.variantId))
+          : new Set<string>();
+        persistSelection(next);
+        setSelectedVariantIds(next);
+      },
       clear() {
         setLines([]);
+        const next = new Set<string>();
+        persistSelection(next);
+        setSelectedVariantIds(next);
       },
       reconcile(nextLines) {
         const safeLines = nextLines.filter(isCartLine);
+        const previousLineIds = new Set(lines.map((line) => line.variantId));
         lastSyncedSignatureRef.current = cartSignature(safeLines);
         setLines(safeLines);
+        setSelectedVariantIds((current) => {
+          const next = new Set(
+            safeLines
+              .filter(
+                (line) =>
+                  current.has(line.variantId) || !previousLineIds.has(line.variantId)
+              )
+              .map((line) => line.variantId)
+          );
+          persistSelection(next);
+          return next;
+        });
       }
     }),
-    [hydrated, lines, syncMessage]
+    [hydrated, lines, persistSelection, selectedVariantIds, syncMessage]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

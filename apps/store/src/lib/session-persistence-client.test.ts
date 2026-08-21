@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   PERSISTENT_CART_KEY,
+  PERSISTENT_CART_SELECTION_KEY,
   PERSISTENT_CART_SYNC_KEY,
   SESSION_CART_KEY,
+  SESSION_CART_SELECTION_KEY,
   SESSION_CART_SYNC_KEY,
   clearClientSessionState,
   readClientPersistence,
@@ -37,11 +39,14 @@ describe("armazenamento da sessão e do carrinho", () => {
     const local = new MemoryStorage();
     const session = new MemoryStorage();
     local.setItem(PERSISTENT_CART_KEY, "cart");
+    local.setItem(PERSISTENT_CART_SELECTION_KEY, "selection");
     local.setItem(PERSISTENT_CART_SYNC_KEY, "sync");
     setClientAuthPersistence(false, local, session);
     expect(local.getItem(PERSISTENT_CART_KEY)).toBeNull();
+    expect(local.getItem(PERSISTENT_CART_SELECTION_KEY)).toBeNull();
     expect(local.getItem(PERSISTENT_CART_SYNC_KEY)).toBeNull();
     expect(session.getItem(SESSION_CART_KEY)).toBe("cart");
+    expect(session.getItem(SESSION_CART_SELECTION_KEY)).toBe("selection");
     expect(session.getItem(SESSION_CART_SYNC_KEY)).toBe("sync");
     expect(readClientPersistence(session)).toBe("session");
   });
@@ -51,8 +56,10 @@ describe("armazenamento da sessão e do carrinho", () => {
     const local = new MemoryStorage();
     const session = new MemoryStorage();
     session.setItem(SESSION_CART_KEY, "cart");
+    session.setItem(SESSION_CART_SELECTION_KEY, "selection");
     setClientAuthPersistence(true, local, session);
     expect(local.getItem(PERSISTENT_CART_KEY)).toBe("cart");
+    expect(local.getItem(PERSISTENT_CART_SELECTION_KEY)).toBe("selection");
     expect(session.getItem(SESSION_CART_KEY)).toBeNull();
     expect(readClientPersistence(session)).toBe("persistent");
   });
@@ -63,7 +70,9 @@ describe("armazenamento da sessão e do carrinho", () => {
     const local = new MemoryStorage();
     const session = new MemoryStorage();
     local.setItem(PERSISTENT_CART_KEY, "cart");
+    local.setItem(PERSISTENT_CART_SELECTION_KEY, "selection");
     session.setItem(SESSION_CART_KEY, "cart");
+    session.setItem(SESSION_CART_SELECTION_KEY, "selection");
     clearClientSessionState(local, session);
     expect(local.length).toBe(0);
     expect(session.length).toBe(0);

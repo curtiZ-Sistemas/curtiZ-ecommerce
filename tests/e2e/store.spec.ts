@@ -4,10 +4,19 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
   const cartSyncRequests: string[] = [];
   await page.addInitScript(() => {
-    for (const key of ["curtiz-cart", "curtiz-cart-sync-id", "curtiz-demo-cart"]) {
+    for (const key of [
+      "curtiz-cart",
+      "curtiz-cart-selection",
+      "curtiz-cart-sync-id",
+      "curtiz-demo-cart"
+    ]) {
       localStorage.removeItem(key);
     }
-    for (const key of ["curtiz-session-cart", "curtiz-session-cart-sync-id"]) {
+    for (const key of [
+      "curtiz-session-cart",
+      "curtiz-session-cart-selection",
+      "curtiz-session-cart-sync-id"
+    ]) {
       sessionStorage.removeItem(key);
     }
     localStorage.setItem(
@@ -27,6 +36,8 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   const hero = page.getByTestId("homepage-primary-hero");
   await expect(hero).toHaveCount(1, { timeout: 30_000 });
   await expect(hero).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Para todos os momentos", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Encontre seu estilo", { exact: true })).toHaveCount(0);
   const featuredSection = page.locator(
     '[data-home-section-type="featured_products"]'
   );
@@ -51,16 +62,21 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Meu carrinho" })).toBeVisible({
     timeout: 30_000
   });
+  await expect(page.getByTestId("cart-item").getByRole("checkbox")).toBeChecked();
   expect(cartSyncRequests).toHaveLength(0);
   await expect(page.locator(".cart-sync-notice")).toHaveCount(0);
 });
 
-test("gerencia a remoção do carrinho somente após seleção explícita", async ({ page }) => {
+test("seleciona produtos para compra sem confundir com remoção", async ({ page, isMobile }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => {
     sessionStorage.removeItem("curtiz-auth-session");
+    if (sessionStorage.getItem("curtiz-selection-e2e-seeded") === "true") return;
+    sessionStorage.setItem("curtiz-selection-e2e-seeded", "true");
     sessionStorage.removeItem("curtiz-session-cart");
+    sessionStorage.removeItem("curtiz-session-cart-selection");
     sessionStorage.removeItem("curtiz-session-cart-sync-id");
+    localStorage.removeItem("curtiz-cart-selection");
     localStorage.setItem(
       "curtiz-cookie-consent",
       JSON.stringify({ categories: { essential: true } })
@@ -93,14 +109,28 @@ test("gerencia a remoção do carrinho somente após seleção explícita", asyn
           quantity: 1,
           maxQuantity: 10,
           unitPriceInCents: 5490
+        },
+        {
+          productId: "wave-preto",
+          slug: "flip-flop-wave-preto",
+          category: "Masculino",
+          variantId: "wave-preto:Preto:41/42",
+          name: "curti Z Flip-Flop Wave Preto 41/42",
+          image: "/images/products/wave-preto.png",
+          color: "Preto",
+          size: "41/42",
+          quantity: 1,
+          maxQuantity: 10,
+          unitPriceInCents: 3000
         }
       ])
     );
   });
 
-  await page.goto("/carrinho", { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".cart-item")).toHaveCount(2);
-  await expect(page.getByText("Sua seleção", { exact: true })).toHaveCount(0);
+  await page.goto("/carrinho", { waitUntil: "commit" });
+  await expect(page.locator(".cart-item")).toHaveCount(3);
+  await expect(page.locator(".cart-item.is-selected")).toHaveCount(3);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("144,80");
 
   const continueShopping = page.getByRole("link", { name: "Continuar comprando" }).first();
   const title = page.getByRole("heading", { name: "Meu carrinho" });
@@ -114,42 +144,57 @@ test("gerencia a remoção do carrinho somente após seleção explícita", asyn
     titleBounds?.y ?? 0
   );
 
-  const manage = page.getByRole("button", { name: "Selecionar produtos para remover" });
-  await manage.click();
-  await expect(page.locator(".cart-item")).toHaveCount(2);
-  const checkboxes = page.getByRole("checkbox");
-  await expect(checkboxes).toHaveCount(2);
-  await checkboxes.nth(0).check();
-  await checkboxes.nth(1).check();
-  await expect(page.getByText("2 produtos selecionados", { exact: true })).toBeVisible();
+  const coralSelection = page.getByRole("checkbox", {
+    name: "Selecionar curti Z Flip-Flop Slim Coral"
+  });
+  await coralSelection.uncheck();
   await expect(page.locator(".cart-item.is-selected")).toHaveCount(2);
-
-  await page.getByRole("button", { name: "Cancelar" }).click();
-  await expect(checkboxes).toHaveCount(0);
-  await expect(page.locator(".cart-item")).toHaveCount(2);
-
-  await manage.click();
-  await page.getByRole("checkbox", { name: "Selecionar curti Z Flip-Flop Wave Preto" }).check();
-  await page.getByRole("button", { name: "Remover selecionados" }).click();
-  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toHaveCount(0);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("89,90");
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Slim Coral" })).toBeVisible();
-  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await page.getByRole("button", { name: "Aumentar quantidade de curti Z Flip-Flop Slim Coral" }).click();
+  await expect(page.getByTestId("selected-subtotal")).toContainText("89,90");
+  await page.getByRole("button", { name: "Aumentar quantidade de curti Z Flip-Flop Wave Preto", exact: true }).click();
+  await expect(page.getByTestId("selected-subtotal")).toContainText("149,80");
 
-  await page.locator(".cart-item").getByRole("button", { name: "Remover" }).click();
-  await expect(page.getByRole("heading", { name: "Sua sacola está vazia." })).toBeVisible();
+  await page.reload({ waitUntil: "commit" });
+  await expect(page.locator(".cart-item")).toHaveCount(3);
+  await expect(coralSelection).not.toBeChecked();
+  await expect(page.getByTestId("selected-subtotal")).toContainText("149,80");
 
-  await page.reload({ waitUntil: "domcontentloaded" });
+  const selectAll = page.getByRole("checkbox", { name: "Selecionar todos" }).first();
+  await selectAll.check();
+  await expect(page.locator(".cart-item.is-selected")).toHaveCount(3);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("259,60");
+
+  await selectAll.uncheck();
+  await expect(page.locator(".cart-item.is-selected")).toHaveCount(0);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("0,00");
+  if (isMobile) {
+    await expect(page.getByRole("button", { name: "Comprar (0)" })).toBeDisabled();
+  } else {
+    await expect(page.getByRole("button", { name: "Selecione um produto" })).toBeDisabled();
+  }
+  await expect(page.locator(".cart-item")).toHaveCount(3);
+
+  await page
+    .getByRole("checkbox", { name: "Selecionar curti Z Flip-Flop Wave Preto 41/42" })
+    .check();
+  page.once("dialog", async (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Remover selecionados" }).click();
   await expect(page.locator(".cart-item")).toHaveCount(2);
-  await manage.click();
+  await expect(
+    page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto 41/42" })
+  ).toHaveCount(0);
+
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toBe("Remover todos os itens da sacola?");
     await dialog.dismiss();
   });
-  await page.getByRole("button", { name: "Limpar tudo" }).click();
+  await page.getByRole("button", { name: "Limpar carrinho" }).click();
   await expect(page.locator(".cart-item")).toHaveCount(2);
 
   page.once("dialog", async (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Limpar tudo" }).click();
+  await page.getByRole("button", { name: "Limpar carrinho" }).click();
   await expect(page.getByRole("heading", { name: "Sua sacola está vazia." })).toBeVisible();
 });
 
@@ -192,9 +237,32 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
           quantity: 1,
           maxQuantity: 10,
           unitPriceInCents: 1
+        },
+        {
+          productId: "slim-coral",
+          slug: "flip-flop-slim-coral",
+          variantId: "slim-coral:Coral:35/36",
+          name: "curti Z Flip-Flop Slim Coral",
+          image: "/images/products/slim-coral.png",
+          color: "Coral",
+          size: "35/36",
+          quantity: 1,
+          maxQuantity: 10,
+          unitPriceInCents: 5490
         }
       ])
     );
+    localStorage.setItem(
+      "curtiz-cart-selection",
+      JSON.stringify(["wave-preto:Preto:39/40"])
+    );
+  });
+  const submittedLines: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/checkout") && request.method() === "POST") {
+      const payload = request.postDataJSON() as { lines?: unknown[] };
+      submittedLines.push(...(payload.lines ?? []));
+    }
   });
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
@@ -240,8 +308,10 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
     expect(invalidResponse.status()).toBe(400);
   }
 
-  await page.goto("/checkout");
+  await page.goto("/checkout", { waitUntil: "commit" });
   await expect(page.getByRole("heading", { name: "Finalizar compra" })).toBeVisible();
+  await expect(page.getByText("curti Z Flip-Flop Wave Preto", { exact: true })).toBeVisible();
+  await expect(page.getByText("curti Z Flip-Flop Slim Coral", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ambiente protegido", { exact: true })).toHaveCount(0);
   await expect(page.locator('.checkout-steps [aria-current="step"]')).toContainText("Dados");
 
@@ -292,6 +362,85 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   );
   await expect(dialog).not.toContainText(/demo|demonstração|fictício|Mercado Pago/i);
   await expect(page).toHaveURL(/\/checkout$/);
+  expect(submittedLines).toEqual([
+    expect.objectContaining({ variantId: "wave-preto:Preto:39/40", quantity: 1 })
+  ]);
+});
+
+test("após a compra preserva no carrinho os produtos não selecionados", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+    localStorage.setItem(
+      "curtiz-cart",
+      JSON.stringify([
+        {
+          productId: "wave-preto",
+          slug: "flip-flop-wave-preto",
+          variantId: "wave-preto:Preto:39/40",
+          name: "curti Z Flip-Flop Wave Preto",
+          image: "/images/products/wave-preto.png",
+          color: "Preto",
+          size: "39/40",
+          quantity: 1,
+          maxQuantity: 10,
+          unitPriceInCents: 5990
+        },
+        {
+          productId: "slim-coral",
+          slug: "flip-flop-slim-coral",
+          variantId: "slim-coral:Coral:35/36",
+          name: "curti Z Flip-Flop Slim Coral",
+          image: "/images/products/slim-coral.png",
+          color: "Coral",
+          size: "35/36",
+          quantity: 1,
+          maxQuantity: 10,
+          unitPriceInCents: 5490
+        }
+      ])
+    );
+    localStorage.setItem(
+      "curtiz-cart-selection",
+      JSON.stringify(["wave-preto:Preto:39/40"])
+    );
+  });
+  const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  await page.route("**/api/checkout", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, orderCode: "CZ-E2E-SELECAO" })
+    });
+  });
+
+  await page.goto("/checkout", { waitUntil: "commit" });
+  await page.getByLabel("Nome completo").fill("Cliente curti Z");
+  await page.getByLabel("E-mail").fill("cliente.demo@curtiz.local");
+  await page.getByLabel("Telefone").fill("11999999999");
+  await page.getByLabel("CPF para o pedido").fill("52998224725");
+  await page.getByLabel("CEP").fill("01310100");
+  await page.getByLabel("Endereço").fill("Avenida Paulista");
+  await page.getByLabel("Número").fill("1000");
+  await page.getByLabel("Bairro").fill("Bela Vista");
+  await page.getByLabel("Cidade").fill("São Paulo");
+  await page.getByLabel("Estado").selectOption("SP");
+  await page.getByRole("button", { name: "Confirmar e pagar" }).click();
+  await expect(page).toHaveURL(/\/pedido\/pendente\?pedido=CZ-E2E-SELECAO/u);
+
+  await page.goto("/carrinho", { waitUntil: "commit" });
+  await expect(page.locator(".cart-item")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Slim Coral" })).toBeVisible();
+  await expect(
+    page.locator(".cart-item").getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })
+  ).toHaveCount(0);
 });
 
 test("preserva o retorno do login e abre atendimento humano", async ({ page }) => {
