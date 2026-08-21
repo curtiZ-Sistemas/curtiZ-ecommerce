@@ -4,35 +4,108 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Aplicação que deve ser reconstruída e republicada
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - store
+          - panel
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: true
+
+env:
+  APP_ENV: production
+  PANEL_DEPLOYMENT_MODE: separate
+  DEMO_MODE: "false"
+  CHECKOUT_ENABLED: "false"
+  PAYMENT_PROVIDER: disabled
+  MERCADO_PAGO_ENABLED: "false"
+  SHIPPING_PROVIDER: disabled
+  MELHOR_ENVIO_ENABLED: "false"
+  EMAIL_PROVIDER: disabled
+  EMAIL_ENABLED: "false"
+  TURNSTILE_ENABLED: "false"
+  REQUIRE_INTERNAL_MFA: "false"
+  AUTH_RATE_LIMIT_ENABLED: "true"
 
 jobs:
+  changes:
+    name: Detectar aplicações alteradas
+    runs-on: ubuntu-latest
+    outputs:
+      store: ${{ steps.scope.outputs.store }}
+      panel: ${{ steps.scope.outputs.panel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        name: Calcular escopo
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_TARGET: ${{ inputs.target }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$REF_NAME" != "main" ]]; then
+              echo "::error::O deploy manual de produção só pode partir do branch main."
+              exit 1
+            fi
+            [[ "$MANUAL_TARGET" == "store" || "$MANUAL_TARGET" == "both" ]] && store=true || store=false
+            [[ "$MANUAL_TARGET" == "panel" || "$MANUAL_TARGET" == "both" ]] && panel=true || panel=false
+          else
+            comparison_sha="$BEFORE_SHA"
+            [[ "$EVENT_NAME" == "pull_request" ]] && comparison_sha="$BASE_SHA"
+            if [[ -z "$comparison_sha" || "$comparison_sha" =~ ^0+$ ]]; then
+              comparison_sha="${HEAD_SHA}^"
+            fi
+            git cat-file -e "${comparison_sha}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$comparison_sha"
+            git diff --name-only "$comparison_sha" "$HEAD_SHA" > changed-files.txt
+            store=false
+            panel=false
+            while IFS= read -r file; do
+              case "$file" in
+                apps/store/*) store=true ;;
+                apps/panel/*) panel=true ;;
+                packages/*|scripts/*|supabase/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|turbo.json|tsconfig.json|eslint.config.mjs|.github/workflows/ci.yml)
+                  store=true
+                  panel=true
+                  ;;
+              esac
+            done < changed-files.txt
+          fi
+          echo "store=$store" >> "$GITHUB_OUTPUT"
+          echo "panel=$panel" >> "$GITHUB_OUTPUT"
+
   quality:
+    name: Qualidade
     runs-on: ubuntu-latest
     env:
-      APP_ENV: production
-      PANEL_DEPLOYMENT_MODE: separate
       NEXT_PUBLIC_STORE_URL: https://store.example.invalid
       NEXT_PUBLIC_PANEL_URL: https://panel.example.invalid
       NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
       SUPABASE_SECRET_KEY: ci-secret-placeholder
-      PAYMENT_PROVIDER: mercadopago
-      MERCADO_PAGO_ACCESS_TOKEN: ci-access-placeholder
-      MERCADO_PAGO_PUBLIC_KEY: ci-public-placeholder
-      MERCADO_PAGO_WEBHOOK_SECRET: ci-webhook-placeholder
-      EMAIL_PROVIDER: resend
-      EMAIL_FROM: curti Z <noreply@store.example.invalid>
-      RESEND_API_KEY: ci-resend-placeholder
-      SHIPPING_PROVIDER: custom
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-site-placeholder
       TURNSTILE_SECRET_KEY: ci-turnstile-placeholder
       PII_ENCRYPTION_KEY: ci-pii-placeholder
       AUDIT_HASH_KEY: ci-audit-placeholder
       ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid
       AUTH_COOKIE_DOMAIN: example.invalid
-      DEMO_MODE: "false"
-      REQUIRE_INTERNAL_MFA: "true"
-      AUTH_RATE_LIMIT_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -46,9 +119,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
 
   database:
+    name: Banco e migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,9 +129,11 @@ jobs:
         with:
           version: 2.110.0
       - run: supabase start
+      - run: supabase db lint --local --fail-on error
       - run: supabase test db
 
   e2e:
+    name: E2E
     runs-on: ubuntu-latest
     env:
       APP_ENV: development
@@ -78,4 +153,111 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      - name: Executar suíte E2E sem aceitar flaky
+        run: pnpm exec playwright test --fail-on-flaky-tests
+      - name: Repetir fluxos críticos da loja
+        run: >-
+          pnpm exec playwright test
+          --project=store-desktop
+          --project=store-mobile
+          --grep "normaliza o cadastro|navega da home|gerencia a remoção"
+          --repeat-each=2
+          --workers=2
+          --fail-on-flaky-tests
+
+  store-worker:
+    name: OpenNext / Loja
+    needs: [changes, quality, database, e2e]
+    if: needs.changes.outputs.store == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
+      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validar variáveis públicas de produção
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure a variável de repositório $name antes do deploy."
+              exit 1
+            fi
+          done
+      - run: pnpm --filter @curtiz/store build:worker
+      - name: Publicar curtiz-ecommerce
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Configure CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID nos secrets do repositório."
+            exit 1
+          fi
+          build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars \
+            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
+            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --var "BUILD_TIMESTAMP:${build_timestamp}"
+
+  panel-worker:
+    name: OpenNext / Painel
+    needs: [changes, quality, database, e2e]
+    if: needs.changes.outputs.panel == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
+      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validar variáveis públicas de produção
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure a variável de repositório $name antes do deploy."
+              exit 1
+            fi
+          done
+      - run: pnpm --filter @curtiz/panel build:worker
+      - name: Publicar curtiz-panel
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Configure CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID nos secrets do repositório."
+            exit 1
+          fi
+          build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars \
+            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
+            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --var "BUILD_TIMESTAMP:${build_timestamp}"

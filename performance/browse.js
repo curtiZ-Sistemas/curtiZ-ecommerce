@@ -1,5 +1,8 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
+import { loadTarget } from "./safety.js";
+
+const baseUrl = loadTarget();
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
@@ -8,7 +11,7 @@ export const options = {
 };
 
 export default function () {
-  const response = http.get(`${__ENV.BASE_URL || "http://localhost:3000"}/`);
+  const response = http.get(`${baseUrl}/`);
   check(response, { "home responde 200": (result) => result.status === 200 });
   sleep(1);
 }

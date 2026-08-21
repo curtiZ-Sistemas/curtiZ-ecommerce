@@ -1,9 +1,8 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
+import { loadTarget } from "./safety.js";
 
-const baseUrl = __ENV.BASE_URL || "http://localhost:3000";
-if (/curtiz\.(com|com\.br)/i.test(baseUrl) && __ENV.ALLOW_PRODUCTION !== "true")
-  throw new Error("Teste recusado em produção. Use staging ou local.");
+const baseUrl = loadTarget();
 export const options = {
   vus: Number(__ENV.VUS || 10),
   duration: __ENV.DURATION || "30s",

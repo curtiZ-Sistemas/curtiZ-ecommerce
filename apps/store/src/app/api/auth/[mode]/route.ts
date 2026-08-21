@@ -212,7 +212,7 @@ function panelBaseUrl(request: Request): string {
     }
   }
 
-  return "https://curtiz-painel.sistemas-curtiz.workers.dev";
+  return "https://curtiz-panel.sistemas-curtiz.workers.dev";
 }
 
 function customerDestination(value: string | undefined) {

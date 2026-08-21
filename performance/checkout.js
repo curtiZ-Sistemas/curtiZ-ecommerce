@@ -1,5 +1,8 @@
 import http from "k6/http";
 import { check } from "k6";
+import { loadTarget } from "./safety.js";
+
+const baseUrl = loadTarget();
 
 export const options = {
   scenarios: {
@@ -14,7 +17,7 @@ export const options = {
 
 export default function () {
   const response = http.post(
-    `${__ENV.BASE_URL || "http://localhost:3000"}/api/checkout`,
+    `${baseUrl}/api/checkout`,
     JSON.stringify({ invalid: true }),
     { headers: { "content-type": "application/json" } }
   );

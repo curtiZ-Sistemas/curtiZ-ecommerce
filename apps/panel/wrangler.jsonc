@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "curtiz-painel",
+  "name": "curtiz-panel",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-07-31",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -13,10 +13,10 @@
   },
   "env": {
     "staging": {
-      "name": "curtiz-painel-staging"
+      "name": "curtiz-panel-staging"
     },
     "production": {
-      "name": "curtiz-painel"
+      "name": "curtiz-panel"
     }
   }
 }
