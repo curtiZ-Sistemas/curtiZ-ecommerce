@@ -67,6 +67,15 @@ const emptyItem = (index: number): Item => ({
   alt_text: "", decorative: false, target_type: "none", target_id: "", target_route: "",
   sort_order: index, config: {}, media: []
 });
+const benefitItems = (): Item[] => ([
+  ["Carrinho preservado", "Sua seleção continua com você.", "shopping-bag"],
+  ["Compra protegida", "Preço e estoque validados antes do pedido.", "shield-check"],
+  ["Acompanhe seu pedido", "Tudo organizado na sua conta.", "package-check"],
+  ["Atendimento fácil", "Ajuda disponível durante sua compra.", "headphones"]
+] as const).map(([title, description, icon], index) => ({
+  ...emptyItem(index), item_type: "benefit", internal_name: title, title, description,
+  decorative: true, config: { icon, enabled: true }
+}));
 const emptyEditor = (position: number): Editor => ({
   internalName: "", sectionType: "product_grid", title: "", subtitle: "", description: "",
   layout: "content_centered", visibility: "all", startsAt: "", endsAt: "", sortOrder: position, changeSummary: "Nova seção",
@@ -80,6 +89,28 @@ const typeLabel = (value: string) => sectionTypes.find(([key]) => key === value)
 const dateLabel = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value)) : "Sem limite";
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const configString = (record: Record<string, unknown>, key: string, fallback: string) => typeof record[key] === "string" ? record[key] : fallback;
+const configBoolean = (record: Record<string, unknown>, key: string, fallback: boolean) => typeof record[key] === "boolean" ? record[key] === true : fallback;
+const configNumber = (record: Record<string, unknown>, key: string, fallback: number) => typeof record[key] === "number" && Number.isFinite(record[key]) ? Number(record[key]) : fallback;
+
+function editorForSectionType(editor: Editor, sectionType: string): Editor {
+  if (sectionType === "benefits") return {
+    ...editor, sectionType, title: editor.title || "Vantagens curti Z", layout: "horizontal_strip", visibility: "all",
+    style: { ...editor.style, spacingTop: "small", spacingBottom: "small" },
+    content: { ...editor.content, limit: 4, desktopEnabled: true, mobileEnabled: false },
+    items: editor.items.length ? editor.items : benefitItems()
+  };
+  if (sectionType === "reviews_carousel") return {
+    ...editor, sectionType, title: editor.title || "O que dizem sobre nós",
+    subtitle: editor.subtitle || "Experiências de quem já comprou na curti Z.", layout: "carousel",
+    content: { ...editor.content, source: "automatic", limit: 6, desktopCards: 3, autoplay: false, autoplayInterval: 6000, desktopEnabled: true, mobileEnabled: true }
+  };
+  if (sectionType === "best_sellers") return {
+    ...editor, sectionType, title: editor.title || "Mais vendidos",
+    subtitle: editor.subtitle || "Os favoritos dos nossos clientes", layout: "carousel",
+    content: { ...editor.content, source: "automatic", limit: 8, salesPeriod: "90d", rankingMetric: "units", fillEmptySlots: true, excludeOutOfStock: true, desktopEnabled: true, mobileEnabled: true }
+  };
+  return { ...editor, sectionType };
+}
 const targetImage = (path?: string): CSSProperties | undefined => path && process.env.NEXT_PUBLIC_SUPABASE_URL ? { backgroundImage: `url(${JSON.stringify(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/catalog-public/${path}`)})` } : undefined;
 function thumbnailStyle(section: Section): CSSProperties | undefined {
   for (const item of section.home_section_items) {
@@ -303,7 +334,7 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
       <div className="homepage-editor-columns">
         <fieldset><legend>Identificação e conteúdo</legend>
           <label><span>Nome interno *</span><input required maxLength={120} value={value.internalName} onChange={(event) => update("internalName", event.target.value)} /></label>
-          <label><span>Tipo *</span><select value={value.sectionType} onChange={(event) => update("sectionType", event.target.value)}>{sectionTypes.map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+          <label><span>Tipo *</span><select value={value.sectionType} onChange={(event) => setValue((current) => editorForSectionType(current, event.target.value))}>{sectionTypes.map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
           <label><span>Título visível</span><input maxLength={160} value={value.title} onChange={(event) => update("title", event.target.value)} /></label>
           <label><span>Subtítulo</span><input maxLength={240} value={value.subtitle} onChange={(event) => update("subtitle", event.target.value)} /></label>
           <label><span>Descrição</span><textarea rows={3} maxLength={2000} value={value.description} onChange={(event) => update("description", event.target.value)} /></label>
@@ -313,9 +344,22 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
         <fieldset><legend>Layout e dispositivos</legend>
           <label><span>Estrutura</span><select value={value.layout} onChange={(event) => update("layout", event.target.value)}>{layouts.map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
           <label><span>Visibilidade</span><select value={value.visibility} onChange={(event) => update("visibility", event.target.value)}><option value="all">Todos</option><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Celular</option></select></label>
+          <div className="homepage-switch-grid"><label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "desktopEnabled", true)} onChange={(event) => content("desktopEnabled", event.target.checked)} /><span>Desktop/tablet</span></label><label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "mobileEnabled", value.sectionType !== "benefits")} onChange={(event) => content("mobileEnabled", event.target.checked)} /><span>Celular</span></label></div>
           <label><span>Origem do conteúdo</span><select value={configString(value.content, "source", "automatic")} onChange={(event) => content("source", event.target.value)}><option value="automatic">Automática, com dados reais</option><option value="manual">Seleção manual</option></select></label>
-          <label><span>Quantidade de itens</span><input type="number" min={1} max={24} value={Number(value.content.limit ?? 8)} onChange={(event) => content("limit", Number(event.target.value))} /></label>
+          <label><span>Quantidade de itens</span><input type="number" min={1} max={value.sectionType === "benefits" ? 4 : value.sectionType === "reviews_carousel" ? 12 : 24} value={Number(value.content.limit ?? 8)} onChange={(event) => content("limit", Number(event.target.value))} /></label>
           <label><span>Colunas no desktop</span><select value={Number(value.content.columns ?? 4)} onChange={(event) => content("columns", Number(event.target.value))}>{[1,2,3,4].map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+          {value.sectionType === "reviews_carousel" && <>
+            <label><span>Cards por viewport</span><select value={configNumber(value.content, "desktopCards", 3)} onChange={(event) => content("desktopCards", Number(event.target.value))}>{[2,3,4].map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+            <label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "autoplay", false)} onChange={(event) => content("autoplay", event.target.checked)} /><span>Autoplay</span></label>
+            <label><span>Intervalo do autoplay (ms)</span><input type="number" min={3000} max={15000} step={500} value={configNumber(value.content, "autoplayInterval", 6000)} onChange={(event) => content("autoplayInterval", Number(event.target.value))} /></label>
+          </>}
+          {value.sectionType === "best_sellers" && <>
+            <label><span>Período das vendas</span><select value={configString(value.content, "salesPeriod", "90d")} onChange={(event) => content("salesPeriod", event.target.value)}><option value="30d">Últimos 30 dias</option><option value="90d">Últimos 90 dias</option><option value="all">Todo o período</option></select></label>
+            <label><span>Critério do ranking</span><select value={configString(value.content, "rankingMetric", "units")} onChange={(event) => content("rankingMetric", event.target.value)}><option value="units">Unidades vendidas</option><option value="revenue">Receita aprovada</option></select></label>
+            <label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "fillEmptySlots", true)} onChange={(event) => content("fillEmptySlots", event.target.checked)} /><span>Preencher vagas sem vendas</span></label>
+            <label className="admin-check"><input type="checkbox" checked={configBoolean(value.content, "excludeOutOfStock", true)} onChange={(event) => content("excludeOutOfStock", event.target.checked)} /><span>Excluir produtos sem estoque</span></label>
+            <label className="admin-check"><input type="checkbox" checked disabled /><span>Excluir produtos inativos (obrigatório)</span></label>
+          </>}
           <div className="homepage-switch-grid">{([["showPrice","Preço"],["showRating","Avaliação"],["showDiscount","Desconto"],["showInstallments","Parcelamento"],["showFavorite","Favorito"],["showPurchase","Compra"],["showStock","Estoque"],["showBadge","Selo"]] as const).map(([key,label]) => { const enabledByDefault = !["showInstallments", "showPurchase", "showStock"].includes(key); const checked = typeof value.content[key] === "boolean" ? value.content[key] === true : enabledByDefault; return <label className="admin-check" key={key}><input type="checkbox" checked={checked} onChange={(event) => content(key, event.target.checked)} /><span>{label}</span></label>; })}</div>
         </fieldset>
         <fieldset><legend>Agenda e visual</legend>
@@ -327,8 +371,8 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
           <label><span>Tom do texto</span><select value={configString(value.style, "textTone", "dark")} onChange={(event) => style("textTone", event.target.value)}><option value="dark">Escuro</option><option value="light">Claro</option></select></label>
         </fieldset>
       </div>
-      <section className="homepage-items-editor"><header><div><h3>Itens, destinos e mídias</h3><p>Produtos e taxonomias são selecionados do cadastro real.</p></div><button className="secondary-button" type="button" disabled={value.items.length >= 24} onClick={() => update("items", [...value.items, emptyItem(value.items.length)])}><Plus /> Adicionar item</button></header>
-        {value.items.length === 0 ? <div className="admin-empty-state compact"><p>Use conteúdo automático ou adicione itens manuais.</p></div> : value.items.map((item, index) => <ItemEditor key={item.id ?? index} item={item} index={index} canUpload={canUpload} onChange={(next) => updateItem(index, next)} onRemove={() => update("items", value.items.filter((_, itemIndex) => itemIndex !== index))} onMove={(direction) => { const target = index + direction; if (target < 0 || target >= value.items.length) return; const items = [...value.items]; [items[index], items[target]] = [items[target]!, items[index]!]; update("items", items); }} />)}
+      <section className="homepage-items-editor"><header><div><h3>Itens, destinos e mídias</h3><p>Benefícios, depoimentos e produtos usam os cadastros e regras reais quando vinculados.</p></div><button className="secondary-button" type="button" disabled={value.items.length >= (value.sectionType === "benefits" ? 4 : 24)} onClick={() => update("items", [...value.items, emptyItem(value.items.length)])}><Plus /> Adicionar item</button></header>
+        {value.items.length === 0 ? <div className="admin-empty-state compact"><p>Use conteúdo automático ou adicione itens manuais.</p></div> : value.items.map((item, index) => <ItemEditor key={item.id ?? index} item={item} index={index} sectionType={value.sectionType} canUpload={canUpload} onChange={(next) => updateItem(index, next)} onRemove={() => update("items", value.items.filter((_, itemIndex) => itemIndex !== index))} onMove={(direction) => { const target = index + direction; if (target < 0 || target >= value.items.length) return; const items = [...value.items]; [items[index], items[target]] = [items[target]!, items[index]!]; update("items", items); }} />)}
       </section>
       {performanceWarning && <p className="homepage-performance-warning" role="status">Esta seção possui muitos elementos e pode deixar a página mais lenta. Revise a quantidade antes de publicar.</p>}
       <footer><button className="secondary-button" type="button" onClick={() => onPreview(value)}><Eye /> Pré-visualizar</button><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" type="submit" disabled={pending}>{pending ? <LoaderCircle className="spin" /> : <Save />} Salvar rascunho</button></footer>
@@ -336,26 +380,34 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
   </section></div>;
 }
 
-function ItemEditor({ item, index, canUpload, onChange, onRemove, onMove }: { item: Item; index: number; canUpload: boolean; onChange: (next: Partial<Item>) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void }) {
+function ItemEditor({ item, index, sectionType, canUpload, onChange, onRemove, onMove }: { item: Item; index: number; sectionType: string; canUpload: boolean; onChange: (next: Partial<Item>) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void }) {
   const [targetQuery, setTargetQuery] = useState("");
   const [targets, setTargets] = useState<Target[]>([]);
   const [searching, setSearching] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const testimonialOrigin = configString(item.config, "origin", "manual");
+  const targetSearchType = sectionType === "reviews_carousel" && testimonialOrigin === "customer_review" ? "review" : item.target_type;
   useEffect(() => {
-    if (["none","brand","external_url","search","offer"].includes(item.target_type) || targetQuery.trim().length < 2) { setTargets([]); return; }
+    if (["none","brand","external_url","search","offer"].includes(targetSearchType) || targetQuery.trim().length < 2) { setTargets([]); return; }
     const controller = new AbortController(); const timer = window.setTimeout(() => { void (async () => {
-      setSearching(true); try { const response = await fetch(`/api/homepage-builder?mode=targets&type=${encodeURIComponent(item.target_type)}&q=${encodeURIComponent(targetQuery)}`, { signal: controller.signal, cache: "no-store" }); const result = await response.json() as { targets?: Target[] }; setTargets(response.ok ? result.targets ?? [] : []); } finally { setSearching(false); }
+      setSearching(true); try { const response = await fetch(`/api/homepage-builder?mode=targets&type=${encodeURIComponent(targetSearchType)}&q=${encodeURIComponent(targetQuery)}`, { signal: controller.signal, cache: "no-store" }); const result = await response.json() as { targets?: Target[] }; setTargets(response.ok ? result.targets ?? [] : []); } finally { setSearching(false); }
     })();
     }, 300); return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [item.target_type, targetQuery]);
+  }, [targetQuery, targetSearchType]);
   const upload = async (file: File | undefined, role: "desktop" | "mobile" | "video") => {
     if (!file) return; setUploading(true);
     try { const form = new FormData(); form.set("file", file); form.set("role", role); const response = await fetch("/api/homepage-builder/media", { method: "POST", body: form }); const result = await response.json() as { path?: string; mimeType?: string; sizeBytes?: number; message?: string }; if (!response.ok || !result.path) throw new Error(result.message); const next = item.media.filter((entry) => entry.role !== role); next.push({ path: result.path, role, mimeType: result.mimeType ?? "", sizeBytes: result.sizeBytes ?? file.size }); onChange({ media: next }); } catch (error) { window.alert(error instanceof Error ? error.message : "Falha no upload."); } finally { setUploading(false); }
   };
   return <article className="homepage-item-editor"><header><strong>Item {index + 1}</strong><div><button type="button" onClick={() => onMove(-1)} aria-label="Subir item"><ChevronUp /></button><button type="button" onClick={() => onMove(1)} aria-label="Descer item"><ChevronDown /></button><button type="button" onClick={onRemove} aria-label="Remover item"><Trash2 /></button></div></header>
-    <div className="admin-form-grid"><label><span>Nome interno *</span><input required value={item.internal_name} onChange={(event) => onChange({ internal_name: event.target.value })} /></label><label><span>Título</span><input value={item.title} onChange={(event) => onChange({ title: event.target.value })} /></label><label className="wide"><span>Descrição</span><textarea rows={2} value={item.description} onChange={(event) => onChange({ description: event.target.value })} /></label>
-      <label><span>Destino</span><select value={item.target_type} onChange={(event) => onChange({ target_type: event.target.value, target_id: "", target_route: "" })}>{[["none","Nenhum"],["product","Produto"],["category","Categoria"],["subcategory","Subcategoria"],["model","Modelo"],["brand","Marca (quando cadastrada)"],["collection","Coleção"],["campaign","Campanha"],["page","Página"],["guide","Guia"],["search","Busca predefinida"],["offer","Oferta"],["external_url","URL externa autorizada"]].map(([key,label]) => <option value={key} key={key}>{label}</option>)}</select></label>
-      {["external_url","search","offer"].includes(item.target_type) ? <label><span>Destino seguro</span><input type={item.target_type === "external_url" ? "url" : "text"} value={item.target_route} placeholder={item.target_type === "external_url" ? "https://dominio-autorizado.com" : "/produtos?..."} onChange={(event) => onChange({ target_route: event.target.value })} /></label> : item.target_type !== "none" && <label className="homepage-target-search"><span>Pesquisar cadastro</span><input value={targetQuery} onChange={(event) => setTargetQuery(event.target.value)} placeholder="Digite ao menos 2 caracteres" />{searching && <LoaderCircle className="spin" />}{targets.length > 0 && <div role="listbox">{targets.map((target) => <button type="button" role="option" aria-selected={item.target_id === target.id} key={target.id} onClick={() => { onChange({ target_id: target.id, target_route: target.route, title: item.title || target.label }); setTargets([]); setTargetQuery(target.label); }}>{target.image && <span className="homepage-target-thumb" style={targetImage(target.image)} />}<span><strong>{target.label}</strong><small>{target.detail}</small></span></button>)}</div>}</label>}
+    <div className="admin-form-grid"><label><span>Nome interno *</span><input required value={item.internal_name} onChange={(event) => onChange({ internal_name: event.target.value })} /></label><label><span>{sectionType === "reviews_carousel" ? "Nome do cliente" : "Título"}</span><input value={item.title} onChange={(event) => onChange({ title: event.target.value })} /></label>{sectionType === "reviews_carousel" && <label><span>Produto relacionado (rótulo opcional)</span><input value={item.subtitle} onChange={(event) => onChange({ subtitle: event.target.value })} /></label>}<label className="wide"><span>{sectionType === "reviews_carousel" ? "Comentário" : "Descrição"}</span><textarea rows={2} value={item.description} onChange={(event) => onChange({ description: event.target.value })} /></label>
+      {(sectionType === "benefits" || sectionType === "reviews_carousel") && <label className="admin-check"><input type="checkbox" checked={configBoolean(item.config, "enabled", true)} onChange={(event) => onChange({ config: { ...item.config, enabled: event.target.checked } })} /><span>Item ativo</span></label>}
+      {sectionType === "benefits" && <label><span>Ícone</span><select value={configString(item.config, "icon", "shopping-bag")} onChange={(event) => onChange({ config: { ...item.config, icon: event.target.value } })}>{[["shopping-bag","Carrinho"],["shield-check","Proteção"],["package-check","Pedido"],["headphones","Atendimento"],["truck","Entrega"],["heart","Favoritos"],["credit-card","Pagamento"],["account","Conta"]].map(([key,label]) => <option value={key} key={key}>{label}</option>)}</select></label>}
+      {sectionType === "reviews_carousel" && <>
+        <label><span>Origem</span><select value={testimonialOrigin} onChange={(event) => onChange({ config: { ...item.config, origin: event.target.value, reviewId: undefined } })}><option value="manual">Manual (sem selo verificado)</option><option value="customer_review">Avaliação real aprovada</option></select></label>
+        {testimonialOrigin === "manual" ? <><label><span>Nota</span><input type="number" min={1} max={5} value={configNumber(item.config, "rating", 5)} onChange={(event) => onChange({ config: { ...item.config, rating: Number(event.target.value) } })} /></label><label><span>Data opcional</span><input type="date" value={configString(item.config, "date", "")} onChange={(event) => onChange({ config: { ...item.config, date: event.target.value } })} /></label></> : <label className="homepage-target-search wide"><span>Selecionar avaliação aprovada</span><input value={targetQuery} onChange={(event) => setTargetQuery(event.target.value)} placeholder="Busque pelo texto da avaliação" />{searching && <LoaderCircle className="spin" />}{configString(item.config, "reviewId", "") && <small>Avaliação vinculada: {configString(item.config, "reviewId", "").slice(0, 8)}</small>}{targets.length > 0 && <div role="listbox">{targets.map((target) => <button type="button" role="option" aria-selected={configString(item.config, "reviewId", "") === target.id} key={target.id} onClick={() => { onChange({ title: item.title || "Cliente curti Z", subtitle: item.subtitle || target.label.replace(/^Avaliação sobre /u, ""), target_route: target.route, config: { ...item.config, origin: "customer_review", reviewId: target.id } }); setTargets([]); setTargetQuery(target.label); }}><span><strong>{target.label}</strong><small>{target.detail}</small></span></button>)}</div>}</label>}
+      </>}
+      {!(sectionType === "reviews_carousel" && testimonialOrigin === "customer_review") && <><label><span>Destino</span><select value={item.target_type} onChange={(event) => onChange({ target_type: event.target.value, target_id: "", target_route: "" })}>{[["none","Nenhum"],["product","Produto"],["category","Categoria"],["subcategory","Subcategoria"],["model","Modelo"],["brand","Marca (quando cadastrada)"],["collection","Coleção"],["campaign","Campanha"],["page","Página"],["guide","Guia"],["search","Busca predefinida"],["offer","Oferta"],["external_url","URL externa autorizada"]].map(([key,label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      {["external_url","search","offer"].includes(item.target_type) ? <label><span>Destino seguro</span><input type={item.target_type === "external_url" ? "url" : "text"} value={item.target_route} placeholder={item.target_type === "external_url" ? "https://dominio-autorizado.com" : "/produtos?..."} onChange={(event) => onChange({ target_route: event.target.value })} /></label> : item.target_type !== "none" && <label className="homepage-target-search"><span>Pesquisar cadastro</span><input value={targetQuery} onChange={(event) => setTargetQuery(event.target.value)} placeholder="Digite ao menos 2 caracteres" />{searching && <LoaderCircle className="spin" />}{targets.length > 0 && <div role="listbox">{targets.map((target) => <button type="button" role="option" aria-selected={item.target_id === target.id} key={target.id} onClick={() => { onChange({ target_id: target.id, target_route: target.route, ...(sectionType === "reviews_carousel" ? { subtitle: item.subtitle || target.label } : { title: item.title || target.label }) }); setTargets([]); setTargetQuery(target.label); }}>{target.image && <span className="homepage-target-thumb" style={targetImage(target.image)} />}<span><strong>{target.label}</strong><small>{target.detail}</small></span></button>)}</div>}</label>}</>}
       {canUpload && <div className="homepage-media-buttons wide">{(["desktop","mobile","video"] as const).map((role) => <label key={role}><span>{role === "desktop" ? "Imagem desktop" : role === "mobile" ? "Imagem mobile" : "Vídeo"}</span><span className="secondary-button homepage-file-button"><Upload /> {uploading ? "Enviando…" : item.media.some((entry) => entry.role === role) ? "Substituir" : "Enviar"}<input type="file" accept={role === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp"} disabled={uploading} onChange={(event) => void upload(event.target.files?.[0], role)} /></span></label>)}</div>}
       {item.media.length > 0 && <><label className="wide"><span>Mídias armazenadas</span><input readOnly value={item.media.map((entry) => `${entry.role}: ${entry.path}`).join(" · ")} /></label><label className="wide"><span>Texto alternativo {!item.decorative && "*"}</span><input required={!item.decorative} maxLength={300} value={item.alt_text} onChange={(event) => onChange({ alt_text: event.target.value })} /></label><label className="admin-check wide"><input type="checkbox" checked={item.decorative} onChange={(event) => onChange({ decorative: event.target.checked, alt_text: event.target.checked ? "" : item.alt_text })} /><span>Imagem decorativa</span></label></>}
     </div>

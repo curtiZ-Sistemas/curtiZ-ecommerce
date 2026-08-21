@@ -9602,6 +9602,225 @@ body:has(.representative-portal-layout) > .demo-banner {
   border-radius: var(--radius);
 }
 
+.home-benefits {
+  position: relative;
+  z-index: 2;
+}
+
+.home-benefits .benefits-grid {
+  min-height: 96px;
+  border-color: var(--neutral-150);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.home-benefits .benefits-grid > * {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  background: var(--white);
+}
+
+.home-benefits .benefits-grid > * + * {
+  border-left: 1px solid var(--neutral-150);
+}
+
+.home-benefits .benefit {
+  height: 100%;
+  min-height: 94px;
+  padding: 18px clamp(14px, 2vw, 24px);
+  transition: background 160ms var(--ease), transform 160ms var(--ease);
+}
+
+.home-benefits a:hover .benefit {
+  background: var(--neutral-50);
+  transform: translateY(-1px);
+}
+
+.home-benefits .benefit strong {
+  font-size: 0.82rem;
+}
+
+.home-benefits .benefit span {
+  overflow: hidden;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.testimonial-carousel {
+  --testimonial-gap: 14px;
+  position: relative;
+}
+
+.testimonial-carousel-viewport {
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+.testimonial-carousel-track {
+  display: flex;
+  margin-left: calc(var(--testimonial-gap) * -1);
+}
+
+.testimonial-carousel-slide {
+  min-width: 0;
+  flex: 0 0 calc(100% / var(--testimonial-columns));
+  padding-left: var(--testimonial-gap);
+}
+
+.testimonial-card {
+  height: 100%;
+  min-height: 244px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+}
+
+.testimonial-stars {
+  display: flex;
+  gap: 3px;
+  color: var(--brand-700);
+}
+
+.testimonial-stars svg {
+  width: 16px;
+  height: 16px;
+}
+
+.testimonial-card blockquote {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--neutral-900);
+  font-size: 0.88rem;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.testimonial-card footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.testimonial-card footer img,
+.testimonial-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.testimonial-avatar {
+  display: grid;
+  place-items: center;
+  color: var(--brand-900);
+  background: var(--brand-100);
+  font-weight: 800;
+}
+
+.testimonial-card footer div {
+  display: grid;
+  gap: 2px;
+}
+
+.testimonial-card footer strong {
+  font-size: 0.78rem;
+}
+
+.testimonial-card time,
+.testimonial-card > a {
+  color: var(--neutral-600);
+  font-size: 0.68rem;
+}
+
+.testimonial-card > a {
+  width: fit-content;
+  color: var(--brand-800);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.verified-purchase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.verified-purchase svg {
+  width: 14px;
+  height: 14px;
+}
+
+.testimonial-carousel-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.testimonial-carousel-controls button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--brand-900);
+  border: 1px solid var(--neutral-300);
+  border-radius: 50%;
+  background: var(--white);
+  cursor: pointer;
+}
+
+.testimonial-carousel-controls button:hover {
+  color: var(--white);
+  border-color: var(--brand-800);
+  background: var(--brand-800);
+}
+
+@media (min-width: 701px) {
+  .home-device-desktop-off {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .home-device-mobile-off {
+    display: none;
+  }
+
+  .testimonial-carousel-slide {
+    flex-basis: 88%;
+  }
+
+  .testimonial-card {
+    min-height: 230px;
+    padding: 19px;
+  }
+
+  .testimonial-carousel-controls {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-benefits .benefit {
+    transition: none;
+  }
+}
+
 .product-gallery {
   min-height: 0;
   display: grid;

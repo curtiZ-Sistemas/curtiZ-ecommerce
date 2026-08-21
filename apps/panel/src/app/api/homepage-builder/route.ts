@@ -78,7 +78,36 @@ const sectionPayloadSchema = z.object({
     if (item.targetType !== "none" && !item.targetRoute) {
       context.addIssue({ code: "custom", path: ["items", index, "targetRoute"], message: "Destino obrigatório." });
     }
+    if (value.sectionType === "reviews_carousel") {
+      const origin = typeof item.config.origin === "string" ? item.config.origin : "manual";
+      if (!(["manual", "customer_review"] as string[]).includes(origin)) {
+        context.addIssue({ code: "custom", path: ["items", index, "config", "origin"], message: "Origem inválida." });
+      }
+      if (origin === "manual" && item.config.rating !== undefined && (typeof item.config.rating !== "number" || item.config.rating < 1 || item.config.rating > 5)) {
+        context.addIssue({ code: "custom", path: ["items", index, "config", "rating"], message: "Nota entre 1 e 5 obrigatória." });
+      }
+      if (origin === "customer_review" && !z.string().uuid().safeParse(item.config.reviewId).success) {
+        context.addIssue({ code: "custom", path: ["items", index, "config", "reviewId"], message: "Avaliação real obrigatória." });
+      }
+    }
   });
+  if (value.sectionType === "benefits" && value.items.length > 4) {
+    context.addIssue({ code: "custom", path: ["items"], message: "A faixa aceita no máximo quatro benefícios." });
+  }
+  if (value.sectionType === "reviews_carousel") {
+    const limit = Number(value.content.limit ?? 6);
+    const cards = Number(value.content.desktopCards ?? 3);
+    const interval = Number(value.content.autoplayInterval ?? 6000);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 12) context.addIssue({ code: "custom", path: ["content", "limit"], message: "Quantidade de depoimentos inválida." });
+    if (![2, 3, 4].includes(cards)) context.addIssue({ code: "custom", path: ["content", "desktopCards"], message: "Quantidade por viewport inválida." });
+    if (interval < 3000 || interval > 15000) context.addIssue({ code: "custom", path: ["content", "autoplayInterval"], message: "Intervalo de autoplay inválido." });
+  }
+  if (value.sectionType === "best_sellers") {
+    const salesPeriod = value.content.salesPeriod ?? "90d";
+    const rankingMetric = value.content.rankingMetric ?? "units";
+    if (typeof salesPeriod !== "string" || !["30d", "90d", "all"].includes(salesPeriod)) context.addIssue({ code: "custom", path: ["content", "salesPeriod"], message: "Período inválido." });
+    if (typeof rankingMetric !== "string" || !["units", "revenue"].includes(rankingMetric)) context.addIssue({ code: "custom", path: ["content", "rankingMetric"], message: "Critério inválido." });
+  }
 });
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -134,6 +163,10 @@ async function targets(request: NextRequest) {
     let builder = auth.supabase.from("promotion_campaigns").select("id,name,status,starts_at,ends_at").in("status", ["approved", "published", "scheduled"]).order("name").limit(40);
     if (query) builder = builder.ilike("name", `%${query}%`);
     result = await builder;
+  } else if (type === "review") {
+    let builder = auth.supabase.from("reviews").select("id,rating,content,verified_purchase,created_at,products(name,slug)").eq("status", "approved").order("created_at", { ascending: false }).limit(30);
+    if (query) builder = builder.ilike("content", `%${query}%`);
+    result = await builder;
   } else if (type === "page" || type === "guide") {
     let builder = auth.supabase.from("cms_pages").select("id,title,slug,status").eq("status", "published").order("title").limit(40);
     if (query) builder = builder.or(`title.ilike.%${query}%,slug.ilike.%${query}%`);
@@ -146,11 +179,14 @@ async function targets(request: NextRequest) {
     const id = text(row, "id");
     const label = text(row, "name") || text(row, "title");
     const slug = text(row, "slug");
+    const relatedProduct = objectRows(row.products)[0] ?? record(row.products) ?? {};
+    const relatedSlug = text(relatedProduct, "slug");
     const route = type === "product" ? `/produto/${slug}`
       : type === "category" || type === "subcategory" ? `/produtos?categoria=${encodeURIComponent(label)}`
       : type === "model" ? `/modelos/${slug}`
       : type === "collection" ? `/produtos?colecao=${encodeURIComponent(label)}`
       : type === "campaign" ? "/ofertas"
+      : type === "review" && relatedSlug ? `/produto/${relatedSlug}`
       : `/${slug}`;
     const variants = objectRows(row.product_variants);
     const firstSku = variants.length ? text(variants[0]!, "sku") : "";
@@ -161,7 +197,9 @@ async function targets(request: NextRequest) {
     }, 0);
     const price = typeof row.base_price === "number" ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(row.base_price) : "";
     const image = objectRows(row.product_images).sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true)).map((entry) => text(entry, "storage_path"))[0] ?? "";
-    return { id, label, route, image, detail: type === "product" ? [firstSku, price, `${stock} disponível(is)`].filter(Boolean).join(" · ") : text(row, "status") || "ativo" };
+    const reviewLabel = type === "review" ? `Avaliação sobre ${text(relatedProduct, "name") || "produto"}` : label;
+    const reviewDetail = type === "review" ? `${text(row, "rating")} estrela(s) · ${text(row, "content").slice(0, 100)}` : "";
+    return { id, label: reviewLabel, route, image, detail: type === "product" ? [firstSku, price, `${stock} disponível(is)`].filter(Boolean).join(" · ") : reviewDetail || text(row, "status") || "ativo" };
   });
   return NextResponse.json({ targets: serialized }, { headers: privateNoStore });
 }

@@ -1,11 +1,12 @@
 import type { HomepageSection, HomepageSectionItem, Product } from "@curtiz/domain";
-import { ArrowRight, Headphones, PackageCheck, ShieldCheck, ShoppingBag } from "lucide-react";
+import { ArrowRight, CreditCard, Headphones, Heart, PackageCheck, ShieldCheck, ShoppingBag, Truck, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { CategoryCarousel } from "./category-carousel";
 import { HomepageCountdown, HomepageMetric } from "./homepage-section-runtime";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
+import { TestimonialCarousel, type TestimonialCardData } from "./testimonial-carousel";
 import type { HomepageData, PublicBanner } from "@/lib/storefront-data";
 
 const categoryRoutes = new Map([["Masculino", "/masculino"], ["Feminino", "/feminino"], ["Infantil", "/infantil"], ["Slides", "/slides"], ["Sandálias", "/sandalias"]]);
@@ -26,9 +27,32 @@ const sectionClass = (section: HomepageSection) => {
   const spacingTop = styleToken(section, "spacingTop", ["none", "small", "medium", "large"], "medium");
   const spacingBottom = styleToken(section, "spacingBottom", ["none", "small", "medium", "large"], "medium");
   const background = styleToken(section, "background", ["default", "subtle", "brand", "dark"], "default");
-  return `home-builder-section home-layout-${section.layout} home-visible-${section.visibility} home-space-top-${spacingTop} home-space-bottom-${spacingBottom} home-background-${background}`;
+  const desktopEnabled = settingBoolean(section, "desktopEnabled", true);
+  const mobileEnabled = settingBoolean(section, "mobileEnabled", section.sectionType !== "benefits");
+  return `home-builder-section home-layout-${section.layout} home-visible-${section.visibility} home-space-top-${spacingTop} home-space-bottom-${spacingBottom} home-background-${background}${desktopEnabled ? "" : " home-device-desktop-off"}${mobileEnabled ? "" : " home-device-mobile-off"}`;
 };
 const mediaFor = (item: HomepageSectionItem, role: string) => item.media.find((media) => media.role === role) ?? item.media.find((media) => media.role === "desktop") ?? item.media[0];
+const itemBoolean = (item: HomepageSectionItem, key: string, fallback: boolean) => typeof item.config[key] === "boolean" ? item.config[key] === true : fallback;
+const itemString = (item: HomepageSectionItem, key: string, fallback = "") => typeof item.config[key] === "string" ? item.config[key] : fallback;
+const itemNumber = (item: HomepageSectionItem, key: string, fallback: number) => typeof item.config[key] === "number" && Number.isFinite(item.config[key]) ? item.config[key] : fallback;
+
+const benefitIcons = {
+  "shopping-bag": ShoppingBag,
+  "shield-check": ShieldCheck,
+  "package-check": PackageCheck,
+  headphones: Headphones,
+  truck: Truck,
+  heart: Heart,
+  "credit-card": CreditCard,
+  account: UserRound
+} as const;
+
+const defaultBenefits: Array<{ id: string; title: string; description: string; icon: keyof typeof benefitIcons }> = [
+  { id: "cart", title: "Carrinho preservado", description: "Sua seleção continua com você.", icon: "shopping-bag" },
+  { id: "protected", title: "Compra protegida", description: "Preço e estoque validados antes do pedido.", icon: "shield-check" },
+  { id: "order", title: "Acompanhe seu pedido", description: "Tudo organizado na sua conta.", icon: "package-check" },
+  { id: "support", title: "Atendimento fácil", description: "Ajuda disponível durante sua compra.", icon: "headphones" }
+];
 
 function productsFor(section: HomepageSection, products: Product[]) {
   const limit = Math.min(24, Math.max(1, settingNumber(section, "limit", 8)));
@@ -58,7 +82,9 @@ export function HomepageSectionRenderer({ data, section, priority }: { data: Hom
     return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Encontre seu estilo"} title={section.title ?? "Para todos os momentos"} /><CategoryCarousel categories={categories.map(({ name, href, product }) => ({ name, href, image: product!.image }))} /></section></HomepageMetric>;
   }
   if (productTypes.has(section.sectionType)) {
-    const products = productsFor(section, data.products);
+    const products = section.sectionType === "best_sellers"
+      ? data.productsBySection[section.id] ?? []
+      : productsFor(section, data.products);
     if (!products.length) return null;
     const carousel = section.layout === "carousel" || section.sectionType.includes("carousel") || section.sectionType === "product_horizontal";
     const display = { price: settingBoolean(section, "showPrice", true), rating: settingBoolean(section, "showRating", true), discount: settingBoolean(section, "showDiscount", true), installments: settingBoolean(section, "showInstallments", false), favorite: settingBoolean(section, "showFavorite", true), stock: settingBoolean(section, "showStock", false), badge: settingBoolean(section, "showBadge", true), purchase: settingBoolean(section, "showPurchase", false) };
@@ -84,12 +110,68 @@ export function HomepageSectionRenderer({ data, section, priority }: { data: Hom
     return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Tempo limitado"} title={section.title ?? "A oferta termina em"} /><HomepageCountdown endsAt={section.endsAt} /></section></HomepageMetric>;
   }
   if (section.sectionType === "reviews_carousel") {
-    const reviewed = [...data.products].filter((product) => product.reviews > 0).sort((left, right) => right.rating - left.rating).slice(0, 4);
-    if (!reviewed.length) return null;
-    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Avaliações verificadas"} title={section.title ?? "Modelos bem avaliados"} /><div className="home-review-grid">{reviewed.map((product) => <Link href={`/produto/${product.slug}`} data-home-item={product.id} key={product.id}><strong>{product.rating.toLocaleString("pt-BR")} de 5</strong><span>{product.name}</span><small>{product.reviews.toLocaleString("pt-BR")} avaliações publicadas</small></Link>)}</div></section></HomepageMetric>;
+    const limit = Math.min(12, Math.max(1, settingNumber(section, "limit", 6)));
+    const source = settingString(section, "source", "automatic");
+    const automatic: TestimonialCardData[] = data.testimonials.map((review) => ({
+      id: review.id,
+      name: "Cliente curti Z",
+      comment: review.comment,
+      rating: Math.round(review.rating),
+      date: review.createdAt,
+      ...(review.productName ? { productName: review.productName } : {}),
+      ...(review.productSlug ? { productHref: `/produto/${review.productSlug}` } : {}),
+      verified: review.verified
+    }));
+    const managed = section.items.filter((item) => itemBoolean(item, "enabled", true)).flatMap((item): TestimonialCardData[] => {
+      const origin = itemString(item, "origin", "manual");
+      if (origin === "customer_review") {
+        const review = data.testimonials.find((candidate) => candidate.id === itemString(item, "reviewId"));
+        if (!review) return [];
+        return [{
+          id: item.id,
+          name: item.title ?? "Cliente curti Z",
+          comment: review.comment,
+          rating: Math.round(review.rating),
+          date: review.createdAt,
+          ...(review.productName ? { productName: review.productName } : {}),
+          ...(review.productSlug ? { productHref: `/produto/${review.productSlug}` } : {}),
+          verified: review.verified
+        }];
+      }
+      if (!item.description?.trim()) return [];
+      const avatar = mediaFor(item, "thumbnail") ?? mediaFor(item, "desktop");
+      const date = itemString(item, "date");
+      return [{
+        id: item.id,
+        name: item.title?.trim() || "Cliente",
+        comment: item.description,
+        rating: Math.min(5, Math.max(1, Math.round(itemNumber(item, "rating", 5)))),
+        ...(avatar ? { avatar: avatar.path } : {}),
+        ...(date ? { date } : {}),
+        ...(item.subtitle ? { productName: item.subtitle } : {}),
+        ...(item.targetRoute ? { productHref: item.targetRoute } : {}),
+        verified: false
+      }];
+    });
+    const testimonials = (source === "manual" ? managed : managed.length ? managed : automatic).slice(0, limit);
+    if (!testimonials.length) return null;
+    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container home-testimonials`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Experiências de quem já comprou na curti Z."} title={section.title ?? "O que dizem sobre nós"} /><TestimonialCarousel items={testimonials} autoplay={settingBoolean(section, "autoplay", false)} autoplayInterval={Math.min(15_000, Math.max(3_000, settingNumber(section, "autoplayInterval", 6_000)))} desktopCards={Math.min(4, Math.max(2, settingNumber(section, "desktopCards", 3)))} /></section></HomepageMetric>;
   }
   if (section.sectionType === "benefits" || section.sectionType === "safe_component") {
-    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container home-benefits`} aria-labelledby={`${section.id}-title`}><SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Experiência de compra"} title={section.title ?? "Comprar na curti Z é simples"} /><div className="benefits-grid"><Benefit icon={<ShoppingBag />} title="Carrinho preservado" text="Monte sua seleção antes de entrar." /><Benefit icon={<ShieldCheck />} title="Validação do pedido" text="Preço e estoque são validados no servidor." /><Benefit icon={<PackageCheck />} title="Acompanhamento" text="Pedidos ficam organizados na sua conta." /><Benefit icon={<Headphones />} title="Atendimento" text="Central de ajuda acessível em toda a loja." /></div></section></HomepageMetric>;
+    const configured = section.items.slice(0, 4).filter((item) => itemBoolean(item, "enabled", true)).map((item) => ({
+      id: item.id,
+      title: item.title ?? item.internalName,
+      description: item.description ?? "",
+      icon: itemString(item, "icon", "shopping-bag") as keyof typeof benefitIcons,
+      href: item.targetRoute
+    }));
+    const benefits = section.items.length ? configured : defaultBenefits;
+    if (!benefits.length) return null;
+    return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container home-benefits`} aria-label={section.title ?? "Vantagens de comprar na curti Z"}><div className="benefits-grid">{benefits.map((benefit) => {
+      const Icon = benefitIcons[benefit.icon] ?? ShoppingBag;
+      const content = <Benefit icon={<Icon aria-hidden="true" />} title={benefit.title} text={benefit.description} />;
+      return "href" in benefit && benefit.href ? <Link href={benefit.href} data-home-item={benefit.id} key={benefit.id}>{content}</Link> : <div key={benefit.id}>{content}</div>;
+    })}</div></section></HomepageMetric>;
   }
   if (["editorial", "institutional", "newsletter"].includes(section.sectionType)) {
     return <HomepageMetric versionId={section.versionId}><section className={`${sectionClass(section)} container home-editorial`} aria-labelledby={`${section.id}-title`}><div><p className="eyebrow">{section.subtitle ?? (section.sectionType === "newsletter" ? "Novidades" : "curti Z")}</p><h2 id={`${section.id}-title`}>{section.title ?? (section.sectionType === "newsletter" ? "Acompanhe as novidades da curti Z" : "Conteúdo curti Z")}</h2>{section.description && <p>{section.description}</p>}<Link className="primary-button" href={section.items[0]?.targetRoute ?? (section.sectionType === "newsletter" ? "/cadastro" : "/produtos")} data-home-item={section.items[0]?.id ?? "action"}>{section.items[0]?.title ?? (section.sectionType === "newsletter" ? "Criar conta" : "Conhecer produtos")} <ArrowRight /></Link></div>{section.items[0]?.media.length ? <ItemImage item={section.items[0]} priority={priority} /> : null}</section></HomepageMetric>;

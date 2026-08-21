@@ -10,7 +10,7 @@ import {
   type CatalogResult,
   type CatalogSort
 } from "./catalog-query";
-import { parseCatalogRpcResult, productCategory, publicCatalogImage } from "./catalog-result";
+import { parseCatalogRpcResult, parseRpcProductList, productCategory, publicCatalogImage } from "./catalog-result";
 import { selectHomepageSections } from "./homepage-layout";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import { createPublicSupabaseClient } from "./supabase/server";
@@ -32,7 +32,20 @@ export type HomepageData = {
   sections: HomepageSection[];
   banners: PublicBanner[];
   products: Product[];
+  productsBySection: Record<string, Product[]>;
+  testimonials: HomepageTestimonial[];
   source: "supabase" | "demo";
+};
+
+export type HomepageTestimonial = {
+  id: string;
+  rating: number;
+  comment: string;
+  verified: boolean;
+  createdAt: string;
+  productId: string;
+  productName?: string;
+  productSlug?: string;
 };
 
 export type ProductVariantOption = {
@@ -117,16 +130,20 @@ const defaultSections: HomepageSection[] = [
     sortOrder: 1
   },
   {
-    id: "default-categories",
-    sectionType: "categories_grid",
-    title: "Para todos os momentos",
-    subtitle: "Encontre seu estilo",
-    layout: "content_centered",
+    id: "default-benefits",
+    sectionType: "benefits",
+    title: "Vantagens curti Z",
+    layout: "horizontal_strip",
     visibility: "all",
-    style: {},
-    content: {},
-    settings: {},
-    items: [],
+    style: { spacingTop: "small", spacingBottom: "small" },
+    content: { limit: 4, desktopEnabled: true, mobileEnabled: false },
+    settings: { limit: 4, desktopEnabled: true, mobileEnabled: false },
+    items: [
+      { id: "benefit-cart", itemType: "benefit", internalName: "Carrinho preservado", title: "Carrinho preservado", description: "Sua seleção continua com você.", decorative: true, targetType: "none", sortOrder: 0, config: { icon: "shopping-bag", enabled: true }, media: [] },
+      { id: "benefit-protected", itemType: "benefit", internalName: "Compra protegida", title: "Compra protegida", description: "Preço e estoque validados antes do pedido.", decorative: true, targetType: "none", sortOrder: 1, config: { icon: "shield-check", enabled: true }, media: [] },
+      { id: "benefit-order", itemType: "benefit", internalName: "Acompanhe seu pedido", title: "Acompanhe seu pedido", description: "Tudo organizado na sua conta.", decorative: true, targetType: "none", sortOrder: 2, config: { icon: "package-check", enabled: true }, media: [] },
+      { id: "benefit-support", itemType: "benefit", internalName: "Atendimento fácil", title: "Atendimento fácil", description: "Ajuda disponível durante sua compra.", decorative: true, targetType: "none", sortOrder: 3, config: { icon: "headphones", enabled: true }, media: [] }
+    ],
     active: true,
     sortOrder: 2
   },
@@ -145,17 +162,46 @@ const defaultSections: HomepageSection[] = [
     sortOrder: 3
   },
   {
-    id: "default-benefits",
-    sectionType: "benefits",
-    title: "Comprar na curti Z é simples",
-    layout: "four_columns",
+    id: "default-testimonials",
+    sectionType: "reviews_carousel",
+    title: "O que dizem sobre nós",
+    subtitle: "Experiências de quem já comprou na curti Z.",
+    layout: "carousel",
+    visibility: "all",
+    style: {},
+    content: { source: "automatic", limit: 6, desktopCards: 3, autoplay: false, autoplayInterval: 6000, desktopEnabled: true, mobileEnabled: true },
+    settings: { source: "automatic", limit: 6, desktopCards: 3, autoplay: false, autoplayInterval: 6000, desktopEnabled: true, mobileEnabled: true },
+    items: [],
+    active: true,
+    sortOrder: 4
+  },
+  {
+    id: "default-best-sellers",
+    sectionType: "best_sellers",
+    title: "Mais vendidos",
+    subtitle: "Os favoritos dos nossos clientes",
+    layout: "carousel",
+    visibility: "all",
+    style: {},
+    content: { limit: 8, salesPeriod: "90d", rankingMetric: "units", fillEmptySlots: true, excludeOutOfStock: true, desktopEnabled: true, mobileEnabled: true },
+    settings: { limit: 8, salesPeriod: "90d", rankingMetric: "units", fillEmptySlots: true, excludeOutOfStock: true, desktopEnabled: true, mobileEnabled: true },
+    items: [],
+    active: true,
+    sortOrder: 5
+  },
+  {
+    id: "default-categories",
+    sectionType: "categories_grid",
+    title: "Para todos os momentos",
+    subtitle: "Encontre seu estilo",
+    layout: "content_centered",
     visibility: "all",
     style: {},
     content: {},
     settings: {},
     items: [],
     active: true,
-    sortOrder: 4
+    sortOrder: 6
   }
 ];
 
@@ -300,6 +346,10 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       sections: defaultSections,
       banners: [fallbackBanner],
       products: demoProducts,
+      productsBySection: {
+        "default-best-sellers": [...demoProducts].sort((left, right) => right.reviews - left.reviews || left.id.localeCompare(right.id)).slice(0, 8)
+      },
+      testimonials: [],
       source: "demo"
     };
   }
@@ -312,6 +362,10 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       sections: defaultSections,
       banners: [fallbackBanner],
       products: developmentFallback ? demoProducts : [],
+      productsBySection: developmentFallback ? {
+        "default-best-sellers": [...demoProducts].sort((left, right) => right.reviews - left.reviews || left.id.localeCompare(right.id)).slice(0, 8)
+      } : {},
+      testimonials: [],
       source: "demo"
     };
   }
@@ -419,10 +473,84 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     ? selectedSections
     : [defaultSections[0]!, ...selectedSections];
 
+  const bestSellerSections = homepageSections.filter((section) => section.sectionType === "best_sellers");
+  const bestSellerRequests = new Map<string, { period: string; metric: string; limit: number; fill: boolean; inStock: boolean }>();
+  for (const section of bestSellerSections) {
+    const periodValue = readString(section.content, "salesPeriod", "90d");
+    const metricValue = readString(section.content, "rankingMetric", "units");
+    const request = {
+      period: ["30d", "90d", "all"].includes(periodValue) ? periodValue : "90d",
+      metric: ["units", "revenue"].includes(metricValue) ? metricValue : "units",
+      limit: Math.min(24, Math.max(1, readNumber(section.content, "limit", 8))),
+      fill: section.content.fillEmptySlots !== false,
+      inStock: section.content.excludeOutOfStock !== false
+    };
+    bestSellerRequests.set(JSON.stringify(request), request);
+  }
+  const rankedByRequest = new Map<string, Product[]>();
+  await Promise.all([...bestSellerRequests.entries()].slice(0, 6).map(async ([key, request]) => {
+    const response = await supabase.rpc("get_homepage_best_sellers", {
+      p_period: request.period,
+      p_metric: request.metric,
+      p_limit: request.limit,
+      p_fill: request.fill,
+      p_in_stock: request.inStock
+    });
+    const result = readQueryResult(response);
+    if (!result.error) rankedByRequest.set(key, parseRpcProductList(result.data) ?? []);
+  }));
+  const productsBySection = Object.fromEntries(bestSellerSections.map((section) => {
+    const periodValue = readString(section.content, "salesPeriod", "90d");
+    const metricValue = readString(section.content, "rankingMetric", "units");
+    const request = {
+      period: ["30d", "90d", "all"].includes(periodValue) ? periodValue : "90d",
+      metric: ["units", "revenue"].includes(metricValue) ? metricValue : "units",
+      limit: Math.min(24, Math.max(1, readNumber(section.content, "limit", 8))),
+      fill: section.content.fillEmptySlots !== false,
+      inStock: section.content.excludeOutOfStock !== false
+    };
+    const fallback = fallbackProductsEnabled
+      ? [...demoProducts].sort((left, right) => right.reviews - left.reviews || left.id.localeCompare(right.id)).slice(0, request.limit)
+      : [];
+    return [section.id, rankedByRequest.get(JSON.stringify(request)) ?? fallback];
+  }));
+
+  const reviewSections = homepageSections.filter((section) => section.sectionType === "reviews_carousel");
+  const selectedReviewIds = [...new Set(reviewSections.flatMap((section) => section.items.map((item) => readString(item.config, "reviewId")).filter(Boolean)))].slice(0, 24);
+  const reviewLimit = Math.min(24, Math.max(1, ...reviewSections.map((section) => readNumber(section.content, "limit", 6))));
+  const [recentReviewsResponse, selectedReviewsResponse] = await Promise.all([
+    reviewSections.length
+      ? supabase.from("reviews").select("id,rating,content,verified_purchase,created_at,product_id,products(name,slug)").eq("status", "approved").order("created_at", { ascending: false }).limit(reviewLimit)
+      : Promise.resolve(null),
+    selectedReviewIds.length
+      ? supabase.from("reviews").select("id,rating,content,verified_purchase,created_at,product_id,products(name,slug)").eq("status", "approved").in("id", selectedReviewIds).limit(24)
+      : Promise.resolve(null)
+  ]);
+  const testimonials = [...readRows(readQueryResult(recentReviewsResponse).data), ...readRows(readQueryResult(selectedReviewsResponse).data)]
+    .filter((row, index, rows) => rows.findIndex((candidate) => readString(candidate, "id") === readString(row, "id")) === index)
+    .flatMap((row): HomepageTestimonial[] => {
+      const id = readString(row, "id");
+      const comment = readString(row, "content");
+      const product = readRows(row.products)[0] ?? (isUnknownRecord(row.products) ? row.products : {});
+      if (!id || !comment) return [];
+      return [{
+        id,
+        rating: Math.min(5, Math.max(1, readNumber(row, "rating"))),
+        comment,
+        verified: row.verified_purchase === true,
+        createdAt: readString(row, "created_at"),
+        productId: readString(row, "product_id"),
+        ...(readString(product, "name") ? { productName: readString(product, "name") } : {}),
+        ...(readString(product, "slug") ? { productSlug: readString(product, "slug") } : {})
+      }];
+    });
+
   return {
     sections: homepageSections,
     banners: fallbackBannerEnabled ? [fallbackBanner] : banners,
     products: fallbackProductsEnabled ? demoProducts : products,
+    productsBySection,
+    testimonials,
     source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
   };
 });

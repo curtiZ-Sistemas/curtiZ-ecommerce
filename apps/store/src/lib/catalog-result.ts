@@ -46,6 +46,8 @@ export const rpcResultSchema = z.object({
   total: z.coerce.number().int().nonnegative()
 });
 
+export const rpcProductListSchema = z.array(rpcProductSchema);
+
 export const productCategory = (value: string): Product["category"] => {
   const allowed: Product["category"][] = [
     "Masculino",
@@ -66,6 +68,32 @@ export const publicCatalogImage = (path: string | null | undefined, slug?: strin
     : "/icon.svg";
 };
 
+export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Product {
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    category: productCategory(product.category),
+    description: product.description,
+    priceInCents: product.priceInCents,
+    ...(product.compareAtPriceInCents
+      ? { compareAtPriceInCents: product.compareAtPriceInCents }
+      : {}),
+    rating: product.rating,
+    reviews: product.reviews,
+    colors: product.colors,
+    sizes: product.sizes,
+    image: publicCatalogImage(product.imagePath, product.slug),
+    featured: product.featured,
+    stock: product.stock
+  };
+}
+
+export function parseRpcProductList(data: unknown): Product[] | null {
+  const parsed = rpcProductListSchema.safeParse(data);
+  return parsed.success ? parsed.data.map(mapRpcProduct) : null;
+}
+
 export function parseCatalogRpcResult(
   data: unknown,
   options: { page: number; pageSize: number }
@@ -73,24 +101,7 @@ export function parseCatalogRpcResult(
   const parsed = rpcResultSchema.safeParse(data);
   if (!parsed.success) return null;
   return {
-    products: parsed.data.products.map((product) => ({
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      category: productCategory(product.category),
-      description: product.description,
-      priceInCents: product.priceInCents,
-      ...(product.compareAtPriceInCents
-        ? { compareAtPriceInCents: product.compareAtPriceInCents }
-        : {}),
-      rating: product.rating,
-      reviews: product.reviews,
-      colors: product.colors,
-      sizes: product.sizes,
-      image: publicCatalogImage(product.imagePath, product.slug),
-      featured: product.featured,
-      stock: product.stock
-    })),
+    products: parsed.data.products.map(mapRpcProduct),
     facets: parsed.data.facets,
     total: parsed.data.total,
     page: options.page,
