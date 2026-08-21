@@ -155,12 +155,11 @@ export function AccountMobileHome({
     }
   ];
 
-  const firstName = snapshot.profile.fullName.trim().split(/\s+/)[0] || "cliente";
+  const displayName = snapshot.profile.fullName.trim() || "Cliente";
 
   return (
     <section className="account-mobile-home" aria-labelledby="account-mobile-title">
       <header className="account-mobile-profile">
-        <p className="eyebrow">Área do cliente</p>
         <UserAvatar
           name={snapshot.profile.fullName}
           src={snapshot.profile.avatarUrl}
@@ -168,9 +167,8 @@ export function AccountMobileHome({
           className="customer-avatar large"
         />
         <div>
-          <h1 id="account-mobile-title">Olá, {firstName}</h1>
+          <h1 id="account-mobile-title">{displayName}</h1>
           <p>{snapshot.profile.email}</p>
-          <small>Minha conta curti Z</small>
         </div>
       </header>
 

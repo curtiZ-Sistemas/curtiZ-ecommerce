@@ -18,6 +18,39 @@ const keepSinglePrimaryHero = (
   });
 };
 
+const placeOccasionsAfterBenefits = (
+  sections: HomepageSection[]
+): HomepageSection[] => {
+  const benefitsIndex = sections.findIndex(
+    (section) => section.sectionType === "benefits"
+  );
+  const occasionsIndex = sections.findIndex(
+    (section) =>
+      section.sectionType === "categories_grid" &&
+      (section.id === "default-categories" ||
+        section.title?.trim().toLocaleLowerCase("pt-BR") ===
+          "para todos os momentos")
+  );
+
+  if (
+    benefitsIndex < 0 ||
+    occasionsIndex < 0 ||
+    occasionsIndex === benefitsIndex + 1
+  ) {
+    return sections;
+  }
+
+  const reordered = [...sections];
+  const [occasions] = reordered.splice(occasionsIndex, 1);
+  if (!occasions) return sections;
+
+  const updatedBenefitsIndex = reordered.findIndex(
+    (section) => section.sectionType === "benefits"
+  );
+  reordered.splice(updatedBenefitsIndex + 1, 0, occasions);
+  return reordered;
+};
+
 export function selectHomepageSections(
   publishedSections: HomepageSection[],
   defaultSections: HomepageSection[],
@@ -30,5 +63,5 @@ export function selectHomepageSections(
       : hasPublicContent || allowPresentationDefaults
         ? defaultSections
         : [];
-  return keepSinglePrimaryHero(selected);
+  return placeOccasionsAfterBenefits(keepSinglePrimaryHero(selected));
 }

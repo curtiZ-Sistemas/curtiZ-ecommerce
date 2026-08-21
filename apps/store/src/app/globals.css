@@ -9017,14 +9017,22 @@ body:has(.account-experience-page) .help-widget {
   }
 
   .application-steps {
-    grid-template-columns: repeat(6, minmax(44px, 1fr));
+    display: flex;
+    gap: 4px;
     position: static;
     overflow-x: auto;
   }
 
   .application-steps button {
+    flex: 0 0 48px;
     justify-content: center;
     padding: 6px;
+    white-space: nowrap;
+  }
+
+  .application-steps button.active {
+    flex-basis: auto;
+    padding-inline: 10px;
   }
 
   .application-steps button:not(.active) {
@@ -9094,8 +9102,14 @@ body:has(.account-experience-page) .help-widget {
   }
 
   .application-form-card {
+    min-width: 0;
     min-height: 0;
     padding: 20px 16px;
+  }
+
+  .application-form-card h1,
+  .application-form-card p {
+    overflow-wrap: anywhere;
   }
 
   .application-steps {
@@ -9826,6 +9840,12 @@ body:has(.account-experience-page) .help-widget {
 
   .testimonial-carousel-controls {
     display: none;
+  }
+
+  .home-benefits .benefit span {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 }
 
@@ -12526,44 +12546,34 @@ body:has(> #main-content > .auth-page) .site-footer {
 
   .account-mobile-profile {
     display: grid;
-    justify-items: center;
-    padding: 4px 8px 2px;
-    text-align: center;
-  }
-
-  .account-mobile-profile .eyebrow {
-    margin-bottom: 12px;
+    grid-template-columns: 56px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 4px 2px 6px;
+    text-align: left;
   }
 
   .account-mobile-profile .customer-avatar {
-    width: 64px;
-    height: 64px;
-    margin-bottom: 11px;
-    font-size: 1.25rem;
+    width: 56px;
+    height: 56px;
+    margin: 0;
+    font-size: 1.1rem;
   }
 
   .account-mobile-profile h1 {
     margin: 0;
     color: var(--brand-900);
-    font-size: clamp(1.35rem, 7vw, 1.65rem);
-    line-height: 1.15;
+    font-size: 1.05rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
-  .account-mobile-profile p:not(.eyebrow) {
-    max-width: min(100%, 320px);
-    margin-top: 4px;
+  .account-mobile-profile p {
+    margin: 3px 0 0;
     overflow-wrap: anywhere;
     color: var(--muted);
     font-size: 0.77rem;
-  }
-
-  .account-mobile-profile small {
-    display: block;
-    margin-top: 6px;
-    color: var(--neutral-500);
-    font-size: 0.68rem;
-    font-weight: 720;
-    letter-spacing: 0.04em;
+    line-height: 1.4;
   }
 
   .account-mobile-menu {
@@ -12573,11 +12583,11 @@ body:has(> #main-content > .auth-page) .site-footer {
 
   .account-mobile-menu > a {
     display: grid;
-    min-height: 64px;
-    grid-template-columns: 38px minmax(0, 1fr) 18px;
+    min-height: 68px;
+    grid-template-columns: 30px minmax(0, 1fr) 18px;
     align-items: center;
-    gap: 12px;
-    padding: 9px 4px;
+    gap: 10px;
+    padding: 10px 4px;
     border-bottom: 1px solid var(--customer-border);
     color: var(--neutral-800);
   }
@@ -12599,12 +12609,11 @@ body:has(> #main-content > .auth-page) .site-footer {
 
   .account-mobile-menu-icon {
     display: grid;
-    width: 38px;
+    width: 30px;
     height: 38px;
     place-items: center;
-    color: var(--brand-800);
-    background: var(--brand-50);
-    border-radius: 50%;
+    color: #111;
+    background: transparent;
   }
 
   .account-mobile-menu-icon svg {
@@ -12619,17 +12628,17 @@ body:has(> #main-content > .auth-page) .site-footer {
   }
 
   .account-mobile-menu-copy strong {
-    font-size: 0.86rem;
+    font-size: 0.9rem;
     line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   .account-mobile-menu-copy small {
-    overflow: hidden;
     color: var(--muted);
-    font-size: 0.69rem;
+    font-size: 0.72rem;
     line-height: 1.35;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .account-mobile-menu > a > svg {
@@ -12643,8 +12652,8 @@ body:has(> #main-content > .auth-page) .site-footer {
   }
 
   .account-mobile-menu > a.is-opportunity .account-mobile-menu-icon {
-    color: var(--white);
-    background: var(--brand-800);
+    color: #111;
+    background: transparent;
   }
 
   .account-mobile-home > .logout-control {
@@ -12672,7 +12681,7 @@ body:has(> #main-content > .auth-page) .site-footer {
   .account-mobile-subpage-header {
     display: grid;
     min-height: 58px;
-    grid-template-columns: minmax(74px, auto) minmax(0, 1fr) minmax(74px, auto);
+    grid-template-columns: minmax(62px, auto) minmax(0, 1fr) minmax(62px, auto);
     align-items: center;
     border-bottom: 1px solid var(--customer-border);
   }
@@ -12694,13 +12703,12 @@ body:has(> #main-content > .auth-page) .site-footer {
 
   .account-mobile-subpage-header h1 {
     margin: 0;
-    overflow: hidden;
     color: var(--brand-900);
     font-size: 1rem;
     line-height: 1.2;
     text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .customer-account-page.is-subpage .customer-account-layout {
@@ -12738,12 +12746,11 @@ body:has(> #main-content > .auth-page) .site-footer {
   }
 
   .account-mobile-menu > a {
-    grid-template-columns: 34px minmax(0, 1fr) 16px;
+    grid-template-columns: 28px minmax(0, 1fr) 16px;
     gap: 9px;
   }
 
   .account-mobile-menu-icon {
-    width: 34px;
-    height: 34px;
+    width: 28px;
   }
 }

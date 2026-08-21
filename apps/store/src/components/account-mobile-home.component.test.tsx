@@ -28,8 +28,11 @@ describe("AccountMobileHome", () => {
       <AccountMobileHome snapshot={snapshot()} favoriteCount={2} />
     );
 
-    expect(html).toContain("Olá, Cliente");
+    expect(html).toContain('id="account-mobile-title">Cliente Demo</h1>');
     expect(html).toContain("cliente.demo@curtiz.local");
+    expect(html).not.toContain("Olá,");
+    expect(html).not.toContain("Área do cliente");
+    expect(html).not.toContain("Minha conta curti Z");
     expect(html).toContain("2 produtos salvos");
     expect(html).toContain("Seja um representante");
     expect(html).toContain("Conheça o programa de representantes");

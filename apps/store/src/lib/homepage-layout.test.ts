@@ -48,4 +48,23 @@ describe("selectHomepageSections", () => {
       )
     ).toEqual([firstHero, benefits]);
   });
+
+  it("posiciona Para todos os momentos logo abaixo dos benefícios", () => {
+    const hero = section("hero", "banner_hero");
+    const occasions = {
+      ...section("categorias", "categories_grid"),
+      title: "Para todos os momentos"
+    };
+    const benefits = section("beneficios");
+    const featured = section("destaques", "product_carousel");
+
+    expect(
+      selectHomepageSections(
+        [hero, occasions, featured, benefits],
+        defaults,
+        true,
+        false
+      )
+    ).toEqual([hero, featured, benefits, occasions]);
+  });
 });
