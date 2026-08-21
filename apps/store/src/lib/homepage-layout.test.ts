@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { HomepageSection } from "@curtiz/domain";
 import { selectHomepageSections } from "./homepage-layout";
 
-const section = (id: string): HomepageSection => ({
+const section = (
+  id: string,
+  sectionType: HomepageSection["sectionType"] = "benefits"
+): HomepageSection => ({
   id,
-  sectionType: "benefits",
+  sectionType,
   layout: "four_columns",
   visibility: "all",
   style: {},
@@ -29,5 +32,20 @@ describe("selectHomepageSections", () => {
 
   it("mantém indisponível quando não existe publicação nem conteúdo público", () => {
     expect(selectHomepageSections([], defaults, false, false)).toEqual([]);
+  });
+
+  it("mantém somente a primeira Hero publicada", () => {
+    const firstHero = section("hero-principal", "banner_hero");
+    const secondHero = section("hero-duplicada", "banner_hero");
+    const benefits = section("beneficios");
+
+    expect(
+      selectHomepageSections(
+        [firstHero, benefits, secondHero],
+        defaults,
+        true,
+        false
+      )
+    ).toEqual([firstHero, benefits]);
   });
 });

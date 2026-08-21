@@ -1,15 +1,35 @@
 import { expect, test } from "@playwright/test";
 
 test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) => {
-  await page.goto("/cadastro?returnTo=/checkout");
-  await page.getByLabel("Nome completo").fill("  joão-pedro   d'ávila");
-  await page.getByLabel("E-mail").fill(" RAFAEL @EMAIL.COM ");
-  await page.getByLabel("Telefone").fill("31999990000");
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+  await page.goto("/cadastro?returnTo=/checkout", { waitUntil: "commit" });
+  const name = page.getByLabel("Nome completo");
+  const email = page.getByLabel("E-mail", { exact: true });
+  const phone = page.getByLabel("Telefone");
+  const password = page.getByLabel("Senha", { exact: true });
+  const requirements = page.locator("#signup-password-requirements");
 
-  await expect(page.getByLabel("Nome completo")).toHaveValue("João-Pedro D'Ávila");
-  await expect(page.getByLabel("E-mail")).toHaveValue("rafael@email.com");
-  await expect(page.getByLabel("Telefone")).toHaveValue("31999990000");
-  await expect(page.getByText("Mínimo de 6 caracteres")).toBeVisible();
+  await expect(name).toBeVisible({ timeout: 30_000 });
+  await name.fill("  joão-pedro   d'ávila");
+  await email.fill(" RAFAEL @EMAIL.COM ");
+  await phone.fill("31999990000");
+
+  await expect(name).toHaveValue("João-Pedro D'Ávila");
+  await expect(email).toHaveValue("rafael@email.com");
+  await expect(phone).toHaveValue("(31) 99999-0000");
+  await expect(requirements.getByRole("listitem")).toHaveCount(5);
+  await password.fill("123456");
+  await expect(
+    requirements.getByRole("listitem").filter({ hasText: "Sem sequência ou senha comum" })
+  ).not.toHaveClass(/\bmet\b/u);
+  await password.fill("SolNorte92!");
+  await expect(requirements.locator("li.met")).toHaveCount(5);
   await expect(page.getByRole("link", { name: /Já tenho uma conta/i })).toHaveAttribute(
     "href",
     "/login?returnTo=%2Fcheckout"

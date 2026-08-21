@@ -75,6 +75,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   return (
     <section
       className="hero container homepage-hero"
+      data-testid="homepage-primary-hero"
       aria-label="Destaques da curti Z"
       onPointerDown={(event) => { pointerStart.current = event.clientX; setPaused(true); }}
       onPointerUp={(event) => {
