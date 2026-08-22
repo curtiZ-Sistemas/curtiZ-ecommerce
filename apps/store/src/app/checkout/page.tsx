@@ -1,17 +1,7 @@
 "use client";
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
-import {
-  Check,
-  ChevronDown,
-  CreditCard,
-  LoaderCircle,
-  LockKeyhole,
-  MapPin,
-  ShoppingBag,
-  Truck,
-  UserRound
-} from "lucide-react";
+import { LoaderCircle, LockKeyhole, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,53 +31,7 @@ const formatPostalCode = (value: string) => {
   return digits.replace(/^(\d{5})(\d)/u, "$1-$2");
 };
 
-const checkoutSteps = ["Carrinho", "Dados e entrega", "Pagamento"] as const;
-const currentCheckoutStep = 2;
-
 type PersonalField = "email" | "phone" | "cpf";
-
-function CheckoutProgress() {
-  const currentLabel = checkoutSteps[currentCheckoutStep - 1];
-  return (
-    <nav className="checkout-progress" aria-label="Progresso do checkout">
-      <ol className="checkout-steps">
-        {checkoutSteps.map((label, index) => {
-          const number = index + 1;
-          const completed = number < currentCheckoutStep;
-          const current = number === currentCheckoutStep;
-          return (
-            <li
-              className={completed ? "completed" : current ? "active" : undefined}
-              aria-current={current ? "step" : undefined}
-              key={label}
-            >
-              <span>
-                {completed ? <Check aria-hidden="true" /> : number}
-                {completed && <i className="sr-only">Etapa concluída:</i>}
-              </span>
-              <strong>{label}</strong>
-            </li>
-          );
-        })}
-      </ol>
-      <div className="checkout-progress-mobile">
-        <div>
-          <span>Etapa {currentCheckoutStep} de {checkoutSteps.length}</span>
-          <strong>{currentLabel}</strong>
-        </div>
-        <progress
-          aria-label={`Etapa ${currentCheckoutStep} de ${checkoutSteps.length}: ${currentLabel}`}
-          max={checkoutSteps.length}
-          value={currentCheckoutStep}
-        />
-        <p>
-          <span>Anterior: {checkoutSteps[currentCheckoutStep - 2]}</span>
-          <span>Próxima: {checkoutSteps[currentCheckoutStep]}</span>
-        </p>
-      </div>
-    </nav>
-  );
-}
 
 type SavedAddress = {
   id: string;
@@ -109,13 +53,13 @@ function CheckoutProducts({ lines }: { lines: CartLine[] }) {
         <div className="checkout-product" key={line.variantId}>
           <span className="checkout-product-image">
             <Image src={line.image} alt="" width={72} height={58} />
-            <i aria-label={`Quantidade: ${line.quantity}`}>{line.quantity}</i>
           </span>
           <div>
             <strong>{line.name}</strong>
             <span>
               {line.color} · {line.size}
             </span>
+            <small>Qtd. {line.quantity}</small>
           </div>
           <strong>{formatBRL(line.quantity * line.unitPriceInCents)}</strong>
         </div>
@@ -136,7 +80,7 @@ function CheckoutTotals({ subtotal }: { subtotal: number }) {
         <strong>A calcular</strong>
       </div>
       <div className="summary-line summary-total">
-        <span>Total atual</span>
+        <span>Total</span>
         <strong>{formatBRL(subtotal)}</strong>
       </div>
     </div>
@@ -151,8 +95,7 @@ export default function CheckoutPage() {
   const [redirecting, setRedirecting] = useState(false);
   const [paymentUnavailable, setPaymentUnavailable] = useState(false);
   const [supportCode, setSupportCode] = useState("");
-  const desktopSubmitButtonRef = useRef<HTMLButtonElement>(null);
-  const mobileSubmitButtonRef = useRef<HTMLButtonElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const closeDialogRef = useRef<HTMLButtonElement>(null);
   const paymentDialogRef = useRef<HTMLElement>(null);
   const idempotencyKeyRef = useRef(crypto.randomUUID());
@@ -163,8 +106,7 @@ export default function CheckoutPage() {
   const subtotal = calculateSubtotal(selectedLines);
 
   const focusSubmitAction = useCallback(() => {
-    const mobileButton = mobileSubmitButtonRef.current;
-    (mobileButton?.offsetParent ? mobileButton : desktopSubmitButtonRef.current)?.focus();
+    submitButtonRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -354,7 +296,7 @@ export default function CheckoutPage() {
 
   if (!hydrated) {
     return (
-      <div className="container page-shell">
+      <div className="container page-shell checkout-page">
         <div className="checkout-layout">
           <div className="skeleton-card"><div className="skeleton skeleton-title" /><div className="skeleton skeleton-copy" /></div>
           <div className="skeleton-card"><div className="skeleton skeleton-title" /><div className="skeleton skeleton-copy" /></div>
@@ -375,7 +317,7 @@ export default function CheckoutPage() {
 
   if (!lines.length) {
     return (
-      <div className="container page-shell">
+      <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
           <span className="empty-state-icon"><ShoppingBag /></span>
           <h1>Seu carrinho está vazio</h1>
@@ -388,7 +330,7 @@ export default function CheckoutPage() {
 
   if (!selectedLines.length) {
     return (
-      <div className="container page-shell">
+      <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
           <span className="empty-state-icon"><ShoppingBag /></span>
           <h1>Nenhum produto selecionado</h1>
@@ -404,20 +346,12 @@ export default function CheckoutPage() {
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
         <Link href="/carrinho">Carrinho</Link><span>/</span><span>Checkout</span>
       </nav>
-      <div className="section-heading checkout-heading">
-        <div className="checkout-heading-copy">
-          <span className="checkout-kicker">
-            <LockKeyhole aria-hidden="true" /> Checkout protegido
-          </span>
-          <h1>Finalizar compra</h1>
-          <p>Revise seus dados e o pedido. Confirmaremos preço, estoque e entrega antes de cobrar.</p>
-        </div>
+      <header className="checkout-heading">
+        <h1>Checkout</h1>
         <Link className="checkout-review-cart" href="/carrinho">
-          Revisar carrinho
+          Voltar ao carrinho
         </Link>
-      </div>
-
-      <CheckoutProgress />
+      </header>
 
       <form
         ref={formRef}
@@ -425,39 +359,9 @@ export default function CheckoutPage() {
         noValidate
         onSubmit={(event) => void submit(event)}
       >
-        <details className="checkout-mobile-order">
-          <summary>
-            <span className="checkout-mobile-order-icon">
-              <ShoppingBag aria-hidden="true" />
-            </span>
-            <span>
-              <strong>
-                {selectedLines.length === 1 ? selectedLines[0]?.name : "Resumo do pedido"}
-              </strong>
-              <small>
-                {selectedLines.length === 1
-                  ? `${selectedLines[0]?.color} · ${selectedLines[0]?.size}`
-                  : `${selectedLines.length} produtos`}
-              </small>
-            </span>
-            <strong>{formatBRL(subtotal)}</strong>
-            <ChevronDown aria-hidden="true" />
-          </summary>
-          <div className="checkout-mobile-order-content">
-            <CheckoutProducts lines={selectedLines} />
-            <CheckoutTotals subtotal={subtotal} />
-          </div>
-        </details>
-
         <div className="checkout-form-column">
-          <section className="form-card checkout-section" aria-labelledby="checkout-identification-title">
-            <header>
-              <span aria-hidden="true"><UserRound /></span>
-              <div>
-                <h2 id="checkout-identification-title">Identificação</h2>
-                <p>Usaremos estes dados para enviar as atualizações do pedido.</p>
-              </div>
-            </header>
+          <section className="checkout-section" aria-labelledby="checkout-identification-title">
+            <h2 id="checkout-identification-title">Identificação</h2>
             <div className="form-grid checkout-identification-grid">
               <div className="field checkout-name-field">
                 <label htmlFor="name">Nome completo</label>
@@ -532,14 +436,8 @@ export default function CheckoutPage() {
             </div>
           </section>
 
-          <section className="form-card checkout-section" aria-labelledby="checkout-address-title">
-            <header>
-              <span aria-hidden="true"><MapPin /></span>
-              <div>
-                <h2 id="checkout-address-title">Endereço de entrega</h2>
-                <p>Informe onde você quer receber o pedido.</p>
-              </div>
-            </header>
+          <section className="checkout-section" aria-labelledby="checkout-address-title">
+            <h2 id="checkout-address-title">Endereço de entrega</h2>
             {savedAddresses.length ? (
               <div className="checkout-saved-addresses">
                 <label htmlFor="savedAddress">Usar endereço salvo</label>
@@ -619,41 +517,17 @@ export default function CheckoutPage() {
             </div>
           </section>
 
-          <div className="checkout-final-grid">
-            <section className="form-card checkout-section" aria-labelledby="checkout-delivery-title">
-              <header>
-                <span aria-hidden="true"><Truck /></span>
-                <div>
-                  <h2 id="checkout-delivery-title">Entrega</h2>
-                  <p>O valor depende do endereço informado.</p>
-                </div>
-              </header>
-              <div className="checkout-delivery-status" role="status">
-                <div>
-                  <strong>Entrega no endereço informado</strong>
-                  <small>Frete confirmado antes de qualquer cobrança.</small>
-                </div>
-                <span>A calcular</span>
-              </div>
-            </section>
+          <section className="checkout-section" aria-labelledby="checkout-delivery-title">
+            <h2 id="checkout-delivery-title">Entrega</h2>
+            <p className="checkout-simple-status" role="status">Informe o CEP para calcular.</p>
+          </section>
 
-            <section className="form-card checkout-section" aria-labelledby="checkout-payment-title">
-              <header>
-                <span aria-hidden="true"><CreditCard /></span>
-                <div>
-                  <h2 id="checkout-payment-title">Pagamento</h2>
-                  <p>Avance somente depois de revisar o pedido.</p>
-                </div>
-              </header>
-              <div className="checkout-payment-summary">
-                <LockKeyhole aria-hidden="true" />
-                <div>
-                  <strong>Pagamento online seguro</strong>
-                  <p>Preço, estoque e entrega serão validados novamente no servidor.</p>
-                </div>
-              </div>
-            </section>
-          </div>
+          <section className="checkout-section" aria-labelledby="checkout-payment-title">
+            <h2 id="checkout-payment-title">Pagamento</h2>
+            <p className="checkout-simple-status">
+              Valores e disponibilidade serão confirmados antes do pagamento.
+            </p>
+          </section>
 
           {message && (
             <p className="form-message" id="checkout-form-message" role="alert">
@@ -662,50 +536,30 @@ export default function CheckoutPage() {
           )}
         </div>
 
-        <aside className="summary-card checkout-summary" aria-labelledby="checkout-summary-title">
-          <div className="checkout-summary-heading">
-            <div>
-              <h2 id="checkout-summary-title">Resumo do pedido</h2>
-              <span>
-                {selectedLines.length} {selectedLines.length === 1 ? "produto" : "produtos"}
-              </span>
-            </div>
-            <ShoppingBag aria-hidden="true" />
-          </div>
-          <CheckoutProducts lines={selectedLines} />
-          <CheckoutTotals subtotal={subtotal} />
-          <button
-            ref={desktopSubmitButtonRef}
-            className="primary-button full-button checkout-button"
-            type="submit"
-            disabled={loading}
-            aria-busy={loading}
-            aria-describedby={message ? "checkout-form-message" : undefined}
-          >
-            {loading ? <LoaderCircle className="spin" /> : <LockKeyhole />}
-            {loading ? "Validando pedido…" : "Confirmar e pagar"}
-          </button>
-          <p className="secure-note">
-            <Check aria-hidden="true" /> Nenhuma cobrança ocorre antes da confirmação do provedor.
-          </p>
-        </aside>
+        <div className="checkout-order-column">
+          <section className="checkout-order-products" aria-labelledby="checkout-products-title">
+            <header className="checkout-order-heading">
+              <h2 id="checkout-products-title">Produtos</h2>
+              <span>{selectedLines.length} {selectedLines.length === 1 ? "item" : "itens"}</span>
+            </header>
+            <CheckoutProducts lines={selectedLines} />
+          </section>
 
-        <div className="checkout-mobile-action" aria-label="Total e finalização do pedido">
-          <div>
-            <span>Total atual</span>
-            <strong>{formatBRL(subtotal)}</strong>
-          </div>
-          <button
-            ref={mobileSubmitButtonRef}
-            className="primary-button checkout-button"
-            type="submit"
-            disabled={loading}
-            aria-busy={loading}
-            aria-describedby={message ? "checkout-form-message" : undefined}
-          >
-            {loading ? <LoaderCircle className="spin" /> : <LockKeyhole />}
-            {loading ? "Validando…" : "Confirmar e pagar"}
-          </button>
+          <aside className="checkout-summary" aria-labelledby="checkout-summary-title">
+            <h2 id="checkout-summary-title">Resumo final</h2>
+            <CheckoutTotals subtotal={subtotal} />
+            <button
+              ref={submitButtonRef}
+              className="primary-button full-button checkout-button"
+              type="submit"
+              disabled={loading}
+              aria-busy={loading}
+              aria-describedby={message ? "checkout-form-message" : undefined}
+            >
+              {loading ? <LoaderCircle className="spin" /> : <LockKeyhole />}
+              {loading ? "Validando pedido…" : "Confirmar e pagar"}
+            </button>
+          </aside>
         </div>
       </form>
       {paymentUnavailable && (

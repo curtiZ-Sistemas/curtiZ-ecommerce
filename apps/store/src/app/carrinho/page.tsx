@@ -88,13 +88,6 @@ export default function CartPage() {
         </div>
         <div className="cart-heading-title">
           <h1>Meu carrinho</h1>
-          {hydrated && lines.length > 0 && (
-            <p>
-              {lines.length === 1
-                ? "1 produto no carrinho"
-                : `${lines.length} produtos no carrinho`}
-            </p>
-          )}
         </div>
       </header>
 
@@ -106,8 +99,7 @@ export default function CartPage() {
             onChange={setAllSelected}
           />
           <span aria-live="polite">
-            {selectedCount} de {lines.length}{" "}
-            {lines.length === 1 ? "produto selecionado" : "produtos selecionados"}
+            {selectedCount} de {lines.length} selecionado{selectedCount === 1 ? "" : "s"}
           </span>
           <div className="cart-selection-actions">
             <button
@@ -154,13 +146,6 @@ export default function CartPage() {
         <div className="cart-layout">
           <div className="cart-main-column">
             <section className="cart-list" aria-label="Produtos no carrinho">
-              <div className="cart-list-header">
-                <span>Produto</span>
-                <span>Preço</span>
-                <span>Quantidade</span>
-                <span className="sr-only">Ações</span>
-              </div>
-
               {lines.map((line) => {
                 const selected = selectedIdSet.has(line.variantId);
                 const isPending =
@@ -204,16 +189,7 @@ export default function CartPage() {
 
                     <div className="cart-item-info">
                       <h2>{line.name}</h2>
-                      <dl className="cart-variations">
-                        <div>
-                          <dt>Cor</dt>
-                          <dd>{line.color}</dd>
-                        </div>
-                        <div>
-                          <dt>Tamanho</dt>
-                          <dd>{line.size}</dd>
-                        </div>
-                      </dl>
+                      <p className="cart-variation">{line.color} · {line.size}</p>
                     </div>
 
                     <div className="cart-item-purchase">
@@ -274,7 +250,6 @@ export default function CartPage() {
               })}
             </section>
 
-            <CartRecommendations lines={lines} />
           </div>
 
           <aside className="summary-card cart-summary">
@@ -291,10 +266,6 @@ export default function CartPage() {
               <span>Frete</span>
               <span>Calculado no checkout</span>
             </div>
-            <div className="summary-line summary-total">
-              <span>Total parcial</span>
-              <strong>{formatBRL(subtotal)}</strong>
-            </div>
 
             {selectedCount > 0 ? (
               <Link className="primary-button full-button checkout-button" href="/checkout">
@@ -304,9 +275,6 @@ export default function CartPage() {
               <button className="primary-button full-button checkout-button" type="button" disabled>
                 Selecione um produto
               </button>
-            )}
-            {selectedCount === 0 && (
-              <p className="cart-selection-hint">Selecione pelo menos um produto para continuar.</p>
             )}
           </aside>
 
@@ -327,6 +295,7 @@ export default function CartPage() {
           </div>
         </div>
       )}
+      {hydrated && lines.length > 0 && <CartRecommendations lines={lines} />}
     </div>
   );
 }
