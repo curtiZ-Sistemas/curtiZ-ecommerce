@@ -50,6 +50,14 @@ export function SiteFooter() {
         </div>
         {groups.map((group) => (
           <nav className="footer-navigation" aria-label={group.title} key={group.title}>
+            <div className="footer-desktop-group">
+              <h2>{group.title}</h2>
+              {group.links.map(([label, href]) => (
+                <Link href={href} key={href}>
+                  {label}
+                </Link>
+              ))}
+            </div>
             <details className="footer-group">
               <summary>
                 <h2>{group.title}</h2>

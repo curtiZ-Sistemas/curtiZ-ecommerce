@@ -3772,6 +3772,10 @@ select:disabled {
   pointer-events: none;
 }
 
+.footer-group {
+  display: none;
+}
+
 .footer-group summary::-webkit-details-marker {
   display: none;
 }
@@ -4848,6 +4852,14 @@ select:disabled {
 
   .footer-navigation:last-child {
     border-bottom: 1px solid var(--neutral-250);
+  }
+
+  .footer-desktop-group {
+    display: none;
+  }
+
+  .footer-group {
+    display: block;
   }
 
   .footer-group summary {
@@ -12751,7 +12763,7 @@ body:has(> #main-content > .auth-page) .site-footer {
 
 /* Home: categorias sem título redundante e sem respiro excessivo. */
 .home-builder-section.home-categories-minimal {
-  padding-top: 14px;
+  padding-top: 24px;
   padding-bottom: 24px;
 }
 
@@ -12949,7 +12961,7 @@ body:has(> #main-content > .auth-page) .site-footer {
 
 @media (max-width: 700px) {
   .home-builder-section.home-categories-minimal {
-    padding-top: 8px;
+    padding-top: 18px;
     padding-bottom: 18px;
   }
 
