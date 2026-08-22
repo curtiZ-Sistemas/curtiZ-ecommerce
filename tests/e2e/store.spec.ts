@@ -310,22 +310,35 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
 
   await page.goto("/checkout", { waitUntil: "commit" });
   await expect(page.getByRole("heading", { name: "Finalizar compra" })).toBeVisible();
-  await expect(page.getByText("curti Z Flip-Flop Wave Preto", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".checkout-product").filter({ hasText: "curti Z Flip-Flop Wave Preto" })
+  ).toHaveCount(2);
   await expect(page.getByText("curti Z Flip-Flop Slim Coral", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ambiente protegido", { exact: true })).toHaveCount(0);
   await expect(page.locator('.checkout-steps [aria-current="step"]')).toContainText("Dados");
 
-  for (const width of [320, 375, 390, 430, 768, 1366, 1920]) {
+  for (const width of [320, 360, 375, 390, 412, 430, 768, 1366, 1920]) {
     await page.setViewportSize({ width, height: width <= 430 ? 844 : 900 });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     if (width <= 700) {
-      await expect(page.getByText("Etapa 2 de 7", { exact: true })).toBeVisible();
+      await expect(page.getByText("Etapa 2 de 3", { exact: true })).toBeVisible();
       await expect(page.locator(".checkout-steps")).toBeHidden();
+      await expect(page.locator(".checkout-mobile-order")).toBeVisible();
+      await expect(page.locator(".checkout-mobile-order > summary")).toContainText(
+        "curti Z Flip-Flop Wave Preto"
+      );
+      await expect(page.locator(".checkout-mobile-action")).toBeVisible();
+      await expect(page.locator(".help-widget")).toBeHidden();
     } else {
       await expect(page.locator(".checkout-steps")).toBeVisible();
       await expect(page.locator(".checkout-progress-mobile")).toBeHidden();
+      if (width > 900) {
+        await expect(page.locator(".checkout-summary")).toContainText(
+          "curti Z Flip-Flop Wave Preto"
+        );
+      }
     }
   }
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -346,7 +359,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
   await page.getByLabel("CEP").fill("01310100");
-  await page.getByLabel("Endereço").fill("Avenida Paulista");
+  await page.getByLabel("Endereço", { exact: true }).fill("Avenida Paulista");
   await page.getByLabel("Número").fill("1000");
   await page.getByLabel("Bairro").fill("Bela Vista");
   await page.getByLabel("Cidade").fill("São Paulo");
@@ -427,13 +440,15 @@ test("após a compra preserva no carrinho os produtos não selecionados", async 
   await page.getByLabel("Telefone").fill("11999999999");
   await page.getByLabel("CPF para o pedido").fill("52998224725");
   await page.getByLabel("CEP").fill("01310100");
-  await page.getByLabel("Endereço").fill("Avenida Paulista");
+  await page.getByLabel("Endereço", { exact: true }).fill("Avenida Paulista");
   await page.getByLabel("Número").fill("1000");
   await page.getByLabel("Bairro").fill("Bela Vista");
   await page.getByLabel("Cidade").fill("São Paulo");
   await page.getByLabel("Estado").selectOption("SP");
   await page.getByRole("button", { name: "Confirmar e pagar" }).click();
-  await expect(page).toHaveURL(/\/pedido\/pendente\?pedido=CZ-E2E-SELECAO/u);
+  await expect(page).toHaveURL(/\/pedido\/pendente\?pedido=CZ-E2E-SELECAO/u, {
+    timeout: 30_000
+  });
 
   await page.goto("/carrinho", { waitUntil: "commit" });
   await expect(page.locator(".cart-item")).toHaveCount(1);
