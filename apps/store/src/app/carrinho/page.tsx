@@ -155,9 +155,10 @@ export default function CartPage() {
           <div className="cart-main-column">
             <section className="cart-list" aria-label="Produtos no carrinho">
               <div className="cart-list-header">
-                <span>Selecionar e produto</span>
+                <span>Produto</span>
+                <span>Preço</span>
                 <span>Quantidade</span>
-                <span>Subtotal</span>
+                <span className="sr-only">Ações</span>
               </div>
 
               {lines.map((line) => {
@@ -197,7 +198,7 @@ export default function CartPage() {
                         alt={line.name}
                         width={150}
                         height={120}
-                        sizes="(max-width: 560px) 92px, 128px"
+                        sizes="(max-width: 340px) 86px, (max-width: 700px) 96px, 112px"
                       />
                     </Link>
 
@@ -213,13 +214,12 @@ export default function CartPage() {
                           <dd>{line.size}</dd>
                         </div>
                       </dl>
-                      <span className="cart-unit-price">
-                        {formatBRL(line.unitPriceInCents)} cada
-                      </span>
                     </div>
 
-                    <div className="cart-item-quantity">
-                      <span className="mobile-field-label">Quantidade</span>
+                    <div className="cart-item-purchase">
+                      <strong className="cart-item-price">
+                        {formatBRL(line.unitPriceInCents)}
+                      </strong>
                       <div className="quantity-control">
                         <button
                           type="button"
@@ -256,6 +256,7 @@ export default function CartPage() {
                       <button
                         className="remove-button"
                         type="button"
+                        aria-label={`Remover ${line.name}`}
                         onClick={() =>
                           completeAction(
                             line.variantId,
@@ -265,13 +266,8 @@ export default function CartPage() {
                         }
                         disabled={pendingId !== null}
                       >
-                        <Trash2 /> Remover
+                        <Trash2 aria-hidden="true" />
                       </button>
-                    </div>
-
-                    <div className="cart-item-total">
-                      <span className="mobile-field-label">Subtotal</span>
-                      <strong>{formatBRL(line.unitPriceInCents * line.quantity)}</strong>
                     </div>
                   </article>
                 );
@@ -315,12 +311,6 @@ export default function CartPage() {
           </aside>
 
           <div className="cart-mobile-summary" aria-label="Resumo do carrinho">
-            <CartSelectAll
-              allSelected={allSelected}
-              someSelected={someSelected}
-              onChange={setAllSelected}
-              compact
-            />
             <div className="cart-mobile-total">
               <span>Total</span>
               <strong data-testid="mobile-selected-total">{formatBRL(subtotal)}</strong>
@@ -344,13 +334,11 @@ export default function CartPage() {
 function CartSelectAll({
   allSelected,
   someSelected,
-  onChange,
-  compact = false
+  onChange
 }: {
   allSelected: boolean;
   someSelected: boolean;
   onChange: (selected: boolean) => void;
-  compact?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -359,7 +347,7 @@ function CartSelectAll({
   }, [someSelected]);
 
   return (
-    <label className={compact ? "cart-select-all is-compact" : "cart-select-all"}>
+    <label className="cart-select-all">
       <input
         ref={inputRef}
         type="checkbox"
