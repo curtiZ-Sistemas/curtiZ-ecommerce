@@ -21,6 +21,7 @@ import { TechnicalResourceManager } from "@/components/technical-resource-manage
 import { LegalCenter, OperationalLegalLinks } from "@/components/legal-center";
 import { HelpContentCenter } from "@/components/help-content-center";
 import { StoreIntelligence } from "@/components/store-intelligence";
+import { PromotionBarManager } from "@/components/promotion-bar-manager";
 import { requirePanelAccess } from "@/lib/auth";
 import { isAdminResource } from "@/lib/admin-resources";
 import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
@@ -89,13 +90,13 @@ export default async function RolePage({
 function showRouteHeading(role: PanelRole, section: string) {
   if (!section) return true;
   if (role === "administracao") {
-    const ownsHeading = ["produtos", "variacoes", "midias", "estoque", "construtor-home", "usuarios", "permissoes"].includes(section) || isAdminResource(section);
+    const ownsHeading = ["produtos", "variacoes", "midias", "estoque", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(section) || isAdminResource(section);
     return !ownsHeading;
   }
   if (role === "operacional") return section !== "construtor-home";
   if (role === "gerencia") {
     const alias = section === "vendas" ? "pedidos-vendas" : section === "comissoes-representantes" ? "comissoes" : section;
-    const ownsHeading = section === "conteudo-loja" || section === "inteligencia-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
+    const ownsHeading = section === "conteudo-loja" || section === "barra-promocional" || section === "inteligencia-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
     return !ownsHeading;
   }
   return !isTechnicalResource(section);
@@ -113,6 +114,7 @@ function Administration({ section, initialQuery }: { section: string; initialQue
     return <ProductManagement key={`${section}:${initialQuery}`} view={section as "produtos" | "variacoes" | "midias" | "estoque"} initialQuery={initialQuery} />;
   }
   if (section === "construtor-home") return <HomepageBuilder />;
+  if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "permissoes") return <AdminPermissions />;
   if (section === "politicas") return <LegalCenter />;
@@ -132,6 +134,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
   if (!section || section === "visao-estrategica" || section === "alertas")
     return <ManagerDashboard />;
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
+  if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "inteligencia-loja") return <StoreIntelligence />;
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;

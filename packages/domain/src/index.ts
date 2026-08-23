@@ -3,5 +3,6 @@ export * from "./permissions";
 export * from "./promotions";
 export * from "./representatives";
 export * from "./status";
+export * from "./store-campaigns";
 export * from "./support";
 export * from "./types";

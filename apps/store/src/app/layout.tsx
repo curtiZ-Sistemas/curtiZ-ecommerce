@@ -9,6 +9,8 @@ import { CookiePreferences } from "@/components/cookie-preferences";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
+import { PromotionBar } from "@/components/promotion-bar";
+import { getPromotionBarMessages } from "@/lib/promotion-bar-data";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
@@ -38,7 +40,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // A CSP usa um nonce exclusivo por requisição; o HTML não pode ser pré-renderizado sem ele.
-  await connection();
+  const [, promotionMessages] = await Promise.all([connection(), getPromotionBarMessages()]);
 
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
@@ -50,6 +52,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </a>
             <RouteFeedback />
             <IntelligenceBootstrap />
+            <PromotionBar messages={promotionMessages} />
             <SiteHeader />
             <main id="main-content">{children}</main>
             <SiteFooter />

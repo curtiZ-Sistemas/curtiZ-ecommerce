@@ -10,7 +10,10 @@ const viewports = [
   { width: 412, height: 860 },
   { width: 430, height: 880 },
   { width: 768, height: 1024 },
-  { width: 1440, height: 900 }
+  { width: 1024, height: 900 },
+  { width: 1280, height: 900 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 }
 ] as const;
 
 const routes = [

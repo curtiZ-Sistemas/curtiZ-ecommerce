@@ -53,6 +53,7 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
     featuredProduct.click()
   ]);
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
   await Promise.all([
@@ -546,6 +547,7 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
   await expect(page.getByRole("link", { name: /Carrinho com 1 itens/i })).toBeVisible();
@@ -892,6 +894,7 @@ test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ pa
   });
 
   await page.goto("/produto/flip-flop-wave-preto");
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
   await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
   await page.goto("/login?next=%2Fcarrinho");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
@@ -954,6 +957,7 @@ test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho"
   });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
   const addToCart = page.getByRole("button", { name: /Adicionar ao carrinho/i });
   const cartWithItem = page.getByRole("link", { name: /Carrinho com 1 itens/i });
   await expect(async () => {
@@ -1007,7 +1011,7 @@ test("galeria do produto abre lightbox acessível e restaura o foco", async ({ p
   });
   await expect(trigger).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Ampliar", { exact: true })).toHaveCount(0);
-  await expect(trigger.locator("img")).toHaveCSS("object-fit", "cover");
+  await expect(trigger.locator("img")).toHaveCSS("object-fit", "contain");
   const selectedSource = await trigger.locator("img").getAttribute("src");
 
   await trigger.click();

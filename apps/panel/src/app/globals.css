@@ -3163,6 +3163,230 @@ button:not(:disabled):active,
   min-width: 0;
 }
 
+/* Administração enxuta da barra de campanhas da loja. */
+.promotion-manager {
+  display: grid;
+  gap: 18px;
+}
+
+.promotion-manager-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--canvas);
+  font-size: 0.74rem;
+}
+
+.promotion-manager-status span {
+  color: var(--muted);
+}
+
+.promotion-manager .admin-success,
+.promotion-manager .admin-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.promotion-manager .admin-success {
+  border-color: #b9ddc6;
+  color: #185f35;
+  background: #f2faf5;
+}
+
+.promotion-manager .admin-error {
+  border-color: #e5bbb6;
+  color: var(--brand-900);
+  background: #fff5f3;
+}
+
+.promotion-message-form {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.promotion-message-form > header,
+.promotion-message-form > footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.promotion-message-form h2,
+.promotion-message-form p {
+  margin: 0;
+}
+
+.promotion-message-form header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.promotion-message-form label small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.promotion-message-form > footer {
+  justify-content: flex-end;
+}
+
+.promotion-active-field {
+  display: flex !important;
+  grid-auto-flow: column;
+  align-items: center !important;
+  justify-content: start;
+  align-content: center !important;
+  gap: 9px !important;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--canvas);
+}
+
+.promotion-active-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-800);
+}
+
+.promotion-message-list {
+  display: grid;
+  gap: 9px;
+}
+
+.promotion-message-list > article {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+}
+
+.promotion-message-list > article.active {
+  border-left: 3px solid var(--brand-800);
+}
+
+.promotion-message-order {
+  text-align: center;
+}
+
+.promotion-message-order span,
+.promotion-message-order strong {
+  display: block;
+}
+
+.promotion-message-order span {
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.promotion-message-order strong {
+  margin-top: 2px;
+  font-size: 1rem;
+}
+
+.promotion-message-copy {
+  min-width: 0;
+}
+
+.promotion-message-copy .status {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--muted);
+  background: #eeeeec;
+  font-size: 0.6rem;
+}
+
+.promotion-message-copy .status.active {
+  color: #185f35;
+  background: #eaf6ee;
+}
+
+.promotion-message-copy h2 {
+  margin: 6px 0 3px;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+}
+
+.promotion-message-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.promotion-message-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.promotion-message-actions button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  background: white;
+  cursor: pointer;
+}
+
+.promotion-message-actions button:hover:not(:disabled),
+.promotion-message-actions button:focus-visible {
+  color: var(--brand-900);
+  border-color: var(--brand-600);
+}
+
+.promotion-message-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.promotion-message-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 700px) {
+  .promotion-manager-status,
+  .promotion-message-form > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .promotion-message-form {
+    padding: 16px;
+  }
+
+  .promotion-message-list > article {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .promotion-message-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+  }
+}
+
 .admin-toolbar > select {
   width: min(220px, 100%);
 }

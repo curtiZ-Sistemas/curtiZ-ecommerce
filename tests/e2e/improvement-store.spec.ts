@@ -95,3 +95,37 @@ test("drawer mobile cabe na viewport e fecha com Escape", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Filtros" })).toBeHidden();
 });
+
+test("produto exige variante real e mantém a compra compacta", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({ categories: { essential: true } })
+    );
+  });
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+
+  const buyNow = page.getByRole("button", { name: "Comprar agora" });
+  const addToCart = page.getByRole("button", { name: "Adicionar ao carrinho" });
+  await expect(buyNow).toBeDisabled();
+  await expect(addToCart).toBeDisabled();
+  await expect(
+    page.locator("#main-content").getByText("Escolha um tamanho para continuar.", { exact: true })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
+  await expect(buyNow).toBeEnabled();
+  await expect(addToCart).toBeEnabled();
+  await expect(page.getByText("Em estoque", { exact: true })).toBeVisible();
+
+  const layout = await page.locator(".product-detail").evaluate((element) => ({
+    width: element.scrollWidth,
+    clientWidth: element.clientWidth
+  }));
+  expect(layout.width).toBeLessThanOrEqual(layout.clientWidth);
+  await Promise.all([
+    page.waitForURL(/\/login\?next=%2Fcheckout%3Forigem%3Dcomprar-agora$/u),
+    buyNow.click()
+  ]);
+  await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
+});

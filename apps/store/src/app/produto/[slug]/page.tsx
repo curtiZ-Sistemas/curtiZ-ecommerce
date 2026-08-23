@@ -87,13 +87,29 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   };
 
   return (
-    <div className="container page-shell">
+    <div className="container page-shell product-page">
       <script
         type="application/ld+json"
         nonce={requestHeaders.get("x-nonce") ?? undefined}
         suppressHydrationWarning
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c")
+        }}
+      />
+      <script
+        type="application/ld+json"
+        nonce={requestHeaders.get("x-nonce") ?? undefined}
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Início", item: "/" },
+              { "@type": "ListItem", position: 2, name: "Produtos", item: "/produtos" },
+              { "@type": "ListItem", position: 3, name: product.name, item: `/produto/${product.slug}` }
+            ]
+          }).replace(/</g, "\\u003c")
         }}
       />
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
@@ -105,8 +121,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <section className="product-information">
         <div>
-          <p className="eyebrow">Detalhes do produto</p>
-          <h2>Informações para escolher com segurança</h2>
+          <p className="eyebrow">Sobre o produto</p>
+          <h2>Detalhes de {product.name}</h2>
           <p>{product.description}</p>
         </div>
         {detail.specifications.length > 0 && (
@@ -154,7 +170,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       )}
 
       {related.length > 0 && (
-        <section className="section">
+        <section className="section product-recommendations">
           <div className="section-heading">
             <h2>Você também pode gostar</h2>
           </div>
