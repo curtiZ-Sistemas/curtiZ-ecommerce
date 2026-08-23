@@ -128,12 +128,30 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
     await searchButton.click();
     await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass({ timeout: 15_000 });
-  await page.locator('input[role="combobox"]:visible').fill("wave");
+  const search = page.locator('input[role="combobox"]:visible');
+  await search.fill("wave");
+  await search.hover();
 
   await expect(page.getByText("Sugestões")).toBeVisible();
   await expect(
     page.getByRole("option", { name: /curti Z Flip-Flop Wave Preto Masculino/i })
   ).toBeVisible();
+  const appearance = await search.evaluate((input) => {
+    const style = getComputedStyle(input);
+    const placeholder = getComputedStyle(input, "::placeholder");
+    return {
+      color: style.color,
+      caretColor: style.caretColor,
+      textFillColor: style.getPropertyValue("-webkit-text-fill-color"),
+      placeholderColor: placeholder.color
+    };
+  });
+  expect(appearance).toEqual({
+    color: "rgb(22, 22, 22)",
+    caretColor: "rgb(22, 22, 22)",
+    textFillColor: "rgb(22, 22, 22)",
+    placeholderColor: "rgb(104, 104, 104)"
+  });
   const widths = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
     content: document.documentElement.scrollWidth

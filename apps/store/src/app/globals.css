@@ -9073,6 +9073,27 @@ body:has(.account-experience-page) .help-widget {
   width: 100%;
 }
 
+.search-autocomplete .search-form input {
+  color: var(--text-primary, var(--ink));
+  caret-color: var(--text-primary, var(--ink));
+  -webkit-text-fill-color: var(--text-primary, var(--ink));
+}
+
+.search-autocomplete .search-form input::placeholder {
+  color: var(--text-secondary, var(--neutral-500));
+  opacity: 1;
+  -webkit-text-fill-color: var(--text-secondary, var(--neutral-500));
+}
+
+.search-autocomplete .search-form input:autofill,
+.search-autocomplete .search-form input:-webkit-autofill,
+.search-autocomplete .search-form input:-webkit-autofill:hover,
+.search-autocomplete .search-form input:-webkit-autofill:focus {
+  color: var(--text-primary, var(--ink));
+  caret-color: var(--text-primary, var(--ink));
+  -webkit-text-fill-color: var(--text-primary, var(--ink));
+}
+
 .search-suggestion,
 .search-all-results {
   width: 100%;

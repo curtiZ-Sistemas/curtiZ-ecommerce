@@ -233,6 +233,19 @@ test("busca desktop mantém histórico privado, removível e acessível pelo tec
   await search.fill("wave");
   await expect(page.locator(".desktop-search .search-history-row")).toHaveCount(0);
   await expect(page.locator(".desktop-search .search-suggestions")).toBeVisible();
+  const appearance = await search.evaluate((input) => {
+    const style = getComputedStyle(input);
+    return {
+      color: style.color,
+      caretColor: style.caretColor,
+      textFillColor: style.getPropertyValue("-webkit-text-fill-color")
+    };
+  });
+  expect(appearance).toEqual({
+    color: "rgb(22, 22, 22)",
+    caretColor: "rgb(22, 22, 22)",
+    textFillColor: "rgb(22, 22, 22)"
+  });
   await search.press("Escape");
   await expect(page.locator(".desktop-search .search-suggestions")).toBeHidden();
 });
