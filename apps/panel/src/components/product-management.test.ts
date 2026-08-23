@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterManagedProducts,
   generateVariantCombinations,
+  groupEditableVariantsByColor,
   isManagedProduct
 } from "../lib/product-management";
 
@@ -56,6 +57,19 @@ describe("product management", () => {
       ])
     );
     expect(variants).toHaveLength(4);
+  });
+
+  it("agrupa somente as combinações reais por cor e preserva tamanhos desiguais", () => {
+    const variants = [
+      ...generateVariantCombinations("Azul", "35, 36", "Slide"),
+      ...generateVariantCombinations("Preto", "39", "Slide")
+    ];
+    const groups = groupEditableVariantsByColor(variants);
+
+    expect(groups.map((group) => [group.color, group.variants.map(({ variant }) => variant.size)])).toEqual([
+      ["Azul", ["35", "36"]],
+      ["Preto", ["39"]]
+    ]);
   });
 
   it("rejeita produto incompleto antes de abrir o editor", () => {

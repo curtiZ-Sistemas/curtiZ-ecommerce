@@ -34,6 +34,7 @@ export type ManagedProduct = {
   lengthCm?: number;
   seoTitle?: string;
   seoDescription?: string;
+  canDelete?: boolean;
   images?: Array<{
     id: string;
     path: string;
@@ -44,6 +45,13 @@ export type ManagedProduct = {
     variantId?: string;
   }>;
   variants: ManagedVariant[];
+};
+
+export type EditableVariantColorGroup = {
+  key: string;
+  color: string;
+  colorHex: string;
+  variants: Array<{ index: number; variant: EditableVariant }>;
 };
 
 export type EditableVariant = {
@@ -146,6 +154,31 @@ export function generateVariantCombinations(
       active: true
     }))
   );
+}
+
+export function groupEditableVariantsByColor(
+  variants: EditableVariant[]
+): EditableVariantColorGroup[] {
+  const groups = new Map<string, EditableVariantColorGroup>();
+
+  variants.forEach((variant, index) => {
+    const normalizedColor = variant.color.trim().toLocaleLowerCase("pt-BR") || "sem-cor";
+    const existing = groups.get(normalizedColor);
+    if (existing) {
+      existing.variants.push({ index, variant });
+      if (!existing.colorHex && variant.colorHex) existing.colorHex = variant.colorHex;
+      return;
+    }
+
+    groups.set(normalizedColor, {
+      key: normalizedColor,
+      color: variant.color.trim() || "Sem cor",
+      colorHex: variant.colorHex,
+      variants: [{ index, variant }]
+    });
+  });
+
+  return [...groups.values()];
 }
 
 export const filterManagedProducts = (

@@ -263,6 +263,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       lengthCm: 30,
       seoTitle: "",
       seoDescription: "",
+      canDelete: false,
       images: [{
         id: "40000000-0000-0000-0000-000000000001",
         path: "/images/products/wave-preto.png",
@@ -298,6 +299,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       lengthCm: 28,
       seoTitle: "",
       seoDescription: "",
+      canDelete: false,
       images: [],
       stock: 0,
       variants: []
@@ -323,6 +325,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       lengthCm: 29,
       seoTitle: "",
       seoDescription: "",
+      canDelete: true,
       images: [],
       stock: 0,
       variants: [{ id: "30000000-0000-0000-0000-000000000003", sku: "ARQ-40", color: "Areia", colorHex: "#d6c3a5", size: "40", active: false, available: 0, reserved: 0, sellable: 0, priceInCents: null, costInCents: null }]
@@ -338,7 +341,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   });
   await page.route("**/api/catalog/products?*", async (route) => {
     if (route.request().method() !== "GET") return route.continue();
-    products[0].name = savedName;
+    products[0]!.name = savedName;
     const productId = new URL(route.request().url()).searchParams.get("productId");
     const availableProducts = [...products, ...createdProducts];
     const selectedProducts = productId
@@ -357,11 +360,22 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
         categories: [{ id: categoryId, name: "Sandálias" }],
         models: [],
         collections: [],
-        capabilities: { create: true, update: true, adjustStock: true, archive: true }
+        capabilities: { create: true, update: true, adjustStock: true, archive: true, delete: true }
       })
     });
   });
   await page.route("**/api/catalog/products", async (route) => {
+    if (route.request().method() === "DELETE") {
+      const payload = route.request().postDataJSON() as { productId: string };
+      const index = products.findIndex((product) => product.id === payload.productId);
+      if (index >= 0) products.splice(index, 1);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Produto excluído permanentemente." })
+      });
+      return;
+    }
     if (route.request().method() !== "PATCH") return route.continue();
     savedPayload = route.request().postDataJSON() as Record<string, unknown>;
     const action = String(savedPayload.action);
@@ -402,7 +416,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ productId: products[0].id, message })
+      body: JSON.stringify({ productId: products[0]!.id, message })
     });
   });
 
@@ -413,31 +427,52 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   for (const product of products) {
     const row = page.locator("article.managed-product").filter({ hasText: product.name });
     await row.getByRole("button", { name: "Editar", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Produto" })).toBeVisible();
+    await expect(page.locator(".panel-drawer")).toBeVisible();
+    if (product === products[0]) {
+      for (const width of [320, 360, 375, 390, 412, 430, 1024, 1280, 1440, 1920]) {
+        await page.setViewportSize({ width, height: width <= 430 ? 780 : 900 });
+        const bounds = await page.locator(".panel-drawer").boundingBox();
+        expect(bounds?.x ?? -1, `drawer fora da viewport em ${width}px`).toBeGreaterThanOrEqual(0);
+        expect((bounds?.x ?? 0) + (bounds?.width ?? width), `drawer largo demais em ${width}px`).toBeLessThanOrEqual(width + 1);
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow, `overflow do editor em ${width}px`).toBeLessThanOrEqual(1);
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
     await expect(page).toHaveURL("http://localhost:3001/administracao/produtos");
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
-    await page.getByRole("button", { name: "Fechar" }).click();
+    await page.getByRole("button", { name: "Fechar", exact: true }).click();
   }
   expect(openedProductIds).toEqual(products.map((product) => product.id));
+
+  const deletableProduct = products[2]!;
+  const deletableRow = page.locator("article.managed-product").filter({ hasText: deletableProduct.name });
+  await deletableRow.locator("details.product-action-menu > summary").click();
+  await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
+  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir produto permanentemente?" });
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole("button", { name: "Excluir permanentemente" }).click();
+  await expect(page.getByText("Produto excluído permanentemente.")).toBeVisible();
+  await expect(deletableRow).toHaveCount(0);
 
   const removedProduct = products[1]!;
   missingProductId = removedProduct.id;
   const removedRow = page.locator("article.managed-product").filter({ hasText: removedProduct.name });
   await removedRow.getByRole("button", { name: "Editar", exact: true }).click();
   await expect(page.getByText("Produto não encontrado.")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Produto" })).toHaveCount(0);
+  await expect(page.locator(".panel-drawer")).toHaveCount(0);
   await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
 
   const firstRow = page.locator("article.managed-product").filter({ hasText: savedName });
   await firstRow.getByRole("button", { name: "Editar", exact: true }).click();
   const updatedName = `${savedName} atualizado`;
-  await page.getByRole("dialog", { name: "Produto" }).getByLabel("Nome *").fill(updatedName);
-  await page.getByRole("button", { name: "Salvar produto" }).click();
+  await page.locator(".panel-drawer").getByLabel("Nome *").fill(updatedName);
+  await page.keyboard.press("Control+s");
   await expect(page.getByText("Produto atualizado.")).toBeVisible();
   await expect(page.getByText(updatedName)).toBeVisible();
   expect(savedPayload).toMatchObject({
     action: "save",
-    productId: products[0].id,
+    productId: products[0]!.id,
     name: updatedName,
     variants: expect.arrayContaining([
       expect.objectContaining({ sku: "MULTI-PRETO-39", stock: 4 }),
@@ -462,7 +497,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   await expect(page.getByText(duplicateName)).toBeVisible();
 
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
-  const createDialog = page.getByRole("dialog", { name: "Produto" });
+  const createDialog = page.locator(".panel-drawer");
+  await page.keyboard.press("Control+s");
+  await expect(createDialog).toBeVisible();
   await createDialog.getByLabel("Nome *").fill("Produto criado no fluxo E2E");
   await createDialog.getByLabel("Slug *").fill("produto-criado-fluxo-e2e");
   await createDialog.getByLabel("Categoria *").selectOption(categoryId);

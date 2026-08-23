@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
   if (product.error || !product.data) return NextResponse.json({ message: "Produto não encontrado." }, { status: 404, headers: privateNoStore });
   let variantId: string | null = null;
   if (parsed.data.color) {
-    const variant = await auth.supabase.from("product_variants").select("id").eq("product_id", parsed.data.productId).eq("color_name", parsed.data.color).eq("active", true).limit(1).maybeSingle();
+    const variant = await auth.supabase.from("product_variants").select("id").eq("product_id", parsed.data.productId).eq("color_name", parsed.data.color).limit(1).maybeSingle();
     if (variant.error || !variant.data) return NextResponse.json({ message: "A cor selecionada não existe neste produto." }, { status: 400, headers: privateNoStore });
     variantId = valueText(variant.data, "id") || null;
   }

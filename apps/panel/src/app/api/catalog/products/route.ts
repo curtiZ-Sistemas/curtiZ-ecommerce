@@ -93,6 +93,8 @@ const actionSchema = z.discriminatedUnion("action", [
   })
 ]);
 
+const deleteSchema = z.object({ productId: postgresUuidSchema });
+
 type CatalogError = {
   code?: string;
   message?: string;
@@ -497,7 +499,8 @@ export async function GET(request: NextRequest) {
     createPermission,
     updatePermission,
     stockPermission,
-    archivePermission
+    archivePermission,
+    deletePermission
   ] = await Promise.all([
     loadProducts(),
     supabase.from("categories").select("id,name").order("name").limit(500),
@@ -506,10 +509,11 @@ export async function GET(request: NextRequest) {
     supabase.rpc("has_permission", { permission_code: "products.create" }),
     supabase.rpc("has_permission", { permission_code: "products.update" }),
     supabase.rpc("has_permission", { permission_code: "inventory.adjust" }),
-    supabase.rpc("has_permission", { permission_code: "products.archive" })
+    supabase.rpc("has_permission", { permission_code: "products.archive" }),
+    supabase.rpc("has_permission", { permission_code: "products.delete" })
   ]);
   const permissionError =
-    createPermission.error ?? updatePermission.error ?? stockPermission.error ?? archivePermission.error;
+    createPermission.error ?? updatePermission.error ?? stockPermission.error ?? archivePermission.error ?? deletePermission.error;
   const capabilities = {
     create:
       !createPermission.error &&
@@ -518,7 +522,8 @@ export async function GET(request: NextRequest) {
       updatePermission.data === true,
     update: !updatePermission.error && updatePermission.data === true,
     adjustStock: !stockPermission.error && stockPermission.data === true,
-    archive: !archivePermission.error && archivePermission.data === true
+    archive: !archivePermission.error && archivePermission.data === true,
+    delete: !deletePermission.error && deletePermission.data === true
   };
   const capabilityMessage = permissionError
     ? "N\u00e3o foi poss\u00edvel confirmar as permiss\u00f5es de produto. Verifique se as migrations de permiss\u00e3o foram aplicadas."
@@ -551,9 +556,27 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const serializedProducts: ReturnType<typeof serializeProducts> = "serialized" in result
+    ? (Array.isArray(result.data) ? result.data as ReturnType<typeof serializeProducts> : [])
+    : serializeProducts(result.data, mediaUrl);
+  let deleteEligibility: UnknownRecord = {};
+  if (capabilities.delete && serializedProducts.length) {
+    const eligibilityResult = await supabase.rpc("admin_product_delete_eligibility", {
+      p_product_ids: serializedProducts.map((product) => product.id)
+    });
+    if (eligibilityResult.error) {
+      logCatalogFailure("load_delete_eligibility", eligibilityResult.error);
+    } else {
+      deleteEligibility = record(eligibilityResult.data) ?? {};
+    }
+  }
+
   return NextResponse.json(
     {
-      products: "serialized" in result ? result.data : serializeProducts(result.data, mediaUrl),
+      products: serializedProducts.map((product) => ({
+        ...product,
+        canDelete: deleteEligibility[product.id] === true
+      })),
       total: result.total,
       page,
       pageSize,
@@ -714,6 +737,66 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json(
     { ok: true, message: "Estoque atualizado com justificativa e auditoria." },
+    { headers: noStore }
+  );
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!safeOrigin(request)) {
+    return NextResponse.json(
+      { message: "Origem não permitida." },
+      { status: 403, headers: noStore }
+    );
+  }
+  const supabase = await authorizedClient(request);
+  if (!supabase) {
+    return NextResponse.json(
+      { message: "Acesso não autorizado." },
+      { status: 401, headers: noStore }
+    );
+  }
+
+  const parsed = deleteSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Identificador de produto inválido." },
+      { status: 400, headers: noStore }
+    );
+  }
+
+  const result = await supabase.rpc("admin_delete_product", {
+    p_product_id: parsed.data.productId
+  });
+  if (result.error) {
+    logCatalogFailure("delete_product", result.error);
+    const related = result.error.code === "23503" || normalizedErrorMessage(result.error).includes("related records");
+    const forbidden = result.error.code === "42501";
+    const notFound = result.error.code === "P0002";
+    return NextResponse.json(
+      {
+        message: forbidden
+          ? "Você não possui permissão para excluir produtos."
+          : related
+            ? "Este produto possui registros relacionados e não pode ser excluído. Use Arquivar para preservar o histórico."
+            : notFound
+              ? "Produto não encontrado."
+              : "Não foi possível excluir o produto."
+      },
+      { status: forbidden ? 403 : notFound ? 404 : related ? 409 : 503, headers: noStore }
+    );
+  }
+
+  const payload = record(result.data);
+  const storagePaths = Array.isArray(payload?.storagePaths)
+    ? payload.storagePaths.filter((path): path is string => typeof path === "string" && path.length > 0)
+    : [];
+  if (storagePaths.length) {
+    const removed = await supabase.storage.from("catalog-public").remove(storagePaths);
+    if (removed.error) logCatalogFailure("delete_product_storage", removed.error);
+  }
+
+  return NextResponse.json(
+    { ok: true, message: "Produto excluído permanentemente." },
     { headers: noStore }
   );
 }
