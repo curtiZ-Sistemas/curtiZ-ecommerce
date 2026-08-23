@@ -129,6 +129,19 @@ export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
     return previous[right.length] ?? right.length;
   };
   const normalizedQuery = filters.query ? normalize(filters.query) : undefined;
+  const relevance = (product: Product) => {
+    if (!normalizedQuery) return 0;
+    const name = normalize(product.name);
+    const category = normalize(product.category);
+    const colors = product.colors.map(normalize);
+    if (name === normalizedQuery) return 0;
+    if (name.startsWith(normalizedQuery)) return 1;
+    if (name.includes(normalizedQuery)) return 2;
+    if (category === normalizedQuery) return 3;
+    if (category.startsWith(normalizedQuery)) return 4;
+    if (colors.some((color) => color.includes(normalizedQuery))) return 5;
+    return 6;
+  };
   const categoryFiltered = demoProducts.filter((product) => {
     if (filters.inStock && product.stock <= 0) return false;
     if (
@@ -199,7 +212,8 @@ export const queryDemoCatalog = (filters: CatalogFilters): CatalogResult => {
     if (filters.sort === "name_asc") comparison = first.name.localeCompare(second.name, "pt-BR");
     if (filters.sort === "name_desc") comparison = second.name.localeCompare(first.name, "pt-BR");
     if (filters.sort === "relevant") {
-      comparison = Number(Boolean(second.featured)) - Number(Boolean(first.featured));
+      comparison = relevance(first) - relevance(second);
+      if (!comparison) comparison = Number(Boolean(second.featured)) - Number(Boolean(first.featured));
     }
     return comparison || first.id.localeCompare(second.id);
   });

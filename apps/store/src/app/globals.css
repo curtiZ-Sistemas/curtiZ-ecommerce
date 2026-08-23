@@ -758,6 +758,8 @@ select:disabled {
   border: 1px solid var(--neutral-200);
   border-radius: var(--radius);
   background: var(--white);
+  color: var(--ink);
+  color-scheme: light;
   box-shadow: var(--shadow-md);
 }
 
@@ -771,6 +773,7 @@ select:disabled {
 }
 
 .search-suggestions-heading strong {
+  color: var(--ink);
   font-size: 0.8rem;
 }
 
@@ -7215,7 +7218,7 @@ body:has(.account-experience-page) .help-widget {
   height: 56px;
   border: 0;
   outline: 0;
-  color: var(--neutral-950);
+  color: var(--ink);
   font: inherit;
 }
 
@@ -9075,15 +9078,85 @@ body:has(.account-experience-page) .help-widget {
   width: 100%;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
+}
+
+.search-suggestion strong {
+  color: var(--neutral-950);
+}
+
+.search-suggestion small {
+  color: var(--neutral-600);
 }
 
 .search-suggestion:hover,
 .search-suggestion.active,
 .search-suggestion:focus-visible {
   background: var(--neutral-50);
+  color: var(--ink);
+  outline: 2px solid transparent;
+}
+
+.search-suggestion:focus-visible,
+.search-history-remove:focus-visible,
+.search-all-results:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--brand-700);
+}
+
+.search-history-row {
+  position: relative;
+}
+
+.search-history-row .search-suggestion {
+  padding-right: 50px;
+}
+
+.search-history-remove {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 4px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--neutral-600);
+  background: transparent;
+  cursor: pointer;
+}
+
+.search-history-remove:hover {
+  color: var(--brand-900);
+  background: var(--brand-50);
+}
+
+.search-history-remove svg {
+  width: 16px;
+  height: 16px;
+}
+
+.search-suggestions-status {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  color: var(--neutral-600);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.search-suggestions-status svg {
+  width: 16px;
+  height: 16px;
 }
 
 .search-suggestion-icon {
@@ -9730,7 +9803,10 @@ body:has(.account-experience-page) .help-widget {
   }
 
   .search-suggestions {
+    right: max(0px, env(safe-area-inset-right));
+    left: max(0px, env(safe-area-inset-left));
     max-height: min(390px, calc(100dvh - 142px));
+    overscroll-behavior: contain;
   }
 }
 

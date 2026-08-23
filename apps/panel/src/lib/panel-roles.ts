@@ -29,7 +29,7 @@ export const panelDefinitions = {
     contextLabel: "Técnico",
     href: "/tecnico",
     description: "Sistema, segurança, integrações e manutenção.",
-    selectable: false
+    selectable: true
   }
 } as const;
 

@@ -27,6 +27,14 @@ describe("domínio Curtiz", () => {
     expect(roleHasPermission("operational", "financial.read_full")).toBe(false);
   });
 
+  it("mantém a matriz de gestão de acessos sem escalada entre funções", () => {
+    expect(roleHasPermission("manager", "users.access.manage_admin")).toBe(true);
+    expect(roleHasPermission("manager", "users.access.manage_technical")).toBe(false);
+    expect(roleHasPermission("technical", "users.access.manage_technical")).toBe(true);
+    expect(roleHasPermission("technical", "users.access.manage_admin")).toBe(false);
+    expect(roleHasPermission("admin", "users.access.manage_operator")).toBe(false);
+  });
+
   it("limita desconto fixo ao subtotal", () => {
     expect(
       evaluatePromotion(

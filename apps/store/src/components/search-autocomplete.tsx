@@ -1,7 +1,7 @@
 "use client";
 
-import type { Product } from "@curtiz/domain";
-import { Clock3, LoaderCircle, Search } from "lucide-react";
+import { formatBRL, type Product } from "@curtiz/domain";
+import { Clock3, LoaderCircle, Search, X } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import React, {
@@ -14,14 +14,22 @@ import React, {
   useState
 } from "react";
 import type { CatalogResult, FacetOption } from "@/lib/catalog-query";
-import { trackIntelligence } from "../lib/intelligence-client";
+import {
+  intelligenceSessionId,
+  recentlyViewedProductIds,
+  trackIntelligence
+} from "../lib/intelligence-client";
+import { normalizeSearchTerm, parseSearchHistory, rememberSearch } from "../lib/search-history";
 
 const recentSearchesKey = "curtiz-recent-searches";
 
 type SearchOption =
   | { id: string; type: "product"; label: string; href: string; product: Product }
   | { id: string; type: "category"; label: string; href: string }
-  | { id: string; type: "recent"; label: string; href: string };
+  | { id: string; type: "recent"; label: string; href: string }
+  | { id: string; type: "recommendation"; label: string; href: string; product: Product };
+
+type RecommendationResult = { products?: Product[] };
 
 export function SearchAutocomplete({
   idPrefix,
@@ -43,6 +51,9 @@ export function SearchAutocomplete({
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<FacetOption[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
+  const [recommendations, setRecommendations] = useState<Product[]>([]);
+  const [searchComplete, setSearchComplete] = useState(false);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -51,19 +62,64 @@ export function SearchAutocomplete({
   useEffect(() => {
     try {
       const stored: unknown = JSON.parse(localStorage.getItem(recentSearchesKey) ?? "[]");
-      if (Array.isArray(stored)) {
-        setRecent(stored.filter((item): item is string => typeof item === "string").slice(0, 5));
-      }
+      setRecent(parseSearchHistory(stored));
     } catch {
       localStorage.removeItem(recentSearchesKey);
     }
   }, []);
 
   useEffect(() => {
-    const normalized = query.trim();
+    const normalized = normalizeSearchTerm(query);
+    const needsEmptyFallback = focused && !normalized && recent.length === 0;
+    const needsNoResultFallback =
+      focused && normalized.length >= 2 && searchComplete && products.length === 0;
+    if (!needsEmptyFallback && !needsNoResultFallback) return;
+
+    const controller = new AbortController();
+    const sessionId = intelligenceSessionId();
+    const personalized = needsNoResultFallback && Boolean(sessionId);
+    setRecommendationsLoading(true);
+    const request = personalized
+      ? fetch("/api/intelligence/recommendations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            source: "personalized",
+            sessionId,
+            recent: recentlyViewedProductIds(),
+            seen: [],
+            seed: normalized || "search-empty",
+            limit: 3
+          }),
+          cache: "no-store",
+          signal: controller.signal
+        })
+      : fetch("/api/intelligence/recommendations?source=most_wanted&limit=3&seed=search", {
+          cache: "force-cache",
+          signal: controller.signal
+        });
+
+    void request
+      .then(async (response) => {
+        if (!response.ok) throw new Error("recommendations_unavailable");
+        return (await response.json()) as RecommendationResult;
+      })
+      .then((result) => setRecommendations((result.products ?? []).filter((item) => item.stock > 0).slice(0, 3)))
+      .catch(() => {
+        if (!controller.signal.aborted) setRecommendations([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecommendationsLoading(false);
+      });
+    return () => controller.abort();
+  }, [focused, products.length, query, recent.length, searchComplete]);
+
+  useEffect(() => {
+    const normalized = normalizeSearchTerm(query);
     if (normalized.length < 2) {
       setProducts([]);
       setCategories([]);
+      setSearchComplete(false);
       setLoading(false);
       return;
     }
@@ -72,7 +128,9 @@ export function SearchAutocomplete({
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void fetch(`/api/catalog?q=${encodeURIComponent(normalized)}&pagina=1&limite=5`, {
+      setSearchComplete(false);
+      setRecommendations([]);
+      void fetch(`/api/catalog?q=${encodeURIComponent(normalized)}&pagina=1&limite=5&sugestoes=1`, {
         cache: "no-store",
         signal: controller.signal
       })
@@ -84,6 +142,7 @@ export function SearchAutocomplete({
           if (requestSequence.current !== sequence) return;
           setProducts(result.products.slice(0, 5));
           setCategories(result.facets.categories.slice(0, 3));
+          setSearchComplete(true);
           trackIntelligence({ type: "search", query: normalized, resultCount: result.total });
           if (result.total === 0) trackIntelligence({ type: "search_no_results", query: normalized, resultCount: 0 });
         })
@@ -91,6 +150,7 @@ export function SearchAutocomplete({
           if (!controller.signal.aborted && requestSequence.current === sequence) {
             setProducts([]);
             setCategories([]);
+            setSearchComplete(false);
           }
         })
         .finally(() => {
@@ -106,7 +166,17 @@ export function SearchAutocomplete({
   }, [query]);
 
   const options = useMemo<SearchOption[]>(() => {
-    if (query.trim().length < 2) {
+    const normalized = normalizeSearchTerm(query);
+    if (!normalized) {
+      if (!recent.length) {
+        return recommendations.map((product) => ({
+          id: `recommendation-empty-${product.id}`,
+          type: "recommendation" as const,
+          label: product.name,
+          href: `/produto/${product.slug}`,
+          product
+        }));
+      }
       return recent.map((term) => ({
         id: `recent-${term}`,
         type: "recent",
@@ -114,6 +184,7 @@ export function SearchAutocomplete({
         href: `/busca?q=${encodeURIComponent(term)}`
       }));
     }
+    if (normalized.length < 2) return [];
     return [
       ...products.map((product) => ({
         id: `product-${product.id}`,
@@ -127,29 +198,53 @@ export function SearchAutocomplete({
         type: "category" as const,
         label: category.label,
         href: `/produtos?categoria=${encodeURIComponent(category.value)}`
-      }))
+      })),
+      ...(searchComplete && products.length === 0
+        ? recommendations.map((product) => ({
+            id: `recommendation-${product.id}`,
+            type: "recommendation" as const,
+            label: product.name,
+            href: `/produto/${product.slug}`,
+            product
+          }))
+        : [])
     ];
-  }, [categories, products, query, recent]);
+  }, [categories, products, query, recent, recommendations, searchComplete]);
 
   const saveRecent = (term: string) => {
-    const normalized = term.trim();
-    if (!normalized) return;
-    const next = [normalized, ...recent.filter((item) => item !== normalized)].slice(0, 5);
+    const next = rememberSearch(recent, term);
+    if (next.length === 0) return;
     setRecent(next);
-    localStorage.setItem(recentSearchesKey, JSON.stringify(next));
+    try {
+      localStorage.setItem(recentSearchesKey, JSON.stringify(next));
+    } catch {
+      // A busca continua funcional quando o navegador bloqueia o armazenamento local.
+    }
+  };
+
+  const removeRecent = (term: string) => {
+    const next = recent.filter((item) => item !== term);
+    setRecent(next);
+    try {
+      if (next.length) localStorage.setItem(recentSearchesKey, JSON.stringify(next));
+      else localStorage.removeItem(recentSearchesKey);
+    } catch {
+      // A remoção permanece refletida na sessão atual.
+    }
   };
 
   const navigate = (option: SearchOption) => {
-    const normalizedQuery = query.trim();
-    if (option.type === "product" && normalizedQuery.length >= 2) trackIntelligence({ type: "search_result_click", query: normalizedQuery, productId: option.product.id });
-    if (option.type !== "category") saveRecent(option.label);
+    const normalizedQuery = normalizeSearchTerm(query);
+    if ((option.type === "product" || option.type === "recommendation") && normalizedQuery.length >= 2) trackIntelligence({ type: "search_result_click", query: normalizedQuery, productId: option.product.id });
+    if (option.type === "recent") saveRecent(option.label);
+    else if (normalizedQuery.length >= 2) saveRecent(normalizedQuery);
     setFocused(false);
     onNavigate?.();
     router.push(option.href);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
-    const normalized = query.trim();
+    const normalized = normalizeSearchTerm(query);
     if (!normalized) {
       event.preventDefault();
       return;
@@ -175,7 +270,10 @@ export function SearchAutocomplete({
     }
   };
 
-  const showPanel = focused && (query.trim().length >= 2 || recent.length > 0);
+  const normalizedQuery = normalizeSearchTerm(query);
+  const showPanel = focused;
+  const emptyRecommendations = !normalizedQuery && recent.length === 0;
+  const noResults = normalizedQuery.length >= 2 && searchComplete && products.length === 0;
 
   return (
     <div
@@ -228,59 +326,70 @@ export function SearchAutocomplete({
         >
           <div className="search-suggestions-heading">
             <strong>
-              {query.trim().length < 2
-                ? "Buscas recentes"
+              {!normalizedQuery
+                ? recent.length
+                  ? "Buscas recentes"
+                  : "Sugestões para você"
+                : normalizedQuery.length < 2
+                  ? "Continue digitando"
                 : loading
                   ? "Buscando produtos…"
+                  : noResults
+                    ? "Nenhum resultado exato"
                   : options.length
                     ? "Sugestões"
-                    : "Nenhum resultado encontrado"}
+                    : "Busca indisponível"}
             </strong>
-            {!loading && query.trim().length >= 2 ? <span>{options.length} opções</span> : null}
-            {!loading && query.trim().length < 2 && recent.length ? (
-              <button
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  setRecent([]);
-                  localStorage.removeItem(recentSearchesKey);
-                }}
-              >
-                Limpar
-              </button>
-            ) : null}
+            {!loading && normalizedQuery.length >= 2 && !noResults ? <span>{options.length} opções</span> : null}
+            {noResults && recommendations.length ? <span>Você pode gostar de</span> : null}
           </div>
+          {(emptyRecommendations || noResults) && recommendationsLoading ? (
+            <p className="search-suggestions-status"><LoaderCircle className="spin" aria-hidden="true" /> Preparando sugestões</p>
+          ) : null}
           {options.map((option, index) => (
-            <button
-              id={option.id}
-              className={activeIndex === index ? "search-suggestion active" : "search-suggestion"}
-              type="button"
-              role="option"
-              aria-selected={activeIndex === index}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => navigate(option)}
-              key={option.id}
-            >
-              {option.type === "product" ? (
-                <Image src={option.product.image} alt="" width={56} height={44} />
-              ) : (
-                <span className="search-suggestion-icon" aria-hidden="true">
-                  {option.type === "recent" ? <Clock3 /> : <Search />}
+            <div className={option.type === "recent" ? "search-history-row" : undefined} key={option.id}>
+              <button
+                id={option.id}
+                className={activeIndex === index ? "search-suggestion active" : "search-suggestion"}
+                type="button"
+                role="option"
+                aria-selected={activeIndex === index}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => navigate(option)}
+              >
+                {option.type === "product" || option.type === "recommendation" ? (
+                  <Image src={option.product.image} alt="" width={56} height={44} />
+                ) : (
+                  <span className="search-suggestion-icon" aria-hidden="true">
+                    {option.type === "recent" ? <Clock3 /> : <Search />}
+                  </span>
+                )}
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>
+                    {option.type === "product" || option.type === "recommendation"
+                      ? `${option.product.category} · ${formatBRL(option.product.priceInCents)}`
+                      : option.type === "category"
+                        ? "Categoria"
+                        : "Buscar novamente"}
+                  </small>
                 </span>
-              )}
-              <span>
-                <strong>{option.label}</strong>
-                <small>
-                  {option.type === "product"
-                    ? option.product.category
-                    : option.type === "category"
-                      ? "Categoria"
-                      : "Buscar novamente"}
-                </small>
-              </span>
-            </button>
+              </button>
+              {option.type === "recent" ? (
+                <button
+                  className="search-history-remove"
+                  type="button"
+                  aria-label={`Apagar pesquisa ${option.label}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => removeRecent(option.label)}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
           ))}
-          {query.trim().length >= 2 && (
+          {normalizedQuery.length === 1 ? <p className="search-suggestions-status">Digite mais um caractere para ver resultados.</p> : null}
+          {normalizedQuery.length >= 2 && (
             <button
               className="search-all-results"
               type="button"
@@ -289,12 +398,12 @@ export function SearchAutocomplete({
                 navigate({
                   id: "all-results",
                   type: "recent",
-                  label: query.trim(),
-                  href: `/busca?q=${encodeURIComponent(query.trim())}`
+                  label: normalizedQuery,
+                  href: `/busca?q=${encodeURIComponent(normalizedQuery)}`
                 })
               }
             >
-              Ver todos os resultados para “{query.trim()}”
+              Ver todos os resultados para “{normalizedQuery}”
             </button>
           )}
         </div>

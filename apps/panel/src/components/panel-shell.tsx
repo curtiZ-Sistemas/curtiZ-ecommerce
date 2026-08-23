@@ -103,8 +103,6 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Políticas e documentos legais", "politicas", Scale],
     ["Treinamentos", "treinamentos", FileText],
     ["Contratos", "contratos", FileClock],
-    ["Usuários", "usuarios", ShieldCheck],
-    ["Permissões", "permissoes", ShieldCheck],
     ["Configurações administrativas", "configuracoes", Settings]
   ],
   gerencia: [
@@ -133,6 +131,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Relatórios", "relatorios", ChartNoAxesCombined],
     ["Aprovações", "aprovacoes", ShieldCheck],
     ["Auditoria", "auditoria", FileClock],
+    ["Usuários e acessos", "usuarios", Users],
     ["Políticas e conformidade", "politicas", Scale],
     ["Simulações", "simulacoes", ChartNoAxesCombined],
     ["Alertas", "alertas", Activity],
@@ -340,6 +339,22 @@ export function PanelShell({
     return () => document.removeEventListener("keydown", closeSearch);
   }, [searchOpen]);
 
+  useEffect(() => {
+    const openSearchShortcut = (event: globalThis.KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase("pt-BR") === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+      } else if (event.key === "/" && !isTyping) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", openSearchShortcut);
+    return () => document.removeEventListener("keydown", openSearchShortcut);
+  }, []);
+
   useLayoutEffect(() => {
     const navigation = navRef.current;
     if (!navigation) return;
@@ -431,11 +446,6 @@ export function PanelShell({
           </div>
         </div>
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
-        <Link className="sidebar-priority" href={roleExperience[role].actionHref} onClick={() => closeMenu()}>
-          <span>Prioridade do painel</span>
-          <strong>{roleExperience[role].actionLabel}</strong>
-          <small>{roleExperience[role].purpose}</small>
-        </Link>
         <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
           {menus[role].map(([label, route, Icon], index) => {
             const href = route ? `/${role}/${route}` : `/${role}`;

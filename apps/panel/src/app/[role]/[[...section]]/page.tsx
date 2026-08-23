@@ -96,7 +96,7 @@ function showRouteHeading(role: PanelRole, section: string) {
   if (role === "operacional") return section !== "construtor-home";
   if (role === "gerencia") {
     const alias = section === "vendas" ? "pedidos-vendas" : section === "comissoes-representantes" ? "comissoes" : section;
-    const ownsHeading = section === "conteudo-loja" || section === "barra-promocional" || section === "inteligencia-loja" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
+    const ownsHeading = section === "conteudo-loja" || section === "barra-promocional" || section === "inteligencia-loja" || section === "usuarios" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
     return !ownsHeading;
   }
   return !isTechnicalResource(section);
@@ -136,6 +136,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
   if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "inteligencia-loja") return <StoreIntelligence />;
+  if (section === "usuarios") return <AdminUsers />;
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;
   if (section === "solicitacoes-representantes" || section === "criativos") {
@@ -162,6 +163,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
 }
 
 function Technical({ section, initialQuery }: { section: string; initialQuery: string }) {
+  if (section === "acessos-tecnicos") return <AdminUsers />;
   if (isTechnicalResource(section)) return <TechnicalResourceManager key={`${section}:${initialQuery}`} resource={section} initialQuery={initialQuery} />;
   return <TechnicalOverview section={section} />;
 }

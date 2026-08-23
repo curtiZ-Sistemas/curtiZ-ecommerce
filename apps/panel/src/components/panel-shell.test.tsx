@@ -60,14 +60,14 @@ describe("PanelShell multipainel", () => {
     expect(markup).toContain("Abrir meu perfil");
   });
 
-  it("expõe contexto, prioridade e estado ativo sem criar ações decorativas", () => {
+  it("expõe contexto e estado ativo sem o bloco explicativo de prioridade", () => {
     const markup = renderToStaticMarkup(
       <PanelShell role="operacional" section="pedidos">
         <p>Conteúdo</p>
       </PanelShell>
     );
 
-    expect(markup).toContain("Prioridade do painel");
+    expect(markup).not.toContain("Prioridade do painel");
     expect(markup).toContain('href="/operacional/pedidos"');
     expect(markup).toContain('aria-current="page"');
     expect(markup).toContain('aria-label="Navegação estrutural"');

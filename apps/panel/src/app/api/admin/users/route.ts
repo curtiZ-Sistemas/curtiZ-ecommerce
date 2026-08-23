@@ -14,14 +14,15 @@ export const dynamic = "force-dynamic";
 const updateSchema = z.object({
   userId: z.string().uuid(),
   status: z.enum(["active", "suspended", "disabled"]),
-  role: z.enum(["customer", "operational", "manager", "technical"]),
+  roles: z.array(z.enum(["customer", "admin", "operational", "technical"])).max(4),
+  updatedAt: z.string().datetime({ offset: true }),
   reason: z.string().trim().min(10).max(500)
 });
 
 const inviteSchema = z.object({
   fullName: z.string().trim().min(3).max(120),
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
-  role: z.enum(["operational", "manager", "technical"]),
+  role: z.enum(["customer", "admin", "operational"]),
   reason: z.string().trim().min(10).max(500)
 });
 
@@ -34,15 +35,17 @@ async function hasPermission(
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdminRequest(request);
+  const auth = await authorizeAdminRequest(request, ["manager", "technical"]);
   if (!auth) return unauthorizedAdminResponse();
-  const [readPermission, managePermission, rolesPermission, createPermission] = await Promise.all([
+  const [readPermission, clientPermission, adminPermission, operatorPermission, technicalPermission, createPermission] = await Promise.all([
     hasPermission(auth.supabase, "users.read"),
-    hasPermission(auth.supabase, "users.manage"),
-    hasPermission(auth.supabase, "users.roles.manage"),
+    hasPermission(auth.supabase, "users.access.manage_client"),
+    hasPermission(auth.supabase, "users.access.manage_admin"),
+    hasPermission(auth.supabase, "users.access.manage_operator"),
+    hasPermission(auth.supabase, "users.access.manage_technical"),
     hasPermission(auth.supabase, "users.create_internal")
   ]);
-  if (readPermission.error || managePermission.error || rolesPermission.error || createPermission.error) {
+  if (readPermission.error || clientPermission.error || adminPermission.error || operatorPermission.error || technicalPermission.error || createPermission.error) {
     return NextResponse.json(
       { message: "Não foi possível confirmar as permissões de usuários." },
       { status: 503, headers: privateNoStore }
@@ -54,8 +57,14 @@ export async function GET(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   }
-  const canManage = managePermission.allowed && rolesPermission.allowed;
-  const canInvite = createPermission.allowed && managePermission.allowed && rolesPermission.allowed;
+  const manageableRoles = [
+    clientPermission.allowed ? "customer" : null,
+    adminPermission.allowed ? "admin" : null,
+    operatorPermission.allowed ? "operational" : null,
+    technicalPermission.allowed ? "technical" : null
+  ].filter((role): role is string => Boolean(role));
+  const canManage = manageableRoles.length > 0;
+  const canInvite = createPermission.allowed && clientPermission.allowed;
   const page = Math.max(
     1,
     Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
@@ -67,7 +76,7 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   let query = auth.supabase
     .from("profiles")
-    .select("id,full_name,email_snapshot,status,created_at,user_roles(role)", { count: "exact" });
+    .select("id,full_name,email_snapshot,status,created_at,updated_at,user_roles(role)", { count: "exact" });
   if (q) query = query.or(`full_name.ilike.%${q}%,email_snapshot.ilike.%${q}%`);
   const result = await query
     .order("created_at", { ascending: false })
@@ -88,7 +97,7 @@ export async function GET(request: NextRequest) {
         .select("entity_id,action,reason,created_at")
         .eq("entity_type", "profiles")
         .in("entity_id", userIds)
-        .in("action", ["update_access", "permission_override"])
+        .in("action", ["update_access", "permission_override", "user_access.changed"])
         .order("created_at", { ascending: false })
     : { data: [], error: null };
   const historyByUser = new Map<string, Record<string, unknown>>();
@@ -104,13 +113,13 @@ export async function GET(request: NextRequest) {
     return {
       ...user,
       roles,
-      editable: canManage && Boolean(userId) && userId !== auth.userId && !roles.includes("admin"),
+      editable: canManage && Boolean(userId) && userId !== auth.userId,
       lastAccessChange: userId ? (historyByUser.get(userId) ?? null) : null,
       user_roles: undefined
     };
   });
   return NextResponse.json(
-    { users, total: result.count ?? 0, page, pageSize, capabilities: { manage: canManage, invite: canInvite } },
+    { users, total: result.count ?? 0, page, pageSize, capabilities: { manage: canManage, invite: canInvite, manageableRoles, canManageStatus: clientPermission.allowed } },
     { headers: privateNoStore }
   );
 }
@@ -122,20 +131,21 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   }
-  const auth = await authorizeAdminRequest(request);
+  const auth = await authorizeAdminRequest(request, ["manager"]);
   if (!auth) return unauthorizedAdminResponse();
-  const [createPermission, managePermission, rolesPermission] = await Promise.all([
+  const [createPermission, clientPermission, adminPermission, operatorPermission] = await Promise.all([
     hasPermission(auth.supabase, "users.create_internal"),
-    hasPermission(auth.supabase, "users.manage"),
-    hasPermission(auth.supabase, "users.roles.manage")
+    hasPermission(auth.supabase, "users.access.manage_client"),
+    hasPermission(auth.supabase, "users.access.manage_admin"),
+    hasPermission(auth.supabase, "users.access.manage_operator")
   ]);
-  if (createPermission.error || managePermission.error || rolesPermission.error) {
+  if (createPermission.error || clientPermission.error || adminPermission.error || operatorPermission.error) {
     return NextResponse.json(
       { message: "Não foi possível confirmar sua permissão agora." },
       { status: 503, headers: privateNoStore }
     );
   }
-  if (!createPermission.allowed || !managePermission.allowed || !rolesPermission.allowed) {
+  if (!createPermission.allowed || !clientPermission.allowed || !adminPermission.allowed || !operatorPermission.allowed) {
     return NextResponse.json(
       { message: "Sua permissão não permite convidar usuários internos." },
       { status: 403, headers: privateNoStore }
@@ -170,11 +180,22 @@ export async function POST(request: NextRequest) {
       { status: 409, headers: privateNoStore }
     );
   }
-  const access = await auth.supabase.rpc("admin_update_user_access", {
+  const profile = await auth.supabase.from("profiles").select("updated_at").eq("id", invitedUser.id).single();
+  const invitedProfile = objectRows([profile.data])[0];
+  const invitedUpdatedAt = typeof invitedProfile?.updated_at === "string" ? invitedProfile.updated_at : "";
+  if (profile.error || !invitedUpdatedAt) {
+    await service.auth.admin.deleteUser(invitedUser.id);
+    return NextResponse.json(
+      { message: "O convite foi cancelado porque o perfil não pôde ser confirmado." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
+  const access = await auth.supabase.rpc("manage_user_access", {
     p_user_id: invitedUser.id,
     p_status: "active",
-    p_role: parsed.data.role,
-    p_reason: parsed.data.reason
+    p_roles: [parsed.data.role],
+    p_reason: parsed.data.reason,
+    p_expected_updated_at: invitedUpdatedAt
   });
   if (access.error) {
     await service.auth.admin.deleteUser(invitedUser.id);
@@ -196,24 +217,25 @@ export async function PATCH(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   }
-  const auth = await authorizeAdminRequest(request);
+  const auth = await authorizeAdminRequest(request, ["manager", "technical"]);
   if (!auth) return unauthorizedAdminResponse();
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
-      { message: "Informe status, papel e justificativa válida." },
+      { message: "Informe status, acessos e justificativa válidos." },
       { status: 400, headers: privateNoStore }
     );
   }
-  const result = await auth.supabase.rpc("admin_update_user_access", {
+  const result = await auth.supabase.rpc("manage_user_access", {
     p_user_id: parsed.data.userId,
     p_status: parsed.data.status,
-    p_role: parsed.data.role,
-    p_reason: parsed.data.reason
+    p_roles: parsed.data.roles,
+    p_reason: parsed.data.reason,
+    p_expected_updated_at: parsed.data.updatedAt
   });
   if (result.error) {
     return NextResponse.json(
-      { message: "Não foi possível alterar este acesso." },
+      { message: result.error.code === "40001" ? "Os acessos mudaram em outra sessão. Recarregue e revise novamente." : "Não foi possível alterar este acesso." },
       { status: result.error.code === "42501" ? 403 : 409, headers: privateNoStore }
     );
   }

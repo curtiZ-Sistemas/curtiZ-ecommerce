@@ -141,6 +141,32 @@ test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page 
   expect(widths.content).toBeLessThanOrEqual(widths.viewport);
 });
 
+test("busca mobile recomenda produtos reais quando não encontra correspondência", async ({ page }) => {
+  await page.route("**/api/catalog?*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        products: [], total: 0, page: 1, pageSize: 5, source: "demo",
+        facets: { categories: [], collections: [], colors: [], sizes: [], price: { min: 0, max: 0 }, promotionCount: 0, inStockCount: 0, newestCount: 0 }
+      })
+    });
+  });
+  await page.route("**/api/intelligence/recommendations?*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ products: [{ id: "recommended-1", slug: "slide-recomendado", name: "Slide recomendado", category: "Slides", description: "Produto disponível", priceInCents: 6990, rating: 4.8, reviews: 20, colors: ["Preto"], sizes: ["39"], image: "/images/products/wave-preto.png", featured: true, stock: 3 }] })
+    });
+  });
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto("/");
+  await page.locator(".header-search-toggle").click();
+  await page.locator('input[role="combobox"]:visible').fill("produto inexistente");
+  await expect(page.getByText("Nenhum resultado exato")).toBeVisible();
+  await expect(page.getByRole("option", { name: /Slide recomendado/ })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, page: document.documentElement.scrollWidth }));
+  expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport);
+});
+
 test("dados estruturados do produto não geram aviso de hidratação", async ({ page }) => {
   const hydrationWarnings: string[] = [];
   page.on("console", (message) => {

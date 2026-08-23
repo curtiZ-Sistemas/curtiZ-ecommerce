@@ -51,6 +51,11 @@ export const permissions = [
   "cms.manage",
   "redirects.manage",
   "users.create_internal",
+  "users.read",
+  "users.access.manage_client",
+  "users.access.manage_admin",
+  "users.access.manage_operator",
+  "users.access.manage_technical",
   "audit.read",
   "technical.health.read",
   "technical.logs.read",
@@ -110,6 +115,7 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
         !permission.startsWith("finance.close") &&
         !permission.startsWith("finance.reopen") &&
         !permission.startsWith("technical.") &&
+        !permission.startsWith("users.access.") &&
         permission !== "representatives.commissions.close" &&
         permission !== "representatives.commissions.read_all"
     )
@@ -117,14 +123,17 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
   manager: new Set(
     permissions.filter(
       (permission) =>
-        !permission.startsWith("technical.integrations") && permission !== "whatsapp.manage"
+        !permission.startsWith("technical.integrations") &&
+        permission !== "users.access.manage_technical" &&
+        permission !== "whatsapp.manage"
     )
   ),
   technical: new Set(
     permissions.filter(
       (permission) =>
         permission.startsWith("technical.") ||
-        permission.startsWith("users.") ||
+        permission === "users.read" ||
+        permission === "users.access.manage_technical" ||
         permission === "audit.read" ||
         permission === "erp.manage" ||
         permission === "whatsapp.manage" ||

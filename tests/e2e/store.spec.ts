@@ -216,6 +216,27 @@ test("catálogo e busca carregam somente resultados paginados", async ({ page })
   expect(visibleProducts).toBeLessThanOrEqual(12);
 });
 
+test("busca desktop mantém histórico privado, removível e acessível pelo teclado", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "curtiz-recent-searches",
+      JSON.stringify(["Wave", "Slide preto", "Sandália", "Infantil", "Azul", "Excedente"])
+    );
+  });
+  await page.goto("/");
+  const search = page.locator(".desktop-search input[role='combobox']");
+  await search.focus();
+  await expect(page.locator(".desktop-search .search-history-row")).toHaveCount(5);
+  await page.getByRole("button", { name: "Apagar pesquisa Slide preto" }).click();
+  await expect(page.getByText("Slide preto", { exact: true })).toHaveCount(0);
+
+  await search.fill("wave");
+  await expect(page.locator(".desktop-search .search-history-row")).toHaveCount(0);
+  await expect(page.locator(".desktop-search .search-suggestions")).toBeVisible();
+  await search.press("Escape");
+  await expect(page.locator(".desktop-search .search-suggestions")).toBeHidden();
+});
+
 test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedido", async ({
   page
 }) => {

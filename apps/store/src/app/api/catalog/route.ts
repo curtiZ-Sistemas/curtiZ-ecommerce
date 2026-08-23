@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseCatalogFilters, queryDemoCatalog } from "@/lib/catalog-query";
-import { parseCatalogRpcResult } from "@/lib/catalog-result";
+import { parseCatalogRpcResult, parseRpcProductList } from "@/lib/catalog-result";
 import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const fixedCategory = url.searchParams.get("categoria_fixa") ?? undefined;
   const compact = url.searchParams.get("compacto") === "1";
+  const suggestions = url.searchParams.get("sugestoes") === "1";
   const filters = parseCatalogFilters(url.searchParams, fixedCategory);
   if (process.env.DEMO_MODE === "true") {
     const result = queryDemoCatalog(filters);
@@ -22,6 +23,29 @@ export async function GET(request: Request) {
 
   const supabase = createPublicSupabaseClient();
   if (supabase) {
+    if (suggestions && filters.query) {
+      const suggestionResponse: unknown = await supabase.rpc("search_catalog_suggestions", {
+        p_query: filters.query,
+        p_limit: Math.min(filters.pageSize, 8)
+      });
+      const suggestionResult = readQueryResult(suggestionResponse);
+      const suggestionProducts = suggestionResult.error
+        ? null
+        : parseRpcProductList(suggestionResult.data);
+      if (suggestionProducts) {
+        return NextResponse.json(
+          {
+            products: suggestionProducts,
+            facets: { categories: [], collections: [], colors: [], sizes: [], price: { min: 0, max: 0 }, promotionCount: 0, inStockCount: 0, newestCount: 0 },
+            total: suggestionProducts.length,
+            page: 1,
+            pageSize: suggestionProducts.length,
+            source: "supabase"
+          },
+          { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=120" } }
+        );
+      }
+    }
     const rpcResponse: unknown = await supabase.rpc("search_catalog", {
       p_query: filters.query ?? null,
       p_category: filters.category ?? null,

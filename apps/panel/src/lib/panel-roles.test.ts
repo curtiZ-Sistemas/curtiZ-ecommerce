@@ -23,8 +23,8 @@ describe("papéis do painel", () => {
     expect(hasMultipleSelectablePanels(["admin", "manager", "operational"])).toBe(true);
   });
 
-  it("exibe somente painéis efetivamente atribuídos e nunca o técnico", () => {
-    expect(authorizedSelectablePanels(["admin", "technical"]).map((panel) => panel.databaseRole)).toEqual(["admin"]);
+  it("exibe somente painéis efetivamente atribuídos, incluindo o técnico", () => {
+    expect(authorizedSelectablePanels(["admin", "technical"]).map((panel) => panel.databaseRole)).toEqual(["admin", "technical"]);
     expect(authorizedSelectablePanels(["manager", "operational"]).map((panel) => panel.databaseRole)).toEqual(["operational", "manager"]);
   });
 
