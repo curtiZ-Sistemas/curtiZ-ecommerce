@@ -27,6 +27,8 @@ const sourceTitles: Record<IntelligenceSource, string> = {
   recently_viewed: "Vistos recentemente",
   because_you_viewed: "Porque você viu estes estilos"
 };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const emptyProductIds: string[] = [];
 const isProduct = (value: unknown): value is Product =>
   Boolean(value) &&
   typeof value === "object" &&
@@ -41,6 +43,7 @@ export function IntelligenceShelf({
   subtitle,
   limit = 8,
   category,
+  excludeProductIds = emptyProductIds,
   infinite = false,
   className = ""
 }: {
@@ -49,6 +52,7 @@ export function IntelligenceShelf({
   subtitle?: string;
   limit?: number;
   category?: string;
+  excludeProductIds?: string[];
   infinite?: boolean;
   className?: string;
 }) {
@@ -70,7 +74,10 @@ export function IntelligenceShelf({
       else setLoadingMore(true);
       setError("");
       try {
-        const seen = reset ? [] : productsRef.current.map((item) => item.id).slice(-50);
+        const seen = [
+          ...excludeProductIds,
+          ...(reset ? [] : productsRef.current.map((item) => item.id))
+        ].filter((id) => uuidPattern.test(id)).slice(-50);
         const response = await fetch("/api/intelligence/recommendations", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -94,7 +101,11 @@ export function IntelligenceShelf({
           !Array.isArray((data as { products?: unknown }).products)
         )
           throw new Error("Não foi possível carregar esta seleção.");
-        const next = (data as { products: unknown[] }).products.filter(isProduct);
+        const excluded = new Set(excludeProductIds);
+        const next = (data as { products: unknown[] }).products
+          .filter(isProduct)
+          .filter((product) => !excluded.has(product.id) && product.stock > 0)
+          .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index);
         setProducts((current) => {
           const merged = reset
             ? next
@@ -120,7 +131,7 @@ export function IntelligenceShelf({
         setLoadingMore(false);
       }
     },
-    [category, limit, source]
+    [category, excludeProductIds, limit, source]
   );
   useEffect(() => {
     page.current = 0;

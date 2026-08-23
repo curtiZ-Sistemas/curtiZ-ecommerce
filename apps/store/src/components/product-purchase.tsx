@@ -6,11 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Heart,
-  ShieldCheck,
   ShoppingBag,
-  Star,
-  Store,
-  Truck
+  Star
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -351,12 +348,6 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
             {added ? <Check /> : <ShoppingBag />}
             {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}
           </button>
-        </div>
-
-        <div className="product-commerce-notes">
-          <p><Truck /><span><strong>Entrega</strong>Prazo e valor confirmados no checkout</span></p>
-          <p><Store /><span><strong>Vendido por</strong>curti Z</span></p>
-          <p><ShieldCheck /><span><strong>Compra segura</strong>Preço e estoque validados antes do pedido</span></p>
         </div>
       </div>
     </section>

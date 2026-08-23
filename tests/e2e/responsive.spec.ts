@@ -360,3 +360,58 @@ test("404 mantém ações e recomendações acessíveis no mobile", async ({ pag
     expect(layout.recommendationOverflow).toBe(true);
   }
 });
+
+test("produto mantém recomendações em grade responsiva sem repetir o item atual", async ({
+  page
+}) => {
+  await page.route("**/api/intelligence/recommendations", async (route) => {
+    const products = Array.from({ length: 8 }, (_, index) => ({
+      id: `recommended-${index + 1}`,
+      slug: `slide-recomendado-${index + 1}`,
+      name: `Slide recomendado ${index + 1}`,
+      category: "Slides",
+      description: "Produto disponível",
+      priceInCents: 6990,
+      rating: 4.8,
+      reviews: 20,
+      colors: ["Preto"],
+      sizes: ["39"],
+      image: "/images/products/wave-preto.png",
+      featured: false,
+      stock: 3
+    }));
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ products, nextCursor: null })
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
+  const shelf = page.locator(".product-recommendations");
+  await expect(shelf.getByRole("heading", { name: "Você Também Pode Gostar" })).toBeVisible();
+  await expect(shelf.locator(".product-card")).toHaveCount(8);
+  await expect(shelf.locator('a[href="/produto/flip-flop-wave-preto"]')).toHaveCount(0);
+  await expect(page.locator(".product-summary").getByText("Vendido por")).toHaveCount(0);
+  await expect(page.locator(".product-summary").getByText("Compra segura")).toHaveCount(0);
+
+  const selectedColor = page.locator(".product-summary .color-swatch.selected").first();
+  if ((await selectedColor.count()) > 0) {
+    expect(
+      await selectedColor.evaluate((element) => getComputedStyle(element, "::after").content)
+    ).toBe("none");
+  }
+
+  for (const width of [320, 360, 390, 430, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: width <= 430 ? 844 : 1000 });
+    const columns = await shelf.locator(".product-grid").evaluate((element) =>
+      getComputedStyle(element).gridTemplateColumns.split(" ").length
+    );
+    expect(columns).toBe(width <= 700 ? 2 : width <= 900 ? 3 : 4);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    ).toBeLessThanOrEqual(1);
+  }
+});

@@ -3,9 +3,9 @@ import { Star } from "lucide-react";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { ProductCard } from "@/components/product-card";
+import { IntelligenceShelf } from "@/components/intelligence-shelf";
 import { ProductPurchase } from "@/components/product-purchase";
-import { getPublicProduct, queryPublicCatalog } from "@/lib/storefront-data";
+import { getPublicProduct } from "@/lib/storefront-data";
 
 const productDescription = "Detalhes, variações e disponibilidade dos produtos curti Z.";
 
@@ -46,21 +46,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
-  const relatedResult = await queryPublicCatalog({
-    category: product.category,
-    sort: "best_sellers",
-    pageSize: 5
-  }).catch((error: unknown) => {
-    console.error(
-      "[product-page] N\u00e3o foi poss\u00edvel carregar produtos relacionados.",
-      error instanceof Error ? error.message : "Erro desconhecido."
-    );
-    return null;
-  });
-  const related = (relatedResult?.products ?? [])
-    .filter((item) => item.id !== product.id)
-    .slice(0, 4);
-
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -121,7 +106,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <section className="product-information">
         <div>
-          <p className="eyebrow">Sobre o produto</p>
+          <p className="eyebrow">Sobre o Produto</p>
           <h2>Detalhes de {product.name}</h2>
           <p>{product.description}</p>
         </div>
@@ -141,8 +126,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <section className="section product-reviews" aria-labelledby="product-reviews-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Experiências publicadas</p>
-              <h2 id="product-reviews-title">Avaliações deste produto</h2>
+              <p className="eyebrow">Experiências Publicadas</p>
+              <h2 id="product-reviews-title">Avaliações do Produto</h2>
             </div>
           </div>
           <div className="product-review-grid">
@@ -169,18 +154,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         </section>
       )}
 
-      {related.length > 0 && (
-        <section className="section product-recommendations">
-          <div className="section-heading">
-            <h2>Você também pode gostar</h2>
-          </div>
-          <div className="product-grid">
-            {related.map((item) => (
-              <ProductCard product={item} key={item.id} />
-            ))}
-          </div>
-        </section>
-      )}
+      <IntelligenceShelf
+        source="personalized"
+        title="Você Também Pode Gostar"
+        limit={8}
+        category={product.category}
+        excludeProductIds={[product.id]}
+        className="product-recommendations"
+      />
     </div>
   );
 }
