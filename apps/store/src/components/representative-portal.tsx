@@ -1216,6 +1216,7 @@ function SaleForm({
                   <span>Quantidade</span>
                   <input
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     max={Math.min(99, selected?.quantity ?? 99)}
                     step={1}

@@ -22,6 +22,7 @@ import {
   XCircle
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePanelPrompt } from "./panel-prompt";
 
 type Item = Record<string, unknown>;
 type Snapshot = {
@@ -95,6 +96,7 @@ const formatDate = (value: string) =>
     : "—";
 
 export function HelpContentCenter() {
+  const requestPrompt = usePanelPrompt();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [tab, setTab] = useState<Tab>("overview");
   const [selectedId, setSelectedId] = useState("");
@@ -269,15 +271,20 @@ export function HelpContentCenter() {
 
   const transition = async (action: string) => {
     if (!selected) return;
-    const reason = window.prompt(
-      action === "schedule" ? "Motivo do agendamento:" : "Justificativa da ação:"
-    );
+    const reason = await requestPrompt({
+      title: action === "schedule" ? "Agendar conteúdo" : "Atualizar conteúdo",
+      label: action === "schedule" ? "Motivo do agendamento" : "Justificativa da ação",
+      minLength: 3
+    });
     if (!reason) return;
     let scheduledAt: string | null = null;
     if (action === "schedule") {
-      const value = window.prompt(
-        "Data e hora ISO com fuso, por exemplo 2026-08-10T10:00:00-03:00:"
-      );
+      const value = await requestPrompt({
+        title: "Agendar conteúdo",
+        label: "Data e hora da publicação",
+        multiline: false,
+        inputType: "datetime-local"
+      });
       if (!value) return;
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) {
@@ -537,10 +544,25 @@ function ContentEditor({
   capabilities: Record<string, boolean>;
   onRequest: (method: "POST" | "PATCH" | "DELETE", body: Item, success: string) => Promise<boolean>;
 }) {
+  const requestPrompt = usePanelPrompt();
   const status = text(selected, "status");
   const versions = snapshot.versions.filter(
     (item) => text(item, "content_id") === text(selected, "id")
   );
+  const restoreVersion = async (item: Item) => {
+    const reason = await requestPrompt({
+      title: "Restaurar versão",
+      label: "Motivo da restauração",
+      minLength: 3
+    });
+    if (reason) {
+      await onRequest(
+        "PATCH",
+        { kind: "restore_version", versionId: text(item, "id"), reason },
+        "Versão restaurada como rascunho."
+      );
+    }
+  };
   const set = <K extends keyof typeof emptyDraft>(key: K, value: (typeof emptyDraft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   return (
@@ -686,6 +708,7 @@ function ContentEditor({
           Prioridade
           <input
             type="number"
+            inputMode="numeric"
             min={0}
             max={1000}
             value={draft.priority}
@@ -957,15 +980,7 @@ function ContentEditor({
                 <p>{text(item, "change_summary")}</p>
                 {capabilities.support_content_publish && (
                   <button
-                    onClick={() => {
-                      const reason = window.prompt("Motivo da restauração:");
-                      if (reason)
-                        void onRequest(
-                          "PATCH",
-                          { kind: "restore_version", versionId: text(item, "id"), reason },
-                          "Versão restaurada como rascunho."
-                        );
-                    }}
+                    onClick={() => void restoreVersion(item)}
                   >
                     Restaurar esta versão
                   </button>
@@ -992,6 +1007,46 @@ function Categories({
   onRequest: (method: "POST" | "PATCH" | "DELETE", body: Item, success: string) => Promise<boolean>;
   pending: string;
 }) {
+  const requestPrompt = usePanelPrompt();
+  const editCategory = async (item: Item) => {
+    const name = await requestPrompt({
+      title: "Editar categoria",
+      label: "Nome da categoria",
+      defaultValue: text(item, "name"),
+      multiline: false,
+      minLength: 2
+    });
+    if (!name) return;
+    const description = await requestPrompt({
+      title: "Editar categoria",
+      label: "Descrição",
+      defaultValue: text(item, "description"),
+      minLength: 1
+    });
+    if (description === null) return;
+    const sortOrder = Number(await requestPrompt({
+      title: "Editar categoria",
+      label: "Ordem",
+      defaultValue: String(number(item, "sort_order")),
+      multiline: false,
+      inputType: "number",
+      inputMode: "numeric"
+    }));
+    if (!Number.isInteger(sortOrder)) return;
+    await onRequest(
+      "PATCH",
+      {
+        kind: "category",
+        id: text(item, "id"),
+        name,
+        description,
+        sortOrder,
+        active: item.active !== false,
+        publicVisible: item.public_visible !== false
+      },
+      "Categoria atualizada."
+    );
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1037,29 +1092,7 @@ function Categories({
               <div className="help-row-actions">
                 <button
                   type="button"
-                  onClick={() => {
-                    const name = window.prompt("Nome da categoria:", text(item, "name"));
-                    if (!name) return;
-                    const description = window.prompt("Descrição:", text(item, "description"));
-                    if (description === null) return;
-                    const sortOrder = Number(
-                      window.prompt("Ordem:", String(number(item, "sort_order")))
-                    );
-                    if (!Number.isInteger(sortOrder)) return;
-                    void onRequest(
-                      "PATCH",
-                      {
-                        kind: "category",
-                        id: text(item, "id"),
-                        name,
-                        description,
-                        sortOrder,
-                        active: item.active !== false,
-                        publicVisible: item.public_visible !== false
-                      },
-                      "Categoria atualizada."
-                    );
-                  }}
+                  onClick={() => void editCategory(item)}
                 >
                   Editar
                 </button>
@@ -1094,7 +1127,7 @@ function Categories({
           <input name="name" required minLength={2} placeholder="Nome" />
           <input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="slug" />
           <input name="description" maxLength={500} placeholder="Descrição" />
-          <input name="sortOrder" type="number" min={0} max={1000} defaultValue={0} />
+          <input name="sortOrder" type="number" inputMode="numeric" min={0} max={1000} defaultValue={0} />
           <button className="primary-button" disabled={Boolean(pending)}>
             <Plus />
             Criar
@@ -1116,6 +1149,27 @@ function QuickReplies({
   onRequest: (method: "POST" | "PATCH" | "DELETE", body: Item, success: string) => Promise<boolean>;
   pending: string;
 }) {
+  const requestPrompt = usePanelPrompt();
+  const editReply = async (item: Item) => {
+    const content = await requestPrompt({
+      title: "Editar resposta rápida",
+      label: "Conteúdo da resposta",
+      defaultValue: text(item, "content"),
+      minLength: 1
+    });
+    if (!content) return;
+    await onRequest(
+      "PATCH",
+      {
+        kind: "quick_reply",
+        id: text(item, "id"),
+        title: text(item, "title"),
+        content,
+        active: item.active !== false
+      },
+      "Resposta rápida atualizada."
+    );
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1152,21 +1206,7 @@ function QuickReplies({
               <div className="help-row-actions">
                 <button
                   type="button"
-                  onClick={() => {
-                    const content = window.prompt("Conteúdo da resposta:", text(item, "content"));
-                    if (!content) return;
-                    void onRequest(
-                      "PATCH",
-                      {
-                        kind: "quick_reply",
-                        id: text(item, "id"),
-                        title: text(item, "title"),
-                        content,
-                        active: item.active !== false
-                      },
-                      "Resposta rápida atualizada."
-                    );
-                  }}
+                  onClick={() => void editReply(item)}
                 >
                   Editar
                 </button>

@@ -24,7 +24,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   formatBrazilianPhone,
-  PHONE_FORMATTED_MAX_LENGTH
+  formatPostalCode,
+  PHONE_FORMATTED_MAX_LENGTH,
+  POSTAL_CODE_FORMATTED_MAX_LENGTH
 } from "@/lib/personal-data";
 import {
   type FormEvent,
@@ -474,7 +476,7 @@ function Profile({
         <div className="customer-form-grid">
           <label className="customer-field">
             <span>Nome completo</span>
-            <input name="fullName" defaultValue={snapshot.profile.fullName} minLength={3} maxLength={120} required />
+            <input name="fullName" autoComplete="name" defaultValue={snapshot.profile.fullName} minLength={3} maxLength={120} required />
           </label>
           <label className="customer-field">
             <span>E-mail</span>
@@ -485,8 +487,9 @@ function Profile({
             <span>Telefone</span>
             <input
               name="phone"
+              type="tel"
               defaultValue={formatBrazilianPhone(snapshot.profile.phone)}
-              inputMode="numeric"
+              inputMode="tel"
               autoComplete="tel"
               maxLength={PHONE_FORMATTED_MAX_LENGTH}
               onInput={(event) => {
@@ -1009,14 +1012,14 @@ function Addresses({
           <h3>{current ? "Editar endereço" : "Novo endereço"}</h3>
           <div className="customer-form-grid">
             <label className="customer-field"><span>Identificação</span><input name="label" defaultValue={current?.label ?? "Casa"} minLength={2} maxLength={40} required /></label>
-            <label className="customer-field"><span>Destinatário</span><input name="recipientName" defaultValue={current?.recipientName ?? profileName} minLength={3} maxLength={120} required /></label>
-            <label className="customer-field"><span>CEP</span><input name="postalCode" defaultValue={current?.postalCode} pattern="\d{5}-?\d{3}" inputMode="numeric" maxLength={9} placeholder="00000-000" required /></label>
-            <label className="customer-field"><span>Rua / avenida</span><input name="street" defaultValue={current?.street} maxLength={160} required /></label>
+            <label className="customer-field"><span>Destinatário</span><input name="recipientName" autoComplete="name" defaultValue={current?.recipientName ?? profileName} minLength={3} maxLength={120} required /></label>
+            <label className="customer-field"><span>CEP</span><input name="postalCode" defaultValue={formatPostalCode(current?.postalCode ?? "")} pattern="\d{5}-?\d{3}" inputMode="numeric" autoComplete="postal-code" maxLength={POSTAL_CODE_FORMATTED_MAX_LENGTH} placeholder="00000-000" onInput={(event) => { event.currentTarget.value = formatPostalCode(event.currentTarget.value); }} required /></label>
+            <label className="customer-field"><span>Rua / avenida</span><input name="street" autoComplete="address-line1" defaultValue={current?.street} maxLength={160} required /></label>
             <label className="customer-field"><span>Número</span><input name="number" defaultValue={current?.number} maxLength={20} required /></label>
-            <label className="customer-field"><span>Complemento</span><input name="complement" defaultValue={current?.complement} maxLength={100} /></label>
-            <label className="customer-field"><span>Bairro</span><input name="district" defaultValue={current?.district} maxLength={100} required /></label>
-            <label className="customer-field"><span>Cidade</span><input name="city" defaultValue={current?.city} maxLength={100} required /></label>
-            <label className="customer-field"><span>UF</span><input name="state" defaultValue={current?.state} maxLength={2} pattern="[A-Za-z]{2}" required /></label>
+            <label className="customer-field"><span>Complemento</span><input name="complement" autoComplete="address-line2" defaultValue={current?.complement} maxLength={100} /></label>
+            <label className="customer-field"><span>Bairro</span><input name="district" autoComplete="address-level3" defaultValue={current?.district} maxLength={100} required /></label>
+            <label className="customer-field"><span>Cidade</span><input name="city" autoComplete="address-level2" defaultValue={current?.city} maxLength={100} required /></label>
+            <label className="customer-field"><span>UF</span><input name="state" autoComplete="address-level1" defaultValue={current?.state} maxLength={2} pattern="[A-Za-z]{2}" required /></label>
             <label className="customer-check"><input type="checkbox" name="isDefault" defaultChecked={current?.isDefault ?? addresses.length === 0} />Definir como endereço principal</label>
           </div>
           <div className="customer-form-actions">
@@ -1104,7 +1107,7 @@ function Returns({
           <h3>Solicitar troca ou devolução</h3>
           <div className="customer-form-grid">
             <label className="customer-field customer-field-full"><span>Produto entregue</span><select name="orderItemId" required>{deliveredItems.map((item) => <option value={item.id} key={item.id}>#{item.orderCode} · {item.productName} · {item.color}/{item.size}</option>)}</select></label>
-            <label className="customer-field"><span>Quantidade</span><input name="quantity" type="number" min={1} max={20} defaultValue={1} required /></label>
+            <label className="customer-field"><span>Quantidade</span><input name="quantity" type="number" inputMode="numeric" min={1} max={20} defaultValue={1} required /></label>
             <label className="customer-field"><span>Solução desejada</span><select name="resolution"><option value="exchange">Troca</option><option value="refund">Reembolso</option><option value="store_credit">Crédito na loja</option></select></label>
             <label className="customer-field customer-field-full"><span>Motivo</span><input name="reason" minLength={3} maxLength={120} required /></label>
             <label className="customer-field customer-field-full"><span>Descreva o ocorrido</span><textarea name="description" minLength={10} maxLength={2000} rows={4} required /></label>

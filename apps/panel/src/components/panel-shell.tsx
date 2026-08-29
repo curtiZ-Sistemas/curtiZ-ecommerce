@@ -47,6 +47,7 @@ import {
   writeSidebarScroll
 } from "../lib/sidebar-scroll";
 import { PanelGlobalSearch } from "./panel-global-search";
+import { PanelPromptProvider } from "./panel-prompt";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -78,11 +79,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Dashboard", "", PanelsTopLeft],
     ["Produtos", "produtos", Boxes],
     ["Categorias", "categorias", Tags],
-    ["Modelos", "modelos", Boxes],
     ["Coleções", "colecoes", PanelsTopLeft],
-    ["Variações", "variacoes", PackagePlus],
-    ["Mídias", "midias", PanelsTopLeft],
-    ["Estoque", "estoque", PackageCheck],
     ["Pedidos", "pedidos", ShoppingBag],
     ["Clientes", "clientes", Users],
     ["Banners", "banners", PanelsTopLeft],
@@ -102,8 +99,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Central de Ajuda", "central-ajuda", LifeBuoy],
     ["Políticas e documentos legais", "politicas", Scale],
     ["Treinamentos", "treinamentos", FileText],
-    ["Contratos", "contratos", FileClock],
-    ["Configurações administrativas", "configuracoes", Settings]
+    ["Contratos", "contratos", FileClock]
   ],
   gerencia: [
     ["Dashboard executivo", "", CircleGauge],
@@ -174,7 +170,10 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
-const roleExperience: Record<PanelRole, { purpose: string; actionLabel: string; actionHref: string }> = {
+const roleExperience: Record<
+  PanelRole,
+  { purpose: string; actionLabel: string; actionHref: string }
+> = {
   operacional: {
     purpose: "Execute pedidos e filas do dia com rastreabilidade.",
     actionLabel: "Abrir pedidos",
@@ -223,11 +222,61 @@ export function PanelPageHeading({ role, section }: { role: PanelRole; section: 
 }
 
 const menuGroups: Record<PanelRole, Record<number, string>> = {
-  operacional: { 0: "Visão geral", 1: "Operação", 5: "Estoque", 9: "Pós-venda", 14: "Atendimento", 16: "Conteúdo", 18: "Gestão" },
-  administracao: { 0: "Visão geral", 1: "Catálogo", 8: "Comercial", 10: "Conteúdo", 15: "Representantes", 24: "Governança" },
-  gerencia: { 0: "Visão geral", 2: "Resultados", 6: "Representantes", 13: "Financeiro", 17: "Conteúdo", 22: "Governança", 29: "Atendimento" },
-  tecnico: { 0: "Monitoramento", 2: "Diagnóstico", 5: "Segurança", 6: "Integrações", 8: "Processamento", 11: "Dados", 15: "Plataforma", 23: "Atendimento" }
+  operacional: {
+    0: "Visão geral",
+    1: "Operação",
+    5: "Estoque",
+    9: "Pós-venda",
+    14: "Atendimento",
+    16: "Conteúdo",
+    18: "Gestão"
+  },
+  administracao: {
+    0: "Visão geral",
+    1: "Catálogo",
+    4: "Comercial",
+    6: "Conteúdo",
+    11: "Representantes",
+    19: "Governança"
+  },
+  gerencia: {
+    0: "Visão geral",
+    2: "Resultados",
+    6: "Representantes",
+    13: "Financeiro",
+    17: "Conteúdo",
+    22: "Governança",
+    29: "Atendimento"
+  },
+  tecnico: {
+    0: "Monitoramento",
+    2: "Diagnóstico",
+    5: "Segurança",
+    6: "Integrações",
+    8: "Processamento",
+    11: "Dados",
+    15: "Plataforma",
+    23: "Atendimento"
+  }
 };
+
+function groupedMenu(role: PanelRole) {
+  const groups: Array<{
+    label: string;
+    items: Array<[string, string, React.ComponentType<{ size?: number }>]>;
+  }> = [];
+
+  menus[role].forEach((item, index) => {
+    const groupLabel = menuGroups[role][index];
+    if (groupLabel || groups.length === 0) {
+      groups.push({ label: groupLabel ?? "Navegação", items: [item] });
+      return;
+    }
+    groups.at(-1)?.items.push(item);
+  });
+
+  return groups;
+}
 
 const notificationRoutes: Record<PanelRole, string> = {
   operacional: "/operacional/pendencias",
@@ -273,6 +322,7 @@ export function PanelShell({
     if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
   };
   const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+  const navigationGroups = groupedMenu(role);
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("curtiz:panel-sidebar-collapsed") === "true");
@@ -342,7 +392,9 @@ export function PanelShell({
   useEffect(() => {
     const openSearchShortcut = (event: globalThis.KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const isTyping = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+      const isTyping = Boolean(
+        target?.closest("input, textarea, select, [contenteditable='true']")
+      );
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase("pt-BR") === "k") {
         event.preventDefault();
         setSearchOpen(true);
@@ -432,7 +484,11 @@ export function PanelShell({
               aria-pressed={sidebarCollapsed}
               title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
             >
-              {sidebarCollapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+              {sidebarCollapsed ? (
+                <PanelLeftOpen aria-hidden="true" />
+              ) : (
+                <PanelLeftClose aria-hidden="true" />
+              )}
             </button>
             <button
               className="sidebar-close"
@@ -447,22 +503,34 @@ export function PanelShell({
         </div>
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
         <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
-          {menus[role].map(([label, route, Icon], index) => {
-            const href = route ? `/${role}/${route}` : `/${role}`;
+          {navigationGroups.map((group) => {
+            const containsActiveItem = group.items.some(([, route]) => route === section);
             return (
-              <React.Fragment key={href}>
-                {menuGroups[role][index] ? <span className="side-nav-group">{menuGroups[role][index]}</span> : null}
-                <Link
-                  className={section === route ? "active" : ""}
-                  href={href}
-                  onClick={() => closeMenu()}
-                  aria-current={section === route ? "page" : undefined}
-                  title={sidebarCollapsed ? label : undefined}
-                >
-                  <Icon size={19} />
-                  <span>{label}</span>
-                </Link>
-              </React.Fragment>
+              <details
+                className="side-nav-section"
+                open={containsActiveItem || group.items[0]?.[1] === "" ? true : undefined}
+                key={`${role}-${group.label}`}
+              >
+                <summary>{group.label}</summary>
+                <div>
+                  {group.items.map(([label, route, Icon]) => {
+                    const href = route ? `/${role}/${route}` : `/${role}`;
+                    return (
+                      <Link
+                        className={section === route ? "active" : ""}
+                        href={href}
+                        onClick={() => closeMenu()}
+                        aria-current={section === route ? "page" : undefined}
+                        title={sidebarCollapsed ? label : undefined}
+                        key={href}
+                      >
+                        <Icon size={19} />
+                        <span>{label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
             );
           })}
         </nav>
@@ -523,7 +591,11 @@ export function PanelShell({
           <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">
             Ver loja <ExternalLink aria-hidden="true" />
           </a>
-          <Link className="topbar-notifications" href={notificationRoutes[role]} aria-label="Abrir notificações e pendências">
+          <Link
+            className="topbar-notifications"
+            href={notificationRoutes[role]}
+            aria-label="Abrir notificações e pendências"
+          >
             <Bell aria-hidden="true" />
           </Link>
           {canSwitchPanel ? (
@@ -538,13 +610,7 @@ export function PanelShell({
           >
             <div className="avatar">
               {avatarUrl ? (
-                <Image
-                  src={avatarUrl}
-                  alt=""
-                  fill
-                  sizes="38px"
-                  unoptimized
-                />
+                <Image src={avatarUrl} alt="" fill sizes="38px" unoptimized />
               ) : (
                 (userName ?? roleLabels[role]).slice(0, 1).toUpperCase()
               )}
@@ -576,7 +642,9 @@ export function PanelShell({
             </span>
           )}
         </header>
-        <main className="panel-content" id="panel-content" tabIndex={-1}>{children}</main>
+        <main className="panel-content" id="panel-content" tabIndex={-1}>
+          <PanelPromptProvider>{children}</PanelPromptProvider>
+        </main>
       </div>
     </div>
   );

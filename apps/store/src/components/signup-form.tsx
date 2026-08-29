@@ -286,7 +286,7 @@ export function SignupForm({
             id="signup-phone"
             name="phone"
             type="tel"
-            inputMode="numeric"
+            inputMode="tel"
             autoComplete="tel"
             value={fields.phone}
             onChange={(event) => updateField("phone", event.target.value)}

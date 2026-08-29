@@ -30,7 +30,10 @@ for (const account of [
     test.setTimeout(90_000);
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
-      if (message.type() === "error" && /content security policy|hydration|react/i.test(message.text())) {
+      if (
+        message.type() === "error" &&
+        /content security policy|hydration|react/i.test(message.text())
+      ) {
         consoleErrors.push(message.text());
       }
     });
@@ -42,7 +45,10 @@ for (const account of [
     await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".topbar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-    await expect(page.locator(".side-nav a.active")).toHaveCSS("background-color", "rgb(249, 227, 224)");
+    await expect(page.locator(".side-nav a.active")).toHaveCSS(
+      "background-color",
+      "rgb(249, 227, 224)"
+    );
     const switchLink = page.locator(".sidebar-switch-link");
     if (await switchLink.count()) {
       const switchBox = await switchLink.boundingBox();
@@ -75,7 +81,9 @@ test("painel técnico separa os metadados de deploy da loja e do painel", async 
   await expect(deploys).not.toContainText(/token|secret|senha/i);
 });
 
-test("busca global abre com teclado e mantém resultados protegidos por função", async ({ page }) => {
+test("busca global abre com teclado e mantém resultados protegidos por função", async ({
+  page
+}) => {
   await loginAs(page, "admin.demo@curtiz.local");
   const searchButton = page.locator(".topbar-search > button");
   await expect(async () => {
@@ -101,9 +109,13 @@ test("novo suporte aparece na fila administrativa", async ({ page }) => {
   await page.waitForURL("http://localhost:3000/minha-conta", { timeout: 30_000 });
   await page.goto("http://localhost:3000/minha-conta/atendimento?new=1");
   await page.getByLabel("Assunto").fill(subject);
-  await page.getByLabel("Mensagem inicial").fill("Meu pedido ainda não recebeu uma atualização logística.");
+  await page
+    .getByLabel("Mensagem inicial")
+    .fill("Meu pedido ainda não recebeu uma atualização logística.");
   await page.getByRole("button", { name: /Enviar para a equipe/i }).click();
-  await expect(page.getByText(/Seu chamado foi enviado e aguarda atendimento/i).first()).toBeVisible();
+  await expect(
+    page.getByText(/Seu chamado foi enviado e aguarda atendimento/i).first()
+  ).toBeVisible();
 
   await loginAs(page, "admin.demo@curtiz.local");
   await page.goto("/administracao/atendimentos");
@@ -112,7 +124,9 @@ test("novo suporte aparece na fila administrativa", async ({ page }) => {
   await page.getByRole("button", { name: new RegExp(subject) }).click();
   await page.getByRole("button", { name: "Assumir" }).click();
   await expect(page.getByText(/Atendimento assumido com sucesso/i)).toBeVisible();
-  await page.getByLabel("Responder").fill("A equipe está verificando o rastreio com a transportadora.");
+  await page
+    .getByLabel("Responder")
+    .fill("A equipe está verificando o rastreio com a transportadora.");
   await page.getByRole("button", { name: "Enviar" }).click();
   await expect(page.getByText(/Resposta enviada ao cliente/i)).toBeVisible();
 });
@@ -121,7 +135,8 @@ test("logout do painel encerra a sessão e volta ao login", async ({ page }) => 
   test.setTimeout(90_000);
   await loginAs(page, "admin.demo@curtiz.local");
   const logoutResponse = page.waitForResponse(
-    (response) => response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
+    (response) =>
+      response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
     { timeout: 20_000 }
   );
   await page.getByRole("button", { name: "Sair do painel" }).click();
@@ -130,24 +145,23 @@ test("logout do painel encerra a sessão e volta ao login", async ({ page }) => 
   await expect(page).toHaveURL("http://localhost:3000/login", { timeout: 20_000 });
 });
 
-test("preserva o scroll da sidebar ao navegar para um item no fim do menu", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 650 });
+test("remove configurações técnicas da administração e redireciona o bookmark antigo", async ({
+  page
+}) => {
   await loginAs(page, "admin.demo@curtiz.local");
-  const navigation = page.locator(".side-nav");
-  await expect(page.getByRole("link", { name: "Configurações administrativas" })).toBeVisible();
-  await navigation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  expect(await navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
-  await page.getByRole("link", { name: "Configurações administrativas" }).click();
-  await page.waitForURL("**/administracao/configuracoes");
-  const restored = await page.locator(".side-nav").evaluate((element) => element.scrollTop);
-  expect(restored).toBeGreaterThan(100);
-  await expect(page.getByRole("link", { name: "Configurações administrativas" })).toHaveClass(/active/);
+  await expect(page.getByRole("link", { name: "Configurações administrativas" })).toHaveCount(0);
+  await page.goto("/administracao/configuracoes");
+  await expect(page).toHaveURL("http://localhost:3001/administracao");
+  for (const route of ["modelos", "variacoes", "midias", "estoque"]) {
+    await page.goto(`/administracao/${route}`);
+    await expect(page).toHaveURL("http://localhost:3001/administracao/produtos");
+  }
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 30 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 24 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
-  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 29 },
+  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 32 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
 ] as const;
 
@@ -159,13 +173,20 @@ for (const account of panelAccounts) {
 
     page.on("pageerror", (error) => failures.add(`${currentRoute}: pageerror ${error.message}`));
     page.on("console", (message) => {
-      if (message.type() === "error" && /content security policy|hydration|react/i.test(message.text())) {
-        failures.add(`${currentRoute}: console ${message.text().replace(/nonce-[^']+/gu, "nonce-redacted")}`);
+      if (
+        message.type() === "error" &&
+        /content security policy|hydration|react/i.test(message.text())
+      ) {
+        failures.add(
+          `${currentRoute}: console ${message.text().replace(/nonce-[^']+/gu, "nonce-redacted")}`
+        );
       }
     });
     page.on("response", (response) => {
       if (response.url().startsWith("http://localhost:3001") && response.status() >= 500) {
-        failures.add(`${currentRoute}: HTTP ${response.status()} em ${new URL(response.url()).pathname}`);
+        failures.add(
+          `${currentRoute}: HTTP ${response.status()} em ${new URL(response.url()).pathname}`
+        );
       }
     });
 
@@ -184,19 +205,27 @@ for (const account of panelAccounts) {
       currentRoute = new URL(entry.href).pathname;
       const response = await page.goto(entry.href, { waitUntil: "commit", timeout: 60_000 });
       expect(response?.status(), currentRoute).toBeLessThan(500);
-      await expect(page.locator("main.panel-content"), currentRoute).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator("main.panel-content"), currentRoute).toBeVisible({
+        timeout: 60_000
+      });
       await expect(page.locator(".topbar-context strong"), currentRoute).toHaveText(
         currentRoute === `/${account.role}` ? "Visão geral" : entry.label,
         { timeout: 60_000 }
       );
-      await expect(page.locator("main.panel-content h1").first(), `${currentRoute} sem título principal`).toBeVisible({ timeout: 60_000 });
+      await expect(
+        page.locator("main.panel-content h1").first(),
+        `${currentRoute} sem título principal`
+      ).toBeVisible({ timeout: 60_000 });
       await expect(page.getByText(/Área .* não encontrada/i), currentRoute).toHaveCount(0);
 
       const overflow = await page.evaluate(() => ({
         document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         body: document.body.scrollWidth - document.body.clientWidth
       }));
-      expect(Math.max(overflow.document, overflow.body), `${currentRoute} com overflow`).toBeLessThanOrEqual(1);
+      expect(
+        Math.max(overflow.document, overflow.body),
+        `${currentRoute} com overflow`
+      ).toBeLessThanOrEqual(1);
     }
     expect([...failures]).toEqual([]);
   });
@@ -221,7 +250,9 @@ test("mantém rotas críticas utilizáveis nos viewports exigidos", async ({ pag
         timeout: 60_000
       });
       expect(response?.status(), `${route.path} em ${width}px`).toBeLessThan(500);
-      await expect(page.locator("main.panel-content"), `${route.path} em ${width}px`).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator("main.panel-content"), `${route.path} em ${width}px`).toBeVisible({
+        timeout: 60_000
+      });
       const overflow = await page.evaluate(() =>
         Math.max(
           document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -264,18 +295,44 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       seoTitle: "",
       seoDescription: "",
       canDelete: false,
-      images: [{
-        id: "40000000-0000-0000-0000-000000000001",
-        path: "/images/products/wave-preto.png",
-        url: "http://localhost:3000/images/products/wave-preto.png",
-        alt: "Produto com variações",
-        primary: true,
-        sortOrder: 0
-      }],
+      images: [
+        {
+          id: "40000000-0000-0000-0000-000000000001",
+          path: "/images/products/wave-preto.png",
+          url: "http://localhost:3000/images/products/wave-preto.png",
+          alt: "Produto com variações",
+          primary: true,
+          sortOrder: 0
+        }
+      ],
       stock: 7,
       variants: [
-        { id: "30000000-0000-0000-0000-000000000001", sku: "MULTI-PRETO-39", color: "Preto", colorHex: "#000000", size: "39", active: true, available: 4, reserved: 1, sellable: 4, priceInCents: null, costInCents: null },
-        { id: "30000000-0000-0000-0000-000000000002", sku: "MULTI-PRETO-40", color: "Preto", colorHex: "#000000", size: "40", active: true, available: 3, reserved: 0, sellable: 3, priceInCents: null, costInCents: null }
+        {
+          id: "30000000-0000-0000-0000-000000000001",
+          sku: "MULTI-PRETO-39",
+          color: "Preto",
+          colorHex: "#000000",
+          size: "39",
+          active: true,
+          available: 4,
+          reserved: 1,
+          sellable: 4,
+          priceInCents: null,
+          costInCents: null
+        },
+        {
+          id: "30000000-0000-0000-0000-000000000002",
+          sku: "MULTI-PRETO-40",
+          color: "Preto",
+          colorHex: "#000000",
+          size: "40",
+          active: true,
+          available: 3,
+          reserved: 0,
+          sellable: 3,
+          priceInCents: null,
+          costInCents: null
+        }
       ]
     },
     {
@@ -328,7 +385,21 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       canDelete: true,
       images: [],
       stock: 0,
-      variants: [{ id: "30000000-0000-0000-0000-000000000003", sku: "ARQ-40", color: "Areia", colorHex: "#d6c3a5", size: "40", active: false, available: 0, reserved: 0, sellable: 0, priceInCents: null, costInCents: null }]
+      variants: [
+        {
+          id: "30000000-0000-0000-0000-000000000003",
+          sku: "ARQ-40",
+          color: "Areia",
+          colorHex: "#d6c3a5",
+          size: "40",
+          active: false,
+          available: 0,
+          reserved: 0,
+          sellable: 0,
+          priceInCents: null,
+          costInCents: null
+        }
+      ]
     }
   ];
   const createdProducts: Array<(typeof products)[number]> = [];
@@ -345,7 +416,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     const productId = new URL(route.request().url()).searchParams.get("productId");
     const availableProducts = [...products, ...createdProducts];
     const selectedProducts = productId
-      ? availableProducts.filter((product) => product.id === productId && product.id !== missingProductId)
+      ? availableProducts.filter(
+          (product) => product.id === productId && product.id !== missingProductId
+        )
       : availableProducts;
     if (productId) openedProductIds.push(productId);
     await route.fulfill({
@@ -354,7 +427,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       body: JSON.stringify({
         products: selectedProducts,
         total: selectedProducts.length,
-        ...(productId && selectedProducts.length === 0 ? { message: "Produto não encontrado." } : {}),
+        ...(productId && selectedProducts.length === 0
+          ? { message: "Produto não encontrado." }
+          : {}),
         page: 1,
         pageSize: 20,
         categories: [{ id: categoryId, name: "Sandálias" }],
@@ -433,8 +508,13 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
         await page.setViewportSize({ width, height: width <= 430 ? 780 : 900 });
         const bounds = await page.locator(".panel-drawer").boundingBox();
         expect(bounds?.x ?? -1, `drawer fora da viewport em ${width}px`).toBeGreaterThanOrEqual(0);
-        expect((bounds?.x ?? 0) + (bounds?.width ?? width), `drawer largo demais em ${width}px`).toBeLessThanOrEqual(width + 1);
-        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(
+          (bounds?.x ?? 0) + (bounds?.width ?? width),
+          `drawer largo demais em ${width}px`
+        ).toBeLessThanOrEqual(width + 1);
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        );
         expect(overflow, `overflow do editor em ${width}px`).toBeLessThanOrEqual(1);
       }
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -446,7 +526,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   expect(openedProductIds).toEqual(products.map((product) => product.id));
 
   const deletableProduct = products[2]!;
-  const deletableRow = page.locator("article.managed-product").filter({ hasText: deletableProduct.name });
+  const deletableRow = page
+    .locator("article.managed-product")
+    .filter({ hasText: deletableProduct.name });
   await deletableRow.locator("details.product-action-menu > summary").click();
   await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
   const deleteDialog = page.getByRole("alertdialog", { name: "Excluir produto permanentemente?" });
@@ -457,7 +539,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
 
   const removedProduct = products[1]!;
   missingProductId = removedProduct.id;
-  const removedRow = page.locator("article.managed-product").filter({ hasText: removedProduct.name });
+  const removedRow = page
+    .locator("article.managed-product")
+    .filter({ hasText: removedProduct.name });
   await removedRow.getByRole("button", { name: "Editar", exact: true }).click();
   await expect(page.getByText("Produto não encontrado.")).toBeVisible();
   await expect(page.locator(".panel-drawer")).toHaveCount(0);
@@ -481,19 +565,32 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   });
 
   const updatedRow = page.locator("article.managed-product").filter({ hasText: updatedName });
-  page.once("dialog", (dialog) => void dialog.accept("Pausa comercial planejada"));
   await updatedRow.locator("details.product-action-menu > summary").click();
   await updatedRow.getByRole("button", { name: "Desativar" }).click();
+  const statusDialog = page.getByRole("dialog", { name: "Alterar status para Inativo" });
+  await statusDialog.getByLabel("Motivo da alteração").fill("Pausa comercial planejada");
+  await statusDialog.getByRole("button", { name: "Confirmar alteração" }).click();
   await expect(page.getByText("Status do produto atualizado.")).toBeVisible();
-  await expect(page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Inativo")).toBeVisible();
+  await expect(
+    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Inativo")
+  ).toBeVisible();
 
   const inactiveRow = page.locator("article.managed-product").filter({ hasText: updatedName });
   await inactiveRow.locator("details.product-action-menu > summary").click();
   await inactiveRow.getByRole("button", { name: "Duplicar" }).click();
   const duplicateName = `${updatedName} — cópia E2E`;
-  await page.getByRole("dialog", { name: "Duplicar produto" }).getByLabel("Novo nome").fill(duplicateName);
-  await page.getByRole("dialog", { name: "Duplicar produto" }).getByLabel("Novo slug").fill("produto-copia-e2e");
-  await page.getByRole("dialog", { name: "Duplicar produto" }).getByRole("button", { name: "Duplicar" }).click();
+  await page
+    .getByRole("dialog", { name: "Duplicar produto" })
+    .getByLabel("Novo nome")
+    .fill(duplicateName);
+  await page
+    .getByRole("dialog", { name: "Duplicar produto" })
+    .getByLabel("Novo slug")
+    .fill("produto-copia-e2e");
+  await page
+    .getByRole("dialog", { name: "Duplicar produto" })
+    .getByRole("button", { name: "Duplicar" })
+    .click();
   await expect(page.getByText(duplicateName)).toBeVisible();
 
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
@@ -510,11 +607,13 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   await createDialog.getByLabel("Largura (cm) *").fill("18");
   await createDialog.getByLabel("Comprimento (cm) *").fill("27");
   await createDialog.getByLabel("Descrição curta *").fill("Produto criado pelo fluxo completo");
-  await createDialog.getByLabel("Descrição detalhada *").fill("Cadastro validado sem dados reais de produção.");
+  await createDialog
+    .getByLabel("Descrição detalhada *")
+    .fill("Cadastro validado sem dados reais de produção.");
   await createDialog.getByRole("button", { name: "Salvar produto" }).click();
   await expect(page.getByText("Produto criado no fluxo E2E")).toBeVisible();
 
-  for (const route of ["variacoes", "midias", "estoque"]) {
+  for (const route of ["modelos", "variacoes", "midias", "estoque"]) {
     await page.goto(`/administracao/${route}`);
     await expect(page.getByRole("heading", { name: updatedName, exact: true })).toBeVisible();
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);

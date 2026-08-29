@@ -12070,6 +12070,128 @@ body:has(> #main-content > .auth-page) .site-footer {
   }
 }
 
+/* Autenticação simples, formulários mobile e imagens sem moldura artificial. */
+.auth-page {
+  min-height: calc(100dvh - var(--header-height, 0px));
+  display: grid;
+  place-items: center;
+  padding: clamp(24px, 5vw, 56px) 16px;
+}
+
+.auth-shell {
+  width: min(100%, 460px);
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.auth-login-card {
+  width: 100%;
+  padding: clamp(18px, 4vw, 34px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.auth-card-header {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.auth-card-header h1 {
+  margin: 12px 0 0;
+  font-size: clamp(1.45rem, 5vw, 1.85rem);
+  letter-spacing: -0.04em;
+}
+
+.auth-logo {
+  width: 122px;
+  height: auto;
+}
+
+.product-image,
+.cart-recommendation-grid .product-image,
+.error-recommendation-grid .product-image {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.product-image img,
+.cart-recommendation-grid .product-image img,
+.error-recommendation-grid .product-image img {
+  width: 92%;
+  height: 92%;
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain !important;
+  object-position: center;
+  transform: none !important;
+}
+
+.product-page .product-gallery-main {
+  padding: clamp(4px, 1vw, 10px);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.product-gallery-trigger {
+  width: 100%;
+  height: 100%;
+}
+
+.product-page .product-gallery-main .product-gallery-trigger > img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain !important;
+  object-position: center;
+  transform: none !important;
+}
+
+.spin {
+  animation-duration: 1.4s !important;
+}
+
+@media (max-width: 700px) {
+  .auth-page {
+    min-height: auto;
+    place-items: start center;
+    padding: 24px 12px calc(32px + env(safe-area-inset-bottom));
+  }
+
+  .auth-login-card {
+    padding: 10px 4px;
+  }
+
+  .product-page .product-gallery-main {
+    padding: 6px 10px;
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .checkout-identification-grid,
+  .address-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .checkout-identification-grid > .field,
+  .address-grid > .field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none !important;
+  }
+}
+
 /* Barra de campanhas: conteúdo curto, servido antes do cabeçalho sem reservar espaço vazio. */
 .promotion-bar {
   width: 100%;
@@ -13805,4 +13927,31 @@ body:has(.checkout-transition) .help-widget {
   .checkout-heading h1 {
     font-size: 1.5rem;
   }
+}
+
+/* Regras finais da galeria, cards e checkout em viewports estreitas. */
+.product-image,
+.cart-recommendation-grid .product-image,
+.error-recommendation-grid .product-image { background: transparent !important; box-shadow: none !important; }
+.product-image img,
+.cart-recommendation-grid .product-image img,
+.error-recommendation-grid .product-image img { width: 92%; height: 92%; max-width: 92%; max-height: 92%; object-fit: contain !important; object-position: center; transform: none !important; }
+.product-page .product-gallery-main { padding: clamp(4px, 1vw, 10px); border: 0; background: transparent; box-shadow: none; }
+.product-gallery-trigger { width: 100%; height: 100%; }
+.product-page .product-gallery-main .product-gallery-trigger > img { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain !important; object-position: center; transform: none !important; }
+.spin { animation-duration: 1.4s !important; }
+
+@media (max-width: 700px) {
+  .product-page .product-gallery-main { padding: 6px 10px; border-bottom: 0; }
+}
+
+@media (max-width: 430px) {
+  .checkout-identification-grid,
+  .address-grid { grid-template-columns: 1fr; }
+  .checkout-identification-grid > .field,
+  .address-grid > .field { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none !important; }
 }

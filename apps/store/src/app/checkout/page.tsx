@@ -12,6 +12,7 @@ import {
   CUSTOMER_EMAIL_MAX_LENGTH,
   formatBrazilianPhone,
   formatCpf,
+  formatPostalCode,
   isValidBrazilianPhone,
   isValidCpf,
   isValidCustomerEmail,
@@ -22,14 +23,34 @@ import {
 import { trackIntelligence } from "../../lib/intelligence-client";
 
 const states = [
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
-  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO"
 ];
-
-const formatPostalCode = (value: string) => {
-  const digits = value.replace(/\D/gu, "").slice(0, 8);
-  return digits.replace(/^(\d{5})(\d)/u, "$1-$2");
-};
 
 type PersonalField = "email" | "phone" | "cpf";
 
@@ -134,7 +155,8 @@ export default function CheckoutPage() {
     };
     for (const [name, value] of Object.entries(values)) {
       const field = formRef.current?.elements.namedItem(name);
-      if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) field.value = value;
+      if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement)
+        field.value = value;
     }
   }, []);
 
@@ -174,7 +196,7 @@ export default function CheckoutPage() {
       }
       if (event.key !== "Tab") return;
       const focusable = paymentDialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+        "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])"
       );
       if (!focusable?.length) return;
       const first = focusable[0];
@@ -298,8 +320,14 @@ export default function CheckoutPage() {
     return (
       <div className="container page-shell checkout-page">
         <div className="checkout-layout">
-          <div className="skeleton-card"><div className="skeleton skeleton-title" /><div className="skeleton skeleton-copy" /></div>
-          <div className="skeleton-card"><div className="skeleton skeleton-title" /><div className="skeleton skeleton-copy" /></div>
+          <div className="skeleton-card">
+            <div className="skeleton skeleton-title" />
+            <div className="skeleton skeleton-copy" />
+          </div>
+          <div className="skeleton-card">
+            <div className="skeleton skeleton-title" />
+            <div className="skeleton skeleton-copy" />
+          </div>
         </div>
       </div>
     );
@@ -319,10 +347,14 @@ export default function CheckoutPage() {
     return (
       <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
-          <span className="empty-state-icon"><ShoppingBag /></span>
+          <span className="empty-state-icon">
+            <ShoppingBag />
+          </span>
           <h1>Seu carrinho está vazio</h1>
           <p>Adicione um produto antes de iniciar o checkout.</p>
-          <Link className="primary-button" href="/produtos">Ver produtos</Link>
+          <Link className="primary-button" href="/produtos">
+            Ver produtos
+          </Link>
         </div>
       </div>
     );
@@ -332,10 +364,14 @@ export default function CheckoutPage() {
     return (
       <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
-          <span className="empty-state-icon"><ShoppingBag /></span>
+          <span className="empty-state-icon">
+            <ShoppingBag />
+          </span>
           <h1>Nenhum produto selecionado</h1>
           <p>Seus produtos continuam salvos. Selecione o que deseja comprar agora.</p>
-          <Link className="primary-button" href="/carrinho">Voltar ao carrinho</Link>
+          <Link className="primary-button" href="/carrinho">
+            Voltar ao carrinho
+          </Link>
         </div>
       </div>
     );
@@ -344,7 +380,9 @@ export default function CheckoutPage() {
   return (
     <div className="container page-shell checkout-page">
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
-        <Link href="/carrinho">Carrinho</Link><span>/</span><span>Checkout</span>
+        <Link href="/carrinho">Carrinho</Link>
+        <span>/</span>
+        <span>Checkout</span>
       </nav>
       <header className="checkout-heading">
         <h1>Checkout</h1>
@@ -365,7 +403,15 @@ export default function CheckoutPage() {
             <div className="form-grid checkout-identification-grid">
               <div className="field checkout-name-field">
                 <label htmlFor="name">Nome completo</label>
-                <input id="name" name="name" autoComplete="name" required minLength={3} maxLength={120} placeholder="Nome e sobrenome" />
+                <input
+                  id="name"
+                  name="name"
+                  autoComplete="name"
+                  required
+                  minLength={3}
+                  maxLength={120}
+                  placeholder="Nome e sobrenome"
+                />
               </div>
               <div className="field">
                 <label htmlFor="email">E-mail</label>
@@ -373,6 +419,7 @@ export default function CheckoutPage() {
                   id="email"
                   name="email"
                   type="email"
+                  inputMode="email"
                   autoComplete="email"
                   maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
                   aria-invalid={Boolean(fieldErrors.email)}
@@ -393,7 +440,7 @@ export default function CheckoutPage() {
                   id="phone"
                   name="phone"
                   type="tel"
-                  inputMode="numeric"
+                  inputMode="tel"
                   autoComplete="tel"
                   maxLength={PHONE_FORMATTED_MAX_LENGTH}
                   aria-invalid={Boolean(fieldErrors.phone)}
@@ -480,7 +527,13 @@ export default function CheckoutPage() {
               </div>
               <div className="field field-street address-street-field">
                 <label htmlFor="street">Endereço</label>
-                <input id="street" name="street" autoComplete="address-line1" maxLength={160} required />
+                <input
+                  id="street"
+                  name="street"
+                  autoComplete="address-line1"
+                  maxLength={160}
+                  required
+                />
               </div>
               <div className="field address-number-field">
                 <label htmlFor="number">Número</label>
@@ -499,16 +552,36 @@ export default function CheckoutPage() {
               </div>
               <div className="field address-district-field">
                 <label htmlFor="district">Bairro</label>
-                <input id="district" name="district" maxLength={100} required />
+                <input
+                  id="district"
+                  name="district"
+                  autoComplete="address-level3"
+                  maxLength={100}
+                  required
+                />
               </div>
               <div className="field address-city-field">
                 <label htmlFor="city">Cidade</label>
-                <input id="city" name="city" autoComplete="address-level2" maxLength={100} required />
+                <input
+                  id="city"
+                  name="city"
+                  autoComplete="address-level2"
+                  maxLength={100}
+                  required
+                />
               </div>
               <div className="field address-state-field">
                 <label htmlFor="state">Estado</label>
-                <select id="state" name="state" autoComplete="address-level1" required defaultValue="">
-                  <option value="" disabled>Selecione</option>
+                <select
+                  id="state"
+                  name="state"
+                  autoComplete="address-level1"
+                  required
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Selecione
+                  </option>
                   {states.map((state) => (
                     <option key={state}>{state}</option>
                   ))}
@@ -519,7 +592,9 @@ export default function CheckoutPage() {
 
           <section className="checkout-section" aria-labelledby="checkout-delivery-title">
             <h2 id="checkout-delivery-title">Entrega</h2>
-            <p className="checkout-simple-status" role="status">Informe o CEP para calcular.</p>
+            <p className="checkout-simple-status" role="status">
+              Informe o CEP para calcular.
+            </p>
           </section>
 
           <section className="checkout-section" aria-labelledby="checkout-payment-title">
@@ -540,7 +615,9 @@ export default function CheckoutPage() {
           <section className="checkout-order-products" aria-labelledby="checkout-products-title">
             <header className="checkout-order-heading">
               <h2 id="checkout-products-title">Produtos</h2>
-              <span>{selectedLines.length} {selectedLines.length === 1 ? "item" : "itens"}</span>
+              <span>
+                {selectedLines.length} {selectedLines.length === 1 ? "item" : "itens"}
+              </span>
             </header>
             <CheckoutProducts lines={selectedLines} />
           </section>
@@ -573,17 +650,26 @@ export default function CheckoutPage() {
             aria-describedby="payment-unavailable-description"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <span className="empty-state-icon"><LockKeyhole /></span>
+            <span className="empty-state-icon">
+              <LockKeyhole />
+            </span>
             <h2 id="payment-unavailable-title">Pagamento online indisponível no momento</h2>
             <p id="payment-unavailable-description">
               Não foi possível concluir o pagamento. Nenhuma cobrança foi realizada.
             </p>
             {supportCode && <small>Código para suporte: {supportCode}</small>}
             <div className="checkout-dialog-actions">
-              <button ref={closeDialogRef} className="primary-button" type="button" onClick={closePaymentDialog}>
+              <button
+                ref={closeDialogRef}
+                className="primary-button"
+                type="button"
+                onClick={closePaymentDialog}
+              >
                 Voltar ao checkout
               </button>
-              <Link className="secondary-button" href="/produtos">Continuar comprando</Link>
+              <Link className="secondary-button" href="/produtos">
+                Continuar comprando
+              </Link>
             </div>
           </section>
         </div>

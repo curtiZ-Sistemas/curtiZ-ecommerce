@@ -219,7 +219,7 @@ export function RepresentativeApplicationWizard() {
               label="Telefone"
               name="phone"
               type="tel"
-              inputMode="numeric"
+              inputMode="tel"
               autoComplete="tel"
               maxLength={PHONE_FORMATTED_MAX_LENGTH}
               onInput={(event) => {

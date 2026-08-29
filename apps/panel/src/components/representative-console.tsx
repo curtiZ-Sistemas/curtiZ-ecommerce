@@ -1,8 +1,19 @@
 "use client";
 
-import { Check, FileImage, LoaderCircle, PackageCheck, ShieldAlert, Users, X } from "lucide-react";
+import {
+  Check,
+  FileImage,
+  LoaderCircle,
+  PackageCheck,
+  Plus,
+  ShieldAlert,
+  Users,
+  X
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PanelRole } from "./panel-shell";
+import { PanelDrawer } from "./panel-drawer";
+import { usePanelPrompt } from "./panel-prompt";
 
 type Application = {
   id: string;
@@ -76,18 +87,24 @@ type InternalCapabilities = Record<string, boolean>;
 
 async function loadInternalCapabilities(): Promise<InternalCapabilities> {
   const response = await fetch("/api/internal-capabilities", { cache: "no-store" });
-  const payload = (await response.json()) as { capabilities?: InternalCapabilities; message?: string };
+  const payload = (await response.json()) as {
+    capabilities?: InternalCapabilities;
+    message?: string;
+  };
   if (!response.ok) throw new Error(payload.message ?? "Não foi possível confirmar as permissões.");
   return payload.capabilities ?? {};
 }
 
 function CreativeManager({ role }: { role: PanelRole }) {
+  const requestPrompt = usePanelPrompt();
   const [items, setItems] = useState<Creative[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
   const [capabilities, setCapabilities] = useState<InternalCapabilities>({});
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createDirty, setCreateDirty] = useState(false);
   const allowed = role === "administracao" || role === "gerencia";
   const canCreate = allowed && capabilities["creatives.manage"] === true;
 
@@ -105,7 +122,10 @@ function CreativeManager({ role }: { role: PanelRole }) {
       }),
       loadInternalCapabilities()
     ])
-      .then(([creatives, nextCapabilities]) => { setItems(creatives); setCapabilities(nextCapabilities); })
+      .then(([creatives, nextCapabilities]) => {
+        setItems(creatives);
+        setCapabilities(nextCapabilities);
+      })
       .catch((reason: unknown) => {
         setItems([]);
         setCapabilities({});
@@ -150,6 +170,8 @@ function CreativeManager({ role }: { role: PanelRole }) {
       }
       event.currentTarget.reset();
       setMessage("Criativo salvo como rascunho.");
+      setCreateDirty(false);
+      setCreateOpen(false);
       load();
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Falha inesperada.");
@@ -159,7 +181,11 @@ function CreativeManager({ role }: { role: PanelRole }) {
   };
 
   const transition = async (creativeId: string, status: string) => {
-    const reason = window.prompt("Registre o motivo da transição:");
+    const reason = await requestPrompt({
+      title: "Alterar status do criativo",
+      label: "Motivo da transição",
+      minLength: 3
+    });
     if (!reason || reason.trim().length < 3 || pending) return;
     setPending(true);
     try {
@@ -181,10 +207,116 @@ function CreativeManager({ role }: { role: PanelRole }) {
 
   return (
     <div className="creative-manager-layout">
-      <section className="panel-card">
-        <h2>Novo criativo</h2>
-        <p>O ativo nasce como rascunho e precisa seguir a aprovação configurada.</p>
-        <form className="creative-manager-form" onSubmit={(event) => void create(event)}>
+      <section className="panel-card representative-console">
+        <header>
+          <div>
+            <h1>Criativos</h1>
+            <p>Somente materiais publicados e elegíveis chegam ao portal.</p>
+          </div>
+          {canCreate ? (
+            <button className="primary-button" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus /> Novo criativo
+            </button>
+          ) : null}
+        </header>
+        {message && (
+          <p className="form-message" role="status">
+            {message}
+          </p>
+        )}
+        {loading ? (
+          <div className="panel-loading">
+            <LoaderCircle className="spin" />
+          </div>
+        ) : loadError ? (
+          <div className="panel-error" role="alert">
+            <ShieldAlert />
+            <p>{loadError}</p>
+            <button type="button" onClick={load}>
+              Tentar novamente
+            </button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="admin-empty-state">
+            <FileImage />
+            <h3>Nenhum criativo encontrado</h3>
+            <p>Crie o primeiro material para iniciar a biblioteca.</p>
+            {canCreate ? (
+              <button className="primary-button" type="button" onClick={() => setCreateOpen(true)}>
+                <Plus /> Criar primeiro criativo
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="creative-manager-list">
+            {items.map((item) => (
+              <article key={item.id}>
+                <div>
+                  <small>
+                    {item.platform} · {item.type ?? item.asset_type}
+                  </small>
+                  <strong>{item.title}</strong>
+                  <p>{item.campaign ?? item.description}</p>
+                </div>
+                <span className={`status ${item.status}`}>{label(item.status)}</span>
+                <div className="review-actions">
+                  {item.status === "draft" && capabilities["creatives.manage"] === true && (
+                    <button onClick={() => void transition(item.id, "pending_review")}>
+                      Enviar à revisão
+                    </button>
+                  )}
+                  {item.status === "pending_review" &&
+                    capabilities["creatives.approve"] === true && (
+                      <>
+                        <button
+                          className="approve"
+                          onClick={() => void transition(item.id, "approved")}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          className="reject"
+                          onClick={() => void transition(item.id, "rejected")}
+                        >
+                          Rejeitar
+                        </button>
+                      </>
+                    )}
+                  {item.status === "approved" && capabilities["creatives.publish"] === true && (
+                    <button
+                      className="approve"
+                      onClick={() => void transition(item.id, "published")}
+                    >
+                      Publicar
+                    </button>
+                  )}
+                  {item.status === "published" && capabilities["creatives.publish"] === true && (
+                    <button onClick={() => void transition(item.id, "archived")}>Arquivar</button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      <PanelDrawer
+        open={createOpen}
+        title="Novo criativo"
+        eyebrow="Biblioteca"
+        dirty={createDirty}
+        onClose={() => {
+          setCreateOpen(false);
+          setCreateDirty(false);
+        }}
+      >
+        <p className="product-media-note">
+          O material nasce como rascunho e segue o fluxo real de aprovação.
+        </p>
+        <form
+          className="creative-manager-form"
+          onChange={() => setCreateDirty(true)}
+          onSubmit={(event) => void create(event)}
+        >
           <label>
             <span>Título</span>
             <input name="title" minLength={3} maxLength={160} required />
@@ -219,88 +351,30 @@ function CreativeManager({ role }: { role: PanelRole }) {
               accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf,application/zip"
             />
           </label>
-          <button className="panel-primary-button" disabled={pending || !canCreate}>
-            {pending ? <LoaderCircle className="spin" /> : <FileImage />} Salvar rascunho
-          </button>
+          <div className="creative-manager-footer">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                setCreateOpen(false);
+                setCreateDirty(false);
+              }}
+              disabled={pending}
+            >
+              Cancelar
+            </button>
+            <button className="primary-button" disabled={pending || !canCreate}>
+              {pending ? <LoaderCircle className="spin" /> : <FileImage />} Salvar rascunho
+            </button>
+          </div>
         </form>
-        {message && (
-          <p className="form-message" role="status">
-            {message}
-          </p>
-        )}
-      </section>
-      <section className="panel-card representative-console">
-        <header>
-          <div>
-            <h2>Biblioteca interna</h2>
-            <p>Somente materiais publicados e elegíveis chegam ao portal.</p>
-          </div>
-          <span>{items.length} ativos</span>
-        </header>
-        {loading ? (
-          <div className="panel-loading">
-            <LoaderCircle className="spin" />
-          </div>
-        ) : loadError ? (
-          <div className="panel-error" role="alert"><ShieldAlert /><p>{loadError}</p><button type="button" onClick={load}>Tentar novamente</button></div>
-        ) : items.length === 0 ? (
-          <div className="admin-empty-state"><FileImage /><h3>Nenhum criativo encontrado</h3><p>A biblioteca será atualizada quando houver materiais reais.</p></div>
-        ) : (
-          <div className="creative-manager-list">
-            {items.map((item) => (
-              <article key={item.id}>
-                <div>
-                  <small>
-                    {item.platform} · {item.type ?? item.asset_type}
-                  </small>
-                  <strong>{item.title}</strong>
-                  <p>{item.campaign ?? item.description}</p>
-                </div>
-                <span className={`status ${item.status}`}>{label(item.status)}</span>
-                <div className="review-actions">
-                  {item.status === "draft" && capabilities["creatives.manage"] === true && (
-                    <button onClick={() => void transition(item.id, "pending_review")}>
-                      Enviar à revisão
-                    </button>
-                  )}
-                  {item.status === "pending_review" && capabilities["creatives.approve"] === true && (
-                    <>
-                      <button
-                        className="approve"
-                        onClick={() => void transition(item.id, "approved")}
-                      >
-                        Aprovar
-                      </button>
-                      <button
-                        className="reject"
-                        onClick={() => void transition(item.id, "rejected")}
-                      >
-                        Rejeitar
-                      </button>
-                    </>
-                  )}
-                  {item.status === "approved" && capabilities["creatives.publish"] === true && (
-                    <button
-                      className="approve"
-                      onClick={() => void transition(item.id, "published")}
-                    >
-                      Publicar
-                    </button>
-                  )}
-                  {item.status === "published" && capabilities["creatives.publish"] === true && (
-                    <button onClick={() => void transition(item.id, "archived")}>Arquivar</button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      </PanelDrawer>
     </div>
   );
 }
 
 function Applications({ role }: { role: PanelRole }) {
+  const requestPrompt = usePanelPrompt();
   const [items, setItems] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -345,7 +419,11 @@ function Applications({ role }: { role: PanelRole }) {
     applicationId: string,
     decision: "start_review" | "request_documents" | "approve" | "reject"
   ) => {
-    const reason = window.prompt("Registre o motivo desta decisão:");
+    const reason = await requestPrompt({
+      title: "Revisar solicitação",
+      label: "Motivo desta decisão",
+      minLength: 3
+    });
     if (!reason || reason.trim().length < 3 || pending) return;
     setPending(applicationId);
     setError("");

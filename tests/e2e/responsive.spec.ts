@@ -191,7 +191,9 @@ test("dados estruturados do produto não geram aviso de hidratação", async ({ 
     if (/hydrated|hydration/i.test(message.text())) hydrationWarnings.push(message.text());
   });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto", exact: true })
+  ).toBeVisible();
   expect(hydrationWarnings).toEqual([]);
 });
 
@@ -375,7 +377,7 @@ test("404 mantém ações e recomendações acessíveis no mobile", async ({ pag
         (document.querySelector<HTMLElement>(".error-recommendation-grid")?.clientWidth ?? 0)
     }));
     expect(layout.content).toBeLessThanOrEqual(layout.viewport);
-    expect(layout.recommendationOverflow).toBe(true);
+    expect(layout.recommendationOverflow).toBe(false);
   }
 });
 

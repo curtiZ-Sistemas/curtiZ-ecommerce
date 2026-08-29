@@ -109,6 +109,7 @@ export function AuthForm({
             id={`${mode}-email`}
             name="email"
             type="email"
+            inputMode="email"
             autoComplete="email"
             maxLength={CUSTOMER_EMAIL_MAX_LENGTH}
             placeholder={mode === "login" ? "voce@exemplo.com.br" : "seu melhor e-mail"}
@@ -125,8 +126,9 @@ export function AuthForm({
           <input
             id="signup-phone"
             name="phone"
+            type="tel"
             autoComplete="tel"
-            inputMode="numeric"
+            inputMode="tel"
             maxLength={PHONE_FORMATTED_MAX_LENGTH}
             onInput={(event) => {
               event.currentTarget.value = formatBrazilianPhone(event.currentTarget.value);

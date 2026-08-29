@@ -5,18 +5,30 @@ import { PanelShell, panelSearchRoute, panelSectionLabel } from "./panel-shell";
 
 describe("PanelShell multipainel", () => {
   it("mostra a troca no cabeçalho e no menu quando há múltiplos painéis", () => {
-    const markup = renderToStaticMarkup(<PanelShell role="administracao" section="" canSwitchPanel><p>Conteúdo</p></PanelShell>);
+    const markup = renderToStaticMarkup(
+      <PanelShell role="administracao" section="" canSwitchPanel>
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
     expect(markup.match(/Trocar painel/g)).toHaveLength(2);
     expect(markup.match(/href="\/selecionar-painel"/g)).toHaveLength(2);
   });
 
   it("não mostra troca de painel para uma única função", () => {
-    const markup = renderToStaticMarkup(<PanelShell role="operacional" section=""><p>Conteúdo</p></PanelShell>);
+    const markup = renderToStaticMarkup(
+      <PanelShell role="operacional" section="">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
     expect(markup).not.toContain("Trocar painel");
   });
 
   it("usa a logo original e inclui o acesso jurídico operacional", () => {
-    const markup = renderToStaticMarkup(<PanelShell role="operacional" section=""><p>Conteúdo</p></PanelShell>);
+    const markup = renderToStaticMarkup(
+      <PanelShell role="operacional" section="">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
     expect(markup).toContain("logo-curtiz.png");
     expect(markup).toContain("Políticas oficiais");
     expect(markup).toContain("Central de Ajuda");
@@ -74,5 +86,22 @@ describe("PanelShell multipainel", () => {
     expect(markup).toContain('href="#panel-content"');
     expect(markup).toContain('aria-label="Recolher menu lateral"');
     expect(markup).toContain('id="panel-content"');
+  });
+
+  it("concentra o catálogo em Produtos e não expõe configuração técnica na administração", () => {
+    const markup = renderToStaticMarkup(
+      <PanelShell role="administracao" section="produtos">
+        <p>Conteúdo</p>
+      </PanelShell>
+    );
+
+    expect(markup).toContain('href="/administracao/produtos"');
+    expect(markup).toContain('href="/administracao/categorias"');
+    expect(markup).toContain('href="/administracao/colecoes"');
+    expect(markup).not.toContain('href="/administracao/variacoes"');
+    expect(markup).not.toContain('href="/administracao/midias"');
+    expect(markup).not.toContain('href="/administracao/estoque"');
+    expect(markup).not.toContain('href="/administracao/modelos"');
+    expect(markup).not.toContain('href="/administracao/configuracoes"');
   });
 });

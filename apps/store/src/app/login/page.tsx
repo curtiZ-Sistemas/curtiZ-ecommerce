@@ -1,7 +1,8 @@
-import { Headphones, PackageCheck } from "lucide-react";
 import { safeInternalPath } from "@curtiz/security";
+import Image from "next/image";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
+import logoCurtiz from "../../../public/images/logo-curtiz.png";
 
 export const metadata = { title: "Acesse sua conta", robots: { index: false, follow: false } };
 
@@ -17,35 +18,17 @@ export default async function LoginPage({
   return (
     <div className="auth-page">
       <div className="auth-shell">
-        <aside className="auth-aside" aria-label="Benefícios da conta curti Z">
-          <div>
-            <p className="eyebrow">Sua experiência curti Z</p>
-            <h1>Tudo sobre seus pedidos em um só lugar.</h1>
-            <p className="auth-aside-copy">
-              Acompanhe compras, entregas e atendimentos em um só lugar.
-            </p>
-          </div>
-          <div className="auth-benefits">
-            <div>
-              <PackageCheck aria-hidden="true" />
-              <span>
-                <strong>Pedidos organizados</strong>Histórico e andamento em tempo real.
-              </span>
-            </div>
-            <div>
-              <Headphones aria-hidden="true" />
-              <span>
-                <strong>Atendimento centralizado</strong>Conversas e solicitações com histórico.
-              </span>
-            </div>
-          </div>
-        </aside>
-
         <section className="auth-card auth-login-card">
           <header className="auth-card-header">
-            <span className="auth-kicker">Bem-vindo de volta</span>
-            <h2>Acesse sua conta</h2>
-            <p>Use seu e-mail e senha cadastrados para continuar.</p>
+            <Image
+              className="auth-logo"
+              src={logoCurtiz}
+              alt="curti Z"
+              width={180}
+              height={120}
+              priority
+            />
+            <h1>Acesse sua conta</h1>
           </header>
           <AuthForm
             mode="login"

@@ -90,7 +90,7 @@ export function AdminDashboard() {
   const primaryMetrics = [
     ["Vendas aprovadas", money.format(data.metrics.grossRevenueInCents / 100), "Receita bruta registrada", "/administracao/pedidos", ShoppingBag],
     ["Pedidos", data.metrics.orders.toLocaleString("pt-BR"), "Acompanhar operação comercial", "/administracao/pedidos", PackageCheck],
-    ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), "Variações no mínimo ou abaixo", "/administracao/estoque", CircleAlert],
+    ["Estoque baixo", data.metrics.lowStock.toLocaleString("pt-BR"), "Variações no mínimo ou abaixo", "/administracao/produtos", CircleAlert],
     [
       "Avaliações pendentes",
       data.metrics.pendingReviews.toLocaleString("pt-BR"),

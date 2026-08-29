@@ -204,19 +204,23 @@ test("catálogo e busca carregam somente resultados paginados", async ({ page })
   const catalogResponse = await page.goto("/produtos");
   expect(catalogResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Todos os produtos" })).toBeVisible();
-  const catalogProducts = await page.locator(".product-card").count();
+  const catalogProducts = await page.locator(".product-card:visible").count();
   expect(catalogProducts).toBeGreaterThan(0);
   expect(catalogProducts).toBeLessThanOrEqual(12);
 
   const searchResponse = await page.goto("/busca?q=Wave");
   expect(searchResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: /Busca/ })).toBeVisible();
-  const visibleProducts = await page.locator(".product-card").count();
+  const visibleProducts = await page.locator(".product-card:visible").count();
   expect(visibleProducts).toBeGreaterThan(0);
   expect(visibleProducts).toBeLessThanOrEqual(12);
 });
 
-test("busca desktop mantém histórico privado, removível e acessível pelo teclado", async ({ page }) => {
+test("busca desktop mantém histórico privado, removível e acessível pelo teclado", async ({
+  page,
+  isMobile
+}) => {
+  test.skip(isMobile, "Fluxo exclusivo da busca desktop.");
   await page.addInitScript(() => {
     localStorage.setItem(
       "curtiz-recent-searches",
@@ -393,20 +397,29 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
 
   await page.getByLabel("Nome completo").fill("Cliente curti Z");
   const email = page.getByLabel("E-mail");
+  await expect(email).toHaveAttribute("inputmode", "email");
+  await expect(email).toHaveAttribute("autocomplete", "email");
   await email.focus();
   await page.keyboard.insertText(`${"a".repeat(130)}@example.com`);
   expect((await email.inputValue()).length).toBe(120);
   await email.fill("cliente.demo@curtiz.local");
   const phone = page.getByLabel("Telefone");
+  await expect(phone).toHaveAttribute("inputmode", "tel");
+  await expect(phone).toHaveAttribute("autocomplete", "tel");
   await phone.fill("119999999999999");
   await expect(phone).toHaveValue("(11) 99999-9999");
   const cpf = page.getByLabel("CPF para o pedido");
+  await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
   await page.getByRole("button", { name: "Confirmar e pagar" }).click();
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
-  await page.getByLabel("CEP").fill("01310100");
+  const postalCode = page.getByLabel("CEP");
+  await expect(postalCode).toHaveAttribute("inputmode", "numeric");
+  await expect(postalCode).toHaveAttribute("autocomplete", "postal-code");
+  await postalCode.fill("01310100");
+  await expect(postalCode).toHaveValue("01310-100");
   await page.getByLabel("Endereço", { exact: true }).fill("Avenida Paulista");
   await page.getByLabel("Número").fill("1000");
   await page.getByLabel("Bairro").fill("Bela Vista");
@@ -561,10 +574,15 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
   await page.goto("/login");
 
   await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
-  await expect(
-    page.getByRole("main").getByText("Use seu e-mail e senha cadastrados para continuar.").first()
-  ).toBeVisible();
+  await expect(page.getByText("Tudo sobre seus pedidos em um só lugar")).toHaveCount(0);
+  await expect(page.getByText("Pedidos organizados")).toHaveCount(0);
   await expect(page.locator('input[type="password"]')).toHaveCount(1);
+  await expect(page.getByLabel("E-mail de acesso")).toHaveAttribute("inputmode", "email");
+  await expect(page.getByLabel("E-mail de acesso")).toHaveAttribute("autocomplete", "email");
+  await expect(page.locator('input[name="password"]')).toHaveAttribute(
+    "autocomplete",
+    "current-password"
+  );
   await expect(page.getByRole("link", { name: "Cadastre-se" })).toHaveAttribute(
     "href",
     "/cadastro"
@@ -687,7 +705,10 @@ test("autentica conta operacional no modo demo local sem Supabase", async ({ pag
 
 test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" }).click();
+  await page
+    .getByRole("region", { name: "Ofertas em destaque" })
+    .getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" })
+    .click();
 
   await page.goto("/login");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
@@ -717,7 +738,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   for (const width of [320, 360, 375, 390, 412, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(page.locator(".account-mobile-home")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Olá, Cliente" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
     await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
     await expect(
@@ -870,7 +891,10 @@ test("portal da representante mantém a identidade visual da área do cliente", 
 
 test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" }).click();
+  await page
+    .getByRole("region", { name: "Ofertas em destaque" })
+    .getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" })
+    .click();
   await page.goto("/favoritos");
 
   await expect(page).toHaveURL(/\/favoritos$/);
@@ -1095,8 +1119,9 @@ test("galeria do produto abre lightbox acessível e restaura o foco", async ({ p
 test("vitrines mobile mantêm duas colunas sem overflow", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("homepage-primary-hero")).toHaveCount(1, { timeout: 30_000 });
-  await expect(page.getByTestId("homepage-primary-hero")).toBeVisible({ timeout: 30_000 });
+  const visibleHero = page.locator('[data-testid="homepage-primary-hero"]:visible');
+  await expect(visibleHero).toHaveCount(1, { timeout: 30_000 });
+  await expect(visibleHero).toBeVisible({ timeout: 30_000 });
   const shelves = page.locator(".home-product-row, .product-grid");
   await expect.poll(() => shelves.count(), { timeout: 20_000 }).toBeGreaterThan(0);
 

@@ -20,6 +20,7 @@ import {
   UserRoundCheck
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePanelPrompt } from "./panel-prompt";
 
 type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -73,6 +74,7 @@ const formatDateTime = (value: string) =>
   }).format(new Date(value));
 
 export function SupportConsole({ role }: { role: PanelRole }) {
+  const requestPrompt = usePanelPrompt();
   const [conversations, setConversations] = useState<SupportConversationView[]>([]);
   const [team, setTeam] = useState<SupportTeamMember[]>([]);
   const [quickReplies, setQuickReplies] = useState<NonNullable<SupportResponse["quickReplies"]>>(
@@ -492,17 +494,23 @@ export function SupportConsole({ role }: { role: PanelRole }) {
                     value={selected.priority}
                     onChange={(event) => {
                       const next = event.target.value;
-                      const reason = window.prompt("Motivo da alteração de prioridade:");
-                      if (reason)
-                        void update(
-                          {
-                            action: "priority",
-                            conversationId: selected.id,
-                            priority: next,
-                            reason
-                          },
-                          "Prioridade atualizada."
-                        );
+                      void (async () => {
+                        const reason = await requestPrompt({
+                          title: "Alterar prioridade",
+                          label: "Motivo da alteração",
+                          minLength: 3
+                        });
+                        if (reason)
+                          await update(
+                            {
+                              action: "priority",
+                              conversationId: selected.id,
+                              priority: next,
+                              reason
+                            },
+                            "Prioridade atualizada."
+                          );
+                      })();
                     }}
                   >
                     <option value="low">Baixa</option>

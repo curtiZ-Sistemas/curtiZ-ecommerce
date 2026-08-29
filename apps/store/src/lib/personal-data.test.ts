@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatBrazilianPhone,
   formatCpf,
+  formatPostalCode,
   isValidBrazilianPhone,
   isValidCpf,
   sanitizeBrazilianPhone,
@@ -29,6 +30,12 @@ describe("personal data formatting", () => {
     expect(formatBrazilianPhone("3133334444")).toBe("(31) 3333-4444");
     expect(formatBrazilianPhone("319999999999999")).toBe("(31) 99999-9999");
     expect(sanitizeBrazilianPhone("31 telefone 99999-9999")).toBe("31999999999");
+  });
+
+  it("formata CEP sem perder o zero inicial", () => {
+    expect(formatPostalCode("0")).toBe("0");
+    expect(formatPostalCode("01310100")).toBe("01310-100");
+    expect(formatPostalCode("01310-10099")).toBe("01310-100");
   });
 
   it("valida DDD e quantidade do telefone no servidor", () => {

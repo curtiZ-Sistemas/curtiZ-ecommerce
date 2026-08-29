@@ -144,7 +144,9 @@ export async function PATCH(request: NextRequest) {
   if (!auth) return unauthorizedAdminResponse();
   const parsed = z.discriminatedUnion("action", [
     z.object({ action: z.literal("primary"), imageId: postgresUuidSchema }),
-    z.object({ action: z.literal("move"), imageId: postgresUuidSchema, direction: z.enum(["before", "after"]) })
+    z.object({ action: z.literal("move"), imageId: postgresUuidSchema, direction: z.enum(["before", "after"]) }),
+    z.object({ action: z.literal("reorder"), imageId: postgresUuidSchema, targetImageId: postgresUuidSchema }),
+    z.object({ action: z.literal("alt"), imageId: postgresUuidSchema, alt: z.string().trim().min(3).max(300) })
   ]).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ message: "Ação de mídia inválida." }, { status: 400, headers: privateNoStore });
   const selected = await auth.supabase.from("product_images").select("id,product_id,sort_order").eq("id", parsed.data.imageId).maybeSingle();
@@ -156,12 +158,32 @@ export async function PATCH(request: NextRequest) {
     if (updated.error) return NextResponse.json({ message: "Não foi possível definir a imagem principal." }, { status: 409, headers: privateNoStore });
     return NextResponse.json({ ok: true, message: "Imagem principal atualizada." }, { headers: privateNoStore });
   }
+  if (parsed.data.action === "alt") {
+    const updated = await auth.supabase
+      .from("product_images")
+      .update({ alt_text: parsed.data.alt })
+      .eq("id", selectedImage.id);
+    if (updated.error)
+      return NextResponse.json(
+        { message: "Não foi possível atualizar o texto alternativo." },
+        { status: 409, headers: privateNoStore }
+      );
+    return NextResponse.json(
+      { ok: true, message: "Texto alternativo atualizado." },
+      { headers: privateNoStore }
+    );
+  }
   const images = await auth.supabase.from("product_images").select("id,sort_order").eq("product_id", selectedImage.product_id).order("sort_order");
   if (images.error) return NextResponse.json({ message: "Não foi possível reordenar as imagens." }, { status: 409, headers: privateNoStore });
   const ordered = images.data ?? [];
   const index = ordered.findIndex((image) => image.id === selectedImage.id);
-  const targetIndex = parsed.data.direction === "before" ? index - 1 : index + 1;
-  const target = ordered[targetIndex];
+  let target: (typeof ordered)[number] | undefined;
+  if (parsed.data.action === "reorder") {
+    const targetImageId = parsed.data.targetImageId;
+    target = ordered.find((image) => image.id === targetImageId);
+  } else {
+    target = ordered[parsed.data.direction === "before" ? index - 1 : index + 1];
+  }
   if (index < 0 || !target) return NextResponse.json({ ok: true, message: "A imagem já está no limite da galeria." }, { headers: privateNoStore });
   const first = await auth.supabase.from("product_images").update({ sort_order: target.sort_order }).eq("id", selectedImage.id);
   const second = first.error ? first : await auth.supabase.from("product_images").update({ sort_order: selectedImage.sort_order }).eq("id", target.id);

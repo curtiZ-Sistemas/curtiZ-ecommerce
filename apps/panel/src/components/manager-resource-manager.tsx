@@ -15,6 +15,7 @@ import {
   type ManagerColumn,
   type ManagerResourceKey
 } from "@/lib/manager-resources";
+import { usePanelPrompt } from "./panel-prompt";
 
 type Item = Record<string, unknown>;
 type ManagerCapabilities = {
@@ -91,6 +92,7 @@ function display(value: unknown, column: ManagerColumn): string {
 }
 
 export function ManagerResourceManager({ resource, initialQuery = "" }: { resource: ManagerResourceKey; initialQuery?: string }) {
+  const requestPrompt = usePanelPrompt();
   const definition = managerResources[resource];
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState(initialQuery);
@@ -164,7 +166,11 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   const commissionAction = async (action: string, item?: Item, period?: { start: string; end: string }) => {
     let reason: string | undefined;
     if (action === "reopen") {
-      reason = window.prompt("Informe a justificativa obrigatória para reabrir o fechamento:")?.trim();
+      reason = (await requestPrompt({
+        title: "Reabrir fechamento",
+        label: "Justificativa obrigatória",
+        minLength: 3
+      }))?.trim();
       if (!reason) return;
     }
 
@@ -191,7 +197,11 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   };
 
   const representativeAction = async (action: "suspend" | "reactivate", item: Item) => {
-    const reason = window.prompt("Informe a justificativa obrigatória para esta alteração:")?.trim();
+    const reason = (await requestPrompt({
+      title: action === "suspend" ? "Suspender representante" : "Reativar representante",
+      label: "Justificativa obrigatória",
+      minLength: 3
+    }))?.trim();
     if (!reason || typeof item.id !== "string") return;
     setPending(true);
     setMessage("");
@@ -213,7 +223,11 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   };
 
   const campaignAction = async (status: string, item: Item) => {
-    const reason = window.prompt("Informe a justificativa obrigatória para esta transição:")?.trim();
+    const reason = (await requestPrompt({
+      title: "Alterar campanha",
+      label: "Justificativa obrigatória",
+      minLength: 3
+    }))?.trim();
     if (!reason || typeof item.id !== "string") return;
     setPending(true);
     setMessage("");

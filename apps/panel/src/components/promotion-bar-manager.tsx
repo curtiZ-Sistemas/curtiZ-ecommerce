@@ -281,7 +281,7 @@ export function PromotionBarManager() {
             </label>
             <label>
               <span>Ordem</span>
-              <input type="number" min="0" max="999" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} required />
+              <input type="number" inputMode="numeric" min="0" max="999" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} required />
             </label>
             <label className="promotion-active-field">
               <input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />

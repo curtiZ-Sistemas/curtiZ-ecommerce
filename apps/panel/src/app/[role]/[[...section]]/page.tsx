@@ -1,10 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import {
-  PanelPageHeading,
-  PanelShell,
-  type PanelRole
-} from "@/components/panel-shell";
+import { notFound, redirect } from "next/navigation";
+import { PanelPageHeading, PanelShell, type PanelRole } from "@/components/panel-shell";
 import { SupportConsole } from "@/components/support-console";
 import { RepresentativeConsole } from "@/components/representative-console";
 import { HomepageBuilder } from "@/components/homepage-builder";
@@ -45,7 +41,9 @@ export default async function RolePage({
   const section = resolved.section?.[0] ?? "";
   const rawQuery = Array.isArray(resolvedSearch.q) ? resolvedSearch.q[0] : resolvedSearch.q;
   const initialQuery = rawQuery?.trim().slice(0, 120) ?? "";
-  const rawStatus = Array.isArray(resolvedSearch.status) ? resolvedSearch.status[0] : resolvedSearch.status;
+  const rawStatus = Array.isArray(resolvedSearch.status)
+    ? resolvedSearch.status[0]
+    : resolvedSearch.status;
   const initialStatus = rawStatus?.trim().slice(0, 40) ?? "";
   const currentPath = `/${role}${section ? `/${section}` : ""}`;
   const access = await requirePanelAccess(role, currentPath);
@@ -90,29 +88,60 @@ export default async function RolePage({
 function showRouteHeading(role: PanelRole, section: string) {
   if (!section) return true;
   if (role === "administracao") {
-    const ownsHeading = ["produtos", "variacoes", "midias", "estoque", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(section) || isAdminResource(section);
+    const ownsHeading =
+      ["produtos", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
+        section
+      ) || isAdminResource(section);
     return !ownsHeading;
   }
   if (role === "operacional") return section !== "construtor-home";
   if (role === "gerencia") {
-    const alias = section === "vendas" ? "pedidos-vendas" : section === "comissoes-representantes" ? "comissoes" : section;
-    const ownsHeading = section === "conteudo-loja" || section === "barra-promocional" || section === "inteligencia-loja" || section === "usuarios" || ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) || isManagerResource(alias);
+    const alias =
+      section === "vendas"
+        ? "pedidos-vendas"
+        : section === "comissoes-representantes"
+          ? "comissoes"
+          : section;
+    const ownsHeading =
+      section === "conteudo-loja" ||
+      section === "barra-promocional" ||
+      section === "inteligencia-loja" ||
+      section === "usuarios" ||
+      ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) ||
+      isManagerResource(alias);
     return !ownsHeading;
   }
   return !isTechnicalResource(section);
 }
 
-function Operational({ section, initialQuery, initialStatus }: { section: string; initialQuery: string; initialStatus: string }) {
+function Operational({
+  section,
+  initialQuery,
+  initialStatus
+}: {
+  section: string;
+  initialQuery: string;
+  initialStatus: string;
+}) {
   if (section === "politicas") return <OperationalLegalLinks />;
   if (section === "construtor-home") return <HomepageBuilder />;
-  return <OperationalConsole key={`${section}:${initialQuery}:${initialStatus}`} section={section} initialQuery={initialQuery} initialStatus={initialStatus} />;
+  return (
+    <OperationalConsole
+      key={`${section}:${initialQuery}:${initialStatus}`}
+      section={section}
+      initialQuery={initialQuery}
+      initialStatus={initialStatus}
+    />
+  );
 }
 
 function Administration({ section, initialQuery }: { section: string; initialQuery: string }) {
   if (!section) return <AdminDashboard />;
-  if (["produtos", "variacoes", "midias", "estoque"].includes(section)) {
-    return <ProductManagement key={`${section}:${initialQuery}`} view={section as "produtos" | "variacoes" | "midias" | "estoque"} initialQuery={initialQuery} />;
-  }
+  if (["modelos", "variacoes", "midias", "estoque"].includes(section))
+    redirect("/administracao/produtos");
+  if (section === "configuracoes") redirect("/administracao");
+  if (section === "produtos")
+    return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} />;
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "usuarios") return <AdminUsers />;
@@ -152,7 +181,14 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
     "comissoes-representantes": "comissoes"
   };
   const resource = aliases[section] ?? section;
-  if (isManagerResource(resource)) return <ManagerResourceManager key={`${resource}:${initialQuery}`} resource={resource} initialQuery={initialQuery} />;
+  if (isManagerResource(resource))
+    return (
+      <ManagerResourceManager
+        key={`${resource}:${initialQuery}`}
+        resource={resource}
+        initialQuery={initialQuery}
+      />
+    );
 
   return (
     <div className="admin-empty-state">
@@ -164,7 +200,14 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
 
 function Technical({ section, initialQuery }: { section: string; initialQuery: string }) {
   if (section === "acessos-tecnicos") return <AdminUsers />;
-  if (isTechnicalResource(section)) return <TechnicalResourceManager key={`${section}:${initialQuery}`} resource={section} initialQuery={initialQuery} />;
+  if (isTechnicalResource(section))
+    return (
+      <TechnicalResourceManager
+        key={`${section}:${initialQuery}`}
+        resource={section}
+        initialQuery={initialQuery}
+      />
+    );
   return <TechnicalOverview section={section} />;
 }
 

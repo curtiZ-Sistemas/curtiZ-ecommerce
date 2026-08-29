@@ -25,9 +25,7 @@ const stateActionSchema = z.object({
   reason: z.string().trim().min(3).max(1000).optional()
 });
 
-type AdminClient = NonNullable<
-  Awaited<ReturnType<typeof authorizeAdminRequest>>
->["supabase"];
+type AdminClient = NonNullable<Awaited<ReturnType<typeof authorizeAdminRequest>>>["supabase"];
 
 async function permissionGranted(supabase: AdminClient, permissionCode: string) {
   const result = await supabase.rpc("has_permission", {
@@ -95,7 +93,7 @@ function normalizeValues(
       continue;
     }
 
-    if (field.type === "number") {
+    if (field.type === "number" || field.type === "money" || field.type === "percentage") {
       if (value === "" || value === null || value === undefined) {
         normalized[field.key] = null;
         continue;
@@ -184,7 +182,8 @@ function normalizeValues(
 
 function validateResourceRules(resource: string, values: Record<string, unknown>): void {
   if (resource === "banners") {
-    const destinationType = typeof values.destination_type === "string" ? values.destination_type : "";
+    const destinationType =
+      typeof values.destination_type === "string" ? values.destination_type : "";
     const destinationUrl = typeof values.destination_url === "string" ? values.destination_url : "";
     if (destinationType === "external_url") {
       let parsed: URL;
@@ -208,7 +207,8 @@ function validateResourceRules(resource: string, values: Record<string, unknown>
 
   if (resource === "avaliacoes") {
     const status = typeof values.status === "string" ? values.status : "";
-    const reason = typeof values.moderation_reason === "string" ? values.moderation_reason.trim() : "";
+    const reason =
+      typeof values.moderation_reason === "string" ? values.moderation_reason.trim() : "";
     if (["rejected", "hidden", "archived"].includes(status) && reason.length < 3) {
       throw new Error("Informe a justificativa da moderação.");
     }
@@ -223,6 +223,13 @@ function validateResourceRules(resource: string, values: Record<string, unknown>
     }
   }
 
+  if (resource === "comissoes") {
+    const basisPoints = values.basis_points;
+    if (typeof basisPoints !== "number" || basisPoints < 0 || basisPoints > 10_000) {
+      throw new Error("Informe uma comissão entre 0% e 100%.");
+    }
+  }
+
   if (
     resource === "criativos" &&
     typeof values.storage_path !== "string" &&
@@ -232,10 +239,7 @@ function validateResourceRules(resource: string, values: Record<string, unknown>
   }
 }
 
-async function resourceContext(
-  request: NextRequest,
-  params: Promise<{ resource: string }>
-) {
+async function resourceContext(request: NextRequest, params: Promise<{ resource: string }>) {
   const resource = (await params).resource;
   if (!isAdminResource(resource)) return null;
 
@@ -292,10 +296,7 @@ export async function GET(
   }
   if (!readPermission.allowed) return forbiddenPermissionResponse();
 
-  const page = Math.max(
-    1,
-    Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1)
-  );
+  const page = Math.max(1, Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1));
   const pageSize = 20;
   const queryText = cleanSearch(request.nextUrl.searchParams.get("q") ?? "");
   const status = (request.nextUrl.searchParams.get("status") ?? "").slice(0, 40);
@@ -308,9 +309,7 @@ export async function GET(
 
   if (queryText && context.definition.searchColumns.length) {
     query = query.or(
-      context.definition.searchColumns
-        .map((column) => `${column}.ilike.%${queryText}%`)
-        .join(",")
+      context.definition.searchColumns.map((column) => `${column}.ilike.%${queryText}%`).join(",")
     );
   }
 
@@ -332,11 +331,7 @@ export async function GET(
     .range(from, to);
 
   if (result.error) {
-    logResourceQueryFailure(
-      context.resource,
-      context.definition.table,
-      result.error
-    );
+    logResourceQueryFailure(context.resource, context.definition.table, result.error);
     return NextResponse.json(
       { message: "Não foi possível carregar os registros desta área." },
       { status: 503, headers: privateNoStore }
@@ -430,7 +425,9 @@ export async function POST(
 
     if (result.error) {
       if (context.resource === "banners" && result.error.message.includes("four active banners")) {
-        throw new Error("Já existem quatro banners ativos. Desative ou substitua um banner para continuar.");
+        throw new Error(
+          "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
+        );
       }
       if (context.resource === "banners" && result.error.message.includes("external banner host")) {
         throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
@@ -448,19 +445,15 @@ export async function POST(
   } catch (error) {
     const validationMessage =
       error instanceof Error &&
-      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some((prefix) =>
-        error.message.startsWith(prefix)
+      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some(
+        (prefix) => error.message.startsWith(prefix)
       )
         ? error.message
         : null;
 
-    const message =
-      validationMessage ?? `Não foi possível criar ${context.definition.singular}.`;
+    const message = validationMessage ?? `Não foi possível criar ${context.definition.singular}.`;
 
-    return NextResponse.json(
-      { message },
-      { status: 409, headers: privateNoStore }
-    );
+    return NextResponse.json({ message }, { status: 409, headers: privateNoStore });
   }
 }
 
@@ -562,9 +555,7 @@ export async function PATCH(
     );
   }
 
-  const parsed = mutationSchema
-    .extend({ id: z.string().uuid() })
-    .safeParse(body);
+  const parsed = mutationSchema.extend({ id: z.string().uuid() }).safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -578,9 +569,10 @@ export async function PATCH(
     validateResourceRules(context.resource, values);
 
     if (context.resource === "avaliacoes") {
-      values.responded_at = typeof values.brand_response === "string" && values.brand_response.trim()
-        ? new Date().toISOString()
-        : null;
+      values.responded_at =
+        typeof values.brand_response === "string" && values.brand_response.trim()
+          ? new Date().toISOString()
+          : null;
     }
 
     if (context.definition.updatedByField) {
@@ -596,9 +588,14 @@ export async function PATCH(
 
     if (result.error || !result.data) {
       if (context.resource === "banners" && result.error?.message.includes("four active banners")) {
-        throw new Error("Já existem quatro banners ativos. Desative ou substitua um banner para continuar.");
+        throw new Error(
+          "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
+        );
       }
-      if (context.resource === "banners" && result.error?.message.includes("external banner host")) {
+      if (
+        context.resource === "banners" &&
+        result.error?.message.includes("external banner host")
+      ) {
         throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
       }
       throw result.error ?? new Error("missing");
@@ -611,8 +608,8 @@ export async function PATCH(
   } catch (error) {
     const validationMessage =
       error instanceof Error &&
-      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some((prefix) =>
-        error.message.startsWith(prefix)
+      ["Preencha", "Escolha", "Informe", "Campo", "Opção", "Já existem", "O domínio"].some(
+        (prefix) => error.message.startsWith(prefix)
       )
         ? error.message
         : null;
@@ -703,8 +700,5 @@ export async function DELETE(
     );
   }
 
-  return NextResponse.json(
-    { message: "Registro arquivado." },
-    { headers: privateNoStore }
-  );
+  return NextResponse.json({ message: "Registro arquivado." }, { headers: privateNoStore });
 }

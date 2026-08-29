@@ -17,6 +17,7 @@ import {
   Send,
   ShieldCheck
 } from "lucide-react";
+import { usePanelPrompt } from "./panel-prompt";
 
 type Item = Record<string, unknown>;
 type Capability =
@@ -149,6 +150,7 @@ function snapshotText(value: unknown) {
 }
 
 export function LegalCenter() {
+  const requestPrompt = usePanelPrompt();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [tab, setTab] = useState<Tab>("visao-geral");
   const [selectedId, setSelectedId] = useState("");
@@ -292,14 +294,21 @@ export function LegalCenter() {
 
   const transition = async (action: string) => {
     if (!selectedId) return;
-    const reason = window.prompt("Informe o motivo auditável desta decisão:")?.trim();
+    const reason = (await requestPrompt({
+      title: "Atualizar documento legal",
+      label: "Motivo auditável desta decisão",
+      minLength: 3
+    }))?.trim();
     if (!reason) return;
     let effectiveFrom: string | null = null;
     if (["publish", "schedule"].includes(action)) {
-      const input = window.prompt(
-        "Data e hora de vigência (AAAA-MM-DDTHH:mm):",
-        new Date().toISOString().slice(0, 16)
-      );
+      const input = await requestPrompt({
+        title: "Definir vigência",
+        label: "Data e hora de vigência",
+        defaultValue: new Date().toISOString().slice(0, 16),
+        multiline: false,
+        inputType: "datetime-local"
+      });
       if (!input) return;
       const parsed = new Date(input);
       if (Number.isNaN(parsed.getTime())) {

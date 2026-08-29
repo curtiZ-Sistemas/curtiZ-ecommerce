@@ -1,5 +1,13 @@
 export type AdminFieldType =
-  "text" | "textarea" | "json" | "number" | "boolean" | "datetime" | "select";
+  | "text"
+  | "textarea"
+  | "json"
+  | "number"
+  | "money"
+  | "percentage"
+  | "boolean"
+  | "datetime"
+  | "select";
 
 export type AdminResourceField = {
   key: string;
@@ -185,8 +193,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     description: "Consulte pedidos sem contornar o fluxo transacional de status.",
     table: "orders",
     readPermission: "orders.read_all",
-    select:
-      "id,public_code,customer_email_snapshot,status,payment_status,grand_total,created_at",
+    select: "id,public_code,customer_email_snapshot,status,payment_status,grand_total,created_at",
     searchColumns: ["public_code", "customer_email_snapshot"],
     fields: [],
     allowCreate: false,
@@ -230,7 +237,18 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
         label: "Tipo de destino",
         type: "select",
         required: true,
-        options: ["none", "product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page", "predefined_search", "external_url"]
+        options: [
+          "none",
+          "product",
+          "category",
+          "collection",
+          "institutional_page",
+          "guide",
+          "campaign",
+          "internal_page",
+          "predefined_search",
+          "external_url"
+        ]
       },
       { key: "destination_id", label: "Destino selecionado", type: "text" },
       { key: "destination_url", label: "Destino", type: "text", required: true },
@@ -253,7 +271,12 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
       { key: "sort_order", label: "Ordem", type: "number" },
       { key: "priority", label: "Prioridade", type: "number" },
       { key: "overlay_color", label: "Cor de sobreposição", type: "text" },
-      { key: "content_alignment", label: "Alinhamento", type: "select", options: ["left", "center", "right"] }
+      {
+        key: "content_alignment",
+        label: "Alinhamento",
+        type: "select",
+        options: ["left", "center", "right"]
+      }
     ],
     allowCreate: true,
     allowArchive: true,
@@ -409,7 +432,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
       { key: "name", label: "Nome", type: "text", required: true },
       { key: "slug", label: "Slug", type: "text", required: true },
       { key: "description", label: "Descrição", type: "textarea", required: true },
-      { key: "price_in_cents", label: "Preço em centavos", type: "number", required: true },
+      { key: "price_in_cents", label: "Preço", type: "money", required: true },
       { key: "required_for_activation", label: "Obrigatório para ativação", type: "boolean" },
       { key: "active", label: "Ativo", type: "boolean" }
     ],
@@ -483,8 +506,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
       { key: "version", label: "Versão", type: "number", required: true },
-      { key: "basis_points", label: "Comissão (pontos-base)", type: "number", required: true },
-      { key: "maximum_in_cents", label: "Teto em centavos", type: "number" },
+      { key: "basis_points", label: "Comissão", type: "percentage", required: true },
+      { key: "maximum_in_cents", label: "Teto", type: "money" },
       { key: "effective_from", label: "Vigência inicial", type: "datetime", required: true },
       { key: "effective_until", label: "Vigência final", type: "datetime" },
       { key: "active", label: "Ativa", type: "boolean" }

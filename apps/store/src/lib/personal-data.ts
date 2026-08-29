@@ -3,6 +3,7 @@ export const CPF_DIGIT_LIMIT = 11;
 export const CPF_FORMATTED_MAX_LENGTH = 14;
 export const PHONE_DIGIT_LIMIT = 11;
 export const PHONE_FORMATTED_MAX_LENGTH = 15;
+export const POSTAL_CODE_FORMATTED_MAX_LENGTH = 9;
 
 const validBrazilianAreaCodes = new Set([
   "11", "12", "13", "14", "15", "16", "17", "18", "19",
@@ -66,6 +67,11 @@ export const formatBrazilianPhone = (value: string) => {
   if (local.length <= 4) return `(${areaCode}) ${local}`;
   if (local.length <= 8) return `(${areaCode}) ${local.slice(0, 4)}-${local.slice(4)}`;
   return `(${areaCode}) ${local.slice(0, 5)}-${local.slice(5)}`;
+};
+
+export const formatPostalCode = (value: string) => {
+  const digits = value.replace(/\D/gu, "").slice(0, 8);
+  return digits.replace(/^(\d{5})(\d)/u, "$1-$2");
 };
 
 export const isValidBrazilianPhone = (value: string) => {

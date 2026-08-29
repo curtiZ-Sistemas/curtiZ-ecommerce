@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, Download, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { technicalResources, type TechnicalColumn, type TechnicalResourceKey } from "@/lib/technical-resources";
+import { usePanelPrompt } from "./panel-prompt";
 
 type Item = Record<string, unknown>;
 type TechnicalCapabilities = { export: boolean; manageLogs: boolean; manageJobs: boolean; manageWebhooks: boolean; manageFeatures: boolean };
@@ -53,6 +54,7 @@ function display(value: unknown, column: TechnicalColumn): string {
 }
 
 export function TechnicalResourceManager({ resource, initialQuery = "" }: { resource: TechnicalResourceKey; initialQuery?: string }) {
+  const requestPrompt = usePanelPrompt();
   const definition = technicalResources[resource];
   const [items, setItems] = useState<Item[]>([]);
   const [filters, setFilters] = useState<Filters>({ ...initialFilters, q: initialQuery });
@@ -99,8 +101,8 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
 
   useEffect(() => { void load(); }, [load]);
 
-  const runAction = async (body: Record<string, unknown>, confirmation: string) => {
-    if (pending || !window.confirm(confirmation)) return;
+  const runAction = async (body: Record<string, unknown>, confirmation?: string) => {
+    if (pending || (confirmation && !window.confirm(confirmation))) return;
     setPending(true);
     setMessage("");
     try {
@@ -120,16 +122,24 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
     }
   };
 
-  const reasonedAction = (body: Record<string, unknown>, promptText: string, confirmation: string) => {
-    const reason = window.prompt(promptText)?.trim();
+  const reasonedAction = async (body: Record<string, unknown>, promptText: string, confirmation?: string) => {
+    const reason = (await requestPrompt({
+      title: "Confirmar ação técnica",
+      label: promptText,
+      minLength: 3
+    }))?.trim();
     if (!reason) return;
-    void runAction({ ...body, reason }, confirmation);
+    await runAction({ ...body, reason }, confirmation);
   };
 
-  const resolveEvent = (item: Item, status: "investigating" | "resolved" | "ignored") => {
-    const note = window.prompt("Registre a análise ou resolução deste evento:")?.trim();
+  const resolveEvent = async (item: Item, status: "investigating" | "resolved" | "ignored") => {
+    const note = (await requestPrompt({
+      title: "Atualizar evento técnico",
+      label: "Análise ou resolução",
+      minLength: 3
+    }))?.trim();
     if (!note || typeof item.id !== "string") return;
-    void runAction({ action: "resolve_event", id: item.id, status, note }, `Confirmar alteração do evento para ${statusLabels[status]}?`);
+    await runAction({ action: "resolve_event", id: item.id, status, note });
   };
 
   const updateFilter = (key: keyof Filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
@@ -171,7 +181,7 @@ export function TechnicalResourceManager({ resource, initialQuery = "" }: { reso
               <tr key={typeof item.id === "string" ? item.id : typeof item.key === "string" ? item.key : `${resource}-${index}`}>
                 {definition.columns.map((column) => <td key={column.key} data-label={column.label}>{display(item[column.key], column)}</td>)}
                 <td data-label="Detalhes"><TechnicalDetails item={item} /></td>
-                {canAct ? <td data-label="Ações" className="technical-row-actions"><TechnicalActions resource={resource} item={item} disabled={pending} reasonedAction={reasonedAction} resolveEvent={resolveEvent} /></td> : null}
+                {canAct ? <td data-label="Ações" className="technical-row-actions"><TechnicalActions resource={resource} item={item} disabled={pending} reasonedAction={(...arguments_) => { void reasonedAction(...arguments_); }} resolveEvent={(...arguments_) => { void resolveEvent(...arguments_); }} /></td> : null}
               </tr>
             ))}</tbody>
           </table>
@@ -197,21 +207,21 @@ function TechnicalDetails({ item }: { item: Item }) {
   return <details className="technical-details"><summary>Ver detalhes</summary><pre>{display(details, { key: "details", label: "Detalhes", format: typeof details === "object" ? "json" : undefined })}</pre></details>;
 }
 
-function TechnicalActions({ resource, item, disabled, reasonedAction, resolveEvent }: { resource: TechnicalResourceKey; item: Item; disabled: boolean; reasonedAction: (body: Record<string, unknown>, promptText: string, confirmation: string) => void; resolveEvent: (item: Item, status: "investigating" | "resolved" | "ignored") => void }) {
+function TechnicalActions({ resource, item, disabled, reasonedAction, resolveEvent }: { resource: TechnicalResourceKey; item: Item; disabled: boolean; reasonedAction: (body: Record<string, unknown>, promptText: string, confirmation?: string) => void; resolveEvent: (item: Item, status: "investigating" | "resolved" | "ignored") => void }) {
   const id = typeof item.id === "string" ? item.id : "";
   const status = scalar(item.status || item.processing_status || item.resolution_status);
   if ((resource === "logs" || resource === "erros") && id) {
     return <div className="technical-action-group">{status === "open" ? <button className="secondary-button" type="button" disabled={disabled} onClick={() => resolveEvent(item, "investigating")}>Investigar</button> : null}{!new Set(["resolved", "ignored"]).has(status) ? <button className="primary-button" type="button" disabled={disabled} onClick={() => resolveEvent(item, "resolved")}>Resolver</button> : null}{status !== "ignored" ? <button className="secondary-button" type="button" disabled={disabled} onClick={() => resolveEvent(item, "ignored")}>Ignorar</button> : null}</div>;
   }
   if (["filas", "jobs", "falhas"].includes(resource) && id) {
-    if (["failed", "cancelled"].includes(status)) return <button className="primary-button" type="button" disabled={disabled} onClick={() => reasonedAction({ action: "reprocess_job", id }, "Justifique o reprocessamento:", "Recolocar este job na fila?")}>Reprocessar</button>;
+    if (["failed", "cancelled"].includes(status)) return <button className="primary-button" type="button" disabled={disabled} onClick={() => reasonedAction({ action: "reprocess_job", id }, "Justifique o reprocessamento:")}>Reprocessar</button>;
     if (["pending", "running"].includes(status)) return <button className="secondary-button danger-button" type="button" disabled={disabled} onClick={() => reasonedAction({ action: "cancel_job", id }, "Justifique o cancelamento:", "Cancelar este job?")}>Cancelar</button>;
   }
-  if (resource === "webhooks" && id && ["failed", "error"].includes(status)) return <button className="primary-button" type="button" disabled={disabled} onClick={() => reasonedAction({ action: "reprocess_webhook", id }, "Justifique o reprocessamento:", "Reprocessar este evento de pagamento?")}>Reprocessar</button>;
+  if (resource === "webhooks" && id && ["failed", "error"].includes(status)) return <button className="primary-button" type="button" disabled={disabled} onClick={() => reasonedAction({ action: "reprocess_webhook", id }, "Justifique o reprocessamento:")}>Reprocessar</button>;
   if (resource === "feature-flags" && typeof item.key === "string") {
     const enabled = item.enabled === true;
     const key = item.key;
-    return <button className={enabled ? "secondary-button danger-button" : "primary-button"} type="button" disabled={disabled} onClick={() => reasonedAction({ action: "set_feature_flag", key, enabled: !enabled }, "Justifique a alteração da flag:", `${enabled ? "Desativar" : "Ativar"} a flag ${key}?`)}>{enabled ? "Desativar" : "Ativar"}</button>;
+    return <button className={enabled ? "secondary-button danger-button" : "primary-button"} type="button" disabled={disabled} onClick={() => reasonedAction({ action: "set_feature_flag", key, enabled: !enabled }, "Justifique a alteração da flag:")}>{enabled ? "Desativar" : "Ativar"}</button>;
   }
   return <span>—</span>;
 }

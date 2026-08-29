@@ -753,7 +753,7 @@ function TaskItem({
     <form onSubmit={submit}>
       <div><strong>{item.productName}</strong><small>{item.sku} · {item.variant}</small></div>
       <label>Esperado <input value={item.expectedQuantity} readOnly /></label>
-      <label>Conferido <input name="quantity" type="number" min={0} max={999} defaultValue={item.checkedQuantity ?? item.expectedQuantity} required /></label>
+      <label>Conferido <input name="quantity" type="number" inputMode="numeric" min={0} max={999} defaultValue={item.checkedQuantity ?? item.expectedQuantity} required /></label>
       <label>Divergência <input name="reason" maxLength={500} defaultValue={item.divergenceReason ?? ""} placeholder="Obrigatório se diferente" /></label>
       <button className="secondary-button" disabled={Boolean(processing)}><Check /> Salvar</button>
     </form>
@@ -823,6 +823,7 @@ function Inventory({
             <input
               name="quantityDelta"
               type="number"
+              inputMode="numeric"
               step="1"
               required
               autoFocus

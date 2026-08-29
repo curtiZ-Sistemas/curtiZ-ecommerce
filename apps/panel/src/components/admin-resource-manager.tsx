@@ -1,5 +1,7 @@
 "use client";
 
+import { formatBRL, formatBRLInput, parseBRLToCents } from "@curtiz/domain";
+
 import {
   Archive,
   ChevronLeft,
@@ -15,14 +17,8 @@ import {
   X
 } from "lucide-react";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from "react";
+import { usePanelPrompt } from "./panel-prompt";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   adminResources,
   type AdminResourceField,
@@ -157,7 +153,14 @@ function displayValue(value: unknown, column: string): string {
     }
     return value;
   }
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (column === "basis_points") {
+      return `${(value / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+    }
+    return column.endsWith("_in_cents") || column.endsWith("_cents")
+      ? formatBRL(value)
+      : String(value);
+  }
 
   if (typeof value === "object") {
     try {
@@ -187,11 +190,17 @@ function itemId(item: Item): string {
 function fieldValue(item: Item, field: AdminResourceField): unknown {
   const value = item[field.key];
 
+  if (field.type === "money" && typeof value === "number" && Number.isFinite(value)) {
+    return formatBRLInput(value);
+  }
+
+  if (field.type === "percentage" && typeof value === "number" && Number.isFinite(value)) {
+    return String(value / 100).replace(".", ",");
+  }
+
   if (field.type === "datetime" && typeof value === "string") {
     const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime())
-      ? ""
-      : dateTimeInput.format(parsed).replace(" ", "T");
+    return Number.isNaN(parsed.getTime()) ? "" : dateTimeInput.format(parsed).replace(" ", "T");
   }
 
   if (field.type === "json" && value && typeof value === "object") {
@@ -205,20 +214,31 @@ function formValue(value: unknown): string {
   return scalarToString(value);
 }
 
+function numberInputMode(field: AdminResourceField): "numeric" | "decimal" {
+  return /(price|amount|value|cost|percent|discount|height|width|length)/iu.test(field.key)
+    ? "decimal"
+    : "numeric";
+}
+
 function getFormValue(form: FormData, field: AdminResourceField): unknown {
   if (field.type === "boolean") {
     return form.get(field.key) === "on";
   }
 
   const value = form.get(field.key);
+  if (field.type === "money" && typeof value === "string") {
+    return value.trim() ? parseBRLToCents(value) : "";
+  }
+  if (field.type === "percentage" && typeof value === "string") {
+    if (!value.trim()) return "";
+    const percentage = Number(value.replace(",", "."));
+    return Number.isFinite(percentage) ? Math.round(percentage * 100) : value;
+  }
   return typeof value === "string" ? value : "";
 }
 
-export function AdminResourceManager({
-  resource
-}: {
-  resource: AdminResourceKey;
-}) {
+export function AdminResourceManager({ resource }: { resource: AdminResourceKey }) {
+  const requestPrompt = usePanelPrompt();
   const definition = adminResources[resource];
   const createLabel = createActionLabel(resource, definition.singular);
   const [items, setItems] = useState<Item[]>([]);
@@ -232,8 +252,7 @@ export function AdminResourceManager({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [capabilities, setCapabilities] =
-    useState<ResourceCapabilities>(noCapabilities);
+  const [capabilities, setCapabilities] = useState<ResourceCapabilities>(noCapabilities);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [stateTarget, setStateTarget] = useState<{
@@ -314,24 +333,23 @@ export function AdminResourceManager({
     const form = new FormData(event.currentTarget);
     const values: Record<string, unknown> = {};
 
-    for (const field of definition.fields) {
-      values[field.key] = getFormValue(form, field);
+    try {
+      for (const field of definition.fields) {
+        values[field.key] = getFormValue(form, field);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Revise os valores informados.");
+      setPending(false);
+      return;
     }
 
-    const isDuplicate =
-      editing !== "new" &&
-      editing._duplicate === true;
+    const isDuplicate = editing !== "new" && editing._duplicate === true;
 
-    const isNew =
-      editing === "new" ||
-      isDuplicate;
+    const isNew = editing === "new" || isDuplicate;
 
     let id: string | undefined;
 
-    if (
-      editing === "new" ||
-      isDuplicate
-    ) {
+    if (editing === "new" || isDuplicate) {
       id = undefined;
     } else {
       id = itemId(editing);
@@ -361,9 +379,7 @@ export function AdminResourceManager({
       setMessage(successMessage);
     } catch (error) {
       setMessage(
-        error instanceof Error && error.message
-          ? error.message
-          : "Não foi possível salvar."
+        error instanceof Error && error.message ? error.message : "Não foi possível salvar."
       );
     } finally {
       setPending(false);
@@ -395,9 +411,15 @@ export function AdminResourceManager({
   const updateState = async (): Promise<void> => {
     if (!stateTarget || pending) return;
 
-    const moderationReason = resource === "avaliacoes" && stateTarget.action === "archive"
-      ? window.prompt("Informe a justificativa para arquivar esta avaliação:")?.trim()
-      : undefined;
+    const moderationReason =
+      resource === "avaliacoes" && stateTarget.action === "archive"
+        ? await requestPrompt({
+            title: "Arquivar avaliação",
+            label: "Justificativa da moderação",
+            minLength: 3,
+            confirmLabel: "Continuar"
+          })
+        : undefined;
     if (resource === "avaliacoes" && stateTarget.action === "archive" && !moderationReason) return;
 
     setPending(true);
@@ -437,10 +459,7 @@ export function AdminResourceManager({
   };
 
   const isArchived = (item: Item): boolean =>
-    Boolean(
-      definition.archiveField &&
-        item[definition.archiveField] === definition.archiveValue
-    );
+    Boolean(definition.archiveField && item[definition.archiveField] === definition.archiveValue);
 
   const selectedItems = items.filter((item) => selectedIds.includes(itemId(item)));
   const selectedArchivedItems = selectedItems.filter(isArchived);
@@ -458,11 +477,7 @@ export function AdminResourceManager({
         </div>
 
         {canCreate ? (
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => setEditing("new")}
-          >
+          <button className="primary-button" type="button" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" /> {createLabel}
           </button>
         ) : null}
@@ -590,7 +605,11 @@ export function AdminResourceManager({
       ) : items.length === 0 ? (
         <div className="admin-empty-state">
           <h3>Nenhum registro encontrado</h3>
-          <p>{canCreate ? `Cadastre ${definition.singular} para começar nesta área.` : "Não há dados reais para os filtros informados."}</p>
+          <p>
+            {canCreate
+              ? `Cadastre ${definition.singular} para começar nesta área.`
+              : "Não há dados reais para os filtros informados."}
+          </p>
           {canCreate ? (
             <button className="primary-button" type="button" onClick={() => setEditing("new")}>
               <Plus aria-hidden="true" /> {createLabel}
@@ -744,11 +763,7 @@ export function AdminResourceManager({
                 <h2 id="resource-form-title">{definition.singular}</h2>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setEditing(null)}
-                aria-label="Fechar"
-              >
+              <button type="button" onClick={() => setEditing(null)} aria-label="Fechar">
                 <X />
               </button>
             </header>
@@ -759,23 +774,33 @@ export function AdminResourceManager({
                   const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
 
-                  if (resource === "banners" && (field.key === "image_path_desktop" || field.key === "image_path_mobile")) {
-                    return <BannerImageField field={field} initialPath={formValue(value)} key={field.key} />;
+                  if (
+                    resource === "banners" &&
+                    (field.key === "image_path_desktop" || field.key === "image_path_mobile")
+                  ) {
+                    return (
+                      <BannerImageField
+                        field={field}
+                        initialPath={formValue(value)}
+                        key={field.key}
+                      />
+                    );
                   }
 
                   if (resource === "banners" && field.key === "destination_type") {
                     return <BannerDestinationField source={source} key={field.key} />;
                   }
 
-                  if (resource === "banners" && ["destination_id", "destination_url"].includes(field.key)) {
+                  if (
+                    resource === "banners" &&
+                    ["destination_id", "destination_url"].includes(field.key)
+                  ) {
                     return null;
                   }
 
                   return (
                     <label
-                      className={
-                        field.type === "textarea" || field.type === "json" ? "wide" : ""
-                      }
+                      className={field.type === "textarea" || field.type === "json" ? "wide" : ""}
                       key={field.key}
                     >
                       <span>
@@ -784,11 +809,7 @@ export function AdminResourceManager({
                       </span>
 
                       {field.type === "boolean" ? (
-                        <input
-                          name={field.key}
-                          type="checkbox"
-                          defaultChecked={value === true}
-                        />
+                        <input name={field.key} type="checkbox" defaultChecked={value === true} />
                       ) : field.type === "select" ? (
                         <select
                           name={field.key}
@@ -809,6 +830,31 @@ export function AdminResourceManager({
                           required={field.required}
                           rows={field.type === "json" ? 6 : 4}
                         />
+                      ) : field.type === "money" ? (
+                        <span className="money-field-control">
+                          <span aria-hidden="true">R$</span>
+                          <input
+                            name={field.key}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={formValue(value)}
+                            required={field.required}
+                            placeholder="0,00"
+                          />
+                        </span>
+                      ) : field.type === "percentage" ? (
+                        <span className="percentage-field-control">
+                          <input
+                            name={field.key}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={formValue(value)}
+                            required={field.required}
+                            placeholder="0"
+                            aria-describedby={`${field.key}-suffix`}
+                          />
+                          <span id={`${field.key}-suffix`} aria-hidden="true">%</span>
+                        </span>
                       ) : (
                         <input
                           name={field.key}
@@ -822,6 +868,7 @@ export function AdminResourceManager({
                           defaultValue={formValue(value)}
                           required={field.required}
                           step={field.type === "number" ? "any" : undefined}
+                          inputMode={field.type === "number" ? numberInputMode(field) : undefined}
                         />
                       )}
                     </label>
@@ -937,7 +984,13 @@ function bannerPublicUrl(path: string) {
   });
 }
 
-function BannerImageField({ field, initialPath }: { field: AdminResourceField; initialPath: string }) {
+function BannerImageField({
+  field,
+  initialPath
+}: {
+  field: AdminResourceField;
+  initialPath: string;
+}) {
   const device = field.key === "image_path_mobile" ? "mobile" : "desktop";
   const [path, setPath] = useState(initialPath);
   const [preview, setPreview] = useState(() => bannerPublicUrl(initialPath));
@@ -947,7 +1000,9 @@ function BannerImageField({ field, initialPath }: { field: AdminResourceField; i
   const persisted = useRef(false);
 
   useEffect(() => {
-    const markPersisted = () => { persisted.current = true; };
+    const markPersisted = () => {
+      persisted.current = true;
+    };
     window.addEventListener("banner-form-saved", markPersisted);
     return () => {
       window.removeEventListener("banner-form-saved", markPersisted);
@@ -973,7 +1028,11 @@ function BannerImageField({ field, initialPath }: { field: AdminResourceField; i
       const response = await fetch("/api/admin/banner-media", { method: "POST", body: form });
       const payload: unknown = await response.json();
       if (!response.ok || !isRecord(payload) || typeof payload.path !== "string") {
-        throw new Error(isRecord(payload) && typeof payload.message === "string" ? payload.message : "Upload indisponível.");
+        throw new Error(
+          isRecord(payload) && typeof payload.message === "string"
+            ? payload.message
+            : "Upload indisponível."
+        );
       }
       if (uploadedPath.current) {
         void fetch("/api/admin/banner-media", {
@@ -984,9 +1043,13 @@ function BannerImageField({ field, initialPath }: { field: AdminResourceField; i
       }
       uploadedPath.current = payload.path;
       setPath(payload.path);
-      setPreview(typeof payload.publicUrl === "string" ? payload.publicUrl : bannerPublicUrl(payload.path));
+      setPreview(
+        typeof payload.publicUrl === "string" ? payload.publicUrl : bannerPublicUrl(payload.path)
+      );
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Não foi possível enviar a imagem.");
+      setError(
+        uploadError instanceof Error ? uploadError.message : "Não foi possível enviar a imagem."
+      );
     } finally {
       setUploading(false);
     }
@@ -994,53 +1057,119 @@ function BannerImageField({ field, initialPath }: { field: AdminResourceField; i
 
   return (
     <div className="banner-image-field">
-      <span>{field.label}{field.required ? " *" : ""}</span>
+      <span>
+        {field.label}
+        {field.required ? " *" : ""}
+      </span>
       <input name={field.key} type="hidden" value={path} />
-      {preview ? <img src={preview} alt={`Prévia da ${field.label.toLocaleLowerCase("pt-BR")}`} /> : <div className="banner-image-placeholder">Nenhuma imagem enviada</div>}
+      {preview ? (
+        <img src={preview} alt={`Prévia da ${field.label.toLocaleLowerCase("pt-BR")}`} />
+      ) : (
+        <div className="banner-image-placeholder">Nenhuma imagem enviada</div>
+      )}
       <label className="secondary-button">
         {uploading ? <LoaderCircle className="spin" /> : <Upload aria-hidden="true" />}
         {uploading ? "Enviando…" : "Selecionar imagem"}
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void upload(event.target.files?.[0])} disabled={uploading} />
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => void upload(event.target.files?.[0])}
+          disabled={uploading}
+        />
       </label>
       <small>JPG, PNG ou WebP, até 10 MB.</small>
-      {error ? <small className="banner-field-error" role="alert">{error}</small> : null}
+      {error ? (
+        <small className="banner-field-error" role="alert">
+          {error}
+        </small>
+      ) : null}
     </div>
   );
 }
 
 function BannerDestinationField({ source }: { source: Item }) {
-  const initialType = typeof source.destination_type === "string" ? source.destination_type : "internal_page";
+  const initialType =
+    typeof source.destination_type === "string" ? source.destination_type : "internal_page";
   const [type, setType] = useState(initialType);
-  const [targetId, setTargetId] = useState(typeof source.destination_id === "string" ? source.destination_id : "");
-  const [url, setUrl] = useState(typeof source.destination_url === "string" ? source.destination_url : "/");
+  const [targetId, setTargetId] = useState(
+    typeof source.destination_id === "string" ? source.destination_id : ""
+  );
+  const [url, setUrl] = useState(
+    typeof source.destination_url === "string" ? source.destination_url : "/"
+  );
   const [query, setQuery] = useState("");
   const [targets, setTargets] = useState<BannerTarget[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const selectable = ["product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page"].includes(type);
+  const selectable = [
+    "product",
+    "category",
+    "collection",
+    "institutional_page",
+    "guide",
+    "campaign",
+    "internal_page"
+  ].includes(type);
 
-  const loadTargets = useCallback(async (search = "") => {
-    if (!["product", "category", "collection", "institutional_page", "guide", "campaign", "internal_page"].includes(type)) return;
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({ type });
-      if (search.trim()) params.set("q", search.trim());
-      const response = await fetch(`/api/admin/banner-targets?${params}`, { cache: "no-store" });
-      const payload: unknown = await response.json();
-      if (!response.ok || !isRecord(payload)) throw new Error("Não foi possível carregar os destinos.");
-      setTargets(Array.isArray(payload.targets) ? payload.targets.filter(isRecord).flatMap((item) =>
-        typeof item.id === "string" && typeof item.label === "string" && typeof item.route === "string"
-          ? [{ id: item.id, label: item.label, detail: typeof item.detail === "string" ? item.detail : "", route: item.route }]
-          : []) : []);
-    } catch (targetError) {
-      setError(targetError instanceof Error ? targetError.message : "Não foi possível carregar os destinos.");
-    } finally {
-      setLoading(false);
-    }
-  }, [type]);
+  const loadTargets = useCallback(
+    async (search = "") => {
+      if (
+        ![
+          "product",
+          "category",
+          "collection",
+          "institutional_page",
+          "guide",
+          "campaign",
+          "internal_page"
+        ].includes(type)
+      )
+        return;
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ type });
+        if (search.trim()) params.set("q", search.trim());
+        const response = await fetch(`/api/admin/banner-targets?${params}`, { cache: "no-store" });
+        const payload: unknown = await response.json();
+        if (!response.ok || !isRecord(payload))
+          throw new Error("Não foi possível carregar os destinos.");
+        setTargets(
+          Array.isArray(payload.targets)
+            ? payload.targets
+                .filter(isRecord)
+                .flatMap((item) =>
+                  typeof item.id === "string" &&
+                  typeof item.label === "string" &&
+                  typeof item.route === "string"
+                    ? [
+                        {
+                          id: item.id,
+                          label: item.label,
+                          detail: typeof item.detail === "string" ? item.detail : "",
+                          route: item.route
+                        }
+                      ]
+                    : []
+                )
+            : []
+        );
+      } catch (targetError) {
+        setError(
+          targetError instanceof Error
+            ? targetError.message
+            : "Não foi possível carregar os destinos."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [type]
+  );
 
-  useEffect(() => { if (selectable) void loadTargets(); }, [loadTargets, selectable]);
+  useEffect(() => {
+    if (selectable) void loadTargets();
+  }, [loadTargets, selectable]);
 
   const chooseType = (nextType: string) => {
     setType(nextType);
@@ -1055,17 +1184,96 @@ function BannerDestinationField({ source }: { source: Item }) {
       <input name="destination_type" type="hidden" value={type} />
       <input name="destination_id" type="hidden" value={targetId} />
       <input name="destination_url" type="hidden" value={url} />
-      <label>Tipo<select value={type} onChange={(event) => chooseType(event.target.value)}>{Object.entries(destinationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      <label>
+        Tipo
+        <select value={type} onChange={(event) => chooseType(event.target.value)}>
+          {Object.entries(destinationLabels).map(([key, label]) => (
+            <option value={key} key={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
       {selectable ? (
         <>
-          <div className="banner-target-search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar destino" /><button className="secondary-button" type="button" onClick={() => void loadTargets(query)} disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <Search />} Buscar</button></div>
-          <label>Destino<select value={targetId} onChange={(event) => { const target = targets.find((item) => item.id === event.target.value); setTargetId(target?.id ?? ""); setUrl(target?.route ?? ""); }} required><option value="">Selecione sem digitar links</option>{targets.map((target) => <option value={target.id} key={target.id}>{target.label} · {target.detail}</option>)}</select></label>
+          <div className="banner-target-search">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Pesquisar destino"
+            />
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => void loadTargets(query)}
+              disabled={loading}
+            >
+              {loading ? <LoaderCircle className="spin" /> : <Search />} Buscar
+            </button>
+          </div>
+          <label>
+            Destino
+            <select
+              value={targetId}
+              onChange={(event) => {
+                const target = targets.find((item) => item.id === event.target.value);
+                setTargetId(target?.id ?? "");
+                setUrl(target?.route ?? "");
+              }}
+              required
+            >
+              <option value="">Selecione sem digitar links</option>
+              {targets.map((target) => (
+                <option value={target.id} key={target.id}>
+                  {target.label} · {target.detail}
+                </option>
+              ))}
+            </select>
+          </label>
         </>
       ) : null}
-      {type === "predefined_search" ? <label>Busca<input value={url.startsWith("/busca?q=") ? decodeURIComponent(url.slice(9)) : ""} onChange={(event) => setUrl(event.target.value.trim() ? `/busca?q=${encodeURIComponent(event.target.value.trim())}` : "")} placeholder="Termo de busca" required /></label> : null}
-      {type === "external_url" ? <label>URL HTTPS autorizada<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://dominio-autorizado.com/…" required /><small>O domínio precisa constar em Configurações administrativas → banner_external_hosts.</small></label> : null}
-      {url && type !== "none" ? <p>Destino gerado: <code>{url}</code></p> : null}
-      {error ? <p className="banner-field-error" role="alert">{error}</p> : null}
+      {type === "predefined_search" ? (
+        <label>
+          Busca
+          <input
+            value={url.startsWith("/busca?q=") ? decodeURIComponent(url.slice(9)) : ""}
+            onChange={(event) =>
+              setUrl(
+                event.target.value.trim()
+                  ? `/busca?q=${encodeURIComponent(event.target.value.trim())}`
+                  : ""
+              )
+            }
+            placeholder="Termo de busca"
+            required
+          />
+        </label>
+      ) : null}
+      {type === "external_url" ? (
+        <label>
+          URL HTTPS autorizada
+          <input
+            type="url"
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://dominio-autorizado.com/…"
+            required
+          />
+          <small>
+            O domínio precisa constar em Configurações administrativas → banner_external_hosts.
+          </small>
+        </label>
+      ) : null}
+      {url && type !== "none" ? (
+        <p>
+          Destino gerado: <code>{url}</code>
+        </p>
+      ) : null}
+      {error ? (
+        <p className="banner-field-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
