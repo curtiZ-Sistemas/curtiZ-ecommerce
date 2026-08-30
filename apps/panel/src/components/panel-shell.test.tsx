@@ -103,5 +103,8 @@ describe("PanelShell multipainel", () => {
     expect(markup).not.toContain('href="/administracao/estoque"');
     expect(markup).not.toContain('href="/administracao/modelos"');
     expect(markup).not.toContain('href="/administracao/configuracoes"');
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("<summary");
+    expect(markup).toContain('<section class="side-nav-section">');
   });
 });

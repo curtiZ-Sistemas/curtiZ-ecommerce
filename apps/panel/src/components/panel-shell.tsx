@@ -504,14 +504,9 @@ export function PanelShell({
         <p className="sidebar-context">Painel {roleLabels[role]}</p>
         <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
           {navigationGroups.map((group) => {
-            const containsActiveItem = group.items.some(([, route]) => route === section);
             return (
-              <details
-                className="side-nav-section"
-                open={containsActiveItem || group.items[0]?.[1] === "" ? true : undefined}
-                key={`${role}-${group.label}`}
-              >
-                <summary>{group.label}</summary>
+              <section className="side-nav-section" key={`${role}-${group.label}`}>
+                <h2>{group.label}</h2>
                 <div>
                   {group.items.map(([label, route, Icon]) => {
                     const href = route ? `/${role}/${route}` : `/${role}`;
@@ -530,7 +525,7 @@ export function PanelShell({
                     );
                   })}
                 </div>
-              </details>
+              </section>
             );
           })}
         </nav>

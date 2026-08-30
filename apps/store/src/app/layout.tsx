@@ -3,7 +3,6 @@ import { Manrope } from "next/font/google";
 import { connection } from "next/server";
 import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
-import { HelpChat } from "@/components/help-chat";
 import { RouteFeedback } from "@/components/route-feedback";
 import { CookiePreferences } from "@/components/cookie-preferences";
 import { SiteFooter } from "@/components/site-footer";
@@ -14,7 +13,8 @@ import { getPromotionBarMessages } from "@/lib/promotion-bar-data";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
-const storeDescription = "Chinelos, slides e sandálias curti Z com conforto, design e compra organizada.";
+const storeDescription =
+  "Chinelos, slides e sandálias curti Z com conforto, design e compra organizada.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"),
@@ -56,7 +56,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <SiteHeader />
             <main id="main-content">{children}</main>
             <SiteFooter />
-            <HelpChat />
+            {/* Chat temporariamente desativado. */}
             <CookiePreferences />
           </FavoritesProvider>
         </CartProvider>

@@ -50,7 +50,9 @@ describe("public storefront components", () => {
   });
 
   it("não cria link decorativo quando o banner não possui destino", () => {
-    const html = renderToStaticMarkup(<HomepageHero banners={[{ ...banners[0]!, href: undefined }]} />);
+    const html = renderToStaticMarkup(
+      <HomepageHero banners={[{ ...banners[0]!, href: undefined }]} />
+    );
     expect(html).not.toContain("<a");
     expect(html).toContain("hero-picture");
   });
@@ -62,6 +64,9 @@ describe("public storefront components", () => {
     expect(html).toContain('role="combobox"');
     expect(html).toContain('aria-autocomplete="list"');
     expect(html).toContain('action="/busca"');
+    expect(html).toContain('placeholder="Qual pegada você vai curti?"');
+    expect(html).toContain('type="submit" aria-label="Buscar"');
+    expect(html).not.toContain(">Buscar</button>");
   });
 
   it("mostra produto disponível sem revelar quantidade ou texto de estoque", () => {

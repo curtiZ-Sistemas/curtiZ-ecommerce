@@ -150,7 +150,6 @@ export function SiteHeader() {
             <div className="container mobile-search-content">
               <SearchAutocomplete
                 idPrefix="mobile"
-                placeholder="O que você procura?"
                 autoFocus
                 onNavigate={() => setSearchOpen(false)}
               />

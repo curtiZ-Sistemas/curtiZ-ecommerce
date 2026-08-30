@@ -34,7 +34,7 @@ type RecommendationResult = { products?: Product[] };
 export function SearchAutocomplete({
   idPrefix,
   className = "",
-  placeholder = "Busque por produto, cor ou categoria",
+  placeholder = "Qual pegada você vai curti?",
   autoFocus = false,
   onNavigate
 }: {
@@ -104,7 +104,9 @@ export function SearchAutocomplete({
         if (!response.ok) throw new Error("recommendations_unavailable");
         return (await response.json()) as RecommendationResult;
       })
-      .then((result) => setRecommendations((result.products ?? []).filter((item) => item.stock > 0).slice(0, 3)))
+      .then((result) =>
+        setRecommendations((result.products ?? []).filter((item) => item.stock > 0).slice(0, 3))
+      )
       .catch(() => {
         if (!controller.signal.aborted) setRecommendations([]);
       })
@@ -144,7 +146,8 @@ export function SearchAutocomplete({
           setCategories(result.facets.categories.slice(0, 3));
           setSearchComplete(true);
           trackIntelligence({ type: "search", query: normalized, resultCount: result.total });
-          if (result.total === 0) trackIntelligence({ type: "search_no_results", query: normalized, resultCount: 0 });
+          if (result.total === 0)
+            trackIntelligence({ type: "search_no_results", query: normalized, resultCount: 0 });
         })
         .catch(() => {
           if (!controller.signal.aborted && requestSequence.current === sequence) {
@@ -235,7 +238,15 @@ export function SearchAutocomplete({
 
   const navigate = (option: SearchOption) => {
     const normalizedQuery = normalizeSearchTerm(query);
-    if ((option.type === "product" || option.type === "recommendation") && normalizedQuery.length >= 2) trackIntelligence({ type: "search_result_click", query: normalizedQuery, productId: option.product.id });
+    if (
+      (option.type === "product" || option.type === "recommendation") &&
+      normalizedQuery.length >= 2
+    )
+      trackIntelligence({
+        type: "search_result_click",
+        query: normalizedQuery,
+        productId: option.product.id
+      });
     if (option.type === "recent") saveRecent(option.label);
     else if (normalizedQuery.length >= 2) saveRecent(normalizedQuery);
     setFocused(false);
@@ -287,11 +298,6 @@ export function SearchAutocomplete({
       }}
     >
       <form className="search-form" action="/busca" role="search" onSubmit={submit}>
-        {loading ? (
-          <LoaderCircle className="spin" aria-hidden="true" />
-        ) : (
-          <Search aria-hidden="true" />
-        )}
         <label className="sr-only" htmlFor={`${idPrefix}-search`}>
           Buscar produtos
         </label>
@@ -314,7 +320,13 @@ export function SearchAutocomplete({
           aria-controls={listId}
           aria-activedescendant={activeIndex >= 0 ? options[activeIndex]?.id : undefined}
         />
-        <button type="submit">Buscar</button>
+        <button type="submit" aria-label="Buscar">
+          {loading ? (
+            <LoaderCircle className="spin" aria-hidden="true" />
+          ) : (
+            <Search aria-hidden="true" />
+          )}
+        </button>
       </form>
 
       {showPanel && (
@@ -332,22 +344,29 @@ export function SearchAutocomplete({
                   : "Sugestões para você"
                 : normalizedQuery.length < 2
                   ? "Continue digitando"
-                : loading
-                  ? "Buscando produtos…"
-                  : noResults
-                    ? "Nenhum resultado exato"
-                  : options.length
-                    ? "Sugestões"
-                    : "Busca indisponível"}
+                  : loading
+                    ? "Buscando produtos…"
+                    : noResults
+                      ? "Nenhum resultado exato"
+                      : options.length
+                        ? "Sugestões"
+                        : "Busca indisponível"}
             </strong>
-            {!loading && normalizedQuery.length >= 2 && !noResults ? <span>{options.length} opções</span> : null}
+            {!loading && normalizedQuery.length >= 2 && !noResults ? (
+              <span>{options.length} opções</span>
+            ) : null}
             {noResults && recommendations.length ? <span>Você pode gostar de</span> : null}
           </div>
           {(emptyRecommendations || noResults) && recommendationsLoading ? (
-            <p className="search-suggestions-status"><LoaderCircle className="spin" aria-hidden="true" /> Preparando sugestões</p>
+            <p className="search-suggestions-status">
+              <LoaderCircle className="spin" aria-hidden="true" /> Preparando sugestões
+            </p>
           ) : null}
           {options.map((option, index) => (
-            <div className={option.type === "recent" ? "search-history-row" : undefined} key={option.id}>
+            <div
+              className={option.type === "recent" ? "search-history-row" : undefined}
+              key={option.id}
+            >
               <button
                 id={option.id}
                 className={activeIndex === index ? "search-suggestion active" : "search-suggestion"}
@@ -388,7 +407,11 @@ export function SearchAutocomplete({
               ) : null}
             </div>
           ))}
-          {normalizedQuery.length === 1 ? <p className="search-suggestions-status">Digite mais um caractere para ver resultados.</p> : null}
+          {normalizedQuery.length === 1 ? (
+            <p className="search-suggestions-status">
+              Digite mais um caractere para ver resultados.
+            </p>
+          ) : null}
           {normalizedQuery.length >= 2 && (
             <button
               className="search-all-results"
