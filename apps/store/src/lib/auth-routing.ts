@@ -1,6 +1,6 @@
 export const loginDestinations = {
   customer: "/minha-conta",
-  representative: "/representante",
+  representative: "/minha-conta",
   operational: "/operacional",
   admin: "/administracao",
   manager: "/gerencia",
@@ -26,4 +26,16 @@ export const resolveLoginDestination = (roles: string[]): string | null => {
   if (selectableCount >= 2) return "/selecionar-painel";
   const role = resolveLoginRole(roles);
   return role ? loginDestinations[role] : null;
+};
+
+export const resolvePostLoginDestination = (destination: string): string => {
+  if (
+    destination === "/representante" ||
+    destination.startsWith("/representante/") ||
+    destination.startsWith("/representante?") ||
+    destination.startsWith("/representante#")
+  ) {
+    return loginDestinations.customer;
+  }
+  return destination;
 };

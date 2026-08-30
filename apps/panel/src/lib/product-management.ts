@@ -66,6 +66,30 @@ export type EditableVariant = {
   active: boolean;
 };
 
+export const MAX_PRODUCT_MEDIA_SIZE = 10 * 1024 * 1024;
+export const PRODUCT_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export function partitionProductMediaFiles<T extends { name: string; size: number; type: string }>(
+  files: readonly T[]
+) {
+  const accepted: T[] = [];
+  const rejected: T[] = [];
+
+  files.forEach((file) => {
+    if (
+      file.size > 0 &&
+      file.size <= MAX_PRODUCT_MEDIA_SIZE &&
+      PRODUCT_MEDIA_TYPES.has(file.type)
+    ) {
+      accepted.push(file);
+    } else {
+      rejected.push(file);
+    }
+  });
+
+  return { accepted, rejected };
+}
+
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu;
 
 export function isManagedProduct(value: unknown): value is ManagedProduct {
@@ -124,8 +148,14 @@ export function isManagedProduct(value: unknown): value is ManagedProduct {
   });
 }
 
-const tokens = (value: string) =>
-  [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+const tokens = (value: string) => [
+  ...new Set(
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )
+];
 
 const skuPart = (value: string) =>
   value

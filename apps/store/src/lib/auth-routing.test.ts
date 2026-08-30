@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { loginDestinations, resolveLoginDestination, resolveLoginRole } from "./auth-routing";
+import {
+  loginDestinations,
+  resolveLoginDestination,
+  resolveLoginRole,
+  resolvePostLoginDestination
+} from "./auth-routing";
 
 describe("login routing", () => {
   it.each([
     ["customer", "/minha-conta"],
-    ["representative", "/representante"],
+    ["representative", "/minha-conta"],
     ["operational", "/operacional"],
     ["admin", "/administracao"],
     ["manager", "/gerencia"],
@@ -30,9 +35,25 @@ describe("login routing", () => {
     [["manager"], "/gerencia"],
     [["operational"], "/operacional"],
     [["customer"], "/minha-conta"],
-    [["representative"], "/representante"],
+    [["representative"], "/minha-conta"],
     [["technical"], "/tecnico"]
   ])("preserva o destino de %j", (roles, destination) => {
     expect(resolveLoginDestination(roles)).toBe(destination);
   });
+
+  it.each([
+    "/representante",
+    "/representante/vendas",
+    "/representante?origem=login",
+    "/representante#resumo"
+  ])("leva o login do portal %s primeiro para a conta do cliente", (destination) => {
+    expect(resolvePostLoginDestination(destination)).toBe("/minha-conta");
+  });
+
+  it.each(["/checkout", "/carrinho", "/minha-conta/pedidos"])(
+    "preserva o retorno legítimo para %s",
+    (destination) => {
+      expect(resolvePostLoginDestination(destination)).toBe(destination);
+    }
+  );
 });

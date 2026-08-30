@@ -1,7 +1,8 @@
 "use client";
 
 import type { CartLine, Product } from "@curtiz/domain";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicCatalog, publicCatalogUrl } from "@/lib/public-catalog-client";
 import { ProductCard } from "./product-card";
 
@@ -11,6 +12,7 @@ type RecommendationState =
   | { status: "error"; products: Product[] };
 
 export function CartRecommendations({ lines }: { lines: CartLine[] }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const [reload, setReload] = useState(0);
   const [state, setState] = useState<RecommendationState>({
     status: "loading",
@@ -68,6 +70,16 @@ export function CartRecommendations({ lines }: { lines: CartLine[] }) {
     return () => controller.abort();
   }, [categoryKey, productKey, reload]);
 
+  const scrollRecommendations = (direction: -1 | 1) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scroller.scrollBy({
+      left: direction * scroller.clientWidth,
+      behavior: reduceMotion ? "auto" : "smooth"
+    });
+  };
+
   return (
     <section className="cart-recommendations" aria-labelledby="cart-recommendations-title">
       <div className="cart-recommendations-heading">
@@ -75,6 +87,24 @@ export function CartRecommendations({ lines }: { lines: CartLine[] }) {
           <p className="eyebrow">Complete sua seleção</p>
           <h2 id="cart-recommendations-title">Você também pode gostar</h2>
         </div>
+        {state.status === "success" && state.products.length > 4 ? (
+          <div className="cart-recommendation-controls" aria-label="Navegar pelas recomendações">
+            <button
+              type="button"
+              aria-label="Ver produtos anteriores"
+              onClick={() => scrollRecommendations(-1)}
+            >
+              <ArrowLeft aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="Ver próximos produtos"
+              onClick={() => scrollRecommendations(1)}
+            >
+              <ArrowRight aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {state.status === "loading" ? (
@@ -101,7 +131,7 @@ export function CartRecommendations({ lines }: { lines: CartLine[] }) {
           </button>
         </div>
       ) : state.products.length > 0 ? (
-        <div className="cart-recommendation-grid">
+        <div className="cart-recommendation-grid" ref={scrollerRef}>
           {state.products.map((product) => (
             <ProductCard
               product={product}

@@ -15,7 +15,11 @@ import {
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
-import { resolveLoginDestination, resolveLoginRole } from "@/lib/auth-routing";
+import {
+  resolveLoginDestination,
+  resolveLoginRole,
+  resolvePostLoginDestination
+} from "@/lib/auth-routing";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
@@ -258,7 +262,7 @@ function demoLoginResponse(
   const destination = demoDestination(account.role);
   const redirectTo =
     account.role === "customer" || account.role === "representative"
-      ? safeInternalPath(login.next, destination)
+      ? resolvePostLoginDestination(safeInternalPath(login.next, destination))
       : new URL(destination, panelBaseUrl(request)).toString();
   const response = NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
@@ -733,7 +737,9 @@ export async function POST(
   const panelUrl = panelBaseUrl(request);
   let redirectTo =
     role === "customer" || role === "representative"
-      ? safeInternalPath(login.next, safeInternalPath(destination, "/minha-conta"))
+      ? resolvePostLoginDestination(
+          safeInternalPath(login.next, safeInternalPath(destination, "/minha-conta"))
+        )
       : new URL(destination, panelUrl).toString();
 
   if (internalRole && process.env.REQUIRE_INTERNAL_MFA === "true") {

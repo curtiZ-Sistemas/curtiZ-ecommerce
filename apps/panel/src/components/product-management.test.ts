@@ -3,7 +3,8 @@ import {
   filterManagedProducts,
   generateVariantCombinations,
   groupEditableVariantsByColor,
-  isManagedProduct
+  isManagedProduct,
+  partitionProductMediaFiles
 } from "../lib/product-management";
 
 const products = [
@@ -66,7 +67,9 @@ describe("product management", () => {
     ];
     const groups = groupEditableVariantsByColor(variants);
 
-    expect(groups.map((group) => [group.color, group.variants.map(({ variant }) => variant.size)])).toEqual([
+    expect(
+      groups.map((group) => [group.color, group.variants.map(({ variant }) => variant.size)])
+    ).toEqual([
       ["Azul", ["35", "36"]],
       ["Preto", ["39"]]
     ]);
@@ -86,8 +89,28 @@ describe("product management", () => {
     expect(
       isManagedProduct({
         ...products[0],
-        images: [{ id: crypto.randomUUID(), path: "invalida.webp", url: "", alt: "", primary: true, sortOrder: 0 }]
+        images: [
+          {
+            id: crypto.randomUUID(),
+            path: "invalida.webp",
+            url: "",
+            alt: "",
+            primary: true,
+            sortOrder: 0
+          }
+        ]
       })
     ).toBe(false);
+  });
+
+  it("aceita apenas imagens suportadas de até 10 MB", () => {
+    const valid = { name: "produto.webp", type: "image/webp", size: 2_000_000 };
+    const tooLarge = { name: "grande.png", type: "image/png", size: 10 * 1024 * 1024 + 1 };
+    const invalidType = { name: "produto.svg", type: "image/svg+xml", size: 2_000 };
+
+    expect(partitionProductMediaFiles([valid, tooLarge, invalidType])).toEqual({
+      accepted: [valid],
+      rejected: [tooLarge, invalidType]
+    });
   });
 });

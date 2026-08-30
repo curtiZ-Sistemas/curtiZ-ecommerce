@@ -31,6 +31,7 @@ import {
   generateVariantCombinations,
   groupEditableVariantsByColor,
   isManagedProduct,
+  partitionProductMediaFiles,
   type ManagedProduct
 } from "@/lib/product-management";
 
@@ -76,6 +77,61 @@ const productStatusLabel = (status: string) =>
   })[status] ?? status;
 
 type ProductManagementView = "produtos" | "variacoes" | "midias" | "estoque";
+
+type ProductEditorSection =
+  "information" | "commercial" | "images" | "variants" | "logistics" | "content";
+
+const productEditorSections: Array<{
+  id: ProductEditorSection;
+  label: string;
+  target: string;
+}> = [
+  { id: "information", label: "Informações", target: "product-step-1" },
+  { id: "commercial", label: "Preços", target: "product-step-3" },
+  { id: "images", label: "Imagens", target: "product-step-4" },
+  { id: "variants", label: "Variações", target: "product-step-5" },
+  { id: "logistics", label: "Logística", target: "product-step-7" },
+  { id: "content", label: "Conteúdo e SEO", target: "product-step-8" }
+];
+
+function QueuedProductImage({
+  file,
+  index,
+  onRemove
+}: {
+  file: File;
+  index: number;
+  onRemove: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <article className="product-media-queued-item">
+      {previewUrl ? (
+        <Image
+          src={previewUrl}
+          alt={`Prévia da imagem ${index + 1}`}
+          width={160}
+          height={160}
+          unoptimized
+        />
+      ) : null}
+      <div>
+        <strong>{file.name}</strong>
+        <span>{index === 0 ? "Será a imagem principal" : "Pronta para envio"}</span>
+        <button className="secondary-button" type="button" onClick={onRemove}>
+          <Trash2 /> Remover
+        </button>
+      </div>
+    </article>
+  );
+}
 
 const productViewCopy: Record<ProductManagementView, { title: string; detail: string }> = {
   produtos: { title: "Produtos", detail: "Estoque, variações e fotos" },
@@ -137,6 +193,9 @@ export function ProductManagement({
     null
   );
   const [draggedMediaId, setDraggedMediaId] = useState("");
+  const [queuedMediaFiles, setQueuedMediaFiles] = useState<File[]>([]);
+  const [activeEditorSection, setActiveEditorSection] =
+    useState<ProductEditorSection>("information");
   const pendingActionRef = useRef(false);
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
   const reasons = useRef<Record<string, HTMLInputElement | null>>({});
@@ -223,6 +282,8 @@ export function ProductManagement({
       setVariantSkuPrefix("");
       setNewVariantSizes({});
       setColorImageSelections({});
+      setQueuedMediaFiles([]);
+      setActiveEditorSection("information");
       setEditorDirty(false);
       return;
     }
@@ -254,7 +315,15 @@ export function ProductManagement({
     setEditing(null);
     setEditorDirty(false);
     setNewVariantSizes({});
+    setQueuedMediaFiles([]);
+    setActiveEditorSection("information");
   }, []);
+
+  const openNewProduct = () => {
+    setQueuedMediaFiles([]);
+    setActiveEditorSection("information");
+    setEditing("new");
+  };
 
   useEffect(() => {
     if (!editingKey) return;
@@ -283,6 +352,7 @@ export function ProductManagement({
     () => groupEditableVariantsByColor(editableVariants),
     [editableVariants]
   );
+  const editorImages = editing === "new" || !editing ? [] : (editing.images ?? []);
 
   const readProduct = async (productId: string) => {
     const params = new URLSearchParams({ productId });
@@ -307,6 +377,8 @@ export function ProductManagement({
     if (openingProductId || pending) return;
     setOpeningProductId(product.id);
     setMessage("");
+    setQueuedMediaFiles([]);
+    setActiveEditorSection("information");
     try {
       setEditing(await readProduct(product.id));
     } catch (error) {
@@ -350,11 +422,13 @@ export function ProductManagement({
   const saveProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
+    const wasNew = editing === "new";
+    const hadQueuedMedia = queuedMediaFiles.length > 0;
     const form = new FormData(event.currentTarget);
     const result = await execute(
       {
         action: "save",
-        ...(editing === "new" ? {} : { productId: editing.id }),
+        ...(wasNew ? {} : { productId: editing.id }),
         name: form.get("name"),
         slug: form.get("slug"),
         shortDescription: form.get("shortDescription"),
@@ -363,7 +437,7 @@ export function ProductManagement({
         modelId: form.get("modelId") || null,
         collectionId: form.get("collectionId") || null,
         status: form.get("status"),
-        statusReason: form.get("statusReason"),
+        statusReason: form.get("statusReason") || undefined,
         featured: form.get("featured") === "on",
         priceInCents: Math.round(Number(form.get("price")) * 100),
         compareAtPriceInCents: form.get("compareAtPrice")
@@ -379,16 +453,26 @@ export function ProductManagement({
         stockReason: form.get("stockReason"),
         variants: editableVariants
       },
-      editing === "new" ? "new-product" : editing.id
+      wasNew ? "new-product" : editing.id
     );
     if (!result) return;
 
-    const productId = result.productId ?? (editing === "new" ? "" : editing.id);
+    const productId = result.productId ?? (wasNew ? "" : editing.id);
     if (!productId) return;
     pendingActionRef.current = true;
     setPending(`save-${productId}`);
     try {
       let savedProduct = await readProduct(productId);
+      setEditing(savedProduct);
+      setEditorDirty(false);
+
+      if (queuedMediaFiles.length) {
+        await sendMediaFiles(savedProduct, queuedMediaFiles, (uploadedFile) => {
+          setQueuedMediaFiles((current) => current.filter((file) => file !== uploadedFile));
+        });
+        savedProduct = await readProduct(productId);
+        await load();
+      }
       for (const [groupKey, imageId] of Object.entries(colorImageSelections)) {
         const variant = savedProduct.variants.find(
           (item) => item.color.trim().toLocaleLowerCase("pt-BR") === groupKey
@@ -409,17 +493,29 @@ export function ProductManagement({
       }
       if (Object.keys(colorImageSelections).length) savedProduct = await readProduct(productId);
       setEditing(savedProduct);
+      setQueuedMediaFiles([]);
       setColorImageSelections({});
       setEditorDirty(false);
       setMessage(
-        editing === "new"
-          ? "Rascunho criado. Envie as fotos e continue com as cores e tamanhos."
+        wasNew
+          ? queuedMediaFiles.length
+            ? "Produto criado e imagens enviadas. Continue com as cores e tamanhos quando necessário."
+            : "Produto criado como rascunho."
           : "Produto atualizado."
       );
     } catch (error) {
+      try {
+        setEditing(await readProduct(productId));
+        await load();
+      } catch {
+        // Preserve the original save/upload error below.
+      }
+      setEditorDirty(hadQueuedMedia);
       setMessage(
         error instanceof Error
-          ? error.message
+          ? hadQueuedMedia
+            ? `O produto foi salvo, mas as imagens não foram concluídas: ${error.message}`
+            : `O produto foi salvo, mas uma configuração complementar falhou: ${error.message}`
           : "Produto salvo, mas a galeria não pôde ser atualizada."
       );
     } finally {
@@ -560,27 +656,78 @@ export function ProductManagement({
     setMessage("Variação duplicada. Revise tamanho, SKU, preço e estoque antes de salvar.");
   };
 
-  const uploadMedia = async (product: ManagedProduct, files: FileList | null) => {
-    if (!files?.length || pending) return;
+  const sendMediaFiles = async (
+    product: ManagedProduct,
+    files: readonly File[],
+    onUploaded?: (file: File) => void
+  ) => {
+    let uploaded = 0;
+    for (const [index, file] of files.entries()) {
+      const form = new FormData();
+      form.set("productId", product.id);
+      form.set("file", file);
+      form.set("alt", product.name);
+      form.set("primary", String((product.images?.length ?? 0) === 0 && index === 0));
+      const response = await fetch("/api/catalog/products/media", { method: "POST", body: form });
+      const result = (await response.json()) as CatalogResponse;
+      if (!response.ok) throw new Error(result.message ?? "Falha no upload.");
+      uploaded += 1;
+      onUploaded?.(file);
+    }
+    return uploaded;
+  };
+
+  const selectNewProductMedia = (files: readonly File[]) => {
+    const { accepted, rejected } = partitionProductMediaFiles(files);
+    if (accepted.length) {
+      setQueuedMediaFiles((current) => {
+        const existing = new Set(
+          current.map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+        );
+        const additions = accepted.filter((file) => {
+          const key = `${file.name}:${file.size}:${file.lastModified}`;
+          if (existing.has(key)) return false;
+          existing.add(key);
+          return true;
+        });
+        return [...current, ...additions];
+      });
+      setEditorDirty(true);
+    }
+    setMessage(
+      rejected.length
+        ? `${rejected.length} arquivo(s) ignorado(s). Use JPG, PNG ou WebP de até 10 MB.`
+        : `${accepted.length} imagem(ns) pronta(s) para envio.`
+    );
+  };
+
+  const uploadMedia = async (product: ManagedProduct, files: readonly File[]) => {
+    const { accepted, rejected } = partitionProductMediaFiles(files);
+    if (!accepted.length || pending) {
+      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB.");
+      return;
+    }
     setPending(`media-${product.id}`);
     setMessage("");
+    let uploaded = 0;
     try {
-      let uploaded = 0;
-      for (const [index, file] of [...files].entries()) {
-        const form = new FormData();
-        form.set("productId", product.id);
-        form.set("file", file);
-        form.set("alt", product.name);
-        form.set("primary", String((product.images?.length ?? 0) === 0 && index === 0));
-        const response = await fetch("/api/catalog/products/media", { method: "POST", body: form });
-        const result = (await response.json()) as CatalogResponse;
-        if (!response.ok) throw new Error(result.message ?? "Falha no upload.");
+      await sendMediaFiles(product, accepted, () => {
         uploaded += 1;
-      }
-      setMessage(`${uploaded} imagem(ns) adicionada(s) ao produto.`);
+      });
+      setMessage(
+        `${uploaded} imagem(ns) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`
+      );
       await load();
       await refreshEditingProduct(product.id);
     } catch (error) {
+      if (uploaded) {
+        try {
+          await load();
+          await refreshEditingProduct(product.id);
+        } catch {
+          // Keep the upload failure as the actionable message.
+        }
+      }
       setMessage(error instanceof Error ? error.message : "Não foi possível enviar as imagens.");
     } finally {
       setPending("");
@@ -670,7 +817,7 @@ export function ProductManagement({
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <button className="primary-button" type="button" onClick={openNewProduct}>
               <Plus /> Cadastrar produto
             </button>
           ) : null}
@@ -827,7 +974,7 @@ export function ProductManagement({
               : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}
           </span>
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <button className="primary-button" type="button" onClick={openNewProduct}>
               <Plus /> Cadastrar produto
             </button>
           ) : null}
@@ -1116,7 +1263,11 @@ export function ProductManagement({
                                 accept="image/jpeg,image/png,image/webp"
                                 multiple
                                 disabled={Boolean(pending)}
-                                onChange={(event) => void uploadMedia(product, event.target.files)}
+                                onChange={(event) => {
+                                  const files = [...(event.currentTarget.files ?? [])];
+                                  event.currentTarget.value = "";
+                                  void uploadMedia(product, files);
+                                }}
                               />
                             </label>
                           ) : null}
@@ -1342,13 +1493,19 @@ export function ProductManagement({
         >
           <div className="product-editor-drawer">
             <nav className="product-editor-nav" aria-label="Seções do cadastro">
-              <a href="#product-step-1">Essencial</a>
-              <a href="#product-step-3">Comercial</a>
-              <a href="#product-step-4">Fotos</a>
-              <a href="#product-step-5">Variações</a>
-              <a href="#product-step-7">Logística</a>
-              <a href="#product-step-8">Conteúdo</a>
-              <a href="#product-step-10">Revisão</a>
+              {productEditorSections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  aria-current={activeEditorSection === section.id ? "step" : undefined}
+                  onClick={() => {
+                    setActiveEditorSection(section.id);
+                    document.getElementById(section.target)?.scrollIntoView({ block: "start" });
+                  }}
+                >
+                  {section.label}
+                </button>
+              ))}
             </nav>
             <form
               ref={editorFormRef}
@@ -1357,8 +1514,11 @@ export function ProductManagement({
             >
               <div className="admin-form-grid">
                 <h3 className="wide product-form-section" id="product-step-1">
-                  Informações essenciais
+                  Informações do produto
                 </h3>
+                <p className="wide product-form-guidance">
+                  Comece pelos dados que identificam o produto. Campos com * são obrigatórios.
+                </p>
                 <label>
                   <span>Nome *</span>
                   <input
@@ -1383,9 +1543,7 @@ export function ProductManagement({
                     defaultValue={editing === "new" ? "" : editing.slug}
                   />
                 </label>
-                <h3 className="wide product-form-section" id="product-step-2">
-                  Organização do catálogo
-                </h3>
+                <p className="wide product-form-subsection">Organização no catálogo</p>
                 <label>
                   <span>Categoria *</span>
                   <select
@@ -1426,35 +1584,34 @@ export function ProductManagement({
                     ))}
                   </select>
                 </label>
-                <label>
-                  <span>Status</span>
-                  {editing === "new" ? <input name="status" type="hidden" value="draft" /> : null}
-                  <select
-                    name={editing === "new" ? undefined : "status"}
-                    disabled={editing === "new"}
-                    defaultValue={editing === "new" ? "draft" : editing.status}
-                  >
-                    <option value="draft">Rascunho</option>
-                    <option value="pending_review">Em análise</option>
-                    <option value="active">Publicado</option>
-                    <option value="inactive">Inativo</option>
-                    <option value="out_of_stock">Sem estoque</option>
-                    <option value="rejected">Rejeitado</option>
-                    {capabilities.archive ||
-                    (editing !== "new" && editing.status === "archived") ? (
-                      <option value="archived">Arquivado</option>
-                    ) : null}
-                  </select>
-                </label>
-                <label className="wide">
-                  <span>Motivo do status</span>
-                  <textarea
-                    name="statusReason"
-                    rows={3}
-                    defaultValue={editing === "new" ? "" : editing.statusReason}
-                    placeholder="Obrigatório para inativar, rejeitar ou arquivar"
-                  />
-                </label>
+                {editing === "new" ? (
+                  <input name="status" type="hidden" value="draft" />
+                ) : (
+                  <>
+                    <label>
+                      <span>Status</span>
+                      <select name="status" defaultValue={editing.status}>
+                        <option value="draft">Rascunho</option>
+                        <option value="pending_review">Em análise</option>
+                        <option value="active">Publicado</option>
+                        <option value="inactive">Inativo</option>
+                        <option value="out_of_stock">Sem estoque</option>
+                        <option value="rejected">Rejeitado</option>
+                        {capabilities.archive || editing.status === "archived" ? (
+                          <option value="archived">Arquivado</option>
+                        ) : null}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Motivo do status</span>
+                      <input
+                        name="statusReason"
+                        defaultValue={editing.statusReason}
+                        placeholder="Necessário ao inativar, rejeitar ou arquivar"
+                      />
+                    </label>
+                  </>
+                )}
                 <h3 className="wide product-form-section" id="product-step-3">
                   Preço
                 </h3>
@@ -1500,16 +1657,65 @@ export function ProductManagement({
                   />
                 </label>
                 <h3 className="wide product-form-section" id="product-step-4">
-                  Fotos
+                  Imagens
                 </h3>
                 <p className="wide product-media-note">
                   {editing === "new"
-                    ? "Salve as informações básicas para liberar a galeria geral."
-                    : "Envie todas as fotos uma única vez. Depois, escolha uma delas em cada cor."}
+                    ? "Escolha as imagens agora. Elas serão enviadas automaticamente quando o produto for criado."
+                    : "Envie as fotos aqui e depois associe a imagem correta a cada cor."}
                 </p>
-                {editing !== "new" ? (
+                {editing === "new" ? (
+                  <section className="wide product-editor-media" aria-label="Imagens selecionadas">
+                    <header>
+                      <div>
+                        <strong>Galeria do produto</strong>
+                        <span>JPG, PNG ou WebP de até 10 MB por imagem</span>
+                      </div>
+                      <label className="secondary-button product-media-upload">
+                        <Upload /> Selecionar imagens
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          disabled={Boolean(pending)}
+                          onChange={(event) => {
+                            const files = [...(event.currentTarget.files ?? [])];
+                            event.currentTarget.value = "";
+                            selectNewProductMedia(files);
+                          }}
+                        />
+                      </label>
+                    </header>
+                    {queuedMediaFiles.length ? (
+                      <div className="product-media-queued-grid">
+                        {queuedMediaFiles.map((file, index) => (
+                          <QueuedProductImage
+                            key={`${file.name}-${file.size}-${file.lastModified}`}
+                            file={file}
+                            index={index}
+                            onRemove={() => {
+                              setQueuedMediaFiles((current) =>
+                                current.filter((candidate) => candidate !== file)
+                              );
+                              setEditorDirty(true);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="product-media-empty">
+                        <ImageIcon aria-hidden="true" />
+                        <span>Nenhuma imagem selecionada.</span>
+                      </div>
+                    )}
+                  </section>
+                ) : (
                   <section className="wide product-editor-media" aria-label="Galeria do produto">
                     <header>
+                      <div>
+                        <strong>Galeria do produto</strong>
+                        <span>Arraste as fotos para reordenar no computador</span>
+                      </div>
                       <label className="secondary-button product-media-upload">
                         <Upload />{" "}
                         {pending === `media-${editing.id}` ? "Enviando…" : "Enviar imagens"}
@@ -1518,7 +1724,11 @@ export function ProductManagement({
                           accept="image/jpeg,image/png,image/webp"
                           multiple
                           disabled={Boolean(pending)}
-                          onChange={(event) => void uploadMedia(editing, event.target.files)}
+                          onChange={(event) => {
+                            const files = [...(event.currentTarget.files ?? [])];
+                            event.currentTarget.value = "";
+                            void uploadMedia(editing, files);
+                          }}
                         />
                       </label>
                     </header>
@@ -1654,287 +1864,288 @@ export function ProductManagement({
                       <p>Nenhuma imagem enviada.</p>
                     )}
                   </section>
-                ) : null}
+                )}
                 <h3 className="wide product-form-section" id="product-step-5">
                   Variações por cor
                 </h3>
-                {editing === "new" ? (
-                  <p className="wide product-media-note">
-                    Salve primeiro o rascunho para enviar as fotos antes de criar cores e tamanhos.
-                  </p>
-                ) : (
-                  <>
-                    <div className="wide variant-generator">
-                      <label>
-                        <span>Prefixo do SKU</span>
-                        <input
-                          value={variantSkuPrefix}
-                          onChange={(event) => setVariantSkuPrefix(event.target.value)}
-                          placeholder="Ex.: SANDALIA-10"
-                        />
-                      </label>
-                      <label>
-                        <span>Cores, separadas por vírgula</span>
-                        <input
-                          value={variantColors}
-                          onChange={(event) => setVariantColors(event.target.value)}
-                          placeholder="Azul, Preto"
-                        />
-                      </label>
-                      <label>
-                        <span>Tamanhos, separados por vírgula</span>
-                        <input
-                          value={variantSizes}
-                          onChange={(event) => setVariantSizes(event.target.value)}
-                          placeholder="35, 36, 37"
-                        />
-                      </label>
-                      <button className="secondary-button" type="button" onClick={generateVariants}>
-                        Gerar combinações
-                      </button>
-                    </div>
-                    <div className="wide product-variant-editor">
-                      {editableVariants.length === 0 ? (
-                        <p>
-                          Nenhuma variação configurada. Rascunhos podem ser salvos assim; publique
-                          somente após configurar os SKUs.
-                        </p>
-                      ) : (
-                        groupedEditableVariants.map((group) => {
-                          const variantIds = new Set(
-                            group.variants.flatMap(({ variant }) =>
-                              variant.id ? [variant.id] : []
-                            )
-                          );
-                          const colorImages = (editing.images ?? []).filter(
-                            (image) => image.variantId && variantIds.has(image.variantId)
-                          );
-                          const selectedImageId =
-                            colorImageSelections[group.key] ?? colorImages[0]?.id ?? "";
-                          const selectedImage = (editing.images ?? []).find(
-                            (image) => image.id === selectedImageId
-                          );
-                          return (
-                            <section className="variant-color-group" key={group.key}>
-                              <header>
-                                <span
-                                  className="variant-color-swatch"
-                                  style={{ backgroundColor: group.colorHex || "#f3f4f6" }}
-                                  aria-hidden="true"
-                                />
-                                <div>
-                                  <strong>{group.color}</strong>
-                                  <span>{group.variants.length} tamanho(s)</span>
-                                </div>
-                                <label className="variant-color-name">
-                                  <span>Nome da cor</span>
+                <p className="wide product-media-note">
+                  Gere as combinações de cor e tamanho. Você também pode salvar um rascunho sem
+                  variações e completar depois.
+                </p>
+                <div className="wide variant-generator">
+                  <label>
+                    <span>Prefixo do SKU</span>
+                    <input
+                      value={variantSkuPrefix}
+                      onChange={(event) => setVariantSkuPrefix(event.target.value)}
+                      placeholder="Ex.: SANDALIA-10"
+                    />
+                  </label>
+                  <label>
+                    <span>Cores, separadas por vírgula</span>
+                    <input
+                      value={variantColors}
+                      onChange={(event) => setVariantColors(event.target.value)}
+                      placeholder="Azul, Preto"
+                    />
+                  </label>
+                  <label>
+                    <span>Tamanhos, separados por vírgula</span>
+                    <input
+                      value={variantSizes}
+                      onChange={(event) => setVariantSizes(event.target.value)}
+                      placeholder="35, 36, 37"
+                    />
+                  </label>
+                  <button className="secondary-button" type="button" onClick={generateVariants}>
+                    Gerar combinações
+                  </button>
+                </div>
+                <div className="wide product-variant-editor">
+                  {editableVariants.length === 0 ? (
+                    <p>
+                      Nenhuma variação configurada. Rascunhos podem ser salvos assim; publique
+                      somente após configurar os SKUs.
+                    </p>
+                  ) : (
+                    groupedEditableVariants.map((group) => {
+                      const variantIds = new Set(
+                        group.variants.flatMap(({ variant }) => (variant.id ? [variant.id] : []))
+                      );
+                      const colorImages = editorImages.filter(
+                        (image) => image.variantId && variantIds.has(image.variantId)
+                      );
+                      const selectedImageId =
+                        colorImageSelections[group.key] ?? colorImages[0]?.id ?? "";
+                      const selectedImage = editorImages.find(
+                        (image) => image.id === selectedImageId
+                      );
+                      return (
+                        <section className="variant-color-group" key={group.key}>
+                          <header>
+                            <span
+                              className="variant-color-swatch"
+                              style={{ backgroundColor: group.colorHex || "#f3f4f6" }}
+                              aria-hidden="true"
+                            />
+                            <div>
+                              <strong>{group.color}</strong>
+                              <span>{group.variants.length} tamanho(s)</span>
+                            </div>
+                            <label className="variant-color-name">
+                              <span>Nome da cor</span>
+                              <input
+                                required
+                                value={group.color === "Sem cor" ? "" : group.color}
+                                onChange={(event) => {
+                                  const color = event.target.value;
+                                  group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { color })
+                                  );
+                                }}
+                              />
+                            </label>
+                            <label className="variant-color-picker">
+                              <span>Cor visual</span>
+                              <input
+                                type="color"
+                                value={group.colorHex || "#000000"}
+                                onChange={(event) =>
+                                  group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, {
+                                      colorHex: event.target.value
+                                    })
+                                  )
+                                }
+                              />
+                            </label>
+                          </header>
+                          <div className="variant-size-list">
+                            {group.variants.map(({ variant, index }) => (
+                              <article
+                                key={variant.id ?? `${variant.color}-${variant.size}-${index}`}
+                              >
+                                <label>
+                                  <span>Tamanho *</span>
                                   <input
                                     required
-                                    value={group.color === "Sem cor" ? "" : group.color}
-                                    onChange={(event) => {
-                                      const color = event.target.value;
-                                      group.variants.forEach(({ index }) =>
-                                        updateEditableVariant(index, { color })
-                                      );
-                                    }}
-                                  />
-                                </label>
-                                <label className="variant-color-picker">
-                                  <span>Cor visual</span>
-                                  <input
-                                    type="color"
-                                    value={group.colorHex || "#000000"}
+                                    value={variant.size}
                                     onChange={(event) =>
-                                      group.variants.forEach(({ index }) =>
-                                        updateEditableVariant(index, {
-                                          colorHex: event.target.value
-                                        })
-                                      )
+                                      updateEditableVariant(index, { size: event.target.value })
                                     }
                                   />
                                 </label>
-                              </header>
-                              <div className="variant-size-list">
-                                {group.variants.map(({ variant, index }) => (
-                                  <article
-                                    key={variant.id ?? `${variant.color}-${variant.size}-${index}`}
-                                  >
-                                    <label>
-                                      <span>Tamanho *</span>
-                                      <input
-                                        required
-                                        value={variant.size}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, { size: event.target.value })
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      <span>SKU *</span>
-                                      <input
-                                        required
-                                        value={variant.sku}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, { sku: event.target.value })
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      <span>Preço próprio (R$)</span>
-                                      <input
-                                        type="number"
-                                        inputMode="decimal"
-                                        min="0"
-                                        step="0.01"
-                                        value={
-                                          variant.priceInCents === null
-                                            ? ""
-                                            : variant.priceInCents / 100
-                                        }
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, {
-                                            priceInCents: event.target.value
-                                              ? Math.round(Number(event.target.value) * 100)
-                                              : null
-                                          })
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      <span>Estoque *</span>
-                                      <input
-                                        required
-                                        disabled={!canAdjustStock}
-                                        type="number"
-                                        inputMode="numeric"
-                                        min="0"
-                                        step="1"
-                                        value={variant.stock}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, {
-                                            stock: Math.max(0, Number(event.target.value) || 0)
-                                          })
-                                        }
-                                      />
-                                    </label>
-                                    <label className="admin-checkbox">
-                                      <input
-                                        type="checkbox"
-                                        checked={variant.active}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, {
-                                            active: event.target.checked
-                                          })
-                                        }
-                                      />
-                                      <span>Ativa</span>
-                                    </label>
-                                    <button
-                                      className="icon-button"
-                                      type="button"
-                                      aria-label={`Duplicar ${variant.sku}`}
-                                      onClick={() => duplicateVariant(variant)}
-                                    >
-                                      <Copy />
-                                    </button>
-                                    <button
-                                      className="icon-button danger-button"
-                                      type="button"
-                                      aria-label={`Remover ${variant.sku}`}
-                                      onClick={() => {
-                                        setEditorDirty(true);
-                                        setEditableVariants((current) =>
-                                          current.filter((_, itemIndex) => itemIndex !== index)
-                                        );
-                                      }}
-                                    >
-                                      <Trash2 />
-                                    </button>
-                                  </article>
-                                ))}
-                              </div>
-                              <div className="variant-color-tools">
                                 <label>
-                                  <span>Adicionar tamanho nesta cor</span>
+                                  <span>SKU *</span>
                                   <input
-                                    value={newVariantSizes[group.key] ?? ""}
+                                    required
+                                    value={variant.sku}
                                     onChange={(event) =>
-                                      setNewVariantSizes((current) => ({
-                                        ...current,
-                                        [group.key]: event.target.value
-                                      }))
+                                      updateEditableVariant(index, { sku: event.target.value })
                                     }
-                                    placeholder="Ex.: 38"
                                   />
+                                </label>
+                                <label>
+                                  <span>Preço próprio (R$)</span>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0"
+                                    step="0.01"
+                                    value={
+                                      variant.priceInCents === null
+                                        ? ""
+                                        : variant.priceInCents / 100
+                                    }
+                                    onChange={(event) =>
+                                      updateEditableVariant(index, {
+                                        priceInCents: event.target.value
+                                          ? Math.round(Number(event.target.value) * 100)
+                                          : null
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>Estoque *</span>
+                                  <input
+                                    required
+                                    disabled={!canAdjustStock}
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="0"
+                                    step="1"
+                                    value={variant.stock}
+                                    onChange={(event) =>
+                                      updateEditableVariant(index, {
+                                        stock: Math.max(0, Number(event.target.value) || 0)
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="admin-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    checked={variant.active}
+                                    onChange={(event) =>
+                                      updateEditableVariant(index, {
+                                        active: event.target.checked
+                                      })
+                                    }
+                                  />
+                                  <span>Ativa</span>
                                 </label>
                                 <button
-                                  className="secondary-button"
+                                  className="icon-button"
                                   type="button"
-                                  onClick={() =>
-                                    addSizeToColor(group.key, group.color, group.colorHex)
-                                  }
+                                  aria-label={`Duplicar ${variant.sku}`}
+                                  onClick={() => duplicateVariant(variant)}
                                 >
-                                  <Plus /> Adicionar tamanho
+                                  <Copy />
                                 </button>
+                                <button
+                                  className="icon-button danger-button"
+                                  type="button"
+                                  aria-label={`Remover ${variant.sku}`}
+                                  onClick={() => {
+                                    setEditorDirty(true);
+                                    setEditableVariants((current) =>
+                                      current.filter((_, itemIndex) => itemIndex !== index)
+                                    );
+                                  }}
+                                >
+                                  <Trash2 />
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                          <div className="variant-color-tools">
+                            <label>
+                              <span>Adicionar tamanho nesta cor</span>
+                              <input
+                                value={newVariantSizes[group.key] ?? ""}
+                                onChange={(event) =>
+                                  setNewVariantSizes((current) => ({
+                                    ...current,
+                                    [group.key]: event.target.value
+                                  }))
+                                }
+                                placeholder="Ex.: 38"
+                              />
+                            </label>
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => addSizeToColor(group.key, group.color, group.colorHex)}
+                            >
+                              <Plus /> Adicionar tamanho
+                            </button>
+                          </div>
+                          {editing !== "new" ? (
+                            <div className="variant-color-media">
+                              <div>
+                                <strong>Imagem desta cor</strong>
+                                <span>Escolha uma foto da galeria geral.</span>
                               </div>
-                              <div className="variant-color-media">
-                                <div>
-                                  <strong>Imagem desta cor</strong>
-                                  <span>Escolha uma foto da galeria geral.</span>
-                                </div>
-                                <div className="variant-color-thumbnails">
-                                  {selectedImage ? (
-                                    <Image
-                                      src={selectedImage.url}
-                                      alt={selectedImage.alt}
-                                      width={52}
-                                      height={52}
-                                      unoptimized
-                                    />
-                                  ) : null}
-                                </div>
-                                <label className="variant-color-image-select">
-                                  <span>Imagem selecionada</span>
-                                  <select
-                                    value={selectedImageId}
-                                    disabled={!editing.images?.length}
-                                    onChange={(event) => {
-                                      setColorImageSelections((current) => ({
-                                        ...current,
-                                        [group.key]: event.target.value
-                                      }));
-                                      setEditorDirty(true);
-                                    }}
-                                  >
-                                    <option value="">Sem imagem específica</option>
-                                    {(editing.images ?? []).map((image, index) => (
-                                      <option key={image.id} value={image.id}>
-                                        {image.primary ? "Principal" : `Imagem ${index + 1}`} —{" "}
-                                        {image.alt}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
+                              <div className="variant-color-thumbnails">
+                                {selectedImage ? (
+                                  <Image
+                                    src={selectedImage.url}
+                                    alt={selectedImage.alt}
+                                    width={52}
+                                    height={52}
+                                    unoptimized
+                                  />
+                                ) : null}
                               </div>
-                            </section>
-                          );
-                        })
-                      )}
-                    </div>
-                  </>
-                )}
-                <h3 className="wide product-form-section" id="product-step-6">
-                  Auditoria de estoque
-                </h3>
-                <label className="wide">
-                  <span>Motivo do estoque *</span>
+                              <label className="variant-color-image-select">
+                                <span>Imagem selecionada</span>
+                                <select
+                                  value={selectedImageId}
+                                  disabled={!editorImages.length}
+                                  onChange={(event) => {
+                                    setColorImageSelections((current) => ({
+                                      ...current,
+                                      [group.key]: event.target.value
+                                    }));
+                                    setEditorDirty(true);
+                                  }}
+                                >
+                                  <option value="">Sem imagem específica</option>
+                                  {editorImages.map((image, index) => (
+                                    <option key={image.id} value={image.id}>
+                                      {image.primary ? "Principal" : `Imagem ${index + 1}`} —{" "}
+                                      {image.alt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })
+                  )}
+                </div>
+                {editableVariants.length ? (
+                  <label className="wide product-stock-reason">
+                    <span>Motivo da definição do estoque *</span>
+                    <input
+                      name="stockReason"
+                      required
+                      minLength={10}
+                      maxLength={500}
+                      defaultValue="Estoque definido no cadastro do produto"
+                    />
+                    <small>Este registro é usado na auditoria das quantidades informadas.</small>
+                  </label>
+                ) : (
                   <input
                     name="stockReason"
-                    required
-                    minLength={10}
-                    defaultValue="Estoque definido no cadastro do produto"
+                    type="hidden"
+                    value="Cadastro inicial sem variações de estoque"
                   />
-                </label>
+                )}
                 <h3 className="wide product-form-section" id="product-step-7">
                   Dimensões e transporte
                 </h3>
@@ -1986,13 +2197,15 @@ export function ProductManagement({
                   />
                 </label>
                 <h3 className="wide product-form-section" id="product-step-8">
-                  Descrições
+                  Conteúdo do produto
                 </h3>
                 <label className="wide">
                   <span>Descrição curta *</span>
                   <input
                     name="shortDescription"
                     required
+                    minLength={3}
+                    maxLength={280}
                     defaultValue={editing === "new" ? "" : editing.shortDescription}
                   />
                 </label>
@@ -2001,13 +2214,13 @@ export function ProductManagement({
                   <textarea
                     name="description"
                     required
+                    minLength={3}
+                    maxLength={4000}
                     rows={5}
                     defaultValue={editing === "new" ? "" : editing.description}
                   />
                 </label>
-                <h3 className="wide product-form-section" id="product-step-9">
-                  SEO
-                </h3>
+                <p className="wide product-form-subsection">Busca e visibilidade</p>
                 <label className="wide">
                   <span>Título SEO</span>
                   <input
@@ -2033,18 +2246,18 @@ export function ProductManagement({
                   />
                   <span>Produto em destaque</span>
                 </label>
-                <h3 className="wide product-form-section" id="product-step-10">
-                  Revisão
-                </h3>
-                <p className="wide product-review-note">
-                  Revise status, preços, variações e estoque. O salvamento é transacional: nenhuma
-                  parte será persistida se outra falhar.
-                </p>
               </div>
               <footer className="product-editor-footer">
                 <span>Atalho: Ctrl/Cmd + S</span>
                 <button className="primary-button" type="submit" disabled={Boolean(pending)}>
-                  {pending && <LoaderCircle className="spin" />} Salvar produto
+                  {pending && <LoaderCircle className="spin" />}
+                  {pending
+                    ? "Salvando…"
+                    : editing === "new"
+                      ? queuedMediaFiles.length
+                        ? `Criar e enviar ${queuedMediaFiles.length} imagem(ns)`
+                        : "Criar rascunho"
+                      : "Salvar alterações"}
                 </button>
               </footer>
             </form>
