@@ -101,8 +101,11 @@ const sectionClass = (section: HomepageSection) => {
     "default"
   );
   const desktopEnabled = settingBoolean(section, "desktopEnabled", true);
-  const mobileEnabled =
-    section.sectionType === "benefits" ? true : settingBoolean(section, "mobileEnabled", true);
+  const mobileEnabled = settingBoolean(
+    section,
+    "mobileEnabled",
+    section.sectionType !== "benefits"
+  );
   return `home-builder-section home-layout-${section.layout} home-visible-${section.visibility} home-space-top-${spacingTop} home-space-bottom-${spacingBottom} home-background-${background}${desktopEnabled ? "" : " home-device-desktop-off"}${mobileEnabled ? "" : " home-device-mobile-off"}`;
 };
 const mediaFor = (item: HomepageSectionItem, role: string) =>

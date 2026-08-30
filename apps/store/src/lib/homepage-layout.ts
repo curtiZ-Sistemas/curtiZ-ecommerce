@@ -14,21 +14,6 @@ const keepSinglePrimaryHero = (sections: HomepageSection[]): HomepageSection[] =
   });
 };
 
-const placeBenefitsAfterHero = (sections: HomepageSection[]): HomepageSection[] => {
-  const heroIndex = sections.findIndex((section) => section.sectionType === "banner_hero");
-  const benefitsIndex = sections.findIndex((section) => section.sectionType === "benefits");
-  if (heroIndex < 0 || benefitsIndex < 0 || benefitsIndex === heroIndex + 1) {
-    return sections;
-  }
-
-  const reordered = [...sections];
-  const [benefits] = reordered.splice(benefitsIndex, 1);
-  if (!benefits) return sections;
-  const updatedHeroIndex = reordered.findIndex((section) => section.sectionType === "banner_hero");
-  reordered.splice(updatedHeroIndex + 1, 0, benefits);
-  return reordered;
-};
-
 const placeOccasionsAfterBenefits = (sections: HomepageSection[]): HomepageSection[] => {
   const benefitsIndex = sections.findIndex((section) => section.sectionType === "benefits");
   const occasionsIndex = sections.findIndex(
@@ -63,5 +48,5 @@ export function selectHomepageSections(
       : hasPublicContent || allowPresentationDefaults
         ? defaultSections
         : [];
-  return placeOccasionsAfterBenefits(placeBenefitsAfterHero(keepSinglePrimaryHero(selected)));
+  return placeOccasionsAfterBenefits(keepSinglePrimaryHero(selected));
 }

@@ -55,18 +55,6 @@ describe("selectHomepageSections", () => {
 
     expect(
       selectHomepageSections([hero, occasions, featured, benefits], defaults, true, false)
-    ).toEqual([hero, benefits, occasions, featured]);
-  });
-
-  it("posiciona os benefícios imediatamente abaixo da Hero", () => {
-    const hero = section("hero", "banner_hero");
-    const featured = section("destaques", "product_carousel");
-    const benefits = section("beneficios");
-
-    expect(selectHomepageSections([featured, hero, benefits], defaults, true, false)).toEqual([
-      featured,
-      hero,
-      benefits
-    ]);
+    ).toEqual([hero, featured, benefits, occasions]);
   });
 });

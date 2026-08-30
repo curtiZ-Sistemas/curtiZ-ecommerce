@@ -12122,7 +12122,13 @@ body:has(> #main-content > .auth-page) .site-footer {
 
 .auth-shell {
   width: min(100%, 460px);
+  min-height: 0;
   display: block;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .auth-login-card {
@@ -14054,19 +14060,6 @@ body:has(.checkout-transition) .help-widget {
   width: 19px;
   height: 19px;
 }
-.hero.container {
-  width: 100%;
-  max-width: none;
-  border-radius: 0;
-}
-#main-content > div:has(> .homepage-hero) + div > .home-benefits {
-  width: 100%;
-  max-width: none;
-  padding-top: 0;
-}
-#main-content > div:has(> .homepage-hero) + div > .home-benefits .benefits-grid {
-  border-radius: 0;
-}
 .home-product-carousel {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 44px;
@@ -14110,15 +14103,6 @@ body:has(.checkout-transition) .help-widget {
 }
 
 @media (max-width: 700px) {
-  .hero.container {
-    width: 100%;
-    border-radius: 0;
-  }
-  .hero-link,
-  .hero-picture,
-  .hero-media {
-    border-radius: 0;
-  }
   .home-product-carousel {
     display: block;
     margin-inline: -12px;
@@ -14134,9 +14118,6 @@ body:has(.checkout-transition) .help-widget {
   }
   .home-product-carousel-slide {
     flex-basis: min(78vw, 270px);
-  }
-  #main-content > div:has(> .homepage-hero) + div > .home-benefits .benefits-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
