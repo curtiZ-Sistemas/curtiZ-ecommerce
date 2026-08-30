@@ -5503,6 +5503,14 @@ button:not(:disabled):active,
   }
 }
 
+@media (min-width: 641px) {
+  .managed-product:has(.product-action-menu[open]) {
+    position: relative;
+    z-index: 30;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 640px) {
   .product-editor-nav {
     top: -16px;
