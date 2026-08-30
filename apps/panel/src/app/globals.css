@@ -8485,3 +8485,200 @@ button:not(:disabled):active,
     background: var(--canvas);
   }
 }
+
+/* Editor de produtos: a largura interna do drawer define a composição dos campos. */
+.panel-drawer-large:has(.product-editor-drawer) {
+  width: min(96vw, 1120px);
+  max-width: 1120px;
+}
+.panel-drawer-large:has(.product-editor-drawer) .panel-drawer-content {
+  overflow-x: hidden;
+}
+.product-editor-drawer {
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+.product-editor-drawer > form {
+  container-name: product-editor;
+  container-type: inline-size;
+}
+.product-editor-drawer .admin-form-grid,
+.product-editor-media,
+.product-editor-media-grid,
+.product-variant-editor,
+.variant-color-group,
+.variant-size-list,
+.variant-size-list > article {
+  min-width: 0;
+  max-width: 100%;
+}
+.product-editor-drawer input,
+.product-editor-drawer select,
+.product-editor-drawer textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+.variant-generator {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: end;
+}
+.variant-generator > button {
+  min-width: 170px;
+}
+.variant-color-group {
+  overflow: clip;
+}
+.variant-color-group > header {
+  display: grid;
+  grid-template-columns: 32px minmax(120px, 1fr) minmax(150px, 190px) minmax(92px, 120px);
+  align-items: end;
+}
+.variant-color-group > header > div {
+  align-self: center;
+}
+.variant-color-name {
+  width: auto;
+}
+.variant-color-picker {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+.variant-color-picker input {
+  width: 42px;
+}
+.product-variant-editor article {
+  grid-template-columns: minmax(72px, 0.55fr) minmax(170px, 1.3fr) minmax(130px, 0.9fr) minmax(100px, 0.65fr) auto 42px 42px;
+  align-items: end;
+}
+.product-variant-editor article > label {
+  min-width: 0;
+}
+.product-variant-editor article input {
+  width: 100%;
+}
+.product-variant-editor article .icon-button {
+  width: 42px;
+  height: 42px;
+  justify-self: stretch;
+}
+.variant-color-tools,
+.variant-color-media {
+  flex-wrap: wrap;
+}
+.variant-color-tools > label {
+  min-width: min(100%, 220px);
+}
+.product-editor-media-grid {
+  grid-template-columns: 1fr;
+}
+.product-editor-media-grid > article {
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px;
+}
+.product-editor-media-grid > article > img {
+  width: 160px;
+  height: 160px;
+  border-radius: 4px;
+}
+.product-editor-media-actions {
+  align-items: center;
+  justify-content: flex-start;
+}
+.product-editor-media-actions > .secondary-button {
+  flex: 0 1 auto;
+}
+
+@container product-editor (max-width: 720px) {
+  .variant-generator {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .variant-generator > button {
+    width: 100%;
+    min-width: 0;
+  }
+  .variant-color-group > header {
+    grid-template-columns: 32px minmax(0, 1fr) minmax(150px, 190px);
+  }
+  .variant-color-picker {
+    grid-column: 2 / -1;
+  }
+  .product-variant-editor article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: white;
+  }
+  .product-variant-editor article .admin-checkbox {
+    grid-column: 1 / -1;
+  }
+  .product-variant-editor article .icon-button {
+    width: 100%;
+  }
+  .variant-size-list {
+    gap: 0;
+    padding: 0;
+    background: var(--canvas);
+  }
+}
+
+@container product-editor (max-width: 520px) {
+  .variant-generator {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+  .variant-generator > button {
+    grid-column: 1;
+  }
+  .variant-color-group > header {
+    grid-template-columns: 32px minmax(0, 1fr) 50px;
+    align-items: center;
+  }
+  .variant-color-name {
+    grid-column: 1 / -1;
+  }
+  .variant-color-picker {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) 50px;
+  }
+  .product-variant-editor article > label:not(.admin-checkbox) {
+    grid-column: 1 / -1;
+  }
+  .variant-color-tools,
+  .variant-color-media {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .variant-color-tools > label,
+  .variant-color-tools > button,
+  .variant-color-image-select {
+    width: 100%;
+    min-width: 0;
+  }
+  .product-editor-media {
+    padding: 12px;
+  }
+  .product-editor-media-grid > article {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+  .product-editor-media-grid > article > img {
+    width: 100%;
+    height: min(220px, 58vw);
+  }
+  .product-editor-media-actions > .secondary-button {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 820px) {
+  .panel-drawer-large:has(.product-editor-drawer) {
+    width: 100%;
+    max-width: none;
+  }
+  .product-editor-drawer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

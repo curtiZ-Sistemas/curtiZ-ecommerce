@@ -14,7 +14,7 @@ export function HomepageProductCarousel({
   const slides = Children.toArray(children);
   const [viewportRef, api] = useEmblaCarousel({
     align: "start",
-    containScroll: "trimSnaps",
+    loop: true,
     slidesToScroll: 4,
     duration: 24
   });
