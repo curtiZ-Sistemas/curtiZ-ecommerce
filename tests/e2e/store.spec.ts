@@ -38,7 +38,9 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(hero).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Para todos os momentos", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Encontre seu estilo", { exact: true })).toHaveCount(0);
-  const featuredSection = page.locator('[data-home-section-type="featured_products"]');
+  const featuredSection = page.locator(
+    '[data-home-section-type="featured_products"]'
+  );
   const featuredProduct = featuredSection.getByRole("link", {
     name: "curti Z Flip-Flop Wave Preto",
     exact: true
@@ -66,7 +68,7 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(page.locator(".cart-sync-notice")).toHaveCount(0);
 });
 
-test("seleciona produtos para compra sem confundir com remoção", async ({ page }) => {
+test("seleciona produtos para compra sem confundir com remoção", async ({ page, isMobile }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => {
     sessionStorage.removeItem("curtiz-auth-session");
@@ -151,16 +153,9 @@ test("seleciona produtos para compra sem confundir com remoção", async ({ page
   await expect(page.locator(".cart-item.is-selected")).toHaveCount(2);
   await expect(page.getByTestId("selected-subtotal")).toContainText("89,90");
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Slim Coral" })).toBeVisible();
-  await page
-    .getByRole("button", { name: "Aumentar quantidade de curti Z Flip-Flop Slim Coral" })
-    .click();
+  await page.getByRole("button", { name: "Aumentar quantidade de curti Z Flip-Flop Slim Coral" }).click();
   await expect(page.getByTestId("selected-subtotal")).toContainText("89,90");
-  await page
-    .getByRole("button", {
-      name: "Aumentar quantidade de curti Z Flip-Flop Wave Preto",
-      exact: true
-    })
-    .click();
+  await page.getByRole("button", { name: "Aumentar quantidade de curti Z Flip-Flop Wave Preto", exact: true }).click();
   await expect(page.getByTestId("selected-subtotal")).toContainText("149,80");
 
   await page.reload({ waitUntil: "commit" });
@@ -176,7 +171,11 @@ test("seleciona produtos para compra sem confundir com remoção", async ({ page
   await selectAll.uncheck();
   await expect(page.locator(".cart-item.is-selected")).toHaveCount(0);
   await expect(page.getByTestId("selected-subtotal")).toContainText("0,00");
-  await expect(page.getByRole("button", { name: "Selecione um produto" })).toBeDisabled();
+  if (isMobile) {
+    await expect(page.getByRole("button", { name: "Comprar (0)" })).toBeDisabled();
+  } else {
+    await expect(page.getByRole("button", { name: "Selecione um produto" })).toBeDisabled();
+  }
   await expect(page.locator(".cart-item")).toHaveCount(3);
 
   await page
@@ -293,7 +292,10 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
         }
       ])
     );
-    localStorage.setItem("curtiz-cart-selection", JSON.stringify(["wave-preto:Preto:39/40"]));
+    localStorage.setItem(
+      "curtiz-cart-selection",
+      JSON.stringify(["wave-preto:Preto:39/40"])
+    );
   });
   const submittedLines: unknown[] = [];
   page.on("request", (request) => {
@@ -372,9 +374,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
     await expect(page.locator(".site-footer")).toBeHidden();
     await expect(page.locator(".help-widget")).toBeHidden();
     expect(
-      await page
-        .locator(".checkout-summary")
-        .evaluate((element) => getComputedStyle(element).position)
+      await page.locator(".checkout-summary").evaluate((element) => getComputedStyle(element).position)
     ).not.toBe("fixed");
     if (width <= 700) {
       const [productsBox, formBox, summaryBox] = await Promise.all([
@@ -388,7 +388,9 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
       expect((productsBox?.y ?? 0) + (productsBox?.height ?? 0)).toBeLessThanOrEqual(
         formBox?.y ?? 0
       );
-      expect((formBox?.y ?? 0) + (formBox?.height ?? 0)).toBeLessThanOrEqual(summaryBox?.y ?? 0);
+      expect((formBox?.y ?? 0) + (formBox?.height ?? 0)).toBeLessThanOrEqual(
+        summaryBox?.y ?? 0
+      );
     }
   }
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -475,7 +477,10 @@ test("após a compra preserva no carrinho os produtos não selecionados", async 
         }
       ])
     );
-    localStorage.setItem("curtiz-cart-selection", JSON.stringify(["wave-preto:Preto:39/40"]));
+    localStorage.setItem(
+      "curtiz-cart-selection",
+      JSON.stringify(["wave-preto:Preto:39/40"])
+    );
   });
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
@@ -1017,7 +1022,9 @@ test("rejeita quantidades inválidas na sincronização", async ({ page }) => {
   }
 });
 
-test("recomenda produtos diferentes e mantém o resumo no fluxo do carrinho", async ({ page }) => {
+test("recomenda produtos diferentes e mantém o total móvel ligado ao carrinho", async ({
+  page
+}) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -1049,22 +1056,23 @@ test("recomenda produtos diferentes e mantém o resumo no fluxo do carrinho", as
   expect(
     await page
       .locator(".cart-recommendation-grid")
-      .evaluate((element) => element.scrollWidth > element.clientWidth)
-  ).toBe(true);
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)
+  ).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
-  const summary = page.locator(".cart-summary");
-  await expect(summary).toBeVisible();
-  await expect(summary.getByTestId("selected-total")).toContainText("59,90");
-  await expect(summary.getByRole("link", { name: "Continuar para o checkout" })).toHaveAttribute(
+  const mobileSummary = page.locator(".cart-mobile-summary");
+  await expect(mobileSummary).toBeVisible();
+  await expect(page.locator(".cart-summary")).toBeHidden();
+  await expect(mobileSummary.getByText("R$ 59,90")).toBeVisible();
+  await expect(mobileSummary.getByRole("link", { name: "Comprar" })).toHaveAttribute(
     "href",
     "/checkout"
   );
   await page
     .getByRole("button", { name: /Aumentar quantidade de curti Z Flip-Flop Wave Preto/i })
     .click();
-  await expect(summary.getByTestId("selected-total")).toContainText("119,80");
+  await expect(mobileSummary.getByText("R$ 119,80")).toBeVisible();
   await expect(page.getByText("Entrega calculada no checkout")).toHaveCount(0);
 
   await recommendedLink.click();

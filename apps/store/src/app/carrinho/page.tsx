@@ -98,24 +98,20 @@ export default function CartPage() {
             someSelected={someSelected}
             onChange={setAllSelected}
           />
+          <span aria-live="polite">
+            {selectedCount} de {lines.length} selecionado{selectedCount === 1 ? "" : "s"}
+          </span>
           <div className="cart-selection-actions">
-            {selectedCount > 0 ? (
-              <button
-                className="cart-remove-selected"
-                type="button"
-                onClick={removeSelected}
-                disabled={pendingId !== null}
-              >
-                Remover selecionados
-              </button>
-            ) : null}
             <button
-              className="cart-clear-all"
+              className="cart-remove-selected"
               type="button"
-              aria-label="Limpar carrinho"
-              onClick={clearCart}
+              onClick={removeSelected}
+              disabled={selectedCount === 0 || pendingId !== null}
             >
-              Limpar
+              Remover selecionados
+            </button>
+            <button className="cart-clear-all" type="button" onClick={clearCart}>
+              Limpar carrinho
             </button>
           </div>
         </div>
@@ -162,7 +158,11 @@ export default function CartPage() {
                   .filter(Boolean)
                   .join(" ");
                 return (
-                  <article className={itemClassName} data-testid="cart-item" key={line.variantId}>
+                  <article
+                    className={itemClassName}
+                    data-testid="cart-item"
+                    key={line.variantId}
+                  >
                     <label className="cart-selection-control">
                       <input
                         type="checkbox"
@@ -189,9 +189,7 @@ export default function CartPage() {
 
                     <div className="cart-item-info">
                       <h2>{line.name}</h2>
-                      <p className="cart-variation">
-                        {line.color} · {line.size}
-                      </p>
+                      <p className="cart-variation">{line.color} · {line.size}</p>
                     </div>
 
                     <div className="cart-item-purchase">
@@ -236,8 +234,10 @@ export default function CartPage() {
                         type="button"
                         aria-label={`Remover ${line.name}`}
                         onClick={() =>
-                          completeAction(line.variantId, `${line.name} removido do carrinho.`, () =>
-                            remove(line.variantId)
+                          completeAction(
+                            line.variantId,
+                            `${line.name} removido do carrinho.`,
+                            () => remove(line.variantId)
                           )
                         }
                         disabled={pendingId !== null}
@@ -249,14 +249,15 @@ export default function CartPage() {
                 );
               })}
             </section>
+
           </div>
 
           <aside className="summary-card cart-summary">
             <h2>Resumo do pedido</h2>
-            <p className="cart-summary-count">
-              {selectedCount} produto{selectedCount === 1 ? "" : "s"} selecionado
-              {selectedCount === 1 ? "" : "s"}
-            </p>
+            <div className="summary-line">
+              <span>Produtos selecionados</span>
+              <strong>{selectedCount}</strong>
+            </div>
             <div className="summary-line">
               <span>Subtotal</span>
               <strong data-testid="selected-subtotal">{formatBRL(subtotal)}</strong>
@@ -264,10 +265,6 @@ export default function CartPage() {
             <div className="summary-line">
               <span>Frete</span>
               <span>Calculado no checkout</span>
-            </div>
-            <div className="summary-line summary-total">
-              <span>Total</span>
-              <strong data-testid="selected-total">{formatBRL(subtotal)}</strong>
             </div>
 
             {selectedCount > 0 ? (
@@ -280,6 +277,22 @@ export default function CartPage() {
               </button>
             )}
           </aside>
+
+          <div className="cart-mobile-summary" aria-label="Resumo do carrinho">
+            <div className="cart-mobile-total">
+              <span>Total</span>
+              <strong data-testid="mobile-selected-total">{formatBRL(subtotal)}</strong>
+            </div>
+            {selectedCount > 0 ? (
+              <Link className="primary-button" href="/checkout">
+                Comprar ({selectedCount})
+              </Link>
+            ) : (
+              <button className="primary-button" type="button" disabled>
+                Comprar (0)
+              </button>
+            )}
+          </div>
         </div>
       )}
       {hydrated && lines.length > 0 && <CartRecommendations lines={lines} />}
