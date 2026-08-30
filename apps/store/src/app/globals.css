@@ -14079,6 +14079,10 @@ body:has(.checkout-transition) .help-widget {
   min-width: 0;
   flex: 0 0 calc((100% - 48px) / 4);
 }
+.home-product-carousel-slide .product-image {
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+}
 .home-product-carousel-arrow {
   width: 44px;
   height: 44px;
