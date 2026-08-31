@@ -9,15 +9,24 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "enabled": true
   },
   "env": {
     "staging": {
-      "name": "curtiz-ecommerce-staging"
+      "name": "curtiz-ecommerce-staging",
+      "images": {
+        "binding": "IMAGES"
+      }
     },
     "production": {
-      "name": "curtiz-ecommerce"
+      "name": "curtiz-ecommerce",
+      "images": {
+        "binding": "IMAGES"
+      }
     }
   }
 }

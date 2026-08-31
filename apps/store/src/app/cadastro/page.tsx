@@ -45,7 +45,7 @@ export default async function Page({
         )}
         {referralStatus === "consentimento" && (
           <p className="form-message" role="status">
-            Para registrar a indicação, habilite a categoria “Funcionais” nas preferências de cookies
+            Para registrar a indicação, habilite a categoria “Preferências” nas preferências de cookies
             e abra novamente o link recebido.
           </p>
         )}

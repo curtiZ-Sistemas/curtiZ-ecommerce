@@ -2,121 +2,124 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Cookie, LoaderCircle, Settings2, X } from "lucide-react";
+import {
+  defaultCookieInventory,
+  type CookieCategory,
+  type CookieInventory,
+  type CookieInventoryItem,
+  type StorageType
+} from "../lib/privacy/cookie-inventory";
+import { consentStorageKey, readStoredConsent } from "../lib/privacy/consent-client";
 
-type Category = { id: string; label: string; description: string; required: boolean };
-type InventoryCookie = {
-  name_pattern: string;
-  category_id: string;
-  provider: string;
-  purpose: string;
-  duration_description: string;
+const storageTypeLabels: Record<StorageType, string> = {
+  cookie: "Cookie",
+  local_storage: "Armazenamento local",
+  session_storage: "Armazenamento da sessão"
 };
-type Inventory = { categories: Category[]; cookies: InventoryCookie[]; policyVersion: string };
-const storageKey = "curtiz-cookie-consent";
 
-function validInventory(value: unknown): Inventory | null {
+function validCategory(value: unknown): CookieCategory | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const data = value as Record<string, unknown>;
-  const categories = Array.isArray(data.categories)
-    ? data.categories
-        .flatMap((entry) =>
-          entry && typeof entry === "object" && !Array.isArray(entry)
-            ? [entry as Record<string, unknown>]
-            : []
-        )
-        .flatMap((entry) =>
-          typeof entry.id === "string" &&
-          typeof entry.label === "string" &&
-          typeof entry.description === "string"
-            ? [
-                {
-                  id: entry.id,
-                  label: entry.label,
-                  description: entry.description,
-                  required: entry.required === true
-                }
-              ]
-            : []
-        )
-    : [];
-  const cookies = Array.isArray(data.cookies)
-    ? data.cookies
-        .flatMap((entry) =>
-          entry && typeof entry === "object" && !Array.isArray(entry)
-            ? [entry as Record<string, unknown>]
-            : []
-        )
-        .flatMap((entry) =>
-          typeof entry.name_pattern === "string" &&
-          typeof entry.category_id === "string" &&
-          typeof entry.provider === "string" &&
-          typeof entry.purpose === "string" &&
-          typeof entry.duration_description === "string"
-            ? [
-                {
-                  name_pattern: entry.name_pattern,
-                  category_id: entry.category_id,
-                  provider: entry.provider,
-                  purpose: entry.purpose,
-                  duration_description: entry.duration_description
-                }
-              ]
-            : []
-        )
-    : [];
+  const entry = value as Record<string, unknown>;
+  if (
+    typeof entry.id !== "string" ||
+    typeof entry.label !== "string" ||
+    typeof entry.description !== "string"
+  )
+    return null;
   return {
-    categories,
-    cookies,
-    policyVersion: typeof data.policyVersion === "string" ? data.policyVersion : "inventory-1"
+    id: entry.id,
+    label: entry.label,
+    description: entry.description,
+    required: entry.required === true
   };
 }
 
+function validCookie(value: unknown): CookieInventoryItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entry = value as Record<string, unknown>;
+  if (
+    typeof entry.name_pattern !== "string" ||
+    typeof entry.category_id !== "string" ||
+    typeof entry.provider !== "string" ||
+    typeof entry.purpose !== "string" ||
+    typeof entry.duration_description !== "string"
+  )
+    return null;
+  const storageType = ["cookie", "local_storage", "session_storage"].includes(
+    String(entry.storage_type)
+  )
+    ? (entry.storage_type as StorageType)
+    : "cookie";
+  return {
+    name_pattern: entry.name_pattern,
+    category_id: entry.category_id,
+    provider: entry.provider,
+    purpose: entry.purpose,
+    duration_description: entry.duration_description,
+    first_party: entry.first_party !== false,
+    storage_type: storageType
+  };
+}
+
+function validInventory(value: unknown): CookieInventory | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const data = value as Record<string, unknown>;
+  const categories = Array.isArray(data.categories)
+    ? data.categories.map(validCategory).filter((item): item is CookieCategory => Boolean(item))
+    : [];
+  const cookies = Array.isArray(data.cookies)
+    ? data.cookies.map(validCookie).filter((item): item is CookieInventoryItem => Boolean(item))
+    : [];
+  if (!categories.length || !cookies.length) return null;
+  return {
+    categories,
+    cookies,
+    policyVersion:
+      typeof data.policyVersion === "string"
+        ? data.policyVersion
+        : defaultCookieInventory().policyVersion
+  };
+}
+
+function choicesFor(inventory: CookieInventory, stored: ReturnType<typeof readStoredConsent>) {
+  return Object.fromEntries(
+    inventory.categories.map((category) => [
+      category.id,
+      category.required || stored?.categories[category.id] === true
+    ])
+  );
+}
+
 export function CookiePreferences() {
-  const [inventory, setInventory] = useState<Inventory>({
-    categories: [],
-    cookies: [],
-    policyVersion: "inventory-1"
-  });
+  const [inventory, setInventory] = useState<CookieInventory>(() => defaultCookieInventory());
+  const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
   const [customizing, setCustomizing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [choices, setChoices] = useState<Record<string, boolean>>({ essential: true });
+
+  const useInventory = useCallback((nextInventory: CookieInventory) => {
+    const stored = readStoredConsent();
+    setInventory(nextInventory);
+    setChoices(choicesFor(nextInventory, stored));
+    setOpen(!stored || stored.policyVersion !== nextInventory.policyVersion);
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/privacy/cookies", { cache: "no-store" });
-      const data = validInventory(await response.json());
-      if (data) {
-        setInventory(data);
-        setChoices((current) =>
-          Object.fromEntries(
-            data.categories.map((category) => [
-              category.id,
-              category.required || current[category.id] === true
-            ])
-          )
-        );
-      }
+      if (!response.ok) throw new Error("inventory_unavailable");
+      useInventory(validInventory(await response.json()) ?? defaultCookieInventory());
     } catch {
-      /* O banner continua funcional apenas com a categoria essencial. */
+      useInventory(defaultCookieInventory());
+    } finally {
+      setReady(true);
     }
-  }, []);
+  }, [useInventory]);
+
   useEffect(() => {
     void load();
-    const saved = localStorage.getItem(storageKey);
-    setOpen(!saved);
-    if (saved) {
-      try {
-        const parsed: unknown = JSON.parse(saved);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          const stored = (parsed as Record<string, unknown>).categories;
-          if (stored && typeof stored === "object" && !Array.isArray(stored))
-            setChoices({ essential: true, ...(stored as Record<string, boolean>) });
-        }
-      } catch {
-        setOpen(true);
-      }
-    }
     const reopen = () => {
       setOpen(true);
       setCustomizing(true);
@@ -124,10 +127,22 @@ export function CookiePreferences() {
     window.addEventListener("open-cookie-preferences", reopen);
     return () => window.removeEventListener("open-cookie-preferences", reopen);
   }, [load]);
+
   const optional = useMemo(
-    () => inventory.categories.filter((category) => !category.required),
+    () =>
+      inventory.categories.filter(
+        (category) =>
+          !category.required &&
+          inventory.cookies.some((cookie) => cookie.category_id === category.id)
+      ),
     [inventory]
   );
+  const visibleCategories = useMemo(
+    () => inventory.categories.filter((category) => category.required || optional.includes(category)),
+    [inventory.categories, optional]
+  );
+  const hasOptional = optional.length > 0;
+
   const save = async (
     next: Record<string, boolean>,
     origin: "banner" | "preferences",
@@ -135,24 +150,14 @@ export function CookiePreferences() {
   ) => {
     setPending(true);
     setError("");
-    const id = (() => {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        try {
-          const parsed: unknown = JSON.parse(saved);
-          if (
-            parsed &&
-            typeof parsed === "object" &&
-            !Array.isArray(parsed) &&
-            typeof (parsed as Record<string, unknown>).id === "string"
-          )
-            return (parsed as Record<string, string>).id;
-        } catch {
-          /* gera novo identificador anônimo */
-        }
-      }
-      return crypto.randomUUID();
-    })();
+    const stored = readStoredConsent();
+    const id = stored?.id ?? crypto.randomUUID();
+    const normalized = Object.fromEntries(
+      visibleCategories.map((category) => [
+        category.id,
+        category.required || next[category.id] === true
+      ])
+    );
     try {
       const response = await fetch("/api/privacy/cookies", {
         method: "POST",
@@ -160,7 +165,7 @@ export function CookiePreferences() {
         body: JSON.stringify({
           id,
           policyVersion: inventory.policyVersion,
-          categories: { ...next, essential: true },
+          categories: normalized,
           origin,
           revoked
         })
@@ -171,29 +176,29 @@ export function CookiePreferences() {
         typeof result === "object" &&
         !Array.isArray(result) &&
         (result as Record<string, unknown>).persisted === true;
-      const rejectsOptional = !Object.entries(next).some(
-        ([key, enabled]) => key !== "essential" && enabled
-      );
-      if (!response.ok || (!persisted && !rejectsOptional))
-        throw new Error(
+      const rejectsOptional = optional.every((category) => normalized[category.id] !== true);
+      if (!response.ok || (!persisted && !rejectsOptional)) {
+        const message =
           result &&
-            typeof result === "object" &&
-            !Array.isArray(result) &&
-            typeof (result as Record<string, unknown>).message === "string"
+          typeof result === "object" &&
+          !Array.isArray(result) &&
+          typeof (result as Record<string, unknown>).message === "string"
             ? (result as Record<string, string>).message
-            : "Não foi possível salvar."
-        );
+            : "Não foi possível salvar.";
+        throw new Error(message);
+      }
       localStorage.setItem(
-        storageKey,
+        consentStorageKey,
         JSON.stringify({
           id,
           policyVersion: inventory.policyVersion,
-          categories: { ...next, essential: true },
+          categories: normalized,
           recordedAt: new Date().toISOString()
         })
       );
+      if (normalized.preferences !== true) localStorage.removeItem("curtiz-recent-searches");
       window.dispatchEvent(new Event("curtiz-consent-changed"));
-      setChoices({ ...next, essential: true });
+      setChoices(normalized);
       setOpen(false);
       setCustomizing(false);
     } catch (saveError) {
@@ -202,7 +207,17 @@ export function CookiePreferences() {
       setPending(false);
     }
   };
-  if (!open) return null;
+
+  if (!ready || !open) return null;
+
+  const rejectedChoices = Object.fromEntries(
+    visibleCategories.map((category) => [category.id, category.required])
+  );
+  const acceptedChoices = Object.fromEntries(
+    visibleCategories.map((category) => [category.id, true])
+  );
+  const showInventory = customizing || !hasOptional;
+
   return (
     <div className="cookie-consent-layer" role="region" aria-label="Preferências de cookies">
       <section className={customizing ? "cookie-consent-card customizing" : "cookie-consent-card"}>
@@ -211,23 +226,26 @@ export function CookiePreferences() {
           <div>
             <h2>Cookies e privacidade</h2>
             <p>
-              Usamos cookies essenciais para segurança. Os opcionais só serão ativados com sua
-              escolha.
+              {hasOptional
+                ? "Usamos recursos essenciais. Preferências e medição só são ativadas com sua escolha."
+                : "No momento, usamos apenas recursos essenciais para segurança e funcionamento da loja."}
             </p>
           </div>
           {customizing && (
             <button
+              type="button"
               className="icon-button"
               aria-label="Fechar preferências"
               onClick={() => setCustomizing(false)}
             >
-              <X />
+              <X aria-hidden="true" />
             </button>
           )}
         </div>
-        {customizing && (
+
+        {showInventory && (
           <div className="cookie-category-list">
-            {inventory.categories.map((category) => (
+            {visibleCategories.map((category) => (
               <label key={category.id}>
                 <input
                   type="checkbox"
@@ -246,70 +264,82 @@ export function CookiePreferences() {
                 </span>
               </label>
             ))}
-            {optional.length === 0 && <p>Nenhum cookie opcional está ativo no inventário atual.</p>}
             <details>
               <summary>Ver inventário verificado</summary>
-              {inventory.cookies.map((cookie) => (
-                <p key={`${cookie.provider}-${cookie.name_pattern}`}>
-                  <code>{cookie.name_pattern}</code> · {cookie.provider}
-                  <br />
-                  <small>
-                    {cookie.purpose} Duração: {cookie.duration_description}
-                  </small>
-                </p>
-              ))}
+              {inventory.cookies
+                .filter((cookie) =>
+                  visibleCategories.some((category) => category.id === cookie.category_id)
+                )
+                .map((cookie) => (
+                  <p key={`${cookie.provider}-${cookie.name_pattern}-${cookie.storage_type}`}>
+                    <code>{cookie.name_pattern}</code> · {cookie.provider}
+                    <br />
+                    <small>
+                      {storageTypeLabels[cookie.storage_type]} {cookie.first_party ? "próprio" : "de terceiro"}. {cookie.purpose} Duração: {cookie.duration_description}
+                    </small>
+                  </p>
+                ))}
             </details>
           </div>
         )}
+
         {error && (
           <p className="form-message error" role="alert">
             {error}
           </p>
         )}
+
         <div className="cookie-consent-actions">
-          <button
-            className="secondary-button"
-            disabled={pending}
-            onClick={() =>
-              void save(
-                Object.fromEntries(
-                  inventory.categories.map((category) => [category.id, category.required])
-                ),
-                "banner",
-                true
-              )
-            }
-          >
-            Rejeitar opcionais
-          </button>
-          <button
-            className="secondary-button"
-            disabled={pending}
-            onClick={() => setCustomizing(true)}
-          >
-            <Settings2 />
-            Personalizar
-          </button>
-          {customizing ? (
-            <button
-              className="primary-button"
-              disabled={pending}
-              onClick={() => void save(choices, "preferences")}
-            >
-              {pending ? <LoaderCircle className="spin" /> : null}Salvar preferências
-            </button>
+          {hasOptional ? (
+            <>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={pending}
+                onClick={() => void save(rejectedChoices, "banner", true)}
+              >
+                Rejeitar opcionais
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={pending}
+                onClick={() => setCustomizing(true)}
+              >
+                <Settings2 aria-hidden="true" />
+                Personalizar
+              </button>
+              {customizing ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pending}
+                  onClick={() => void save(choices, "preferences")}
+                >
+                  {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
+                  Salvar preferências
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pending}
+                  onClick={() => void save(acceptedChoices, "banner")}
+                >
+                  {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
+                  Aceitar opcionais
+                </button>
+              )}
+            </>
           ) : (
             <button
+              type="button"
               className="primary-button"
               disabled={pending}
-              onClick={() =>
-                void save(
-                  Object.fromEntries(inventory.categories.map((category) => [category.id, true])),
-                  "banner"
-                )
-              }
+              onClick={() => void save(rejectedChoices, "banner")}
             >
-              {pending ? <LoaderCircle className="spin" /> : null}Aceitar todos
+              {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
+              Entendi
             </button>
           )}
         </div>

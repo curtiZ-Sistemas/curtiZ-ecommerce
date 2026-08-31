@@ -1,9 +1,11 @@
 "use client";
 
 import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { hasConsentCategory } from "../lib/privacy/consent-client";
 
 const device = () => window.innerWidth <= 700 ? "mobile" : window.innerWidth <= 1024 ? "tablet" : "desktop";
 const sendMetric = (versionId: string, metric: "view" | "click", itemKey = "") => {
+  if (!hasConsentCategory("analytics")) return;
   void fetch("/api/homepage-metrics", { method: "POST", headers: { "content-type": "application/json" }, keepalive: true, body: JSON.stringify({ versionId, metric, itemKey, device: device() }) }).catch(() => undefined);
 };
 

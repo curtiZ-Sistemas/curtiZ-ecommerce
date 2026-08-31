@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { getImageProps } from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -44,6 +45,23 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     ? "/images/hero-curtiz-mobile.png"
     : banner.mobileImage;
 
+  const desktopProps = getImageProps({
+    src: desktopImage,
+    alt: banner.altText,
+    width: 2172,
+    height: 724,
+    sizes: "(max-width: 1280px) calc(100vw - 32px), 1200px",
+    quality: 75
+  }).props;
+  const mobileProps = getImageProps({
+    src: mobileImage,
+    alt: banner.altText,
+    width: 941,
+    height: 1672,
+    sizes: "calc(100vw - 24px)",
+    quality: 75
+  }).props;
+
   const go = (direction: number) => {
     setPaused(true);
     setActive(
@@ -54,13 +72,17 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
   const picture = (
     <picture className="hero-picture">
-      <source media="(max-width: 700px)" srcSet={mobileImage} />
+      <source
+        media="(max-width: 700px)"
+        srcSet={mobileProps.srcSet}
+        sizes={mobileProps.sizes}
+        width={941}
+        height={1672}
+      />
       <img
+        {...desktopProps}
         className="hero-media"
-        src={desktopImage}
         alt={banner.altText}
-        width={1600}
-        height={560}
         fetchPriority={active === 0 ? "high" : "auto"}
         loading={active === 0 ? "eager" : "lazy"}
         decoding="async"

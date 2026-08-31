@@ -221,8 +221,11 @@ export function HomepageSectionRenderer({
       <HomepageMetric versionId={section.versionId}>
         <section
           className={`${sectionClass(section)} home-categories-minimal container`}
-          aria-label="Categorias de produtos"
+          aria-labelledby="homepage-categories-title"
         >
+          <h2 className="sr-only" id="homepage-categories-title">
+            Compre por categoria
+          </h2>
           <CategoryCarousel
             categories={categories.map(({ name, href, product }) => ({
               name,

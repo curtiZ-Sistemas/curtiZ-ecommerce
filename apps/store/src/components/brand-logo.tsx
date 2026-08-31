@@ -7,8 +7,9 @@ export function BrandLogo({ priority = false }: { priority?: boolean }) {
       <Image
         src="/images/logo-curtiz.png"
         alt="curti Z"
-        width={420}
-        height={120}
+        width={1536}
+        height={1024}
+        sizes="(max-width: 700px) 138px, 168px"
         priority={priority}
       />
     </Link>

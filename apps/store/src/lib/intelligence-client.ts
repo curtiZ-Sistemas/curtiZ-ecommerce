@@ -1,5 +1,7 @@
 "use client";
 
+import { hasConsentCategory } from "./privacy/consent-client";
+
 export type IntelligenceEventType =
   | "page_view"
   | "product_impression"
@@ -28,7 +30,6 @@ export type IntelligenceEvent = {
   path?: string;
 };
 
-const consentKey = "curtiz-cookie-consent";
 const sessionKey = "curtiz:intelligence-session";
 const recentKey = "curtiz:intelligence-recent";
 const maxBatch = 20;
@@ -38,17 +39,7 @@ let flushing = false;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function hasAnalyticsConsent() {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(consentKey) ?? "null");
-    return Boolean(
-      parsed &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { categories?: Record<string, unknown> }).categories?.analytics === true
-    );
-  } catch {
-    return false;
-  }
+  return hasConsentCategory("analytics");
 }
 
 export function intelligenceSessionId() {

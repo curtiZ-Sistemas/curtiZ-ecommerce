@@ -4,6 +4,7 @@ import {
 } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasServerConsent } from "@/lib/privacy/consent-server";
 import { readQueryResult } from "@/lib/unknown-data";
 
 const codePattern = /^[A-Z0-9_-]{4,32}$/u;
@@ -35,20 +36,7 @@ export async function GET(
     return NextResponse.redirect(cadastro, 303);
   }
 
-  const preferenceValue = request.cookies.get("curtiz-cookie-preferences")?.value;
-  let functionalAllowed = false;
-  if (preferenceValue) {
-    try {
-      const preferences: unknown = JSON.parse(preferenceValue);
-      functionalAllowed = Boolean(
-        preferences && typeof preferences === "object" && !Array.isArray(preferences)
-          && (preferences as Record<string, unknown>).functional === true
-      );
-    } catch {
-      functionalAllowed = false;
-    }
-  }
-  if (!functionalAllowed) {
+  if (!hasServerConsent(request, "preferences")) {
     cadastro.searchParams.set("indicacao", "consentimento");
     return NextResponse.redirect(cadastro, 303);
   }

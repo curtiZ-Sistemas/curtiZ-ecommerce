@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn()
@@ -43,18 +43,53 @@ describe("cookie preferences API", () => {
     expect(response.headers.get("set-cookie")).toContain("curtiz-cookie-preferences=");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("Secure");
+    expect(response.headers.get("set-cookie")).toContain("curtiz_referral=");
+  });
+
+  it("mantém um inventário real quando o banco está temporariamente indisponível", async () => {
+    mockedClient.mockResolvedValue(null);
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      categories: Array<{ id: string }>;
+      cookies: Array<{ name_pattern: string; storage_type: string }>;
+      policyVersion: string;
+    };
+
+    expect(payload.categories.map((category) => category.id)).toEqual(
+      expect.arrayContaining(["essential", "preferences", "analytics"])
+    );
+    expect(payload.cookies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name_pattern: "curtiz:intelligence-session",
+          storage_type: "session_storage"
+        })
+      ])
+    );
+    expect(payload.policyVersion).toBe("inventory-2");
   });
 
   it("informa quando o consentimento também foi persistido", async () => {
-    mockedClient.mockResolvedValue({
-      rpc: vi.fn().mockResolvedValue({ error: null })
-    } as never);
+    const rpc = vi.fn().mockResolvedValue({ error: null });
+    mockedClient.mockResolvedValue({ rpc } as never);
 
-    const response = await POST(request({ essential: true, analytics: false }));
+    const response = await POST(request({ essential: true, functional: true }));
     const payload = (await response.json()) as { persisted: boolean };
 
     expect(response.status).toBe(200);
     expect(payload.persisted).toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      "record_cookie_consent",
+      expect.objectContaining({
+        p_categories: {
+          essential: true,
+          preferences: true,
+          analytics: false,
+          marketing: false
+        }
+      })
+    );
   });
 
   it("não grava o cookie quando o RPC falha", async () => {

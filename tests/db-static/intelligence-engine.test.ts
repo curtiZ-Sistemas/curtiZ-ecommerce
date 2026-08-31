@@ -52,7 +52,9 @@ describe("curti Z intelligence engine", () => {
     expect(homepageBuilder).toMatch(/<option\s+value=["']discovery["']>/u);
     expect(recommendations).toMatch(/const sourceSchema = z\.enum\(\[[\s\S]*["']discovery["']/u);
     expect(recommendations).toContain("p_source: input.source");
-    expect(shelf).toContain('fetch("/api/intelligence/recommendations"');
+    expect(shelf).toContain('"/api/intelligence/recommendations"');
+    expect(shelf).toContain("publicParams");
+    expect(recommendations).toContain('hasServerConsent(request, "analytics")');
     expect(shelf).toContain("new IntersectionObserver");
     expect(shelf).toContain("nextCursor");
   });

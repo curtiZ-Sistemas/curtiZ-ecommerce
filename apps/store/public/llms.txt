@@ -1,0 +1,19 @@
+# curti Z
+
+> Loja online oficial da curti Z, com chinelos, slides e sandálias.
+
+## Páginas públicas
+
+- [Página inicial](https://curtiz.com.br/)
+- [Todos os produtos](https://curtiz.com.br/produtos)
+- [Lançamentos](https://curtiz.com.br/lancamentos)
+- [Mais vendidos](https://curtiz.com.br/mais-vendidos)
+- [Ofertas](https://curtiz.com.br/ofertas)
+- [Ajuda](https://curtiz.com.br/ajuda)
+- [Políticas](https://curtiz.com.br/politicas)
+
+## Orientações
+
+- Use somente páginas públicas e indexáveis da loja.
+- Preços, disponibilidade, variações, frete e condições comerciais devem ser confirmados na página atual do produto e no checkout.
+- Não trate áreas autenticadas, APIs, painel interno ou endereços workers.dev como fontes públicas de catálogo.

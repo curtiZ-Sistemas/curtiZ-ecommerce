@@ -61,10 +61,16 @@ export function IntelligenceShelf({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [hasMore, setHasMore] = useState(true);
+  const [consentRevision, setConsentRevision] = useState(0);
   const sentinel = useRef<HTMLDivElement>(null);
   const page = useRef(0);
   const request = useRef<AbortController | null>(null);
   const productsRef = useRef<Product[]>([]);
+  useEffect(() => {
+    const refreshConsent = () => setConsentRevision((current) => current + 1);
+    window.addEventListener("curtiz-consent-changed", refreshConsent);
+    return () => window.removeEventListener("curtiz-consent-changed", refreshConsent);
+  }, []);
   const load = useCallback(
     async (reset = false) => {
       if (request.current) return;
@@ -74,25 +80,49 @@ export function IntelligenceShelf({
       else setLoadingMore(true);
       setError("");
       try {
+        void consentRevision;
+        const sessionId = intelligenceSessionId();
+        const publicSource: IntelligenceSource = [
+          "personalized",
+          "recently_viewed",
+          "because_you_viewed",
+          "price_range"
+        ].includes(source)
+          ? "trending"
+          : source;
         const seen = [
           ...excludeProductIds,
           ...(reset ? [] : productsRef.current.map((item) => item.id))
         ].filter((id) => uuidPattern.test(id)).slice(-50);
-        const response = await fetch("/api/intelligence/recommendations", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            source,
-            sessionId: intelligenceSessionId(),
-            category: category || null,
-            seen,
-            recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
-            seed: `${new Date().toISOString().slice(0, 10)}:${page.current}`,
-            limit
-          }),
-          signal: controller.signal,
-          cache: "no-store"
+        const seed = `${new Date().toISOString().slice(0, 10)}:${page.current}`;
+        const publicParams = new URLSearchParams({
+          source: publicSource,
+          seed,
+          limit: String(limit)
         });
+        if (category) publicParams.set("category", category);
+        const response = await fetch(
+          sessionId
+            ? "/api/intelligence/recommendations"
+            : `/api/intelligence/recommendations?${publicParams}`,
+          sessionId
+            ? {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  source,
+                  sessionId,
+                  category: category || null,
+                  seen,
+                  recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
+                  seed,
+                  limit
+                }),
+                signal: controller.signal,
+                cache: "no-store"
+              }
+            : { signal: controller.signal }
+        );
         const data: unknown = await response.json();
         if (
           !response.ok ||
@@ -131,7 +161,7 @@ export function IntelligenceShelf({
         setLoadingMore(false);
       }
     },
-    [category, excludeProductIds, limit, source]
+    [category, consentRevision, excludeProductIds, limit, source]
   );
   useEffect(() => {
     page.current = 0;

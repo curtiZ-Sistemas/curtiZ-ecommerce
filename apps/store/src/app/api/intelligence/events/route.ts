@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
+import { hasServerConsent } from "../../../../lib/privacy/consent-server";
 import { createServerSupabaseClient } from "../../../../lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -40,25 +41,9 @@ const batchSchema = z.object({
   events: z.array(eventSchema).min(1).max(20)
 });
 
-function hasServerAnalyticsConsent(request: NextRequest) {
-  const raw = request.cookies.get("curtiz-cookie-preferences")?.value;
-  if (!raw) return false;
-  try {
-    const parsed: unknown = JSON.parse(decodeURIComponent(raw));
-    return Boolean(
-      parsed &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { analytics?: unknown }).analytics === true
-    );
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ accepted: 0 }, { status: 403 });
-  if (!hasServerAnalyticsConsent(request))
+  if (!hasServerConsent(request, "analytics"))
     return NextResponse.json(
       { accepted: 0, enabled: false },
       { status: 403, headers: { "cache-control": "private, no-store" } }

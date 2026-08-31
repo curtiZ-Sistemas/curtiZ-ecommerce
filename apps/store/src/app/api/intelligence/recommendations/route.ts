@@ -3,6 +3,7 @@ import { z } from "zod";
 import { demoProducts } from "../../../../lib/catalog";
 import { parseRpcProductList } from "../../../../lib/catalog-result";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
+import { hasServerConsent } from "../../../../lib/privacy/consent-server";
 import {
   createPublicSupabaseClient,
   createServerSupabaseClient
@@ -110,6 +111,11 @@ export async function GET(request: NextRequest) {
 }
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ products: [] }, { status: 403 });
+  if (!hasServerConsent(request, "analytics"))
+    return NextResponse.json(
+      { products: [], enabled: false },
+      { status: 403, headers: { "cache-control": "private, no-store" } }
+    );
   const parsed = inputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ products: [] }, { status: 400 });
   return recommendationResponse(parsed.data, true);

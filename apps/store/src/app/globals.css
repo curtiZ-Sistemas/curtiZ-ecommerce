@@ -1322,13 +1322,15 @@ select:disabled {
 .hero-picture {
   width: 100%;
   display: block;
+  aspect-ratio: 3 / 1;
   line-height: 0;
 }
 
 .hero-picture img {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
+  object-fit: cover;
 }
 
 .hero-media {
@@ -1600,7 +1602,7 @@ select:disabled {
 
 .price-row s,
 .product-price s {
-  color: var(--neutral-500);
+  color: var(--neutral-700);
   font-size: 0.76rem;
 }
 
@@ -3506,7 +3508,7 @@ select:disabled {
 }
 
 .footer-brand > span {
-  color: var(--neutral-500);
+  color: var(--neutral-700);
   font-size: 0.65rem;
 }
 
@@ -9824,6 +9826,17 @@ body:has(.account-experience-page) .help-widget {
 }
 
 @media (max-width: 700px) {
+  .hero-picture {
+    aspect-ratio: 941 / 1672;
+  }
+
+  .hero-picture img,
+  .hero-media {
+    height: 100% !important;
+    aspect-ratio: 941 / 1672 !important;
+    object-fit: cover;
+  }
+
   .hero-carousel-controls {
     right: 10px;
     bottom: 10px;

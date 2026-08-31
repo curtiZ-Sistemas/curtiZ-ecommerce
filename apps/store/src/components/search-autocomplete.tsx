@@ -20,6 +20,7 @@ import {
   trackIntelligence
 } from "../lib/intelligence-client";
 import { normalizeSearchTerm, parseSearchHistory, rememberSearch } from "../lib/search-history";
+import { hasConsentCategory } from "../lib/privacy/consent-client";
 
 const recentSearchesKey = "curtiz-recent-searches";
 
@@ -60,12 +61,22 @@ export function SearchAutocomplete({
   const requestSequence = useRef(0);
 
   useEffect(() => {
-    try {
-      const stored: unknown = JSON.parse(localStorage.getItem(recentSearchesKey) ?? "[]");
-      setRecent(parseSearchHistory(stored));
-    } catch {
-      localStorage.removeItem(recentSearchesKey);
-    }
+    const syncRecentSearches = () => {
+      if (!hasConsentCategory("preferences")) {
+        localStorage.removeItem(recentSearchesKey);
+        setRecent([]);
+        return;
+      }
+      try {
+        const stored: unknown = JSON.parse(localStorage.getItem(recentSearchesKey) ?? "[]");
+        setRecent(parseSearchHistory(stored));
+      } catch {
+        localStorage.removeItem(recentSearchesKey);
+      }
+    };
+    syncRecentSearches();
+    window.addEventListener("curtiz-consent-changed", syncRecentSearches);
+    return () => window.removeEventListener("curtiz-consent-changed", syncRecentSearches);
   }, []);
 
   useEffect(() => {
@@ -215,6 +226,7 @@ export function SearchAutocomplete({
   }, [categories, products, query, recent, recommendations, searchComplete]);
 
   const saveRecent = (term: string) => {
+    if (!hasConsentCategory("preferences")) return;
     const next = rememberSearch(recent, term);
     if (next.length === 0) return;
     setRecent(next);
