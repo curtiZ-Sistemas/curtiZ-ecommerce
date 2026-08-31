@@ -5,6 +5,16 @@ import { CookieSettingsButton } from "./cookie-preferences";
 
 const groups = [
   {
+    title: "Comprar",
+    links: [
+      ["Todos os produtos", "/produtos"],
+      ["Chinelos e slides masculinos", "/masculino"],
+      ["Chinelos e sandálias femininas", "/feminino"],
+      ["Chinelos e sandálias infantis", "/infantil"],
+      ["Lançamentos", "/lancamentos"]
+    ]
+  },
+  {
     title: "Institucional",
     links: [
       ["Quem somos", "/sobre"],
@@ -44,7 +54,8 @@ export function SiteFooter() {
         <div className="footer-brand">
           <BrandLogo />
           <p>
-            Conforto e estilo para todos os momentos, com uma experiência de compra clara e organizada.
+            A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de
+            compra clara e organizada.
           </p>
           <span>Loja exclusivamente online.</span>
         </div>

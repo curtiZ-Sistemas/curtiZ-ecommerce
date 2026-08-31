@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BRAND_NAME, officialUrl } from "./seo";
 
 export function catalogMetadata({
   title,
@@ -12,8 +13,15 @@ export function catalogMetadata({
   return {
     title,
     description,
-    alternates: { canonical: path },
-    openGraph: { title, description, type: "website", url: path },
-    twitter: { card: "summary", title, description }
+    alternates: { canonical: officialUrl(path) },
+    openGraph: {
+      title: `${title} | ${BRAND_NAME}`,
+      description,
+      type: "website",
+      siteName: BRAND_NAME,
+      locale: "pt_BR",
+      url: officialUrl(path)
+    },
+    twitter: { card: "summary", title: `${title} | ${BRAND_NAME}`, description }
   };
 }

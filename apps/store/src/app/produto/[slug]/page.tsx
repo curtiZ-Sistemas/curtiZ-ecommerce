@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import { Star } from "lucide-react";
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { IntelligenceShelf } from "@/components/intelligence-shelf";
+import { JsonLd } from "@/components/json-ld";
 import { ProductPurchase } from "@/components/product-purchase";
+import {
+  productBreadcrumbStructuredData,
+  productCategoryPath,
+  productMetadata,
+  productStructuredData
+} from "@/lib/seo";
 import { getPublicProduct } from "@/lib/storefront-data";
-
-const productDescription = "Detalhes, variações e disponibilidade dos produtos curti Z.";
 
 export async function generateMetadata({
   params
@@ -17,88 +21,22 @@ export async function generateMetadata({
   const { slug } = await params;
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
-  const url = `/produto/${encodeURIComponent(slug)}`;
-  const title = detail.product.name;
-  const description = detail.product.description || productDescription;
-  const image = detail.gallery[0]?.src;
-
-  return {
-    title,
-    description,
-    alternates: { canonical: url },
-    openGraph: {
-      title,
-      description,
-      url,
-      ...(image ? { images: [{ url: image, alt: title }] } : {})
-    },
-    twitter: {
-      card: image ? "summary_large_image" : "summary",
-      title,
-      description,
-      ...(image ? { images: [image] } : {})
-    }
-  };
+  return productMetadata(detail);
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const [{ slug }, requestHeaders] = await Promise.all([params, headers()]);
+  const { slug } = await params;
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: product.name,
-    description: product.description,
-    image: detail.gallery.map((image) => image.src),
-    brand: { "@type": "Brand", name: "curti Z" },
-    offers: {
-      "@type": "Offer",
-      priceCurrency: "BRL",
-      price: (product.priceInCents / 100).toFixed(2),
-      availability:
-        product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock"
-    },
-    ...(product.reviews > 0
-      ? {
-          aggregateRating: {
-            "@type": "AggregateRating",
-            ratingValue: product.rating,
-            reviewCount: product.reviews
-          }
-        }
-      : {})
-  };
+  const categoryPath = productCategoryPath(product.category);
 
   return (
     <div className="container page-shell product-page">
-      <script
-        type="application/ld+json"
-        nonce={requestHeaders.get("x-nonce") ?? undefined}
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c")
-        }}
-      />
-      <script
-        type="application/ld+json"
-        nonce={requestHeaders.get("x-nonce") ?? undefined}
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "BreadcrumbList",
-            itemListElement: [
-              { "@type": "ListItem", position: 1, name: "Início", item: "/" },
-              { "@type": "ListItem", position: 2, name: "Produtos", item: "/produtos" },
-              { "@type": "ListItem", position: 3, name: product.name, item: `/produto/${product.slug}` }
-            ]
-          }).replace(/</g, "\\u003c")
-        }}
-      />
+      <JsonLd data={productStructuredData(detail)} />
+      <JsonLd data={productBreadcrumbStructuredData(product)} />
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
-        <Link href="/">Início</Link> / <Link href="/produtos">Produtos</Link> /{" "}
+        <Link href="/">curti Z</Link> / <Link href={categoryPath}>{product.category}</Link> /{" "}
         <span>{product.name}</span>
       </nav>
 

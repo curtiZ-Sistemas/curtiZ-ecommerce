@@ -165,7 +165,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
           >
             <Image
               src={selectedImage}
-              alt={product.name}
+              alt={`${product.name} da curti Z`}
               width={760}
               height={620}
               sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
@@ -222,7 +222,7 @@ export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
       {lightboxOpen ? (
         <ProductImageViewer
           src={selectedImage}
-          alt={product.name}
+          alt={`${product.name} da curti Z`}
           imageIndex={activeImageIndex}
           imageCount={images.length}
           onClose={closeLightbox}

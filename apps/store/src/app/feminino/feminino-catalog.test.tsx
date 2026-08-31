@@ -21,12 +21,12 @@ import { FemininoCatalog } from "./feminino-catalog";
 describe("feminino catalog", () => {
   it("mantém SEO e skeleton leve sem renderizar o catálogo completo no Worker", () => {
     const html = renderToStaticMarkup(
-      <FemininoCatalog description="Leveza, cor e design em cada passo." />
+      <FemininoCatalog description="Descrição da categoria feminina curti Z." />
     );
 
     expect(dynamicConfiguration.ssr).toBe(false);
-    expect(html).toContain("<h1>Feminino</h1>");
-    expect(html).toContain("Leveza, cor e design em cada passo.");
+    expect(html).toContain("<h1>Chinelos e sandálias femininas</h1>");
+    expect(html).toContain("curti Z");
     expect(html).toContain('aria-label="Carregando produtos"');
     expect(html).not.toContain("Filtros");
   });

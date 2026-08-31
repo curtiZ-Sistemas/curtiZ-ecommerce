@@ -3,7 +3,8 @@ import { PrivacyRequestForm } from "@/components/privacy-request-form";
 
 export const metadata: Metadata = {
   title: "Solicitações de privacidade",
-  description: "Canal para exercício de direitos relacionados a dados pessoais."
+  description: "Canal para exercício de direitos relacionados a dados pessoais.",
+  robots: { index: false, follow: false, noarchive: true }
 };
 export default function PrivacyRequestsPage() {
   return (

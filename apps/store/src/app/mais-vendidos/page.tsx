@@ -1,9 +1,16 @@
 import { CatalogPage } from "@/components/catalog-page";
+import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
 
-const description = "Os favoritos de quem escolhe curti Z.";
+const description =
+  "Veja os chinelos, slides e sandálias mais vendidos da curti Z e encontre os favoritos de quem já escolheu a marca.";
 export const metadata = catalogMetadata({ title: "Mais vendidos", description, path: "/mais-vendidos" });
 
 export default function Page() {
-  return <CatalogPage title="Mais vendidos" description={description} preset="best_sellers" />;
+  return (
+    <>
+      <CatalogSeo name="Mais vendidos" path="/mais-vendidos" />
+      <CatalogPage title="Mais vendidos da curti Z" description={description} preset="best_sellers" />
+    </>
+  );
 }

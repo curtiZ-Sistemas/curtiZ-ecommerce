@@ -46,7 +46,7 @@ export function ProductCard({
         {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
         <Image
           src={product.image}
-          alt={product.name}
+          alt={`${product.name} da curti Z`}
           width={360}
           height={280}
           sizes={imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"}

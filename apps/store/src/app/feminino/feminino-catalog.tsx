@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 
 const DeferredCatalogPage = dynamic(
   () => import("@/components/catalog-page").then((module) => module.CatalogPage),
@@ -12,18 +13,30 @@ const DeferredCatalogPage = dynamic(
 
 export function FemininoCatalog({ description }: { description: string }) {
   return (
-    <DeferredCatalogPage title="Feminino" description={description} category="Feminino" />
+    <DeferredCatalogPage
+      title="Chinelos e sandálias femininas"
+      description={description}
+      category="Feminino"
+    />
   );
 }
 
 export function FemininoCatalogFallback() {
   return (
     <div className="container page-shell catalog-page">
+      <nav className="breadcrumbs" aria-label="Navegação estrutural">
+        <Link href="/">curti Z</Link>
+        <span>/</span>
+        <span>Chinelos e sandálias femininas</span>
+      </nav>
       <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">Catálogo curti Z</p>
-          <h1>Feminino</h1>
-          <p>Leveza, cor e design em cada passo.</p>
+          <h1>Chinelos e sandálias femininas</h1>
+          <p>
+            Descubra chinelos e sandálias femininas curti Z com leveza, cores atuais e conforto
+            para acompanhar sua rotina.
+          </p>
         </div>
       </header>
 

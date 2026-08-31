@@ -3439,8 +3439,8 @@ select:disabled {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: 1.45fr repeat(3, 1fr);
-  gap: clamp(30px, 5vw, 70px);
+  grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr));
+  gap: clamp(24px, 3.5vw, 52px);
   padding-block: 46px;
 }
 
@@ -3954,7 +3954,7 @@ select:disabled {
   }
 
   .footer-grid {
-    grid-template-columns: 1.2fr repeat(3, 1fr);
+    grid-template-columns: 1.2fr repeat(2, 1fr);
     gap: 25px;
   }
 

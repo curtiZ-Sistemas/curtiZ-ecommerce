@@ -1,7 +1,13 @@
 import { configuredPublicOrigins, resolvePublicAppUrls } from "@curtiz/config";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { MfaForm } from "@/components/mfa-form";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  title: "Verificação em duas etapas",
+  robots: { index: false, follow: false, noarchive: true }
+};
 
 const allowedDestination = (value: string | undefined): string => {
   const fallback = resolvePublicAppUrls(value).panelUrl;

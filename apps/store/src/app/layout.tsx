@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { configuredPublicAppUrls } from "@curtiz/config";
 import { Manrope } from "next/font/google";
 import { connection } from "next/server";
 import { CartProvider } from "@/components/cart-provider";
@@ -10,32 +9,37 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
 import { PromotionBar } from "@/components/promotion-bar";
+import { JsonLd } from "@/components/json-ld";
 import { getPromotionBarMessages } from "@/lib/promotion-bar-data";
+import {
+  OFFICIAL_STORE_ORIGIN,
+  organizationStructuredData,
+  STORE_DESCRIPTION,
+  websiteStructuredData
+} from "@/lib/seo";
 import "./globals.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
-const storeDescription =
-  "Chinelos, slides e sandálias curti Z com conforto, design e compra organizada.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(configuredPublicAppUrls().storeUrl),
+  metadataBase: new URL(OFFICIAL_STORE_ORIGIN),
   title: {
-    default: "curti Z — conforto e estilo para todos os momentos",
-    template: "%s — curti Z"
+    default: "curti Z | Chinelos, slides e sandálias",
+    template: "%s | curti Z"
   },
-  description: storeDescription,
+  description: STORE_DESCRIPTION,
   openGraph: {
     type: "website",
     locale: "pt_BR",
     siteName: "curti Z",
-    title: "curti Z — conforto e estilo para todos os momentos",
-    description: storeDescription,
+    title: "curti Z | Chinelos, slides e sandálias",
+    description: STORE_DESCRIPTION,
     url: "/"
   },
   twitter: {
     card: "summary",
-    title: "curti Z — conforto e estilo para todos os momentos",
-    description: storeDescription
+    title: "curti Z | Chinelos, slides e sandálias",
+    description: STORE_DESCRIPTION
   }
 };
 
@@ -46,6 +50,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
       <body>
+        <JsonLd data={websiteStructuredData} />
+        <JsonLd data={organizationStructuredData} />
         <CartProvider>
           <FavoritesProvider>
             <a className="skip-link" href="#main-content">

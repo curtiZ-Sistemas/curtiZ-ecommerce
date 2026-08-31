@@ -2,6 +2,7 @@
 
 import { formatBRL } from "@curtiz/domain";
 import { ArrowLeft, ArrowRight, ChevronDown, RotateCcw, SlidersHorizontal, X } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -370,6 +371,11 @@ export function CatalogPage({
 
   return (
     <div className="container page-shell catalog-page">
+      <nav className="breadcrumbs" aria-label="Navegação estrutural">
+        <Link href="/">curti Z</Link>
+        <span>/</span>
+        <span>{title}</span>
+      </nav>
       <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">Catálogo curti Z</p>

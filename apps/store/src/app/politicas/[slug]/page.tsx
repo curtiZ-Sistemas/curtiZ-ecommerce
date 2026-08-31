@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertCircle, ExternalLink } from "lucide-react";
+import { BRAND_NAME, officialUrl } from "@/lib/seo";
 import { getPublicLegalDocument } from "@/lib/legal-data";
 
 export async function generateMetadata({
@@ -9,9 +10,27 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const document = await getPublicLegalDocument((await params).slug);
-  return document
-    ? { title: document.title, description: document.summary }
-    : { title: "Documento não publicado" };
+  if (!document) {
+    return {
+      title: "Documento não publicado",
+      robots: { index: false, follow: false, noarchive: true }
+    };
+  }
+
+  const path = `/politicas/${encodeURIComponent(document.slug)}`;
+  return {
+    title: document.title,
+    description: document.summary,
+    alternates: { canonical: officialUrl(path) },
+    openGraph: {
+      type: "article",
+      siteName: BRAND_NAME,
+      locale: "pt_BR",
+      title: `${document.title} | ${BRAND_NAME}`,
+      description: document.summary,
+      url: officialUrl(path)
+    }
+  };
 }
 
 export default async function LegalDocumentPage({ params }: { params: Promise<{ slug: string }> }) {

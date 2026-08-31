@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpenCheck, FileCheck2 } from "lucide-react";
 import { getPublicLegalDocuments } from "@/lib/legal-data";
+import { catalogMetadata } from "@/lib/catalog-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = catalogMetadata({
   title: "Políticas e documentos legais",
-  description: "Documentos oficiais publicados e vigentes da curti Z."
-};
+  description: "Consulte os documentos oficiais publicados e vigentes da curti Z.",
+  path: "/politicas"
+});
 
 export default async function PoliciesPage() {
   const documents = await getPublicLegalDocuments();

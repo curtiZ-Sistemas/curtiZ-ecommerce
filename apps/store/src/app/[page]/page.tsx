@@ -1,5 +1,17 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { BRAND_NAME, officialUrl } from "@/lib/seo";
 import { getPublicCmsPage } from "@/lib/storefront-data";
+
+const noIndexPages = new Set([
+  "rastrear-pedido",
+  "esqueci-senha",
+  "confirmar-email",
+  "redefinir-senha",
+  "403",
+  "manutencao",
+  "indisponivel"
+]);
 
 const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   sobre: {
@@ -94,21 +106,36 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
   }
 };
 
-export async function generateMetadata({ params }: { params: Promise<{ page: string }> }) {
+export async function generateMetadata({
+  params
+}: {
+  params: Promise<{ page: string }>;
+}): Promise<Metadata> {
   const slug = (await params).page;
   const cmsPage = await getPublicCmsPage(slug);
   const fallback = pages[slug];
 
   if (!cmsPage && !fallback) notFound();
 
-  if (cmsPage) {
-    return {
-      title: cmsPage.seoTitle ?? cmsPage.title,
-      description: cmsPage.seoDescription ?? cmsPage.summary
-    };
-  }
+  const title = cmsPage?.seoTitle ?? cmsPage?.title ?? fallback!.title;
+  const description = cmsPage?.seoDescription ?? cmsPage?.summary ?? fallback!.lead;
+  const path = `/${encodeURIComponent(slug)}`;
+  const indexable = !noIndexPages.has(slug);
 
-  return { title: fallback!.title, description: fallback!.lead };
+  return {
+    title,
+    description,
+    ...(indexable ? { alternates: { canonical: officialUrl(path) } } : {}),
+    openGraph: {
+      type: "website",
+      siteName: BRAND_NAME,
+      locale: "pt_BR",
+      title: `${title} | ${BRAND_NAME}`,
+      description,
+      url: officialUrl(path)
+    },
+    ...(indexable ? {} : { robots: { index: false, follow: false, noarchive: true } })
+  };
 }
 
 export default async function ContentPage({ params }: { params: Promise<{ page: string }> }) {
