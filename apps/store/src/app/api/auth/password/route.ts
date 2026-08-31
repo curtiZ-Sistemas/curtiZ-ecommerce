@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { resolvePublicAppUrls } from "@curtiz/config";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
         { status: 403, headers }
       );
     }
-    const baseUrl = process.env.NEXT_PUBLIC_STORE_URL ?? request.nextUrl.origin;
+    const baseUrl = resolvePublicAppUrls(request.url).storeUrl;
     await supabase.auth.resetPasswordForEmail(parsed.data.email, {
       redirectTo: `${baseUrl}/auth/callback?next=/redefinir-senha`
     });

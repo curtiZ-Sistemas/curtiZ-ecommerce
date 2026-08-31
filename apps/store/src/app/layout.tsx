@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { configuredPublicAppUrls } from "@curtiz/config";
 import { Manrope } from "next/font/google";
 import { connection } from "next/server";
 import { CartProvider } from "@/components/cart-provider";
@@ -17,7 +18,7 @@ const storeDescription =
   "Chinelos, slides e sandálias curti Z com conforto, design e compra organizada.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(configuredPublicAppUrls().storeUrl),
   title: {
     default: "curti Z — conforto e estilo para todos os momentos",
     template: "%s — curti Z"

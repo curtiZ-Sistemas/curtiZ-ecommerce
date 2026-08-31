@@ -4,7 +4,7 @@ import path from "node:path";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
-  transpilePackages: ["@curtiz/domain", "@curtiz/integrations", "@curtiz/security"],
+  transpilePackages: ["@curtiz/config", "@curtiz/domain", "@curtiz/integrations", "@curtiz/security"],
   async headers() {
     return [
       {

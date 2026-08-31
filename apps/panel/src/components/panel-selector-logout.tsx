@@ -2,15 +2,10 @@
 
 import { ArrowLeft, LoaderCircle, LogOut } from "lucide-react";
 import { useState } from "react";
+import { resolvePublicAppUrls } from "@curtiz/config";
 
 function browserStoreOrigin(configuredStoreUrl: string) {
-  const configured = new URL(configuredStoreUrl);
-  const current = new URL(window.location.href);
-  const configuredIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(configured.hostname);
-  const currentIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(current.hostname);
-  return configuredIsLoopback && !currentIsLoopback
-    ? `${current.protocol}//${current.hostname}:3000`
-    : configured.origin;
+  return resolvePublicAppUrls(window.location.href).storeUrl || configuredStoreUrl;
 }
 
 export function PanelSelectorLogout({

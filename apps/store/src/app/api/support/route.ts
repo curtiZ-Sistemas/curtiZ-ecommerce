@@ -7,6 +7,7 @@ import {
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
+import { configuredPublicOrigins } from "@curtiz/config";
 import { DEMO_SESSION_COOKIE, sanitizePlainText, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -117,8 +118,8 @@ const categoryByDatabaseSlug: Record<string, SupportCategory> = {
 const allowedOrigins = () =>
   new Set(
     [
-      process.env.NEXT_PUBLIC_STORE_URL,
-      process.env.NEXT_PUBLIC_PANEL_URL,
+      ...configuredPublicOrigins(),
+      ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()),
       "http://localhost:3000",
       "http://127.0.0.1:3000",
       "http://localhost:3001",
@@ -127,6 +128,7 @@ const allowedOrigins = () =>
   );
 
 const originIsAllowed = (request: Request, origin: string) => {
+  if (origin === new URL(request.url).origin) return true;
   if (allowedOrigins().has(origin)) return true;
   if (process.env.DEMO_MODE !== "true") return false;
   try {

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolvePublicAppUrls } from "@curtiz/config";
+
 import {
   supportStatusLabels,
   type SupportConversationView,
@@ -32,22 +34,10 @@ type SupportResponse = {
   quickReplies?: Array<{ id: string; title: string; shortcut: string; content: string }>;
 };
 
-const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
-
 function storeUrl() {
-  if (typeof window === "undefined") return configuredStoreUrl;
-  try {
-    const configured = new URL(configuredStoreUrl);
-    if (
-      ["localhost", "127.0.0.1"].includes(configured.hostname) &&
-      !["localhost", "127.0.0.1"].includes(window.location.hostname)
-    ) {
-      configured.hostname = window.location.hostname;
-    }
-    return configured.origin;
-  } catch {
-    return configuredStoreUrl;
-  }
+  return resolvePublicAppUrls(
+    typeof window === "undefined" ? undefined : window.location.href
+  ).storeUrl;
 }
 
 const statusFilters: Array<{ value: "all" | SupportStatus; label: string }> = [

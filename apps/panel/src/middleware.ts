@@ -6,6 +6,7 @@ import {
 } from "@curtiz/security/auth-persistence";
 import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
 import { publicCatalogMediaOrigins } from "@/lib/public-media";
+import { resolvePublicAppUrls } from "@curtiz/config";
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
@@ -13,13 +14,7 @@ import { type NextRequest, NextResponse } from "next/server";
 export async function middleware(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
 
-  const storeOrigin = (() => {
-    try {
-      return new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000").origin;
-    } catch {
-      return "http://localhost:3000";
-    }
-  })();
+  const storeOrigin = resolvePublicAppUrls(request.url).storeUrl;
 
   const mediaOrigins = publicCatalogMediaOrigins({
     storeUrl: storeOrigin,

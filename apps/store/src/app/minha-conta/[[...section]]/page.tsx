@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CustomerAccount } from "@/components/customer-account";
 import { loadCustomerAccount } from "@/lib/customer-account-data";
+import { requestPublicAppUrls } from "@/lib/request-public-urls";
 
 export const metadata = {
   title: "Minha conta",
@@ -23,11 +24,9 @@ export default async function AccountPage({
   const snapshot = await loadCustomerAccount();
 
   if (snapshot.panelDestination) {
+    const { panelUrl } = await requestPublicAppUrls();
     redirect(
-      new URL(
-        snapshot.panelDestination,
-        process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001"
-      ).toString()
+      new URL(snapshot.panelDestination, panelUrl).toString()
     );
   }
 

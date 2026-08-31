@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 import { RepresentativeAccessCard } from "@/components/representative-access-card";
 import { ProfileAvatarManager } from "@/components/profile-avatar-manager";
+import { requestPublicAppUrls } from "@/lib/request-public-urls";
 
 export const metadata = { title: "Perfil", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ export default async function ProfilePage() {
   const hasInternalRole = roles.some((role) =>
     ["admin", "manager", "operational", "technical"].includes(role)
   );
-  const panelUrl = process.env.NEXT_PUBLIC_PANEL_URL?.trim() || "http://localhost:3001";
+  const { panelUrl } = await requestPublicAppUrls();
   const returnUrl = hasInternalRole ? `${panelUrl.replace(/\/$/, "")}/selecionar-painel` : "/minha-conta";
   return (
     <main className="container page-shell profile-page account-experience-page">

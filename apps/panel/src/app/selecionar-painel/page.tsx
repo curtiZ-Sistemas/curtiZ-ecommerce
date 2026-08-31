@@ -4,6 +4,7 @@ import Image from "next/image";
 import logoCurtiz from "../../../public/images/logo-curtiz.png";
 import { PanelSelectorLogout } from "@/components/panel-selector-logout";
 import { requirePanelSelectionAccess } from "@/lib/auth";
+import { requestPublicAppUrls } from "@/lib/request-public-urls";
 
 const icons = {
   administracao: Boxes,
@@ -14,7 +15,7 @@ const icons = {
 
 export default async function PanelSelectorPage() {
   const access = await requirePanelSelectionAccess();
-  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+  const { storeUrl } = await requestPublicAppUrls();
   const fallbackHref = access.panels[0]?.href ?? "/";
 
   return (

@@ -12,6 +12,7 @@ import {
   verifyReferralAttribution,
   verifyDemoSession
 } from "@curtiz/security";
+import { configuredPublicOrigins, resolvePublicAppUrls } from "@curtiz/config";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
@@ -194,29 +195,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 function panelBaseUrl(request: Request): string {
-  const requestUrl = new URL(request.url);
-
-  if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) {
-    return `${requestUrl.protocol}//${requestUrl.hostname}:3001`;
-  }
-
-  const configuredPanelUrl = process.env.NEXT_PUBLIC_PANEL_URL?.trim();
-
-  if (configuredPanelUrl) {
-    try {
-      const configuredOrigin = new URL(configuredPanelUrl).origin;
-
-      // Impede que uma configuração errada envie o painel
-      // para o mesmo Worker da loja.
-      if (configuredOrigin !== requestUrl.origin) {
-        return configuredOrigin;
-      }
-    } catch {
-      // Continua para o endereço de produção conhecido.
-    }
-  }
-
-  return "https://curtiz-panel.sistemas-curtiz.workers.dev";
+  return resolvePublicAppUrls(request.url).panelUrl;
 }
 
 function customerDestination(value: string | undefined) {
@@ -232,7 +211,7 @@ function customerDestination(value: string | undefined) {
 }
 
 function confirmationRedirect(request: Request, next: string | undefined) {
-  const callback = new URL("/auth/callback", process.env.NEXT_PUBLIC_STORE_URL ?? request.url);
+  const callback = new URL("/auth/callback", resolvePublicAppUrls(request.url).storeUrl);
   callback.searchParams.set("next", customerDestination(next));
   return callback.toString();
 }
@@ -287,15 +266,16 @@ function demoLoginResponse(
 function isAllowedRequest(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
+  const requestOrigin = new URL(request.url).origin;
   const configuredOrigins = new Set([
-    process.env.NEXT_PUBLIC_STORE_URL,
-    process.env.NEXT_PUBLIC_PANEL_URL,
+    ...configuredPublicOrigins(),
+    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()),
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001"
   ]);
-  if (configuredOrigins.has(origin)) return true;
+  if (origin === requestOrigin || configuredOrigins.has(origin)) return true;
   if (process.env.DEMO_MODE !== "true") return false;
   try {
     const requestUrl = new URL(request.url);

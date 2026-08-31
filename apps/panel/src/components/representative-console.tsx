@@ -1,5 +1,7 @@
 "use client";
 
+import { resolvePublicAppUrls } from "@curtiz/config";
+
 import {
   Check,
   FileImage,
@@ -25,14 +27,9 @@ type Application = {
 };
 
 const storeOrigin = () => {
-  const configured = new URL(process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000");
-  if (typeof window === "undefined") return configured.origin;
-  const current = new URL(window.location.href);
-  const configuredLocal = ["localhost", "127.0.0.1", "::1"].includes(configured.hostname);
-  const currentLocal = ["localhost", "127.0.0.1", "::1"].includes(current.hostname);
-  return configuredLocal && !currentLocal
-    ? `${current.protocol}//${current.hostname}:3000`
-    : configured.origin;
+  return resolvePublicAppUrls(
+    typeof window === "undefined" ? undefined : window.location.href
+  ).storeUrl;
 };
 
 export function RepresentativeConsole({ role, section }: { role: PanelRole; section: string }) {

@@ -15,6 +15,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@curtiz/config": "workspace:*",
     "@curtiz/domain": "workspace:*",
     "@curtiz/integrations": "workspace:*",
     "@curtiz/security": "workspace:*",

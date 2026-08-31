@@ -1,7 +1,16 @@
 import type { MetadataRoute } from "next";
+import { configuredPublicAppUrls } from "@curtiz/config";
+import { headers } from "next/headers";
 
-export default function robots(): MetadataRoute.Robots {
-  const base = (process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000").replace(/\/+$/u, "");
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  const requestHeaders = await headers();
+  const hostname = (requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "")
+    .split(":")[0]
+    ?.toLowerCase();
+  const base = configuredPublicAppUrls().storeUrl;
+  if (hostname?.endsWith(".workers.dev")) {
+    return { rules: [{ userAgent: "*", disallow: "/" }] };
+  }
   return {
     rules: [
       {

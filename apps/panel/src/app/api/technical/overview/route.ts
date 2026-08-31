@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
     store,
     { name: "Supabase / Banco", state: databaseAvailable ? "online" : "unavailable", detail: databaseAvailable ? "Consultas protegidas responderam" : "Consulta protegida falhou", checkedAt: new Date().toISOString() },
     { name: "Auth", state: "online", detail: "Sessão validada pelo Supabase Auth", checkedAt: new Date().toISOString() },
-    { name: "Cloudflare", state: configured((process.env.NEXT_PUBLIC_PANEL_URL ?? "").includes("workers.dev")), detail: "Estado inferido apenas da configuração de runtime" },
+    { name: "Cloudflare", state: configured(Boolean(process.env.NEXT_PUBLIC_PANEL_URL)), detail: "Origem pública configurada; disponibilidade é verificada pelo deploy" },
     { name: "Mercado Pago", state: configured(enabled(process.env.MERCADO_PAGO_ENABLED) && Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN) && Boolean(process.env.MERCADO_PAGO_WEBHOOK_SECRET)), detail: enabled(process.env.MERCADO_PAGO_ENABLED) ? "Provider habilitado; credenciais não são exibidas" : "Provider desabilitado" },
     { name: "Resend", state: configured(enabled(process.env.EMAIL_ENABLED) && Boolean(process.env.RESEND_API_KEY)), detail: enabled(process.env.EMAIL_ENABLED) ? "E-mail habilitado; credencial não é exibida" : "E-mail desabilitado" },
     { name: "Frete", state: shippingProvider === "mock" ? "mock" : configured(shippingProvider !== "disabled" && (Boolean(process.env.MELHOR_ENVIO_ACCESS_TOKEN) || Boolean(process.env.CORREIOS_API_TOKEN))), detail: shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },

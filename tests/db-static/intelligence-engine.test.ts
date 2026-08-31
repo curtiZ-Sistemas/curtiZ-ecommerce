@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync("supabase/migrations/202608210001_intelligence_engine.sql", "utf8");
 const client = readFileSync("apps/store/src/lib/intelligence-client.ts", "utf8");
 const renderer = readFileSync("apps/store/src/components/homepage-section-renderer.tsx", "utf8");
+const shelf = readFileSync("apps/store/src/components/intelligence-shelf.tsx", "utf8");
+const recommendations = readFileSync(
+  "apps/store/src/app/api/intelligence/recommendations/route.ts",
+  "utf8"
+);
+const homepageBuilder = readFileSync("apps/panel/src/components/homepage-builder.tsx", "utf8");
 
 describe("curti Z intelligence engine", () => {
   it("accepts bounded consented batches and excludes client purchases", () => {
@@ -41,6 +47,13 @@ describe("curti Z intelligence engine", () => {
   });
   it("exposes configurable intelligent shelves with resilient discovery", () => {
     expect(renderer).toContain("IntelligenceShelf");
-    expect(renderer).toContain('source==="discovery"');
+    expect(renderer).toMatch(/const allowed: IntelligenceSource\[\] = \[[\s\S]*["']discovery["']/u);
+    expect(renderer).toMatch(/infinite=\{source\s*===\s*["']discovery["']\}/u);
+    expect(homepageBuilder).toMatch(/<option\s+value=["']discovery["']>/u);
+    expect(recommendations).toMatch(/const sourceSchema = z\.enum\(\[[\s\S]*["']discovery["']/u);
+    expect(recommendations).toContain("p_source: input.source");
+    expect(shelf).toContain('fetch("/api/intelligence/recommendations"');
+    expect(shelf).toContain("new IntersectionObserver");
+    expect(shelf).toContain("nextCursor");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  configuredCookieDomains,
   cookieDomainMatchesHost,
   normalizeCookieDomain,
   sharedCookieOptions
@@ -16,6 +17,28 @@ describe("cookies compartilhados entre aplicações", () => {
     expect(cookieDomainMatchesHost("example.com", "store.example.com")).toBe(true);
     expect(cookieDomainMatchesHost("example.com", "example.com")).toBe(true);
     expect(cookieDomainMatchesHost("example.com", "notexample.com")).toBe(false);
+  });
+
+  it("seleciona o domínio correspondente entre produção e workers.dev", () => {
+    const domains = "curtiz.com.br,sistemas-curtiz.workers.dev";
+    expect(configuredCookieDomains(domains)).toEqual([
+      "curtiz.com.br",
+      "sistemas-curtiz.workers.dev"
+    ]);
+    expect(sharedCookieOptions({ httpOnly: true }, "painel.curtiz.com.br", domains)).toEqual({
+      httpOnly: true,
+      domain: ".curtiz.com.br"
+    });
+    expect(
+      sharedCookieOptions(
+        { httpOnly: true },
+        "curtiz-panel.sistemas-curtiz.workers.dev",
+        domains
+      )
+    ).toEqual({
+      httpOnly: true,
+      domain: ".sistemas-curtiz.workers.dev"
+    });
   });
 
   it("não aplica Domain quando o host não corresponde", () => {

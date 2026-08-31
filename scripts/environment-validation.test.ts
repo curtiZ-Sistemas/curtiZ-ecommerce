@@ -6,13 +6,16 @@ const stagingEnvironment: EnvironmentValues = {
   PANEL_DEPLOYMENT_MODE: "separate",
   NEXT_PUBLIC_STORE_URL: "https://store-staging.example.com",
   NEXT_PUBLIC_PANEL_URL: "https://panel-staging.example.com",
+  NEXT_PUBLIC_STORE_TEST_URL: "https://store-test.example.net",
+  NEXT_PUBLIC_PANEL_TEST_URL: "https://panel-test.example.net",
   NEXT_PUBLIC_SUPABASE_URL: "https://staging.supabase.co",
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
   SUPABASE_SECRET_KEY: "staging-secret-key",
   PII_ENCRYPTION_KEY: "staging-pii-key",
   AUDIT_HASH_KEY: "staging-audit-key",
-  ALLOWED_ORIGINS: "https://store-staging.example.com,https://panel-staging.example.com",
-  AUTH_COOKIE_DOMAIN: "example.com",
+  ALLOWED_ORIGINS:
+    "https://store-staging.example.com,https://panel-staging.example.com,https://store-test.example.net,https://panel-test.example.net",
+  AUTH_COOKIE_DOMAINS: "example.com,example.net",
   DEMO_MODE: "true",
   DEMO_USERS_PASSWORD: "a-secure-staging-demo-password",
   DEMO_SESSION_SECRET: "staging-demo-session-secret-with-32-chars-minimum",
@@ -162,7 +165,7 @@ describe("environment validation", () => {
         ...stagingEnvironment,
         NEXT_PUBLIC_PANEL_URL: "https://panel.outro-dominio.com"
       }).errors
-    ).toContain("NEXT_PUBLIC_PANEL_URL não pertence a AUTH_COOKIE_DOMAIN");
+    ).toContain("NEXT_PUBLIC_PANEL_URL não pertence a nenhum domínio de AUTH_COOKIE_DOMAINS");
   });
 
   it("rejeita URL do Supabase com caminho da API", () => {

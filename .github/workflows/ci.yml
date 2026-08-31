@@ -97,6 +97,8 @@ jobs:
     env:
       NEXT_PUBLIC_STORE_URL: https://store.example.invalid
       NEXT_PUBLIC_PANEL_URL: https://panel.example.invalid
+      NEXT_PUBLIC_STORE_TEST_URL: https://store-test.example.invalid
+      NEXT_PUBLIC_PANEL_TEST_URL: https://panel-test.example.invalid
       NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
       SUPABASE_SECRET_KEY: ci-secret-placeholder
@@ -104,8 +106,8 @@ jobs:
       TURNSTILE_SECRET_KEY: ci-turnstile-placeholder
       PII_ENCRYPTION_KEY: ci-pii-placeholder
       AUDIT_HASH_KEY: ci-audit-placeholder
-      ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid
-      AUTH_COOKIE_DOMAIN: example.invalid
+      ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid
+      AUTH_COOKIE_DOMAINS: example.invalid
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -173,6 +175,8 @@ jobs:
     env:
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
+      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
+      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
@@ -190,7 +194,7 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
+          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Configure a variável de repositório $name antes do deploy."
               exit 1
@@ -222,6 +226,8 @@ jobs:
     env:
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
+      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
+      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
@@ -238,7 +244,7 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
+          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Configure a variável de repositório $name antes do deploy."
               exit 1

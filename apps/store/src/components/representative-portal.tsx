@@ -1,5 +1,7 @@
 "use client";
 
+import { configuredPublicAppUrls } from "@curtiz/config";
+
 import { formatBRL } from "@curtiz/domain";
 import {
   BadgeDollarSign,
@@ -1805,8 +1807,8 @@ const postRepresentativeAction = async (body: Record<string, unknown>) => {
   return result;
 };
 const windowOrigin = () =>
-  typeof window === "undefined" ? "https://curtiz.com.br" : window.location.origin;
-const referralLink = (code: string) => `${process.env.NEXT_PUBLIC_STORE_URL ?? ""}/indicar/${code}`;
+  typeof window === "undefined" ? configuredPublicAppUrls().storeUrl : window.location.origin;
+const referralLink = (code: string) => `${windowOrigin()}/indicar/${code}`;
 const formatDate = (value: string) =>
   value
     ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date(value))

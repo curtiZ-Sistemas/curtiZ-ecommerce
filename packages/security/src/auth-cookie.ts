@@ -19,13 +19,24 @@ export const cookieDomainMatchesHost = (domain: string, host: string): boolean =
   return normalizedHost === domain || normalizedHost.endsWith(`.${domain}`);
 };
 
+export const configuredCookieDomains = (value: string | undefined): string[] => [
+  ...new Set(
+    (value ?? "")
+      .split(",")
+      .map((item) => normalizeCookieDomain(item))
+      .filter((item): item is string => Boolean(item))
+  )
+];
+
 export const sharedCookieOptions = <T>(
   options: T,
   host: string | null | undefined,
-  configuredDomain = process.env.AUTH_COOKIE_DOMAIN
+  configuredDomains = process.env.AUTH_COOKIE_DOMAINS ?? process.env.AUTH_COOKIE_DOMAIN
 ): T & { domain?: string } => {
-  const domain = normalizeCookieDomain(configuredDomain);
-  if (!domain || !host || !cookieDomainMatchesHost(domain, host)) {
+  const domain = configuredCookieDomains(configuredDomains).find((candidate) =>
+    host ? cookieDomainMatchesHost(candidate, host) : false
+  );
+  if (!domain) {
     return options as T & { domain?: string };
   }
   return { ...options, domain: `.${domain}` };

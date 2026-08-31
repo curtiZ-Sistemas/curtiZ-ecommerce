@@ -33,4 +33,17 @@ describe("store security headers", () => {
 
     expect(getUser).not.toHaveBeenCalled();
   });
+
+  it("impede indexação do alias workers.dev sem redirecionar o ambiente", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+
+    const response = await middleware(
+      new NextRequest("https://curtiz-ecommerce.sistemas-curtiz.workers.dev/produtos")
+    );
+
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
+    expect(response.headers.get("location")).toBeNull();
+  });
 });

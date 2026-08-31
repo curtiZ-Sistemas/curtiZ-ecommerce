@@ -18,11 +18,13 @@ const stagingRequired = [
   "PII_ENCRYPTION_KEY",
   "AUDIT_HASH_KEY",
   "ALLOWED_ORIGINS",
-  "AUTH_COOKIE_DOMAIN"
+  "AUTH_COOKIE_DOMAINS"
 ] as const;
 
 const productionRequired = [
   ...stagingRequired,
+  "NEXT_PUBLIC_STORE_TEST_URL",
+  "NEXT_PUBLIC_PANEL_TEST_URL",
   "PAYMENT_PROVIDER",
   "EMAIL_PROVIDER",
   "SHIPPING_PROVIDER",
@@ -181,21 +183,52 @@ const validateAllowedOrigins = (
       errors.push(`ALLOWED_ORIGINS contém uma origem inválida: ${origin}`);
     }
   }
+
+  const originSet = new Set(origins.map((item) => item.replace(/\/$/u, "")));
+  for (const key of [
+    "NEXT_PUBLIC_STORE_URL",
+    "NEXT_PUBLIC_PANEL_URL",
+    "NEXT_PUBLIC_STORE_TEST_URL",
+    "NEXT_PUBLIC_PANEL_TEST_URL"
+  ] as const) {
+    const configuredUrl = environment[key]?.trim();
+    if (!configuredUrl) continue;
+    try {
+      const configuredOrigin = new URL(configuredUrl).origin;
+      if (!originSet.has(configuredOrigin)) {
+        errors.push(`ALLOWED_ORIGINS deve incluir ${key}`);
+      }
+    } catch {
+      // validateUrl já informa o erro de URL.
+    }
+  }
 };
 
 const validateSharedCookieDomain = (environment: EnvironmentValues, errors: string[]): void => {
-  const rawDomain = normalize(environment.AUTH_COOKIE_DOMAIN).replace(/^\./u, "");
+  const configuredDomains =
+    environment.AUTH_COOKIE_DOMAINS?.trim() || environment.AUTH_COOKIE_DOMAIN?.trim() || "";
+  const domains = configuredDomains
+    .split(",")
+    .map((domain) => domain.trim().toLowerCase().replace(/^\./u, ""))
+    .filter(Boolean);
 
-  if (!rawDomain) {
+  if (!domains.length) {
     return;
   }
 
-  if (rawDomain.includes(":") || rawDomain.includes("/") || !rawDomain.includes(".")) {
-    errors.push("AUTH_COOKIE_DOMAIN deve conter somente um domínio válido");
-    return;
+  for (const domain of domains) {
+    if (domain.includes(":") || domain.includes("/") || !domain.includes(".")) {
+      errors.push("AUTH_COOKIE_DOMAINS deve conter somente domínios válidos separados por vírgula");
+      return;
+    }
   }
 
-  for (const key of ["NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL"] as const) {
+  for (const key of [
+    "NEXT_PUBLIC_STORE_URL",
+    "NEXT_PUBLIC_PANEL_URL",
+    "NEXT_PUBLIC_STORE_TEST_URL",
+    "NEXT_PUBLIC_PANEL_TEST_URL"
+  ] as const) {
     const rawUrl = environment[key]?.trim();
 
     if (!rawUrl) {
@@ -205,10 +238,12 @@ const validateSharedCookieDomain = (environment: EnvironmentValues, errors: stri
     try {
       const host = new URL(rawUrl).hostname.toLowerCase();
 
-      const belongsToCookieDomain = host === rawDomain || host.endsWith(`.${rawDomain}`);
+      const belongsToCookieDomain = domains.some(
+        (domain) => host === domain || host.endsWith(`.${domain}`)
+      );
 
       if (!belongsToCookieDomain) {
-        errors.push(`${key} não pertence a AUTH_COOKIE_DOMAIN`);
+        errors.push(`${key} não pertence a nenhum domínio de AUTH_COOKIE_DOMAINS`);
       }
     } catch {
       // validateUrl já informa o erro de URL.
@@ -242,6 +277,27 @@ const validateSeparateApplications = (environment: EnvironmentValues, errors: st
 
     if (storeOrigin === panelOrigin) {
       errors.push("NEXT_PUBLIC_STORE_URL e NEXT_PUBLIC_PANEL_URL devem usar aplicações distintas");
+    }
+  } catch {
+    // validateUrl já informa os erros de URL.
+  }
+};
+
+const validateTestUrlPair = (environment: EnvironmentValues, errors: string[]): void => {
+  const storeTestUrl = environment.NEXT_PUBLIC_STORE_TEST_URL?.trim();
+  const panelTestUrl = environment.NEXT_PUBLIC_PANEL_TEST_URL?.trim();
+
+  if (Boolean(storeTestUrl) !== Boolean(panelTestUrl)) {
+    errors.push(
+      "NEXT_PUBLIC_STORE_TEST_URL e NEXT_PUBLIC_PANEL_TEST_URL devem ser configuradas em conjunto"
+    );
+    return;
+  }
+
+  if (!storeTestUrl || !panelTestUrl) return;
+  try {
+    if (new URL(storeTestUrl).origin === new URL(panelTestUrl).origin) {
+      errors.push("As URLs de teste da loja e do painel devem usar aplicações distintas");
     }
   } catch {
     // validateUrl já informa os erros de URL.
@@ -357,9 +413,15 @@ const validateCommonValues = (
 
   validateUrl(environment, "NEXT_PUBLIC_PANEL_URL", requireHttps, errors);
 
+  validateUrl(environment, "NEXT_PUBLIC_STORE_TEST_URL", requireHttps, errors);
+
+  validateUrl(environment, "NEXT_PUBLIC_PANEL_TEST_URL", requireHttps, errors);
+
   validateUrl(environment, "NEXT_PUBLIC_SUPABASE_URL", requireHttps, errors);
 
   validateAllowedOrigins(environment, requireHttps, errors);
+
+  validateTestUrlPair(environment, errors);
 
   validateProviderCredentials(environment, errors);
 };

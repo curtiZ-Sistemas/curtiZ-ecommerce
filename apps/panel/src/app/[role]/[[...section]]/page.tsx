@@ -23,6 +23,7 @@ import { isAdminResource } from "@/lib/admin-resources";
 import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
 import { isTechnicalResource } from "@/lib/technical-resources";
 import { hasMultipleSelectablePanels } from "@/lib/panel-roles";
+import { requestPublicAppUrls } from "@/lib/request-public-urls";
 
 const roles = new Set<PanelRole>(["operacional", "administracao", "gerencia", "tecnico"]);
 
@@ -47,6 +48,7 @@ export default async function RolePage({
   const initialStatus = rawStatus?.trim().slice(0, 40) ?? "";
   const currentPath = `/${role}${section ? `/${section}` : ""}`;
   const access = await requirePanelAccess(role, currentPath);
+  const { storeUrl } = await requestPublicAppUrls();
   const representativeSections = new Set([
     "representantes",
     "solicitacoes-representantes",
@@ -63,6 +65,7 @@ export default async function RolePage({
       section={section}
       userName={access.fullName}
       avatarUrl={access.avatarUrl}
+      storeUrl={storeUrl}
       canSwitchPanel={hasMultipleSelectablePanels(access.roles)}
     >
       {showRouteHeading(role, section) ? <PanelPageHeading role={role} section={section} /> : null}

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { requestPublicAppUrls } from "@/lib/request-public-urls";
 
-export default function PanelEntry() {
-  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+export default async function PanelEntry() {
+  const { storeUrl } = await requestPublicAppUrls();
   redirect(`${storeUrl}/login`);
 }

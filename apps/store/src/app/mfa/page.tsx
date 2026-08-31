@@ -1,16 +1,14 @@
+import { configuredPublicOrigins, resolvePublicAppUrls } from "@curtiz/config";
 import { redirect } from "next/navigation";
 import { MfaForm } from "@/components/mfa-form";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const allowedDestination = (value: string | undefined): string => {
-  const fallback = process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001";
+  const fallback = resolvePublicAppUrls(value).panelUrl;
   if (!value) return fallback;
   try {
     const candidate = new URL(value);
-    const allowed = [process.env.NEXT_PUBLIC_STORE_URL, process.env.NEXT_PUBLIC_PANEL_URL]
-      .filter((item): item is string => Boolean(item))
-      .map((item) => new URL(item).origin);
-    return allowed.includes(candidate.origin) ? candidate.toString() : fallback;
+    return configuredPublicOrigins().has(candidate.origin) ? candidate.toString() : fallback;
   } catch {
     return fallback;
   }
@@ -34,4 +32,3 @@ export default async function MfaPage({ searchParams }: { searchParams: Promise<
     </main>
   );
 }
-

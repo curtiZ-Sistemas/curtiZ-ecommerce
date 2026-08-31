@@ -189,7 +189,7 @@ function getSafeReturnPath(request: NextRequest): string {
   return requestedPath;
 }
 
-function applySecurityHeaders(response: NextResponse, csp: string): NextResponse {
+function applySecurityHeaders(response: NextResponse, csp: string, hostname: string): NextResponse {
   response.headers.set("Content-Security-Policy", csp);
 
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -202,6 +202,9 @@ function applySecurityHeaders(response: NextResponse, csp: string): NextResponse
 
   if (process.env.NODE_ENV === "production") {
     response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  if (hostname.toLowerCase().endsWith(".workers.dev")) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   }
 
   return response;
@@ -260,7 +263,7 @@ function rewriteToNativeNotFound(
   copyResponseCookies(currentResponse, response);
   response.headers.set("Cache-Control", "public, max-age=0, must-revalidate");
 
-  return applySecurityHeaders(response, csp);
+  return applySecurityHeaders(response, csp, request.nextUrl.hostname);
 }
 
 function redirectToLogin(
@@ -287,7 +290,7 @@ function redirectToLogin(
 
   redirectResponse.headers.set("Cache-Control", "private, no-store");
 
-  return applySecurityHeaders(redirectResponse, csp);
+  return applySecurityHeaders(redirectResponse, csp, request.nextUrl.hostname);
 }
 
 export async function middleware(request: NextRequest) {
@@ -363,7 +366,8 @@ export async function middleware(request: NextRequest) {
           headers: requestHeaders
         }
       }),
-      csp
+      csp,
+      request.nextUrl.hostname
     );
 
   let response = createNextResponse();

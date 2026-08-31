@@ -8,13 +8,11 @@ import {
   hasPanelRouteAccess,
   type PanelRouteRole
 } from "./panel-roles";
-
-const storeUrl = () => process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
-const panelUrl = () => process.env.NEXT_PUBLIC_PANEL_URL ?? "http://localhost:3001";
-
-const storeDestination = (path: string) => new URL(path, storeUrl()).toString();
+import { requestPublicAppUrls } from "./request-public-urls";
 
 export async function requirePanelAccess(role: PanelRouteRole, currentPath: string) {
+  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const cookieStore = await cookies();
   const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
   if (session) {
@@ -61,7 +59,7 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (assurance.error || assurance.data.currentLevel !== "aal2") {
       const safePath = safeInternalPath(currentPath, `/${role}`);
-      const destination = new URL(safePath, panelUrl()).toString();
+      const destination = new URL(safePath, panelUrl).toString();
       redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
     }
   }
@@ -87,6 +85,8 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
 }
 
 export async function requirePanelSelectionAccess() {
+  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const currentPath = "/selecionar-painel";
   const cookieStore = await cookies();
   const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
@@ -124,7 +124,7 @@ export async function requirePanelSelectionAccess() {
   if (process.env.REQUIRE_INTERNAL_MFA === "true") {
     const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (assurance.error || assurance.data.currentLevel !== "aal2") {
-      const destination = new URL(currentPath, panelUrl()).toString();
+      const destination = new URL(currentPath, panelUrl).toString();
       redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
     }
   }

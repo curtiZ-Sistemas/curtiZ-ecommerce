@@ -26,11 +26,52 @@ Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
 - variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
+  `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
   `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`;
 - variable opcional: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, quando o Turnstile estiver habilitado.
 
 O token Cloudflare deve ter somente as permissões necessárias para publicar os dois Workers na
 conta correta. Não armazene tokens em variables públicas.
+
+## Domínios públicos e aliases de teste
+
+A origem canônica da loja é determinada somente por `NEXT_PUBLIC_STORE_URL`. O par de produção e o
+par de teste devem ser configurados assim:
+
+```dotenv
+NEXT_PUBLIC_STORE_URL=https://curtiz.com.br
+NEXT_PUBLIC_PANEL_URL=https://painel.curtiz.com.br
+NEXT_PUBLIC_STORE_TEST_URL=https://curtiz-ecommerce.sistemas-curtiz.workers.dev
+NEXT_PUBLIC_PANEL_TEST_URL=https://curtiz-panel.sistemas-curtiz.workers.dev
+AUTH_COOKIE_DOMAINS=curtiz.com.br,sistemas-curtiz.workers.dev
+ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-panel.sistemas-curtiz.workers.dev
+```
+
+As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build do GitHub Actions e devem ser
+espelhadas com os mesmos valores no runtime dos dois Workers. As duas últimas são aliases, não
+origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` são variáveis somente de runtime dos
+dois Workers no Cloudflare. A aplicação seleciona o par correspondente ao host da requisição; isso
+mantém login, logout, MFA e navegação loja/painel isolados entre produção e teste.
+
+No Cloudflare, associe `curtiz.com.br` ao Worker `curtiz-ecommerce` e
+`painel.curtiz.com.br` ao Worker `curtiz-panel` como **Custom Domains**. Não adicione essas rotas ao
+Wrangler: assim os domínios podem ser retirados e recolocados no painel sem alteração de código e
+os endereços `workers.dev` permanecem habilitados. Para o `www`, crie um registro DNS `A` proxied
+`www` apontando para `192.0.2.0` e um Single Redirect com padrão de entrada `https://www.*`, destino
+`https://${1}`, status 301 e **Preserve query string** habilitado.
+
+No Supabase Auth, use `https://curtiz.com.br` como **Site URL** e cadastre estas Redirect URLs:
+
+```text
+https://curtiz.com.br/auth/callback**
+https://curtiz-ecommerce.sistemas-curtiz.workers.dev/auth/callback**
+```
+
+O `**` fica restrito ao final da rota real e é necessário porque confirmação e recuperação incluem
+o parâmetro seguro `next` na query string. Se os templates de e-mail do Auth tiverem sido
+personalizados, os links de confirmação e recuperação devem usar `{{ .RedirectTo }}`.
+
+O ambiente local mantém as URLs adicionais definidas em `supabase/config.toml`.
 
 Para republicar sem criar commit, abra **Actions → CI → Run workflow** e escolha `store`, `panel` ou
 `both`. A execução manual passa pelas mesmas validações antes do deploy.

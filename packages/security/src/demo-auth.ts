@@ -61,7 +61,9 @@ const configuredStagingHosts = (): Set<string> => {
   const configured = [
     ...(process.env.STAGING_DEMO_HOSTS ?? "").split(","),
     process.env.NEXT_PUBLIC_STORE_URL,
-    process.env.NEXT_PUBLIC_PANEL_URL
+    process.env.NEXT_PUBLIC_PANEL_URL,
+    process.env.NEXT_PUBLIC_STORE_TEST_URL,
+    process.env.NEXT_PUBLIC_PANEL_TEST_URL
   ];
   const hosts = new Set<string>();
   for (const value of configured) {

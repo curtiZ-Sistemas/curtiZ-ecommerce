@@ -7,6 +7,8 @@ const booleanString = z
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_STORE_URL: z.string().url(),
   NEXT_PUBLIC_PANEL_URL: z.string().url(),
+  NEXT_PUBLIC_STORE_TEST_URL: z.string().url().optional(),
+  NEXT_PUBLIC_PANEL_TEST_URL: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z
     .string()
     .url()
@@ -27,6 +29,7 @@ export const serverEnvSchema = z.object({
   EMAIL_PROVIDER: z.enum(["disabled", "mock", "resend"]).default("disabled"),
   WHATSAPP_PROVIDER: z.enum(["disabled", "mock", "meta"]).default("disabled"),
   AUTH_COOKIE_DOMAIN: z.string().min(3).optional(),
+  AUTH_COOKIE_DOMAINS: z.string().min(3).optional(),
   STAGING_DEMO_HOSTS: z.string().optional(),
   DEMO_MODE: booleanString.default(false),
   ALLOW_GUEST_CHECKOUT: booleanString.default(false),
@@ -41,3 +44,4 @@ export const serverEnvSchema = z.object({
 });
 
 export * from "./integrations";
+export * from "./public-urls";

@@ -299,6 +299,7 @@ export function PanelShell({
   section,
   userName,
   avatarUrl,
+  storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
   canSwitchPanel = false,
   children
 }: {
@@ -306,6 +307,7 @@ export function PanelShell({
   section: string;
   userName?: string;
   avatarUrl?: string;
+  storeUrl?: string;
   canSwitchPanel?: boolean;
   children: React.ReactNode;
 }) {
@@ -321,7 +323,7 @@ export function PanelShell({
     setMenuOpen(false);
     if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0);
   };
-  const configuredStoreUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+  const configuredStoreUrl = storeUrl;
   const navigationGroups = groupedMenu(role);
 
   useEffect(() => {
@@ -336,16 +338,7 @@ export function PanelShell({
     });
   };
 
-  const browserStoreUrl = () => {
-    const configured = new URL(configuredStoreUrl);
-    const current = new URL(window.location.href);
-    const configuredIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(configured.hostname);
-    const currentIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(current.hostname);
-    if (configuredIsLoopback && !currentIsLoopback) {
-      return `${current.protocol}//${current.hostname}:3000`;
-    }
-    return configured.origin;
-  };
+  const browserStoreUrl = () => configuredStoreUrl;
 
   const logout = async () => {
     if (signingOut) return;
