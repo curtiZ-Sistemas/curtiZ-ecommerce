@@ -223,6 +223,13 @@ test("busca desktop mantém histórico privado, removível e acessível pelo tec
   test.skip(isMobile, "Fluxo exclusivo da busca desktop.");
   await page.addInitScript(() => {
     localStorage.setItem(
+      "curtiz-cookie-consent",
+      JSON.stringify({
+        version: "inventory-2",
+        categories: { essential: true, preferences: true, analytics: false }
+      })
+    );
+    localStorage.setItem(
       "curtiz-recent-searches",
       JSON.stringify(["Wave", "Slide preto", "Sandália", "Infantil", "Azul", "Excedente"])
     );
