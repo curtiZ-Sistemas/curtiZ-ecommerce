@@ -38,7 +38,7 @@ test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) =>
 
 test("filtra no servidor, mantém URL e permite remover chips", async ({ page, isMobile }) => {
   await page.goto("/produtos");
-  await expect(page.getByText(/produtos encontrados/i)).toBeVisible();
+  await expect(page.getByText(/produtos encontrados/i).filter({ visible: true })).toBeVisible();
   const rejectCookies = page.getByRole("button", { name: "Rejeitar opcionais" });
   await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
   await rejectCookies.click();
