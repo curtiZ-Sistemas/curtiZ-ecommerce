@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseCatalogFilters, queryDemoCatalog } from "@/lib/catalog-query";
-import { parseCatalogRpcResult, parseRpcProductList } from "@/lib/catalog-result";
+import { parseCatalogRpcResult } from "@/lib/catalog-result";
 import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
@@ -23,29 +23,6 @@ export async function GET(request: Request) {
 
   const supabase = createPublicSupabaseClient();
   if (supabase) {
-    if (suggestions && filters.query) {
-      const suggestionResponse: unknown = await supabase.rpc("search_catalog_suggestions", {
-        p_query: filters.query,
-        p_limit: Math.min(filters.pageSize, 8)
-      });
-      const suggestionResult = readQueryResult(suggestionResponse);
-      const suggestionProducts = suggestionResult.error
-        ? null
-        : parseRpcProductList(suggestionResult.data);
-      if (suggestionProducts) {
-        return NextResponse.json(
-          {
-            products: suggestionProducts,
-            facets: { categories: [], collections: [], colors: [], sizes: [], price: { min: 0, max: 0 }, promotionCount: 0, inStockCount: 0, newestCount: 0 },
-            total: suggestionProducts.length,
-            page: 1,
-            pageSize: suggestionProducts.length,
-            source: "supabase"
-          },
-          { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=120" } }
-        );
-      }
-    }
     const rpcResponse: unknown = await supabase.rpc("search_catalog", {
       p_query: filters.query ?? null,
       p_category: filters.category ?? null,
@@ -60,7 +37,7 @@ export async function GET(request: Request) {
       p_min_rating: filters.minRating ?? null,
       p_sort: filters.sort,
       p_page: filters.page,
-      p_page_size: filters.pageSize
+      p_page_size: suggestions ? Math.min(filters.pageSize, 8) : filters.pageSize
     });
     const { data, error } = readQueryResult(rpcResponse);
     if (!error) {

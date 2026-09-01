@@ -1,6 +1,6 @@
 "use client";
 
-import type { Product } from "@curtiz/domain";
+import { storefrontItemKey, type Product } from "@curtiz/domain";
 import { useEffect, useState } from "react";
 import { fetchPublicCatalog, publicCatalogUrl } from "@/lib/public-catalog-client";
 import { ProductCard } from "./product-card";
@@ -25,6 +25,9 @@ export function ErrorRecommendations({ excludeProductId }: { excludeProductId?: 
         if (controller.signal.aborted) return;
         const products = result
           .filter((product) => product.id !== excludeProductId && product.stock > 0)
+          .filter((product, index, list) =>
+            list.findIndex((candidate) => candidate.id === product.id) === index
+          )
           .slice(0, 4);
         setState({ status: "ready", products });
       })
@@ -72,7 +75,7 @@ export function ErrorRecommendations({ excludeProductId }: { excludeProductId?: 
               product={product}
               display={{ rating: false, installments: false }}
               imageSizes="(max-width: 700px) 66vw, (max-width: 1000px) 33vw, 280px"
-              key={product.id}
+              key={storefrontItemKey(product)}
             />
           ))}
         </div>

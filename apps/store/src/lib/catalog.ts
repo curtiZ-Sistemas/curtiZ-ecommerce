@@ -13,7 +13,7 @@ export const demoProducts: Product[] = [
     reviews: 1234,
     colors: ["Preto", "Marinho"],
     sizes: ["37/38", "39/40", "41/42", "43/44"],
-    image: "/images/products/wave-preto.png",
+    image: "/images/products/wave-preto.webp",
     featured: true,
     stock: 156
   },
@@ -29,7 +29,7 @@ export const demoProducts: Product[] = [
     reviews: 982,
     colors: ["Coral", "Rosa"],
     sizes: ["33/34", "35/36", "37/38", "39/40"],
-    image: "/images/products/slim-coral.png",
+    image: "/images/products/slim-coral.webp",
     featured: true,
     stock: 73
   },
@@ -45,7 +45,7 @@ export const demoProducts: Product[] = [
     reviews: 756,
     colors: ["Marinho", "Branco"],
     sizes: ["35/36", "37/38", "39/40", "41/42"],
-    image: "/images/products/bold-marinho.png",
+    image: "/images/products/bold-marinho.webp",
     featured: true,
     stock: 98
   },
@@ -61,7 +61,7 @@ export const demoProducts: Product[] = [
     reviews: 643,
     colors: ["Areia", "Caramelo"],
     sizes: ["34", "35", "36", "37", "38", "39"],
-    image: "/images/products/comfort-areia.png",
+    image: "/images/products/comfort-areia.webp",
     featured: true,
     stock: 64
   },
@@ -77,7 +77,7 @@ export const demoProducts: Product[] = [
     reviews: 521,
     colors: ["Rosa", "Azul"],
     sizes: ["25/26", "27/28", "29/30", "31/32"],
-    image: "/images/products/joy-rosa.png",
+    image: "/images/products/joy-rosa.webp",
     featured: true,
     stock: 112
   },
@@ -93,7 +93,7 @@ export const demoProducts: Product[] = [
     reviews: 812,
     colors: ["Preto"],
     sizes: ["35/36", "37/38", "39/40", "41/42"],
-    image: "/images/products/soft-preto.png",
+    image: "/images/products/soft-preto.webp",
     stock: 81
   },
   {
@@ -107,7 +107,7 @@ export const demoProducts: Product[] = [
     reviews: 438,
     colors: ["Preto"],
     sizes: ["37/38", "39/40", "41/42", "43/44"],
-    image: "/images/products/classic-preto.png",
+    image: "/images/products/classic-preto.webp",
     stock: 129
   },
   {
@@ -121,7 +121,7 @@ export const demoProducts: Product[] = [
     reviews: 307,
     colors: ["Bege"],
     sizes: ["33/34", "35/36", "37/38", "39/40"],
-    image: "/images/products/comfort-bege.png",
+    image: "/images/products/comfort-bege.webp",
     stock: 55
   }
 ];

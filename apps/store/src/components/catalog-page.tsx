@@ -1,6 +1,6 @@
 "use client";
 
-import { formatBRL } from "@curtiz/domain";
+import { formatBRL, storefrontItemKey } from "@curtiz/domain";
 import { ArrowLeft, ArrowRight, ChevronDown, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -542,7 +542,7 @@ export function CatalogPage({
             <>
               <div className="product-grid">
                 {products.map((product, index) => (
-                  <ProductCard product={product} priority={index < 2} key={product.id} />
+                  <ProductCard product={product} priority={index < 2} key={storefrontItemKey(product)} />
                 ))}
               </div>
               {totalPages > 1 && (

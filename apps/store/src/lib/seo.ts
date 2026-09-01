@@ -113,6 +113,12 @@ export function breadcrumbStructuredData(
 type ProductSeoDetail = {
   product: Product;
   gallery: Array<{ src: string }>;
+  media?: Array<{
+    type: "image" | "video";
+    src: string;
+    alt: string;
+    poster?: string;
+  }>;
   variants: Array<{
     id?: string;
     sku?: string;
@@ -191,6 +197,10 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
   const variantUrl = selectedVariant?.id
     ? `${officialUrl(path)}?variant=${encodeURIComponent(selectedVariant.id)}`
     : officialUrl(path);
+  const videos = (detail.media ?? []).filter(
+    (item): item is typeof item & { type: "video"; poster: string } =>
+      item.type === "video" && Boolean(item.poster)
+  );
 
   return {
     "@context": "https://schema.org",
@@ -222,6 +232,17 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
           ? "https://schema.org/InStock"
           : "https://schema.org/OutOfStock"
     },
+    ...(videos.length
+      ? {
+          subjectOf: videos.map((video) => ({
+            "@type": "VideoObject",
+            name: video.alt || `${product.name} em vídeo`,
+            description: productSeoDescription(product),
+            contentUrl: video.src,
+            thumbnailUrl: video.poster
+          }))
+        }
+      : {}),
     ...(product.reviews > 0 && product.rating > 0
       ? {
           aggregateRating: {

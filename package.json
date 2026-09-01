@@ -36,6 +36,7 @@
     "test:environment": "vitest run scripts/environment-validation.test.ts",
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
+    "measure:performance": "tsx scripts/measure-storefront-performance.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",

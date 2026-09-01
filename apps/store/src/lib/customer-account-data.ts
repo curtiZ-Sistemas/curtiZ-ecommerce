@@ -165,7 +165,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       .limit(50),
     supabase
       .from("favorites")
-      .select("product_id,created_at,products(id,name,slug,status,base_price,product_images(storage_path,is_primary,sort_order),product_variants(id,color_name,size,active,price_override,inventory(available_quantity,reserved_quantity)))")
+      .select("product_id,variant_id,created_at,products(id,name,slug,status,base_price,product_images(storage_path,variant_id,is_primary,sort_order),product_variants(id,color_name,size,active,price_override,inventory(available_quantity,reserved_quantity)))")
       .eq("customer_id", user.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -331,7 +331,9 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
         readNumber(a, "sort_order") - readNumber(b, "sort_order")
     );
     const variants = readRows(product.product_variants);
+    const savedVariantId = readString(row, "variant_id");
     const variant =
+      variants.find((entry) => readString(entry, "id") === savedVariantId) ??
       variants.find((entry) => {
         const inventory = relation(entry.inventory);
         return (
@@ -344,14 +346,20 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       0,
       readNumber(inventory, "available_quantity")
     );
+    const selectedImage =
+      images.find((image) => readString(image, "variant_id") === readString(variant, "id")) ??
+      images.find((image) => !readString(image, "variant_id")) ??
+      images[0];
+    const color = readString(variant, "color_name");
     return {
       productId: readString(row, "product_id"),
-      name: readString(product, "name"),
+      ...(savedVariantId ? { selectionVariantId: savedVariantId } : {}),
+      name: `${readString(product, "name")}${savedVariantId && color ? ` — ${color}` : ""}`,
       slug: readString(product, "slug"),
-      image: publicImage(readString(images[0] ?? {}, "storage_path")),
+      image: publicImage(readString(selectedImage ?? {}, "storage_path")),
       priceInCents: cents(variant.price_override ?? product.base_price),
       stock,
-      color: readString(variant, "color_name"),
+      color,
       size: readString(variant, "size"),
       variantId: readString(variant, "id"),
       available: readString(product, "status") === "active" && stock > 0

@@ -43,8 +43,8 @@ describe("public storefront components", () => {
 
     expect(html).toContain('class="hero-media"');
     expect(html).toContain('media="(max-width: 700px)"');
-    expect(html).toContain('srcSet="/_next/image?url=%2Fimages%2Fhero-curtiz-mobile.png');
-    expect(html).toContain('src="/_next/image?url=%2Fimages%2Fhero-curtiz-desktop.png');
+    expect(html).toContain('srcSet="/images/hero-curtiz-mobile.avif');
+    expect(html).toContain('src="/images/hero-curtiz-desktop.webp');
     expect(html).toContain('width="941" height="1672"');
     expect(html).toContain('aria-label="Controles dos banners"');
     expect(html).toContain('href="/lancamentos"');
@@ -93,6 +93,31 @@ describe("public storefront components", () => {
     expect(html).toContain("Produto disponível");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
+  });
+
+  it("renderiza um card virtual com imagem, preço e link da variação", () => {
+    const html = renderToStaticMarkup(
+      <ProductCard product={{
+        id: "produto-1",
+        storefrontKey: "produto-1:azul",
+        variantId: "azul",
+        slug: "chinelo-essential",
+        name: "Chinelo Essential — Azul",
+        category: "Masculino",
+        description: "Produto",
+        priceInCents: 6490,
+        rating: 0,
+        reviews: 0,
+        colors: ["Azul"],
+        sizes: ["37"],
+        image: "/images/products/essential-azul.webp",
+        stock: 2
+      }} />
+    );
+    expect(html).toContain("Chinelo Essential — Azul");
+    expect(html).toContain("essential-azul.webp");
+    expect(html).toContain("R$\u00a064,90");
+    expect(html).toContain("/produto/chinelo-essential?variant=azul");
   });
 
   it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {

@@ -313,6 +313,27 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
           : [];
       })
       .sort((left, right) => Number(right.primary) - Number(left.primary) || left.sortOrder - right.sortOrder);
+    const media = rows(product.product_media)
+      .flatMap((item) => {
+        const path = text(item.storage_path);
+        const url = mediaUrl(path);
+        const posterPath = text(item.thumbnail_path);
+        if (!path || !url) return [];
+        return [{
+          id: text(item.id),
+          path,
+          url,
+          alt: text(item.alt_text),
+          primary: item.is_primary === true,
+          sortOrder: number(item.sort_order),
+          type: item.media_type === "video" ? "video" as const : "image" as const,
+          mimeType: text(item.mime_type),
+          variantId: text(item.variant_id) || undefined,
+          posterPath: posterPath || undefined,
+          posterUrl: posterPath ? mediaUrl(posterPath) : undefined
+        }];
+      })
+      .sort((left, right) => left.sortOrder - right.sortOrder);
     const serialized = {
       id: text(product.id),
       name: text(product.name),
@@ -347,6 +368,17 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
           ? product.merchant_identifier_exists
           : null,
       images,
+      media: media.length
+        ? media
+        : images.map((image) => ({
+            ...image,
+            type: "image" as const,
+            mimeType: image.path.toLowerCase().endsWith(".webp")
+              ? "image/webp"
+              : image.path.toLowerCase().match(/\.jpe?g$/u)
+                ? "image/jpeg"
+                : "image/png"
+          })),
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
     };
@@ -462,7 +494,7 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
     });
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
 
   const variantMatches = queryText
     ? await (async () => {

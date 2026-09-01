@@ -103,14 +103,16 @@ describe("product management", () => {
     ).toBe(false);
   });
 
-  it("aceita apenas imagens suportadas de até 10 MB", () => {
+  it("aceita imagens até 10 MB e vídeos MP4/WebM até 80 MB", () => {
     const valid = { name: "produto.webp", type: "image/webp", size: 2_000_000 };
+    const video = { name: "produto.mp4", type: "video/mp4", size: 40_000_000 };
     const tooLarge = { name: "grande.png", type: "image/png", size: 10 * 1024 * 1024 + 1 };
+    const renamed = { name: "produto.jpg", type: "video/mp4", size: 2_000 };
     const invalidType = { name: "produto.svg", type: "image/svg+xml", size: 2_000 };
 
-    expect(partitionProductMediaFiles([valid, tooLarge, invalidType])).toEqual({
-      accepted: [valid],
-      rejected: [tooLarge, invalidType]
+    expect(partitionProductMediaFiles([valid, video, tooLarge, renamed, invalidType])).toEqual({
+      accepted: [valid, video],
+      rejected: [tooLarge, renamed, invalidType]
     });
   });
 });

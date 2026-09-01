@@ -804,13 +804,13 @@ function Favorites({
       <SectionTitle eyebrow="Favoritos" title="Seus produtos favoritos" description="Preços e disponibilidade são verificados em tempo real." />
       <div className="customer-favorite-grid">
         {favorites.map((favorite) => (
-          <article className="customer-favorite-card" key={favorite.productId}>
-            <Link href={`/produto/${favorite.slug}`} className="customer-favorite-image">
+          <article className="customer-favorite-card" key={`${favorite.productId}:${favorite.selectionVariantId ?? "product"}`}>
+            <Link href={`/produto/${favorite.slug}?variant=${favorite.variantId}`} className="customer-favorite-image">
               {favorite.image ? <Image src={favorite.image} alt="" fill sizes="(max-width: 600px) 50vw, 220px" /> : <ShoppingBag />}
               {!favorite.available && <span>Indisponível</span>}
             </Link>
             <div>
-              <Link href={`/produto/${favorite.slug}`}><h3>{favorite.name}</h3></Link>
+              <Link href={`/produto/${favorite.slug}?variant=${favorite.variantId}`}><h3>{favorite.name}</h3></Link>
               <strong>{formatBRL(favorite.priceInCents)}</strong>
               {!favorite.available && <small>Indisponível</small>}
             </div>
@@ -822,6 +822,10 @@ function Favorites({
                 onClick={() => {
                   const product: Product = {
                     id: favorite.productId,
+                    storefrontKey: `${favorite.productId}:${favorite.variantId}`,
+                    variantId: favorite.variantId,
+                    variantColor: favorite.color,
+                    variantSize: favorite.size,
                     slug: favorite.slug,
                     name: favorite.name,
                     category: "Masculino",
@@ -849,8 +853,8 @@ function Favorites({
                 type="button"
                 disabled={pending}
                 onClick={() => {
-                  localFavorites.remove(favorite.productId);
-                  void runAction({ action: "favorite_remove", productId: favorite.productId }, "Produto removido dos favoritos.");
+                  localFavorites.remove(favorite.productId, favorite.selectionVariantId);
+                  void runAction({ action: "favorite_remove", productId: favorite.productId, variantId: favorite.selectionVariantId }, "Produto removido dos favoritos.");
                 }}
               >
                 Remover

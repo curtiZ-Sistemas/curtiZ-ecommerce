@@ -1,5 +1,6 @@
 export * from "./money";
 export * from "./merchant";
+export * from "./storefront-item";
 export * from "./permissions";
 export * from "./promotions";
 export * from "./representatives";

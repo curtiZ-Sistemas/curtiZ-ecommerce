@@ -1,6 +1,13 @@
 import "server-only";
 
-import type { HomepageSection, HomepageSectionItem, HomepageSectionType, Product } from "@curtiz/domain";
+import {
+  diversifyStorefrontItems,
+  storefrontItemKey,
+  type HomepageSection,
+  type HomepageSectionItem,
+  type HomepageSectionType,
+  type Product
+} from "@curtiz/domain";
 import { cache } from "react";
 import { z } from "zod";
 import { demoProducts, findProduct } from "./catalog";
@@ -74,6 +81,7 @@ export type ProductReview = {
 export type ProductDetailData = {
   product: Product;
   gallery: Array<{ id: string; src: string; alt: string }>;
+  media: ProductMediaItem[];
   variants: ProductVariantOption[];
   specifications: Array<{ label: string; value: string }>;
   reviews: ProductReview[];
@@ -85,6 +93,16 @@ export type ProductDetailData = {
     identifierExists?: boolean;
   };
   source: "supabase" | "demo";
+};
+
+export type ProductMediaItem = {
+  id: string;
+  type: "image" | "video";
+  src: string;
+  alt: string;
+  mimeType: string;
+  variantId?: string;
+  poster?: string;
 };
 
 export type PublicCmsPage = {
@@ -219,8 +237,8 @@ const fallbackBanner: PublicBanner = {
   id: "default-hero-banner",
   title: "Conheça os lançamentos da curti Z",
   altText: "Conheça os lançamentos da curti Z",
-  desktopImage: "/images/hero-curtiz-desktop.png",
-  mobileImage: "/images/hero-curtiz-mobile.png",
+  desktopImage: "/images/hero-curtiz-desktop.webp",
+  mobileImage: "/images/hero-curtiz-mobile.webp",
   href: "/lancamentos",
   position: "hero"
 };
@@ -235,8 +253,11 @@ const safeDestination = (value: string) => {
   }
 };
 
+const optimizedBundledImage = (path: string) =>
+  path.startsWith("/images/") ? path.replace(/\.png$/iu, ".webp") : path;
+
 const publicImage = (path: string) => {
-  if (path.startsWith("/") || path.startsWith("https://")) return path;
+  if (path.startsWith("/") || path.startsWith("https://")) return optimizedBundledImage(path);
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
@@ -468,8 +489,22 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
 
   const fallbackBannerEnabled = banners.length === 0;
   const fallbackProductsEnabled = !bestCatalog && !promotionCatalog && !newestCatalog && presentationFallback;
-  const products = [...manualProducts, ...(bestCatalog?.products ?? []), ...(promotionCatalog?.products ?? []), ...(newestCatalog?.products ?? [])]
-    .filter((product, index, list) => list.findIndex((candidate) => candidate.id === product.id) === index);
+  const mergedProducts = [
+    ...manualProducts,
+    ...(bestCatalog?.products ?? []),
+    ...(promotionCatalog?.products ?? []),
+    ...(newestCatalog?.products ?? [])
+  ];
+  const productsWithVisualVariants = new Set(
+    mergedProducts.filter((product) => product.variantId).map((product) => product.id)
+  );
+  const products = diversifyStorefrontItems(
+    mergedProducts
+      .filter((product) => product.variantId || !productsWithVisualVariants.has(product.id))
+      .filter((product, index, list) =>
+        list.findIndex((candidate) => storefrontItemKey(candidate) === storefrontItemKey(product)) === index
+      )
+  );
   const allowDefaults = presentationFallback || process.env.NODE_ENV !== "production";
   const selectedSections = selectHomepageSections(
     sections,
@@ -569,8 +604,11 @@ export const getProductsByModel = cache(async (slug: string): Promise<Product[]>
   if (process.env.DEMO_MODE === "true") return [];
   const supabase = createPublicSupabaseClient();
   if (!supabase) return [];
-  const result = await supabase.from("products").select(`${directProductSelect},product_models!inner(slug)`).eq("status", "active").eq("product_models.slug", slug).limit(48);
-  return result.error ? [] : mapDirectProducts(result.data);
+  const result = await supabase.rpc("get_model_storefront_items", {
+    p_model_slug: slug,
+    p_limit: 48
+  });
+  return result.error ? [] : (parseRpcProductList(result.data) ?? []);
 });
 
 const productDetailSchema = z.object({
@@ -643,6 +681,13 @@ const demoProductDetail = (slug: string): ProductDetailData | null => {
   return {
     product,
     gallery: [{ id: `${product.id}-primary`, src: product.image, alt: product.name }],
+    media: [{
+      id: `${product.id}-primary`,
+      type: "image",
+      src: product.image,
+      alt: product.name,
+      mimeType: "image/webp"
+    }],
     variants,
     specifications: [],
     reviews: [],
@@ -665,7 +710,43 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
-  const firstImage = parsed.data.images[0]?.path;
+  const mediaResponse = await supabase
+    .from("product_media")
+    .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
+    .eq("product_id", parsed.data.id)
+    .order("sort_order")
+    .limit(60);
+  const media = mediaResponse.error
+    ? []
+    : readRows(mediaResponse.data).flatMap((item): ProductMediaItem[] => {
+        const id = readString(item, "id");
+        const path = readString(item, "storage_path");
+        const type = readString(item, "media_type");
+        if (!id || !path || !["image", "video"].includes(type)) return [];
+        const posterPath = readString(item, "thumbnail_path");
+        return [{
+          id,
+          type: type as "image" | "video",
+          src: publicCatalogImage(path, parsed.data.slug),
+          alt: readString(item, "alt_text") || parsed.data.name,
+          mimeType: readString(item, "mime_type"),
+          ...(readString(item, "variant_id") ? { variantId: readString(item, "variant_id") } : {}),
+          ...(posterPath ? { poster: publicCatalogImage(posterPath, parsed.data.slug) } : {})
+        }];
+      });
+  const imageMedia = media.filter((item) => item.type === "image");
+  const legacyGallery = parsed.data.images.map((image) => ({
+    id: image.id,
+    src: publicCatalogImage(image.path, parsed.data.slug),
+    alt: image.alt
+  }));
+  const gallery = imageMedia.length
+    ? imageMedia.map((item) => ({ id: item.id, src: item.src, alt: item.alt }))
+    : legacyGallery;
+  const orderedMedia = media.length
+    ? media
+    : legacyGallery.map((item) => ({ ...item, type: "image" as const, mimeType: "image/webp" }));
+  const firstImage = gallery[0]?.src;
   const colors = [...new Set(parsed.data.variants.map((variant) => variant.color))];
   const sizes = [...new Set(parsed.data.variants.map((variant) => variant.size))];
   const product: Product = {
@@ -682,17 +763,14 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
     reviews: parsed.data.reviews,
     colors,
     sizes,
-    image: publicCatalogImage(firstImage, parsed.data.slug),
+    image: firstImage ?? publicCatalogImage(parsed.data.images[0]?.path, parsed.data.slug),
     featured: parsed.data.featured,
     stock: parsed.data.stock
   };
   return {
     product,
-    gallery: parsed.data.images.map((image) => ({
-      id: image.id,
-      src: publicCatalogImage(image.path, parsed.data.slug),
-      alt: image.alt
-    })),
+    gallery,
+    media: orderedMedia,
     variants: parsed.data.variants.map((variant) => ({
       id: variant.id,
       ...(variant.sku ? { sku: variant.sku } : {}),

@@ -3,6 +3,12 @@ export type AppRole =
 
 export type Product = {
   id: string;
+  /** Identidade virtual do card; `id` continua sendo sempre o produto real. */
+  storefrontKey?: string;
+  variantId?: string;
+  sku?: string;
+  variantColor?: string;
+  variantSize?: string;
   slug: string;
   name: string;
   category: "Masculino" | "Feminino" | "Infantil" | "Slides" | "Sandálias";

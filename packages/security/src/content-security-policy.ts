@@ -3,6 +3,7 @@ export type ContentSecurityPolicyOptions = {
   connectSources?: readonly string[];
   frameSources?: readonly string[];
   imageSources?: readonly string[];
+  mediaSources?: readonly string[];
   scriptSources?: readonly string[];
   development?: boolean;
 };
@@ -14,6 +15,7 @@ export const buildNonceContentSecurityPolicy = ({
   connectSources = [],
   frameSources = [],
   imageSources = [],
+  mediaSources = [],
   scriptSources = [],
   development = false
 }: ContentSecurityPolicyOptions): string => {
@@ -21,6 +23,7 @@ export const buildNonceContentSecurityPolicy = ({
   return [
     "default-src 'self'",
     `img-src ${sources(["'self'", "data:", "blob:", ...imageSources])}`,
+    `media-src ${sources(["'self'", "blob:", ...mediaSources])}`,
     `style-src ${sources([
       "'self'",
       development ? "'unsafe-inline'" : `'nonce-${nonce}'`

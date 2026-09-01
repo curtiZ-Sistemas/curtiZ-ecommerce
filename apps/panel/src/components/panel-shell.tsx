@@ -39,7 +39,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import React, { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-import logoCurtiz from "../../public/images/logo-curtiz.png";
+import logoCurtiz from "../../public/images/logo-curtiz.webp";
 import {
   keepActiveItemVisible,
   panelSidebarScrollKey,

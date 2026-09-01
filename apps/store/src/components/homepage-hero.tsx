@@ -1,11 +1,18 @@
 "use client";
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { getImageProps } from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { PublicBanner } from "@/lib/storefront-data";
+
+const bundledHero = (path: string, viewport: "desktop" | "mobile") => {
+  if (!path.startsWith(`/images/hero-curtiz-${viewport}`)) return null;
+  return {
+    avif: `/images/hero-curtiz-${viewport}.avif`,
+    webp: `/images/hero-curtiz-${viewport}.webp`
+  };
+};
 
 export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
@@ -39,28 +46,13 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const banner = slides[Math.min(active, slides.length - 1)]!;
   const useFallbackImage = failedBannerIds.has(banner.id);
   const desktopImage = useFallbackImage
-    ? "/images/hero-curtiz-desktop.png"
+    ? "/images/hero-curtiz-desktop.webp"
     : banner.desktopImage;
   const mobileImage = useFallbackImage
-    ? "/images/hero-curtiz-mobile.png"
+    ? "/images/hero-curtiz-mobile.webp"
     : banner.mobileImage;
-
-  const desktopProps = getImageProps({
-    src: desktopImage,
-    alt: banner.altText,
-    width: 2172,
-    height: 724,
-    sizes: "(max-width: 1280px) calc(100vw - 32px), 1200px",
-    quality: 75
-  }).props;
-  const mobileProps = getImageProps({
-    src: mobileImage,
-    alt: banner.altText,
-    width: 941,
-    height: 1672,
-    sizes: "calc(100vw - 24px)",
-    quality: 75
-  }).props;
+  const bundledDesktop = bundledHero(desktopImage, "desktop");
+  const bundledMobile = bundledHero(mobileImage, "mobile");
 
   const go = (direction: number) => {
     setPaused(true);
@@ -72,15 +64,22 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
   const picture = (
     <picture className="hero-picture">
+      {bundledMobile ? (
+        <source media="(max-width: 700px)" type="image/avif" srcSet={bundledMobile.avif} />
+      ) : null}
       <source
         media="(max-width: 700px)"
-        srcSet={mobileProps.srcSet}
-        sizes={mobileProps.sizes}
+        srcSet={bundledMobile?.webp ?? mobileImage}
+        sizes="calc(100vw - 24px)"
         width={941}
         height={1672}
       />
+      {bundledDesktop ? <source type="image/avif" srcSet={bundledDesktop.avif} /> : null}
       <img
-        {...desktopProps}
+        src={bundledDesktop?.webp ?? desktopImage}
+        width={2172}
+        height={724}
+        sizes="(max-width: 1280px) calc(100vw - 32px), 1200px"
         className="hero-media"
         alt={banner.altText}
         fetchPriority={active === 0 ? "high" : "auto"}

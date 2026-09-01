@@ -376,7 +376,7 @@ export function RepresentativePortal({ section }: { section: string }) {
       >
         <header>
           <Link href="/representante" className="representative-brand">
-            <Image src="/images/logo-curtiz.png" alt="curti Z" width={150} height={100} priority />
+            <Image src="/images/logo-curtiz.webp" alt="curti Z" width={150} height={100} priority />
             <small>Representantes</small>
           </Link>
           <button onClick={() => setMenuOpen(false)} aria-label="Fechar menu">

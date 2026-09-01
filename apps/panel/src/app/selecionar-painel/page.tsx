@@ -1,7 +1,7 @@
 import { Boxes, ChartNoAxesCombined, ClipboardCheck, PanelsTopLeft, Wrench } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import logoCurtiz from "../../../public/images/logo-curtiz.png";
+import logoCurtiz from "../../../public/images/logo-curtiz.webp";
 import { PanelSelectorLogout } from "@/components/panel-selector-logout";
 import { requirePanelSelectionAccess } from "@/lib/auth";
 import { requestPublicAppUrls } from "@/lib/request-public-urls";

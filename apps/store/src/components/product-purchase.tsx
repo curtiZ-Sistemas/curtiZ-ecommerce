@@ -1,11 +1,12 @@
 "use client";
 
-import { formatBRL } from "@curtiz/domain";
+import { formatBRL, storefrontItemKey, type Product } from "@curtiz/domain";
 import {
   Check,
   ChevronLeft,
   ChevronRight,
   Heart,
+  PlayCircle,
   ShoppingBag,
   Star
 } from "lucide-react";
@@ -41,7 +42,8 @@ export function ProductPurchase({
   const [color, setColor] = useState(initialSelection.color || product.colors[0] || "");
   const [size, setSize] = useState(initialSelection.size);
   const [selectedImage, setSelectedImage] = useState(
-    initialVariant?.image ?? gallery[0]?.src ?? variants[0]?.image ?? product.image
+    detail.media.find((item) => !item.variantId || item.variantId === initialVariant?.id)?.src ??
+      initialVariant?.image ?? gallery[0]?.src ?? variants[0]?.image ?? product.image
   );
   const [thumbnailStart, setThumbnailStart] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -65,9 +67,25 @@ export function ProductPurchase({
   const selectedVariant = variants.find(
     (variant) => variant.color === color && variant.size === size
   );
-  const favorite = hydrated && has(product.id);
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
   const currentStock = selectedVariant?.stock;
+  const favoriteProduct: Product = selectedVariant
+    ? {
+        ...product,
+        storefrontKey: storefrontItemKey({ id: product.id, variantId: selectedVariant.id }),
+        variantId: selectedVariant.id,
+        ...(selectedVariant.sku ? { sku: selectedVariant.sku } : {}),
+        variantColor: selectedVariant.color,
+        variantSize: selectedVariant.size,
+        name: `${product.name} — ${selectedVariant.color}`,
+        image: selectedVariant.image ?? product.image,
+        priceInCents: currentPrice,
+        colors: [selectedVariant.color],
+        sizes: [selectedVariant.size],
+        stock: selectedVariant.stock
+      }
+    : product;
+  const favorite = hydrated && has(favoriteProduct);
   const comparisonPrice =
     product.compareAtPriceInCents && product.compareAtPriceInCents > currentPrice
       ? product.compareAtPriceInCents
@@ -78,18 +96,33 @@ export function ProductPurchase({
   const images = useMemo(
     () =>
       [
-        ...(selectedVariant?.image
-          ? [{ id: `${selectedVariant.id}-variant`, src: selectedVariant.image, alt: product.name }]
+        ...detail.media.filter(
+          (item) => !item.variantId || item.variantId === selectedVariant?.id
+        ),
+        ...(selectedVariant?.image && !detail.media.some((item) => item.src === selectedVariant.image)
+          ? [{ id: `${selectedVariant.id}-variant`, src: selectedVariant.image, alt: product.name, type: "image" as const, mimeType: "image/webp" }]
           : []),
-        ...gallery,
-        { id: `${product.id}-fallback`, src: product.image, alt: product.name }
+        ...(!detail.media.length ? gallery.map((item) => ({ ...item, type: "image" as const, mimeType: "image/webp" })) : []),
+        ...(!detail.media.length ? [{ id: `${product.id}-fallback`, src: product.image, alt: product.name, type: "image" as const, mimeType: "image/webp" }] : [])
       ].filter(
         (image, index, list) => list.findIndex((candidate) => candidate.src === image.src) === index
       ),
-    [gallery, product.id, product.image, product.name, selectedVariant?.id, selectedVariant?.image]
+    [detail.media, gallery, product.id, product.image, product.name, selectedVariant?.id, selectedVariant?.image]
   );
+  const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
   const maximumThumbnailStart = Math.max(0, images.length - 3);
+  const preserveVariantInUrl = (variantId?: string) => {
+    if (!variantId) return;
+    router.replace(
+      `/produto/${encodeURIComponent(product.slug)}?variant=${encodeURIComponent(variantId)}`,
+      { scroll: false }
+    );
+  };
+
+  useEffect(() => {
+    if (selectedMedia && selectedImage !== selectedMedia.src) setSelectedImage(selectedMedia.src);
+  }, [selectedImage, selectedMedia]);
 
   useEffect(() => {
     setThumbnailStart((current) => {
@@ -127,7 +160,11 @@ export function ProductPurchase({
     setColor(nextColor);
     setSize(nextSize);
     setAdded(false);
-    if (imageVariant?.image) setSelectedImage(imageVariant.image);
+    const nextMedia = detail.media.find(
+      (item) => !item.variantId || item.variantId === imageVariant?.id
+    );
+    setSelectedImage(nextMedia?.src ?? imageVariant?.image ?? product.image);
+    preserveVariantInUrl(retainedSize?.id ?? (nextSize ? imageVariant?.id : undefined));
     trackIntelligence({
       type: "variant_select",
       productId: product.id,
@@ -146,7 +183,11 @@ export function ProductPurchase({
       productId: product.id,
       variantId: nextVariant?.id
     });
-    if (nextVariant?.image) setSelectedImage(nextVariant.image);
+    const nextMedia = detail.media.find(
+      (item) => !item.variantId || item.variantId === nextVariant?.id
+    );
+    setSelectedImage(nextMedia?.src ?? nextVariant?.image ?? product.image);
+    preserveVariantInUrl(nextVariant?.id);
   };
 
   const addSelected = () => {
@@ -167,7 +208,20 @@ export function ProductPurchase({
       <div className="product-gallery">
         {discountPercentage > 0 ? <span className="gallery-offer">-{discountPercentage}%</span> : null}
         <div className="product-gallery-main">
-          <button
+          {selectedMedia?.type === "video" ? (
+            <video
+              className="product-gallery-video"
+              controls
+              playsInline
+              preload="metadata"
+              poster={selectedMedia.poster}
+              aria-label={selectedMedia.alt}
+              onPlay={() => trackIntelligence({ type: "image_interaction", productId: product.id })}
+            >
+              <source src={selectedMedia.src} type={selectedMedia.mimeType} />
+              Seu navegador não reproduz este vídeo.
+            </video>
+          ) : <button
             ref={galleryTriggerRef}
             className="product-gallery-trigger"
             type="button"
@@ -176,7 +230,7 @@ export function ProductPurchase({
             aria-label={`Abrir visualização de ${product.name}`}
           >
             <Image
-              src={selectedImage}
+              src={selectedMedia?.src ?? selectedImage}
               alt={`${product.name} da curti Z`}
               width={760}
               height={620}
@@ -184,7 +238,7 @@ export function ProductPurchase({
               loading="eager"
               priority
             />
-          </button>
+          </button>}
         </div>
         {images.length > 1 ? (
           <div className="product-thumbnail-navigation">
@@ -203,16 +257,21 @@ export function ProductPurchase({
                 const inDesktopWindow = index >= thumbnailStart && index < thumbnailStart + 3;
                 return (
                   <button
-                    className={selectedImage === image.src ? "active" : ""}
+                    className={selectedMedia?.src === image.src ? "active" : ""}
                     data-visible-desktop={inDesktopWindow}
                     type="button"
                     onClick={() => setSelectedImage(image.src)}
                     aria-label={`Exibir ${image.alt}, imagem ${index + 1} de ${images.length}`}
-                    aria-pressed={selectedImage === image.src}
+                    aria-pressed={selectedMedia?.src === image.src}
                     role="listitem"
                     key={image.id}
                   >
-                    <Image src={image.src} alt="" width={112} height={88} sizes="112px" />
+                    {image.type === "video" ? (
+                      <span className="product-video-thumbnail">
+                        {image.poster ? <Image src={image.poster} alt="" width={112} height={88} sizes="112px" /> : null}
+                        <PlayCircle aria-hidden="true" />
+                      </span>
+                    ) : <Image src={image.src} alt="" width={112} height={88} sizes="112px" />}
                   </button>
                 );
               })}
@@ -231,9 +290,9 @@ export function ProductPurchase({
         ) : null}
       </div>
 
-      {lightboxOpen ? (
+      {lightboxOpen && selectedMedia?.type !== "video" ? (
         <ProductImageViewer
-          src={selectedImage}
+          src={selectedMedia?.src ?? selectedImage}
           alt={`${product.name} da curti Z`}
           imageIndex={activeImageIndex}
           imageCount={images.length}
@@ -253,7 +312,7 @@ export function ProductPurchase({
           <button
             className={favorite ? "product-favorite active" : "product-favorite"}
             type="button"
-            onClick={() => toggle(product)}
+            onClick={() => toggle(favoriteProduct)}
             aria-label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
             aria-pressed={favorite}
           >
@@ -333,6 +392,7 @@ export function ProductPurchase({
               {currentStock > 0 ? "Em estoque" : "Indisponível nesta combinação"}
             </p>
           ) : null}
+          {selectedVariant?.sku ? <p className="product-sku">SKU: {selectedVariant.sku}</p> : null}
           <p className="sr-only" role="status" aria-live="polite">
             {added ? `${product.name} adicionado ao carrinho.` : ""}
           </p>

@@ -70,6 +70,7 @@ export type CustomerOrder = {
 
 export type CustomerFavorite = {
   productId: string;
+  selectionVariantId?: string;
   name: string;
   slug: string;
   image: string;

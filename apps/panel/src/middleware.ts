@@ -29,6 +29,7 @@ export async function middleware(request: NextRequest) {
     nonce,
 
     imageSources: [...mediaOrigins],
+    mediaSources: [...mediaOrigins],
 
     connectSources: [
       storeOrigin,

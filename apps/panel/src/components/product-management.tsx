@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   ImageIcon,
+  PlayCircle,
   LoaderCircle,
   MoreHorizontal,
   PackagePlus,
@@ -32,7 +33,8 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
-  type ManagedProduct
+  type ManagedProduct,
+  type ManagedProductMedia
 } from "@/lib/product-management";
 
 type CatalogResponse = {
@@ -75,6 +77,54 @@ const productStatusLabel = (status: string) =>
     archived: "Arquivado",
     rejected: "Rejeitado"
   })[status] ?? status;
+
+async function optimizeProductImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || (file.type === "image/webp" && file.size <= 500_000)) {
+    return file;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) return file;
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.84));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/u, ".webp"), {
+      type: "image/webp",
+      lastModified: file.lastModified
+    });
+  } catch {
+    return file;
+  }
+}
+
+function uploadFileWithProgress(
+  signedUrl: string,
+  file: File,
+  onProgress: (percentage: number) => void
+) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", signedUrl);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onerror = () => reject(new Error("A conexão falhou durante o envio do vídeo."));
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error("O Storage recusou o envio do vídeo."));
+    };
+    const form = new FormData();
+    form.append("cacheControl", "31536000");
+    form.append("", file);
+    request.send(form);
+  });
+}
 
 type ProductManagementView = "produtos" | "variacoes" | "midias" | "estoque";
 
@@ -132,6 +182,22 @@ function QueuedProductImage({
       </div>
     </article>
   );
+}
+
+function ProductMediaPreview({
+  media,
+  size
+}: {
+  media: ManagedProductMedia;
+  size: number;
+}) {
+  const source = media.type === "video" ? media.posterUrl : media.url;
+  return source ? (
+    <span className={media.type === "video" ? "product-media-preview is-video" : "product-media-preview"}>
+      <Image src={source} alt={media.alt} width={size} height={size} unoptimized />
+      {media.type === "video" ? <PlayCircle aria-label="Vídeo" /> : null}
+    </span>
+  ) : null;
 }
 
 const productViewCopy: Record<ProductManagementView, { title: string; detail: string }> = {
@@ -195,6 +261,7 @@ export function ProductManagement({
   );
   const [draggedMediaId, setDraggedMediaId] = useState("");
   const [queuedMediaFiles, setQueuedMediaFiles] = useState<File[]>([]);
+  const [mediaUploadProgress, setMediaUploadProgress] = useState(0);
   const [activeEditorSection, setActiveEditorSection] =
     useState<ProductEditorSection>("information");
   const pendingActionRef = useRef(false);
@@ -676,9 +743,10 @@ export function ProductManagement({
   ) => {
     let uploaded = 0;
     for (const [index, file] of files.entries()) {
+      const uploadFile = await optimizeProductImage(file);
       const form = new FormData();
       form.set("productId", product.id);
-      form.set("file", file);
+      form.set("file", uploadFile);
       form.set("alt", product.name);
       form.set("primary", String((product.images?.length ?? 0) === 0 && index === 0));
       const response = await fetch("/api/catalog/products/media", { method: "POST", body: form });
@@ -688,6 +756,42 @@ export function ProductManagement({
       onUploaded?.(file);
     }
     return uploaded;
+  };
+
+  const sendVideoFile = async (product: ManagedProduct, file: File) => {
+    const poster = product.images?.[0];
+    if (!poster) throw new Error("Envie pelo menos uma imagem antes do vídeo para usá-la como poster.");
+    const preparedResponse = await fetch("/api/catalog/products/media/video", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "prepare",
+        productId: product.id,
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size
+      })
+    });
+    const prepared = (await preparedResponse.json()) as { path?: string; signedUrl?: string; message?: string };
+    if (!preparedResponse.ok || !prepared.path || !prepared.signedUrl) {
+      throw new Error(prepared.message ?? "Não foi possível preparar o vídeo.");
+    }
+    await uploadFileWithProgress(prepared.signedUrl, file, setMediaUploadProgress);
+    const finalizedResponse = await fetch("/api/catalog/products/media/video", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "finalize",
+        productId: product.id,
+        path: prepared.path,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        alt: `${product.name} em vídeo`,
+        posterImageId: poster.id
+      })
+    });
+    const finalized = (await finalizedResponse.json()) as { message?: string };
+    if (!finalizedResponse.ok) throw new Error(finalized.message ?? "Falha ao finalizar o vídeo.");
   };
 
   const selectNewProductMedia = (files: readonly File[]) => {
@@ -717,18 +821,26 @@ export function ProductManagement({
   const uploadMedia = async (product: ManagedProduct, files: readonly File[]) => {
     const { accepted, rejected } = partitionProductMediaFiles(files);
     if (!accepted.length || pending) {
-      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB.");
+      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB e vídeos MP4/WebM de até 80 MB.");
       return;
     }
     setPending(`media-${product.id}`);
     setMessage("");
     let uploaded = 0;
     try {
-      await sendMediaFiles(product, accepted, () => {
+      const images = accepted.filter((file) => file.type.startsWith("image/"));
+      const videos = accepted.filter((file) => file.type.startsWith("video/"));
+      await sendMediaFiles(product, images, () => {
         uploaded += 1;
       });
+      let currentProduct = images.length ? await readProduct(product.id) : product;
+      for (const video of videos) {
+        await sendVideoFile(currentProduct, video);
+        uploaded += 1;
+        currentProduct = await readProduct(product.id);
+      }
       setMessage(
-        `${uploaded} imagem(ns) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`
+        `${uploaded} mídia(s) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`
       );
       await load();
       await refreshEditingProduct(product.id);
@@ -741,8 +853,9 @@ export function ProductManagement({
           // Keep the upload failure as the actionable message.
         }
       }
-      setMessage(error instanceof Error ? error.message : "Não foi possível enviar as imagens.");
+      setMessage(error instanceof Error ? error.message : "Não foi possível enviar as mídias.");
     } finally {
+      setMediaUploadProgress(0);
       setPending("");
     }
   };
@@ -1264,16 +1377,20 @@ export function ProductManagement({
                         <header>
                           <div>
                             <ImageIcon />
-                            <strong>Fotos</strong>
-                            <span>Galeria geral do produto.</span>
+                            <strong>Galeria</strong>
+                            <span>Imagens e vídeos na ordem de exibição.</span>
                           </div>
                           {canUpdateProduct ? (
                             <label className="secondary-button product-media-upload">
                               <Upload />{" "}
-                              {pending === `media-${product.id}` ? "Enviando…" : "Enviar imagens"}
+                              {pending === `media-${product.id}`
+                                ? mediaUploadProgress
+                                  ? `Enviando ${mediaUploadProgress}%`
+                                  : "Enviando…"
+                                : "Enviar mídia"}
                               <input
                                 type="file"
-                                accept="image/jpeg,image/png,image/webp"
+                                accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
                                 multiple
                                 disabled={Boolean(pending)}
                                 onChange={(event) => {
@@ -1285,19 +1402,13 @@ export function ProductManagement({
                             </label>
                           ) : null}
                         </header>
-                        {product.images?.length ? (
+                        {product.media?.length ? (
                           <div className="managed-media-grid">
-                            {product.images.map((media) => (
+                            {product.media.map((media) => (
                               <figure key={media.id}>
-                                <Image
-                                  src={media.url}
-                                  alt={media.alt}
-                                  width={120}
-                                  height={120}
-                                  unoptimized
-                                />
+                                <ProductMediaPreview media={media} size={120} />
                                 <figcaption>
-                                  {media.primary ? "Principal" : `Ordem ${media.sortOrder + 1}`}
+                                  {media.type === "video" ? "Vídeo" : media.primary ? "Principal" : "Imagem"} · Ordem {media.sortOrder + 1}
                                 </figcaption>
                                 {canUpdateProduct ? (
                                   <div className="managed-media-actions">
@@ -1357,7 +1468,7 @@ export function ProductManagement({
                             ))}
                           </div>
                         ) : (
-                          <p>Nenhuma imagem enviada.</p>
+                          <p>Nenhuma mídia enviada.</p>
                         )}
                       </section>
                     ) : null}
@@ -1723,18 +1834,22 @@ export function ProductManagement({
                     )}
                   </section>
                 ) : (
-                  <section className="wide product-editor-media" aria-label="Galeria do produto">
+                  <section className="wide product-editor-media" aria-label="Galeria de imagens e vídeos do produto">
                     <header>
                       <div>
                         <strong>Galeria do produto</strong>
-                        <span>Arraste as fotos para reordenar no computador</span>
+                        <span>Arraste imagens e vídeos para definir a ordem</span>
                       </div>
                       <label className="secondary-button product-media-upload">
                         <Upload />{" "}
-                        {pending === `media-${editing.id}` ? "Enviando…" : "Enviar imagens"}
+                        {pending === `media-${editing.id}`
+                          ? mediaUploadProgress
+                            ? `Enviando ${mediaUploadProgress}%`
+                            : "Enviando…"
+                          : "Enviar mídia"}
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
+                          accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
                           multiple
                           disabled={Boolean(pending)}
                           onChange={(event) => {
@@ -1745,9 +1860,9 @@ export function ProductManagement({
                         />
                       </label>
                     </header>
-                    {editing.images?.length ? (
+                    {editing.media?.length ? (
                       <div className="product-editor-media-grid">
-                        {editing.images.map((image) => (
+                        {editing.media.map((image) => (
                           <article
                             key={image.id}
                             draggable={!pending}
@@ -1775,13 +1890,7 @@ export function ProductManagement({
                               }
                             }}
                           >
-                            <Image
-                              src={image.url}
-                              alt={image.alt}
-                              width={180}
-                              height={180}
-                              unoptimized
-                            />
+                            <ProductMediaPreview media={image} size={180} />
                             <div>
                               <label>
                                 <span>Texto alternativo</span>

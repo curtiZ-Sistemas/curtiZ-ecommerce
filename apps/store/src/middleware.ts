@@ -327,6 +327,7 @@ export async function middleware(request: NextRequest) {
     nonce,
 
     imageSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
+    mediaSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
 
     scriptSources: [...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])],
 

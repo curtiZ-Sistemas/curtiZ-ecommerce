@@ -1,4 +1,4 @@
-import type { HomepageSection, HomepageSectionItem, Product } from "@curtiz/domain";
+import { storefrontItemKey, type HomepageSection, type HomepageSectionItem, type Product } from "@curtiz/domain";
 import {
   ArrowRight,
   CreditCard,
@@ -291,7 +291,7 @@ export function HomepageSectionRenderer({
         product={product}
         display={display}
         priority={priority && index < 2}
-        key={product.id}
+        key={storefrontItemKey(product)}
       />
     ));
     return (

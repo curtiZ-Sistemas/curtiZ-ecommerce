@@ -29,7 +29,7 @@ describe("PanelShell multipainel", () => {
         <p>Conteúdo</p>
       </PanelShell>
     );
-    expect(markup).toContain("logo-curtiz.png");
+    expect(markup).toContain("logo-curtiz.webp");
     expect(markup).toContain("Políticas oficiais");
     expect(markup).toContain("Central de Ajuda");
   });

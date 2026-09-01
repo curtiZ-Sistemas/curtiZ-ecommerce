@@ -1,6 +1,6 @@
 "use client";
 
-import type { Product } from "@curtiz/domain";
+import { storefrontItemKey, type Product } from "@curtiz/domain";
 import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
@@ -62,6 +62,8 @@ export function IntelligenceShelf({
   const [error, setError] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [consentRevision, setConsentRevision] = useState(0);
+  const [activated, setActivated] = useState(false);
+  const shelf = useRef<HTMLElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const page = useRef(0);
   const request = useRef<AbortController | null>(null);
@@ -164,12 +166,28 @@ export function IntelligenceShelf({
     [category, consentRevision, excludeProductIds, limit, source]
   );
   useEffect(() => {
+    const node = shelf.current;
+    if (!node || activated) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setActivated(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activated]);
+  useEffect(() => {
+    if (!activated) return;
     page.current = 0;
     productsRef.current = [];
     setProducts([]);
     void load(true);
     return () => request.current?.abort();
-  }, [load]);
+  }, [activated, load]);
   useEffect(() => {
     const node = sentinel.current;
     if (!infinite || !node || !hasMore || loading || loadingMore || error) return;
@@ -182,9 +200,9 @@ export function IntelligenceShelf({
     observer.observe(node);
     return () => observer.disconnect();
   }, [error, hasMore, infinite, load, loading, loadingMore]);
-  if (loading)
+  if (!activated || loading)
     return (
-      <section className={`section container intelligence-shelf ${className}`} aria-busy="true">
+      <section ref={shelf} className={`section container intelligence-shelf ${className}`} aria-busy="true">
         <div className="section-heading">
           <h2>{title ?? sourceTitles[source]}</h2>
         </div>
@@ -224,7 +242,7 @@ export function IntelligenceShelf({
       </div>
       <div className="product-grid">
         {products.map((product) => (
-          <ProductCard product={product} recommendationSource={source} key={product.id} />
+          <ProductCard product={product} recommendationSource={source} key={storefrontItemKey(product)} />
         ))}
       </div>
       {infinite && (

@@ -175,11 +175,11 @@ export async function POST(request: NextRequest) {
       { status: 409, headers: privateNoStore }
     );
   if (parsed.data.primary === "true") {
-    const reset = await auth.supabase
-      .from("product_images")
-      .update({ is_primary: false })
-      .eq("product_id", parsed.data.productId);
-    if (reset.error) {
+    const [reset, resetMedia] = await Promise.all([
+      auth.supabase.from("product_images").update({ is_primary: false }).eq("product_id", parsed.data.productId),
+      auth.supabase.from("product_media").update({ is_primary: false }).eq("product_id", parsed.data.productId)
+    ]);
+    if (reset.error || resetMedia.error) {
       await auth.supabase.storage.from("catalog-public").remove([path]);
       return NextResponse.json(
         { message: "Não foi possível definir a imagem principal." },
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     }
   }
   const count = await auth.supabase
-    .from("product_images")
+    .from("product_media")
     .select("id", { count: "exact", head: true })
     .eq("product_id", parsed.data.productId);
   const inserted = await auth.supabase
@@ -212,9 +212,32 @@ export async function POST(request: NextRequest) {
       { status: 409, headers: privateNoStore }
     );
   }
+  const imageId = valueText(inserted.data, "id");
+  const insertedMedia = await auth.supabase.from("product_media").insert({
+    id: imageId,
+    product_id: parsed.data.productId,
+    variant_id: variantId,
+    media_type: "image",
+    storage_path: path,
+    thumbnail_path: null,
+    alt_text: parsed.data.alt,
+    mime_type: image.mime,
+    size_bytes: file.size,
+    sort_order: count.count ?? 0,
+    is_primary: parsed.data.primary === "true",
+    created_by: auth.userId
+  });
+  if (insertedMedia.error) {
+    await auth.supabase.from("product_images").delete().eq("id", imageId);
+    await auth.supabase.storage.from("catalog-public").remove([path]);
+    return NextResponse.json(
+      { message: "Não foi possível associar a imagem à galeria." },
+      { status: 409, headers: privateNoStore }
+    );
+  }
   return NextResponse.json(
     {
-      id: valueText(inserted.data as unknown, "id"),
+      id: imageId,
       path,
       url: auth.supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl
     },
@@ -239,25 +262,28 @@ export async function DELETE(request: NextRequest) {
       { status: 400, headers: privateNoStore }
     );
   const image = await auth.supabase
-    .from("product_images")
-    .select("id,storage_path")
+    .from("product_media")
+    .select("id,storage_path,media_type")
     .eq("id", parsed.data.imageId)
     .maybeSingle();
   if (image.error || !image.data)
     return NextResponse.json(
-      { message: "Imagem não encontrada." },
+      { message: "Mídia não encontrada." },
       { status: 404, headers: privateNoStore }
     );
   const removedRow = await auth.supabase
-    .from("product_images")
+    .from("product_media")
     .delete()
     .eq("id", parsed.data.imageId);
   if (removedRow.error)
     return NextResponse.json(
-      { message: "A imagem não pôde ser removida." },
+      { message: "A mídia não pôde ser removida." },
       { status: 409, headers: privateNoStore }
     );
   const storagePath = valueText(image.data, "storage_path");
+  if (image.data.media_type === "image") {
+    await auth.supabase.from("product_images").delete().eq("id", parsed.data.imageId);
+  }
   const removedFile = storagePath
     ? await auth.supabase.storage.from("catalog-public").remove([storagePath])
     : { error: null };
@@ -266,7 +292,7 @@ export async function DELETE(request: NextRequest) {
       requestId: crypto.randomUUID(),
       code: removedFile.error.message.slice(0, 120)
     });
-  return NextResponse.json({ ok: true, message: "Imagem removida." }, { headers: privateNoStore });
+  return NextResponse.json({ ok: true, message: "Mídia removida." }, { headers: privateNoStore });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -353,6 +379,15 @@ export async function PATCH(request: NextRequest) {
           { message: "Não foi possível associar a imagem à cor." },
           { status: 409, headers: privateNoStore }
         );
+      const associatedMedia = await auth.supabase
+        .from("product_media")
+        .update({ variant_id: variant.data.id })
+        .eq("id", image.data.id);
+      if (associatedMedia.error)
+        return NextResponse.json(
+          { message: "Não foi possível sincronizar a imagem com a galeria." },
+          { status: 409, headers: privateNoStore }
+        );
 
       const cleared = await auth.supabase
         .from("product_images")
@@ -367,6 +402,11 @@ export async function PATCH(request: NextRequest) {
           },
           { status: 409, headers: privateNoStore }
         );
+      await auth.supabase
+        .from("product_media")
+        .update({ variant_id: null })
+        .in("variant_id", variantIds)
+        .neq("id", image.data.id);
     } else {
       const cleared = await auth.supabase
         .from("product_images")
@@ -377,6 +417,10 @@ export async function PATCH(request: NextRequest) {
           { message: "Não foi possível remover a imagem desta cor." },
           { status: 409, headers: privateNoStore }
         );
+      await auth.supabase
+        .from("product_media")
+        .update({ variant_id: null })
+        .in("variant_id", variantIds);
     }
 
     return NextResponse.json(
@@ -386,25 +430,25 @@ export async function PATCH(request: NextRequest) {
   }
 
   const selected = await auth.supabase
-    .from("product_images")
-    .select("id,product_id,sort_order")
+    .from("product_media")
+    .select("id,product_id,sort_order,media_type")
     .eq("id", parsed.data.imageId)
     .maybeSingle();
   if (selected.error || !selected.data)
     return NextResponse.json(
-      { message: "Imagem não encontrada." },
+      { message: "Mídia não encontrada." },
       { status: 404, headers: privateNoStore }
     );
   const selectedImage = selected.data;
   if (parsed.data.action === "primary") {
     const reset = await auth.supabase
-      .from("product_images")
+      .from("product_media")
       .update({ is_primary: false })
       .eq("product_id", selectedImage.product_id);
     const updated = reset.error
       ? reset
       : await auth.supabase
-          .from("product_images")
+          .from("product_media")
           .update({ is_primary: true })
           .eq("id", selectedImage.id);
     if (updated.error)
@@ -412,14 +456,20 @@ export async function PATCH(request: NextRequest) {
         { message: "Não foi possível definir a imagem principal." },
         { status: 409, headers: privateNoStore }
       );
+    if (!updated.error) {
+      await auth.supabase.from("product_images").update({ is_primary: false }).eq("product_id", selectedImage.product_id);
+      if (selectedImage.media_type === "image") {
+        await auth.supabase.from("product_images").update({ is_primary: true }).eq("id", selectedImage.id);
+      }
+    }
     return NextResponse.json(
-      { ok: true, message: "Imagem principal atualizada." },
+      { ok: true, message: "Mídia principal atualizada." },
       { headers: privateNoStore }
     );
   }
   if (parsed.data.action === "alt") {
     const updated = await auth.supabase
-      .from("product_images")
+      .from("product_media")
       .update({ alt_text: parsed.data.alt })
       .eq("id", selectedImage.id);
     if (updated.error)
@@ -427,13 +477,16 @@ export async function PATCH(request: NextRequest) {
         { message: "Não foi possível atualizar o texto alternativo." },
         { status: 409, headers: privateNoStore }
       );
+    if (selectedImage.media_type === "image") {
+      await auth.supabase.from("product_images").update({ alt_text: parsed.data.alt }).eq("id", selectedImage.id);
+    }
     return NextResponse.json(
       { ok: true, message: "Texto alternativo atualizado." },
       { headers: privateNoStore }
     );
   }
   const images = await auth.supabase
-    .from("product_images")
+    .from("product_media")
     .select("id,sort_order")
     .eq("product_id", selectedImage.product_id)
     .order("sort_order");
@@ -457,13 +510,13 @@ export async function PATCH(request: NextRequest) {
       { headers: privateNoStore }
     );
   const first = await auth.supabase
-    .from("product_images")
+    .from("product_media")
     .update({ sort_order: target.sort_order })
     .eq("id", selectedImage.id);
   const second = first.error
     ? first
     : await auth.supabase
-        .from("product_images")
+        .from("product_media")
         .update({ sort_order: selectedImage.sort_order })
         .eq("id", target.id);
   if (second.error)
@@ -471,6 +524,10 @@ export async function PATCH(request: NextRequest) {
       { message: "Não foi possível reordenar as imagens." },
       { status: 409, headers: privateNoStore }
     );
+  if (!second.error) {
+    await auth.supabase.from("product_images").update({ sort_order: target.sort_order }).eq("id", selectedImage.id);
+    await auth.supabase.from("product_images").update({ sort_order: selectedImage.sort_order }).eq("id", target.id);
+  }
   return NextResponse.json(
     { ok: true, message: "Ordem das imagens atualizada." },
     { headers: privateNoStore }

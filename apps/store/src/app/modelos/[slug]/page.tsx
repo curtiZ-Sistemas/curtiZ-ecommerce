@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { storefrontItemKey } from "@curtiz/domain";
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
 import { getProductsByModel } from "@/lib/storefront-data";
@@ -25,5 +26,5 @@ export default async function ModelProductsPage({ params }: { params: Promise<{ 
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) notFound();
   const products = await getProductsByModel(slug);
   const title = modelTitle(slug);
-  return <main className="section container"><div className="section-heading"><div><p className="eyebrow">Modelo</p><h1>{title}</h1></div></div>{products.length ? <div className="product-grid">{products.map((product, index) => <ProductCard product={product} priority={index < 2} key={product.id} />)}</div> : <div className="empty-state" role="status"><h2>Nenhum produto disponível</h2><p>Este modelo não possui produtos ativos e com estoque no momento.</p></div>}</main>;
+  return <main className="section container"><div className="section-heading"><div><p className="eyebrow">Modelo</p><h1>{title}</h1></div></div>{products.length ? <div className="product-grid">{products.map((product, index) => <ProductCard product={product} priority={index < 2} key={storefrontItemKey(product)} />)}</div> : <div className="empty-state" role="status"><h2>Nenhum produto disponível</h2><p>Este modelo não possui produtos ativos e com estoque no momento.</p></div>}</main>;
 }

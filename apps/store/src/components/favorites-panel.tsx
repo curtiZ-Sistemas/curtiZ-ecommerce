@@ -1,6 +1,7 @@
 "use client";
 
 import { Heart } from "lucide-react";
+import { storefrontItemKey } from "@curtiz/domain";
 import Link from "next/link";
 import { ProductCard } from "./product-card";
 import { useFavorites } from "./favorites-provider";
@@ -49,7 +50,7 @@ export function FavoritesPanel() {
       </div>
       <div className="favorites-grid">
         {products.map((product) => (
-          <ProductCard product={product} key={product.id} />
+          <ProductCard product={product} key={storefrontItemKey(product)} />
         ))}
       </div>
     </section>

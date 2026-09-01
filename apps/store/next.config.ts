@@ -19,6 +19,9 @@ const nextConfig: NextConfig = {
   turbopack: { root: path.resolve(process.cwd(), "../..") },
   transpilePackages: ["@curtiz/domain", "@curtiz/integrations", "@curtiz/security", "@curtiz/config"],
   images: {
+    // O runtime OpenNext atual não transforma os bytes em /_next/image. Entregar as
+    // variantes já otimizadas evita baixar o original mais de uma vez com URLs distintas.
+    unoptimized: true,
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 430, 640, 768, 1024, 1280, 1600],
     imageSizes: [32, 48, 64, 96, 128, 256, 384],

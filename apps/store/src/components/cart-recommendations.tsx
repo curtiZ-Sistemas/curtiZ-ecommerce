@@ -1,6 +1,6 @@
 "use client";
 
-import type { CartLine, Product } from "@curtiz/domain";
+import { storefrontItemKey, type CartLine, type Product } from "@curtiz/domain";
 import { useEffect, useMemo, useState } from "react";
 import { fetchPublicCatalog, publicCatalogUrl } from "@/lib/public-catalog-client";
 import { ProductCard } from "./product-card";
@@ -107,7 +107,7 @@ export function CartRecommendations({ lines }: { lines: CartLine[] }) {
               product={product}
               display={{ rating: false, installments: false }}
               imageSizes="(max-width: 700px) 62vw, (max-width: 1100px) 32vw, 230px"
-              key={product.id}
+              key={storefrontItemKey(product)}
             />
           ))}
         </div>

@@ -1,10 +1,15 @@
-import type { Product } from "@curtiz/domain";
+import { diversifyStorefrontItems, type Product } from "@curtiz/domain";
 import { z } from "zod";
 import { demoProducts } from "./catalog";
 import type { CatalogResult } from "./catalog-query";
 
 export const rpcProductSchema = z.object({
   id: z.string(),
+  storefrontKey: z.string().optional(),
+  variantId: z.string().nullable().optional(),
+  sku: z.string().nullable().optional(),
+  variantColor: z.string().nullable().optional(),
+  variantSize: z.string().nullable().optional(),
   slug: z.string(),
   name: z.string(),
   category: z.string(),
@@ -61,6 +66,7 @@ export const productCategory = (value: string): Product["category"] => {
 
 export const publicCatalogImage = (path: string | null | undefined, slug?: string) => {
   if (!path) return demoProducts.find((product) => product.slug === slug)?.image ?? "/icon.svg";
+  if (path.startsWith("/images/")) return path.replace(/\.png$/iu, ".webp");
   if (path.startsWith("/") || path.startsWith("https://")) return path;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   return url
@@ -71,6 +77,11 @@ export const publicCatalogImage = (path: string | null | undefined, slug?: strin
 export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Product {
   return {
     id: product.id,
+    ...(product.storefrontKey ? { storefrontKey: product.storefrontKey } : {}),
+    ...(product.variantId ? { variantId: product.variantId } : {}),
+    ...(product.sku ? { sku: product.sku } : {}),
+    ...(product.variantColor ? { variantColor: product.variantColor } : {}),
+    ...(product.variantSize ? { variantSize: product.variantSize } : {}),
     slug: product.slug,
     name: product.name,
     category: productCategory(product.category),
@@ -91,7 +102,7 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
 
 export function parseRpcProductList(data: unknown): Product[] | null {
   const parsed = rpcProductListSchema.safeParse(data);
-  return parsed.success ? parsed.data.map(mapRpcProduct) : null;
+  return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct)) : null;
 }
 
 export function parseCatalogRpcResult(
@@ -101,7 +112,7 @@ export function parseCatalogRpcResult(
   const parsed = rpcResultSchema.safeParse(data);
   if (!parsed.success) return null;
   return {
-    products: parsed.data.products.map(mapRpcProduct),
+    products: diversifyStorefrontItems(parsed.data.products.map(mapRpcProduct)),
     facets: parsed.data.facets,
     total: parsed.data.total,
     page: options.page,

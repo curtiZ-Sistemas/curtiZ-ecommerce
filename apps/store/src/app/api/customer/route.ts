@@ -48,11 +48,13 @@ const schemas = {
   }),
   favorite_save: base.extend({
     action: z.literal("favorite_save"),
-    productId: uuid
+    productId: uuid,
+    variantId: uuid.optional()
   }),
   favorite_remove: base.extend({
     action: z.literal("favorite_remove"),
-    productId: uuid
+    productId: uuid,
+    variantId: uuid.optional()
   }),
   review_save: base.extend({
     action: z.literal("review_save"),
@@ -191,6 +193,7 @@ export async function POST(request: Request) {
     }
     case "favorite_save": {
       const productId = stringValue(data.productId);
+      const variantId = stringValue(data.variantId);
       const productResponse = await supabase
         .from("products")
         .select("id")
@@ -200,18 +203,39 @@ export async function POST(request: Request) {
       if (!readQueryResult(productResponse).data) {
         return json({ message: "Produto indisponível." }, 409);
       }
+      if (variantId) {
+        const variantResponse = await supabase
+          .from("product_variants")
+          .select("id")
+          .eq("id", variantId)
+          .eq("product_id", productId)
+          .eq("active", true)
+          .maybeSingle();
+        if (!readQueryResult(variantResponse).data) {
+          return json({ message: "Variação indisponível." }, 409);
+        }
+      }
       response = await supabase
         .from("favorites")
-        .upsert({ customer_id: user.id, product_id: productId });
+        .upsert(
+          { customer_id: user.id, product_id: productId, variant_id: variantId || null },
+          { onConflict: "customer_id,product_id,selection_key" }
+        );
       break;
     }
-    case "favorite_remove":
-      response = await supabase
+    case "favorite_remove": {
+      const variantId = stringValue(data.variantId);
+      let favoriteDelete = supabase
         .from("favorites")
         .delete()
         .eq("customer_id", user.id)
         .eq("product_id", stringValue(data.productId));
+      favoriteDelete = variantId
+        ? favoriteDelete.eq("variant_id", variantId)
+        : favoriteDelete.is("variant_id", null);
+      response = await favoriteDelete;
       break;
+    }
     case "review_save": {
       const itemResponse = await supabase
         .from("order_items")

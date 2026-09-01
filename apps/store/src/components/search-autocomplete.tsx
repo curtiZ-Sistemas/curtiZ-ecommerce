@@ -1,6 +1,6 @@
 "use client";
 
-import { formatBRL, type Product } from "@curtiz/domain";
+import { formatBRL, storefrontItemKey, storefrontProductHref, type Product } from "@curtiz/domain";
 import { Clock3, LoaderCircle, Search, X } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -184,10 +184,10 @@ export function SearchAutocomplete({
     if (!normalized) {
       if (!recent.length) {
         return recommendations.map((product) => ({
-          id: `recommendation-empty-${product.id}`,
+          id: `recommendation-empty-${storefrontItemKey(product)}`,
           type: "recommendation" as const,
           label: product.name,
-          href: `/produto/${product.slug}`,
+          href: storefrontProductHref(product),
           product
         }));
       }
@@ -201,10 +201,10 @@ export function SearchAutocomplete({
     if (normalized.length < 2) return [];
     return [
       ...products.map((product) => ({
-        id: `product-${product.id}`,
+        id: `product-${storefrontItemKey(product)}`,
         type: "product" as const,
         label: product.name,
-        href: `/produto/${product.slug}`,
+        href: storefrontProductHref(product),
         product
       })),
       ...categories.map((category) => ({
@@ -215,10 +215,10 @@ export function SearchAutocomplete({
       })),
       ...(searchComplete && products.length === 0
         ? recommendations.map((product) => ({
-            id: `recommendation-${product.id}`,
+            id: `recommendation-${storefrontItemKey(product)}`,
             type: "recommendation" as const,
             label: product.name,
-            href: `/produto/${product.slug}`,
+            href: storefrontProductHref(product),
             product
           }))
         : [])
@@ -257,7 +257,8 @@ export function SearchAutocomplete({
       trackIntelligence({
         type: "search_result_click",
         query: normalizedQuery,
-        productId: option.product.id
+        productId: option.product.id,
+        variantId: option.product.variantId
       });
     if (option.type === "recent") saveRecent(option.label);
     else if (normalizedQuery.length >= 2) saveRecent(normalizedQuery);

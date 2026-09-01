@@ -61,7 +61,22 @@ export type ManagedProduct = {
     height: number;
     variantId?: string;
   }>;
+  media?: ManagedProductMedia[];
   variants: ManagedVariant[];
+};
+
+export type ManagedProductMedia = {
+  id: string;
+  path: string;
+  url: string;
+  alt: string;
+  primary: boolean;
+  sortOrder: number;
+  type: "image" | "video";
+  mimeType: string;
+  variantId?: string;
+  posterPath?: string;
+  posterUrl?: string;
 };
 
 export type EditableVariantColorGroup = {
@@ -86,7 +101,10 @@ export type EditableVariant = {
 };
 
 export const MAX_PRODUCT_MEDIA_SIZE = 10 * 1024 * 1024;
-export const PRODUCT_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+export const MAX_PRODUCT_VIDEO_SIZE = 80 * 1024 * 1024;
+export const PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+export const PRODUCT_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+export const PRODUCT_MEDIA_TYPES = new Set([...PRODUCT_IMAGE_TYPES, ...PRODUCT_VIDEO_TYPES]);
 
 export function partitionProductMediaFiles<T extends { name: string; size: number; type: string }>(
   files: readonly T[]
@@ -97,8 +115,11 @@ export function partitionProductMediaFiles<T extends { name: string; size: numbe
   files.forEach((file) => {
     if (
       file.size > 0 &&
-      file.size <= MAX_PRODUCT_MEDIA_SIZE &&
-      PRODUCT_MEDIA_TYPES.has(file.type)
+      file.size <= (PRODUCT_VIDEO_TYPES.has(file.type) ? MAX_PRODUCT_VIDEO_SIZE : MAX_PRODUCT_MEDIA_SIZE) &&
+      PRODUCT_MEDIA_TYPES.has(file.type) &&
+      (PRODUCT_VIDEO_TYPES.has(file.type)
+        ? /\.(?:mp4|webm)$/iu.test(file.name)
+        : /\.(?:jpe?g|png|webp)$/iu.test(file.name))
     ) {
       accepted.push(file);
     } else {
@@ -125,7 +146,8 @@ export function isManagedProduct(value: unknown): value is ManagedProduct {
     typeof product.stock !== "number" ||
     !Number.isFinite(product.stock) ||
     !Array.isArray(product.variants) ||
-    (product.images !== undefined && !Array.isArray(product.images))
+    (product.images !== undefined && !Array.isArray(product.images)) ||
+    (product.media !== undefined && !Array.isArray(product.media))
   ) {
     return false;
   }
@@ -150,7 +172,7 @@ export function isManagedProduct(value: unknown): value is ManagedProduct {
   });
   if (!variantsAreValid) return false;
 
-  return (product.images ?? []).every((value) => {
+  const imagesAreValid = (product.images ?? []).every((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const image = value as Record<string, unknown>;
     return (
@@ -163,6 +185,25 @@ export function isManagedProduct(value: unknown): value is ManagedProduct {
       typeof image.primary === "boolean" &&
       typeof image.sortOrder === "number" &&
       Number.isFinite(image.sortOrder)
+    );
+  });
+  if (!imagesAreValid) return false;
+
+  return (product.media ?? []).every((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const media = value as Record<string, unknown>;
+    return (
+      typeof media.id === "string" &&
+      uuidPattern.test(media.id) &&
+      typeof media.path === "string" &&
+      typeof media.url === "string" &&
+      typeof media.alt === "string" &&
+      (media.type === "image" || media.type === "video") &&
+      typeof media.mimeType === "string" &&
+      typeof media.primary === "boolean" &&
+      typeof media.sortOrder === "number" &&
+      Number.isFinite(media.sortOrder) &&
+      (media.type !== "video" || typeof media.posterUrl === "string")
     );
   });
 }
