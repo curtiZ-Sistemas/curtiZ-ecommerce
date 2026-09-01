@@ -32,4 +32,16 @@ describe("opções comerciais do produto", () => {
     expect(galleryWindowStart(6, 1)).toBe(1);
     expect(galleryWindowStart(6, 9)).toBe(3);
   });
+
+  it("seleciona a variação indicada pelo link do feed", () => {
+    expect(
+      initialProductSelection(
+        [
+          { id: "variante-1", color: "Preto", size: "37", stock: 2 },
+          { id: "variante-2", color: "Branco", size: "38", stock: 0 }
+        ],
+        "variante-2"
+      )
+    ).toEqual({ color: "Branco", size: "38" });
+  });
 });

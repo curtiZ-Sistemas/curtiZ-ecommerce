@@ -50,6 +50,9 @@ export type HomepageTestimonial = {
 
 export type ProductVariantOption = {
   id: string;
+  sku?: string;
+  gtin?: string;
+  mpn?: string;
   color: string;
   colorHex?: string;
   size: string;
@@ -74,6 +77,13 @@ export type ProductDetailData = {
   variants: ProductVariantOption[];
   specifications: Array<{ label: string; value: string }>;
   reviews: ProductReview[];
+  merchant?: {
+    condition?: "new" | "refurbished" | "used";
+    gender?: "male" | "female" | "unisex";
+    ageGroup?: "newborn" | "infant" | "toddler" | "kids" | "adult";
+    googleProductCategory?: string;
+    identifierExists?: boolean;
+  };
   source: "supabase" | "demo";
 };
 
@@ -578,6 +588,9 @@ const productDetailSchema = z.object({
   variants: z.array(
     z.object({
       id: z.string(),
+      sku: z.string().optional(),
+      gtin: z.string().nullable().optional(),
+      mpn: z.string().nullable().optional(),
       color: z.string(),
       colorHex: z.string().nullable().optional(),
       size: z.string(),
@@ -586,6 +599,13 @@ const productDetailSchema = z.object({
       imagePath: z.string().nullable().optional()
     })
   ),
+  merchant: z.object({
+    condition: z.enum(["new", "refurbished", "used"]).nullable().optional(),
+    gender: z.enum(["male", "female", "unisex"]).nullable().optional(),
+    ageGroup: z.enum(["newborn", "infant", "toddler", "kids", "adult"]).nullable().optional(),
+    googleProductCategory: z.string().nullable().optional(),
+    identifierExists: z.boolean().nullable().optional()
+  }).optional(),
   images: z.array(
     z.object({
       id: z.string(),
@@ -675,6 +695,9 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
     })),
     variants: parsed.data.variants.map((variant) => ({
       id: variant.id,
+      ...(variant.sku ? { sku: variant.sku } : {}),
+      ...(variant.gtin ? { gtin: variant.gtin } : {}),
+      ...(variant.mpn ? { mpn: variant.mpn } : {}),
       color: variant.color,
       ...(variant.colorHex ? { colorHex: variant.colorHex } : {}),
       size: variant.size,
@@ -684,6 +707,21 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         ? { image: publicCatalogImage(variant.imagePath, parsed.data.slug) }
         : {})
     })),
+    ...(parsed.data.merchant
+      ? {
+          merchant: {
+            ...(parsed.data.merchant.condition ? { condition: parsed.data.merchant.condition } : {}),
+            ...(parsed.data.merchant.gender ? { gender: parsed.data.merchant.gender } : {}),
+            ...(parsed.data.merchant.ageGroup ? { ageGroup: parsed.data.merchant.ageGroup } : {}),
+            ...(parsed.data.merchant.googleProductCategory
+              ? { googleProductCategory: parsed.data.merchant.googleProductCategory }
+              : {}),
+            ...(typeof parsed.data.merchant.identifierExists === "boolean"
+              ? { identifierExists: parsed.data.merchant.identifierExists }
+              : {})
+          }
+        }
+      : {}),
     specifications: parsed.data.specifications,
     reviews: parsed.data.recentReviews.map((review) => ({
       id: review.id,

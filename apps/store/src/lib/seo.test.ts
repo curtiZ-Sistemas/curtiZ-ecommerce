@@ -98,4 +98,30 @@ describe("SEO da loja", () => {
   it("escapa conteúdo perigoso ao serializar JSON-LD", () => {
     expect(serializeJsonLd({ value: "</script>" })).not.toContain("</script>");
   });
+
+  it("inclui identificadores e condição reais da variação no Product e Offer", () => {
+    const schema = productStructuredData({
+      ...detail,
+      merchant: { condition: "new" },
+      variants: [{
+        id: "variante-real",
+        sku: "SLIDE-PT-37",
+        gtin: "7894900011517",
+        mpn: "WAVE-37-PT",
+        priceInCents: 7990,
+        stock: 2
+      }]
+    }, "variante-real");
+
+    expect(schema).toMatchObject({
+      sku: "SLIDE-PT-37",
+      gtin13: "7894900011517",
+      mpn: "WAVE-37-PT",
+      offers: {
+        sku: "SLIDE-PT-37",
+        itemCondition: "https://schema.org/NewCondition",
+        url: "https://curtiz.com.br/produto/slide-wave-preto?variant=variante-real"
+      }
+    });
+  });
 });

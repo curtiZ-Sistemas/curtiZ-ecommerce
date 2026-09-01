@@ -10,6 +10,8 @@ export type ManagedVariant = {
   colorHex?: string;
   priceInCents?: number | null;
   costInCents?: number | null;
+  gtin?: string;
+  mpn?: string;
 };
 
 export type ManagedProduct = {
@@ -34,6 +36,19 @@ export type ManagedProduct = {
   lengthCm?: number;
   seoTitle?: string;
   seoDescription?: string;
+  categoryName?: string;
+  merchantCondition?: "new" | "refurbished" | "used";
+  merchantGender?: "male" | "female" | "unisex";
+  merchantAgeGroup?: "newborn" | "infant" | "toddler" | "kids" | "adult";
+  googleProductCategory?: string;
+  merchantIdentifierExists?: boolean | null;
+  merchantEligibility?: {
+    eligible: boolean;
+    eligibleVariants: number;
+    activeVariants: number;
+    reasons: string[];
+    warnings: string[];
+  };
   canDelete?: boolean;
   images?: Array<{
     id: string;
@@ -42,6 +57,8 @@ export type ManagedProduct = {
     alt: string;
     primary: boolean;
     sortOrder: number;
+    width: number;
+    height: number;
     variantId?: string;
   }>;
   variants: ManagedVariant[];
@@ -64,6 +81,8 @@ export type EditableVariant = {
   costInCents: number | null;
   stock: number;
   active: boolean;
+  gtin: string;
+  mpn: string;
 };
 
 export const MAX_PRODUCT_MEDIA_SIZE = 10 * 1024 * 1024;
@@ -181,7 +200,9 @@ export function generateVariantCombinations(
       priceInCents: null,
       costInCents: null,
       stock: 0,
-      active: true
+      active: true,
+      gtin: "",
+      mpn: ""
     }))
   );
 }

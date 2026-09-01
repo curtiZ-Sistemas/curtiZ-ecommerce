@@ -1,4 +1,5 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
+import { evaluateMerchantEligibility, type MerchantCatalogItem } from "@curtiz/domain";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
@@ -30,7 +31,9 @@ const variantSchema = z.object({
   priceInCents: z.number().int().min(0).max(100_000_000).nullable(),
   costInCents: z.number().int().min(0).max(100_000_000).nullable(),
   stock: z.number().int().min(0).max(999_999),
-  active: z.boolean()
+  active: z.boolean(),
+  gtin: z.string().trim().max(50),
+  mpn: z.string().trim().max(70)
 });
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -88,6 +91,11 @@ const actionSchema = z.discriminatedUnion("action", [
     lengthCm: z.number().positive().max(10_000),
     seoTitle: z.string().trim().max(160).optional(),
     seoDescription: z.string().trim().max(320).optional(),
+    merchantCondition: z.enum(["new", "refurbished", "used"]).nullable().optional(),
+    merchantGender: z.enum(["male", "female", "unisex"]).nullable().optional(),
+    merchantAgeGroup: z.enum(["newborn", "infant", "toddler", "kids", "adult"]).nullable().optional(),
+    googleProductCategory: z.string().trim().max(500).optional(),
+    merchantIdentifierExists: z.boolean().nullable().optional(),
     stockReason: z.string().trim().min(10).max(500),
     variants: z.array(variantSchema).max(500)
   })
@@ -281,10 +289,31 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
             : Math.round(number(variant.cost_override) * 100),
         available,
         reserved,
-        sellable: Math.max(available, 0)
+        sellable: Math.max(available, 0),
+        gtin: text(variant.barcode),
+        mpn: text(variant.merchant_mpn)
       };
     });
-    return {
+    const category = rows(product.categories)[0] ?? record(product.categories);
+    const images = rows(product.product_images)
+      .flatMap((image) => {
+        const url = mediaUrl(text(image.storage_path));
+        return url
+          ? [{
+              id: text(image.id),
+              path: text(image.storage_path),
+              url,
+              alt: text(image.alt_text),
+              primary: image.is_primary === true,
+              sortOrder: number(image.sort_order),
+              width: number(image.width),
+              height: number(image.height),
+              variantId: text(image.variant_id) || undefined
+            }]
+          : [];
+      })
+      .sort((left, right) => Number(right.primary) - Number(left.primary) || left.sortOrder - right.sortOrder);
+    const serialized = {
       id: text(product.id),
       name: text(product.name),
       slug: text(product.slug),
@@ -296,6 +325,7 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
           ? null
           : Math.round(number(product.compare_at_price) * 100),
       categoryId: text(product.category_id),
+      categoryName: text(category?.name),
       modelId: text(product.model_id),
       collectionId: text(product.collection_id),
       shortDescription: text(product.short_description),
@@ -308,24 +338,70 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
       lengthCm: number(product.length_cm),
       seoTitle: text(product.seo_title),
       seoDescription: text(product.seo_description),
-      images: rows(product.product_images)
-        .flatMap((image) => {
-          const url = mediaUrl(text(image.storage_path));
-          return url
-            ? [{
-                id: text(image.id),
-                path: text(image.storage_path),
-                url,
-                alt: text(image.alt_text),
-                primary: image.is_primary === true,
-                sortOrder: number(image.sort_order),
-                variantId: text(image.variant_id) || undefined
-              }]
-            : [];
-        })
-        .sort((left, right) => Number(right.primary) - Number(left.primary) || left.sortOrder - right.sortOrder),
+      merchantCondition: text(product.merchant_condition) || undefined,
+      merchantGender: text(product.merchant_gender) || undefined,
+      merchantAgeGroup: text(product.merchant_age_group) || undefined,
+      googleProductCategory: text(product.google_product_category),
+      merchantIdentifierExists:
+        typeof product.merchant_identifier_exists === "boolean"
+          ? product.merchant_identifier_exists
+          : null,
+      images,
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
+    };
+    const reasons = new Set<string>();
+    const warnings = new Set<string>();
+    let eligibleVariants = 0;
+    const activeVariants = variants.filter((variant) => variant.active);
+    for (const variant of activeVariants) {
+      const effectivePrice = variant.priceInCents ?? serialized.priceInCents;
+      const originalPrice = serialized.compareAtPriceInCents ?? 0;
+      const candidate: MerchantCatalogItem = {
+        id: variant.id,
+        title: [serialized.name, variant.color, variant.size].join(" - "),
+        description: serialized.description,
+        link: `https://curtiz.com.br/produto/${encodeURIComponent(serialized.slug)}?variant=${encodeURIComponent(variant.id)}`,
+        canonicalLink: `https://curtiz.com.br/produto/${encodeURIComponent(serialized.slug)}`,
+        images: images
+          .filter((image) => !image.variantId || image.variantId === variant.id)
+          .map((image) => ({ url: image.url, width: image.width, height: image.height })),
+        availability: variant.sellable > 0 ? "in_stock" : "out_of_stock",
+        priceInCents: originalPrice > effectivePrice ? originalPrice : effectivePrice,
+        ...(originalPrice > effectivePrice ? { salePriceInCents: effectivePrice } : {}),
+        condition: serialized.merchantCondition as MerchantCatalogItem["condition"],
+        brand: "curti Z",
+        gtin: variant.gtin || undefined,
+        mpn: variant.mpn || undefined,
+        identifierExists: serialized.merchantIdentifierExists ?? undefined,
+        googleProductCategory: serialized.googleProductCategory || undefined,
+        productType: serialized.categoryName,
+        color: variant.color,
+        size: variant.size,
+        gender: serialized.merchantGender as MerchantCatalogItem["gender"],
+        ageGroup: serialized.merchantAgeGroup as MerchantCatalogItem["ageGroup"],
+        itemGroupId: serialized.id,
+        itemGroupTitle: serialized.name
+      };
+      const result = evaluateMerchantEligibility(candidate);
+      if (result.eligible) eligibleVariants += 1;
+      result.reasons.forEach((reason) => reasons.add(reason));
+      result.warnings.forEach((warning) => warnings.add(warning));
+    }
+    if (serialized.status !== "active") reasons.add("Produto não está publicado.");
+    if (!activeVariants.length) reasons.add("Produto sem variações ativas.");
+    return {
+      ...serialized,
+      merchantEligibility: {
+        eligible:
+          serialized.status === "active" &&
+          activeVariants.length > 0 &&
+          eligibleVariants === activeVariants.length,
+        eligibleVariants,
+        activeVariants: activeVariants.length,
+        reasons: [...reasons],
+        warnings: [...warnings]
+      }
     };
   });
 
@@ -386,7 +462,7 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
     });
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
 
   const variantMatches = queryText
     ? await (async () => {

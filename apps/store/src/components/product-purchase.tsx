@@ -23,13 +23,25 @@ import { useFavorites } from "./favorites-provider";
 import { ProductImageViewer } from "./product-image-viewer";
 import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-client";
 
-export function ProductPurchase({ detail }: { detail: ProductDetailData }) {
+export function ProductPurchase({
+  detail,
+  initialVariantId
+}: {
+  detail: ProductDetailData;
+  initialVariantId?: string;
+}) {
   const { product, variants, gallery } = detail;
-  const initialSelection = useMemo(() => initialProductSelection(variants), [variants]);
+  const initialSelection = useMemo(
+    () => initialProductSelection(variants, initialVariantId),
+    [initialVariantId, variants]
+  );
+  const initialVariant = variants.find(
+    (variant) => variant.color === initialSelection.color && variant.size === initialSelection.size
+  );
   const [color, setColor] = useState(initialSelection.color || product.colors[0] || "");
   const [size, setSize] = useState(initialSelection.size);
   const [selectedImage, setSelectedImage] = useState(
-    gallery[0]?.src ?? variants[0]?.image ?? product.image
+    initialVariant?.image ?? gallery[0]?.src ?? variants[0]?.image ?? product.image
   );
   const [thumbnailStart, setThumbnailStart] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);

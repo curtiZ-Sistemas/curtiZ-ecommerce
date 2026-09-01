@@ -24,8 +24,14 @@ export async function generateMetadata({
   return productMetadata(detail);
 }
 
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+export default async function ProductPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ variant?: string }>;
+}) {
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
@@ -33,14 +39,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="container page-shell product-page">
-      <JsonLd data={productStructuredData(detail)} />
+      <JsonLd data={productStructuredData(detail, query.variant)} />
       <JsonLd data={productBreadcrumbStructuredData(product)} />
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
         <Link href="/">curti Z</Link> / <Link href={categoryPath}>{product.category}</Link> /{" "}
         <span>{product.name}</span>
       </nav>
 
-      <ProductPurchase detail={detail} />
+      <ProductPurchase detail={detail} initialVariantId={query.variant} />
 
       <section className="product-information">
         <div>

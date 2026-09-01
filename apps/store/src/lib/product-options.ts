@@ -1,4 +1,5 @@
 export type ProductOptionVariant = {
+  id?: string;
   color: string;
   colorHex?: string;
   size: string;
@@ -32,7 +33,14 @@ export function resolveProductColor(color: string, colorHex?: string): string {
   return fallbackColors[normalizedColorName(color)] ?? "#9b9b9b";
 }
 
-export function initialProductSelection(variants: readonly ProductOptionVariant[]) {
+export function initialProductSelection(
+  variants: readonly ProductOptionVariant[],
+  preferredVariantId?: string
+) {
+  const preferred = preferredVariantId
+    ? variants.find((variant) => variant.id === preferredVariantId)
+    : undefined;
+  if (preferred) return { color: preferred.color, size: preferred.size };
   const firstAvailable = variants.find((variant) => variant.stock > 0) ?? variants[0];
   if (!firstAvailable) return { color: "", size: "" };
   const availableSizes = [

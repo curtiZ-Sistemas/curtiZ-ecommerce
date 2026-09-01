@@ -79,7 +79,7 @@ const productStatusLabel = (status: string) =>
 type ProductManagementView = "produtos" | "variacoes" | "midias" | "estoque";
 
 type ProductEditorSection =
-  "information" | "commercial" | "images" | "variants" | "logistics" | "content";
+  "information" | "commercial" | "images" | "variants" | "logistics" | "content" | "merchant";
 
 const productEditorSections: Array<{
   id: ProductEditorSection;
@@ -91,7 +91,8 @@ const productEditorSections: Array<{
   { id: "images", label: "Imagens", target: "product-step-4" },
   { id: "variants", label: "Variações", target: "product-step-5" },
   { id: "logistics", label: "Logística", target: "product-step-7" },
-  { id: "content", label: "Conteúdo e SEO", target: "product-step-8" }
+  { id: "content", label: "Conteúdo e SEO", target: "product-step-8" },
+  { id: "merchant", label: "Google Merchant", target: "product-step-9" }
 ];
 
 function QueuedProductImage({
@@ -297,7 +298,9 @@ export function ProductManagement({
         priceInCents: variant.priceInCents ?? null,
         costInCents: variant.costInCents ?? null,
         stock: variant.available,
-        active: variant.active
+        active: variant.active,
+        gtin: variant.gtin ?? "",
+        mpn: variant.mpn ?? ""
       }))
     );
     setColorImageSelections({});
@@ -450,6 +453,14 @@ export function ProductManagement({
         lengthCm: Number(form.get("lengthCm")),
         seoTitle: form.get("seoTitle"),
         seoDescription: form.get("seoDescription"),
+        merchantCondition: form.get("merchantCondition") || null,
+        merchantGender: form.get("merchantGender") || null,
+        merchantAgeGroup: form.get("merchantAgeGroup") || null,
+        googleProductCategory: form.get("googleProductCategory"),
+        merchantIdentifierExists:
+          form.get("merchantIdentifierExists") === ""
+            ? null
+            : form.get("merchantIdentifierExists") === "true",
         stockReason: form.get("stockReason"),
         variants: editableVariants
       },
@@ -649,7 +660,9 @@ export function ProductManagement({
         id: undefined,
         sku,
         size: `${variant.size} cópia`,
-        stock: 0
+        stock: 0,
+        gtin: "",
+        mpn: ""
       }
     ]);
     setEditorDirty(true);
@@ -1986,6 +1999,28 @@ export function ProductManagement({
                                   />
                                 </label>
                                 <label>
+                                  <span>GTIN / EAN</span>
+                                  <input
+                                    inputMode="numeric"
+                                    maxLength={50}
+                                    value={variant.gtin}
+                                    onChange={(event) =>
+                                      updateEditableVariant(index, { gtin: event.target.value })
+                                    }
+                                  />
+                                  <small>Use apenas o código real impresso pelo fabricante.</small>
+                                </label>
+                                <label>
+                                  <span>MPN do fabricante</span>
+                                  <input
+                                    maxLength={70}
+                                    value={variant.mpn}
+                                    onChange={(event) =>
+                                      updateEditableVariant(index, { mpn: event.target.value })
+                                    }
+                                  />
+                                </label>
+                                <label>
                                   <span>Preço próprio (R$)</span>
                                   <input
                                     type="number"
@@ -2246,6 +2281,102 @@ export function ProductManagement({
                   />
                   <span>Produto em destaque</span>
                 </label>
+                <h3 className="wide product-form-section" id="product-step-9">
+                  Google Merchant Center
+                </h3>
+                {editing !== "new" && editing.merchantEligibility ? (
+                  <div className="wide product-form-subsection" role="status">
+                    <strong>
+                      {editing.merchantEligibility.eligible
+                        ? "Elegível para o feed"
+                        : "Ainda não elegível para o feed"}
+                    </strong>
+                    <p>
+                      {editing.merchantEligibility.eligibleVariants} de{" "}
+                      {editing.merchantEligibility.activeVariants} variações ativas elegíveis.
+                    </p>
+                    {editing.merchantEligibility.reasons.length ? (
+                      <ul>
+                        {editing.merchantEligibility.reasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {editing.merchantEligibility.warnings.length ? (
+                      <ul>
+                        {editing.merchantEligibility.warnings.map((warning) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+                <label>
+                  <span>Condição</span>
+                  <select
+                    name="merchantCondition"
+                    defaultValue={editing === "new" ? "" : editing.merchantCondition ?? ""}
+                  >
+                    <option value="">Não informada</option>
+                    <option value="new">Novo</option>
+                    <option value="refurbished">Recondicionado</option>
+                    <option value="used">Usado</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Gênero Google</span>
+                  <select
+                    name="merchantGender"
+                    defaultValue={editing === "new" ? "" : editing.merchantGender ?? ""}
+                  >
+                    <option value="">Não informado</option>
+                    <option value="female">Feminino</option>
+                    <option value="male">Masculino</option>
+                    <option value="unisex">Unissex</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Faixa etária Google</span>
+                  <select
+                    name="merchantAgeGroup"
+                    defaultValue={editing === "new" ? "" : editing.merchantAgeGroup ?? ""}
+                  >
+                    <option value="">Não informada</option>
+                    <option value="newborn">Recém-nascido</option>
+                    <option value="infant">Bebê</option>
+                    <option value="toddler">Primeira infância</option>
+                    <option value="kids">Infantil</option>
+                    <option value="adult">Adulto</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Identificadores de fabricante</span>
+                  <select
+                    name="merchantIdentifierExists"
+                    defaultValue={
+                      editing === "new" || editing.merchantIdentifierExists == null
+                        ? ""
+                        : String(editing.merchantIdentifierExists)
+                    }
+                  >
+                    <option value="">Ainda não confirmado</option>
+                    <option value="true">Possui GTIN ou MPN real</option>
+                    <option value="false">Não possui identificadores</option>
+                  </select>
+                </label>
+                <label className="wide">
+                  <span>Categoria de produto do Google</span>
+                  <input
+                    name="googleProductCategory"
+                    maxLength={500}
+                    defaultValue={editing === "new" ? "" : editing.googleProductCategory}
+                  />
+                  <small>Opcional: em branco, o Google usa classificação automática.</small>
+                </label>
+                <p className="wide">
+                  Produtos incompletos continuam normalmente na loja, mas não entram no feed.
+                  Nunca invente GTIN, MPN, marca, preço ou disponibilidade.
+                </p>
               </div>
               <footer className="product-editor-footer">
                 <span>Atalho: Ctrl/Cmd + S</span>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { Product } from "@curtiz/domain";
+import { isValidGtin, type Product } from "@curtiz/domain";
 
 export const BRAND_NAME = "curti Z";
 export const BRAND_ALTERNATE_NAMES = ["curtiZ", "Curtiz", "curti z"] as const;
@@ -113,7 +113,17 @@ export function breadcrumbStructuredData(
 type ProductSeoDetail = {
   product: Product;
   gallery: Array<{ src: string }>;
-  variants: Array<{ priceInCents: number; stock: number }>;
+  variants: Array<{
+    id?: string;
+    sku?: string;
+    gtin?: string;
+    mpn?: string;
+    color?: string;
+    size?: string;
+    priceInCents: number;
+    stock: number;
+  }>;
+  merchant?: { condition?: "new" | "refurbished" | "used" };
 };
 
 export function productSeoDescription(product: Product): string {
@@ -154,17 +164,33 @@ export function productMetadata(detail: ProductSeoDetail): Metadata {
   };
 }
 
-export function productStructuredData(detail: ProductSeoDetail) {
+export function productStructuredData(detail: ProductSeoDetail, preferredVariantId?: string) {
   const { product } = detail;
   const path = `/produto/${encodeURIComponent(product.slug)}`;
-  const availablePrices = detail.variants
-    .filter((variant) => variant.stock > 0)
-    .map((variant) => variant.priceInCents);
-  const priceInCents = availablePrices.length
-    ? Math.min(...availablePrices)
-    : product.priceInCents;
+  const selectedVariant =
+    (preferredVariantId
+      ? detail.variants.find((variant) => variant.id === preferredVariantId)
+      : undefined) ??
+    detail.variants.find((variant) => variant.stock > 0) ??
+    detail.variants[0];
+  const priceInCents = selectedVariant?.priceInCents ?? product.priceInCents;
   const images = [...new Set([detail.gallery[0]?.src, ...detail.gallery.map((image) => image.src), product.image])]
     .filter((image): image is string => Boolean(image));
+
+  const gtin = selectedVariant?.gtin?.trim();
+  const gtinProperty = gtin && isValidGtin(gtin)
+    ? { [`gtin${gtin.length}`]: gtin }
+    : {};
+  const condition = detail.merchant?.condition
+    ? {
+        new: "https://schema.org/NewCondition",
+        refurbished: "https://schema.org/RefurbishedCondition",
+        used: "https://schema.org/UsedCondition"
+      }[detail.merchant.condition]
+    : undefined;
+  const variantUrl = selectedVariant?.id
+    ? `${officialUrl(path)}?variant=${encodeURIComponent(selectedVariant.id)}`
+    : officialUrl(path);
 
   return {
     "@context": "https://schema.org",
@@ -177,17 +203,24 @@ export function productStructuredData(detail: ProductSeoDetail) {
     category: product.category,
     color: product.colors,
     size: product.sizes,
+    ...(selectedVariant?.sku ? { sku: selectedVariant.sku } : {}),
+    ...(selectedVariant?.mpn ? { mpn: selectedVariant.mpn } : {}),
+    ...gtinProperty,
     brand: {
       "@type": "Brand",
       name: BRAND_NAME
     },
     offers: {
       "@type": "Offer",
-      url: officialUrl(path),
+      url: variantUrl,
       priceCurrency: "BRL",
       price: (priceInCents / 100).toFixed(2),
+      ...(selectedVariant?.sku ? { sku: selectedVariant.sku } : {}),
+      ...(condition ? { itemCondition: condition } : {}),
       availability:
-        product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock"
+        (selectedVariant?.stock ?? product.stock) > 0
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock"
     },
     ...(product.reviews > 0 && product.rating > 0
       ? {
