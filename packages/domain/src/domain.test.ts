@@ -27,6 +27,13 @@ describe("domínio Curtiz", () => {
     expect(roleHasPermission("operational", "financial.read_full")).toBe(false);
   });
 
+  it("restringe a gestão do controle financeiro ao perfil gerencial", () => {
+    expect(roleHasPermission("manager", "finance.manage")).toBe(true);
+    expect(roleHasPermission("admin", "finance.manage")).toBe(false);
+    expect(roleHasPermission("operational", "finance.manage")).toBe(false);
+    expect(roleHasPermission("technical", "finance.manage")).toBe(false);
+  });
+
   it("mantém a matriz de gestão de acessos sem escalada entre funções", () => {
     expect(roleHasPermission("manager", "users.access.manage_admin")).toBe(true);
     expect(roleHasPermission("manager", "users.access.manage_technical")).toBe(false);

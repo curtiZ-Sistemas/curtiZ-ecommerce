@@ -19,7 +19,6 @@ export type ManagerResourceDefinition = {
 };
 
 export const managerResourceKeys = [
-  "financeiro",
   "pedidos-vendas",
   "clientes",
   "representantes",
@@ -42,24 +41,6 @@ export const managerResourceKeys = [
 export type ManagerResourceKey = (typeof managerResourceKeys)[number];
 
 export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinition> = {
-  financeiro: {
-    label: "Financeiro",
-    description: "Receitas, custos disponíveis e conciliação sem projeções fictícias.",
-    table: "financial_entries",
-    select: "id,type,source,amount,reconciliation_status,occurred_at",
-    columns: [
-      { key: "type", label: "Tipo" },
-      { key: "source", label: "Origem" },
-      { key: "amount", label: "Valor", format: "money" },
-      { key: "reconciliation_status", label: "Conciliação", format: "status" },
-      { key: "occurred_at", label: "Data", format: "datetime" }
-    ],
-    searchColumns: ["type", "source", "reconciliation_status"],
-    orderColumn: "occurred_at",
-    dateColumn: "occurred_at",
-    statusColumn: "reconciliation_status",
-    exportAllowed: true
-  },
   "pedidos-vendas": {
     label: "Pedidos e vendas",
     description: "Acompanhe pedidos, pagamentos e resultado disponível por período.",
@@ -198,7 +179,8 @@ export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinit
     label: "Comissões",
     description: "Lançamentos calculados pelas regras versionadas.",
     table: "commission_entries",
-    select: "id,representative_id,status,eligible_amount_in_cents,commission_in_cents,source_event,reversal_of,created_at",
+    select:
+      "id,representative_id,status,eligible_amount_in_cents,commission_in_cents,source_event,reversal_of,created_at",
     columns: [
       { key: "representative_id", label: "Representante" },
       { key: "source_event", label: "Origem" },
@@ -218,7 +200,8 @@ export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinit
     label: "Fechamentos de comissão",
     description: "Simulações, aprovações, bloqueios e reaberturas auditadas.",
     table: "commission_closings",
-    select: "id,public_code,period_start,period_end,status,totals_snapshot,locked_at,reopen_reason,created_at",
+    select:
+      "id,public_code,period_start,period_end,status,totals_snapshot,locked_at,reopen_reason,created_at",
     columns: [
       { key: "public_code", label: "Fechamento" },
       { key: "period_start", label: "Início", format: "date" },
@@ -308,7 +291,8 @@ export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinit
     label: "Auditoria",
     description: "Trilha imutável com ator, ação, módulo, antes, depois e justificativa.",
     table: "audit_logs",
-    select: "id,actor_id,actor_role,action,entity_type,previous_data_sanitized,new_data_sanitized,reason,created_at",
+    select:
+      "id,actor_id,actor_role,action,entity_type,previous_data_sanitized,new_data_sanitized,reason,created_at",
     columns: [
       { key: "actor_role", label: "Perfil" },
       { key: "action", label: "Ação" },

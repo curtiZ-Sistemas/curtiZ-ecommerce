@@ -41,6 +41,7 @@ export const permissions = [
   "finance.reconcile",
   "finance.close_period",
   "finance.reopen_period",
+  "finance.manage",
   "promotions.advanced_manage",
   "promotions.approve",
   "marketing.manage",
@@ -114,6 +115,7 @@ const matrix: Record<AppRole, ReadonlySet<Permission>> = {
         !permission.startsWith("financial.read_full") &&
         !permission.startsWith("finance.close") &&
         !permission.startsWith("finance.reopen") &&
+        permission !== "finance.manage" &&
         !permission.startsWith("technical.") &&
         !permission.startsWith("users.access.") &&
         permission !== "representatives.commissions.close" &&

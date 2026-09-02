@@ -11,6 +11,7 @@ import { AdminPermissions } from "@/components/admin-permissions";
 import { AdminResourceManager } from "@/components/admin-resource-manager";
 import { AdminUsers } from "@/components/admin-users";
 import { ManagerDashboard } from "@/components/manager-dashboard";
+import { FinancialControl } from "@/components/financial-control";
 import { ManagerResourceManager } from "@/components/manager-resource-manager";
 import { TechnicalOverview } from "@/components/technical-overview";
 import { TechnicalResourceManager } from "@/components/technical-resource-manager";
@@ -109,6 +110,7 @@ function showRouteHeading(role: PanelRole, section: string) {
       section === "conteudo-loja" ||
       section === "barra-promocional" ||
       section === "inteligencia-loja" ||
+      section === "financeiro" ||
       section === "usuarios" ||
       ["niveis", "metas", "kits", "banners", "regras-comissao"].includes(section) ||
       isManagerResource(alias);
@@ -168,6 +170,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
   if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "inteligencia-loja") return <StoreIntelligence />;
+  if (section === "financeiro") return <FinancialControl />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;

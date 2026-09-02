@@ -40,6 +40,7 @@ values
   ('finance.reconcile', 'Conciliar pagamentos'),
   ('finance.close_period', 'Fechar período'),
   ('finance.reopen_period', 'Reabrir período'),
+  ('finance.manage', 'Gerenciar controle financeiro'),
   ('promotions.advanced_manage', 'Gerenciar promoções avançadas'),
   ('promotions.approve', 'Aprovar promoções'),
   ('banners.update', 'Gerenciar banners'),
@@ -77,7 +78,7 @@ select 'manager', id from public.permissions where code in (
   'support.conversations.read','support.conversations.reply','support.conversations.escalate',
   'support.reports.read','returns.read','returns.approve','returns.refund',
   'financial.read_summary','financial.read_full','finance.reconcile','finance.close_period',
-  'finance.reopen_period','promotions.approve','reports.export','audit.read'
+  'finance.reopen_period','finance.manage','promotions.approve','reports.export','audit.read'
 )
 on conflict do nothing;
 

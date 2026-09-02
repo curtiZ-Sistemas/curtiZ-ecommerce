@@ -104,7 +104,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
   gerencia: [
     ["Dashboard executivo", "", CircleGauge],
     ["Visão estratégica", "visao-estrategica", ChartNoAxesCombined],
-    ["Financeiro", "financeiro", BadgeDollarSign],
+    ["Controle financeiro", "financeiro", BadgeDollarSign],
     ["Pedidos e vendas", "pedidos-vendas", ShoppingBag],
     ["Inteligência da loja", "inteligencia-loja", Sparkles],
     ["Clientes", "clientes", Users],

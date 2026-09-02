@@ -3,7 +3,7 @@ import { isManagerResource, managerResources } from "./manager-resources";
 
 describe("manager resources", () => {
   it("expõe somente recursos persistidos da Gerência", () => {
-    expect(isManagerResource("financeiro")).toBe(true);
+    expect(isManagerResource("financeiro")).toBe(false);
     expect(isManagerResource("fechamentos")).toBe(true);
     expect(isManagerResource("auditoria")).toBe(true);
     expect(isManagerResource("usuarios")).toBe(false);
@@ -25,7 +25,6 @@ describe("manager resources", () => {
   });
 
   it("limita exportação às áreas gerenciais explicitamente autorizadas", () => {
-    expect(managerResources.financeiro.exportAllowed).toBe(true);
     expect(managerResources.auditoria.exportAllowed).toBe(true);
     expect(managerResources.clientes.exportAllowed).not.toBe(true);
     expect(managerResources["configuracoes-estrategicas"].exportAllowed).not.toBe(true);
