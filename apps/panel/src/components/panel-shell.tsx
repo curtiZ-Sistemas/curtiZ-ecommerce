@@ -126,7 +126,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Banners", "banners", PanelsTopLeft],
     ["Relatórios", "relatorios", ChartNoAxesCombined],
     ["Aprovações", "aprovacoes", ShieldCheck],
-    ["Auditoria", "auditoria", FileClock],
+    ["Logs de Atividades", "auditoria", FileClock],
     ["Usuários e acessos", "usuarios", Users],
     ["Políticas e conformidade", "politicas", Scale],
     ["Simulações", "simulacoes", ChartNoAxesCombined],

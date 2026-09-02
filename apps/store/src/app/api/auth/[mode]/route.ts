@@ -326,6 +326,7 @@ export async function POST(
     const signedDemoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
     const supabase = signedDemoSession ? null : await createServerSupabaseClient();
     if (supabase) {
+      await supabase.rpc("log_internal_auth_event", { p_event: "LOGOUT" });
       const { error } = await supabase.auth.signOut();
       if (error) {
         return NextResponse.json(
@@ -734,6 +735,10 @@ export async function POST(
     if (assurance.data.currentLevel !== "aal2") {
       redirectTo = `/mfa?next=${encodeURIComponent(redirectTo)}`;
     }
+  }
+
+  if (internalRole) {
+    await supabase.rpc("log_internal_auth_event", { p_event: "LOGIN" });
   }
 
   const response = NextResponse.json(

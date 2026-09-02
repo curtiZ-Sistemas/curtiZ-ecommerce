@@ -33,7 +33,6 @@ export const managerResourceKeys = [
   "campanhas",
   "banners",
   "relatorios",
-  "auditoria",
   "simulacoes",
   "configuracoes-estrategicas"
 ] as const;
@@ -286,26 +285,6 @@ export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinit
     orderColumn: "created_at",
     dateColumn: "created_at",
     statusColumn: "status"
-  },
-  auditoria: {
-    label: "Auditoria",
-    description: "Trilha imutável com ator, ação, módulo, antes, depois e justificativa.",
-    table: "audit_logs",
-    select:
-      "id,actor_id,actor_role,action,entity_type,previous_data_sanitized,new_data_sanitized,reason,created_at",
-    columns: [
-      { key: "actor_role", label: "Perfil" },
-      { key: "action", label: "Ação" },
-      { key: "entity_type", label: "Módulo" },
-      { key: "previous_data_sanitized", label: "Antes", format: "json" },
-      { key: "new_data_sanitized", label: "Depois", format: "json" },
-      { key: "reason", label: "Justificativa" },
-      { key: "created_at", label: "Data", format: "datetime" }
-    ],
-    searchColumns: ["action", "entity_type", "reason"],
-    orderColumn: "created_at",
-    dateColumn: "created_at",
-    exportAllowed: true
   },
   simulacoes: {
     label: "Simulações de comissão",

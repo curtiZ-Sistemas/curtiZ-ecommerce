@@ -81,10 +81,6 @@ export async function GET(
   const fromDate = validDate(request.nextUrl.searchParams.get("from") ?? "");
   const toDate = validDate(request.nextUrl.searchParams.get("to") ?? "");
   const format = request.nextUrl.searchParams.get("format");
-  const auditActor = request.nextUrl.searchParams.get("actor") ?? "";
-  const auditAction = cleanFilter(request.nextUrl.searchParams.get("action") ?? "");
-  const auditModule = cleanFilter(request.nextUrl.searchParams.get("module") ?? "");
-  const auditResult = cleanFilter(request.nextUrl.searchParams.get("result") ?? "");
 
   let query = auth.supabase
     .from(definition.table)
@@ -102,15 +98,6 @@ export async function GET(
   if (toDate && definition.dateColumn) {
     query = query.lt(definition.dateColumn, `${nextDate(toDate)}T00:00:00-03:00`);
   }
-  if (resource === "auditoria") {
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(auditActor)) {
-      query = query.eq("actor_id", auditActor);
-    }
-    if (auditAction) query = query.eq("action", auditAction);
-    if (auditModule) query = query.eq("entity_type", auditModule);
-    if (auditResult) query = query.contains("new_data_sanitized", { result: auditResult });
-  }
-
   query = query.order(definition.orderColumn, { ascending: false });
 
   if (format === "csv") {
@@ -144,11 +131,7 @@ export async function GET(
         status: status || null,
         from: fromDate,
         to: toDate,
-        query_applied: Boolean(search),
-        actor: auditActor || null,
-        action: auditAction || null,
-        module: auditModule || null,
-        result: auditResult || null
+        query_applied: Boolean(search)
       }
     });
     if (audit.error) {

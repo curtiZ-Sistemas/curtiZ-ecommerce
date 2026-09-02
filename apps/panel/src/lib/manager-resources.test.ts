@@ -5,7 +5,7 @@ describe("manager resources", () => {
   it("expõe somente recursos persistidos da Gerência", () => {
     expect(isManagerResource("financeiro")).toBe(false);
     expect(isManagerResource("fechamentos")).toBe(true);
-    expect(isManagerResource("auditoria")).toBe(true);
+    expect(isManagerResource("auditoria")).toBe(false);
     expect(isManagerResource("usuarios")).toBe(false);
     expect(isManagerResource("integracoes")).toBe(false);
   });
@@ -25,7 +25,7 @@ describe("manager resources", () => {
   });
 
   it("limita exportação às áreas gerenciais explicitamente autorizadas", () => {
-    expect(managerResources.auditoria.exportAllowed).toBe(true);
+    expect(managerResources["pedidos-vendas"].exportAllowed).toBe(true);
     expect(managerResources.clientes.exportAllowed).not.toBe(true);
     expect(managerResources["configuracoes-estrategicas"].exportAllowed).not.toBe(true);
   });

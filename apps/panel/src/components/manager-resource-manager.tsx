@@ -100,10 +100,6 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [auditActor, setAuditActor] = useState("");
-  const [auditAction, setAuditAction] = useState("");
-  const [auditModule, setAuditModule] = useState("");
-  const [auditResult, setAuditResult] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -118,14 +114,8 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
     if (status) params.set("status", status);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    if (resource === "auditoria") {
-      if (auditActor) params.set("actor", auditActor);
-      if (auditAction) params.set("action", auditAction);
-      if (auditModule) params.set("module", auditModule);
-      if (auditResult) params.set("result", auditResult);
-    }
     return params;
-  }, [auditAction, auditActor, auditModule, auditResult, from, page, resource, status, submittedQuery, to]);
+  }, [from, page, status, submittedQuery, to]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -270,8 +260,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
         </form>
         {definition.statusColumn && !definition.fixedStatus ? <input aria-label="Filtrar por status" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} placeholder="Status exato" /> : null}
         {definition.dateColumn ? <><input aria-label="Data inicial" type="date" value={from} onChange={(event) => { setPage(1); setFrom(event.target.value); }} /><input aria-label="Data final" type="date" value={to} onChange={(event) => { setPage(1); setTo(event.target.value); }} /></> : null}
-        {resource === "auditoria" ? <><input aria-label="Filtrar por usuário" value={auditActor} onChange={(event) => { setPage(1); setAuditActor(event.target.value.trim()); }} placeholder="ID do usuário" /><input aria-label="Filtrar por ação" value={auditAction} onChange={(event) => { setPage(1); setAuditAction(event.target.value); }} placeholder="Ação exata" /><input aria-label="Filtrar por módulo" value={auditModule} onChange={(event) => { setPage(1); setAuditModule(event.target.value); }} placeholder="Módulo exato" /><input aria-label="Filtrar por resultado" value={auditResult} onChange={(event) => { setPage(1); setAuditResult(event.target.value); }} placeholder="Resultado exato" /></> : null}
-        {query || submittedQuery || status || from || to || auditActor || auditAction || auditModule || auditResult ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); setStatus(""); setFrom(""); setTo(""); setAuditActor(""); setAuditAction(""); setAuditModule(""); setAuditResult(""); setPage(1); }}><X aria-hidden="true" /> Limpar filtros</button> : null}
+        {query || submittedQuery || status || from || to ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); setStatus(""); setFrom(""); setTo(""); setPage(1); }}><X aria-hidden="true" /> Limpar filtros</button> : null}
         <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar registros"><RefreshCw className={loading ? "spin" : ""} /></button>
       </div>
 
