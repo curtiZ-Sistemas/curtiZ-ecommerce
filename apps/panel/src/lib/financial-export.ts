@@ -129,7 +129,7 @@ export async function buildFinancialWorkbook(
 ) {
   const { Workbook } = await import("exceljs");
   const workbook = new Workbook();
-  workbook.creator = "curtiZ";
+  workbook.creator = "curti Z";
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -137,7 +137,7 @@ export async function buildFinancialWorkbook(
     const summary = workbook.addWorksheet("Resumo");
     summary.columns = [{ width: 34 }, { width: 22 }];
     summary.addRows([
-      ["Controle financeiro curtiZ", ""],
+      ["Controle financeiro curti Z", ""],
       ["Período", `${period.from} a ${period.to}`],
       ["Saldo atual", data.summary.balance],
       ["Entradas no período", data.summary.income],

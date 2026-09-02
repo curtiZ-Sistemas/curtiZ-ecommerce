@@ -11,6 +11,8 @@ import { AdminPermissions } from "@/components/admin-permissions";
 import { AdminResourceManager } from "@/components/admin-resource-manager";
 import { AdminUsers } from "@/components/admin-users";
 import { ManagerDashboard } from "@/components/manager-dashboard";
+import { ManagerStrategy } from "@/components/manager-strategy";
+import { ManagerAlerts } from "@/components/manager-alerts";
 import { FinancialControl } from "@/components/financial-control";
 import { ActivityLogs } from "@/components/activity-logs";
 import { ManagerResourceManager } from "@/components/manager-resource-manager";
@@ -91,7 +93,7 @@ export default async function RolePage({
 }
 
 function showRouteHeading(role: PanelRole, section: string) {
-  if (!section) return true;
+  if (!section) return role !== "gerencia";
   if (role === "administracao") {
     const ownsHeading =
       ["produtos", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
@@ -111,6 +113,8 @@ function showRouteHeading(role: PanelRole, section: string) {
       section === "conteudo-loja" ||
       section === "barra-promocional" ||
       section === "inteligencia-loja" ||
+      section === "visao-estrategica" ||
+      section === "alertas" ||
       section === "financeiro" ||
       section === "auditoria" ||
       section === "usuarios" ||
@@ -167,8 +171,9 @@ function Administration({ section, initialQuery }: { section: string; initialQue
 }
 
 function Management({ section, initialQuery }: { section: string; initialQuery: string }) {
-  if (!section || section === "visao-estrategica" || section === "alertas")
-    return <ManagerDashboard />;
+  if (!section) return <ManagerDashboard />;
+  if (section === "visao-estrategica") return <ManagerStrategy />;
+  if (section === "alertas") return <ManagerAlerts />;
   if (section === "conteudo-loja") return <HomepageBuilder showVersions />;
   if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "inteligencia-loja") return <StoreIntelligence />;

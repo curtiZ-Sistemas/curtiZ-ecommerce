@@ -15,6 +15,11 @@ import {
   type ManagerColumn,
   type ManagerResourceKey
 } from "@/lib/manager-resources";
+import { ManagementPeriodSelect } from "@/components/management-ui";
+import {
+  managementPeriodFor,
+  type ManagementPeriodPreset
+} from "@/lib/management-period";
 import { usePanelPrompt } from "./panel-prompt";
 
 type Item = Record<string, unknown>;
@@ -98,6 +103,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [status, setStatus] = useState("");
+  const [preset, setPreset] = useState<ManagementPeriodPreset>("custom");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -149,6 +155,14 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   }, [load]);
 
   const pages = Math.max(1, Math.ceil(total / 20));
+  const changePreset = (next: ManagementPeriodPreset) => {
+    setPreset(next);
+    setPage(1);
+    if (next === "custom") return;
+    const period = managementPeriodFor(next);
+    setFrom(period.from);
+    setTo(period.to);
+  };
   const hasCommissionWorkflow = (resource === "fechamentos" || resource === "simulacoes") && capabilities.manageClosings;
   const hasRepresentativeWorkflow = resource === "representantes" && capabilities.manageRepresentatives;
   const hasCampaignWorkflow = resource === "campanhas" && (capabilities.manageCreatives || capabilities.approveCreatives || capabilities.publishCreatives);
@@ -241,7 +255,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   return (
     <section className="panel-card admin-resource manager-resource">
       <header className="admin-resource-header">
-        <div><h1>{definition.label}</h1><p>{definition.description}</p></div>
+        <div><span className="page-heading-eyebrow">Gerência</span><h1>{definition.label}</h1><p>{definition.description}</p></div>
         {capabilities.export ? (
           <a className="secondary-button" href={`/api/manager/resources/${resource}?${parameters}&format=csv`}>
             <Download aria-hidden="true" /> Exportar CSV
@@ -259,8 +273,8 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
           <button className="secondary-button" type="submit">Buscar</button>
         </form>
         {definition.statusColumn && !definition.fixedStatus ? <input aria-label="Filtrar por status" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} placeholder="Status exato" /> : null}
-        {definition.dateColumn ? <><input aria-label="Data inicial" type="date" value={from} onChange={(event) => { setPage(1); setFrom(event.target.value); }} /><input aria-label="Data final" type="date" value={to} onChange={(event) => { setPage(1); setTo(event.target.value); }} /></> : null}
-        {query || submittedQuery || status || from || to ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); setStatus(""); setFrom(""); setTo(""); setPage(1); }}><X aria-hidden="true" /> Limpar filtros</button> : null}
+        {definition.dateColumn ? <><ManagementPeriodSelect value={preset} onChange={changePreset} disabled={loading} /><input aria-label="Data inicial" type="date" value={from} onChange={(event) => { setPreset("custom"); setPage(1); setFrom(event.target.value); }} /><input aria-label="Data final" type="date" value={to} onChange={(event) => { setPreset("custom"); setPage(1); setTo(event.target.value); }} /></> : null}
+        {query || submittedQuery || status || from || to ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); setStatus(""); setPreset("custom"); setFrom(""); setTo(""); setPage(1); }}><X aria-hidden="true" /> Limpar filtros</button> : null}
         <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar registros"><RefreshCw className={loading ? "spin" : ""} /></button>
       </div>
 

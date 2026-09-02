@@ -57,6 +57,12 @@ import {
   type FinancialSnapshot
 } from "@/lib/financial-control";
 import { exportFinancialWorkbook } from "@/lib/financial-export";
+import {
+  managementPeriodFor,
+  managementPeriodOptions,
+  managementToday,
+  type ManagementPeriodPreset
+} from "@/lib/management-period";
 import { usePanelPrompt } from "./panel-prompt";
 
 type Tab =
@@ -100,25 +106,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "audit", label: "Histórico" }
 ];
 
-function today() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-}
-
-function periodFor(preset: string) {
-  const end = today();
-  const now = new Date(`${end}T12:00:00Z`);
-  const from = new Date(now);
-  if (preset === "today") return { from: end, to: end };
-  if (preset === "7days") from.setUTCDate(from.getUTCDate() - 6);
-  if (preset === "month") from.setUTCDate(1);
-  if (preset === "previous") {
-    from.setUTCMonth(from.getUTCMonth() - 1, 1);
-    const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0));
-    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-  }
-  if (preset === "year") from.setUTCMonth(0, 1);
-  return { from: from.toISOString().slice(0, 10), to: end };
-}
+const today = managementToday;
 
 function scalar(value: unknown): string {
   if (typeof value === "string") return value;
@@ -171,9 +159,9 @@ function chartMoney(value: unknown) {
 
 export function FinancialControl() {
   const requestPrompt = usePanelPrompt();
-  const initial = periodFor("month");
+  const initial = managementPeriodFor("month");
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [preset, setPreset] = useState("month");
+  const [preset, setPreset] = useState<ManagementPeriodPreset>("month");
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [data, setData] = useState<FinancialSnapshot>(emptyFinancialSnapshot);
@@ -271,10 +259,10 @@ export function FinancialControl() {
     }
   };
 
-  const changePreset = (value: string) => {
+  const changePreset = (value: ManagementPeriodPreset) => {
     setPreset(value);
     if (value !== "custom") {
-      const period = periodFor(value);
+      const period = managementPeriodFor(value);
       setFrom(period.from);
       setTo(period.to);
     }
@@ -302,7 +290,7 @@ export function FinancialControl() {
     <section className="financial-control" aria-busy={loading || pending}>
       <header className="financial-header">
         <div>
-          <span className="page-heading-eyebrow">Painel dos sócios</span>
+          <span className="page-heading-eyebrow">Gerência</span>
           <h1>Controle financeiro</h1>
           <p>Caixa, compromissos e aportes conectados em uma única fonte de verdade.</p>
         </div>
@@ -351,13 +339,13 @@ export function FinancialControl() {
       <div className="financial-period panel-card">
         <label>
           <span>Período</span>
-          <select value={preset} onChange={(event) => changePreset(event.target.value)}>
-            <option value="today">Hoje</option>
-            <option value="7days">7 dias</option>
-            <option value="month">Este mês</option>
-            <option value="previous">Mês anterior</option>
-            <option value="year">Este ano</option>
-            <option value="custom">Personalizado</option>
+          <select
+            value={preset}
+            onChange={(event) => changePreset(event.target.value as ManagementPeriodPreset)}
+          >
+            {managementPeriodOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </label>
         {preset === "custom" ? (

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { config, middleware } from "./middleware";
+import { config, proxy } from "./proxy";
 
 vi.mock("@/lib/public-media", () => ({
   publicCatalogMediaOrigins: () => []
@@ -14,7 +14,7 @@ describe("panel security headers", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
 
-    const response = await middleware(new NextRequest("https://painel.example/administrativo"));
+    const response = await proxy(new NextRequest("https://painel.example/administrativo"));
 
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");

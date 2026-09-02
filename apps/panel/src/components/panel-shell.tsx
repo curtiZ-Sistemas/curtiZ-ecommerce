@@ -208,7 +208,9 @@ export function PanelPageHeading({ role, section }: { role: PanelRole; section: 
   return (
     <div className="page-heading">
       <div>
-        <span className="page-heading-eyebrow">Painel {roleLabels[role]}</span>
+        <span className="page-heading-eyebrow">
+          {role === "gerencia" ? roleLabels[role] : `Painel ${roleLabels[role]}`}
+        </span>
         <h1>{title}</h1>
         <p>{experience.purpose}</p>
       </div>

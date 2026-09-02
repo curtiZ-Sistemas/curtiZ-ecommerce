@@ -88,7 +88,9 @@ export function originLabel(value: ActivityOrigin): string {
 export function actorLabel(item: ActivityLog): string {
   return item.origin_type === "person"
     ? item.actor_name_snapshot || "Usuário removido"
-    : item.origin_name || (item.origin_type === "integration" ? "Integração" : "Sistema curtiZ");
+    : item.origin_name === "Sistema curtiZ"
+      ? "Sistema curti Z"
+      : item.origin_name || (item.origin_type === "integration" ? "Integração" : "Sistema curti Z");
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

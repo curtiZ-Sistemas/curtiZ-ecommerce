@@ -2,17 +2,28 @@
 
 import {
   BadgeDollarSign,
+  HandCoins,
   ChartNoAxesCombined,
   CircleDollarSign,
   LoaderCircle,
   RotateCcw,
   ShoppingBag,
   SlidersHorizontal,
-  TriangleAlert
+  Users
 } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RevenueChart, type RevenuePoint } from "@/components/revenue-chart";
+import {
+  ManagementMetricCard,
+  ManagementPageHeader,
+  ManagementPeriodSelect,
+  ManagementSectionHeader
+} from "@/components/management-ui";
+import {
+  managementPeriodFor,
+  type ManagementPeriodPreset
+} from "@/lib/management-period";
 
 type RecordValue = Record<string, unknown>;
 type Option = { id: string; name: string };
@@ -21,6 +32,7 @@ type RepresentativeOption = { id: string; public_code: string; region_code?: str
 type DashboardResponse = {
   demo?: boolean;
   metrics?: RecordValue;
+  financial?: RecordValue;
   options?: {
     products?: Option[];
     categories?: Option[];
@@ -44,13 +56,6 @@ const dayLabel = new Intl.DateTimeFormat("pt-BR", {
   month: "short",
   timeZone: "America/Sao_Paulo"
 });
-const inputDate = new Intl.DateTimeFormat("sv-SE", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  timeZone: "America/Sao_Paulo"
-});
-
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -72,10 +77,7 @@ function parseResponse(value: unknown): DashboardResponse {
 }
 
 function initialDates() {
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(start.getDate() - 29);
-  return { from: inputDate.format(start), to: inputDate.format(end) };
+  return managementPeriodFor("30days");
 }
 
 export function ManagerDashboard() {
@@ -91,7 +93,9 @@ export function ManagerDashboard() {
     campaign: ""
   });
   const [submitted, setSubmitted] = useState(filters);
+  const [preset, setPreset] = useState<ManagementPeriodPreset>("30days");
   const [metrics, setMetrics] = useState<RecordValue>({});
+  const [financial, setFinancial] = useState<RecordValue>({});
   const [options, setOptions] = useState<NonNullable<DashboardResponse["options"]>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -113,6 +117,7 @@ export function ManagerDashboard() {
       const payload = parseResponse(await response.json());
       if (!response.ok) throw new Error(payload.message);
       setMetrics(isRecord(payload.metrics) ? payload.metrics : {});
+      setFinancial(isRecord(payload.financial) ? payload.financial : {});
       if (payload.options) {
         setOptions(payload.options);
         optionsLoaded.current = true;
@@ -121,6 +126,7 @@ export function ManagerDashboard() {
       setWarnings(Array.isArray(payload.warnings) ? payload.warnings.filter((item): item is string => typeof item === "string") : []);
     } catch {
       setMetrics({});
+      setFinancial({});
       setDemo(false);
       setWarnings([]);
       setMessage("Não foi possível carregar os indicadores gerenciais agora.");
@@ -134,7 +140,16 @@ export function ManagerDashboard() {
   }, [load]);
 
   const update = (key: keyof typeof filters, value: string) => {
+    if (key === "from" || key === "to") setPreset("custom");
     setFilters((current) => ({ ...current, [key]: value }));
+  };
+  const changePreset = (next: ManagementPeriodPreset) => {
+    setPreset(next);
+    if (next === "custom") return;
+    const period = managementPeriodFor(next);
+    const updated = { ...filters, ...period };
+    setFilters(updated);
+    setSubmitted(updated);
   };
   const advancedFilterCount = [
     filters.region,
@@ -158,6 +173,7 @@ export function ManagerDashboard() {
       level: "",
       campaign: ""
     };
+    setPreset("30days");
     setFilters(next);
     setSubmitted(next);
   };
@@ -186,6 +202,10 @@ export function ManagerDashboard() {
 
   return (
     <div className="manager-dashboard">
+      <ManagementPageHeader
+        title="Dashboard executivo"
+        description="Situação atual da curti Z, pendências prioritárias e desempenho do período."
+      />
       <form
         className="panel-card manager-filters"
         onSubmit={(event: FormEvent) => {
@@ -194,6 +214,7 @@ export function ManagerDashboard() {
         }}
       >
         <div className="manager-filter-primary">
+          <ManagementPeriodSelect value={preset} onChange={changePreset} disabled={loading} />
           <label>
             De
             <input type="date" value={filters.from} onChange={(event) => update("from", event.target.value)} required />
@@ -235,21 +256,24 @@ export function ManagerDashboard() {
       {demo ? <p className="admin-feedback" role="status">Ambiente de demonstração: indicadores financeiros reais não são exibidos.</p> : null}
       {warnings.length ? <p className="admin-feedback" role="alert">Filtros parcialmente indisponíveis: {warnings.join(", ")}.</p> : null}
 
-      <div className="manager-metric-grid" aria-busy={loading}>
-        <ManagerMetric icon={<BadgeDollarSign />} label="Faturamento bruto" value={loading || demo || hasLoadError ? "—" : cents(metrics.gross_cents)} detail={trend} />
-        <ManagerMetric icon={<CircleDollarSign />} label="Faturamento líquido" value={loading || demo || hasLoadError ? "—" : cents(metrics.net_cents)} detail="Após taxas e custo de frete registrado" />
-        <ManagerMetric icon={<ChartNoAxesCombined />} label="Lucro estimado" value={loading || demo || hasLoadError ? "—" : cents(metrics.estimated_profit_cents)} detail="Com custos persistidos nos pedidos" />
-        <ManagerMetric icon={<RotateCcw />} label="Reembolsos" value={loading || demo || hasLoadError ? "—" : cents(metrics.refunds_cents)} detail={hasLoadError ? "Dados indisponíveis" : `${count(alerts, "refunds_in_period")} pedido(s) no período`} />
-        <ManagerMetric icon={<ShoppingBag />} label="Pedidos" value={loading || demo || hasLoadError ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${demo || hasLoadError ? "—" : cents(metrics.average_ticket_cents)}`} />
+      <div className="management-metric-grid manager-executive-metrics" aria-busy={loading}>
+        <ManagementMetricCard icon={BadgeDollarSign} label="Faturamento bruto" value={loading || demo || hasLoadError ? "—" : cents(metrics.gross_cents)} detail={trend} />
+        <ManagementMetricCard icon={CircleDollarSign} label="Faturamento líquido" value={loading || demo || hasLoadError ? "—" : cents(metrics.net_cents)} detail="Após taxas e frete registrados" />
+        <ManagementMetricCard icon={ChartNoAxesCombined} label="Lucro estimado" value={loading || demo || hasLoadError ? "—" : cents(metrics.estimated_profit_cents)} detail="Conforme custos persistidos" />
+        <ManagementMetricCard icon={ShoppingBag} label="Pedidos" value={loading || demo || hasLoadError ? "—" : numberValue(metrics.orders).toLocaleString("pt-BR")} detail={`Ticket médio ${demo || hasLoadError ? "—" : cents(metrics.average_ticket_cents)}`} />
+        <ManagementMetricCard icon={RotateCcw} label="Reembolsos" value={loading || demo || hasLoadError ? "—" : cents(metrics.refunds_cents)} detail={hasLoadError ? "Dados indisponíveis" : `${count(alerts, "refunds_in_period")} pedido(s) no período`} tone={count(alerts, "refunds_in_period") ? "warning" : "neutral"} />
+        <ManagementMetricCard icon={HandCoins} label="A receber" value={loading || demo || hasLoadError ? "—" : cents(financial.receivable_cents)} detail={`${cents(financial.overdue_receivable_cents)} vencidos`} tone={numberValue(financial.overdue_receivable_cents) > 0 ? "warning" : "neutral"} />
+        <ManagementMetricCard icon={CircleDollarSign} label="A pagar" value={loading || demo || hasLoadError ? "—" : cents(financial.payable_cents)} detail={`${cents(financial.overdue_payable_cents)} vencidos`} tone={numberValue(financial.overdue_payable_cents) > 0 ? "danger" : "neutral"} />
+        <ManagementMetricCard icon={Users} label="Representantes ativos" value={loading || demo || hasLoadError ? "—" : count(overview, "active_representatives").toLocaleString("pt-BR")} detail={`${count(overview, "network_growth")} novos no período`} />
       </div>
 
       <div className="manager-dashboard-columns">
         <section className="panel-card">
-          <h2>Faturamento ao longo do tempo</h2>
+          <ManagementSectionHeader title="Faturamento ao longo do tempo" description="Receita bruta e líquida do período selecionado." />
           {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Consolidando dados</div> : hasLoadError ? <p className="admin-empty-copy">Série indisponível.</p> : <RevenueChart data={series} />}
         </section>
         <section className="panel-card">
-          <h2>Aprovações pendentes</h2>
+          <ManagementSectionHeader title="Aprovações pendentes" description="Filas que exigem decisão gerencial." />
           {hasLoadError ? <p className="admin-empty-copy">Filas indisponíveis.</p> : <>
             <DashboardLink href="/gerencia/solicitacoes-representantes" label="Representantes" value={count(pending, "applications")} />
             <DashboardLink href="/gerencia/criativos" label="Criativos" value={count(pending, "creatives")} />
@@ -259,24 +283,8 @@ export function ManagerDashboard() {
         </section>
       </div>
 
-      <section className="panel-card manager-overview">
-        <h2>Visão estratégica</h2>
-        {hasLoadError ? <p className="admin-empty-copy">Indicadores estratégicos indisponíveis.</p> : <div className="manager-overview-grid">
-          <Overview label="Novos clientes" value={count(overview, "customers")} />
-          <Overview label="Representantes ativos" value={count(overview, "active_representatives")} />
-          <Overview label="Crescimento da rede" value={count(overview, "network_growth")} detail="novos no período" />
-          <Overview label="Pedidos de kits" value={count(overview, "kits")} detail={cents(isRecord(overview) ? overview.kits_cents : 0)} />
-          <Overview label="Estoque crítico" value={count(overview, "critical_stock")} detail="variações no mínimo" />
-          <Overview label="Comissões" value={cents(isRecord(overview) ? overview.commissions_cents : 0)} />
-          <Overview label="Qualificações" value={count(overview, "qualified_representatives")} detail="resultados positivos" />
-          <Overview label="Níveis ativos" value={count(overview, "active_levels")} />
-          <Overview label="Campanhas ativas" value={count(overview, "active_campaigns")} />
-          <Overview label="Eventos de marketing/home" value={count(overview, "homepage_events")} detail="eventos registrados" />
-        </div>}
-      </section>
-
       <section className="panel-card manager-alerts">
-        <h2><TriangleAlert aria-hidden="true" /> Alertas gerenciais</h2>
+        <ManagementSectionHeader title="Alertas prioritários" description="Ocorrências que podem afetar caixa, comissão ou estoque." action={<Link className="secondary-button" href="/gerencia/alertas">Ver todos</Link>} />
         {hasLoadError ? <p className="admin-empty-copy">Alertas indisponíveis.</p> : <div className="admin-compact-list">
           <div><span>Divergências de conciliação<small>Registros financeiros ainda não resolvidos</small></span><strong>{count(alerts, "reconciliation_divergences")}</strong></div>
           <div><span>Pagamentos de comissão com falha<small>Exigem conferência antes de nova tentativa</small></span><strong>{count(alerts, "failed_commission_payments")}</strong></div>
@@ -299,14 +307,6 @@ function Filter({ label, value, options, onChange }: { label: string; value: str
   );
 }
 
-function ManagerMetric({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
-  return <article className="admin-metric">{icon}<span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
-}
-
 function DashboardLink({ href, label, value }: { href: string; label: string; value: number }) {
   return <Link className="compact-item manager-dashboard-link" href={href}><span><strong>{label}</strong><small>Abrir fila relacionada</small></span><strong>{value}</strong></Link>;
-}
-
-function Overview({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
-  return <article><span>{label}</span><strong>{typeof value === "number" ? value.toLocaleString("pt-BR") : value}</strong>{detail ? <small>{detail}</small> : null}</article>;
 }

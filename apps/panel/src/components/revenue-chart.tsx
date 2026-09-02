@@ -2,6 +2,7 @@
 
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -29,17 +30,18 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
   }
 
   return (
-    <div style={{ width: "100%", height: 300 }} aria-label="Gráfico de faturamento">
+    <div className="management-chart" role="img" aria-label="Gráfico de faturamento bruto e líquido">
       <ResponsiveContainer>
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#eee7e4" />
-          <XAxis dataKey="date" fontSize={11} />
-          <YAxis fontSize={11} tickFormatter={(value: number) => compactCurrency.format(value)} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e7e3df" vertical={false} />
+          <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} />
+          <YAxis width={72} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value: number) => compactCurrency.format(value)} />
           <Tooltip formatter={(value) => compactCurrency.format(Number(value))} />
+          <Legend />
           <Line
             type="monotone"
             dataKey="gross"
-            stroke="#7e1c13"
+            stroke="var(--brand-800)"
             strokeWidth={3}
             dot={false}
             name="Bruto"
@@ -47,7 +49,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
           <Line
             type="monotone"
             dataKey="net"
-            stroke="#cf6853"
+            stroke="#c94336"
             strokeWidth={2}
             dot={false}
             name="Líquido"

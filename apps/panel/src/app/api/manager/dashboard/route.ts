@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
           alerts: {},
           overview: {}
         },
+        financial: {},
         options: {}
       },
       { headers: managerNoStore }
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
   const includeOptions = request.nextUrl.searchParams.get("includeOptions") !== "0";
   const emptyOptions = () => Promise.resolve({ data: [], error: null });
 
-  const [metrics, products, categories, models, representatives, levels, campaigns] =
+  const [metrics, financial, products, categories, models, representatives, levels, campaigns] =
     await Promise.all([
       auth.supabase.rpc("manager_dashboard_metrics", {
         p_date_from: parsed.data.from,
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
         p_level_id: parsed.data.level ?? null,
         p_campaign_id: parsed.data.campaign ?? null
       }),
+      auth.supabase.rpc("manager_executive_financial_summary"),
       includeOptions
         ? auth.supabase.from("products").select("id,name").order("name").limit(300)
         : emptyOptions(),
@@ -127,6 +129,7 @@ export async function GET(request: NextRequest) {
   }
 
   const metricData: unknown = metrics.data;
+  const financialData: unknown = financial.data;
 
   const representativeRows = managerRows(representatives.data);
   const regions = [
@@ -140,7 +143,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       metrics: metricData,
+      financial: financial.error ? {} : financialData,
       warnings: [
+        financial.error ? "resumo financeiro" : null,
         products.error ? "produtos" : null,
         categories.error ? "categorias" : null,
         models.error ? "modelos" : null,

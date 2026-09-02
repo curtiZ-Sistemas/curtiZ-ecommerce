@@ -8,7 +8,7 @@ function safeCell(value: string): string {
 export async function buildActivityWorkbook(items: ActivityLog[], periodLabel: string) {
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "curtiZ";
+  workbook.creator = "curti Z";
   workbook.created = new Date();
   const sheet = workbook.addWorksheet("Logs de atividades", { views: [{ state: "frozen", ySplit: 1 }] });
   sheet.columns = [
