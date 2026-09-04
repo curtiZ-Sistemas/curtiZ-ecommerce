@@ -1,11 +1,9 @@
 "use client";
 
-import Autoplay from "embla-carousel-autoplay";
-import useEmblaCarousel from "embla-carousel-react";
 import { ArrowLeft, ArrowRight, BadgeCheck, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { type CSSProperties, useEffect, useRef } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 export type TestimonialCardData = {
   id: string;
@@ -32,29 +30,44 @@ export function TestimonialCarousel({
   autoplayInterval,
   desktopCards
 }: TestimonialCarouselProps) {
-  const autoplayPlugin = useRef(
-    Autoplay({
-      delay: autoplayInterval,
-      stopOnInteraction: true,
-      stopOnMouseEnter: true
-    })
-  );
-  const [viewportRef, api] = useEmblaCarousel(
-    { align: "start", containScroll: "trimSnaps", loop: items.length > desktopCards },
-    autoplay ? [autoplayPlugin.current] : []
-  );
+  const viewport = useRef<HTMLDivElement>(null);
+  const [paused, setPaused] = useState(false);
+  const move = useCallback((direction: -1 | 1) => {
+    const node = viewport.current;
+    if (!node) return;
+    const maximum = node.scrollWidth - node.clientWidth;
+    const atStart = node.scrollLeft <= 2;
+    const atEnd = node.scrollLeft >= maximum - 2;
+    node.scrollTo({
+      left: direction < 0 && atStart
+        ? maximum
+        : direction > 0 && atEnd
+          ? 0
+          : node.scrollLeft + direction * node.clientWidth,
+      behavior: "smooth"
+    });
+  }, []);
 
   useEffect(() => {
-    if (!autoplay || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      autoplayPlugin.current.stop();
-    }
-  }, [autoplay]);
+    if (!autoplay || paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) move(1);
+    }, autoplayInterval);
+    return () => window.clearInterval(timer);
+  }, [autoplay, autoplayInterval, move, paused]);
 
   const style = { "--testimonial-columns": desktopCards } as CSSProperties;
 
   return (
     <div className="testimonial-carousel" style={style}>
-      <div className="testimonial-carousel-viewport" ref={viewportRef} aria-label="Depoimentos de clientes">
+      <div
+        className="testimonial-carousel-viewport"
+        ref={viewport}
+        aria-label="Depoimentos de clientes"
+        onPointerDown={() => setPaused(true)}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+      >
         <div className="testimonial-carousel-track">
           {items.map((item) => (
             <article className="testimonial-carousel-slide" key={item.id}>
@@ -77,15 +90,15 @@ export function TestimonialCarousel({
                     {item.date && <time dateTime={item.date}>{new Intl.DateTimeFormat("pt-BR", { month: "short", year: "numeric", timeZone: "America/Sao_Paulo" }).format(new Date(item.date))}</time>}
                   </div>
                 </footer>
-                {item.productName && item.productHref && <Link href={item.productHref} data-home-item={item.id}>Sobre {item.productName}</Link>}
+                {item.productName && item.productHref && <Link href={item.productHref} prefetch={false} data-home-item={item.id}>Sobre {item.productName}</Link>}
               </div>
             </article>
           ))}
         </div>
       </div>
       {items.length > desktopCards && <div className="testimonial-carousel-controls" aria-label="Controles dos depoimentos">
-        <button type="button" onClick={() => api?.scrollPrev()} aria-label="Depoimento anterior"><ArrowLeft aria-hidden="true" /></button>
-        <button type="button" onClick={() => api?.scrollNext()} aria-label="Próximo depoimento"><ArrowRight aria-hidden="true" /></button>
+        <button type="button" onClick={() => { setPaused(true); move(-1); }} aria-label="Depoimento anterior"><ArrowLeft aria-hidden="true" /></button>
+        <button type="button" onClick={() => { setPaused(true); move(1); }} aria-label="Próximo depoimento"><ArrowRight aria-hidden="true" /></button>
       </div>}
     </div>
   );

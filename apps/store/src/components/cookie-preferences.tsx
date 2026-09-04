@@ -108,7 +108,7 @@ export function CookiePreferences() {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/privacy/cookies", { cache: "no-store" });
+      const response = await fetch("/api/privacy/cookies", { cache: "force-cache" });
       if (!response.ok) throw new Error("inventory_unavailable");
       useInventory(validInventory(await response.json()) ?? defaultCookieInventory());
     } catch {
@@ -119,6 +119,12 @@ export function CookiePreferences() {
   }, [useInventory]);
 
   useEffect(() => {
+    const fallback = defaultCookieInventory();
+    const stored = readStoredConsent();
+    setInventory(fallback);
+    setChoices(choicesFor(fallback, stored));
+    setOpen(!stored);
+    setReady(true);
     void load();
     const reopen = () => {
       setOpen(true);
@@ -208,7 +214,14 @@ export function CookiePreferences() {
     }
   };
 
-  if (!ready || !open) return null;
+  if (!ready || !open)
+    return (
+      <div
+        className="cookie-consent-layer"
+        data-open="false"
+        aria-hidden="true"
+      />
+    );
 
   const rejectedChoices = Object.fromEntries(
     visibleCategories.map((category) => [category.id, category.required])
@@ -219,7 +232,7 @@ export function CookiePreferences() {
   const showInventory = customizing || !hasOptional;
 
   return (
-    <div className="cookie-consent-layer" role="region" aria-label="Preferências de cookies">
+    <div className="cookie-consent-layer" data-open="true" role="region" aria-label="Preferências de cookies">
       <section className={customizing ? "cookie-consent-card customizing" : "cookie-consent-card"}>
         <div className="cookie-consent-heading">
           <Cookie aria-hidden="true" />

@@ -25,4 +25,19 @@ describe("public storefront asset budget", () => {
       21 * 1024 * 1024
     );
   });
+
+  it("keeps the mobile LCP image and responsive card variants within transfer budgets", () => {
+    const byPath = new Map(sizes.map((asset) => [asset.path.replaceAll("\\", "/"), asset.bytes]));
+    expect(byPath.get("apps/store/public/images/hero-curtiz-mobile.avif")).toBeLessThanOrEqual(
+      90 * 1024
+    );
+    for (const [path, bytes] of byPath) {
+      if (/\/products\/.+\.(360|540)\.webp$/u.test(path)) {
+        expect(bytes, path).toBeLessThanOrEqual(16 * 1024);
+      }
+      if (/\/products\/[a-z0-9-]+\.webp$/u.test(path)) {
+        expect(bytes, path).toBeLessThanOrEqual(32 * 1024);
+      }
+    }
+  });
 });

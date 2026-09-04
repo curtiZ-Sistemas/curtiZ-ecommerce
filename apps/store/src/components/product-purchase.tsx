@@ -213,7 +213,7 @@ export function ProductPurchase({
               className="product-gallery-video"
               controls
               playsInline
-              preload="metadata"
+              preload="none"
               poster={selectedMedia.poster}
               aria-label={selectedMedia.alt}
               onPlay={() => trackIntelligence({ type: "image_interaction", productId: product.id })}

@@ -397,7 +397,7 @@ export function HomepageSectionRenderer({
           <video
             className="home-editorial-video"
             controls
-            preload="metadata"
+            preload="none"
             poster={mediaFor(item, "thumbnail")?.path}
           >
             <source src={media.path} type={media.mimeType} />

@@ -21,7 +21,7 @@ export function HomepageMetric({ versionId, children }: { versionId?: string; ch
     const element = (event.target as HTMLElement).closest<HTMLElement>("[data-home-item]");
     if (element) sendMetric(versionId, "click", element.dataset.homeItem ?? "");
   };
-  return <div ref={ref} onClick={click}>{children}</div>;
+  return <div className="homepage-section-metric" ref={ref} onClick={click}>{children}</div>;
 }
 
 export function HomepageCountdown({ endsAt }: { endsAt: string }) {

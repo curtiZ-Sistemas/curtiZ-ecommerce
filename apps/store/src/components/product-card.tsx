@@ -13,6 +13,7 @@ import { useMemo, useRef } from "react";
 import { useFavorites } from "./favorites-provider";
 import { trackIntelligence } from "../lib/intelligence-client";
 import { useQualifiedImpression } from "../lib/use-qualified-impression";
+import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
 
 export function ProductCard({
   product,
@@ -40,6 +41,8 @@ export function ProductCard({
   const cardRef = useRef<HTMLElement>(null);
   const itemKey = storefrontItemKey(product);
   const href = storefrontProductHref(product);
+  const responsiveImage = bundledProductSrcSet(product.image);
+  const responsiveSizes = imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw";
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
   useQualifiedImpression(cardRef, `${recommendationSource ?? "catalog"}:${itemKey}`, impression);
   const favorite = hydrated && has(product);
@@ -49,16 +52,33 @@ export function ProductCard({
 
   return (
     <article className="product-card" ref={cardRef}>
-      <Link href={href} className="product-image" onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>
+      <Link href={href} prefetch={priority ? null : false} className="product-image" onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>
         {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
-        <Image
-          src={product.image}
-          alt={`${product.name} da curti Z`}
-          width={360}
-          height={280}
-          sizes={imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw"}
-          priority={priority}
-        />
+        {responsiveImage ? (
+          <picture>
+            <source type="image/webp" srcSet={responsiveImage} sizes={responsiveSizes} />
+            <img
+              src={product.image}
+              srcSet={responsiveImage}
+              sizes={responsiveSizes}
+              alt={`${product.name} da curti Z`}
+              width={720}
+              height={720}
+              loading={priority ? "eager" : "lazy"}
+              fetchPriority={priority ? "high" : "auto"}
+              decoding="async"
+            />
+          </picture>
+        ) : (
+          <Image
+            src={product.image}
+            alt={`${product.name} da curti Z`}
+            width={360}
+            height={280}
+            sizes={responsiveSizes}
+            priority={priority}
+          />
+        )}
       </Link>
       {display?.favorite !== false && <button
         className={favorite ? "favorite-button active" : "favorite-button"}
@@ -74,7 +94,7 @@ export function ProductCard({
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
-          <Link href={href} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
+          <Link href={href} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
         </h3>
         {display?.rating !== false && <div
           className="rating"
@@ -90,7 +110,7 @@ export function ProductCard({
         </div>}
         {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
         {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
-        {display?.purchase && <Link className="secondary-button compact-button" href={href}>Ver opções</Link>}
+        {display?.purchase && <Link className="secondary-button compact-button" href={href} prefetch={priority ? null : false}>Ver opções</Link>}
       </div>
     </article>
   );

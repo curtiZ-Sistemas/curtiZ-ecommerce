@@ -11,7 +11,7 @@ import { resolvePublicAppUrls } from "@curtiz/config";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const storeOrigin = resolvePublicAppUrls(request.url).storeUrl;
   const mediaOrigins = publicCatalogMediaOrigins({

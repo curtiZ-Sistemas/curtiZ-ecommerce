@@ -64,7 +64,7 @@ export function SiteFooter() {
             <div className="footer-desktop-group">
               <h2>{group.title}</h2>
               {group.links.map(([label, href]) => (
-                <Link href={href} key={href}>
+                <Link href={href} prefetch={false} key={href}>
                   {label}
                 </Link>
               ))}
@@ -76,7 +76,7 @@ export function SiteFooter() {
               </summary>
               <div className="footer-group-links">
                 {group.links.map(([label, href]) => (
-                  <Link href={href} key={href}>
+                  <Link href={href} prefetch={false} key={href}>
                     {label}
                   </Link>
                 ))}

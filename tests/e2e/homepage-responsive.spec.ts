@@ -27,7 +27,7 @@ test("home profissional respeita breakpoints sem overflow ou aviso de hidrata√ß√
     if (width <= 700) await expect(benefits).toBeHidden();
     else await expect(benefits).toBeVisible();
     if (width === 390) {
-      await expect(footer.locator(".footer-group")).toHaveCount(3);
+      await expect(footer.locator(".footer-group")).toHaveCount(4);
       await expect(footer.locator(".footer-group[open]")).toHaveCount(0);
       await expect(footer.getByRole("link", { name: "Quem somos" })).toBeHidden();
       await footer.locator("summary", { hasText: "Institucional" }).click();

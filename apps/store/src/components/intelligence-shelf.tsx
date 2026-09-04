@@ -208,7 +208,7 @@ export function IntelligenceShelf({
         </div>
         <div className="intelligence-skeleton" aria-label="Carregando recomendações">
           {Array.from({ length: Math.min(limit, 4) }, (_, index) => (
-            <i key={index} />
+            <i aria-hidden="true" key={index} />
           ))}
         </div>
       </section>

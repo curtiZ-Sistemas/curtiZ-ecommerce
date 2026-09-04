@@ -104,7 +104,7 @@ export function SiteHeader() {
             <Menu />
           </button>
 
-          <BrandLogo priority />
+          <BrandLogo />
 
           <SearchAutocomplete idPrefix="desktop" className="desktop-search" />
 
@@ -122,6 +122,7 @@ export function SiteHeader() {
             <Link
               className="account-action"
               href={accountName ? "/minha-conta" : "/login"}
+              prefetch={false}
               aria-label={accountName ? "Acessar minha conta" : "Entrar na minha conta"}
             >
               <UserRound />
@@ -130,10 +131,10 @@ export function SiteHeader() {
                 Minha conta
               </span>
             </Link>
-            <Link className="favorite-action" href="/favoritos" aria-label="Favoritos">
+            <Link className="favorite-action" href="/favoritos" prefetch={false} aria-label="Favoritos">
               <Heart />
             </Link>
-            <Link href="/carrinho" className="cart-link" aria-label={`Carrinho com ${items} itens`}>
+            <Link href="/carrinho" prefetch={false} className="cart-link" aria-label={`Carrinho com ${items} itens`}>
               <ShoppingBag />
               {hydrated && items > 0 && <span className="cart-count">{items}</span>}
             </Link>
@@ -161,6 +162,7 @@ export function SiteHeader() {
           <Link
             className={pathname === "/" ? "active" : ""}
             href="/"
+            prefetch={false}
             aria-current={pathname === "/" ? "page" : undefined}
           >
             Início
@@ -169,6 +171,7 @@ export function SiteHeader() {
             <Link
               className={pathname === href ? "active" : ""}
               href={href}
+              prefetch={false}
               aria-current={pathname === href ? "page" : undefined}
               key={href}
             >
@@ -178,6 +181,7 @@ export function SiteHeader() {
           <Link
             className={pathname === "/rastrear-pedido" ? "active" : ""}
             href="/rastrear-pedido"
+            prefetch={false}
             aria-current={pathname === "/rastrear-pedido" ? "page" : undefined}
           >
             Rastrear pedido
@@ -185,6 +189,7 @@ export function SiteHeader() {
           <Link
             className={pathname === "/ajuda" ? "active" : ""}
             href="/ajuda"
+            prefetch={false}
             aria-current={pathname === "/ajuda" ? "page" : undefined}
           >
             Atendimento
@@ -221,24 +226,25 @@ export function SiteHeader() {
               </button>
             </div>
             <nav>
-              <Link href="/">Início</Link>
+              <Link href="/" prefetch={false}>Início</Link>
               {navigation.map(([label, href]) => (
-                <Link href={href} key={href}>
+                <Link href={href} prefetch={false} key={href}>
                   {label}
                 </Link>
               ))}
-              <Link href="/favoritos">Favoritos</Link>
-              <Link href="/rastrear-pedido">Rastrear pedido</Link>
-              <Link href="/ajuda">Central de ajuda</Link>
+              <Link href="/favoritos" prefetch={false}>Favoritos</Link>
+              <Link href="/rastrear-pedido" prefetch={false}>Rastrear pedido</Link>
+              <Link href="/ajuda" prefetch={false}>Central de ajuda</Link>
             </nav>
             <div className="mobile-drawer-actions">
               <Link
                 className="primary-button full-button"
                 href={accountName ? "/minha-conta" : "/login"}
+                prefetch={false}
               >
                 <UserRound /> {accountName ? "Minha conta" : "Acessar minha conta"}
               </Link>
-              <Link className="secondary-button full-button" href="/carrinho">
+              <Link className="secondary-button full-button" href="/carrinho" prefetch={false}>
                 <ShoppingBag /> Ver carrinho {items > 0 ? `(${items})` : ""}
               </Link>
             </div>
