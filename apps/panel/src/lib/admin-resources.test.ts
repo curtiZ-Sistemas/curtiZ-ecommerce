@@ -51,6 +51,11 @@ describe("admin resources", () => {
     });
   });
 
+  it("mantém o cadastro de categorias sem imagem obrigatória ou opcional", () => {
+    expect(adminResources.categorias.select).not.toContain("image_path");
+    expect(adminResources.categorias.fields.some((field) => field.key === "image_path")).toBe(false);
+  });
+
   it("oferece destinos estruturados para banners e moderação reversível", () => {
     expect(adminResources.banners.fields.find((field) => field.key === "destination_type")?.options)
       .toEqual(expect.arrayContaining(["product", "category", "institutional_page", "predefined_search"]));

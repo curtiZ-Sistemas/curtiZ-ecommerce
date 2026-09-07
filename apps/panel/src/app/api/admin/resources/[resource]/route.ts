@@ -11,17 +11,18 @@ import {
   isAdminResource,
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
+import { postgresUuidSchema } from "@/lib/postgres-uuid";
 
 export const dynamic = "force-dynamic";
 
 const mutationSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: postgresUuidSchema.optional(),
   values: z.record(z.string(), z.unknown()).default({})
 });
 
 const stateActionSchema = z.object({
   action: z.enum(["archive", "restore"]),
-  ids: z.array(z.string().uuid()).min(1).max(100),
+  ids: z.array(postgresUuidSchema).min(1).max(100),
   reason: z.string().trim().min(3).max(1000).optional()
 });
 
@@ -597,7 +598,7 @@ export async function PATCH(
     );
   }
 
-  const parsed = mutationSchema.extend({ id: z.string().uuid() }).safeParse(body);
+  const parsed = mutationSchema.extend({ id: postgresUuidSchema }).safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -728,7 +729,7 @@ export async function DELETE(
   }
 
   const parsed = z
-    .object({ id: z.string().uuid(), permanent: z.boolean().optional() })
+    .object({ id: postgresUuidSchema, permanent: z.boolean().optional() })
     .safeParse(await request.json().catch(() => null));
 
   if (!parsed.success) {
@@ -745,32 +746,23 @@ export async function DELETE(
         { status: 405, headers: privateNoStore }
       );
     }
-    const [primaryProducts, linkedProducts, children, category] = await Promise.all([
+    const [primaryProducts, children] = await Promise.all([
       context.auth.supabase
         .from("products")
         .select("id", { count: "exact", head: true })
         .eq("category_id", parsed.data.id),
       context.auth.supabase
-        .from("product_categories")
-        .select("product_id", { count: "exact", head: true })
-        .eq("category_id", parsed.data.id),
-      context.auth.supabase
         .from("categories")
         .select("id", { count: "exact", head: true })
-        .eq("parent_id", parsed.data.id),
-      context.auth.supabase
-        .from("categories")
-        .select("image_path")
-        .eq("id", parsed.data.id)
-        .maybeSingle()
+        .eq("parent_id", parsed.data.id)
     ]);
-    if (primaryProducts.error || linkedProducts.error || children.error || category.error) {
+    if (primaryProducts.error || children.error) {
       return NextResponse.json(
         { message: "Não foi possível confirmar se a categoria pode ser excluída." },
         { status: 503, headers: privateNoStore }
       );
     }
-    if ((primaryProducts.count ?? 0) > 0 || (linkedProducts.count ?? 0) > 0) {
+    if ((primaryProducts.count ?? 0) > 0) {
       return NextResponse.json(
         {
           message:
@@ -796,14 +788,6 @@ export async function DELETE(
         { message: "A categoria possui referências que impedem a exclusão. Use Arquivar." },
         { status: 409, headers: privateNoStore }
       );
-    }
-    const imagePath =
-      category.data && typeof category.data.image_path === "string" ? category.data.image_path : "";
-    if (imagePath.startsWith("categories/")) {
-      const removed = await context.auth.supabase.storage.from("catalog-public").remove([imagePath]);
-      if (removed.error) {
-        logResourceQueryFailure(context.resource, "storage.objects", removed.error);
-      }
     }
     return NextResponse.json({ message: "Categoria excluída." }, { headers: privateNoStore });
   }

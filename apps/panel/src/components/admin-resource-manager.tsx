@@ -415,7 +415,6 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
 
       const successMessage = result.message ?? "Alterações salvas.";
       window.dispatchEvent(new Event("banner-form-saved"));
-      window.dispatchEvent(new Event("category-form-saved"));
       setEditing(null);
       await load();
       setMessage(successMessage);
@@ -864,16 +863,6 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                     return <BannerDestinationField source={source} key={field.key} />;
                   }
 
-                  if (resource === "categorias" && field.key === "image_path") {
-                    return (
-                      <CategoryImageField
-                        initialPath={formValue(value)}
-                        categoryId={itemId(source)}
-                        key={field.key}
-                      />
-                    );
-                  }
-
                   if (resource === "categorias" && ["name", "slug"].includes(field.key)) {
                     const isName = field.key === "name";
                     return (
@@ -1238,115 +1227,6 @@ function BannerImageField({
           {error}
         </small>
       ) : null}
-    </div>
-  );
-}
-
-function CategoryImageField({
-  initialPath,
-  categoryId
-}: {
-  initialPath: string;
-  categoryId: string;
-}) {
-  const [path, setPath] = useState(initialPath);
-  const [preview, setPreview] = useState(() => bannerPublicUrl(initialPath));
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const temporaryPath = useRef("");
-  const pathRef = useRef(initialPath);
-
-  const removeStoredPath = useCallback((storagePath: string) => {
-    if (!storagePath) return;
-    void fetch("/api/admin/category-media", {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: storagePath })
-    });
-  }, []);
-
-  useEffect(() => {
-    const markPersisted = () => {
-      if (initialPath && initialPath !== pathRef.current) removeStoredPath(initialPath);
-      temporaryPath.current = "";
-    };
-    window.addEventListener("category-form-saved", markPersisted);
-    return () => {
-      window.removeEventListener("category-form-saved", markPersisted);
-      if (temporaryPath.current) removeStoredPath(temporaryPath.current);
-    };
-  }, [initialPath, removeStoredPath]);
-
-  const upload = async (file: File | undefined) => {
-    if (!file || uploading) return;
-    setUploading(true);
-    setError("");
-    try {
-      const form = new FormData();
-      form.set("file", file);
-      if (categoryId) form.set("categoryId", categoryId);
-      const response = await fetch("/api/admin/category-media", { method: "POST", body: form });
-      const payload: unknown = await response.json();
-      if (!response.ok || !isRecord(payload) || typeof payload.path !== "string") {
-        throw new Error(
-          isRecord(payload) && typeof payload.message === "string"
-            ? payload.message
-            : "Upload indisponível."
-        );
-      }
-      if (temporaryPath.current) removeStoredPath(temporaryPath.current);
-      temporaryPath.current = payload.path;
-      pathRef.current = payload.path;
-      setPath(payload.path);
-      setPreview(
-        typeof payload.publicUrl === "string" ? payload.publicUrl : bannerPublicUrl(payload.path)
-      );
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Não foi possível enviar a imagem.");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="banner-image-field category-image-field">
-      <span>Imagem da categoria</span>
-      <input name="image_path" type="hidden" value={path} />
-      {preview ? (
-        <img src={preview} alt="Prévia da imagem da categoria" />
-      ) : (
-        <div className="banner-image-placeholder">Nenhuma imagem enviada</div>
-      )}
-      <div className="category-image-actions">
-        <label className="secondary-button">
-          {uploading ? <LoaderCircle className="spin" /> : <Upload aria-hidden="true" />}
-          {uploading ? "Enviando…" : preview ? "Substituir imagem" : "Selecionar imagem"}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={(event) => void upload(event.target.files?.[0])}
-            disabled={uploading}
-          />
-        </label>
-        {preview ? (
-          <button
-            className="secondary-button danger-button"
-            type="button"
-            disabled={uploading}
-            onClick={() => {
-              if (temporaryPath.current) removeStoredPath(temporaryPath.current);
-              temporaryPath.current = "";
-              pathRef.current = "";
-              setPath("");
-              setPreview("");
-            }}
-          >
-            <Trash2 /> Remover
-          </button>
-        ) : null}
-      </div>
-      <small>JPG, PNG ou WebP, até 10 MB.</small>
-      {error ? <small className="admin-field-error" role="alert">{error}</small> : null}
     </div>
   );
 }

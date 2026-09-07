@@ -118,6 +118,16 @@ function logCatalogFailure(operation: string, error: CatalogError) {
 const normalizedErrorMessage = (error: CatalogError) =>
   error?.message?.trim().toLowerCase() ?? "";
 
+const productCategoriesUnavailable = (error: CatalogError) => {
+  const message = normalizedErrorMessage(error);
+  return (
+    message.includes("product_categories") &&
+    (["42P01", "PGRST200", "PGRST205"].includes(error?.code ?? "") ||
+      message.includes("schema cache") ||
+      message.includes("relation"))
+  );
+};
+
 function statusMutationError(
   error: CatalogError,
   status: string
@@ -551,8 +561,10 @@ export async function GET(request: NextRequest) {
       storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
     });
+  const legacyProductSelect =
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_categories(category_id,is_primary,categories(id,name)),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name))`;
 
   const variantMatches = queryText
     ? await (async () => {
@@ -599,23 +611,34 @@ export async function GET(request: NextRequest) {
     : "";
 
   const loadProductRange = async (from: number, to: number, withCount: boolean) => {
-    let query = supabase
-      .from("products")
-      .select(productSelect, withCount ? { count: "exact" } : {});
+    const run = (select: string) => {
+      let query = supabase
+        .from("products")
+        .select(select, withCount ? { count: "exact" } : {});
 
-    if (searchClause) query = query.or(searchClause);
-    if (status) query = query.eq("status", status);
+      if (searchClause) query = query.or(searchClause);
+      if (status) query = query.eq("status", status);
 
-    return query.order("updated_at", { ascending: false }).range(from, to);
+      return query.order("updated_at", { ascending: false }).range(from, to);
+    };
+    const result = await run(productSelect);
+    return productCategoriesUnavailable(result.error)
+      ? run(legacyProductSelect)
+      : result;
   };
 
   const loadProducts = async () => {
     if (productId?.success) {
-      const result = await supabase
-        .from("products")
-        .select(productSelect)
-        .eq("id", productId.data)
-        .maybeSingle();
+      const loadProduct = (select: string) =>
+        supabase
+          .from("products")
+          .select(select)
+          .eq("id", productId.data)
+          .maybeSingle();
+      let result = await loadProduct(productSelect);
+      if (productCategoriesUnavailable(result.error)) {
+        result = await loadProduct(legacyProductSelect);
+      }
       return {
         data: result.data ? [result.data] : [],
         error: result.error,
