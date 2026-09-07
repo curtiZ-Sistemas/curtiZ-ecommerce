@@ -14247,8 +14247,6 @@ body:has(.checkout-transition) .help-widget {
 .catalog-page .catalog-heading p { margin-block: 4px; }
 .header-main > .brand {
   justify-content: center;
-  background: #fff;
-  border-radius: 4px;
 }
 .header-main > .brand img {
   width: 132%;

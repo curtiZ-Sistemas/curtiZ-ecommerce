@@ -118,13 +118,13 @@ function logCatalogFailure(operation: string, error: CatalogError) {
 const normalizedErrorMessage = (error: CatalogError) =>
   error?.message?.trim().toLowerCase() ?? "";
 
-const productCategoriesUnavailable = (error: CatalogError) => {
+const catalogSelectUnavailable = (error: CatalogError) => {
   const message = normalizedErrorMessage(error);
   return (
-    message.includes("product_categories") &&
-    (["42P01", "PGRST200", "PGRST205"].includes(error?.code ?? "") ||
+    ["42P01", "42703", "PGRST200", "PGRST204", "PGRST205"].includes(error?.code ?? "") ||
       message.includes("schema cache") ||
-      message.includes("relation"))
+      message.includes("could not find") ||
+      message.includes("does not exist")
   );
 };
 
@@ -563,6 +563,8 @@ export async function GET(request: NextRequest) {
     });
   const legacyProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+  const basicProductSelect =
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description";
   const productSelect =
     `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name))`;
 
@@ -621,10 +623,10 @@ export async function GET(request: NextRequest) {
 
       return query.order("updated_at", { ascending: false }).range(from, to);
     };
-    const result = await run(productSelect);
-    return productCategoriesUnavailable(result.error)
-      ? run(legacyProductSelect)
-      : result;
+    let result = await run(productSelect);
+    if (catalogSelectUnavailable(result.error)) result = await run(legacyProductSelect);
+    if (catalogSelectUnavailable(result.error)) result = await run(basicProductSelect);
+    return result;
   };
 
   const loadProducts = async () => {
@@ -636,9 +638,8 @@ export async function GET(request: NextRequest) {
           .eq("id", productId.data)
           .maybeSingle();
       let result = await loadProduct(productSelect);
-      if (productCategoriesUnavailable(result.error)) {
-        result = await loadProduct(legacyProductSelect);
-      }
+      if (catalogSelectUnavailable(result.error)) result = await loadProduct(legacyProductSelect);
+      if (catalogSelectUnavailable(result.error)) result = await loadProduct(basicProductSelect);
       return {
         data: result.data ? [result.data] : [],
         error: result.error,
@@ -721,8 +722,8 @@ export async function GET(request: NextRequest) {
       : undefined;
   if (permissionError) logCatalogFailure("load_capabilities", permissionError);
 
-  if (result.error || categories.error) {
-    logCatalogFailure(productId?.success ? "load_product" : "load_products", result.error ?? categories.error);
+  if (result.error) {
+    logCatalogFailure(productId?.success ? "load_product" : "load_products", result.error);
     return NextResponse.json(
       {
         message: productId?.success

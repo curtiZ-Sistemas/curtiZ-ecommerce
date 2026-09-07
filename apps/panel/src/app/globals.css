@@ -8889,16 +8889,13 @@ button:not(:disabled):active,
     gap: 8px;
   }
 
-  .sidebar-collapsed .panel-brand {
-    width: 52px;
-    height: 38px;
+.sidebar-collapsed .panel-brand {
     justify-content: center;
     padding-inline: 0;
   }
 
   .sidebar-collapsed .panel-brand img {
-    width: 77px;
-    transform: translateX(-12px);
+    width: 52px;
   }
 
   .sidebar-collapsed .sidebar-context,
@@ -8967,21 +8964,16 @@ button:not(:disabled):active,
 }
 
 .panel-brand {
-  width: 126px;
-  height: 47px;
+  width: 112px;
+  height: 38px;
   padding: 0;
   overflow: hidden;
-  border-radius: 3px;
-  background: white;
 }
 
 .panel-brand img {
-  flex: 0 0 auto;
-  width: 172px;
-  max-width: none;
+  width: 108px;
   height: auto;
   object-fit: contain;
-  transform: translateX(-23px);
 }
 
 .sidebar-context {
