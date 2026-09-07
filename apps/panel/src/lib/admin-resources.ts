@@ -30,6 +30,7 @@ export type AdminResourceDefinition = {
   fields: readonly AdminResourceField[];
   allowCreate: boolean;
   allowArchive: boolean;
+  allowDelete?: boolean;
   archiveField?: string;
   archiveValue?: string | boolean;
   restoreValue?: string | boolean;
@@ -72,11 +73,12 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     table: "categories",
     readPermission: "catalog.taxonomy.manage",
     writePermission: "catalog.taxonomy.manage",
-    select: "id,name,slug,description,active,sort_order,seo_title,seo_description,updated_at",
+    select: "id,name,slug,image_path,description,active,sort_order,seo_title,seo_description,updated_at",
     searchColumns: ["name", "slug"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
-      { key: "slug", label: "Slug", type: "text", required: true },
+      { key: "slug", label: "Slug (opcional)", type: "text" },
+      { key: "image_path", label: "Imagem da categoria", type: "text" },
       { key: "description", label: "Descrição", type: "textarea" },
       { key: "sort_order", label: "Ordem", type: "number" },
       { key: "seo_title", label: "Título SEO", type: "text" },
@@ -85,6 +87,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     ],
     allowCreate: true,
     allowArchive: true,
+    allowDelete: true,
     archiveField: "active",
     archiveValue: false,
     restoreValue: true,

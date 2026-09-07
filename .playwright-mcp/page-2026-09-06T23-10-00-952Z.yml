@@ -1,0 +1,125 @@
+- generic [active] [ref=f2e1]:
+  - link "Ir para o conteúdo principal" [ref=f2e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - progressbar [aria-hidden]
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - link "curti Z — página inicial" [ref=f2e5] [cursor=pointer]:
+        - /url: /
+        - img "curti Z" [ref=f2e6]
+      - search [ref=f2e8]:
+        - generic [ref=f2e9]: Buscar produtos
+        - combobox "Buscar produtos" [ref=f2e10]
+        - button "Buscar" [ref=f2e11] [cursor=pointer]
+      - navigation "Conta e compras" [ref=f2e15]:
+        - link "Entrar na minha conta" [ref=f2e16] [cursor=pointer]:
+          - /url: /login
+          - generic [ref=f2e20]:
+            - generic [ref=f2e21]: Olá, entre
+            - text: Minha conta
+        - link "Favoritos" [ref=f2e22] [cursor=pointer]:
+          - /url: /favoritos
+        - link "Carrinho com 0 itens" [ref=f2e25] [cursor=pointer]:
+          - /url: /carrinho
+    - navigation "Categorias principais" [ref=f2e29]:
+      - link "Início" [ref=f2e30] [cursor=pointer]:
+        - /url: /
+      - link "Masculino" [ref=f2e31] [cursor=pointer]:
+        - /url: /masculino
+      - link "Feminino" [ref=f2e32] [cursor=pointer]:
+        - /url: /feminino
+      - link "Infantil" [ref=f2e33] [cursor=pointer]:
+        - /url: /infantil
+      - link "Slides" [ref=f2e34] [cursor=pointer]:
+        - /url: /slides
+      - link "Sandálias" [ref=f2e35] [cursor=pointer]:
+        - /url: /sandalias
+      - link "Lançamentos" [ref=f2e36] [cursor=pointer]:
+        - /url: /lancamentos
+      - link "Ofertas" [ref=f2e37] [cursor=pointer]:
+        - /url: /ofertas
+      - link "Mais vendidos" [ref=f2e38] [cursor=pointer]:
+        - /url: /mais-vendidos
+      - link "Rastrear pedido" [ref=f2e39] [cursor=pointer]:
+        - /url: /rastrear-pedido
+      - link "Atendimento" [ref=f2e40] [cursor=pointer]:
+        - /url: /ajuda
+  - main [ref=f2e41]:
+    - generic [ref=f2e42]:
+      - navigation "Navegação estrutural" [ref=f2e43]:
+        - link "Início" [ref=f2e44] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f2e45]: /
+        - generic [ref=f2e46]: Carrinho
+      - generic [ref=f2e47]:
+        - link "Continuar comprando" [ref=f2e49] [cursor=pointer]:
+          - /url: /produtos
+        - heading "Meu carrinho" [level=1] [ref=f2e53]
+      - status [ref=f2e54]
+      - generic "Carregando carrinho" [ref=f2e55]
+  - contentinfo [ref=f2e71]:
+    - generic [ref=f2e72]:
+      - generic [ref=f2e73]:
+        - link "curti Z — página inicial" [ref=f2e74] [cursor=pointer]:
+          - /url: /
+          - img "curti Z" [ref=f2e75]
+        - paragraph [ref=f2e76]: A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de compra clara e organizada.
+        - text: Loja exclusivamente online.
+      - navigation "Comprar" [ref=f2e77]:
+        - generic [ref=f2e78]:
+          - heading "Comprar" [level=2] [ref=f2e79]
+          - link "Todos os produtos" [ref=f2e80] [cursor=pointer]:
+            - /url: /produtos
+          - link "Chinelos e slides masculinos" [ref=f2e81] [cursor=pointer]:
+            - /url: /masculino
+          - link "Chinelos e sandálias femininas" [ref=f2e82] [cursor=pointer]:
+            - /url: /feminino
+          - link "Chinelos e sandálias infantis" [ref=f2e83] [cursor=pointer]:
+            - /url: /infantil
+          - link "Lançamentos" [ref=f2e84] [cursor=pointer]:
+            - /url: /lancamentos
+      - navigation "Institucional" [ref=f2e85]:
+        - generic [ref=f2e86]:
+          - heading "Institucional" [level=2] [ref=f2e87]
+          - link "Quem somos" [ref=f2e88] [cursor=pointer]:
+            - /url: /sobre
+          - link "Fale conosco" [ref=f2e89] [cursor=pointer]:
+            - /url: /contato
+          - link "Atendimento" [ref=f2e90] [cursor=pointer]:
+            - /url: /ajuda
+      - navigation "Políticas" [ref=f2e91]:
+        - generic [ref=f2e92]:
+          - heading "Políticas" [level=2] [ref=f2e93]
+          - link "Centro de políticas" [ref=f2e94] [cursor=pointer]:
+            - /url: /politicas
+          - link "Termos" [ref=f2e95] [cursor=pointer]:
+            - /url: /politicas/termos-de-uso
+          - link "Privacidade" [ref=f2e96] [cursor=pointer]:
+            - /url: /politicas/aviso-de-privacidade
+          - link "Cookies" [ref=f2e97] [cursor=pointer]:
+            - /url: /politicas/politica-de-cookies
+          - link "Trocas e devoluções" [ref=f2e98] [cursor=pointer]:
+            - /url: /trocas-e-devolucoes
+          - link "Formas de envio" [ref=f2e99] [cursor=pointer]:
+            - /url: /formas-de-envio
+          - link "Formas de pagamento" [ref=f2e100] [cursor=pointer]:
+            - /url: /formas-de-pagamento
+          - link "Garantia" [ref=f2e101] [cursor=pointer]:
+            - /url: /politicas/garantia
+          - link "Acessibilidade" [ref=f2e102] [cursor=pointer]:
+            - /url: /politicas/acessibilidade
+      - navigation "Representantes" [ref=f2e103]:
+        - generic [ref=f2e104]:
+          - heading "Representantes" [level=2] [ref=f2e105]
+          - link "Termos" [ref=f2e106] [cursor=pointer]:
+            - /url: /politicas/termos-representante
+          - link "Kits e qualificação" [ref=f2e107] [cursor=pointer]:
+            - /url: /politicas/kits-e-qualificacao
+          - link "Comissões" [ref=f2e108] [cursor=pointer]:
+            - /url: /politicas/comissoes
+          - link "Uso da marca" [ref=f2e109] [cursor=pointer]:
+            - /url: /politicas/criativos
+    - generic [ref=f2e111]:
+      - generic [ref=f2e112]: © 2026 curti Z. Todos os direitos reservados.
+      - button "Preferências de cookies" [ref=f2e113] [cursor=pointer]
+  - alert [ref=f2e114]

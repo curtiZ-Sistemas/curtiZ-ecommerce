@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       .limit(6),
     auth.supabase
       .from("audit_logs")
-      .select("id,action,entity_type,created_at")
+      .select("id,action,action_type,entity_type,created_at")
       .order("created_at", { ascending: false })
       .limit(6)
   ]);

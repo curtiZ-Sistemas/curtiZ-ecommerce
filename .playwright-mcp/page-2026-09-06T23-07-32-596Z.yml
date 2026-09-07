@@ -1,0 +1,155 @@
+- generic [ref=f23e2]:
+  - link "Pular para o conteúdo" [ref=f23e3] [cursor=pointer]:
+    - /url: "#panel-content"
+  - complementary [ref=f23e4]:
+    - generic [ref=f23e5]:
+      - link [ref=f23e6] [cursor=pointer]:
+        - /url: /gerencia
+        - img "curti Z" [ref=f23e7]
+      - button "Recolher menu lateral" [ref=f23e9] [cursor=pointer]
+    - paragraph [ref=f23e13]: Painel Gerência
+    - navigation "Menu Gerência" [ref=f23e14]:
+      - generic [ref=f23e15]:
+        - heading "Visão geral" [level=2] [ref=f23e16]
+        - generic [ref=f23e17]:
+          - link "Dashboard executivo" [ref=f23e18] [cursor=pointer]:
+            - /url: /gerencia
+          - link "Visão estratégica" [ref=f23e24] [cursor=pointer]:
+            - /url: /gerencia/visao-estrategica
+      - generic [ref=f23e28]:
+        - heading "Resultados" [level=2] [ref=f23e29]
+        - generic [ref=f23e30]:
+          - link "Controle financeiro" [ref=f23e31] [cursor=pointer]:
+            - /url: /gerencia/financeiro
+          - link "Pedidos e vendas" [ref=f23e36] [cursor=pointer]:
+            - /url: /gerencia/pedidos-vendas
+          - link "Inteligência da loja" [ref=f23e41] [cursor=pointer]:
+            - /url: /gerencia/inteligencia-loja
+          - link "Clientes" [ref=f23e45] [cursor=pointer]:
+            - /url: /gerencia/clientes
+      - generic [ref=f23e52]:
+        - heading "Representantes" [level=2] [ref=f23e53]
+        - generic [ref=f23e54]:
+          - link "Rede de representantes" [ref=f23e55] [cursor=pointer]:
+            - /url: /gerencia/representantes
+          - link "Solicitações" [ref=f23e62] [cursor=pointer]:
+            - /url: /gerencia/solicitacoes-representantes
+          - link "Rede de indicações" [ref=f23e68] [cursor=pointer]:
+            - /url: /gerencia/rede-indicacoes
+          - link "Níveis" [ref=f23e75] [cursor=pointer]:
+            - /url: /gerencia/niveis
+          - link "Qualificação" [ref=f23e79] [cursor=pointer]:
+            - /url: /gerencia/qualificacao
+          - link "Metas" [ref=f23e84] [cursor=pointer]:
+            - /url: /gerencia/metas
+          - link "Kits" [ref=f23e90] [cursor=pointer]:
+            - /url: /gerencia/kits
+      - generic [ref=f23e97]:
+        - heading "Financeiro" [level=2] [ref=f23e98]
+        - generic [ref=f23e99]:
+          - link "Comissões" [ref=f23e100] [cursor=pointer]:
+            - /url: /gerencia/comissoes
+          - link "Regras de comissão" [ref=f23e105] [cursor=pointer]:
+            - /url: /gerencia/regras-comissao
+          - link "Fechamentos" [ref=f23e110] [cursor=pointer]:
+            - /url: /gerencia/fechamentos
+          - link "Pagamentos" [ref=f23e117] [cursor=pointer]:
+            - /url: /gerencia/pagamentos
+      - generic [ref=f23e122]:
+        - heading "Conteúdo" [level=2] [ref=f23e123]
+        - generic [ref=f23e124]:
+          - link "Criativos" [ref=f23e125] [cursor=pointer]:
+            - /url: /gerencia/criativos
+          - link "Campanhas" [ref=f23e129] [cursor=pointer]:
+            - /url: /gerencia/campanhas
+          - link "Barra promocional" [ref=f23e135] [cursor=pointer]:
+            - /url: /gerencia/barra-promocional
+          - link "Construtor da página inicial" [ref=f23e140] [cursor=pointer]:
+            - /url: /gerencia/conteudo-loja
+          - link "Banners" [ref=f23e144] [cursor=pointer]:
+            - /url: /gerencia/banners
+      - generic [ref=f23e148]:
+        - heading "Governança" [level=2] [ref=f23e149]
+        - generic [ref=f23e150]:
+          - link "Relatórios" [ref=f23e151] [cursor=pointer]:
+            - /url: /gerencia/relatorios
+          - link "Aprovações" [ref=f23e155] [cursor=pointer]:
+            - /url: /gerencia/aprovacoes
+          - link "Logs de Atividades" [ref=f23e160] [cursor=pointer]:
+            - /url: /gerencia/auditoria
+          - link "Usuários e acessos" [ref=f23e167] [cursor=pointer]:
+            - /url: /gerencia/usuarios
+          - link "Políticas e conformidade" [ref=f23e174] [cursor=pointer]:
+            - /url: /gerencia/politicas
+          - link "Simulações" [ref=f23e180] [cursor=pointer]:
+            - /url: /gerencia/simulacoes
+          - link "Alertas" [ref=f23e184] [cursor=pointer]:
+            - /url: /gerencia/alertas
+      - generic [ref=f23e188]:
+        - heading "Atendimento" [level=2] [ref=f23e189]
+        - generic [ref=f23e190]:
+          - link "Configurações estratégicas" [ref=f23e191] [cursor=pointer]:
+            - /url: /gerencia/configuracoes-estrategicas
+          - link "Atendimentos" [ref=f23e196] [cursor=pointer]:
+            - /url: /gerencia/atendimentos
+          - link "Central de Ajuda" [ref=f23e200] [cursor=pointer]:
+            - /url: /gerencia/central-ajuda
+    - link "Trocar painel" [ref=f23e209] [cursor=pointer]:
+      - /url: /selecionar-painel
+    - link "Abrir suporte interno" [ref=f23e213] [cursor=pointer]:
+      - /url: /gerencia/atendimentos
+      - generic [ref=f23e221]:
+        - strong [ref=f23e222]: Precisa de ajuda?
+        - generic [ref=f23e223]: Suporte interno auditado
+  - generic [ref=f23e224]:
+    - banner [ref=f23e225]:
+      - navigation "Navegação estrutural" [ref=f23e226]:
+        - link "Gerência" [ref=f23e227] [cursor=pointer]:
+          - /url: /gerencia
+        - generic [aria-hidden] [ref=f23e228]: /
+        - strong [ref=f23e229]: Controle financeiro
+      - button "Abrir busca" [ref=f23e231] [cursor=pointer]
+      - link "Ver loja" [ref=f23e235] [cursor=pointer]:
+        - /url: https://curtiz.com.br
+      - link "Abrir notificações e pendências" [ref=f23e240] [cursor=pointer]:
+        - /url: /gerencia/alertas
+      - link "Trocar painel" [ref=f23e244] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "R Rafael Administrador Gerência" [ref=f23e247] [cursor=pointer]:
+        - /url: https://curtiz.com.br/perfil
+        - generic [ref=f23e248]: R
+        - generic [ref=f23e249]:
+          - strong [ref=f23e250]: Rafael Administrador
+          - generic [ref=f23e251]: Gerência
+      - button "Sair do painel" [ref=f23e252] [cursor=pointer]
+    - main [ref=f23e256]:
+      - generic [ref=f23e257]:
+        - generic [ref=f23e258]:
+          - generic [ref=f23e259]:
+            - generic [ref=f23e260]: Gerência
+            - heading "Controle financeiro" [level=1] [ref=f23e261]
+            - paragraph [ref=f23e262]: Caixa, compromissos e aportes conectados em uma única fonte de verdade.
+          - generic [ref=f23e263]:
+            - button "Sincronizar" [disabled] [ref=f23e264]
+            - button "Exportar para Excel" [disabled] [ref=f23e271]
+        - generic [ref=f23e275]:
+          - generic [ref=f23e276]:
+            - generic [ref=f23e277]: Período
+            - combobox "Período" [ref=f23e278]:
+              - option "Hoje"
+              - option "7 dias"
+              - option "30 dias"
+              - option "Este mês" [selected]
+              - option "Mês anterior"
+              - option "Este ano"
+              - option "Personalizado"
+          - generic [ref=f23e279]: Aguardando sincronização
+        - navigation "Áreas do financeiro" [ref=f23e280]:
+          - button "Visão geral" [ref=f23e281] [cursor=pointer]
+          - button "A receber" [ref=f23e282] [cursor=pointer]
+          - button "A pagar" [ref=f23e283] [cursor=pointer]
+          - button "Lançamentos" [ref=f23e284] [cursor=pointer]
+          - button "Aportes" [ref=f23e285] [cursor=pointer]
+          - button "Configurações" [ref=f23e286] [cursor=pointer]
+          - button "Histórico" [ref=f23e287] [cursor=pointer]
+        - generic [ref=f23e288]: Consolidando dados financeiros…

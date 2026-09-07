@@ -184,7 +184,7 @@ export function TechnicalOverview({ section }: { section: string }) {
           ) : null}
           {message ? <p className="admin-empty-copy">Configuração de runtime indisponível.</p> : <div className="technical-runtime-grid">
             <Runtime label="Ambiente" value={textValue(runtime.environment) || "Não configurado"} />
-            <Runtime label="Versão" value={textValue(runtime.version) || "Não configurada"} />
+            <Runtime label="Versão" value={textValue(runtime.version) || "Metadados de versão não informados"} />
             <Runtime label="Backups" value={textValue(runtime.backup) || "Não configurado"} />
           </div>}
           {!message ? <p className="technical-note">{textValue(runtime.databaseDiagnostics)}</p> : null}
@@ -210,7 +210,7 @@ function DeploymentCard({ label, value }: { label: string; value: unknown }) {
       <dl>
         <div><dt>Ambiente</dt><dd>{textValue(deployment.environment) || "Não informado"}</dd></div>
         <div><dt>Commit</dt><dd>{textValue(deployment.commit) || "Não informado"}</dd></div>
-        <div><dt>Build</dt><dd>{textValue(deployment.build) || "Não informado"}</dd></div>
+        <div><dt>Build</dt><dd>{textValue(deployment.build) || "Metadados de build não informados"}</dd></div>
         <div><dt>Gerado em</dt><dd>{textValue(deployment.builtAt) || "Não informado"}</dd></div>
       </dl>
     </article>

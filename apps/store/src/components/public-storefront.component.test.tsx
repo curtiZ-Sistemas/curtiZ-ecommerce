@@ -118,6 +118,8 @@ describe("public storefront components", () => {
     expect(html).toContain("essential-azul.webp");
     expect(html).toContain("R$\u00a064,90");
     expect(html).toContain("/produto/chinelo-essential?variant=azul");
+    expect(html).not.toContain('class="rating"');
+    expect(html).not.toContain("0 de 5");
   });
 
   it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {

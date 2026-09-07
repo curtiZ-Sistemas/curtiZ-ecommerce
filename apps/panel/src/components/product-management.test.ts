@@ -4,7 +4,8 @@ import {
   generateVariantCombinations,
   groupEditableVariantsByColor,
   isManagedProduct,
-  partitionProductMediaFiles
+  partitionProductMediaFiles,
+  productPublishRequirements
 } from "../lib/product-management";
 
 const products = [
@@ -58,6 +59,28 @@ describe("product management", () => {
       ])
     );
     expect(variants).toHaveLength(4);
+  });
+
+  it("gera as 36 combinações do kit sem interpretar nomes compostos como hexadecimal", () => {
+    const variants = generateVariantCombinations(
+      "Preto+Preto, Branco+Branco, Preto+Bege, Bege+Branco, Lilás+Branco, Lilás+Preto",
+      "34, 35, 36, 37, 38, 39",
+      "KIT"
+    );
+    expect(variants).toHaveLength(36);
+    expect(variants).toContainEqual(
+      expect.objectContaining({ color: "Lilás+Branco", size: "39", colorHex: "" })
+    );
+  });
+
+  it("separa os requisitos de publicação dos requisitos de rascunho", () => {
+    expect(productPublishRequirements({ name: "Rascunho", variants: [] })).toEqual([
+      "descrição",
+      "categoria",
+      "preço de venda",
+      "dados de entrega",
+      "ao menos uma variação ativa"
+    ]);
   });
 
   it("agrupa somente as combinações reais por cor e preserva tamanhos desiguais", () => {

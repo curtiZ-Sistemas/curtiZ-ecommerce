@@ -1,0 +1,5 @@
+- generic [active] [ref=f25e1]:
+  - status "Carregando painel" [ref=f25e2]:
+    - complementary [aria-hidden] [ref=f25e3]
+    - generic [ref=f25e28]: Carregando painel…
+  - alert [ref=f25e29]

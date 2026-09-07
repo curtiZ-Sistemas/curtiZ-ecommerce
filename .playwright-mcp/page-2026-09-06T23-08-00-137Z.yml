@@ -1,0 +1,196 @@
+- generic [active] [ref=f24e1]:
+  - generic [ref=f24e2]:
+    - link "Pular para o conteúdo" [ref=f24e3] [cursor=pointer]:
+      - /url: "#panel-content"
+    - complementary [ref=f24e4]:
+      - generic [ref=f24e5]:
+        - link [ref=f24e6] [cursor=pointer]:
+          - /url: /tecnico
+          - img "curti Z" [ref=f24e7]
+        - button "Recolher menu lateral" [ref=f24e9] [cursor=pointer]
+      - paragraph [ref=f24e13]: Painel Técnico
+      - navigation "Menu Técnico" [ref=f24e14]:
+        - generic [ref=f24e15]:
+          - heading "Monitoramento" [level=2] [ref=f24e16]
+          - generic [ref=f24e17]:
+            - link "Visão geral" [ref=f24e18] [cursor=pointer]:
+              - /url: /tecnico
+            - link "Saúde dos serviços" [ref=f24e22] [cursor=pointer]:
+              - /url: /tecnico/saude-servicos
+        - generic [ref=f24e28]:
+          - heading "Diagnóstico" [level=2] [ref=f24e29]
+          - generic [ref=f24e30]:
+            - link "Logs" [ref=f24e31] [cursor=pointer]:
+              - /url: /tecnico/logs
+            - link "Erros" [ref=f24e38] [cursor=pointer]:
+              - /url: /tecnico/erros
+            - link "Segurança" [ref=f24e42] [cursor=pointer]:
+              - /url: /tecnico/seguranca
+        - generic [ref=f24e47]:
+          - heading "Segurança" [level=2] [ref=f24e48]
+          - link "Acessos técnicos" [ref=f24e50] [cursor=pointer]:
+            - /url: /tecnico/acessos-tecnicos
+        - generic [ref=f24e57]:
+          - heading "Integrações" [level=2] [ref=f24e58]
+          - generic [ref=f24e59]:
+            - link "Integrações" [ref=f24e60] [cursor=pointer]:
+              - /url: /tecnico/integracoes
+            - link "Webhooks" [ref=f24e66] [cursor=pointer]:
+              - /url: /tecnico/webhooks
+        - generic [ref=f24e72]:
+          - heading "Processamento" [level=2] [ref=f24e73]
+          - generic [ref=f24e74]:
+            - link "Filas" [ref=f24e75] [cursor=pointer]:
+              - /url: /tecnico/filas
+            - link "Jobs" [ref=f24e79] [cursor=pointer]:
+              - /url: /tecnico/jobs
+            - link "Falhas" [ref=f24e83] [cursor=pointer]:
+              - /url: /tecnico/falhas
+        - generic [ref=f24e87]:
+          - heading "Dados" [level=2] [ref=f24e88]
+          - generic [ref=f24e89]:
+            - link "Banco de dados" [ref=f24e90] [cursor=pointer]:
+              - /url: /tecnico/banco-dados
+            - link "Supabase" [ref=f24e102] [cursor=pointer]:
+              - /url: /tecnico/supabase
+            - link "Storage" [ref=f24e108] [cursor=pointer]:
+              - /url: /tecnico/storage
+            - link "Backups" [ref=f24e120] [cursor=pointer]:
+              - /url: /tecnico/backups
+        - generic [ref=f24e127]:
+          - heading "Plataforma" [level=2] [ref=f24e128]
+          - generic [ref=f24e129]:
+            - link "Auditoria técnica" [ref=f24e130] [cursor=pointer]:
+              - /url: /tecnico/auditoria-tecnica
+            - link "Integridade dos dados" [ref=f24e137] [cursor=pointer]:
+              - /url: /tecnico/integridade-dados
+            - link "Performance" [ref=f24e142] [cursor=pointer]:
+              - /url: /tecnico/performance
+            - link "Deploys" [ref=f24e146] [cursor=pointer]:
+              - /url: /tecnico/deploys
+            - link "Versões" [ref=f24e152] [cursor=pointer]:
+              - /url: /tecnico/versoes
+            - link "Sessões" [ref=f24e157] [cursor=pointer]:
+              - /url: /tecnico/sessoes
+            - link "Feature flags" [ref=f24e164] [cursor=pointer]:
+              - /url: /tecnico/feature-flags
+            - link "Configurações técnicas" [ref=f24e169] [cursor=pointer]:
+              - /url: /tecnico/configuracoes-tecnicas
+        - generic [ref=f24e174]:
+          - heading "Atendimento" [level=2] [ref=f24e175]
+          - link "Atendimentos técnicos" [ref=f24e177] [cursor=pointer]:
+            - /url: /tecnico/atendimentos
+      - link "Trocar painel" [ref=f24e181] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "Abrir suporte interno" [ref=f24e185] [cursor=pointer]:
+        - /url: /tecnico/atendimentos
+        - generic [ref=f24e193]:
+          - strong [ref=f24e194]: Precisa de ajuda?
+          - generic [ref=f24e195]: Suporte interno auditado
+    - generic [ref=f24e196]:
+      - banner [ref=f24e197]:
+        - navigation "Navegação estrutural" [ref=f24e198]:
+          - link "Técnico" [ref=f24e199] [cursor=pointer]:
+            - /url: /tecnico
+          - strong [ref=f24e200]: Visão geral
+        - button "Abrir busca" [ref=f24e202] [cursor=pointer]
+        - link "Ver loja" [ref=f24e206] [cursor=pointer]:
+          - /url: https://curtiz.com.br
+        - link "Abrir notificações e pendências" [ref=f24e211] [cursor=pointer]:
+          - /url: /tecnico/erros
+        - link "Trocar painel" [ref=f24e215] [cursor=pointer]:
+          - /url: /selecionar-painel
+        - link "R Rafael Administrador Técnico" [ref=f24e218] [cursor=pointer]:
+          - /url: https://curtiz.com.br/perfil
+          - generic [ref=f24e219]: R
+          - generic [ref=f24e220]:
+            - strong [ref=f24e221]: Rafael Administrador
+            - generic [ref=f24e222]: Técnico
+        - button "Sair do painel" [ref=f24e223] [cursor=pointer]
+      - main [ref=f24e227]:
+        - generic [ref=f24e228]:
+          - generic [ref=f24e229]:
+            - generic [ref=f24e230]: Painel Técnico
+            - heading "Técnico" [level=1] [ref=f24e231]
+            - paragraph [ref=f24e232]: Monitore a plataforma e trate incidentes com segurança.
+          - link "Revisar erros" [ref=f24e233] [cursor=pointer]:
+            - /url: /tecnico/erros
+        - generic [ref=f24e234]:
+          - generic [ref=f24e235]:
+            - paragraph [ref=f24e236]: Estados obtidos de verificações reais, consultas protegidas ou configuração do runtime.
+            - button "Verificar agora" [disabled] [ref=f24e237]
+          - generic [ref=f24e243]:
+            - article [ref=f24e244]:
+              - generic [ref=f24e247]: Erros nas últimas 24h
+              - strong [ref=f24e248]: —
+            - article [ref=f24e249]:
+              - generic [ref=f24e252]: Erros abertos
+              - strong [ref=f24e253]: —
+            - article [ref=f24e254]:
+              - generic [ref=f24e265]: Jobs pendentes
+              - strong [ref=f24e266]: —
+            - article [ref=f24e267]:
+              - generic [ref=f24e278]: Jobs falhos
+              - strong [ref=f24e279]: —
+            - article [ref=f24e280]:
+              - generic [ref=f24e285]: Webhooks falhos
+              - strong [ref=f24e286]: —
+            - article [ref=f24e287]:
+              - generic [ref=f24e290]: Eventos de segurança 24h
+              - strong [ref=f24e291]: —
+          - generic [ref=f24e292]:
+            - heading "Saúde dos serviços" [level=2] [ref=f24e293]
+            - generic [ref=f24e294]: Verificando
+          - generic [ref=f24e297]:
+            - heading "Storage" [level=2] [ref=f24e298]
+            - paragraph [ref=f24e303]: Nenhum bucket criado.
+            - paragraph [ref=f24e304]: Somente totais agregados são exibidos; caminhos e arquivos privados não são expostos.
+          - generic [ref=f24e305]:
+            - heading "Banco e integridade" [level=2] [ref=f24e306]
+            - paragraph [ref=f24e311]: Diagnóstico agregado indisponível.
+            - paragraph [ref=f24e312]: Diagnóstico somente leitura e agregado. O painel não oferece execução de SQL arbitrário.
+          - generic [ref=f24e313]:
+            - heading "Runtime, deploy e manutenção" [level=2] [ref=f24e314]
+            - generic [ref=f24e315]:
+              - article [ref=f24e316]:
+                - heading "Loja" [level=3] [ref=f24e317]
+                - generic [ref=f24e318]:
+                  - generic [ref=f24e319]:
+                    - term [ref=f24e320]: Ambiente
+                    - definition [ref=f24e321]: Não informado
+                  - generic [ref=f24e322]:
+                    - term [ref=f24e323]: Commit
+                    - definition [ref=f24e324]: Não informado
+                  - generic [ref=f24e325]:
+                    - term [ref=f24e326]: Build
+                    - definition [ref=f24e327]: Não informado
+                  - generic [ref=f24e328]:
+                    - term [ref=f24e329]: Gerado em
+                    - definition [ref=f24e330]: Não informado
+              - article [ref=f24e331]:
+                - heading "Painel" [level=3] [ref=f24e332]
+                - generic [ref=f24e333]:
+                  - generic [ref=f24e334]:
+                    - term [ref=f24e335]: Ambiente
+                    - definition [ref=f24e336]: Não informado
+                  - generic [ref=f24e337]:
+                    - term [ref=f24e338]: Commit
+                    - definition [ref=f24e339]: Não informado
+                  - generic [ref=f24e340]:
+                    - term [ref=f24e341]: Build
+                    - definition [ref=f24e342]: Não informado
+                  - generic [ref=f24e343]:
+                    - term [ref=f24e344]: Gerado em
+                    - definition [ref=f24e345]: Não informado
+            - generic [ref=f24e346]:
+              - generic [ref=f24e347]:
+                - generic [ref=f24e348]: Ambiente
+                - strong [ref=f24e349]: Não configurado
+              - generic [ref=f24e350]:
+                - generic [ref=f24e351]: Versão
+                - strong [ref=f24e352]: Não configurada
+              - generic [ref=f24e353]:
+                - generic [ref=f24e354]: Backups
+                - strong [ref=f24e355]: Não configurado
+            - paragraph [ref=f24e356]
+  - alert [ref=f24e357]

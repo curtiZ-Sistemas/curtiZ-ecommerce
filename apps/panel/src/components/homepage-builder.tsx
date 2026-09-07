@@ -51,6 +51,9 @@ type Section = {
   ends_at: string | null; sort_order: number; locked: boolean; revision: number;
   current_version_id: string | null; updated_at: string; responsible_name: string; home_section_items: Array<Record<string, unknown>>;
 };
+const statusLabel = (value: string) => ({ draft: "Rascunho", pending_review: "Em revisão", approved: "Aprovada", scheduled: "Agendada", published: "Publicada", hidden: "Oculta", expired: "Encerrada", archived: "Arquivada", rejected: "Rejeitada", cancelled: "Cancelada", superseded: "Substituída" } as Record<string, string>)[value] ?? value;
+const visibilityLabel = (value: string) => ({ all: "Todos", desktop: "Computador", tablet: "Tablet", mobile: "Celular" } as Record<string, string>)[value] ?? value;
+
 type Version = { id: string; section_id: string; version: number; status: string; change_summary: string | null; created_at: string };
 type PageVersion = { id: string; version: number; status: string; reason: string; scheduled_at: string | null; published_at: string | null; created_at: string };
 type Metric = { section_version_id: string; item_key: string; metric_date: string; device: string; views: number; clicks: number };
@@ -297,7 +300,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     return (
       <section className="panel-card homepage-professional">
         <header className="homepage-builder-header">
-          <div><p className="eyebrow">Conteúdo</p><h1>Construtor da Página Inicial</h1><p>Monte, revise e publique a home por snapshots atômicos, sem editar código.</p></div>
+          <div><p className="eyebrow">Conteúdo</p><h1>Construtor da Página Inicial</h1><p>Monte, revise e publique a home com versões completas da página, sem editar código.</p></div>
         </header>
         <div className="admin-empty-state" role="alert">
           <h2>Construtor indisponível</h2>
@@ -311,7 +314,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
   return (
     <section className="panel-card homepage-professional">
       <header className="homepage-builder-header">
-        <div><p className="eyebrow">Conteúdo</p><h1>Construtor da Página Inicial</h1><p>Monte, revise e publique a home por snapshots atômicos, sem editar código.</p></div>
+        <div><p className="eyebrow">Conteúdo</p><h1>Construtor da Página Inicial</h1><p>Monte, revise e publique a home com versões completas da página, sem editar código.</p></div>
         <div className="homepage-header-actions">
           <button className="secondary-button" type="button" onClick={() => setPreview("page")}><Eye /> Visualizar como ficará na loja</button>
           {data?.capabilities["homepage.publish"] && <><button className="secondary-button" type="button" disabled={pending} onClick={() => void publish(true)}><FileClock /> Agendar</button><button className="primary-button" type="button" disabled={pending} onClick={() => void publish(false)}><ShieldCheck /> Publicar página</button></>}
@@ -333,12 +336,12 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
         <div className="homepage-toolbar">
           <label><Search /><span className="sr-only">Buscar seção</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou título" /></label>
           <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filtrar por tipo"><option value="">Todos os tipos</option>{sectionTypes.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option>{["draft","pending_review","approved","scheduled","published","hidden","expired","archived","rejected"].map((value) => <option value={value} key={value}>{value.replaceAll("_", " ")}</option>)}</select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option>{["draft","pending_review","approved","scheduled","published","hidden","expired","archived","rejected"].map((value) => <option value={value} key={value}>{statusLabel(value)}</option>)}</select>
           <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} aria-label="Filtrar por período"><option value="">Todos os períodos</option><option value="current">Em exibição</option><option value="future">Agendadas</option><option value="expired">Encerradas</option></select>
           <button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw /> Atualizar</button>
         </div>
         {loading ? <div className="homepage-skeleton" aria-label="Carregando seções">{[1,2,3].map((value) => <div key={value} />)}</div>
-          : sections.length === 0 ? <div className="admin-empty-state"><ImagePlus /><h2>Nenhuma seção encontrada</h2><p>Crie uma seção ou ajuste os filtros.</p></div>
+          : sections.length === 0 ? <div className="admin-empty-state"><ImagePlus /><h2>Nenhuma seção encontrada</h2><p>{data?.sections.length ? "Ajuste os filtros para encontrar as seções cadastradas." : "Ainda não há seções cadastradas neste editor. Quando não há seções publicadas, a loja usa sua composição padrão, com o banner e o catálogo disponíveis. Esse conteúdo não aparece como rascunho aqui. Criar uma seção não altera a loja até a publicação."}</p></div>
           : <div className="homepage-block-list" aria-label="Ordem da página inicial">
             <div className="homepage-tree-root"><strong>Página inicial</strong><span>{data?.sections.length ?? 0} seções</span></div>
             {sections.map((section) => {
@@ -347,7 +350,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
                 <GripVertical className="homepage-drag" aria-hidden="true" />
                 <div className="homepage-thumbnail" style={thumbnailStyle(section)}><span>{thumbnailStyle(section) ? "" : typeLabel(section.section_type).slice(0, 2).toUpperCase()}</span></div>
                 <div className="homepage-block-copy"><small>Seção {globalIndex + 1} · {typeLabel(section.section_type)}</small><strong>{section.internal_name}</strong><span>{section.title || "Sem título visível"}</span><em>Atualizada em {dateLabel(section.updated_at)}</em></div>
-                <div className="homepage-block-meta"><span className={`status ${["published","approved"].includes(section.status) ? "green" : section.status === "rejected" ? "red" : "gray"}`}>{section.status.replaceAll("_", " ")}</span><span>Posição {globalIndex + 1}</span><span>{section.visibility}</span><span>Responsável: {section.responsible_name}</span><span>{dateLabel(section.starts_at)} → {dateLabel(section.ends_at)}</span>{section.locked && <span><Lock /> Bloqueada</span>}</div>
+                <div className="homepage-block-meta"><span className={`status ${["published","approved"].includes(section.status) ? "green" : section.status === "rejected" ? "red" : "gray"}`}>{statusLabel(section.status)}</span><span>Posição {globalIndex + 1}</span><span>{visibilityLabel(section.visibility)}</span><span>Responsável: {section.responsible_name}</span><span>{dateLabel(section.starts_at)} → {dateLabel(section.ends_at)}</span>{section.locked && <span><Lock /> Bloqueada</span>}</div>
                 <div className="homepage-block-actions">
                   <button type="button" onClick={() => setPreview(sectionEditor(section))} aria-label={`Pré-visualizar ${section.internal_name}`}><Eye /></button>
                   {data?.capabilities["homepage.edit"] && <><button type="button" disabled={pending || globalIndex === 0} onClick={() => void reorder(section.id, globalIndex - 1)} aria-label="Subir"><ArrowUp /></button><button type="button" disabled={pending || globalIndex === data.sections.length - 1} onClick={() => void reorder(section.id, globalIndex + 1)} aria-label="Descer"><ArrowDown /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, 0)} aria-label="Enviar ao topo"><MoveUp /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, data.sections.length - 1)} aria-label="Enviar ao final"><MoveDown /></button><button type="button" onClick={() => setEditor(sectionEditor(section))} aria-label="Editar"><Pencil /></button><button type="button" disabled={pending} onClick={() => void act({ action: "duplicate", sectionId: section.id }, "Seção duplicada.")} aria-label="Duplicar"><Copy /></button></>}
@@ -569,7 +572,7 @@ function PreviewModal({ preview, sections, device, onDevice, onClose }: { previe
 }
 
 function HistoryView({ versions, pageVersions, canRestore, pending, onRestore, onCancel }: { versions: Version[]; pageVersions: PageVersion[]; canRestore: boolean; pending: boolean; onRestore: (version: Version) => void; onCancel: (version: PageVersion) => void }) {
-  return <div className="homepage-history-grid"><section><h2>Versões da página</h2>{pageVersions.length ? pageVersions.map((version) => <article key={version.id}><strong>Publicação {version.version}</strong><span className="status gray">{version.status}</span><p>{version.reason}</p><small>{dateLabel(version.scheduled_at ?? version.published_at ?? version.created_at)}</small>{canRestore && version.status === "scheduled" && <button className="secondary-button" disabled={pending} onClick={() => onCancel(version)}><X /> Cancelar agendamento</button>}</article>) : <div className="admin-empty-state"><p>Nenhuma publicação versionada.</p></div>}</section><section><h2>Versões das seções</h2>{versions.length ? versions.map((version) => <article key={version.id}><strong>Versão {version.version}</strong><span className="status gray">{version.status}</span><p>{version.change_summary || "Alteração registrada"}</p><small>{dateLabel(version.created_at)}</small>{canRestore && <button className="secondary-button" disabled={pending} onClick={() => onRestore(version)}><RotateCcw /> Restaurar como rascunho</button>}</article>) : <div className="admin-empty-state"><p>Nenhuma versão encontrada.</p></div>}</section></div>;
+  return <div className="homepage-history-grid"><section><h2>Versões da página</h2>{pageVersions.length ? pageVersions.map((version) => <article key={version.id}><strong>Publicação {version.version}</strong><span className="status gray">{statusLabel(version.status)}</span><p>{version.reason}</p><small>{dateLabel(version.scheduled_at ?? version.published_at ?? version.created_at)}</small>{canRestore && version.status === "scheduled" && <button className="secondary-button" disabled={pending} onClick={() => onCancel(version)}><X /> Cancelar agendamento</button>}</article>) : <div className="admin-empty-state"><p>Nenhuma publicação versionada.</p></div>}</section><section><h2>Versões das seções</h2>{versions.length ? versions.map((version) => <article key={version.id}><strong>Versão {version.version}</strong><span className="status gray">{statusLabel(version.status)}</span><p>{version.change_summary || "Alteração registrada"}</p><small>{dateLabel(version.created_at)}</small>{canRestore && <button className="secondary-button" disabled={pending} onClick={() => onRestore(version)}><RotateCcw /> Restaurar como rascunho</button>}</article>) : <div className="admin-empty-state"><p>Nenhuma versão encontrada.</p></div>}</section></div>;
 }
 
 function MetricsView({ metrics, sections }: { metrics: Metric[]; sections: Section[] }) {

@@ -56,6 +56,8 @@ export function SearchAutocomplete({
   const [searchComplete, setSearchComplete] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [focused, setFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const requestSequence = useRef(0);
@@ -115,9 +117,11 @@ export function SearchAutocomplete({
         if (!response.ok) throw new Error("recommendations_unavailable");
         return (await response.json()) as RecommendationResult;
       })
-      .then((result) =>
-        setRecommendations((result.products ?? []).filter((item) => item.stock > 0).slice(0, 3))
-      )
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setRecommendations((result.products ?? []).filter((item) => item.stock > 0).slice(0, 3));
+        }
+      })
       .catch(() => {
         if (!controller.signal.aborted) setRecommendations([]);
       })
@@ -129,19 +133,18 @@ export function SearchAutocomplete({
 
   useEffect(() => {
     const normalized = normalizeSearchTerm(query);
+    const sequence = ++requestSequence.current;
+    setSearchError(false);
+    setProducts([]);
+    setCategories([]);
+    setSearchComplete(false);
     if (normalized.length < 2) {
-      setProducts([]);
-      setCategories([]);
-      setSearchComplete(false);
       setLoading(false);
       return;
     }
-    const sequence = requestSequence.current + 1;
-    requestSequence.current = sequence;
+    setLoading(true);
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      setLoading(true);
-      setSearchComplete(false);
       setRecommendations([]);
       void fetch(`/api/catalog?q=${encodeURIComponent(normalized)}&pagina=1&limite=5&sugestoes=1`, {
         cache: "no-store",
@@ -152,7 +155,7 @@ export function SearchAutocomplete({
           return (await response.json()) as CatalogResult;
         })
         .then((result) => {
-          if (requestSequence.current !== sequence) return;
+          if (controller.signal.aborted || requestSequence.current !== sequence) return;
           setProducts(result.products.slice(0, 5));
           setCategories(result.facets.categories.slice(0, 3));
           setSearchComplete(true);
@@ -165,6 +168,7 @@ export function SearchAutocomplete({
             setProducts([]);
             setCategories([]);
             setSearchComplete(false);
+            setSearchError(true);
           }
         })
         .finally(() => {
@@ -177,7 +181,7 @@ export function SearchAutocomplete({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [query, retry]);
 
   const options = useMemo<SearchOption[]>(() => {
     const normalized = normalizeSearchTerm(query);
@@ -363,7 +367,7 @@ export function SearchAutocomplete({
                       ? "Nenhum resultado exato"
                       : options.length
                         ? "Sugestões"
-                        : "Busca indisponível"}
+                        : searchError ? "Busca indisponível" : "Buscando produtos…"}
             </strong>
             {!loading && normalizedQuery.length >= 2 && !noResults ? (
               <span>{options.length} opções</span>
@@ -420,6 +424,7 @@ export function SearchAutocomplete({
               ) : null}
             </div>
           ))}
+          {searchError ? <button type="button" className="search-all-results" onMouseDown={(event) => event.preventDefault()} onClick={() => setRetry((value) => value + 1)}>Tentar novamente</button> : null}
           {normalizedQuery.length === 1 ? (
             <p className="search-suggestions-status">
               Digite mais um caractere para ver resultados.

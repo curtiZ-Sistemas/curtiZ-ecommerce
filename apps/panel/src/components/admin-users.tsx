@@ -11,6 +11,7 @@ const roleLabels: Record<string, string> = { customer: "Cliente", admin: "Admini
 type User = {
   id: string; full_name: string; email_snapshot: string; status: string; updated_at: string;
   roles: string[]; editable: boolean;
+  historyUnavailable: boolean;
   lastAccessChange: { action?: string; reason?: string; created_at?: string } | null;
 };
 type Capabilities = { manage: boolean; invite: boolean; manageableRoles: string[]; canManageStatus: boolean };
@@ -110,7 +111,7 @@ export function AdminUsers() {
             <td data-label="Nome">{user.full_name}</td><td data-label="E-mail">{user.email_snapshot}</td>
             <td data-label="Acessos"><span className="access-badges">{user.roles.map((role) => <small className="access-badge" key={role}>{roleLabels[role] ?? role}</small>)}</span></td>
             <td data-label="Status">{user.status}</td>
-            <td data-label="Última alteração">{user.lastAccessChange?.created_at ? <span className="admin-user-history"><strong>Acessos atualizados</strong><small>{accessDate.format(new Date(user.lastAccessChange.created_at))}{user.lastAccessChange.reason ? ` · ${user.lastAccessChange.reason}` : ""}</small></span> : "Sem alterações"}</td>
+            <td data-label="Última alteração">{user.historyUnavailable ? "Histórico indisponível" : user.lastAccessChange?.created_at ? <span className="admin-user-history"><strong>Acessos atualizados</strong><small>{accessDate.format(new Date(user.lastAccessChange.created_at))}{user.lastAccessChange.reason ? ` · ${user.lastAccessChange.reason}` : ""}</small></span> : "Sem alterações"}</td>
             <td className="admin-row-actions">{user.editable ? <button type="button" onClick={() => openEditor(user)} aria-label={`Gerenciar acessos de ${user.full_name}`}><Pencil /></button> : <small>Seu próprio acesso</small>}</td>
           </tr>)}
         </tbody></table></div>

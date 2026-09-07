@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { actionLabels, type ActivityAction } from "../lib/activity-logs";
 
 type DashboardData = {
   metrics: {
@@ -184,8 +185,8 @@ export function AdminDashboard() {
               {data.activities.map((activity) => (
                 <div key={text(activity.id)}>
                   <span>
-                    <strong>{text(activity.action)}</strong>
-                    <small>{text(activity.entity_type)}</small>
+                    <strong>{actionLabels[text(activity.action_type) as ActivityAction] ?? "Atividade registrada"}</strong>
+                    <small>{text(activity.action)} · {text(activity.entity_type)}</small>
                   </span>
                   <time>{date.format(new Date(text(activity.created_at)))}</time>
                 </div>

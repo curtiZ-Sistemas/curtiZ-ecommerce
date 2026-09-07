@@ -5,6 +5,7 @@ import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ const number = (value: unknown) =>
 const noStore = { "cache-control": "private, no-store" };
 const variantSchema = z.object({
   id: postgresUuidSchema.optional(),
-  sku: z.string().trim().min(2).max(140),
+  sku: z.string().trim().max(140),
   color: z.string().trim().min(1).max(80),
   colorHex: z.string().regex(/^#[0-9a-f]{6}$/iu).or(z.literal("")),
   size: z.string().trim().min(1).max(40),
@@ -69,26 +70,23 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("save"),
     productId: postgresUuidSchema.optional(),
     name: z.string().trim().min(3).max(160),
-    slug: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .max(180),
-    shortDescription: z.string().trim().min(3).max(280),
-    description: z.string().trim().min(3).max(4_000),
-    categoryId: postgresUuidSchema,
+    slug: z.string().trim().max(180),
+    shortDescription: z.string().trim().max(280).default(""),
+    description: z.string().trim().max(4_000).default(""),
+    categoryId: postgresUuidSchema.nullable().optional(),
+    categoryIds: z.array(postgresUuidSchema).max(50).default([]),
     modelId: postgresUuidSchema.nullable().optional(),
     collectionId: postgresUuidSchema.nullable().optional(),
     status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
     statusReason: z.string().trim().max(1000).optional(),
     featured: z.boolean(),
-    priceInCents: z.number().int().min(0).max(100_000_000),
+    priceInCents: z.number().int().min(0).max(100_000_000).nullable(),
     compareAtPriceInCents: z.number().int().min(0).max(100_000_000).nullable(),
-    costInCents: z.number().int().min(0).max(100_000_000),
-    weightGrams: z.number().int().min(1).max(100_000),
-    heightCm: z.number().positive().max(10_000),
-    widthCm: z.number().positive().max(10_000),
-    lengthCm: z.number().positive().max(10_000),
+    costInCents: z.number().int().min(0).max(100_000_000).nullable(),
+    weightGrams: z.number().int().min(1).max(100_000).nullable(),
+    heightCm: z.number().positive().max(10_000).nullable(),
+    widthCm: z.number().positive().max(10_000).nullable(),
+    lengthCm: z.number().positive().max(10_000).nullable(),
     seoTitle: z.string().trim().max(160).optional(),
     seoDescription: z.string().trim().max(320).optional(),
     merchantCondition: z.enum(["new", "refurbished", "used"]).nullable().optional(),
@@ -96,7 +94,7 @@ const actionSchema = z.discriminatedUnion("action", [
     merchantAgeGroup: z.enum(["newborn", "infant", "toddler", "kids", "adult"]).nullable().optional(),
     googleProductCategory: z.string().trim().max(500).optional(),
     merchantIdentifierExists: z.boolean().nullable().optional(),
-    stockReason: z.string().trim().min(10).max(500),
+    stockReason: z.string().trim().max(500).default("Cadastro inicial sem estoque informado"),
     variants: z.array(variantSchema).max(500)
   })
 ]);
@@ -143,6 +141,14 @@ function statusMutationError(
     };
   }
 
+  if (status === "active" && message.includes("active product is incomplete")) {
+    return {
+      message:
+        "Complete descrição, categoria, preço e dados de entrega antes de publicar o produto.",
+      statusCode: 409
+    };
+  }
+
   if (message.includes("a status reason is required")) {
     return {
       message: "Informe o motivo da alteração de status.",
@@ -178,6 +184,14 @@ function saveProductError(
   if (message.includes("an active product requires at least one active variant")) {
     return {
       message: "Mantenha pelo menos uma variação ativa antes de publicar.",
+      statusCode: 409
+    };
+  }
+
+  if (message.includes("active product is incomplete")) {
+    return {
+      message:
+        "O rascunho pode ser salvo, mas a publicação exige descrição, categoria, preço e dados de entrega.",
       statusCode: 409
     };
   }
@@ -263,6 +277,7 @@ async function authorizedClient(request: NextRequest) {
   ) {
     return null;
   }
+  if (!(await hasRequiredInternalMfa(supabase))) return null;
   return supabase;
 }
 
@@ -295,6 +310,15 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
       };
     });
     const category = rows(product.categories)[0] ?? record(product.categories);
+    const categoryLinks = rows(product.product_categories);
+    const linkedCategories = categoryLinks.flatMap((link) => {
+      const linked = rows(link.categories)[0] ?? record(link.categories);
+      const id = text(link.category_id);
+      return id ? [{ id, name: text(linked?.name), primary: link.is_primary === true }] : [];
+    });
+    const categoryIds = linkedCategories.length
+      ? linkedCategories.map((item) => item.id)
+      : [text(product.category_id)].filter(Boolean);
     const images = rows(product.product_images)
       .flatMap((image) => {
         const url = mediaUrl(text(image.storage_path));
@@ -346,7 +370,9 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
           ? null
           : Math.round(number(product.compare_at_price) * 100),
       categoryId: text(product.category_id),
+      categoryIds,
       categoryName: text(category?.name),
+      categoryNames: linkedCategories.map((item) => item.name).filter(Boolean),
       modelId: text(product.model_id),
       collectionId: text(product.collection_id),
       shortDescription: text(product.short_description),
@@ -440,6 +466,38 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
 const cleanCatalogSearch = (value: string) =>
   value.replaceAll(/[^\p{L}\p{N}\s@.+-]/gu, " ").trim().slice(0, 80);
 
+const catalogCode = (value: string, upper = false) => {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")
+    .slice(0, 120);
+  return upper ? normalized.toUpperCase() : normalized;
+};
+
+async function uniqueCatalogCode(
+  supabase: Awaited<ReturnType<typeof authorizedClient>> & {},
+  table: "products" | "product_variants",
+  column: "slug" | "sku",
+  requested: string,
+  fallback: string,
+  currentId?: string
+) {
+  const base = catalogCode(requested || fallback, column === "sku") ||
+    (column === "sku" ? "PRODUTO" : "produto");
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const candidate = suffix === 1 ? base : `${base}-${suffix}`;
+    let query = supabase.from(table).select("id").eq(column, candidate).limit(1);
+    if (currentId) query = query.neq("id", currentId);
+    const result = await query.maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return candidate;
+  }
+  throw new Error(`could not generate unique ${column}`);
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await authorizedClient(request);
   if (!supabase) {
@@ -494,7 +552,7 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
     });
   const productSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_categories(category_id,is_primary,categories(id,name)),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
 
   const variantMatches = queryText
     ? await (async () => {
@@ -683,7 +741,14 @@ export async function GET(request: NextRequest) {
     {
       products: serializedProducts.map((product) => ({
         ...product,
-        canDelete: deleteEligibility[product.id] === true
+        canDelete:
+          deleteEligibility[product.id] === true ||
+          record(deleteEligibility[product.id])?.canDelete === true,
+        deleteBlockers: Array.isArray(record(deleteEligibility[product.id])?.blockers)
+          ? (record(deleteEligibility[product.id])?.blockers as unknown[]).filter(
+              (item): item is string => typeof item === "string" && item.length > 0
+            )
+          : []
       })),
       total: result.total,
       page,
@@ -786,21 +851,82 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (parsed.data.action === "save") {
-    if (["inactive", "archived", "rejected"].includes(parsed.data.status) && !parsed.data.statusReason?.trim()) {
+    const categoryIds = [
+      ...new Set([
+        ...(parsed.data.categoryId ? [parsed.data.categoryId] : []),
+        ...parsed.data.categoryIds
+      ])
+    ];
+    const slug = await uniqueCatalogCode(
+      supabase,
+      "products",
+      "slug",
+      parsed.data.slug,
+      parsed.data.name,
+      parsed.data.productId
+    );
+    const variants: z.infer<typeof variantSchema>[] = [];
+    const usedSkus = new Set<string>();
+    for (const variant of parsed.data.variants) {
+      let sku = await uniqueCatalogCode(
+        supabase,
+        "product_variants",
+        "sku",
+        variant.sku,
+        `${parsed.data.name}-${variant.color}-${variant.size}`,
+        variant.id
+      );
+      let localSuffix = 2;
+      while (usedSkus.has(sku.toLocaleUpperCase("pt-BR"))) {
+        sku = await uniqueCatalogCode(
+          supabase,
+          "product_variants",
+          "sku",
+          `${sku}-${localSuffix}`,
+          `${parsed.data.name}-${variant.color}-${variant.size}-${localSuffix}`,
+          variant.id
+        );
+        localSuffix += 1;
+      }
+      usedSkus.add(sku.toLocaleUpperCase("pt-BR"));
+      variants.push({
+        ...variant,
+        sku
+      });
+    }
+    const payload = {
+      ...parsed.data,
+      slug,
+      categoryId: parsed.data.categoryId ?? categoryIds[0] ?? null,
+      categoryIds,
+      variants
+    };
+    if (["inactive", "archived", "rejected"].includes(payload.status) && !payload.statusReason?.trim()) {
       return NextResponse.json(
         { message: "Informe o motivo da alteração de status." },
         { status: 400, headers: noStore }
       );
     }
-    if (parsed.data.status === "active" && !parsed.data.variants.some((variant) => variant.active)) {
+    if (
+      payload.status === "active" &&
+      (!payload.description ||
+        !payload.categoryId ||
+        !payload.priceInCents ||
+        !payload.weightGrams ||
+        !payload.heightCm ||
+        !payload.widthCm ||
+        !payload.lengthCm ||
+        !payload.variants.some((variant) => variant.active))
+    ) {
       return NextResponse.json(
         { message: "Mantenha pelo menos uma variação ativa antes de publicar." },
         { status: 400, headers: noStore }
       );
     }
     if (
-      parsed.data.compareAtPriceInCents !== null &&
-      parsed.data.compareAtPriceInCents <= parsed.data.priceInCents
+      payload.compareAtPriceInCents !== null &&
+      payload.priceInCents !== null &&
+      payload.compareAtPriceInCents <= payload.priceInCents
     ) {
       return NextResponse.json(
         { message: "O preço anterior deve ser maior que o preço de venda." },
@@ -808,7 +934,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     const result = await supabase.rpc("admin_save_product_authorized", {
-      p_payload: parsed.data
+      p_payload: payload
     });
 
     if (result.error || typeof result.data !== "string") {
@@ -824,7 +950,7 @@ export async function PATCH(request: NextRequest) {
       {
         ok: true,
         productId: result.data,
-        message: parsed.data.productId ? "Produto atualizado." : "Produto criado como configurado."
+        message: payload.productId ? "Produto atualizado." : "Produto criado como configurado."
       },
       { headers: noStore }
     );

@@ -1,0 +1,413 @@
+- generic [active] [ref=f11e1]:
+  - link "Ir para o conteúdo principal" [ref=f11e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - progressbar [aria-hidden]
+  - banner [ref=f11e3]:
+    - generic [ref=f11e4]:
+      - link "curti Z — página inicial" [ref=f11e5] [cursor=pointer]:
+        - /url: /
+        - img "curti Z" [ref=f11e6]
+      - search [ref=f11e8]:
+        - generic [ref=f11e9]: Buscar produtos
+        - combobox "Buscar produtos" [ref=f11e10]
+        - button "Buscar" [ref=f11e11] [cursor=pointer]
+      - navigation "Conta e compras" [ref=f11e15]:
+        - link "Entrar na minha conta" [ref=f11e16] [cursor=pointer]:
+          - /url: /login
+          - generic [ref=f11e20]:
+            - generic [ref=f11e21]: Olá, entre
+            - text: Minha conta
+        - link "Favoritos" [ref=f11e22] [cursor=pointer]:
+          - /url: /favoritos
+        - link "Carrinho com 0 itens" [ref=f11e25] [cursor=pointer]:
+          - /url: /carrinho
+    - navigation "Categorias principais" [ref=f11e29]:
+      - link "Início" [ref=f11e30] [cursor=pointer]:
+        - /url: /
+      - link "Masculino" [ref=f11e31] [cursor=pointer]:
+        - /url: /masculino
+      - link "Feminino" [ref=f11e32] [cursor=pointer]:
+        - /url: /feminino
+      - link "Infantil" [ref=f11e33] [cursor=pointer]:
+        - /url: /infantil
+      - link "Slides" [ref=f11e34] [cursor=pointer]:
+        - /url: /slides
+      - link "Sandálias" [ref=f11e35] [cursor=pointer]:
+        - /url: /sandalias
+      - link "Lançamentos" [ref=f11e36] [cursor=pointer]:
+        - /url: /lancamentos
+      - link "Ofertas" [ref=f11e37] [cursor=pointer]:
+        - /url: /ofertas
+      - link "Mais vendidos" [ref=f11e38] [cursor=pointer]:
+        - /url: /mais-vendidos
+      - link "Rastrear pedido" [ref=f11e39] [cursor=pointer]:
+        - /url: /rastrear-pedido
+      - link "Atendimento" [ref=f11e40] [cursor=pointer]:
+        - /url: /ajuda
+  - main [ref=f11e41]:
+    - region "Destaques da curti Z" [ref=f11e43]:
+      - heading "Conheça os lançamentos da curti Z" [level=1] [ref=f11e44]
+      - link "Conheça os lançamentos da curti Z" [ref=f11e45] [cursor=pointer]:
+        - /url: /lancamentos
+        - img "Conheça os lançamentos da curti Z" [ref=f11e47]
+    - region "Vantagens curti Z" [ref=f11e49]:
+      - generic [ref=f11e50]:
+        - generic [ref=f11e56]:
+          - strong [ref=f11e57]: Carrinho preservado
+          - generic [ref=f11e58]: Sua seleção continua com você.
+        - generic [ref=f11e64]:
+          - strong [ref=f11e65]: Compra protegida
+          - generic [ref=f11e66]: Preço e estoque validados antes do pedido.
+        - generic [ref=f11e74]:
+          - strong [ref=f11e75]: Acompanhe seu pedido
+          - generic [ref=f11e76]: Tudo organizado na sua conta.
+        - generic [ref=f11e81]:
+          - strong [ref=f11e82]: Atendimento fácil
+          - generic [ref=f11e83]: Ajuda disponível durante sua compra.
+    - region [ref=f11e85]:
+      - heading "Compre por categoria" [level=2] [ref=f11e86]
+      - generic [ref=f11e87]:
+        - generic "Carrossel de categorias" [ref=f11e88]:
+          - generic [ref=f11e89]:
+            - link [ref=f11e91] [cursor=pointer]:
+              - /url: /masculino
+              - generic [ref=f11e92]:
+                - heading "Masculino" [level=3] [ref=f11e93]
+                - generic [ref=f11e94]: Ver produtos
+            - link [ref=f11e99] [cursor=pointer]:
+              - /url: /feminino
+              - generic [ref=f11e100]:
+                - heading "Feminino" [level=3] [ref=f11e101]
+                - generic [ref=f11e102]: Ver produtos
+            - link [ref=f11e107] [cursor=pointer]:
+              - /url: /infantil
+              - generic [ref=f11e108]:
+                - heading "Infantil" [level=3] [ref=f11e109]
+                - generic [ref=f11e110]: Ver produtos
+            - link [ref=f11e115] [cursor=pointer]:
+              - /url: /slides
+              - generic [ref=f11e116]:
+                - heading "Slides" [level=3] [ref=f11e117]
+                - generic [ref=f11e118]: Ver produtos
+            - link [ref=f11e123] [cursor=pointer]:
+              - /url: /sandalias
+              - generic [ref=f11e124]:
+                - heading "Sandálias" [level=3] [ref=f11e125]
+                - generic [ref=f11e126]: Ver produtos
+        - generic "Controles das categorias" [ref=f11e130]:
+          - button "Categoria anterior" [ref=f11e131] [cursor=pointer]
+          - button "Próxima categoria" [ref=f11e134] [cursor=pointer]
+    - region [ref=f11e138]:
+      - generic [ref=f11e139]:
+        - generic [ref=f11e140]:
+          - paragraph [ref=f11e141]: Seleção especial
+          - heading "Ofertas em destaque" [level=2] [ref=f11e142]
+        - link "Ver todos" [ref=f11e143] [cursor=pointer]:
+          - /url: /ofertas
+      - generic [ref=f11e146]:
+        - article [ref=f11e147]:
+          - link "-29% Chinelo da curti Z" [ref=f11e148] [cursor=pointer]:
+            - /url: /produto/chinelo
+            - generic [ref=f11e149]: "-29%"
+            - img "Chinelo da curti Z" [ref=f11e150]
+          - button "Favoritar Chinelo" [ref=f11e151] [cursor=pointer]
+          - generic [ref=f11e154]:
+            - paragraph [ref=f11e155]: Masculino
+            - heading [level=3] [ref=f11e156]:
+              - link "Chinelo" [ref=f11e157] [cursor=pointer]:
+                - /url: /produto/chinelo
+            - generic "0 de 5, 0 avaliações" [ref=f11e158]:
+              - strong [ref=f11e161]: "0"
+              - generic [ref=f11e162]: (0)
+            - generic [ref=f11e163]:
+              - strong [ref=f11e164]: R$ 50,00
+              - generic [ref=f11e165]: R$ 70,00
+        - article [ref=f11e166]:
+          - link "-20% curti Z Slide Bold Marinho da curti Z" [ref=f11e167] [cursor=pointer]:
+            - /url: /produto/slide-bold-marinho
+            - generic [ref=f11e168]: "-20%"
+            - img "curti Z Slide Bold Marinho da curti Z" [ref=f11e170]
+          - button "Favoritar curti Z Slide Bold Marinho" [ref=f11e171] [cursor=pointer]
+          - generic [ref=f11e174]:
+            - paragraph [ref=f11e175]: Slides
+            - heading [level=3] [ref=f11e176]:
+              - link "curti Z Slide Bold Marinho" [ref=f11e177] [cursor=pointer]:
+                - /url: /produto/slide-bold-marinho
+            - generic "0 de 5, 0 avaliações" [ref=f11e178]:
+              - strong [ref=f11e181]: "0"
+              - generic [ref=f11e182]: (0)
+            - generic [ref=f11e183]:
+              - strong [ref=f11e184]: R$ 79,90
+              - generic [ref=f11e185]: R$ 99,90
+        - article [ref=f11e186]:
+          - link "-27% curti Z Sandália Comfort Areia da curti Z" [ref=f11e187] [cursor=pointer]:
+            - /url: /produto/sandalia-comfort-areia
+            - generic [ref=f11e188]: "-27%"
+            - img "curti Z Sandália Comfort Areia da curti Z" [ref=f11e190]
+          - button "Favoritar curti Z Sandália Comfort Areia" [ref=f11e191] [cursor=pointer]
+          - generic [ref=f11e194]:
+            - paragraph [ref=f11e195]: Sandálias
+            - heading [level=3] [ref=f11e196]:
+              - link "curti Z Sandália Comfort Areia" [ref=f11e197] [cursor=pointer]:
+                - /url: /produto/sandalia-comfort-areia
+            - generic "0 de 5, 0 avaliações" [ref=f11e198]:
+              - strong [ref=f11e201]: "0"
+              - generic [ref=f11e202]: (0)
+            - generic [ref=f11e203]:
+              - strong [ref=f11e204]: R$ 79,90
+              - generic [ref=f11e205]: R$ 109,90
+        - article [ref=f11e206]:
+          - link "-20% curti Z Infantil Joy Rosa da curti Z" [ref=f11e207] [cursor=pointer]:
+            - /url: /produto/infantil-joy-rosa
+            - generic [ref=f11e208]: "-20%"
+            - img "curti Z Infantil Joy Rosa da curti Z" [ref=f11e210]
+          - button "Favoritar curti Z Infantil Joy Rosa" [ref=f11e211] [cursor=pointer]
+          - generic [ref=f11e214]:
+            - paragraph [ref=f11e215]: Infantil
+            - heading [level=3] [ref=f11e216]:
+              - link "curti Z Infantil Joy Rosa" [ref=f11e217] [cursor=pointer]:
+                - /url: /produto/infantil-joy-rosa
+            - generic "0 de 5, 0 avaliações" [ref=f11e218]:
+              - strong [ref=f11e221]: "0"
+              - generic [ref=f11e222]: (0)
+            - generic [ref=f11e223]:
+              - strong [ref=f11e224]: R$ 39,90
+              - generic [ref=f11e225]: R$ 49,90
+        - article [ref=f11e226]:
+          - link "-25% curti Z Flip-Flop Wave Preto — Preto da curti Z" [ref=f11e227] [cursor=pointer]:
+            - /url: /produto/flip-flop-wave-preto?variant=30000000-0000-0000-0000-000000000001
+            - generic [ref=f11e228]: "-25%"
+            - img "curti Z Flip-Flop Wave Preto — Preto da curti Z" [ref=f11e230]
+          - button "Favoritar curti Z Flip-Flop Wave Preto — Preto" [ref=f11e231] [cursor=pointer]
+          - generic [ref=f11e234]:
+            - paragraph [ref=f11e235]: Masculino
+            - heading [level=3] [ref=f11e236]:
+              - link "curti Z Flip-Flop Wave Preto — Preto" [ref=f11e237] [cursor=pointer]:
+                - /url: /produto/flip-flop-wave-preto?variant=30000000-0000-0000-0000-000000000001
+            - generic "0 de 5, 0 avaliações" [ref=f11e238]:
+              - strong [ref=f11e241]: "0"
+              - generic [ref=f11e242]: (0)
+            - generic [ref=f11e243]:
+              - strong [ref=f11e244]: R$ 59,90
+              - generic [ref=f11e245]: R$ 79,90
+        - article [ref=f11e246]:
+          - link "-21% curti Z Flip-Flop Slim Coral — Coral da curti Z" [ref=f11e247] [cursor=pointer]:
+            - /url: /produto/flip-flop-slim-coral?variant=30000000-0000-0000-0000-000000000002
+            - generic [ref=f11e248]: "-21%"
+            - img "curti Z Flip-Flop Slim Coral — Coral da curti Z" [ref=f11e250]
+          - button "Favoritar curti Z Flip-Flop Slim Coral — Coral" [ref=f11e251] [cursor=pointer]
+          - generic [ref=f11e254]:
+            - paragraph [ref=f11e255]: Feminino
+            - heading [level=3] [ref=f11e256]:
+              - link "curti Z Flip-Flop Slim Coral — Coral" [ref=f11e257] [cursor=pointer]:
+                - /url: /produto/flip-flop-slim-coral?variant=30000000-0000-0000-0000-000000000002
+            - generic "0 de 5, 0 avaliações" [ref=f11e258]:
+              - strong [ref=f11e261]: "0"
+              - generic [ref=f11e262]: (0)
+            - generic [ref=f11e263]:
+              - strong [ref=f11e264]: R$ 54,90
+              - generic [ref=f11e265]: R$ 69,90
+    - region [ref=f11e267]:
+      - generic [ref=f11e268]:
+        - generic [ref=f11e269]:
+          - paragraph [ref=f11e270]: Os favoritos dos nossos clientes
+          - heading "Mais vendidos" [level=2] [ref=f11e271]
+        - link "Ver todos" [ref=f11e272] [cursor=pointer]:
+          - /url: /produtos
+      - generic [ref=f11e275]:
+        - button "Produtos anteriores" [ref=f11e276] [cursor=pointer]
+        - generic "Mais vendidos" [ref=f11e279]:
+          - generic [ref=f11e280]:
+            - article [ref=f11e282]:
+              - link "-20% curti Z Infantil Joy Rosa da curti Z" [ref=f11e283] [cursor=pointer]:
+                - /url: /produto/infantil-joy-rosa
+                - generic [ref=f11e284]: "-20%"
+                - img "curti Z Infantil Joy Rosa da curti Z" [ref=f11e286]
+              - button "Favoritar curti Z Infantil Joy Rosa" [ref=f11e287] [cursor=pointer]
+              - generic [ref=f11e290]:
+                - paragraph [ref=f11e291]: Infantil
+                - heading [level=3] [ref=f11e292]:
+                  - link "curti Z Infantil Joy Rosa" [ref=f11e293] [cursor=pointer]:
+                    - /url: /produto/infantil-joy-rosa
+                - generic "0 de 5, 0 avaliações" [ref=f11e294]:
+                  - strong [ref=f11e297]: "0"
+                  - generic [ref=f11e298]: (0)
+                - generic [ref=f11e299]:
+                  - strong [ref=f11e300]: R$ 39,90
+                  - generic [ref=f11e301]: R$ 49,90
+            - article [ref=f11e303]:
+              - link "-20% curti Z Slide Bold Marinho da curti Z" [ref=f11e304] [cursor=pointer]:
+                - /url: /produto/slide-bold-marinho
+                - generic [ref=f11e305]: "-20%"
+                - img "curti Z Slide Bold Marinho da curti Z" [ref=f11e307]
+              - button "Favoritar curti Z Slide Bold Marinho" [ref=f11e308] [cursor=pointer]
+              - generic [ref=f11e311]:
+                - paragraph [ref=f11e312]: Slides
+                - heading [level=3] [ref=f11e313]:
+                  - link "curti Z Slide Bold Marinho" [ref=f11e314] [cursor=pointer]:
+                    - /url: /produto/slide-bold-marinho
+                - generic "0 de 5, 0 avaliações" [ref=f11e315]:
+                  - strong [ref=f11e318]: "0"
+                  - generic [ref=f11e319]: (0)
+                - generic [ref=f11e320]:
+                  - strong [ref=f11e321]: R$ 79,90
+                  - generic [ref=f11e322]: R$ 99,90
+            - article [ref=f11e324]:
+              - link [ref=f11e325] [cursor=pointer]:
+                - /url: /produto/slide-comfort-bege
+                - img "curti Z Slide Comfort Bege da curti Z" [ref=f11e326]
+              - button "Favoritar curti Z Slide Comfort Bege" [ref=f11e327] [cursor=pointer]
+              - generic [ref=f11e330]:
+                - paragraph [ref=f11e331]: Feminino
+                - heading [level=3] [ref=f11e332]:
+                  - link "curti Z Slide Comfort Bege" [ref=f11e333] [cursor=pointer]:
+                    - /url: /produto/slide-comfort-bege
+                - generic "0 de 5, 0 avaliações" [ref=f11e334]:
+                  - strong [ref=f11e337]: "0"
+                  - generic [ref=f11e338]: (0)
+                - strong [ref=f11e340]: R$ 29,90
+            - article [ref=f11e342]:
+              - link "-25% curti Z Flip-Flop Wave Preto — Preto da curti Z" [ref=f11e343] [cursor=pointer]:
+                - /url: /produto/flip-flop-wave-preto?variant=30000000-0000-0000-0000-000000000001
+                - generic [ref=f11e344]: "-25%"
+                - img "curti Z Flip-Flop Wave Preto — Preto da curti Z" [ref=f11e346]
+              - button "Favoritar curti Z Flip-Flop Wave Preto — Preto" [ref=f11e347] [cursor=pointer]
+              - generic [ref=f11e350]:
+                - paragraph [ref=f11e351]: Masculino
+                - heading [level=3] [ref=f11e352]:
+                  - link "curti Z Flip-Flop Wave Preto — Preto" [ref=f11e353] [cursor=pointer]:
+                    - /url: /produto/flip-flop-wave-preto?variant=30000000-0000-0000-0000-000000000001
+                - generic "0 de 5, 0 avaliações" [ref=f11e354]:
+                  - strong [ref=f11e357]: "0"
+                  - generic [ref=f11e358]: (0)
+                - generic [ref=f11e359]:
+                  - strong [ref=f11e360]: R$ 59,90
+                  - generic [ref=f11e361]: R$ 79,90
+            - article [ref=f11e363]:
+              - link "-27% curti Z Sandália Comfort Areia da curti Z" [ref=f11e364] [cursor=pointer]:
+                - /url: /produto/sandalia-comfort-areia
+                - generic [ref=f11e365]: "-27%"
+                - img "curti Z Sandália Comfort Areia da curti Z" [ref=f11e367]
+              - button "Favoritar curti Z Sandália Comfort Areia" [ref=f11e368] [cursor=pointer]
+              - generic [ref=f11e371]:
+                - paragraph [ref=f11e372]: Sandálias
+                - heading [level=3] [ref=f11e373]:
+                  - link "curti Z Sandália Comfort Areia" [ref=f11e374] [cursor=pointer]:
+                    - /url: /produto/sandalia-comfort-areia
+                - generic "0 de 5, 0 avaliações" [ref=f11e375]:
+                  - strong [ref=f11e378]: "0"
+                  - generic [ref=f11e379]: (0)
+                - generic [ref=f11e380]:
+                  - strong [ref=f11e381]: R$ 79,90
+                  - generic [ref=f11e382]: R$ 109,90
+            - article [ref=f11e384]:
+              - link [ref=f11e385] [cursor=pointer]:
+                - /url: /produto/flip-flop-classic-preto
+                - img "curti Z Flip-Flop Classic Preto da curti Z" [ref=f11e387]
+              - button "Favoritar curti Z Flip-Flop Classic Preto" [ref=f11e388] [cursor=pointer]
+              - generic [ref=f11e391]:
+                - paragraph [ref=f11e392]: Masculino
+                - heading [level=3] [ref=f11e393]:
+                  - link "curti Z Flip-Flop Classic Preto" [ref=f11e394] [cursor=pointer]:
+                    - /url: /produto/flip-flop-classic-preto
+                - generic "0 de 5, 0 avaliações" [ref=f11e395]:
+                  - strong [ref=f11e398]: "0"
+                  - generic [ref=f11e399]: (0)
+                - strong [ref=f11e401]: R$ 49,90
+            - article [ref=f11e403]:
+              - link "-21% curti Z Flip-Flop Slim Coral — Coral da curti Z" [ref=f11e404] [cursor=pointer]:
+                - /url: /produto/flip-flop-slim-coral?variant=30000000-0000-0000-0000-000000000002
+                - generic [ref=f11e405]: "-21%"
+                - img "curti Z Flip-Flop Slim Coral — Coral da curti Z" [ref=f11e407]
+              - button "Favoritar curti Z Flip-Flop Slim Coral — Coral" [ref=f11e408] [cursor=pointer]
+              - generic [ref=f11e411]:
+                - paragraph [ref=f11e412]: Feminino
+                - heading [level=3] [ref=f11e413]:
+                  - link "curti Z Flip-Flop Slim Coral — Coral" [ref=f11e414] [cursor=pointer]:
+                    - /url: /produto/flip-flop-slim-coral?variant=30000000-0000-0000-0000-000000000002
+                - generic "0 de 5, 0 avaliações" [ref=f11e415]:
+                  - strong [ref=f11e418]: "0"
+                  - generic [ref=f11e419]: (0)
+                - generic [ref=f11e420]:
+                  - strong [ref=f11e421]: R$ 54,90
+                  - generic [ref=f11e422]: R$ 69,90
+            - article [ref=f11e424]:
+              - link [ref=f11e425] [cursor=pointer]:
+                - /url: /produto/slide-soft-preto
+                - img "curti Z Slide Soft Preto da curti Z" [ref=f11e427]
+              - button "Favoritar curti Z Slide Soft Preto" [ref=f11e428] [cursor=pointer]
+              - generic [ref=f11e431]:
+                - paragraph [ref=f11e432]: Slides
+                - heading [level=3] [ref=f11e433]:
+                  - link "curti Z Slide Soft Preto" [ref=f11e434] [cursor=pointer]:
+                    - /url: /produto/slide-soft-preto
+                - generic "0 de 5, 0 avaliações" [ref=f11e435]:
+                  - strong [ref=f11e438]: "0"
+                  - generic [ref=f11e439]: (0)
+                - strong [ref=f11e441]: R$ 69,90
+        - button "Próximos produtos" [ref=f11e442] [cursor=pointer]
+  - contentinfo [ref=f11e445]:
+    - generic [ref=f11e446]:
+      - generic [ref=f11e447]:
+        - link "curti Z — página inicial" [ref=f11e448] [cursor=pointer]:
+          - /url: /
+          - img "curti Z" [ref=f11e449]
+        - paragraph [ref=f11e450]: A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de compra clara e organizada.
+        - text: Loja exclusivamente online.
+      - navigation "Comprar" [ref=f11e451]:
+        - generic [ref=f11e452]:
+          - heading "Comprar" [level=2] [ref=f11e453]
+          - link "Todos os produtos" [ref=f11e454] [cursor=pointer]:
+            - /url: /produtos
+          - link "Chinelos e slides masculinos" [ref=f11e455] [cursor=pointer]:
+            - /url: /masculino
+          - link "Chinelos e sandálias femininas" [ref=f11e456] [cursor=pointer]:
+            - /url: /feminino
+          - link "Chinelos e sandálias infantis" [ref=f11e457] [cursor=pointer]:
+            - /url: /infantil
+          - link "Lançamentos" [ref=f11e458] [cursor=pointer]:
+            - /url: /lancamentos
+      - navigation "Institucional" [ref=f11e459]:
+        - generic [ref=f11e460]:
+          - heading "Institucional" [level=2] [ref=f11e461]
+          - link "Quem somos" [ref=f11e462] [cursor=pointer]:
+            - /url: /sobre
+          - link "Fale conosco" [ref=f11e463] [cursor=pointer]:
+            - /url: /contato
+          - link "Atendimento" [ref=f11e464] [cursor=pointer]:
+            - /url: /ajuda
+      - navigation "Políticas" [ref=f11e465]:
+        - generic [ref=f11e466]:
+          - heading "Políticas" [level=2] [ref=f11e467]
+          - link "Centro de políticas" [ref=f11e468] [cursor=pointer]:
+            - /url: /politicas
+          - link "Termos" [ref=f11e469] [cursor=pointer]:
+            - /url: /politicas/termos-de-uso
+          - link "Privacidade" [ref=f11e470] [cursor=pointer]:
+            - /url: /politicas/aviso-de-privacidade
+          - link "Cookies" [ref=f11e471] [cursor=pointer]:
+            - /url: /politicas/politica-de-cookies
+          - link "Trocas e devoluções" [ref=f11e472] [cursor=pointer]:
+            - /url: /trocas-e-devolucoes
+          - link "Formas de envio" [ref=f11e473] [cursor=pointer]:
+            - /url: /formas-de-envio
+          - link "Formas de pagamento" [ref=f11e474] [cursor=pointer]:
+            - /url: /formas-de-pagamento
+          - link "Garantia" [ref=f11e475] [cursor=pointer]:
+            - /url: /politicas/garantia
+          - link "Acessibilidade" [ref=f11e476] [cursor=pointer]:
+            - /url: /politicas/acessibilidade
+      - navigation "Representantes" [ref=f11e477]:
+        - generic [ref=f11e478]:
+          - heading "Representantes" [level=2] [ref=f11e479]
+          - link "Termos" [ref=f11e480] [cursor=pointer]:
+            - /url: /politicas/termos-representante
+          - link "Kits e qualificação" [ref=f11e481] [cursor=pointer]:
+            - /url: /politicas/kits-e-qualificacao
+          - link "Comissões" [ref=f11e482] [cursor=pointer]:
+            - /url: /politicas/comissoes
+          - link "Uso da marca" [ref=f11e483] [cursor=pointer]:
+            - /url: /politicas/criativos
+    - generic [ref=f11e485]:
+      - generic [ref=f11e486]: © 2026 curti Z. Todos os direitos reservados.
+      - button "Preferências de cookies" [ref=f11e487] [cursor=pointer]

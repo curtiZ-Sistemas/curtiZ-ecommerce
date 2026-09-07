@@ -25,7 +25,7 @@ const compactCurrency = new Intl.NumberFormat("pt-BR", {
 });
 
 export function RevenueChart({ data }: { data: RevenuePoint[] }) {
-  if (data.length === 0) {
+  if (!data.some((point) => point.gross !== 0 || point.net !== 0)) {
     return <p className="admin-empty-copy">Sem vendas no período selecionado.</p>;
   }
 

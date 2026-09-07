@@ -10279,7 +10279,7 @@ body {
 }
 
 .catalog-heading {
-  padding: clamp(18px, 3vw, 30px);
+  padding: 12px 0;
   border: 1px solid #dedede;
   border-radius: 6px;
   background: var(--surface-primary);
@@ -10399,7 +10399,7 @@ body {
   }
 
   .catalog-heading {
-    padding: 20px;
+    padding: 10px 0;
   }
 }
 
@@ -14232,4 +14232,33 @@ body:has(.checkout-transition) .help-widget {
   .home-product-carousel-track {
     transition: none !important;
   }
+}
+
+/* Composição compacta sem recortar a arte do banner. */
+.catalog-page .catalog-heading {
+  margin-bottom: 16px;
+  border: 0;
+  background: transparent;
+}
+.catalog-page .catalog-heading h1 {
+  margin-block: 4px 8px;
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+}
+.catalog-page .catalog-heading p { margin-block: 4px; }
+.header-main > .brand {
+  justify-content: center;
+  background: #fff;
+  border-radius: 4px;
+}
+.header-main > .brand img {
+  width: 132%;
+  max-width: none;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .homepage-hero.hero.container { margin-top: 4px; }
+  .homepage-section-metric:has(> .homepage-hero) + .homepage-section-metric > .home-builder-section { padding-top: 20px; }
+  .catalog-page.page-shell { padding-top: 12px; }
+  .catalog-page .catalog-heading { margin-bottom: 10px; }
+  .catalog-page .catalog-heading > div > p:last-child { font-size: .85rem; line-height: 1.45; }
 }

@@ -1,0 +1,249 @@
+- generic [ref=f22e2]:
+  - link "Pular para o conteúdo" [ref=f22e3] [cursor=pointer]:
+    - /url: "#panel-content"
+  - complementary [ref=f22e4]:
+    - generic [ref=f22e5]:
+      - link [ref=f22e6] [cursor=pointer]:
+        - /url: /gerencia
+        - img "curti Z" [ref=f22e7]
+      - button "Recolher menu lateral" [ref=f22e9] [cursor=pointer]
+    - paragraph [ref=f22e13]: Painel Gerência
+    - navigation "Menu Gerência" [ref=f22e14]:
+      - generic [ref=f22e15]:
+        - heading "Visão geral" [level=2] [ref=f22e16]
+        - generic [ref=f22e17]:
+          - link "Dashboard executivo" [ref=f22e18] [cursor=pointer]:
+            - /url: /gerencia
+          - link "Visão estratégica" [ref=f22e24] [cursor=pointer]:
+            - /url: /gerencia/visao-estrategica
+      - generic [ref=f22e28]:
+        - heading "Resultados" [level=2] [ref=f22e29]
+        - generic [ref=f22e30]:
+          - link "Controle financeiro" [ref=f22e31] [cursor=pointer]:
+            - /url: /gerencia/financeiro
+          - link "Pedidos e vendas" [ref=f22e36] [cursor=pointer]:
+            - /url: /gerencia/pedidos-vendas
+          - link "Inteligência da loja" [ref=f22e41] [cursor=pointer]:
+            - /url: /gerencia/inteligencia-loja
+          - link "Clientes" [ref=f22e45] [cursor=pointer]:
+            - /url: /gerencia/clientes
+      - generic [ref=f22e52]:
+        - heading "Representantes" [level=2] [ref=f22e53]
+        - generic [ref=f22e54]:
+          - link "Rede de representantes" [ref=f22e55] [cursor=pointer]:
+            - /url: /gerencia/representantes
+          - link "Solicitações" [ref=f22e62] [cursor=pointer]:
+            - /url: /gerencia/solicitacoes-representantes
+          - link "Rede de indicações" [ref=f22e68] [cursor=pointer]:
+            - /url: /gerencia/rede-indicacoes
+          - link "Níveis" [ref=f22e75] [cursor=pointer]:
+            - /url: /gerencia/niveis
+          - link "Qualificação" [ref=f22e79] [cursor=pointer]:
+            - /url: /gerencia/qualificacao
+          - link "Metas" [ref=f22e84] [cursor=pointer]:
+            - /url: /gerencia/metas
+          - link "Kits" [ref=f22e90] [cursor=pointer]:
+            - /url: /gerencia/kits
+      - generic [ref=f22e97]:
+        - heading "Financeiro" [level=2] [ref=f22e98]
+        - generic [ref=f22e99]:
+          - link "Comissões" [ref=f22e100] [cursor=pointer]:
+            - /url: /gerencia/comissoes
+          - link "Regras de comissão" [ref=f22e105] [cursor=pointer]:
+            - /url: /gerencia/regras-comissao
+          - link "Fechamentos" [ref=f22e110] [cursor=pointer]:
+            - /url: /gerencia/fechamentos
+          - link "Pagamentos" [ref=f22e117] [cursor=pointer]:
+            - /url: /gerencia/pagamentos
+      - generic [ref=f22e122]:
+        - heading "Conteúdo" [level=2] [ref=f22e123]
+        - generic [ref=f22e124]:
+          - link "Criativos" [ref=f22e125] [cursor=pointer]:
+            - /url: /gerencia/criativos
+          - link "Campanhas" [ref=f22e129] [cursor=pointer]:
+            - /url: /gerencia/campanhas
+          - link "Barra promocional" [ref=f22e135] [cursor=pointer]:
+            - /url: /gerencia/barra-promocional
+          - link "Construtor da página inicial" [ref=f22e140] [cursor=pointer]:
+            - /url: /gerencia/conteudo-loja
+          - link "Banners" [ref=f22e144] [cursor=pointer]:
+            - /url: /gerencia/banners
+      - generic [ref=f22e148]:
+        - heading "Governança" [level=2] [ref=f22e149]
+        - generic [ref=f22e150]:
+          - link "Relatórios" [ref=f22e151] [cursor=pointer]:
+            - /url: /gerencia/relatorios
+          - link "Aprovações" [ref=f22e155] [cursor=pointer]:
+            - /url: /gerencia/aprovacoes
+          - link "Logs de Atividades" [ref=f22e160] [cursor=pointer]:
+            - /url: /gerencia/auditoria
+          - link "Usuários e acessos" [ref=f22e167] [cursor=pointer]:
+            - /url: /gerencia/usuarios
+          - link "Políticas e conformidade" [ref=f22e174] [cursor=pointer]:
+            - /url: /gerencia/politicas
+          - link "Simulações" [ref=f22e180] [cursor=pointer]:
+            - /url: /gerencia/simulacoes
+          - link "Alertas" [ref=f22e184] [cursor=pointer]:
+            - /url: /gerencia/alertas
+      - generic [ref=f22e188]:
+        - heading "Atendimento" [level=2] [ref=f22e189]
+        - generic [ref=f22e190]:
+          - link "Configurações estratégicas" [ref=f22e191] [cursor=pointer]:
+            - /url: /gerencia/configuracoes-estrategicas
+          - link "Atendimentos" [ref=f22e196] [cursor=pointer]:
+            - /url: /gerencia/atendimentos
+          - link "Central de Ajuda" [ref=f22e200] [cursor=pointer]:
+            - /url: /gerencia/central-ajuda
+    - link "Trocar painel" [ref=f22e209] [cursor=pointer]:
+      - /url: /selecionar-painel
+    - link "Abrir suporte interno" [ref=f22e213] [cursor=pointer]:
+      - /url: /gerencia/atendimentos
+      - generic [ref=f22e221]:
+        - strong [ref=f22e222]: Precisa de ajuda?
+        - generic [ref=f22e223]: Suporte interno auditado
+  - generic [ref=f22e224]:
+    - banner [ref=f22e225]:
+      - navigation "Navegação estrutural" [ref=f22e226]:
+        - link "Gerência" [ref=f22e227] [cursor=pointer]:
+          - /url: /gerencia
+        - strong [ref=f22e228]: Visão geral
+      - button "Abrir busca" [ref=f22e230] [cursor=pointer]
+      - link "Ver loja" [ref=f22e234] [cursor=pointer]:
+        - /url: https://curtiz.com.br
+      - link "Abrir notificações e pendências" [ref=f22e239] [cursor=pointer]:
+        - /url: /gerencia/alertas
+      - link "Trocar painel" [ref=f22e243] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "R Rafael Administrador Gerência" [ref=f22e246] [cursor=pointer]:
+        - /url: https://curtiz.com.br/perfil
+        - generic [ref=f22e247]: R
+        - generic [ref=f22e248]:
+          - strong [ref=f22e249]: Rafael Administrador
+          - generic [ref=f22e250]: Gerência
+      - button "Sair do painel" [ref=f22e251] [cursor=pointer]
+    - main [ref=f22e255]:
+      - generic [ref=f22e256]:
+        - generic [ref=f22e258]:
+          - generic [ref=f22e259]: Gerência
+          - heading "Dashboard executivo" [level=1] [ref=f22e260]
+          - paragraph [ref=f22e261]: Situação atual da curti Z, pendências prioritárias e desempenho do período.
+        - generic [ref=f22e262]:
+          - generic [ref=f22e263]:
+            - generic [ref=f22e264]:
+              - text: Período
+              - combobox "Período" [disabled] [ref=f22e265]:
+                - option "Hoje"
+                - option "7 dias"
+                - option "30 dias" [selected]
+                - option "Este mês"
+                - option "Mês anterior"
+                - option "Este ano"
+                - option "Personalizado"
+            - generic [ref=f22e266]:
+              - text: De
+              - textbox "De" [ref=f22e267]: 2026-08-08
+            - generic [ref=f22e268]:
+              - text: Até
+              - textbox "Até" [ref=f22e269]: 2026-09-06
+            - button "Aplicar período" [disabled] [ref=f22e271]
+          - group [ref=f22e274]:
+            - generic "Filtros avançados Produto, região, rede e campanha" [ref=f22e275] [cursor=pointer]:
+              - generic [ref=f22e276]: Filtros avançados
+              - generic [ref=f22e278]: Produto, região, rede e campanha
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+            - option "Todos" [selected]
+        - generic [ref=f22e279]:
+          - article [ref=f22e280]:
+            - generic [ref=f22e284]: Faturamento bruto
+            - strong [ref=f22e285]: —
+            - generic [ref=f22e286]: Sem base anterior comparável
+          - article [ref=f22e287]:
+            - generic [ref=f22e291]: Faturamento líquido
+            - strong [ref=f22e292]: —
+            - generic [ref=f22e293]: Após taxas e frete registrados
+          - article [ref=f22e294]:
+            - generic [ref=f22e297]: Lucro estimado
+            - strong [ref=f22e298]: —
+            - generic [ref=f22e299]: Conforme custos persistidos
+          - article [ref=f22e300]:
+            - generic [ref=f22e304]: Pedidos
+            - strong [ref=f22e305]: —
+            - generic [ref=f22e306]: Ticket médio R$ 0,00
+          - article [ref=f22e307]:
+            - generic [ref=f22e311]: Reembolsos
+            - strong [ref=f22e312]: —
+            - generic [ref=f22e313]: 0 pedido(s) no período
+          - article [ref=f22e314]:
+            - generic [ref=f22e321]: A receber
+            - strong [ref=f22e322]: —
+            - generic [ref=f22e323]: R$ 0,00 vencidos
+          - article [ref=f22e324]:
+            - generic [ref=f22e328]: A pagar
+            - strong [ref=f22e329]: —
+            - generic [ref=f22e330]: R$ 0,00 vencidos
+          - article [ref=f22e331]:
+            - generic [ref=f22e337]: Representantes ativos
+            - strong [ref=f22e338]: —
+            - generic [ref=f22e339]: 0 novos no período
+        - generic [ref=f22e340]:
+          - generic [ref=f22e341]:
+            - generic [ref=f22e343]:
+              - heading "Faturamento ao longo do tempo" [level=2] [ref=f22e344]
+              - paragraph [ref=f22e345]: Receita bruta e líquida do período selecionado.
+            - generic [ref=f22e346]: Consolidando dados
+          - generic [ref=f22e349]:
+            - generic [ref=f22e351]:
+              - heading "Aprovações pendentes" [level=2] [ref=f22e352]
+              - paragraph [ref=f22e353]: Filas que exigem decisão gerencial.
+            - link "Representantes Abrir fila relacionada 0" [ref=f22e354] [cursor=pointer]:
+              - /url: /gerencia/solicitacoes-representantes
+              - generic [ref=f22e355]:
+                - strong [ref=f22e356]: Representantes
+                - generic [ref=f22e357]: Abrir fila relacionada
+              - strong [ref=f22e358]: "0"
+            - link "Criativos Abrir fila relacionada 0" [ref=f22e359] [cursor=pointer]:
+              - /url: /gerencia/criativos
+              - generic [ref=f22e360]:
+                - strong [ref=f22e361]: Criativos
+                - generic [ref=f22e362]: Abrir fila relacionada
+              - strong [ref=f22e363]: "0"
+            - link "Campanhas Abrir fila relacionada 0" [ref=f22e364] [cursor=pointer]:
+              - /url: /gerencia/campanhas
+              - generic [ref=f22e365]:
+                - strong [ref=f22e366]: Campanhas
+                - generic [ref=f22e367]: Abrir fila relacionada
+              - strong [ref=f22e368]: "0"
+            - link "Fechamentos Abrir fila relacionada 0" [ref=f22e369] [cursor=pointer]:
+              - /url: /gerencia/fechamentos
+              - generic [ref=f22e370]:
+                - strong [ref=f22e371]: Fechamentos
+                - generic [ref=f22e372]: Abrir fila relacionada
+              - strong [ref=f22e373]: "0"
+        - generic [ref=f22e374]:
+          - generic [ref=f22e375]:
+            - generic [ref=f22e376]:
+              - heading "Alertas prioritários" [level=2] [ref=f22e377]
+              - paragraph [ref=f22e378]: Ocorrências que podem afetar caixa, comissão ou estoque.
+            - link "Ver todos" [ref=f22e379] [cursor=pointer]:
+              - /url: /gerencia/alertas
+          - generic [ref=f22e380]:
+            - generic [ref=f22e381]:
+              - generic [ref=f22e382]:
+                - text: Divergências de conciliação
+                - generic [ref=f22e383]: Registros financeiros ainda não resolvidos
+              - strong [ref=f22e384]: "0"
+            - generic [ref=f22e385]:
+              - generic [ref=f22e386]:
+                - text: Pagamentos de comissão com falha
+                - generic [ref=f22e387]: Exigem conferência antes de nova tentativa
+              - strong [ref=f22e388]: "0"
+            - generic [ref=f22e389]:
+              - generic [ref=f22e390]:
+                - text: Estoque crítico
+                - generic [ref=f22e391]: Variações no estoque mínimo ou abaixo dele
+              - strong [ref=f22e392]: "0"

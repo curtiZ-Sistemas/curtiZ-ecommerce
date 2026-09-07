@@ -1,6 +1,7 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasRequiredInternalMfa } from "./internal-mfa";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -53,6 +54,7 @@ export async function authorizeAdminRequest(
   ) {
     return null;
   }
+  if (!(await hasRequiredInternalMfa(supabase))) return null;
   return { supabase, userId: user.id };
 }
 

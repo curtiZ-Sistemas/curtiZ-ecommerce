@@ -1,0 +1,122 @@
+- generic [active] [ref=f20e1]:
+  - generic [ref=f20e2]:
+    - link "Pular para o conteúdo" [ref=f20e3] [cursor=pointer]:
+      - /url: "#panel-content"
+    - complementary [ref=f20e4]:
+      - generic [ref=f20e5]:
+        - link [ref=f20e6] [cursor=pointer]:
+          - /url: /administracao
+          - img "curti Z" [ref=f20e7]
+        - button "Fechar menu" [ref=f20e9]
+      - paragraph [ref=f20e13]: Painel Administrador
+      - navigation "Menu Administrador" [ref=f20e14]:
+        - generic [ref=f20e15]:
+          - heading "Visão geral" [level=2] [ref=f20e16]
+          - link "Dashboard" [ref=f20e18] [cursor=pointer]:
+            - /url: /administracao
+        - generic [ref=f20e22]:
+          - heading "Catálogo" [level=2] [ref=f20e23]
+          - generic [ref=f20e24]:
+            - link "Produtos" [ref=f20e25] [cursor=pointer]:
+              - /url: /administracao/produtos
+            - link "Categorias" [ref=f20e37] [cursor=pointer]:
+              - /url: /administracao/categorias
+            - link "Coleções" [ref=f20e43] [cursor=pointer]:
+              - /url: /administracao/colecoes
+        - generic [ref=f20e47]:
+          - heading "Comercial" [level=2] [ref=f20e48]
+          - generic [ref=f20e49]:
+            - link "Pedidos" [ref=f20e50] [cursor=pointer]:
+              - /url: /administracao/pedidos
+            - link "Clientes" [ref=f20e55] [cursor=pointer]:
+              - /url: /administracao/clientes
+        - generic [ref=f20e62]:
+          - heading "Conteúdo" [level=2] [ref=f20e63]
+          - generic [ref=f20e64]:
+            - link "Banners" [ref=f20e65] [cursor=pointer]:
+              - /url: /administracao/banners
+            - link "Construtor da página inicial" [ref=f20e69] [cursor=pointer]:
+              - /url: /administracao/construtor-home
+            - link "Conteúdo" [ref=f20e73] [cursor=pointer]:
+              - /url: /administracao/conteudo
+            - link "Marketing" [ref=f20e78] [cursor=pointer]:
+              - /url: /administracao/marketing
+            - link "Cupons" [ref=f20e84] [cursor=pointer]:
+              - /url: /administracao/cupons
+        - generic [ref=f20e90]:
+          - heading "Representantes" [level=2] [ref=f20e91]
+          - generic [ref=f20e92]:
+            - link "Representantes" [ref=f20e93] [cursor=pointer]:
+              - /url: /administracao/representantes
+            - link "Kits" [ref=f20e100] [cursor=pointer]:
+              - /url: /administracao/kits
+            - link "Níveis" [ref=f20e107] [cursor=pointer]:
+              - /url: /administracao/niveis
+            - link "Metas" [ref=f20e111] [cursor=pointer]:
+              - /url: /administracao/metas
+            - link "Comissões autorizadas" [ref=f20e117] [cursor=pointer]:
+              - /url: /administracao/comissoes
+            - link "Criativos" [ref=f20e122] [cursor=pointer]:
+              - /url: /administracao/criativos
+            - link "Campanhas" [ref=f20e126] [cursor=pointer]:
+              - /url: /administracao/campanhas
+            - link "Barra promocional" [ref=f20e132] [cursor=pointer]:
+              - /url: /administracao/barra-promocional
+        - generic [ref=f20e137]:
+          - heading "Governança" [level=2] [ref=f20e138]
+          - generic [ref=f20e139]:
+            - link "Avaliações" [ref=f20e140] [cursor=pointer]:
+              - /url: /administracao/avaliacoes
+            - link "Central de Ajuda" [ref=f20e144] [cursor=pointer]:
+              - /url: /administracao/central-ajuda
+            - link "Políticas e documentos legais" [ref=f20e153] [cursor=pointer]:
+              - /url: /administracao/politicas
+            - link "Treinamentos" [ref=f20e159] [cursor=pointer]:
+              - /url: /administracao/treinamentos
+            - link "Contratos" [ref=f20e164] [cursor=pointer]:
+              - /url: /administracao/contratos
+      - link "Trocar painel" [ref=f20e171] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "Abrir suporte interno" [ref=f20e175] [cursor=pointer]:
+        - /url: /administracao/atendimentos
+        - generic [ref=f20e183]:
+          - strong [ref=f20e184]: Precisa de ajuda?
+          - generic [ref=f20e185]: Suporte interno auditado
+    - generic [ref=f20e186]:
+      - banner [ref=f20e187]:
+        - button "Abrir menu" [ref=f20e188] [cursor=pointer]
+        - navigation "Navegação estrutural" [ref=f20e190]:
+          - strong [ref=f20e191]: Produtos
+        - button "Abrir busca" [ref=f20e193] [cursor=pointer]
+        - link "Abrir notificações e pendências" [ref=f20e197] [cursor=pointer]:
+          - /url: /administracao/pedidos
+        - link "R" [ref=f20e201] [cursor=pointer]:
+          - /url: https://curtiz.com.br/perfil
+        - button "Sair do painel" [ref=f20e203] [cursor=pointer]
+      - main [ref=f20e207]:
+        - generic [ref=f20e208]:
+          - heading "Produtos" [level=1] [ref=f20e211]
+          - generic [ref=f20e212]:
+            - generic [ref=f20e213]:
+              - generic [ref=f20e217]: Buscar produtos
+              - textbox "Buscar produtos" [ref=f20e218]:
+                - /placeholder: Buscar nome, slug ou SKU
+              - button "Buscar" [ref=f20e219] [cursor=pointer]
+            - generic [ref=f20e220]:
+              - generic [ref=f20e221]: Status
+              - combobox "Status" [ref=f20e222]:
+                - option "Todos" [selected]
+                - option "Rascunhos"
+                - option "Em análise"
+                - option "Publicados"
+                - option "Inativos"
+                - option "Sem estoque"
+                - option "Rejeitados"
+                - option "Arquivados"
+            - group "Filtrar disponibilidade" [ref=f20e223]:
+              - button "Todos" [ref=f20e224] [cursor=pointer]
+              - button "Publicados" [ref=f20e225] [cursor=pointer]
+              - button "Rascunhos" [ref=f20e226] [cursor=pointer]
+              - button "Sem estoque" [ref=f20e227] [cursor=pointer]
+          - strong [ref=f20e231]: Carregando produtos
+  - alert [ref=f20e232]

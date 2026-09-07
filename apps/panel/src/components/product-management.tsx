@@ -33,6 +33,7 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
+  productPublishRequirements,
   type ManagedProduct,
   type ManagedProductMedia
 } from "@/lib/product-management";
@@ -136,23 +137,22 @@ const productEditorSections: Array<{
   label: string;
   target: string;
 }> = [
-  { id: "information", label: "Informações", target: "product-step-1" },
-  { id: "commercial", label: "Preços", target: "product-step-3" },
-  { id: "images", label: "Imagens", target: "product-step-4" },
-  { id: "variants", label: "Variações", target: "product-step-5" },
-  { id: "logistics", label: "Logística", target: "product-step-7" },
-  { id: "content", label: "Conteúdo e SEO", target: "product-step-8" },
-  { id: "merchant", label: "Google Merchant", target: "product-step-9" }
+  { id: "information", label: "Básico", target: "product-step-1" },
+  { id: "commercial", label: "Venda", target: "product-step-3" },
+  { id: "logistics", label: "Entrega", target: "product-step-7" },
+  { id: "content", label: "Avançado", target: "product-step-8" }
 ];
 
 function QueuedProductImage({
   file,
   index,
-  onRemove
+  onRemove,
+  onMove
 }: {
   file: File;
   index: number;
   onRemove: () => void;
+  onMove: (direction: -1 | 1) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
 
@@ -164,7 +164,9 @@ function QueuedProductImage({
 
   return (
     <article className="product-media-queued-item">
-      {previewUrl ? (
+      {previewUrl && file.type.startsWith("video/") ? (
+        <video src={previewUrl} aria-label={`Prévia do vídeo ${index + 1}`} muted />
+      ) : previewUrl ? (
         <Image
           src={previewUrl}
           alt={`Prévia da imagem ${index + 1}`}
@@ -176,6 +178,25 @@ function QueuedProductImage({
       <div>
         <strong>{file.name}</strong>
         <span>{index === 0 ? "Será a imagem principal" : "Pronta para envio"}</span>
+        <div className="product-media-queued-actions">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={`Mover ${file.name} para antes`}
+            onClick={() => onMove(-1)}
+            disabled={index === 0}
+          >
+            <ChevronLeft />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={`Mover ${file.name} para depois`}
+            onClick={() => onMove(1)}
+          >
+            <ChevronRight />
+          </button>
+        </div>
         <button className="secondary-button" type="button" onClick={onRemove}>
           <Trash2 /> Remover
         </button>
@@ -240,6 +261,8 @@ export function ProductManagement({
   } | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [primaryCategoryId, setPrimaryCategoryId] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
   const [capabilities, setCapabilities] = useState({
@@ -253,6 +276,9 @@ export function ProductManagement({
   const [variantColors, setVariantColors] = useState("");
   const [variantSizes, setVariantSizes] = useState("");
   const [variantSkuPrefix, setVariantSkuPrefix] = useState("");
+  const [hasVariations, setHasVariations] = useState(true);
+  const [simpleStock, setSimpleStock] = useState(0);
+  const [bulkVariantPrice, setBulkVariantPrice] = useState("");
   const [newVariantSizes, setNewVariantSizes] = useState<Record<string, string>>({});
   const [colorImageSelections, setColorImageSelections] = useState<Record<string, string>>({});
   const [mediaAltTexts, setMediaAltTexts] = useState<Record<string, string>>({});
@@ -348,6 +374,10 @@ export function ProductManagement({
       setVariantColors("");
       setVariantSizes("");
       setVariantSkuPrefix("");
+      setSelectedCategoryIds([]);
+      setPrimaryCategoryId("");
+      setHasVariations(false);
+      setSimpleStock(0);
       setNewVariantSizes({});
       setColorImageSelections({});
       setQueuedMediaFiles([]);
@@ -370,6 +400,10 @@ export function ProductManagement({
         mpn: variant.mpn ?? ""
       }))
     );
+    setSelectedCategoryIds(editing.categoryIds?.length ? editing.categoryIds : editing.categoryId ? [editing.categoryId] : []);
+    setPrimaryCategoryId(editing.categoryId ?? editing.categoryIds?.[0] ?? "");
+    setHasVariations(editing.variants.length > 1 || editing.variants.some((variant) => variant.color !== "Padrão" || variant.size !== "Único"));
+    setSimpleStock(editing.variants[0]?.available ?? 0);
     setColorImageSelections({});
     setVariantSkuPrefix(editing.slug);
     setVariantColors("");
@@ -423,6 +457,35 @@ export function ProductManagement({
     [editableVariants]
   );
   const editorImages = editing === "new" || !editing ? [] : (editing.images ?? []);
+  const canUseSimpleProduct =
+    editing === "new" ||
+    !editing ||
+    editing.variants.length === 0 ||
+    (editing.variants.length === 1 &&
+      editing.variants[0]?.color === "Padrão" &&
+      editing.variants[0]?.size === "Único");
+  const missingToPublish =
+    editing && editing !== "new"
+      ? productPublishRequirements({
+          name: editing.name,
+          description: editing.description,
+          categoryIds: editing.categoryIds?.length
+            ? editing.categoryIds
+            : editing.categoryId
+              ? [editing.categoryId]
+              : [],
+          priceInCents: editing.priceInCents,
+          weightGrams: editing.weightGrams,
+          heightCm: editing.heightCm,
+          widthCm: editing.widthCm,
+          lengthCm: editing.lengthCm,
+          variants: editing.variants.map((variant) => ({
+            active: variant.active,
+            sku: variant.sku,
+            stock: variant.available
+          }))
+        })
+      : [];
 
   const readProduct = async (productId: string) => {
     const params = new URLSearchParams({ productId });
@@ -495,6 +558,29 @@ export function ProductManagement({
     const wasNew = editing === "new";
     const hadQueuedMedia = queuedMediaFiles.length > 0;
     const form = new FormData(event.currentTarget);
+    const optionalNumber = (key: string) => {
+      const value = form.get(key);
+      if (typeof value !== "string" || !value.trim()) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const variants = hasVariations
+      ? editableVariants
+      : [
+          {
+            ...(editableVariants.length === 1 ? editableVariants[0] : {}),
+            sku: editableVariants.length === 1 ? editableVariants[0]!.sku : "",
+            color: "Padrão",
+            colorHex: "",
+            size: "Único",
+            priceInCents: null,
+            costInCents: null,
+            stock: simpleStock,
+            active: true,
+            gtin: editableVariants.length === 1 ? editableVariants[0]!.gtin : "",
+            mpn: editableVariants.length === 1 ? editableVariants[0]!.mpn : ""
+          }
+        ];
     const result = await execute(
       {
         action: "save",
@@ -503,21 +589,24 @@ export function ProductManagement({
         slug: form.get("slug"),
         shortDescription: form.get("shortDescription"),
         description: form.get("description"),
-        categoryId: form.get("categoryId"),
+        categoryId: primaryCategoryId || null,
+        categoryIds: selectedCategoryIds,
         modelId: form.get("modelId") || null,
         collectionId: form.get("collectionId") || null,
         status: form.get("status"),
         statusReason: form.get("statusReason") || undefined,
         featured: form.get("featured") === "on",
-        priceInCents: Math.round(Number(form.get("price")) * 100),
+        priceInCents:
+          optionalNumber("price") === null ? null : Math.round(optionalNumber("price")! * 100),
         compareAtPriceInCents: form.get("compareAtPrice")
           ? Math.round(Number(form.get("compareAtPrice")) * 100)
           : null,
-        costInCents: Math.round(Number(form.get("cost")) * 100),
-        weightGrams: Number(form.get("weightGrams")),
-        heightCm: Number(form.get("heightCm")),
-        widthCm: Number(form.get("widthCm")),
-        lengthCm: Number(form.get("lengthCm")),
+        costInCents:
+          optionalNumber("cost") === null ? null : Math.round(optionalNumber("cost")! * 100),
+        weightGrams: optionalNumber("weightGrams"),
+        heightCm: optionalNumber("heightCm"),
+        widthCm: optionalNumber("widthCm"),
+        lengthCm: optionalNumber("lengthCm"),
         seoTitle: form.get("seoTitle"),
         seoDescription: form.get("seoDescription"),
         merchantCondition: form.get("merchantCondition") || null,
@@ -529,7 +618,7 @@ export function ProductManagement({
             ? null
             : form.get("merchantIdentifierExists") === "true",
         stockReason: form.get("stockReason"),
-        variants: editableVariants
+        variants
       },
       wasNew ? "new-product" : editing.id
     );
@@ -545,10 +634,17 @@ export function ProductManagement({
       setEditorDirty(false);
 
       if (queuedMediaFiles.length) {
-        await sendMediaFiles(savedProduct, queuedMediaFiles, (uploadedFile) => {
+        const images = queuedMediaFiles.filter((file) => file.type.startsWith("image/"));
+        const videos = queuedMediaFiles.filter((file) => file.type.startsWith("video/"));
+        await sendMediaFiles(savedProduct, images, (uploadedFile) => {
           setQueuedMediaFiles((current) => current.filter((file) => file !== uploadedFile));
         });
         savedProduct = await readProduct(productId);
+        for (const video of videos) {
+          await sendVideoFile(savedProduct, video);
+          setQueuedMediaFiles((current) => current.filter((file) => file !== video));
+          savedProduct = await readProduct(productId);
+        }
         await load();
       }
       for (const [groupKey, imageId] of Object.entries(colorImageSelections)) {
@@ -1254,7 +1350,9 @@ export function ProductManagement({
                             </button>
                           ) : capabilities.delete ? (
                             <span className="product-delete-unavailable">
-                              Possui registros relacionados; use Arquivar.
+                              {product.deleteBlockers?.length
+                                ? `Vínculo impeditivo: ${product.deleteBlockers.join(", ")}. Arquive para preservar o histórico.`
+                                : "Possui histórico comercial; use Arquivar."}
                             </span>
                           ) : null}
                         </div>
@@ -1659,30 +1757,67 @@ export function ProductManagement({
                   />
                 </label>
                 <label>
-                  <span>Slug *</span>
+                  <span>Slug (opcional)</span>
                   <input
                     name="slug"
-                    required
                     pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
                     defaultValue={editing === "new" ? "" : editing.slug}
+                    placeholder="Gerado automaticamente pelo nome"
+                  />
+                </label>
+                <label className="wide">
+                  <span>Descrição</span>
+                  <textarea
+                    name="description"
+                    maxLength={4000}
+                    rows={4}
+                    defaultValue={editing === "new" ? "" : editing.description}
+                    placeholder="Conte o essencial sobre o produto"
                   />
                 </label>
                 <p className="wide product-form-subsection">Organização no catálogo</p>
-                <label>
-                  <span>Categoria *</span>
-                  <select
-                    name="categoryId"
-                    required
-                    defaultValue={editing === "new" ? "" : editing.categoryId}
-                  >
-                    <option value="">Selecione</option>
-                    {categories.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <fieldset className="wide product-category-picker">
+                  <legend>Categorias</legend>
+                  <p>Selecione uma ou mais. A principal é usada onde apenas uma categoria cabe.</p>
+                  <div>
+                    {categories.map((item) => {
+                      const selected = selectedCategoryIds.includes(item.id);
+                      return (
+                        <label key={item.id}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(event) => {
+                              setEditorDirty(true);
+                              setSelectedCategoryIds((current) =>
+                                event.target.checked
+                                  ? [...new Set([...current, item.id])]
+                                  : current.filter((id) => id !== item.id)
+                              );
+                              if (event.target.checked && !primaryCategoryId) {
+                                setPrimaryCategoryId(item.id);
+                              } else if (!event.target.checked && primaryCategoryId === item.id) {
+                                setPrimaryCategoryId(
+                                  selectedCategoryIds.find((id) => id !== item.id) ?? ""
+                                );
+                              }
+                            }}
+                          />
+                          <span>{item.name}</span>
+                          <input
+                            type="radio"
+                            name="primaryCategory"
+                            aria-label={`${item.name} como categoria principal`}
+                            checked={primaryCategoryId === item.id}
+                            disabled={!selected}
+                            onChange={() => setPrimaryCategoryId(item.id)}
+                          />
+                          <small>Principal</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
                 <label>
                   <span>Modelo</span>
                   <select name="modelId" defaultValue={editing === "new" ? "" : editing.modelId}>
@@ -1740,14 +1875,13 @@ export function ProductManagement({
                   Preço
                 </h3>
                 <label>
-                  <span>Preço (R$) *</span>
+                  <span>Preço (R$)</span>
                   <input
                     name="price"
                     type="number"
                     inputMode="decimal"
                     min="0"
                     step="0.01"
-                    required
                     defaultValue={editing === "new" ? "" : (editing.priceInCents / 100).toFixed(2)}
                   />
                 </label>
@@ -1767,14 +1901,13 @@ export function ProductManagement({
                   />
                 </label>
                 <label>
-                  <span>Custo (R$) *</span>
+                  <span>Custo (R$)</span>
                   <input
                     name="cost"
                     type="number"
                     inputMode="decimal"
                     min="0"
                     step="0.01"
-                    required
                     defaultValue={
                       editing === "new" ? "" : ((editing.costInCents ?? 0) / 100).toFixed(2)
                     }
@@ -1789,7 +1922,15 @@ export function ProductManagement({
                     : "Envie as fotos aqui e depois associe a imagem correta a cada cor."}
                 </p>
                 {editing === "new" ? (
-                  <section className="wide product-editor-media" aria-label="Imagens selecionadas">
+                  <section
+                    className="wide product-editor-media product-media-dropzone"
+                    aria-label="Mídias selecionadas"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      selectNewProductMedia([...event.dataTransfer.files]);
+                    }}
+                  >
                     <header>
                       <div>
                         <strong>Galeria do produto</strong>
@@ -1799,7 +1940,7 @@ export function ProductManagement({
                         <Upload /> Selecionar imagens
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
+                          accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
                           multiple
                           disabled={Boolean(pending)}
                           onChange={(event) => {
@@ -1823,6 +1964,21 @@ export function ProductManagement({
                               );
                               setEditorDirty(true);
                             }}
+                            onMove={(direction) => {
+                              setQueuedMediaFiles((current) => {
+                                const from = current.indexOf(file);
+                                const to = Math.max(
+                                  0,
+                                  Math.min(current.length - 1, from + direction)
+                                );
+                                if (from < 0 || from === to) return current;
+                                const next = [...current];
+                                const [moved] = next.splice(from, 1);
+                                if (moved) next.splice(to, 0, moved);
+                                return next;
+                              });
+                              setEditorDirty(true);
+                            }}
                           />
                         ))}
                       </div>
@@ -1834,7 +1990,16 @@ export function ProductManagement({
                     )}
                   </section>
                 ) : (
-                  <section className="wide product-editor-media" aria-label="Galeria de imagens e vídeos do produto">
+                  <section
+                    className="wide product-editor-media product-media-dropzone"
+                    aria-label="Galeria de imagens e vídeos do produto"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      if (!event.dataTransfer.files.length) return;
+                      event.preventDefault();
+                      void uploadMedia(editing, [...event.dataTransfer.files]);
+                    }}
+                  >
                     <header>
                       <div>
                         <strong>Galeria do produto</strong>
@@ -1987,14 +2152,56 @@ export function ProductManagement({
                     )}
                   </section>
                 )}
-                <h3 className="wide product-form-section" id="product-step-5">
+                <fieldset className="wide product-kind-picker">
+                  <legend>Estoque</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="productKind"
+                      checked={!hasVariations}
+                      disabled={!canUseSimpleProduct}
+                      onChange={() => setHasVariations(false)}
+                    />
+                    Produto simples
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="productKind"
+                      checked={hasVariations}
+                      onChange={() => setHasVariations(true)}
+                    />
+                    Com variações
+                  </label>
+                  {!canUseSimpleProduct ? (
+                    <small>
+                      Produtos com combinações existentes mantêm seus IDs e vínculos de estoque.
+                    </small>
+                  ) : null}
+                </fieldset>
+                {!hasVariations ? (
+                  <label className="wide product-simple-stock">
+                    <span>Estoque disponível</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      step="1"
+                      disabled={!canAdjustStock}
+                      value={simpleStock}
+                      onChange={(event) => setSimpleStock(Math.max(0, Number(event.target.value) || 0))}
+                    />
+                    <small>O SKU será gerado automaticamente e poderá ser editado depois.</small>
+                  </label>
+                ) : null}
+                <h3 className={`wide product-form-section ${hasVariations ? "" : "is-hidden"}`} id="product-step-5">
                   Variações por cor
                 </h3>
-                <p className="wide product-media-note">
+                <p className={`wide product-media-note ${hasVariations ? "" : "is-hidden"}`}>
                   Gere as combinações de cor e tamanho. Você também pode salvar um rascunho sem
                   variações e completar depois.
                 </p>
-                <div className="wide variant-generator">
+                <div className={`wide variant-generator ${hasVariations ? "" : "is-hidden"}`}>
                   <label>
                     <span>Prefixo do SKU</span>
                     <input
@@ -2022,8 +2229,33 @@ export function ProductManagement({
                   <button className="secondary-button" type="button" onClick={generateVariants}>
                     Gerar combinações
                   </button>
+                  <label>
+                    <span>Aplicar preço a todas (R$)</span>
+                    <input
+                      value={bulkVariantPrice}
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      onChange={(event) => setBulkVariantPrice(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!bulkVariantPrice || !editableVariants.length}
+                    onClick={() => {
+                      const priceInCents = Math.round(Number(bulkVariantPrice) * 100);
+                      setEditableVariants((current) =>
+                        current.map((variant) => ({ ...variant, priceInCents }))
+                      );
+                      setEditorDirty(true);
+                    }}
+                  >
+                    Aplicar preço
+                  </button>
                 </div>
-                <div className="wide product-variant-editor">
+                <div className={`wide product-variant-editor ${hasVariations ? "" : "is-hidden"}`}>
                   {editableVariants.length === 0 ? (
                     <p>
                       Nenhuma variação configurada. Rascunhos podem ser salvos assim; publique
@@ -2107,28 +2339,33 @@ export function ProductManagement({
                                     }
                                   />
                                 </label>
-                                <label>
-                                  <span>GTIN / EAN</span>
-                                  <input
-                                    inputMode="numeric"
-                                    maxLength={50}
-                                    value={variant.gtin}
-                                    onChange={(event) =>
-                                      updateEditableVariant(index, { gtin: event.target.value })
-                                    }
-                                  />
-                                  <small>Use apenas o código real impresso pelo fabricante.</small>
-                                </label>
-                                <label>
-                                  <span>MPN do fabricante</span>
-                                  <input
-                                    maxLength={70}
-                                    value={variant.mpn}
-                                    onChange={(event) =>
-                                      updateEditableVariant(index, { mpn: event.target.value })
-                                    }
-                                  />
-                                </label>
+                                <details className="variant-technical-details">
+                                  <summary>Detalhes técnicos</summary>
+                                  <div>
+                                    <label>
+                                      <span>GTIN / EAN</span>
+                                      <input
+                                        inputMode="numeric"
+                                        maxLength={50}
+                                        value={variant.gtin}
+                                        onChange={(event) =>
+                                          updateEditableVariant(index, { gtin: event.target.value })
+                                        }
+                                      />
+                                      <small>Use apenas o código real do fabricante.</small>
+                                    </label>
+                                    <label>
+                                      <span>MPN do fabricante</span>
+                                      <input
+                                        maxLength={70}
+                                        value={variant.mpn}
+                                        onChange={(event) =>
+                                          updateEditableVariant(index, { mpn: event.target.value })
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+                                </details>
                                 <label>
                                   <span>Preço próprio (R$)</span>
                                   <input
@@ -2271,7 +2508,7 @@ export function ProductManagement({
                     })
                   )}
                 </div>
-                {editableVariants.length ? (
+                {hasVariations && editableVariants.length ? (
                   <label className="wide product-stock-reason">
                     <span>Motivo da definição do estoque *</span>
                     <input
@@ -2294,74 +2531,57 @@ export function ProductManagement({
                   Dimensões e transporte
                 </h3>
                 <label>
-                  <span>Peso (g) *</span>
+                  <span>Peso (g)</span>
                   <input
                     name="weightGrams"
                     type="number"
                     inputMode="numeric"
                     min="1"
-                    required
                     defaultValue={editing === "new" ? "" : editing.weightGrams}
                   />
                 </label>
                 <label>
-                  <span>Altura (cm) *</span>
+                  <span>Altura (cm)</span>
                   <input
                     name="heightCm"
                     type="number"
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    required
                     defaultValue={editing === "new" ? "" : editing.heightCm}
                   />
                 </label>
                 <label>
-                  <span>Largura (cm) *</span>
+                  <span>Largura (cm)</span>
                   <input
                     name="widthCm"
                     type="number"
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    required
                     defaultValue={editing === "new" ? "" : editing.widthCm}
                   />
                 </label>
                 <label>
-                  <span>Comprimento (cm) *</span>
+                  <span>Comprimento (cm)</span>
                   <input
                     name="lengthCm"
                     type="number"
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    required
                     defaultValue={editing === "new" ? "" : editing.lengthCm}
                   />
                 </label>
-                <h3 className="wide product-form-section" id="product-step-8">
-                  Conteúdo do produto
-                </h3>
+                <details className="wide product-advanced">
+                  <summary id="product-step-8">Avançado: SEO, Google e códigos técnicos</summary>
+                  <div className="admin-form-grid">
                 <label className="wide">
-                  <span>Descrição curta *</span>
+                  <span>Resumo curto</span>
                   <input
                     name="shortDescription"
-                    required
-                    minLength={3}
                     maxLength={280}
                     defaultValue={editing === "new" ? "" : editing.shortDescription}
-                  />
-                </label>
-                <label className="wide">
-                  <span>Descrição detalhada *</span>
-                  <textarea
-                    name="description"
-                    required
-                    minLength={3}
-                    maxLength={4000}
-                    rows={5}
-                    defaultValue={editing === "new" ? "" : editing.description}
                   />
                 </label>
                 <p className="wide product-form-subsection">Busca e visibilidade</p>
@@ -2486,7 +2706,19 @@ export function ProductManagement({
                   Produtos incompletos continuam normalmente na loja, mas não entram no feed.
                   Nunca invente GTIN, MPN, marca, preço ou disponibilidade.
                 </p>
+                  </div>
+                </details>
               </div>
+              {editing !== "new" && editing.status !== "active" ? (
+                <aside className="product-publication-check" role="status">
+                  <strong>
+                    {missingToPublish.length
+                      ? "Rascunho salvo. Falta para publicar:"
+                      : "Este produto está pronto para publicação."}
+                  </strong>
+                  {missingToPublish.length ? <span>{missingToPublish.join(", ")}.</span> : null}
+                </aside>
+              ) : null}
               <footer className="product-editor-footer">
                 <span>Atalho: Ctrl/Cmd + S</span>
                 <button className="primary-button" type="submit" disabled={Boolean(pending)}>

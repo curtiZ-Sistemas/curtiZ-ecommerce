@@ -96,7 +96,7 @@ export function ProductCard({
         <h3>
           <Link href={href} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
         </h3>
-        {display?.rating !== false && <div
+        {display?.rating !== false && product.reviews > 0 && <div
           className="rating"
           aria-label={`${product.rating} de 5, ${product.reviews} avaliações`}
         >

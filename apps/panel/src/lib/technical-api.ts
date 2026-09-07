@@ -1,6 +1,7 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasRequiredInternalMfa } from "./internal-mfa";
 import { type TechnicalRecord } from "@/lib/technical-sanitizer";
 
 export { sanitizeTechnicalValue } from "@/lib/technical-sanitizer";
@@ -55,6 +56,7 @@ export async function authorizeTechnicalRequest(request: NextRequest) {
   ) {
     return null;
   }
+  if (!(await hasRequiredInternalMfa(supabase))) return null;
   return { supabase, userId: user.id };
 }
 

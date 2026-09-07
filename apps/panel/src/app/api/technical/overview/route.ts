@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
         },
         runtime: {
           environment: "demonstração",
-          version: process.env.APP_VERSION ?? "não configurada",
+          version: process.env.APP_VERSION ?? null,
           commit: process.env.GIT_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA ?? null,
           backup: "não configurado",
           databaseDiagnostics: "Diagnósticos reais não são exibidos no ambiente de demonstração."
@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
       }),
       runtime: {
         environment: process.env.APP_ENV ?? "não configurado",
-        version: process.env.APP_VERSION ?? "não configurada",
+        version: process.env.APP_VERSION ?? null,
         commit: process.env.GIT_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA ?? null,
         backup: process.env.BACKUP_PROVIDER ? "configurado" : "não configurado",
         databaseDiagnostics: "Conexões, índices e SQL arbitrário não são expostos ao navegador."

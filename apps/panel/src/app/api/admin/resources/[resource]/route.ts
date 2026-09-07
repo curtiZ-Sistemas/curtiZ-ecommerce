@@ -62,6 +62,29 @@ function primitiveToString(value: unknown): string | null {
   return null;
 }
 
+const normalizedSlug = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+
+function normalizeCategoryValues(values: Record<string, unknown>) {
+  if (values.sort_order === null) delete values.sort_order;
+  const name = typeof values.name === "string" ? values.name.trim() : "";
+  const slug =
+    typeof values.slug === "string" && values.slug.trim()
+      ? normalizedSlug(values.slug)
+      : normalizedSlug(name);
+  values.slug = slug;
+  const errors: Record<string, string> = {};
+  if (name.length < 2) errors.name = "Informe um nome com pelo menos 2 caracteres.";
+  if (!slug) errors.slug = "Não foi possível gerar o slug. Use letras ou números no nome.";
+  if (slug.length > 180) errors.slug = "O slug deve ter no máximo 180 caracteres.";
+  return errors;
+}
+
 function logResourceQueryFailure(
   resource: string,
   table: string,
@@ -347,7 +370,8 @@ export async function GET(
       capabilities: {
         create: context.definition.allowCreate && writePermission.allowed,
         update: context.definition.allowCreate && writePermission.allowed,
-        archive: context.definition.allowArchive && writePermission.allowed
+        archive: context.definition.allowArchive && writePermission.allowed,
+        delete: context.definition.allowDelete === true && writePermission.allowed
       }
     },
     { headers: privateNoStore }
@@ -407,6 +431,15 @@ export async function POST(
 
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
+    if (context.resource === "categorias") {
+      const errors = normalizeCategoryValues(values);
+      if (Object.keys(errors).length) {
+        return NextResponse.json(
+          { message: "Revise os campos destacados.", errors },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+    }
     validateResourceRules(context.resource, values);
 
     if (context.definition.createdByField) {
@@ -424,6 +457,15 @@ export async function POST(
       .single();
 
     if (result.error) {
+      if (context.resource === "categorias" && result.error.code === "23505") {
+        return NextResponse.json(
+          {
+            message: "Já existe uma categoria com esse slug.",
+            errors: { slug: "Escolha outro slug ou ajuste o nome da categoria." }
+          },
+          { status: 409, headers: privateNoStore }
+        );
+      }
       if (context.resource === "banners" && result.error.message.includes("four active banners")) {
         throw new Error(
           "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
@@ -566,6 +608,15 @@ export async function PATCH(
 
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
+    if (context.resource === "categorias") {
+      const errors = normalizeCategoryValues(values);
+      if (Object.keys(errors).length) {
+        return NextResponse.json(
+          { message: "Revise os campos destacados.", errors },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+    }
     validateResourceRules(context.resource, values);
 
     if (context.resource === "avaliacoes") {
@@ -587,6 +638,15 @@ export async function PATCH(
       .maybeSingle();
 
     if (result.error || !result.data) {
+      if (context.resource === "categorias" && result.error?.code === "23505") {
+        return NextResponse.json(
+          {
+            message: "Já existe uma categoria com esse slug.",
+            errors: { slug: "Escolha outro slug ou ajuste o nome da categoria." }
+          },
+          { status: 409, headers: privateNoStore }
+        );
+      }
       if (context.resource === "banners" && result.error?.message.includes("four active banners")) {
         throw new Error(
           "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
@@ -668,7 +728,7 @@ export async function DELETE(
   }
 
   const parsed = z
-    .object({ id: z.string().uuid() })
+    .object({ id: z.string().uuid(), permanent: z.boolean().optional() })
     .safeParse(await request.json().catch(() => null));
 
   if (!parsed.success) {
@@ -676,6 +736,76 @@ export async function DELETE(
       { message: "Registro inválido." },
       { status: 400, headers: privateNoStore }
     );
+  }
+
+  if (parsed.data.permanent === true && context.resource === "categorias") {
+    if (!context.definition.allowDelete) {
+      return NextResponse.json(
+        { message: "Esta categoria deve ser preservada." },
+        { status: 405, headers: privateNoStore }
+      );
+    }
+    const [primaryProducts, linkedProducts, children, category] = await Promise.all([
+      context.auth.supabase
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("category_id", parsed.data.id),
+      context.auth.supabase
+        .from("product_categories")
+        .select("product_id", { count: "exact", head: true })
+        .eq("category_id", parsed.data.id),
+      context.auth.supabase
+        .from("categories")
+        .select("id", { count: "exact", head: true })
+        .eq("parent_id", parsed.data.id),
+      context.auth.supabase
+        .from("categories")
+        .select("image_path")
+        .eq("id", parsed.data.id)
+        .maybeSingle()
+    ]);
+    if (primaryProducts.error || linkedProducts.error || children.error || category.error) {
+      return NextResponse.json(
+        { message: "Não foi possível confirmar se a categoria pode ser excluída." },
+        { status: 503, headers: privateNoStore }
+      );
+    }
+    if ((primaryProducts.count ?? 0) > 0 || (linkedProducts.count ?? 0) > 0) {
+      return NextResponse.json(
+        {
+          message:
+            "A categoria possui produtos vinculados e não pode ser excluída. Arquive-a para preservar as referências."
+        },
+        { status: 409, headers: privateNoStore }
+      );
+    }
+    if ((children.count ?? 0) > 0) {
+      return NextResponse.json(
+        { message: "A categoria possui subcategorias vinculadas. Reorganize-as antes de excluir." },
+        { status: 409, headers: privateNoStore }
+      );
+    }
+    const deleted = await context.auth.supabase
+      .from("categories")
+      .delete()
+      .eq("id", parsed.data.id)
+      .select("id")
+      .maybeSingle();
+    if (deleted.error || !deleted.data) {
+      return NextResponse.json(
+        { message: "A categoria possui referências que impedem a exclusão. Use Arquivar." },
+        { status: 409, headers: privateNoStore }
+      );
+    }
+    const imagePath =
+      category.data && typeof category.data.image_path === "string" ? category.data.image_path : "";
+    if (imagePath.startsWith("categories/")) {
+      const removed = await context.auth.supabase.storage.from("catalog-public").remove([imagePath]);
+      if (removed.error) {
+        logResourceQueryFailure(context.resource, "storage.objects", removed.error);
+      }
+    }
+    return NextResponse.json({ message: "Categoria excluída." }, { headers: privateNoStore });
   }
 
   const values: Record<string, unknown> = {

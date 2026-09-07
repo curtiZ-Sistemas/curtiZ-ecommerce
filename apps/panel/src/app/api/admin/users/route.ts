@@ -92,13 +92,7 @@ export async function GET(request: NextRequest) {
     .map((user) => (typeof user.id === "string" ? user.id : ""))
     .filter(Boolean);
   const historyResult = userIds.length
-    ? await auth.supabase
-        .from("audit_logs")
-        .select("entity_id,action,reason,created_at")
-        .eq("entity_type", "profiles")
-        .in("entity_id", userIds)
-        .in("action", ["update_access", "permission_override", "user_access.changed"])
-        .order("created_at", { ascending: false })
+    ? await auth.supabase.rpc("latest_user_access_history", { p_user_ids: userIds })
     : { data: [], error: null };
   const historyByUser = new Map<string, Record<string, unknown>>();
   for (const history of objectRows(historyResult.data)) {
@@ -115,6 +109,7 @@ export async function GET(request: NextRequest) {
       roles,
       editable: canManage && Boolean(userId) && userId !== auth.userId,
       lastAccessChange: userId ? (historyByUser.get(userId) ?? null) : null,
+      historyUnavailable: Boolean(historyResult.error),
       user_roles: undefined
     };
   });

@@ -1,0 +1,109 @@
+- generic [ref=f21e2]:
+  - link "Pular para o conteúdo" [ref=f21e3] [cursor=pointer]:
+    - /url: "#panel-content"
+  - complementary [ref=f21e4]:
+    - generic [ref=f21e5]:
+      - link [ref=f21e6] [cursor=pointer]:
+        - /url: /operacional
+        - img "curti Z" [ref=f21e7]
+      - button "Recolher menu lateral" [ref=f21e9] [cursor=pointer]
+    - paragraph [ref=f21e13]: Painel Operacional
+    - navigation "Menu Operacional" [ref=f21e14]:
+      - generic [ref=f21e15]:
+        - heading "Visão geral" [level=2] [ref=f21e16]
+        - link "Dashboard" [ref=f21e18] [cursor=pointer]:
+          - /url: /operacional
+      - generic [ref=f21e24]:
+        - heading "Operação" [level=2] [ref=f21e25]
+        - generic [ref=f21e26]:
+          - link "Pedidos" [ref=f21e27] [cursor=pointer]:
+            - /url: /operacional/pedidos
+          - link "Separação" [ref=f21e32] [cursor=pointer]:
+            - /url: /operacional/separacao
+          - link "Expedição" [ref=f21e38] [cursor=pointer]:
+            - /url: /operacional/expedicao
+          - link "Envio" [ref=f21e45] [cursor=pointer]:
+            - /url: /operacional/envio
+      - generic [ref=f21e51]:
+        - heading "Estoque" [level=2] [ref=f21e52]
+        - generic [ref=f21e53]:
+          - link "Estoque" [ref=f21e54] [cursor=pointer]:
+            - /url: /operacional/estoque
+          - link "Kits" [ref=f21e66] [cursor=pointer]:
+            - /url: /operacional/kits
+          - link "Montagem de kits" [ref=f21e73] [cursor=pointer]:
+            - /url: /operacional/montagem-kits
+          - link "Reposição" [ref=f21e79] [cursor=pointer]:
+            - /url: /operacional/reposicao
+      - generic [ref=f21e85]:
+        - heading "Pós-venda" [level=2] [ref=f21e86]
+        - generic [ref=f21e87]:
+          - link "Notas fiscais" [ref=f21e88] [cursor=pointer]:
+            - /url: /operacional/notas-fiscais
+          - link "Trocas" [ref=f21e93] [cursor=pointer]:
+            - /url: /operacional/trocas
+          - link "Devoluções" [ref=f21e100] [cursor=pointer]:
+            - /url: /operacional/devolucoes
+          - link "Produtos danificados" [ref=f21e107] [cursor=pointer]:
+            - /url: /operacional/danificados
+          - link "Ocorrências" [ref=f21e112] [cursor=pointer]:
+            - /url: /operacional/ocorrencias
+      - generic [ref=f21e116]:
+        - heading "Atendimento" [level=2] [ref=f21e117]
+        - generic [ref=f21e118]:
+          - link "Atendimento atribuído" [ref=f21e119] [cursor=pointer]:
+            - /url: /operacional/atendimentos
+          - link "Central de Ajuda" [ref=f21e123] [cursor=pointer]:
+            - /url: /operacional/central-ajuda
+      - generic [ref=f21e132]:
+        - heading "Conteúdo" [level=2] [ref=f21e133]
+        - generic [ref=f21e134]:
+          - link "Mídias da página inicial" [ref=f21e135] [cursor=pointer]:
+            - /url: /operacional/construtor-home
+          - link "Representantes" [ref=f21e139] [cursor=pointer]:
+            - /url: /operacional/representantes
+      - generic [ref=f21e146]:
+        - heading "Gestão" [level=2] [ref=f21e147]
+        - generic [ref=f21e148]:
+          - link "Pendências" [ref=f21e149] [cursor=pointer]:
+            - /url: /operacional/pendencias
+          - link "Relatórios operacionais" [ref=f21e156] [cursor=pointer]:
+            - /url: /operacional/relatorios-operacionais
+          - link "Políticas oficiais" [ref=f21e160] [cursor=pointer]:
+            - /url: /operacional/politicas
+    - link "Trocar painel" [ref=f21e166] [cursor=pointer]:
+      - /url: /selecionar-painel
+    - link "Abrir suporte interno" [ref=f21e170] [cursor=pointer]:
+      - /url: /operacional/atendimentos
+      - generic [ref=f21e178]:
+        - strong [ref=f21e179]: Precisa de ajuda?
+        - generic [ref=f21e180]: Suporte interno auditado
+  - generic [ref=f21e181]:
+    - banner [ref=f21e182]:
+      - navigation "Navegação estrutural" [ref=f21e183]:
+        - link "Operacional" [ref=f21e184] [cursor=pointer]:
+          - /url: /operacional
+        - strong [ref=f21e185]: Visão geral
+      - button "Abrir busca" [ref=f21e187] [cursor=pointer]
+      - link "Ver loja" [ref=f21e191] [cursor=pointer]:
+        - /url: https://curtiz.com.br
+      - link "Abrir notificações e pendências" [ref=f21e196] [cursor=pointer]:
+        - /url: /operacional/pendencias
+      - link "Trocar painel" [ref=f21e200] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "R Rafael Administrador Operacional" [ref=f21e203] [cursor=pointer]:
+        - /url: https://curtiz.com.br/perfil
+        - generic [ref=f21e204]: R
+        - generic [ref=f21e205]:
+          - strong [ref=f21e206]: Rafael Administrador
+          - generic [ref=f21e207]: Operacional
+      - button "Sair do painel" [ref=f21e208] [cursor=pointer]
+    - main [ref=f21e212]:
+      - generic [ref=f21e213]:
+        - generic [ref=f21e214]:
+          - generic [ref=f21e215]: Painel Operacional
+          - heading "Operacional" [level=1] [ref=f21e216]
+          - paragraph [ref=f21e217]: Execute pedidos e filas do dia com rastreabilidade.
+        - link "Abrir pedidos" [ref=f21e218] [cursor=pointer]:
+          - /url: /operacional/pedidos
+      - generic "Carregando operação" [ref=f21e219]

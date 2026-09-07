@@ -1,0 +1,91 @@
+- generic [active] [ref=f14e1]:
+  - link "Ir para o conteúdo principal" [ref=f14e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - progressbar [aria-hidden]
+  - banner [ref=f14e3]:
+    - generic [ref=f14e4]:
+      - button "Abrir menu" [ref=f14e5] [cursor=pointer]
+      - link "curti Z — página inicial" [ref=f14e7] [cursor=pointer]:
+        - /url: /
+        - img "curti Z" [ref=f14e8]
+      - navigation "Conta e compras" [ref=f14e9]:
+        - button "Abrir busca" [ref=f14e10] [cursor=pointer]
+        - link "Entrar na minha conta" [ref=f14e14] [cursor=pointer]:
+          - /url: /login
+        - link "Carrinho com 1 itens" [ref=f14e18] [cursor=pointer]:
+          - /url: /carrinho
+          - generic [ref=f14e22]: "1"
+  - main [ref=f14e23]:
+    - generic [ref=f14e24]:
+      - navigation "Navegação estrutural" [ref=f14e25]:
+        - link "Início" [ref=f14e26] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f14e27]: /
+        - generic [ref=f14e28]: Carrinho
+      - generic [ref=f14e29]:
+        - link "Continuar comprando" [ref=f14e31] [cursor=pointer]:
+          - /url: /produtos
+        - heading "Meu carrinho" [level=1] [ref=f14e35]
+      - group "Seleção do carrinho" [ref=f14e36]:
+        - generic [ref=f14e37] [cursor=pointer]:
+          - checkbox "Selecionar todos" [checked] [ref=f14e38]
+          - generic [ref=f14e39]: Selecionar todos
+        - generic [ref=f14e40]: 1 de 1 selecionado
+        - generic [ref=f14e41]:
+          - button "Remover selecionados" [ref=f14e42] [cursor=pointer]
+          - button "Limpar carrinho" [ref=f14e43] [cursor=pointer]
+      - status [ref=f14e44]
+      - generic [ref=f14e45]:
+        - region "Produtos no carrinho" [ref=f14e47]:
+          - article [ref=f14e48]:
+            - generic [ref=f14e49] [cursor=pointer]:
+              - checkbox "Selecionar curti Z Slide Bold Marinho" [checked] [ref=f14e50]
+              - generic [ref=f14e51]: Selecionar curti Z Slide Bold Marinho
+            - link [ref=f14e52] [cursor=pointer]:
+              - /url: /produto/slide-bold-marinho
+              - img "curti Z Slide Bold Marinho" [ref=f14e53]
+            - generic [ref=f14e54]:
+              - heading "curti Z Slide Bold Marinho" [level=2] [ref=f14e55]
+              - paragraph [ref=f14e56]: Marinho · 37/38
+            - generic [ref=f14e57]:
+              - strong [ref=f14e58]: R$ 79,90
+              - generic [ref=f14e59]:
+                - button "Diminuir quantidade de curti Z Slide Bold Marinho" [disabled] [ref=f14e60]
+                - 'status "Quantidade atual: 1" [ref=f14e62]': "1"
+                - button "Aumentar quantidade de curti Z Slide Bold Marinho" [ref=f14e63] [cursor=pointer]
+              - button "Remover curti Z Slide Bold Marinho" [ref=f14e65] [cursor=pointer]
+        - generic "Resumo do carrinho" [ref=f14e69]:
+          - generic [ref=f14e70]:
+            - generic [ref=f14e71]: Total
+            - strong [ref=f14e72]: R$ 79,90
+          - link "Comprar (1)" [ref=f14e73] [cursor=pointer]:
+            - /url: /checkout
+      - region [ref=f14e74]:
+        - generic [ref=f14e76]:
+          - paragraph [ref=f14e77]: Complete sua seleção
+          - heading "Você também pode gostar" [level=2] [ref=f14e78]
+        - generic "Carregando recomendações" [ref=f14e79]
+  - contentinfo [ref=f14e100]:
+    - generic [ref=f14e101]:
+      - generic [ref=f14e102]:
+        - link "curti Z — página inicial" [ref=f14e103] [cursor=pointer]:
+          - /url: /
+          - img "curti Z" [ref=f14e104]
+        - paragraph [ref=f14e105]: A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de compra clara e organizada.
+        - generic [ref=f14e106]: Loja exclusivamente online.
+      - navigation "Comprar" [ref=f14e107]:
+        - group [ref=f14e108]:
+          - heading "Comprar" [level=2] [ref=f14e110] [cursor=pointer]
+      - navigation "Institucional" [ref=f14e113]:
+        - group [ref=f14e114]:
+          - heading "Institucional" [level=2] [ref=f14e116] [cursor=pointer]
+      - navigation "Políticas" [ref=f14e119]:
+        - group [ref=f14e120]:
+          - heading "Políticas" [level=2] [ref=f14e122] [cursor=pointer]
+      - navigation "Representantes" [ref=f14e125]:
+        - group [ref=f14e126]:
+          - heading "Representantes" [level=2] [ref=f14e128] [cursor=pointer]
+    - generic [ref=f14e132]:
+      - generic [ref=f14e133]: © 2026 curti Z. Todos os direitos reservados.
+      - button "Preferências de cookies" [ref=f14e134] [cursor=pointer]
+  - alert [ref=f14e135]

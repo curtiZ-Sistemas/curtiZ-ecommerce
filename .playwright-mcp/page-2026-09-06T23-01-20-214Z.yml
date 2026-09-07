@@ -1,0 +1,68 @@
+- generic [active] [ref=f12e1]:
+  - link "Ir para o conteúdo principal" [ref=f12e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - progressbar [aria-hidden]
+  - banner [ref=f12e3]:
+    - generic [ref=f12e4]:
+      - button "Abrir menu" [ref=f12e5] [cursor=pointer]
+      - link "curti Z — página inicial" [ref=f12e7] [cursor=pointer]:
+        - /url: /
+        - img "curti Z" [ref=f12e8]
+      - navigation "Conta e compras" [ref=f12e9]:
+        - button "Abrir busca" [ref=f12e10] [cursor=pointer]
+        - link "Entrar na minha conta" [ref=f12e14] [cursor=pointer]:
+          - /url: /login
+        - link "Carrinho com 0 itens" [ref=f12e18] [cursor=pointer]:
+          - /url: /carrinho
+  - main [ref=f12e22]:
+    - generic [ref=f12e23]:
+      - navigation "Navegação estrutural" [ref=f12e24]:
+        - link "curti Z" [ref=f12e25] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f12e26]: /
+        - generic [ref=f12e27]: Todos os produtos curti Z
+      - generic [ref=f12e29]:
+        - paragraph [ref=f12e30]: Catálogo curti Z
+        - heading "Todos os produtos curti Z" [level=1] [ref=f12e31]
+        - paragraph [ref=f12e32]: Explore chinelos, slides e sandálias curti Z e encontre cores, tamanhos e estilos para cada momento.
+      - generic [ref=f12e33]:
+        - button "Filtrar" [ref=f12e34] [cursor=pointer]
+        - combobox "Ordenar produtos" [ref=f12e37]:
+          - option "Mais relevantes" [selected]
+          - option "Mais recentes"
+          - option "Mais vendidos"
+          - option "Melhor avaliados"
+          - option "Menor preço"
+          - option "Maior preço"
+          - option "Nome A–Z"
+          - option "Nome Z–A"
+        - status [ref=f12e38]: 0 resultados
+      - generic [ref=f12e40]:
+        - generic [ref=f12e42]:
+          - strong [ref=f12e43]: "0"
+          - text: produtos encontrados
+        - generic "Carregando produtos" [ref=f12e44]
+  - contentinfo [ref=f12e93]:
+    - generic [ref=f12e94]:
+      - generic [ref=f12e95]:
+        - link "curti Z — página inicial" [ref=f12e96] [cursor=pointer]:
+          - /url: /
+          - img "curti Z" [ref=f12e97]
+        - paragraph [ref=f12e98]: A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de compra clara e organizada.
+        - generic [ref=f12e99]: Loja exclusivamente online.
+      - navigation "Comprar" [ref=f12e100]:
+        - group [ref=f12e101]:
+          - heading "Comprar" [level=2] [ref=f12e103] [cursor=pointer]
+      - navigation "Institucional" [ref=f12e106]:
+        - group [ref=f12e107]:
+          - heading "Institucional" [level=2] [ref=f12e109] [cursor=pointer]
+      - navigation "Políticas" [ref=f12e112]:
+        - group [ref=f12e113]:
+          - heading "Políticas" [level=2] [ref=f12e115] [cursor=pointer]
+      - navigation "Representantes" [ref=f12e118]:
+        - group [ref=f12e119]:
+          - heading "Representantes" [level=2] [ref=f12e121] [cursor=pointer]
+    - generic [ref=f12e125]:
+      - generic [ref=f12e126]: © 2026 curti Z. Todos os direitos reservados.
+      - button "Preferências de cookies" [ref=f12e127] [cursor=pointer]
+  - alert [ref=f12e128]

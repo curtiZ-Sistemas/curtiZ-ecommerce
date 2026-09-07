@@ -1,0 +1,114 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - link "Pular para o conteúdo" [ref=f18e3] [cursor=pointer]:
+      - /url: "#panel-content"
+    - complementary [ref=f18e4]:
+      - generic [ref=f18e5]:
+        - link [ref=f18e6] [cursor=pointer]:
+          - /url: /administracao
+          - img "curti Z" [ref=f18e7]
+        - button "Recolher menu lateral" [ref=f18e9] [cursor=pointer]
+      - paragraph [ref=f18e13]: Painel Administrador
+      - navigation "Menu Administrador" [ref=f18e14]:
+        - generic [ref=f18e15]:
+          - heading "Visão geral" [level=2] [ref=f18e16]
+          - link "Dashboard" [ref=f18e18] [cursor=pointer]:
+            - /url: /administracao
+        - generic [ref=f18e22]:
+          - heading "Catálogo" [level=2] [ref=f18e23]
+          - generic [ref=f18e24]:
+            - link "Produtos" [ref=f18e25] [cursor=pointer]:
+              - /url: /administracao/produtos
+            - link "Categorias" [ref=f18e37] [cursor=pointer]:
+              - /url: /administracao/categorias
+            - link "Coleções" [ref=f18e43] [cursor=pointer]:
+              - /url: /administracao/colecoes
+        - generic [ref=f18e47]:
+          - heading "Comercial" [level=2] [ref=f18e48]
+          - generic [ref=f18e49]:
+            - link "Pedidos" [ref=f18e50] [cursor=pointer]:
+              - /url: /administracao/pedidos
+            - link "Clientes" [ref=f18e55] [cursor=pointer]:
+              - /url: /administracao/clientes
+        - generic [ref=f18e62]:
+          - heading "Conteúdo" [level=2] [ref=f18e63]
+          - generic [ref=f18e64]:
+            - link "Banners" [ref=f18e65] [cursor=pointer]:
+              - /url: /administracao/banners
+            - link "Construtor da página inicial" [ref=f18e69] [cursor=pointer]:
+              - /url: /administracao/construtor-home
+            - link "Conteúdo" [ref=f18e73] [cursor=pointer]:
+              - /url: /administracao/conteudo
+            - link "Marketing" [ref=f18e78] [cursor=pointer]:
+              - /url: /administracao/marketing
+            - link "Cupons" [ref=f18e84] [cursor=pointer]:
+              - /url: /administracao/cupons
+        - generic [ref=f18e90]:
+          - heading "Representantes" [level=2] [ref=f18e91]
+          - generic [ref=f18e92]:
+            - link "Representantes" [ref=f18e93] [cursor=pointer]:
+              - /url: /administracao/representantes
+            - link "Kits" [ref=f18e100] [cursor=pointer]:
+              - /url: /administracao/kits
+            - link "Níveis" [ref=f18e107] [cursor=pointer]:
+              - /url: /administracao/niveis
+            - link "Metas" [ref=f18e111] [cursor=pointer]:
+              - /url: /administracao/metas
+            - link "Comissões autorizadas" [ref=f18e117] [cursor=pointer]:
+              - /url: /administracao/comissoes
+            - link "Criativos" [ref=f18e122] [cursor=pointer]:
+              - /url: /administracao/criativos
+            - link "Campanhas" [ref=f18e126] [cursor=pointer]:
+              - /url: /administracao/campanhas
+            - link "Barra promocional" [ref=f18e132] [cursor=pointer]:
+              - /url: /administracao/barra-promocional
+        - generic [ref=f18e137]:
+          - heading "Governança" [level=2] [ref=f18e138]
+          - generic [ref=f18e139]:
+            - link "Avaliações" [ref=f18e140] [cursor=pointer]:
+              - /url: /administracao/avaliacoes
+            - link "Central de Ajuda" [ref=f18e144] [cursor=pointer]:
+              - /url: /administracao/central-ajuda
+            - link "Políticas e documentos legais" [ref=f18e153] [cursor=pointer]:
+              - /url: /administracao/politicas
+            - link "Treinamentos" [ref=f18e159] [cursor=pointer]:
+              - /url: /administracao/treinamentos
+            - link "Contratos" [ref=f18e164] [cursor=pointer]:
+              - /url: /administracao/contratos
+      - link "Trocar painel" [ref=f18e171] [cursor=pointer]:
+        - /url: /selecionar-painel
+      - link "Abrir suporte interno" [ref=f18e175] [cursor=pointer]:
+        - /url: /administracao/atendimentos
+        - generic [ref=f18e183]:
+          - strong [ref=f18e184]: Precisa de ajuda?
+          - generic [ref=f18e185]: Suporte interno auditado
+    - generic [ref=f18e186]:
+      - banner [ref=f18e187]:
+        - navigation "Navegação estrutural" [ref=f18e188]:
+          - link "Administrador" [ref=f18e189] [cursor=pointer]:
+            - /url: /administracao
+          - strong [ref=f18e190]: Visão geral
+        - button "Abrir busca" [ref=f18e192] [cursor=pointer]
+        - link "Ver loja" [ref=f18e196] [cursor=pointer]:
+          - /url: https://curtiz.com.br
+        - link "Abrir notificações e pendências" [ref=f18e201] [cursor=pointer]:
+          - /url: /administracao/pedidos
+        - link "Trocar painel" [ref=f18e205] [cursor=pointer]:
+          - /url: /selecionar-painel
+        - link "R Rafael Administrador Administrador" [ref=f18e208] [cursor=pointer]:
+          - /url: https://curtiz.com.br/perfil
+          - generic [ref=f18e209]: R
+          - generic [ref=f18e210]:
+            - strong [ref=f18e211]: Rafael Administrador
+            - generic [ref=f18e212]: Administrador
+        - button "Sair do painel" [ref=f18e213] [cursor=pointer]
+      - main [ref=f18e217]:
+        - generic [ref=f18e218]:
+          - generic [ref=f18e219]:
+            - generic [ref=f18e220]: Painel Administrador
+            - heading "Administrador" [level=1] [ref=f18e221]
+            - paragraph [ref=f18e222]: Mantenha catálogo, clientes e operação comercial organizados.
+          - link "Gerenciar produtos" [ref=f18e223] [cursor=pointer]:
+            - /url: /administracao/produtos
+        - status [ref=f18e224]: Carregando indicadores
+  - alert [ref=f18e227]

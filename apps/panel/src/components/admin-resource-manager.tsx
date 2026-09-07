@@ -13,6 +13,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Trash2,
   Upload,
   X
 } from "lucide-react";
@@ -34,18 +35,21 @@ type ListResponse = {
   pageSize?: number;
   message?: string;
   capabilities?: ResourceCapabilities;
+  errors?: Record<string, string>;
 };
 
 type ResourceCapabilities = {
   create: boolean;
   update: boolean;
   archive: boolean;
+  delete: boolean;
 };
 
 const noCapabilities: ResourceCapabilities = {
   create: false,
   update: false,
-  archive: false
+  archive: false,
+  delete: false
 };
 
 function isRecord(value: unknown): value is Item {
@@ -63,7 +67,8 @@ function parseListResponse(value: unknown): ListResponse {
     ? {
         create: value.capabilities.create === true,
         update: value.capabilities.update === true,
-        archive: value.capabilities.archive === true
+        archive: value.capabilities.archive === true,
+        delete: value.capabilities.delete === true
       }
     : undefined;
 
@@ -73,7 +78,14 @@ function parseListResponse(value: unknown): ListResponse {
     page: readNumber(value.page),
     pageSize: readNumber(value.pageSize),
     message: typeof value.message === "string" ? value.message : undefined,
-    capabilities
+    capabilities,
+    errors: isRecord(value.errors)
+      ? Object.fromEntries(
+          Object.entries(value.errors).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string"
+          )
+        )
+      : undefined
   };
 }
 
@@ -214,6 +226,14 @@ function formValue(value: unknown): string {
   return scalarToString(value);
 }
 
+const resourceSlug = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+
 function numberInputMode(field: AdminResourceField): "numeric" | "decimal" {
   return /(price|amount|value|cost|percent|discount|height|width|length)/iu.test(field.key)
     ? "decimal"
@@ -254,11 +274,25 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
   const [loadError, setLoadError] = useState("");
   const [capabilities, setCapabilities] = useState<ResourceCapabilities>(noCapabilities);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [categoryName, setCategoryName] = useState("");
+  const [categorySlug, setCategorySlug] = useState("");
+  const [categorySlugEdited, setCategorySlugEdited] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [stateTarget, setStateTarget] = useState<{
     items: Item[];
     action: "archive" | "restore";
   } | null>(null);
+
+  useEffect(() => {
+    if (resource !== "categorias" || !editing) return;
+    const source = editing === "new" ? {} : editing;
+    setCategoryName(formValue(source.name));
+    setCategorySlug(formValue(source.slug));
+    setCategorySlugEdited(editing !== "new" && Boolean(formValue(source.slug)));
+    setFieldErrors({});
+  }, [editing, resource]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -322,6 +356,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
   const canCreate = definition.allowCreate && capabilities.create;
   const canUpdate = definition.allowCreate && capabilities.update;
   const canArchive = definition.allowArchive && capabilities.archive;
+  const canDelete = definition.allowDelete === true && capabilities.delete;
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -329,6 +364,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
 
     setPending(true);
     setMessage("");
+    setFieldErrors({});
 
     const form = new FormData(event.currentTarget);
     const values: Record<string, unknown> = {};
@@ -336,6 +372,10 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
     try {
       for (const field of definition.fields) {
         values[field.key] = getFormValue(form, field);
+      }
+      if (resource === "categorias") {
+        values.name = categoryName;
+        values.slug = categorySlug || resourceSlug(categoryName);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Revise os valores informados.");
@@ -369,11 +409,13 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
       const result = await readListResponse(response);
 
       if (!response.ok) {
+        setFieldErrors(result.errors ?? {});
         throw new Error(result.message || "Não foi possível salvar.");
       }
 
       const successMessage = result.message ?? "Alterações salvas.";
       window.dispatchEvent(new Event("banner-form-saved"));
+      window.dispatchEvent(new Event("category-form-saved"));
       setEditing(null);
       await load();
       setMessage(successMessage);
@@ -453,6 +495,28 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
           ? error.message
           : "Não foi possível atualizar os registros."
       );
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const deleteCategory = async (): Promise<void> => {
+    if (resource !== "categorias" || !deleteTarget || pending) return;
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/resources/${resource}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: itemId(deleteTarget), permanent: true })
+      });
+      const result = await readListResponse(response);
+      if (!response.ok) throw new Error(result.message || "Não foi possível excluir a categoria.");
+      setDeleteTarget(null);
+      await load();
+      setMessage(result.message ?? "Categoria excluída.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir a categoria.");
     } finally {
       setPending(false);
     }
@@ -711,6 +775,15 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                             <Archive />
                           </button>
                         ) : null}
+                        {canDelete ? (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTarget(item)}
+                            aria-label="Excluir permanentemente"
+                          >
+                            <Trash2 />
+                          </button>
+                        ) : null}
                       </td>
                     ) : null}
                   </tr>
@@ -791,6 +864,48 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                     return <BannerDestinationField source={source} key={field.key} />;
                   }
 
+                  if (resource === "categorias" && field.key === "image_path") {
+                    return (
+                      <CategoryImageField
+                        initialPath={formValue(value)}
+                        categoryId={itemId(source)}
+                        key={field.key}
+                      />
+                    );
+                  }
+
+                  if (resource === "categorias" && ["name", "slug"].includes(field.key)) {
+                    const isName = field.key === "name";
+                    return (
+                      <label key={field.key}>
+                        <span>{field.label}{isName ? " *" : ""}</span>
+                        <input
+                          name={field.key}
+                          required={isName}
+                          value={isName ? categoryName : categorySlug}
+                          placeholder={isName ? "Ex.: Sandálias" : "Gerado automaticamente"}
+                          onChange={(event) => {
+                            if (isName) {
+                              setCategoryName(event.target.value);
+                              if (!categorySlugEdited) setCategorySlug(resourceSlug(event.target.value));
+                            } else {
+                              setCategorySlug(resourceSlug(event.target.value));
+                              setCategorySlugEdited(Boolean(event.target.value));
+                            }
+                            setFieldErrors((current) => ({ ...current, [field.key]: "" }));
+                          }}
+                          aria-invalid={Boolean(fieldErrors[field.key])}
+                          aria-describedby={fieldErrors[field.key] ? `${field.key}-error` : undefined}
+                        />
+                        {fieldErrors[field.key] ? (
+                          <small className="admin-field-error" id={`${field.key}-error`} role="alert">
+                            {fieldErrors[field.key]}
+                          </small>
+                        ) : null}
+                      </label>
+                    );
+                  }
+
                   if (
                     resource === "banners" &&
                     ["destination_id", "destination_url"].includes(field.key)
@@ -809,7 +924,11 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                       </span>
 
                       {field.type === "boolean" ? (
-                        <input name={field.key} type="checkbox" defaultChecked={value === true} />
+                        <input
+                          name={field.key}
+                          type="checkbox"
+                          defaultChecked={value === true || (editing === "new" && resource === "categorias")}
+                        />
                       ) : field.type === "select" ? (
                         <select
                           name={field.key}
@@ -892,6 +1011,42 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="admin-modal-backdrop">
+          <section
+            className="admin-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-category-title"
+          >
+            <h2 id="delete-category-title">Excluir categoria permanentemente?</h2>
+            <p>
+              A categoria <strong>{displayValue(deleteTarget.name, "name")}</strong> só será
+              excluída se não houver produtos ou subcategorias vinculados.
+            </p>
+            <div>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={pending}
+              >
+                Cancelar
+              </button>
+              <button
+                className="primary-button danger-button"
+                type="button"
+                onClick={() => void deleteCategory()}
+                disabled={pending}
+              >
+                {pending ? <LoaderCircle className="spin" /> : null}
+                Excluir categoria
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -1083,6 +1238,115 @@ function BannerImageField({
           {error}
         </small>
       ) : null}
+    </div>
+  );
+}
+
+function CategoryImageField({
+  initialPath,
+  categoryId
+}: {
+  initialPath: string;
+  categoryId: string;
+}) {
+  const [path, setPath] = useState(initialPath);
+  const [preview, setPreview] = useState(() => bannerPublicUrl(initialPath));
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const temporaryPath = useRef("");
+  const pathRef = useRef(initialPath);
+
+  const removeStoredPath = useCallback((storagePath: string) => {
+    if (!storagePath) return;
+    void fetch("/api/admin/category-media", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: storagePath })
+    });
+  }, []);
+
+  useEffect(() => {
+    const markPersisted = () => {
+      if (initialPath && initialPath !== pathRef.current) removeStoredPath(initialPath);
+      temporaryPath.current = "";
+    };
+    window.addEventListener("category-form-saved", markPersisted);
+    return () => {
+      window.removeEventListener("category-form-saved", markPersisted);
+      if (temporaryPath.current) removeStoredPath(temporaryPath.current);
+    };
+  }, [initialPath, removeStoredPath]);
+
+  const upload = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      if (categoryId) form.set("categoryId", categoryId);
+      const response = await fetch("/api/admin/category-media", { method: "POST", body: form });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isRecord(payload) || typeof payload.path !== "string") {
+        throw new Error(
+          isRecord(payload) && typeof payload.message === "string"
+            ? payload.message
+            : "Upload indisponível."
+        );
+      }
+      if (temporaryPath.current) removeStoredPath(temporaryPath.current);
+      temporaryPath.current = payload.path;
+      pathRef.current = payload.path;
+      setPath(payload.path);
+      setPreview(
+        typeof payload.publicUrl === "string" ? payload.publicUrl : bannerPublicUrl(payload.path)
+      );
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="banner-image-field category-image-field">
+      <span>Imagem da categoria</span>
+      <input name="image_path" type="hidden" value={path} />
+      {preview ? (
+        <img src={preview} alt="Prévia da imagem da categoria" />
+      ) : (
+        <div className="banner-image-placeholder">Nenhuma imagem enviada</div>
+      )}
+      <div className="category-image-actions">
+        <label className="secondary-button">
+          {uploading ? <LoaderCircle className="spin" /> : <Upload aria-hidden="true" />}
+          {uploading ? "Enviando…" : preview ? "Substituir imagem" : "Selecionar imagem"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => void upload(event.target.files?.[0])}
+            disabled={uploading}
+          />
+        </label>
+        {preview ? (
+          <button
+            className="secondary-button danger-button"
+            type="button"
+            disabled={uploading}
+            onClick={() => {
+              if (temporaryPath.current) removeStoredPath(temporaryPath.current);
+              temporaryPath.current = "";
+              pathRef.current = "";
+              setPath("");
+              setPreview("");
+            }}
+          >
+            <Trash2 /> Remover
+          </button>
+        ) : null}
+      </div>
+      <small>JPG, PNG ou WebP, até 10 MB.</small>
+      {error ? <small className="admin-field-error" role="alert">{error}</small> : null}
     </div>
   );
 }

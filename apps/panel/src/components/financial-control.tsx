@@ -94,6 +94,7 @@ const dateTime = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
   timeZone: "America/Sao_Paulo"
 });
+const compactMoney = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
 const chartColors = ["#982920", "#d36a43", "#2d9c78", "#c94336", "#5271c4"];
 
 const tabs: Array<{ id: Tab; label: string }> = [
@@ -562,14 +563,14 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
         </div>
       ) : (
         <div className="financial-charts">
-          <ChartCard title="Entradas x saídas">
+          <ChartCard title="Entradas x saídas" empty={!data.series.some((point) => point.income !== 0 || point.expense !== 0)}>
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={data.series}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="date" tickFormatter={(value) => scalar(value).slice(5)} />
                 <YAxis
                   width={72}
-                  tickFormatter={(value) => `${Math.round(numberValue(value) / 1000)}k`}
+                  tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
                 <Tooltip formatter={chartMoney} />
                 <Legend />
@@ -578,7 +579,7 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Evolução do saldo">
+          <ChartCard title="Evolução do saldo" empty={!data.series.some((point) => point.balance !== 0)}>
             <ResponsiveContainer width="100%" height={270}>
               <AreaChart data={data.series}>
                 <defs>
@@ -591,7 +592,7 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
                 <XAxis dataKey="date" tickFormatter={(value) => scalar(value).slice(5)} />
                 <YAxis
                   width={72}
-                  tickFormatter={(value) => `${Math.round(numberValue(value) / 1000)}k`}
+                  tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
                 <Tooltip formatter={chartMoney} />
                 <Area
@@ -621,7 +622,7 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
             data={data.largest_receivables}
             color="#5271c4"
           />
-          <ChartCard title="Situação das contas">
+          <ChartCard title="Situação das contas" empty={!data.account_status.some((item) => item.value !== 0)}>
             <ResponsiveContainer width="100%" height={270}>
               <PieChart>
                 <Pie
@@ -641,13 +642,13 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
               </PieChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Aportes por grupo">
+          <ChartCard title="Aportes por grupo" empty={!data.contribution_groups.some((item) => item.ideal !== 0 || item.realized !== 0)}>
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={data.contribution_groups} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis
                   type="number"
-                  tickFormatter={(value) => `${Math.round(numberValue(value) / 1000)}k`}
+                  tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
                 <YAxis type="category" dataKey="name" width={100} />
                 <Tooltip formatter={chartMoney} />
@@ -663,11 +664,11 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+function ChartCard({ title, children, empty = false }: { title: string; children: ReactNode; empty?: boolean }) {
   return (
     <article className="panel-card financial-chart">
       <h2>{title}</h2>
-      {children}
+      {empty ? <p className="financial-chart-empty">Sem movimentação neste recorte.</p> : children}
     </article>
   );
 }
@@ -682,13 +683,13 @@ function SimpleBarChart({
 }) {
   return (
     <ChartCard title={title}>
-      {data.length ? (
+      {data.some((item) => item.value !== 0) ? (
         <ResponsiveContainer width="100%" height={270}>
           <BarChart data={data} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis
               type="number"
-              tickFormatter={(value) => `${Math.round(numberValue(value) / 1000)}k`}
+              tickFormatter={(value) => compactMoney.format(numberValue(value))}
             />
             <YAxis type="category" dataKey="name" width={110} />
             <Tooltip formatter={chartMoney} />

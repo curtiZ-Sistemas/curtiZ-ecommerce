@@ -24,6 +24,7 @@ export type ManagedProduct = {
   compareAtPriceInCents?: number | null;
   stock: number;
   categoryId?: string;
+  categoryIds?: string[];
   modelId?: string;
   collectionId?: string;
   shortDescription?: string;
@@ -37,6 +38,8 @@ export type ManagedProduct = {
   seoTitle?: string;
   seoDescription?: string;
   categoryName?: string;
+  categoryNames?: string[];
+  deleteBlockers?: string[];
   merchantCondition?: "new" | "refurbished" | "used";
   merchantGender?: "male" | "female" | "unisex";
   merchantAgeGroup?: "newborn" | "infant" | "toddler" | "kids" | "adult";
@@ -271,6 +274,31 @@ export function groupEditableVariantsByColor(
   });
 
   return [...groups.values()];
+}
+
+export function productPublishRequirements(product: {
+  name?: string;
+  description?: string;
+  categoryIds?: string[];
+  priceInCents?: number | null;
+  weightGrams?: number | null;
+  heightCm?: number | null;
+  widthCm?: number | null;
+  lengthCm?: number | null;
+  variants?: Array<{ active: boolean; sku: string; stock: number }>;
+}) {
+  const missing: string[] = [];
+  if (!product.name?.trim()) missing.push("nome");
+  if (!product.description?.trim()) missing.push("descrição");
+  if (!product.categoryIds?.length) missing.push("categoria");
+  if (!product.priceInCents || product.priceInCents <= 0) missing.push("preço de venda");
+  if (!product.weightGrams || !product.heightCm || !product.widthCm || !product.lengthCm) {
+    missing.push("dados de entrega");
+  }
+  if (!product.variants?.some((variant) => variant.active && variant.sku.trim())) {
+    missing.push("ao menos uma variação ativa");
+  }
+  return missing;
 }
 
 export const filterManagedProducts = (
