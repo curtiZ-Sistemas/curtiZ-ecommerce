@@ -118,16 +118,6 @@ function logCatalogFailure(operation: string, error: CatalogError) {
 const normalizedErrorMessage = (error: CatalogError) =>
   error?.message?.trim().toLowerCase() ?? "";
 
-const catalogSelectUnavailable = (error: CatalogError) => {
-  const message = normalizedErrorMessage(error);
-  return (
-    ["42P01", "42703", "PGRST200", "PGRST204", "PGRST205"].includes(error?.code ?? "") ||
-      message.includes("schema cache") ||
-      message.includes("could not find") ||
-      message.includes("does not exist")
-  );
-};
-
 function statusMutationError(
   error: CatalogError,
   status: string
@@ -624,8 +614,8 @@ export async function GET(request: NextRequest) {
       return query.order("updated_at", { ascending: false }).range(from, to);
     };
     let result = await run(productSelect);
-    if (catalogSelectUnavailable(result.error)) result = await run(legacyProductSelect);
-    if (catalogSelectUnavailable(result.error)) result = await run(basicProductSelect);
+    if (result.error) result = await run(legacyProductSelect);
+    if (result.error) result = await run(basicProductSelect);
     return result;
   };
 
@@ -638,8 +628,8 @@ export async function GET(request: NextRequest) {
           .eq("id", productId.data)
           .maybeSingle();
       let result = await loadProduct(productSelect);
-      if (catalogSelectUnavailable(result.error)) result = await loadProduct(legacyProductSelect);
-      if (catalogSelectUnavailable(result.error)) result = await loadProduct(basicProductSelect);
+      if (result.error) result = await loadProduct(legacyProductSelect);
+      if (result.error) result = await loadProduct(basicProductSelect);
       return {
         data: result.data ? [result.data] : [],
         error: result.error,
