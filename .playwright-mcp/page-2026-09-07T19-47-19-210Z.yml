@@ -1,0 +1,323 @@
+- generic [ref=e3]:
+  - generic:
+    - button "Ir para o conteúdo principal"
+  - generic [ref=e4]:
+    - banner [ref=e5]:
+      - navigation [ref=e7]:
+        - generic [ref=e8]:
+          - link "Central do Vendedor" [ref=e9] [cursor=pointer]:
+            - /url: //seller.shopee.com.br
+          - link "Vender na Shopee" [ref=e10] [cursor=pointer]:
+            - /url: /seller/signup
+          - link "Baixe o App" [ref=e12] [cursor=pointer]:
+            - /url: /web/
+          - generic [ref=e13]: Siga-nos no
+          - generic [ref=e14]:
+            - link "Siga-nos no Instagram!" [ref=e15] [cursor=pointer]:
+              - /url: https://instagram.com/Shopee_BR
+            - link "Siga-nos no WhatsApp!" [ref=e16] [cursor=pointer]:
+              - /url: https://whatsapp.com/channel/0029VaKEnKI6GcGLZwn7l103
+            - link "Siga-nos no TikTok!" [ref=e17] [cursor=pointer]:
+              - /url: https://www.tiktok.com/@shopee_br
+        - list [ref=e18]:
+          - listitem
+          - listitem [ref=e19] [cursor=pointer]:
+            - link "Ajuda" [ref=e20]:
+              - /url: https://help.shopee.com.br/portal
+          - listitem [ref=e27] [cursor=pointer]:
+            - button "Português (BR)" [ref=e29]
+          - listitem [ref=e38]:
+            - link "Cadastrar" [ref=e39] [cursor=pointer]:
+              - /url: /buyer/signup?next=
+            - link "Entre" [ref=e41] [cursor=pointer]:
+              - /url: /buyer/login?next=
+      - generic [ref=e43]:
+        - link "home" [ref=e44] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e49]:
+          - search [ref=e50]:
+            - generic [ref=e51]:
+              - combobox "Pesquisar nesta loja" [ref=e53]
+              - generic [ref=e54] [cursor=pointer]:
+                - combobox [ref=e55]
+                - combobox [aria-hidden] [ref=e59]
+            - button "search" [ref=e60] [cursor=pointer]
+          - generic [ref=e71]:
+            - link [aria-hidden] [ref=e72] [cursor=pointer]:
+              - /url: /search?keyword=pijama%20feminino
+              - text: Pijama Feminino
+            - link [aria-hidden] [ref=e73] [cursor=pointer]:
+              - /url: /search?keyword=bolsa%20paty%20pequena
+              - text: Bolsa Paty Pequena
+            - link [aria-hidden] [ref=e74] [cursor=pointer]:
+              - /url: /search?keyword=short%20para%20academia
+              - text: Short Para Academia
+            - link [aria-hidden] [ref=e75] [cursor=pointer]:
+              - /url: /search?keyword=kit%20produtos%20de%20limpeza%20de%20pele
+              - text: Kit Produtos De Limpeza De Pele
+            - link [aria-hidden] [ref=e76] [cursor=pointer]:
+              - /url: /search?keyword=roupas%20para%20adolescentes%20feminina
+              - text: Roupas Para Adolescentes Feminina
+            - link [aria-hidden] [ref=e77] [cursor=pointer]:
+              - /url: /search?keyword=garrafa%20t%C3%A9rmica%20de%20%C3%A1gua
+              - text: Garrafa Térmica De Água
+            - link [aria-hidden] [ref=e78] [cursor=pointer]:
+              - /url: /search?keyword=espelho%20redondo%20grande
+              - text: Espelho Redondo Grande
+            - link [aria-hidden] [ref=e79] [cursor=pointer]:
+              - /url: /search?keyword=t%C3%AAnis%20feminino%20academia
+              - text: Tênis Feminino Academia
+            - link [aria-hidden] [ref=e80] [cursor=pointer]:
+              - /url: /search?keyword=kit%20ventosa%20para%20celular
+              - text: Kit Ventosa Para Celular
+            - link [aria-hidden] [ref=e81] [cursor=pointer]:
+              - /url: /search?keyword=par%20de%20alian%C3%A7a%20casamento
+              - text: Par De Aliança Casamento
+            - link [aria-hidden] [ref=e82] [cursor=pointer]:
+              - /url: /search?keyword=fone%20de%20ouvido%20bluetooth%20sem%20fio
+              - text: Fone De Ouvido Bluetooth Sem Fio
+            - link [aria-hidden] [ref=e83] [cursor=pointer]:
+              - /url: /search?keyword=bendito%20cacto%20body%20splash
+              - text: Bendito Cacto Body Splash
+            - link [aria-hidden] [ref=e84] [cursor=pointer]:
+              - /url: /search?keyword=cropped%20tube
+              - text: Cropped Tube
+            - link [aria-hidden] [ref=e85] [cursor=pointer]:
+              - /url: /search?keyword=t%C3%AAnis%20adolescente%20menina
+              - text: Tênis Adolescente Menina
+            - link [aria-hidden] [ref=e86] [cursor=pointer]:
+              - /url: /search?keyword=penteadeira%20maquiagem
+              - text: Penteadeira Maquiagem
+            - link [aria-hidden] [ref=e87] [cursor=pointer]:
+              - /url: /search?keyword=cartela%20de%20adesivos%20hologr%C3%A1fico
+              - text: Cartela De Adesivos Holográfico
+            - link [aria-hidden] [ref=e88] [cursor=pointer]:
+              - /url: /search?keyword=kit%20papete
+              - text: Kit Papete
+            - link [aria-hidden] [ref=e89] [cursor=pointer]:
+              - /url: /search?keyword=conjunto%20de%20facas%20inox%206%20pe%C3%A7as
+              - text: Conjunto De Facas Inox 6 Peças
+            - link [aria-hidden] [ref=e90] [cursor=pointer]:
+              - /url: /search?keyword=pulseira%20vivara%20prata%20925
+              - text: Pulseira Vivara Prata 925
+            - link [aria-hidden] [ref=e91] [cursor=pointer]:
+              - /url: /search?keyword=uno%20original%20com%20carta%20dura
+              - text: Uno Original Com Carta Dura
+            - link [aria-hidden] [ref=e92] [cursor=pointer]:
+              - /url: /search?keyword=pano%20de%20prato
+              - text: Pano De Prato
+            - link [aria-hidden] [ref=e93] [cursor=pointer]:
+              - /url: /search?keyword=forro%20de%20cama%20casal%20imperme%C3%A1vel
+              - text: Forro De Cama Casal Impermeável
+            - link [aria-hidden] [ref=e94] [cursor=pointer]:
+              - /url: /search?keyword=moletom%20preto%20masculino
+              - text: Moletom Preto Masculino
+            - link [aria-hidden] [ref=e95] [cursor=pointer]:
+              - /url: /search?keyword=kit%20mantimentos%20de%20cozinha%20vidro
+              - text: Kit Mantimentos De Cozinha Vidro
+            - link [aria-hidden] [ref=e96] [cursor=pointer]:
+              - /url: /search?keyword=adesivo%20para%20bike%20aranha
+              - text: Adesivo Para Bike Aranha
+            - link [aria-hidden] [ref=e97] [cursor=pointer]:
+              - /url: /search?keyword=wide%20leg%20cinza
+              - text: Wide Leg Cinza
+            - link [aria-hidden] [ref=e98] [cursor=pointer]:
+              - /url: /search?keyword=camiseta%20t%C3%A9rmica%20masculina%20manga%20longa
+              - text: Camiseta Térmica Masculina Manga Longa
+            - link [aria-hidden] [ref=e99] [cursor=pointer]:
+              - /url: /search?keyword=roupas%20femininas%20shorts
+              - text: Roupas Femininas Shorts
+            - link [aria-hidden] [ref=e100] [cursor=pointer]:
+              - /url: /search?keyword=cal%C3%A7a
+              - text: Calça
+            - link [aria-hidden] [ref=e101] [cursor=pointer]:
+              - /url: /search?keyword=smartwatch%20t900%20ultra%20plus
+              - text: Smartwatch T900 Ultra Plus
+            - link [aria-hidden] [ref=e102] [cursor=pointer]:
+              - /url: /search?keyword=%C3%B3culos%20de%20descanso%20feminino%20redondo
+              - text: Óculos De Descanso Feminino Redondo
+            - link [aria-hidden] [ref=e103] [cursor=pointer]:
+              - /url: /search?keyword=roupa%20rec%C3%A9m%20nascido%20unissex
+              - text: Roupa Recém Nascido Unissex
+            - link [aria-hidden] [ref=e104] [cursor=pointer]:
+              - /url: /search?keyword=gloss%20fran
+              - text: Gloss Fran
+            - link [aria-hidden] [ref=e105] [cursor=pointer]:
+              - /url: /search?keyword=patins%20roxo
+              - text: Patins Roxo
+            - link [aria-hidden] [ref=e106] [cursor=pointer]:
+              - /url: /search?keyword=roupa%20de%20academia%20feminina
+              - text: Roupa De Academia Feminina
+        - link "Shopping Cart Icon Carrinho Faça login para ver seu carrinho / adicionar produtos" [ref=e111] [cursor=pointer]:
+          - /url: /buyer/login?from_source=mini_cart_btn&next=
+          - img "Shopping Cart Icon" [ref=e112]
+          - generic [ref=e116]: Carrinho Faça login para ver seu carrinho / adicionar produtos
+    - main [ref=e123]:
+      - generic [ref=e125]:
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - link [ref=e130] [cursor=pointer]:
+              - /url: /alexandre_dc
+            - generic [ref=e138]:
+              - heading "CURTI Z" [level=1] [ref=e139]
+              - generic [ref=e140]: Último login há 11 minutos
+          - generic [ref=e142]:
+            - button [ref=e144] [cursor=pointer]
+            - button [ref=e149] [cursor=pointer]
+        - generic [ref=e154]:
+          - generic [ref=e159] [cursor=pointer]:
+            - generic [ref=e160]: "produtos:"
+            - generic [ref=e161]: "12"
+          - generic [ref=e170]:
+            - generic [ref=e171]: "seguidores:"
+            - generic [ref=e172]: "7"
+          - generic [ref=e179]:
+            - generic [ref=e180]: "Seguindo:"
+            - generic [ref=e181]: "1"
+          - generic [ref=e186] [cursor=pointer]:
+            - generic [ref=e187]: "Avaliação Geral da Loja:"
+            - generic [ref=e188]: 0 avaliações
+          - generic [ref=e196]:
+            - generic [ref=e197]: "Loja Shopee desde:"
+            - generic [ref=e198]: 19 meses atrás
+    - contentinfo [ref=e199]:
+      - generic [ref=e201]:
+        - generic [ref=e202]:
+          - generic [ref=e203]:
+            - generic [ref=e204]:
+              - generic [ref=e205]: ATENDIMENTO AO CLIENTE
+              - list [ref=e206]:
+                - listitem [ref=e207]:
+                  - link "Central de Ajuda" [ref=e208] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal
+                - listitem [ref=e210]:
+                  - link "Como Comprar" [ref=e211] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/76401-[No%c3%a7%c3%b5es-b%c3%a1sicas-do-comprador]-Como-fa%c3%a7o-uma-compra-na-Shopee%3F
+                - listitem [ref=e213]:
+                  - link "Métodos de Pagamento" [ref=e214] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/76237-[Novo-na-Shopee]-Quais-op%c3%a7%c3%b5es-de-pagamento-s%c3%a3o-aceitas-pela-Shopee%3F
+                - listitem [ref=e216]:
+                  - link "Garantia Shopee" [ref=e217] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/76327-[Seguran%c3%a7a-do-pedido]-O-que-%c3%a9-a-Garantia-Shopee%3F
+                - listitem [ref=e219]:
+                  - link "Devolução e Reembolso" [ref=e220] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/category/68-Retorno-Reembolso/579-Solicitando-um-Reembolso?page=1
+                - listitem [ref=e222]:
+                  - link "Fale Conosco" [ref=e223] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/78354-[Atendimento-ao-Cliente]-Como-entro-em-contato-com-o-Atendimento-ao-Cliente-da-Shopee
+                - listitem [ref=e225]:
+                  - link "Ouvidoria" [ref=e226] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/76290-[Ouvidoria]-Como-abrir-uma-solicita%c3%a7%c3%a3o-para-a-ouvidoria%3F
+                - listitem [ref=e228]:
+                  - link "Preferências de cookies" [ref=e229] [cursor=pointer]:
+                    - /url: https://shopee.com.br/setting/cookie
+            - generic [ref=e231]:
+              - generic [ref=e232]: SOBRE A SHOPEE
+              - list [ref=e233]:
+                - listitem [ref=e234]:
+                  - link "Sobre Nós" [ref=e235] [cursor=pointer]:
+                    - /url: https://shopee.com.br/blog/sobre-nos/
+                - listitem [ref=e237]:
+                  - link "Políticas" [ref=e238] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/4/category/17558-Pol%C3%ADticas/17562-Pol%C3%ADticas-da-Shopee?page=1
+                - listitem [ref=e240]:
+                  - link "Política de Privacidade da Shopee" [ref=e241] [cursor=pointer]:
+                    - /url: https://help.shopee.com.br/portal/article/77068
+                - listitem [ref=e243]:
+                  - link "Programa de Afiliados da Shopee" [ref=e244] [cursor=pointer]:
+                    - /url: https://shopee.com.br/m/afiliados
+                - listitem [ref=e246]:
+                  - link "Seja um Motorista Parceiro Shopee" [ref=e247] [cursor=pointer]:
+                    - /url: https://spx.com.br/br/driver/seja-um-motorista-parceiro.html
+                - listitem [ref=e249]:
+                  - link "Ofertas Relâmpago" [ref=e250] [cursor=pointer]:
+                    - /url: https://shopee.com.br/flash_sale
+                - listitem [ref=e252]:
+                  - link "Shopee Blog" [ref=e253] [cursor=pointer]:
+                    - /url: https://shopee.com.br/blog
+                - listitem [ref=e255]:
+                  - link "Imprensa" [ref=e256] [cursor=pointer]:
+                    - /url: https://shopee.com.br/m/imprensa
+                - listitem [ref=e258]:
+                  - link "Carreira" [ref=e259] [cursor=pointer]:
+                    - /url: https://careers.shopee.com.br/
+              - generic [ref=e261]: Black Friday
+              - list [ref=e262]:
+                - listitem [ref=e263]:
+                  - link "Black Friday 2026" [ref=e264] [cursor=pointer]:
+                    - /url: https://shopee.com.br/m/black-friday
+            - generic [ref=e266]:
+              - generic [ref=e267]: PAGAMENTO
+              - list [ref=e268]:
+                - listitem [ref=e269]:
+                  - img "logo" [ref=e272]
+                - listitem [ref=e273]:
+                  - img "logo" [ref=e276]
+                - listitem [ref=e277]:
+                  - img "logo" [ref=e280]
+                - listitem [ref=e281]:
+                  - img "logo" [ref=e284]
+                - listitem [ref=e285]:
+                  - img "logo" [ref=e288]
+                - listitem [ref=e289]:
+                  - img "logo" [ref=e292]
+                - listitem [ref=e293]:
+                  - img "logo" [ref=e296]
+                - listitem [ref=e297]:
+                  - img "logo" [ref=e300]
+            - generic [ref=e301]:
+              - generic [ref=e302]: SIGA-NOS
+              - list [ref=e303]:
+                - listitem [ref=e304]:
+                  - link "Instagram" [ref=e305] [cursor=pointer]:
+                    - /url: https://instagram.com/Shopee_BR
+                - listitem [ref=e308]:
+                  - link "TikTok" [ref=e309] [cursor=pointer]:
+                    - /url: https://www.tiktok.com/@shopee_br
+                - listitem [ref=e312]:
+                  - link "Whatsapp" [ref=e313] [cursor=pointer]:
+                    - /url: https://whatsapp.com/channel/0029VaKEnKI6GcGLZwn7l103
+                - listitem [ref=e316]:
+                  - link "Facebook" [ref=e317] [cursor=pointer]:
+                    - /url: https://facebook.com/ShopeeBR
+                - listitem [ref=e320]:
+                  - link "LinkedIn" [ref=e321] [cursor=pointer]:
+                    - /url: https://linkedin.com/company/shopee
+            - generic [ref=e324]:
+              - generic [ref=e325]: BAIXAR APP SHOPEE
+              - generic [ref=e326]:
+                - link [ref=e327] [cursor=pointer]:
+                  - /url: https://shopee.com.br/web
+                  - img "download_qr_code" [ref=e329]
+                - generic [ref=e330]:
+                  - link [ref=e331] [cursor=pointer]:
+                    - /url: https://shopee.com.br/web
+                    - img "app" [ref=e333]
+                  - link [ref=e334] [cursor=pointer]:
+                    - /url: https://shopee.com.br/web
+                    - img "app" [ref=e336]
+          - generic [ref=e337]:
+            - generic [ref=e338]: © 2026 Shopee. Todos os direitos reservados
+            - generic [ref=e339]:
+              - generic [ref=e340]: "País e região:"
+              - link "Argentina" [ref=e342] [cursor=pointer]:
+                - /url: https://shopee.com.ar
+              - link "Singapura" [ref=e344] [cursor=pointer]:
+                - /url: https://shopee.sg
+              - link "Indonésia" [ref=e346] [cursor=pointer]:
+                - /url: https://shopee.co.id
+              - link "Tailândia" [ref=e348] [cursor=pointer]:
+                - /url: https://shopee.co.th
+              - link "Malásia" [ref=e350] [cursor=pointer]:
+                - /url: https://shopee.com.my
+              - link "Vietnã" [ref=e352] [cursor=pointer]:
+                - /url: https://shopee.vn
+              - link "Filipinas" [ref=e354] [cursor=pointer]:
+                - /url: https://shopee.ph
+              - link "Brasil" [ref=e356] [cursor=pointer]:
+                - /url: https://shopee.com.br
+              - link "México" [ref=e358] [cursor=pointer]:
+                - /url: https://shopee.com.mx
+              - link "Taiwan" [ref=e360] [cursor=pointer]:
+                - /url: https://shopee.tw
+        - generic [ref=e361]: "CNPJ/MF nº 35.635.824/0001-12. Endereço: Av. Brigadeiro Faria Lima, 3732 - 22º e 23º andares, Itaim Bibi, São Paulo (SP), Brasil, 04538-132"

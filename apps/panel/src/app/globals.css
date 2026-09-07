@@ -2534,7 +2534,7 @@ button:not(:disabled):active,
   background: var(--surface-muted, #faf9f8);
 }
 
-.managed-product header div {
+.managed-product header > div:not(.managed-product-image):not(.managed-product-actions):not(.managed-product-identity) {
   display: grid;
   gap: 3px;
 }
@@ -5787,6 +5787,7 @@ button:not(:disabled):active,
   z-index: 2;
   bottom: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -10061,12 +10062,12 @@ button:not(:disabled):active,
 .managed-product-columns,
 .managed-product > header {
   display: grid;
-  grid-template-columns: 98px minmax(200px, 1fr) 82px 116px 112px 82px 210px;
+  grid-template-columns: 94px minmax(140px, 1fr) 70px 100px 100px 70px 150px;
   align-items: center;
   gap: 14px;
 }
 .managed-product-columns {
-  padding: 0 16px;
+  padding: 0 14px;
   color: var(--muted);
   font-size: 0.67rem;
   font-weight: 850;
@@ -10083,6 +10084,9 @@ button:not(:disabled):active,
 }
 .managed-product-image > input,
 .managed-product-columns input { width: 16px; height: 16px; accent-color: var(--brand-700); }
+.managed-product-image > input { flex-shrink: 0; }
+.managed-product-mobile-label { display: none; }
+.product-editor-message { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 .managed-product-columns > span:first-child { display: flex; align-items: center; gap: 7px; }
 .product-bulk-actions { display: flex; min-height: 52px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); background: var(--canvas); }
 .product-bulk-actions > strong { margin-right: auto; }
@@ -10125,7 +10129,7 @@ button:not(:disabled):active,
   min-height: 42px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .managed-product-columns {
     display: none;
   }
@@ -10158,6 +10162,7 @@ button:not(:disabled):active,
     grid-column: 1;
     grid-row: 3;
   }
+  .managed-product-mobile-label { display: block; }
   .managed-product-commercial {
     grid-column: 2;
     grid-row: 3;
@@ -10217,6 +10222,9 @@ button:not(:disabled):active,
 }
 .product-editor-drawer {
   grid-template-columns: 150px minmax(0, 1fr);
+}
+.product-editor-drawer.product-editor-new {
+  grid-template-columns: minmax(0, 1fr);
 }
 .product-editor-drawer > form {
   container-name: product-editor;

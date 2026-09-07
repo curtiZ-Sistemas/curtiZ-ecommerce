@@ -431,6 +431,7 @@ export function ProductManagement({
   }, []);
 
   const openNewProduct = () => {
+    setMessage("");
     setQueuedMediaFiles([]);
     setActiveEditorSection("information");
     setEditing("new");
@@ -1276,7 +1277,7 @@ export function ProductManagement({
         </div>
       ) : (
         <>
-          <div className="managed-product-columns" aria-hidden="true">
+          <div className="managed-product-columns">
             <span><input type="checkbox" aria-label="Selecionar todos os produtos desta página" checked={products.length > 0 && products.every((product) => selectedProductIds.includes(product.id))} onChange={(event) => setSelectedProductIds(event.target.checked ? products.map((product) => product.id) : [])} /> Imagem</span>
             <span>Produto</span>
             <span>Variações</span>
@@ -1315,10 +1316,11 @@ export function ProductManagement({
                     </div>
                   </div>
                   <div className="managed-product-variations">
+                    <span className="managed-product-mobile-label">Variações</span>
                     <strong>{product.variants.length.toLocaleString("pt-BR")}</strong>
                   </div>
                   <div className="managed-product-status">
-                    <span className={`status product-status-${product.status}`}>
+                    <span className={`status product-status-${product.status === "active" ? "active" : ["archived", "rejected"].includes(product.status) ? "archived" : "draft"}`}>
                       {productStatusLabel(product.status)}
                     </span>
                   </div>
@@ -1793,9 +1795,10 @@ export function ProductManagement({
           eyebrow={editing === "new" ? "Novo cadastro" : "Edição de produto"}
           title={editing === "new" ? "Cadastrar produto" : editing.name}
           dirty={editorDirty && !pendingActionRef.current}
+          busy={Boolean(pending)}
           onClose={closeEditor}
         >
-          <div className="product-editor-drawer">
+          {({ requestClose }) => <div className={`product-editor-drawer${editing === "new" ? " product-editor-new" : ""}`}>
             {editing !== "new" ? <nav className="product-editor-nav" aria-label="Seções da edição">
               {productEditorSections.map((section) => (
                 <button
@@ -2709,7 +2712,8 @@ export function ProductManagement({
                 </aside>
               ) : null}
               <footer className="product-editor-footer">
-                <button className="secondary-button" type="button" onClick={closeEditor} disabled={Boolean(pending)}>Cancelar</button>
+                {message ? <p className="form-message product-editor-message" role="status">{message}</p> : null}
+                <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending)}>Cancelar</button>
                 {editing === "new" ? (
                   <>
                     <button className="secondary-button" type="submit" name="submitMode" value="draft" disabled={Boolean(pending)}>Salvar como rascunho</button>
@@ -2720,7 +2724,7 @@ export function ProductManagement({
                 )}
               </footer>
             </form>
-          </div>
+          </div>}
         </PanelDrawer>
       )}
 
