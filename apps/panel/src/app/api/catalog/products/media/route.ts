@@ -18,6 +18,15 @@ const valueText = (value: unknown, key: string) => {
   return typeof candidate === "string" ? candidate : "";
 };
 
+const productMediaUnavailable = (error: { code?: string; message?: string } | null) => {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    ["42P01", "PGRST200", "PGRST204", "PGRST205"].includes(error?.code ?? "") ||
+    message.includes("product_media") ||
+    message.includes("schema cache")
+  );
+};
+
 const uint16 = (bytes: Uint8Array, offset: number, little = false) =>
   little ? bytes[offset]! | (bytes[offset + 1]! << 8) : (bytes[offset]! << 8) | bytes[offset + 1]!;
 const uint24 = (bytes: Uint8Array, offset: number) =>
@@ -179,7 +188,7 @@ export async function POST(request: NextRequest) {
       auth.supabase.from("product_images").update({ is_primary: false }).eq("product_id", parsed.data.productId),
       auth.supabase.from("product_media").update({ is_primary: false }).eq("product_id", parsed.data.productId)
     ]);
-    if (reset.error || resetMedia.error) {
+    if (reset.error || (resetMedia.error && !productMediaUnavailable(resetMedia.error))) {
       await auth.supabase.storage.from("catalog-public").remove([path]);
       return NextResponse.json(
         { message: "Não foi possível definir a imagem principal." },
@@ -187,10 +196,21 @@ export async function POST(request: NextRequest) {
       );
     }
   }
-  const count = await auth.supabase
+  let count = await auth.supabase
     .from("product_media")
     .select("id", { count: "exact", head: true })
     .eq("product_id", parsed.data.productId);
+  if (count.error && productMediaUnavailable(count.error)) {
+    count = await auth.supabase
+      .from("product_images")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", parsed.data.productId);
+  }
+  if (count.error)
+    return NextResponse.json(
+      { message: "Não foi possível preparar a imagem para a galeria." },
+      { status: 409, headers: privateNoStore }
+    );
   const inserted = await auth.supabase
     .from("product_images")
     .insert({
@@ -227,7 +247,7 @@ export async function POST(request: NextRequest) {
     is_primary: parsed.data.primary === "true",
     created_by: auth.userId
   });
-  if (insertedMedia.error) {
+  if (insertedMedia.error && !productMediaUnavailable(insertedMedia.error)) {
     await auth.supabase.from("product_images").delete().eq("id", imageId);
     await auth.supabase.storage.from("catalog-public").remove([path]);
     return NextResponse.json(
@@ -383,7 +403,7 @@ export async function PATCH(request: NextRequest) {
         .from("product_media")
         .update({ variant_id: variant.data.id })
         .eq("id", image.data.id);
-      if (associatedMedia.error)
+      if (associatedMedia.error && !productMediaUnavailable(associatedMedia.error))
         return NextResponse.json(
           { message: "Não foi possível sincronizar a imagem com a galeria." },
           { status: 409, headers: privateNoStore }

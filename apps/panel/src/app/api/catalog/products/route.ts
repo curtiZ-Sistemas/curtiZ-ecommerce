@@ -553,6 +553,8 @@ export async function GET(request: NextRequest) {
     });
   const legacyProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+  const compatibleProductSelect =
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const basicProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description";
   const productSelect =
@@ -615,6 +617,7 @@ export async function GET(request: NextRequest) {
     };
     let result = await run(productSelect);
     if (result.error) result = await run(legacyProductSelect);
+    if (result.error) result = await run(compatibleProductSelect);
     if (result.error) result = await run(basicProductSelect);
     return result;
   };
@@ -629,6 +632,7 @@ export async function GET(request: NextRequest) {
           .maybeSingle();
       let result = await loadProduct(productSelect);
       if (result.error) result = await loadProduct(legacyProductSelect);
+      if (result.error) result = await loadProduct(compatibleProductSelect);
       if (result.error) result = await loadProduct(basicProductSelect);
       return {
         data: result.data ? [result.data] : [],
