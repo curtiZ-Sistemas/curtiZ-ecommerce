@@ -40,6 +40,7 @@ export const serverEnvSchema = z.object({
   MELHOR_ENVIO_ENABLED: booleanString.default(false),
   EMAIL_ENABLED: booleanString.default(false),
   TURNSTILE_ENABLED: booleanString.default(false),
+  GOOGLE_MERCHANT_ENABLED: booleanString.default(false),
   INVENTORY_RESERVATION_MINUTES: z.coerce.number().int().min(5).max(120).default(30)
 });
 

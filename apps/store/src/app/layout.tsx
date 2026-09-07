@@ -11,6 +11,7 @@ import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
 import { PromotionBar } from "@/components/promotion-bar";
 import { JsonLd } from "@/components/json-ld";
 import { getPromotionBarMessages } from "@/lib/promotion-bar-data";
+import { getStoreNavigation } from "@/lib/store-navigation";
 import {
   OFFICIAL_STORE_ORIGIN,
   organizationStructuredData,
@@ -45,7 +46,11 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // A CSP usa um nonce exclusivo por requisição; o HTML não pode ser pré-renderizado sem ele.
-  const [, promotionMessages] = await Promise.all([connection(), getPromotionBarMessages()]);
+  const [, promotionMessages, navigation] = await Promise.all([
+    connection(),
+    getPromotionBarMessages(),
+    getStoreNavigation()
+  ]);
 
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
@@ -60,7 +65,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <RouteFeedback />
             <IntelligenceBootstrap />
             <PromotionBar messages={promotionMessages} />
-            <SiteHeader />
+            <SiteHeader navigation={navigation} />
             <main id="main-content">{children}</main>
             <SiteFooter />
             {/* Chat temporariamente desativado. */}

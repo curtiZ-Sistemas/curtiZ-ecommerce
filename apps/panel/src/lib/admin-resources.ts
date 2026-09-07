@@ -69,19 +69,15 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
   categorias: {
     label: "Categorias",
     singular: "categoria",
-    description: "Organize a navegação, hierarquia e SEO do catálogo.",
+    description: "Organize as categorias usadas pelos produtos da loja.",
     table: "categories",
     readPermission: "catalog.taxonomy.manage",
     writePermission: "catalog.taxonomy.manage",
-    select: "id,name,slug,description,active,sort_order,seo_title,seo_description,updated_at",
-    searchColumns: ["name", "slug"],
+    select: "id,name,active,sort_order,updated_at",
+    searchColumns: ["name"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
-      { key: "slug", label: "Slug (opcional)", type: "text" },
-      { key: "description", label: "Descrição", type: "textarea" },
       { key: "sort_order", label: "Ordem", type: "number" },
-      { key: "seo_title", label: "Título SEO", type: "text" },
-      { key: "seo_description", label: "Descrição SEO", type: "textarea" },
       { key: "active", label: "Ativa", type: "boolean" }
     ],
     allowCreate: true,

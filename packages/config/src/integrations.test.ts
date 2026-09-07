@@ -17,9 +17,17 @@ describe("configuração opcional de integrações", () => {
       shipping: { provider: "disabled", enabled: false, melhorEnvioEnabled: false },
       email: { provider: "disabled", enabled: false },
       whatsapp: { provider: "disabled", enabled: false },
+      googleMerchant: { enabled: false },
       turnstile: { enabled: false },
       internalMfaRequired: false
     });
+  });
+
+  it("mantém o catálogo Google desligado sem liberação explícita", () => {
+    expect(getIntegrationConfig({}).googleMerchant.enabled).toBe(false);
+    expect(
+      getIntegrationConfig({ GOOGLE_MERCHANT_ENABLED: "true" }).googleMerchant.enabled
+    ).toBe(true);
   });
 
   it("não libera checkout com apenas um provider ativo", () => {

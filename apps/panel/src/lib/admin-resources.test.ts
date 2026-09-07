@@ -56,6 +56,14 @@ describe("admin resources", () => {
     expect(adminResources.categorias.fields.some((field) => field.key === "image_path")).toBe(false);
   });
 
+  it("gera slug e SEO de categoria sem exigir campos técnicos no formulário", () => {
+    expect(adminResources.categorias.fields.map((field) => field.key)).toEqual([
+      "name",
+      "sort_order",
+      "active"
+    ]);
+  });
+
   it("oferece destinos estruturados para banners e moderação reversível", () => {
     expect(adminResources.banners.fields.find((field) => field.key === "destination_type")?.options)
       .toEqual(expect.arrayContaining(["product", "category", "institutional_page", "predefined_search"]));

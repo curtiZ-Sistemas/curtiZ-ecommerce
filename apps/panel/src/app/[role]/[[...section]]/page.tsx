@@ -22,6 +22,7 @@ import { LegalCenter, OperationalLegalLinks } from "@/components/legal-center";
 import { HelpContentCenter } from "@/components/help-content-center";
 import { StoreIntelligence } from "@/components/store-intelligence";
 import { PromotionBarManager } from "@/components/promotion-bar-manager";
+import { StoreNavigationManager } from "@/components/store-navigation-manager";
 import { requirePanelAccess } from "@/lib/auth";
 import { isAdminResource } from "@/lib/admin-resources";
 import { isManagerResource, type ManagerResourceKey } from "@/lib/manager-resources";
@@ -96,7 +97,7 @@ function showRouteHeading(role: PanelRole, section: string) {
   if (!section) return role !== "gerencia";
   if (role === "administracao") {
     const ownsHeading =
-      ["produtos", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
+      ["produtos", "navegacao-loja", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
         section
       ) || isAdminResource(section);
     return !ownsHeading;
@@ -153,6 +154,7 @@ function Administration({ section, initialQuery }: { section: string; initialQue
   if (section === "configuracoes") redirect("/administracao");
   if (section === "produtos")
     return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} />;
+  if (section === "navegacao-loja") return <StoreNavigationManager />;
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "barra-promocional") return <PromotionBarManager />;
   if (section === "usuarios") return <AdminUsers />;

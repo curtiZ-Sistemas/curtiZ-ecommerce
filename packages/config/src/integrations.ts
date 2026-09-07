@@ -36,6 +36,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
   const emailEnabled =
     parseEnvironmentBoolean(environment.EMAIL_ENABLED) || emailProvider === "resend";
   const turnstileEnabled = parseEnvironmentBoolean(environment.TURNSTILE_ENABLED);
+  const googleMerchantEnabled = parseEnvironmentBoolean(environment.GOOGLE_MERCHANT_ENABLED);
   const paymentEnabled =
     paymentProvider === "mock" || (paymentProvider === "mercadopago" && mercadoPagoEnabled);
   const shippingEnabled =
@@ -52,6 +53,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
     shipping: { provider: shippingProvider, enabled: shippingEnabled, melhorEnvioEnabled },
     email: { provider: emailProvider, enabled: emailEnabled },
     whatsapp: { provider: whatsappProvider, enabled: whatsappProvider !== "disabled" },
+    googleMerchant: { enabled: googleMerchantEnabled },
     turnstile: { enabled: turnstileEnabled },
     internalMfaRequired: parseEnvironmentBoolean(environment.REQUIRE_INTERNAL_MFA)
   } as const;
@@ -78,5 +80,7 @@ export const isEmailEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).email.enabled;
 export const isTurnstileEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).turnstile.enabled;
+export const isGoogleMerchantEnabled = (environment?: IntegrationEnvironment) =>
+  getIntegrationConfig(environment).googleMerchant.enabled;
 export const isInternalMfaRequired = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).internalMfaRequired;

@@ -18,6 +18,7 @@ import { authorizeManagerRequest } from "./manager-api";
 import { authorizeTechnicalRequest } from "./technical-api";
 import { GET as readOperations, POST as changeOperations } from "../app/api/operations/route";
 import { GET as readProducts, PATCH as changeProducts, DELETE as deleteProducts } from "../app/api/catalog/products/route";
+import { GET as readNavigation, PATCH as changeNavigation } from "../app/api/admin/store-navigation/route";
 
 beforeEach(() => {
   vi.stubEnv("REQUIRE_INTERNAL_MFA", "true");
@@ -49,6 +50,14 @@ describe("API de produtos", () => {
     expect((await changeProducts(new NextRequest(url, { method: "PATCH" }))).status).toBe(401);
     expect((await deleteProducts(new NextRequest(url, { method: "DELETE" }))).status).toBe(401);
     expect(mocks.assurance).toHaveBeenCalledTimes(3);
+  });
+});
+describe("API de navegação da loja", () => {
+  it("nega leitura e escrita sem segundo fator", async () => {
+    mocks.roles = ["admin"];
+    const url = "http://localhost:3001/api/admin/store-navigation";
+    expect((await readNavigation(new NextRequest(url))).status).toBe(401);
+    expect((await changeNavigation(new NextRequest(url, { method: "PATCH" }))).status).toBe(401);
   });
 });
 afterEach(() => vi.unstubAllEnvs());

@@ -117,7 +117,8 @@ const columnLabels: Record<string, string> = {
   verified_purchase: "Compra verificada",
   brand_response: "Resposta da curti Z",
   storage_path: "Arquivo",
-  accepted_at: "Aceito em"
+  accepted_at: "Aceito em",
+  product_count: "Produtos"
 };
 
 const statusLabels: Record<string, string> = {
@@ -279,6 +280,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
   const [categorySlug, setCategorySlug] = useState("");
   const [categorySlugEdited, setCategorySlugEdited] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [stateTarget, setStateTarget] = useState<{
     items: Item[];
@@ -348,8 +350,10 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
       .map((key) => key.trim())
       .filter((key) => !["id", "updated_at", "created_at", "edited_at"].includes(key));
 
-    return keys.slice(0, 5);
-  }, [definition.select]);
+    return resource === "categorias"
+      ? ["name", "product_count", "active", "sort_order"]
+      : keys.slice(0, 5);
+  }, [definition.select, resource]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const selectionLabelColumn = columns[0] ?? "id";
@@ -364,6 +368,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
 
     setPending(true);
     setMessage("");
+    setDeleteError("");
     setFieldErrors({});
 
     const form = new FormData(event.currentTarget);
@@ -515,7 +520,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
       await load();
       setMessage(result.message ?? "Categoria excluída.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível excluir a categoria.");
+      setDeleteError(error instanceof Error ? error.message : "Não foi possível excluir a categoria.");
     } finally {
       setPending(false);
     }
@@ -777,7 +782,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                         {canDelete ? (
                           <button
                             type="button"
-                            onClick={() => setDeleteTarget(item)}
+                            onClick={() => { setDeleteError(""); setDeleteTarget(item); }}
                             aria-label="Excluir permanentemente"
                           >
                             <Trash2 />
@@ -1012,16 +1017,17 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
             aria-modal="true"
             aria-labelledby="delete-category-title"
           >
-            <h2 id="delete-category-title">Excluir categoria permanentemente?</h2>
+            <h2 id="delete-category-title">Excluir categoria?</h2>
             <p>
-              A categoria <strong>{displayValue(deleteTarget.name, "name")}</strong> só será
-              excluída se não houver produtos ou subcategorias vinculados.
+              <strong>{displayValue(deleteTarget.name, "name")}</strong> será excluída somente
+              se não estiver em uso.
             </p>
+            {deleteError ? <p className="admin-field-error" role="alert">{deleteError}</p> : null}
             <div>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => { setDeleteTarget(null); setDeleteError(""); }}
                 disabled={pending}
               >
                 Cancelar

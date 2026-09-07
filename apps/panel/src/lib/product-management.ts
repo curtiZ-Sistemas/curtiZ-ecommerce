@@ -103,6 +103,13 @@ export type EditableVariant = {
   mpn: string;
 };
 
+export type ProductPublicationInput = {
+  name?: string;
+  categoryIds?: string[];
+  priceInCents?: number | null;
+  variants?: Array<{ active: boolean }>;
+};
+
 export const MAX_PRODUCT_MEDIA_SIZE = 10 * 1024 * 1024;
 export const MAX_PRODUCT_VIDEO_SIZE = 80 * 1024 * 1024;
 export const PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -278,27 +285,48 @@ export function groupEditableVariantsByColor(
 
 export function productPublishRequirements(product: {
   name?: string;
-  description?: string;
   categoryIds?: string[];
   priceInCents?: number | null;
-  weightGrams?: number | null;
-  heightCm?: number | null;
-  widthCm?: number | null;
-  lengthCm?: number | null;
-  variants?: Array<{ active: boolean; sku: string; stock: number }>;
-}) {
+  variants?: Array<{ active: boolean }>;
+}): string[] {
   const missing: string[] = [];
   if (!product.name?.trim()) missing.push("nome");
-  if (!product.description?.trim()) missing.push("descrição");
   if (!product.categoryIds?.length) missing.push("categoria");
   if (!product.priceInCents || product.priceInCents <= 0) missing.push("preço de venda");
-  if (!product.weightGrams || !product.heightCm || !product.widthCm || !product.lengthCm) {
-    missing.push("dados de entrega");
-  }
-  if (!product.variants?.some((variant) => variant.active && variant.sku.trim())) {
-    missing.push("ao menos uma variação ativa");
-  }
+  if (!product.variants?.some((variant) => variant.active)) missing.push("estoque do produto");
   return missing;
+}
+
+export function productPublicationMessage(product: ProductPublicationInput): string | null {
+  if (!product.name?.trim()) return "Adicione o nome do produto.";
+  if (!product.categoryIds?.length) return "Escolha a categoria do produto.";
+  if (!product.priceInCents || product.priceInCents <= 0) {
+    return "Adicione o preço do produto.";
+  }
+  if (!product.variants?.some((variant) => variant.active)) {
+    return "Adicione o estoque do produto.";
+  }
+  return null;
+}
+
+export function automaticProductSeo(input: {
+  name: string;
+  description?: string;
+  categoryName?: string;
+}) {
+  const name = input.name.trim();
+  const category = input.categoryName?.trim();
+  const source = input.description?.trim() ||
+    `${name}${category ? ` na categoria ${category}` : ""}. Compre online na curtiZ.`;
+  const title = `${name}${category ? ` | ${category}` : ""} | curtiZ`;
+  return {
+    title: title.slice(0, 160),
+    description: source.replace(/\s+/gu, " ").slice(0, 320)
+  };
+}
+
+export function productThumbnail(product: Pick<ManagedProduct, "images">) {
+  return product.images?.find((image) => image.primary) ?? product.images?.[0] ?? null;
 }
 
 export const filterManagedProducts = (

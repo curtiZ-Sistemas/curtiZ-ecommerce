@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  automaticProductSeo,
   filterManagedProducts,
   generateVariantCombinations,
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
-  productPublishRequirements
+  productPublicationMessage,
+  productPublishRequirements,
+  productThumbnail
 } from "../lib/product-management";
 
 const products = [
@@ -75,12 +78,34 @@ describe("product management", () => {
 
   it("separa os requisitos de publicação dos requisitos de rascunho", () => {
     expect(productPublishRequirements({ name: "Rascunho", variants: [] })).toEqual([
-      "descrição",
       "categoria",
       "preço de venda",
-      "dados de entrega",
-      "ao menos uma variação ativa"
+      "estoque do produto"
     ]);
+  });
+
+  it("valida a publicação com mensagens específicas sem exigir SEO ou dimensões", () => {
+    expect(productPublicationMessage({ name: "Sandália X", categoryIds: [], priceInCents: 8990, variants: [{ active: true }] }))
+      .toBe("Escolha a categoria do produto.");
+    expect(productPublicationMessage({ name: "Sandália X", categoryIds: ["feminino"], priceInCents: 0, variants: [{ active: true }] }))
+      .toBe("Adicione o preço do produto.");
+    expect(productPublicationMessage({ name: "Sandália X", categoryIds: ["feminino"], priceInCents: 8990, variants: [{ active: true }] }))
+      .toBeNull();
+  });
+
+  it("gera SEO automático sem campos manuais", () => {
+    expect(automaticProductSeo({ name: "Sandália X", categoryName: "Feminino" })).toEqual({
+      title: "Sandália X | Feminino | curtiZ",
+      description: "Sandália X na categoria Feminino. Compre online na curtiZ."
+    });
+  });
+
+  it("usa imagem principal, depois a primeira imagem e só então nenhum resultado", () => {
+    const first = { id: "1", path: "first.webp", url: "/first.webp", alt: "Primeira", primary: false, sortOrder: 0, width: 100, height: 100 };
+    const primary = { ...first, id: "2", path: "main.webp", url: "/main.webp", primary: true, sortOrder: 1 };
+    expect(productThumbnail({ images: [first, primary] })).toBe(primary);
+    expect(productThumbnail({ images: [first] })).toBe(first);
+    expect(productThumbnail({ images: [] })).toBeNull();
   });
 
   it("agrupa somente as combinações reais por cor e preserva tamanhos desiguais", () => {

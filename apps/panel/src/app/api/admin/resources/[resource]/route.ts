@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   authorizeAdminRequest,
+  objectRows,
   privateNoStore,
   safePanelOrigin,
   unauthorizedAdminResponse
@@ -12,6 +13,7 @@ import {
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
+import { categoryDeletionMessage } from "../../../../../lib/category-management";
 
 export const dynamic = "force-dynamic";
 
@@ -362,9 +364,57 @@ export async function GET(
     );
   }
 
+  let responseItems: Record<string, unknown>[] = objectRows(result.data);
+  if (context.resource === "categorias" && responseItems.length) {
+    const categoryIds = objectRows(responseItems)
+      .map((item) => typeof item.id === "string" ? item.id : "")
+      .filter(Boolean);
+    const [primaryProducts, linkedProducts, children] = await Promise.all([
+      context.auth.supabase.from("products").select("id,category_id").in("category_id", categoryIds),
+      context.auth.supabase.from("product_categories").select("product_id,category_id").in("category_id", categoryIds),
+      context.auth.supabase.from("categories").select("id,parent_id").in("parent_id", categoryIds)
+    ]);
+    if (primaryProducts.error || linkedProducts.error || children.error) {
+      logResourceQueryFailure(
+        context.resource,
+        context.definition.table,
+        primaryProducts.error ?? linkedProducts.error ?? children.error
+      );
+      return NextResponse.json(
+        { message: "Não foi possível carregar os vínculos das categorias." },
+        { status: 503, headers: privateNoStore }
+      );
+    }
+    const productIds = new Map<string, Set<string>>();
+    const childCounts = new Map<string, number>();
+    for (const id of categoryIds) productIds.set(id, new Set());
+    for (const product of objectRows(primaryProducts.data)) {
+      const categoryId = typeof product.category_id === "string" ? product.category_id : "";
+      const productId = typeof product.id === "string" ? product.id : "";
+      if (categoryId && productId) productIds.get(categoryId)?.add(productId);
+    }
+    for (const link of objectRows(linkedProducts.data)) {
+      const categoryId = typeof link.category_id === "string" ? link.category_id : "";
+      const productId = typeof link.product_id === "string" ? link.product_id : "";
+      if (categoryId && productId) productIds.get(categoryId)?.add(productId);
+    }
+    for (const child of objectRows(children.data)) {
+      const parentId = typeof child.parent_id === "string" ? child.parent_id : "";
+      if (parentId) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
+    }
+    responseItems = objectRows(responseItems).map((item) => {
+      const id = typeof item.id === "string" ? item.id : "";
+      return {
+        ...item,
+        product_count: productIds.get(id)?.size ?? 0,
+        subcategory_count: childCounts.get(id) ?? 0
+      };
+    });
+  }
+
   return NextResponse.json(
     {
-      items: result.data ?? [],
+      items: responseItems,
       total: result.count ?? 0,
       page,
       pageSize,
@@ -746,34 +796,47 @@ export async function DELETE(
         { status: 405, headers: privateNoStore }
       );
     }
-    const [primaryProducts, children] = await Promise.all([
+    const [primaryProducts, linkedProducts, children] = await Promise.all([
       context.auth.supabase
         .from("products")
-        .select("id", { count: "exact", head: true })
+        .select("id")
+        .eq("category_id", parsed.data.id),
+      context.auth.supabase
+        .from("product_categories")
+        .select("product_id")
         .eq("category_id", parsed.data.id),
       context.auth.supabase
         .from("categories")
         .select("id", { count: "exact", head: true })
         .eq("parent_id", parsed.data.id)
     ]);
-    if (primaryProducts.error || children.error) {
+    if (primaryProducts.error || linkedProducts.error || children.error) {
       return NextResponse.json(
         { message: "Não foi possível confirmar se a categoria pode ser excluída." },
         { status: 503, headers: privateNoStore }
       );
     }
-    if ((primaryProducts.count ?? 0) > 0) {
+    const linkedProductIds = new Set([
+      ...objectRows(primaryProducts.data).map((item) => typeof item.id === "string" ? item.id : ""),
+      ...objectRows(linkedProducts.data).map((item) => typeof item.product_id === "string" ? item.product_id : "")
+    ].filter(Boolean));
+    const productCount = linkedProductIds.size;
+    const dependencyMessage = categoryDeletionMessage(productCount, children.count ?? 0);
+    if (productCount > 0 && dependencyMessage) {
       return NextResponse.json(
         {
-          message:
-            "A categoria possui produtos vinculados e não pode ser excluída. Arquive-a para preservar as referências."
+          message: dependencyMessage,
+          dependencies: { products: productCount, subcategories: children.count ?? 0 }
         },
         { status: 409, headers: privateNoStore }
       );
     }
-    if ((children.count ?? 0) > 0) {
+    if ((children.count ?? 0) > 0 && dependencyMessage) {
       return NextResponse.json(
-        { message: "A categoria possui subcategorias vinculadas. Reorganize-as antes de excluir." },
+        {
+          message: dependencyMessage,
+          dependencies: { products: 0, subcategories: children.count ?? 0 }
+        },
         { status: 409, headers: privateNoStore }
       );
     }

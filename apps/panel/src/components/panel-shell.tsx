@@ -79,6 +79,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Dashboard", "", PanelsTopLeft],
     ["Produtos", "produtos", Boxes],
     ["Categorias", "categorias", Tags],
+    ["Navegação da loja", "navegacao-loja", PanelsTopLeft],
     ["Coleções", "colecoes", PanelsTopLeft],
     ["Pedidos", "pedidos", ShoppingBag],
     ["Clientes", "clientes", Users],

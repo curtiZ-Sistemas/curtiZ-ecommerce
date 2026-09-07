@@ -46,7 +46,8 @@ begin
   perform private.require_permission('catalog.taxonomy.manage');
   if coalesce(array_length(p_item_ids, 1), 0) > 100
     or coalesce(array_length(p_item_ids, 1), 0) <> (
-      select count(distinct item_id) from unnest(coalesce(p_item_ids, array[]::uuid[])) item_id
+      select count(distinct item_id)
+      from unnest(coalesce(p_item_ids, array[]::uuid[])) as item(item_id)
     ) then
     raise exception 'invalid navigation order' using errcode = '22023';
   end if;

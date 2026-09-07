@@ -10061,7 +10061,7 @@ button:not(:disabled):active,
 .managed-product-columns,
 .managed-product > header {
   display: grid;
-  grid-template-columns: 72px minmax(220px, 1fr) 120px 120px 90px 232px;
+  grid-template-columns: 98px minmax(200px, 1fr) 82px 116px 112px 82px 210px;
   align-items: center;
   gap: 14px;
 }
@@ -10077,13 +10077,20 @@ button:not(:disabled):active,
   padding: 10px 14px;
 }
 .managed-product-image {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
+.managed-product-image > input,
+.managed-product-columns input { width: 16px; height: 16px; accent-color: var(--brand-700); }
+.managed-product-columns > span:first-child { display: flex; align-items: center; gap: 7px; }
+.product-bulk-actions { display: flex; min-height: 52px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); background: var(--canvas); }
+.product-bulk-actions > strong { margin-right: auto; }
 .managed-product-identity {
   grid-column: auto;
 }
 .managed-product-status,
+.managed-product-variations,
 .managed-product-commercial,
 .managed-product-stock {
   align-self: center;
@@ -10123,7 +10130,7 @@ button:not(:disabled):active,
     display: none;
   }
   .managed-product > header {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 92px minmax(0, 1fr);
     align-items: center;
     gap: 12px;
   }
@@ -10136,6 +10143,7 @@ button:not(:disabled):active,
     grid-row: 1;
   }
   .managed-product-status,
+  .managed-product-variations,
   .managed-product-commercial,
   .managed-product-stock {
     min-width: 0;
@@ -10146,17 +10154,21 @@ button:not(:disabled):active,
   .managed-product-status {
     grid-column: 1 / -1;
   }
-  .managed-product-commercial {
+  .managed-product-variations {
     grid-column: 1;
     grid-row: 3;
   }
-  .managed-product-stock {
+  .managed-product-commercial {
     grid-column: 2;
     grid-row: 3;
   }
-  .managed-product-actions {
+  .managed-product-stock {
     grid-column: 1 / -1;
     grid-row: 4;
+  }
+  .managed-product-actions {
+    grid-column: 1 / -1;
+    grid-row: 5;
     width: 100%;
     justify-content: stretch;
   }
@@ -10491,17 +10503,6 @@ button:not(:disabled):active,
   background: #111;
 }
 .product-media-queued-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.product-advanced {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--canvas);
-}
-.product-advanced > summary {
-  cursor: pointer;
-  padding: 14px 16px;
-  font-weight: 750;
-}
-.product-advanced > .admin-form-grid { padding: 0 16px 16px; }
 .product-publication-check {
   display: flex;
   flex-wrap: wrap;
@@ -10558,4 +10559,32 @@ button:not(:disabled):active,
   .product-kind-picker { flex-direction: column; }
   .product-kind-picker label { width: 100%; }
   .admin-modal { width: 100%; max-height: 100dvh; border-radius: 0; }
+}
+
+.store-navigation-manager { display: grid; gap: 18px; }
+.store-navigation-list { display: grid; gap: 22px; }
+.store-navigation-list > section { display: grid; gap: 8px; }
+.store-navigation-list h2 { margin: 0 0 4px; font-size: 1rem; }
+.store-navigation-list article {
+  display: grid;
+  grid-template-columns: 86px minmax(180px, 1fr) 92px 132px;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: white;
+}
+.store-navigation-list article > div:nth-child(2) { display: grid; gap: 2px; }
+.store-navigation-list article span { color: var(--muted); font-size: .78rem; }
+.store-navigation-order,
+.store-navigation-actions { display: flex; gap: 6px; }
+.store-navigation-order button,
+.store-navigation-actions button { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--line); background: white; }
+.store-navigation-order svg,
+.store-navigation-actions svg { width: 17px; }
+@media (max-width: 640px) {
+  .store-navigation-list article { grid-template-columns: 78px minmax(0, 1fr); }
+  .store-navigation-list article > .status { grid-column: 1; }
+  .store-navigation-actions { grid-column: 2; justify-content: end; }
 }

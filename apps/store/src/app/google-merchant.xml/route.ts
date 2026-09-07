@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isGoogleMerchantEnabled } from "@curtiz/config";
 import { buildGoogleMerchantFeed } from "@/lib/google-merchant";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,12 @@ const feedHeaders = {
 };
 
 export async function GET() {
+  if (!isGoogleMerchantEnabled()) {
+    return new NextResponse("Catálogo Google desativado.", {
+      status: 404,
+      headers: { "cache-control": "private, no-store", "x-robots-tag": "noindex, nofollow" }
+    });
+  }
   const requestId = crypto.randomUUID();
   const supabase = createPublicSupabaseClient();
   if (!supabase) {

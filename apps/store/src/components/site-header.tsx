@@ -8,19 +8,9 @@ import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 import { BrandLogo } from "./brand-logo";
 import { useCart } from "./cart-provider";
 import { SearchAutocomplete } from "./search-autocomplete";
+import type { StoreNavigationItem } from "@/lib/store-navigation-core";
 
-const navigation = [
-  ["Masculino", "/masculino"],
-  ["Feminino", "/feminino"],
-  ["Infantil", "/infantil"],
-  ["Slides", "/slides"],
-  ["Sandálias", "/sandalias"],
-  ["Lançamentos", "/lancamentos"],
-  ["Ofertas", "/ofertas"],
-  ["Mais vendidos", "/mais-vendidos"]
-] as const;
-
-export function SiteHeader() {
+export function SiteHeader({ navigation }: { navigation: StoreNavigationItem[] }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [accountName, setAccountName] = useState<string>();
@@ -159,41 +149,17 @@ export function SiteHeader() {
         )}
 
         <nav className="desktop-nav container" aria-label="Categorias principais">
-          <Link
-            className={pathname === "/" ? "active" : ""}
-            href="/"
-            prefetch={false}
-            aria-current={pathname === "/" ? "page" : undefined}
-          >
-            Início
-          </Link>
-          {navigation.map(([label, href]) => (
+          {navigation.map(({ id, label, href }) => (
             <Link
               className={pathname === href ? "active" : ""}
               href={href}
               prefetch={false}
               aria-current={pathname === href ? "page" : undefined}
-              key={href}
+              key={id}
             >
               {label}
             </Link>
           ))}
-          <Link
-            className={pathname === "/rastrear-pedido" ? "active" : ""}
-            href="/rastrear-pedido"
-            prefetch={false}
-            aria-current={pathname === "/rastrear-pedido" ? "page" : undefined}
-          >
-            Rastrear pedido
-          </Link>
-          <Link
-            className={pathname === "/ajuda" ? "active" : ""}
-            href="/ajuda"
-            prefetch={false}
-            aria-current={pathname === "/ajuda" ? "page" : undefined}
-          >
-            Atendimento
-          </Link>
         </nav>
       </header>
 
@@ -226,15 +192,12 @@ export function SiteHeader() {
               </button>
             </div>
             <nav>
-              <Link href="/" prefetch={false}>Início</Link>
-              {navigation.map(([label, href]) => (
-                <Link href={href} prefetch={false} key={href}>
+              {navigation.map(({ id, label, href }) => (
+                <Link href={href} prefetch={false} key={id}>
                   {label}
                 </Link>
               ))}
               <Link href="/favoritos" prefetch={false}>Favoritos</Link>
-              <Link href="/rastrear-pedido" prefetch={false}>Rastrear pedido</Link>
-              <Link href="/ajuda" prefetch={false}>Central de ajuda</Link>
             </nav>
             <div className="mobile-drawer-actions">
               <Link

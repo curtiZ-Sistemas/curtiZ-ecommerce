@@ -6,6 +6,10 @@ import { publicCatalogMediaUrl } from "@/lib/public-media";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
+import {
+  automaticProductSeo,
+  productPublicationMessage
+} from "../../../../lib/product-management";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +57,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("status"),
     productId: postgresUuidSchema,
-    status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
+    status: z.enum(["draft", "active", "archived"]),
     reason: z.string().trim().min(3).max(1000).optional()
   }),
   z.object({
@@ -77,7 +81,7 @@ const actionSchema = z.discriminatedUnion("action", [
     categoryIds: z.array(postgresUuidSchema).max(50).default([]),
     modelId: postgresUuidSchema.nullable().optional(),
     collectionId: postgresUuidSchema.nullable().optional(),
-    status: z.enum(["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"]),
+    status: z.enum(["draft", "active", "archived"]),
     statusReason: z.string().trim().max(1000).optional(),
     featured: z.boolean(),
     priceInCents: z.number().int().min(0).max(100_000_000).nullable(),
@@ -143,9 +147,8 @@ function statusMutationError(
 
   if (status === "active" && message.includes("active product is incomplete")) {
     return {
-      message:
-        "Complete descrição, categoria, preço e dados de entrega antes de publicar o produto.",
-      statusCode: 409
+      message: "Revise nome, categoria e preço antes de publicar o produto.",
+      statusCode: 400
     };
   }
 
@@ -190,9 +193,8 @@ function saveProductError(
 
   if (message.includes("active product is incomplete")) {
     return {
-      message:
-        "O rascunho pode ser salvo, mas a publicação exige descrição, categoria, preço e dados de entrega.",
-      statusCode: 409
+      message: "Revise nome, categoria e preço antes de publicar o produto.",
+      statusCode: 400
     };
   }
 
@@ -542,7 +544,7 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   const queryText = cleanCatalogSearch(request.nextUrl.searchParams.get("q") ?? "");
   const requestedStatus = request.nextUrl.searchParams.get("status") ?? "";
-  const status = ["draft", "pending_review", "active", "inactive", "out_of_stock", "archived", "rejected"].includes(requestedStatus)
+  const status = ["draft", "active", "archived"].includes(requestedStatus)
     ? requestedStatus
     : "";
   const outOfStock = request.nextUrl.searchParams.get("stock") === "out";
@@ -687,7 +689,7 @@ export async function GET(request: NextRequest) {
     deletePermission
   ] = await Promise.all([
     loadProducts(),
-    supabase.from("categories").select("id,name").order("name").limit(500),
+    supabase.from("categories").select("id,name,parent_id").order("name").limit(500),
     supabase.from("product_models").select("id,name").order("name").limit(500),
     supabase.from("collections").select("id,name").order("name").limit(500),
     supabase.rpc("has_permission", { permission_code: "products.create" }),
@@ -755,6 +757,22 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const categoryRows = rows(categories.data);
+  const categoriesById = new Map(categoryRows.map((item) => [text(item.id), item]));
+  const categoryName = (item: UnknownRecord) => {
+    const names = [text(item.name)];
+    let parentId = text(item.parent_id);
+    const visited = new Set<string>();
+    while (parentId && !visited.has(parentId) && names.length < 6) {
+      visited.add(parentId);
+      const parent = categoriesById.get(parentId);
+      if (!parent) break;
+      names.unshift(text(parent.name));
+      parentId = text(parent.parent_id);
+    }
+    return names.filter(Boolean).join(" > ");
+  };
+
   return NextResponse.json(
     {
       products: serializedProducts.map((product) => ({
@@ -771,9 +789,9 @@ export async function GET(request: NextRequest) {
       total: result.total,
       page,
       pageSize,
-      categories: rows(categories.data).map((item) => ({
+      categories: categoryRows.map((item) => ({
         id: text(item.id),
-        name: text(item.name)
+        name: categoryName(item)
       })),
       models: models.error
         ? []
@@ -814,11 +832,36 @@ export async function PATCH(request: NextRequest) {
   if (parsed.data.action === "archive" || parsed.data.action === "status") {
     const status = parsed.data.action === "archive" ? "archived" : parsed.data.status;
     const reason = parsed.data.reason?.trim() || null;
-    if (["inactive", "archived", "rejected"].includes(status) && !reason) {
+    if (status === "archived" && !reason) {
       return NextResponse.json(
         { message: "Informe o motivo da alteração de status." },
         { status: 400, headers: noStore }
       );
+    }
+    if (status === "active") {
+      const product = await supabase
+        .from("products")
+        .select("id,name,category_id,base_price,product_variants(active)")
+        .eq("id", parsed.data.productId)
+        .maybeSingle();
+      if (product.error) {
+        return NextResponse.json(
+          { message: "Não foi possível validar o produto para publicação." },
+          { status: 503, headers: noStore }
+        );
+      }
+      if (!product.data) {
+        return NextResponse.json({ message: "Produto não encontrado." }, { status: 404, headers: noStore });
+      }
+      const publicationMessage = productPublicationMessage({
+        name: text(product.data.name),
+        categoryIds: text(product.data.category_id) ? [text(product.data.category_id)] : [],
+        priceInCents: Math.round(number(product.data.base_price) * 100),
+        variants: rows(product.data.product_variants).map((variant) => ({ active: variant.active === true }))
+      });
+      if (publicationMessage) {
+        return NextResponse.json({ message: publicationMessage }, { status: 400, headers: noStore });
+      }
     }
     const result = await supabase.rpc("admin_set_product_status_authorized", {
       p_product_id: parsed.data.productId,
@@ -919,25 +962,23 @@ export async function PATCH(request: NextRequest) {
       categoryIds,
       variants
     };
-    if (["inactive", "archived", "rejected"].includes(payload.status) && !payload.statusReason?.trim()) {
+    if (payload.status === "archived" && !payload.statusReason?.trim()) {
       return NextResponse.json(
         { message: "Informe o motivo da alteração de status." },
         { status: 400, headers: noStore }
       );
     }
-    if (
-      payload.status === "active" &&
-      (!payload.description ||
-        !payload.categoryId ||
-        !payload.priceInCents ||
-        !payload.weightGrams ||
-        !payload.heightCm ||
-        !payload.widthCm ||
-        !payload.lengthCm ||
-        !payload.variants.some((variant) => variant.active))
-    ) {
+    const publicationMessage = payload.status === "active"
+      ? productPublicationMessage({
+          name: payload.name,
+          categoryIds,
+          priceInCents: payload.priceInCents,
+          variants: payload.variants
+        })
+      : null;
+    if (publicationMessage) {
       return NextResponse.json(
-        { message: "Mantenha pelo menos uma variação ativa antes de publicar." },
+        { message: publicationMessage },
         { status: 400, headers: noStore }
       );
     }
@@ -951,8 +992,26 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
+    const categoryResult = payload.categoryId
+      ? await supabase.from("categories").select("name").eq("id", payload.categoryId).maybeSingle()
+      : null;
+    if (categoryResult?.error) {
+      return NextResponse.json(
+        { message: "A categoria selecionada não está disponível." },
+        { status: 409, headers: noStore }
+      );
+    }
+    const seo = automaticProductSeo({
+      name: payload.name,
+      description: payload.description,
+      categoryName: text(categoryResult?.data?.name)
+    });
     const result = await supabase.rpc("admin_save_product_authorized", {
-      p_payload: payload
+      p_payload: {
+        ...payload,
+        seoTitle: seo.title,
+        seoDescription: seo.description
+      }
     });
 
     if (result.error || typeof result.data !== "string") {
