@@ -244,8 +244,8 @@ function saveProductError(
   }
 
   return {
-    message: "Não foi possível salvar o produto.",
-    statusCode: 409
+    message: "Não foi possível salvar o produto agora. Seus dados foram mantidos. Tente novamente.",
+    statusCode: 503
   };
 }
 
@@ -929,12 +929,15 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (parsed.data.action === "save") {
+    let saveOperation = "prepare_product";
+    try {
     const categoryIds = [
       ...new Set([
         ...(parsed.data.categoryId ? [parsed.data.categoryId] : []),
         ...parsed.data.categoryIds
       ])
     ];
+    saveOperation = "generate_slug";
     const slug = await uniqueCatalogCode(
       supabase,
       "products",
@@ -946,6 +949,7 @@ export async function PATCH(request: NextRequest) {
     const variants: z.infer<typeof variantSchema>[] = [];
     const usedSkus = new Set<string>();
     for (const variant of parsed.data.variants) {
+      saveOperation = "generate_variant_sku";
       let sku = await uniqueCatalogCode(
         supabase,
         "product_variants",
@@ -1009,10 +1013,12 @@ export async function PATCH(request: NextRequest) {
         { status: 400, headers: noStore }
       );
     }
+    saveOperation = "load_category";
     const categoryResult = payload.categoryId
       ? await supabase.from("categories").select("name").eq("id", payload.categoryId).maybeSingle()
       : null;
     if (categoryResult?.error) {
+      logCatalogFailure(saveOperation, categoryResult.error);
       return NextResponse.json(
         { message: "A categoria selecionada não está disponível." },
         { status: 409, headers: noStore }
@@ -1023,6 +1029,7 @@ export async function PATCH(request: NextRequest) {
       description: payload.description,
       categoryName: text(categoryResult?.data?.name)
     });
+    saveOperation = "save_product";
     const result = await supabase.rpc("admin_save_product_authorized", {
       p_payload: {
         ...payload,
@@ -1048,6 +1055,19 @@ export async function PATCH(request: NextRequest) {
       },
       { headers: noStore }
     );
+    } catch (error) {
+      const catalogError: CatalogError = error instanceof Error
+        ? { message: error.message }
+        : error && typeof error === "object"
+          ? error
+          : null;
+      logCatalogFailure(saveOperation, catalogError);
+      const mappedError = saveProductError(catalogError);
+      return NextResponse.json(
+        { message: mappedError.message },
+        { status: mappedError.statusCode, headers: noStore }
+      );
+    }
   }
 
   const restockResult = await supabase.rpc("admin_restock_inventory", {

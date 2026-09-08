@@ -6,6 +6,8 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
+  parseNewProductDraft,
+  productDraftStorageKey,
   productDeletionMessage,
   productPublicationMessage,
   productPublishRequirements,
@@ -104,6 +106,16 @@ describe("product management", () => {
   it("explica bloqueios sem confundir falha de consulta com histórico comercial", () => {
     expect(productDeletionMessage(["cart items", "pedidos"])).toContain("itens em carrinhos, pedidos. Use Arquivar");
     expect(productDeletionMessage()).toContain("Não foi possível confirmar");
+  });
+
+  it("separa e valida o rascunho local por usuário", () => {
+    expect(productDraftStorageKey("user-a")).not.toBe(productDraftStorageKey("user-b"));
+    expect(parseNewProductDraft(JSON.stringify({
+      version: 1, savedAt: new Date().toISOString(), fields: { name: "Slide" }, categoryIds: [],
+      primaryCategoryId: "", variants: [], hasVariations: false, simpleStock: 3,
+      variantColors: "", variantSizes: "", variantSkuPrefix: ""
+    }))).toMatchObject({ fields: { name: "Slide" }, simpleStock: 3 });
+    expect(parseNewProductDraft("invalid")).toBeNull();
   });
 
   it("usa imagem principal, depois a primeira imagem e só então nenhum resultado", () => {

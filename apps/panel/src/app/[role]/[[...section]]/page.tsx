@@ -79,7 +79,7 @@ export default async function RolePage({
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
       ) : role === "administracao" ? (
-        <Administration section={section} initialQuery={initialQuery} />
+        <Administration section={section} initialQuery={initialQuery} draftOwnerKey={access.userId} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
         <RepresentativeConsole role={role} section={section} />
       ) : role === "operacional" ? (
@@ -147,13 +147,13 @@ function Operational({
   );
 }
 
-function Administration({ section, initialQuery }: { section: string; initialQuery: string }) {
+function Administration({ section, initialQuery, draftOwnerKey }: { section: string; initialQuery: string; draftOwnerKey: string }) {
   if (!section) return <AdminDashboard />;
   if (["modelos", "variacoes", "midias", "estoque"].includes(section))
     redirect("/administracao/produtos");
   if (section === "configuracoes") redirect("/administracao");
   if (section === "produtos")
-    return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} />;
+    return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} draftOwnerKey={draftOwnerKey} />;
   if (section === "navegacao-loja") return <StoreNavigationManager />;
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "barra-promocional") return <PromotionBarManager />;

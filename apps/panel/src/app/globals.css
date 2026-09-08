@@ -10537,6 +10537,18 @@ button:not(:disabled):active,
 .product-kind-picker { display: flex; flex-wrap: wrap; gap: 8px; }
 .product-kind-picker > legend { width: 100%; }
 .product-simple-stock { max-width: 320px; }
+.product-draft-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+}
+.product-draft-recovery > span { flex: 1 1 260px; }
+.product-draft-recovery .secondary-button { min-height: 36px; padding: 7px 10px; }
 .variant-technical-details > summary {
   cursor: pointer;
   min-height: 42px;

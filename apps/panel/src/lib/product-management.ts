@@ -12,6 +12,44 @@ export function productDeletionMessage(blockers: readonly string[] = []): string
     : "Não foi possível confirmar se o produto pode ser excluído. Atualize a listagem.";
 }
 
+export type NewProductDraft = {
+  version: 1;
+  savedAt: string;
+  fields: Record<string, string>;
+  categoryIds: string[];
+  primaryCategoryId: string;
+  variants: EditableVariant[];
+  hasVariations: boolean;
+  simpleStock: number;
+  variantColors: string;
+  variantSizes: string;
+  variantSkuPrefix: string;
+};
+
+export const productDraftStorageKey = (ownerKey: string) =>
+  `curtiz:product-draft:v1:${ownerKey}`;
+
+export function parseNewProductDraft(value: string | null): NewProductDraft | null {
+  if (!value) return null;
+  try {
+    const draft: unknown = JSON.parse(value);
+    if (!draft || typeof draft !== "object") return null;
+    const candidate = draft as Partial<NewProductDraft>;
+    if (
+      candidate.version !== 1 ||
+      !candidate.fields || typeof candidate.fields !== "object" ||
+      !Array.isArray(candidate.categoryIds) ||
+      !Array.isArray(candidate.variants) ||
+      typeof candidate.primaryCategoryId !== "string" ||
+      typeof candidate.hasVariations !== "boolean" ||
+      typeof candidate.simpleStock !== "number"
+    ) return null;
+    return candidate as NewProductDraft;
+  } catch {
+    return null;
+  }
+}
+
 export type ManagedVariant = {
   id: string;
   sku: string;

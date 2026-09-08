@@ -33,12 +33,15 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
+  parseNewProductDraft,
+  productDraftStorageKey,
   productDeletionMessage,
   productPublicationMessage,
   productPublishRequirements,
   productThumbnail,
   type ManagedProduct,
-  type ManagedProductMedia
+  type ManagedProductMedia,
+  type NewProductDraft
 } from "@/lib/product-management";
 
 type CatalogResponse = {
@@ -235,10 +238,12 @@ const productViewCopy: Record<ProductManagementView, { title: string; detail: st
 
 export function ProductManagement({
   view = "produtos",
-  initialQuery = ""
+  initialQuery = "",
+  draftOwnerKey
 }: {
   view?: ProductManagementView;
   initialQuery?: string;
+  draftOwnerKey: string;
 }) {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [filter, setFilter] = useState<"all" | "out">("all");
@@ -262,6 +267,7 @@ export function ProductManagement({
   const [bulkAction, setBulkAction] = useState<"archive" | "delete" | null>(null);
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
+  const [draftOffer, setDraftOffer] = useState<NewProductDraft | null>(null);
   const [duplicateTarget, setDuplicateTarget] = useState<ManagedProduct | null>(null);
   const [statusTarget, setStatusTarget] = useState<{
     product: ManagedProduct;
@@ -302,6 +308,44 @@ export function ProductManagement({
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
   const reasons = useRef<Record<string, HTMLInputElement | null>>({});
   const editorFormRef = useRef<HTMLFormElement | null>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftKey = productDraftStorageKey(draftOwnerKey);
+
+  const clearLocalDraft = useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
+    try { localStorage.removeItem(draftKey); } catch { /* Storage pode estar indisponível. */ }
+    setDraftOffer(null);
+  }, [draftKey]);
+
+  const persistLocalDraft = useCallback(() => {
+    if (editing !== "new" || !editorDirty) return;
+    const form = editorFormRef.current;
+    if (!form) return;
+    const fields: Record<string, string> = {};
+    new FormData(form).forEach((value, key) => {
+      if (typeof value === "string") fields[key] = value;
+    });
+    const draft: NewProductDraft = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      fields,
+      categoryIds: selectedCategoryIds,
+      primaryCategoryId,
+      variants: editableVariants,
+      hasVariations,
+      simpleStock,
+      variantColors,
+      variantSizes,
+      variantSkuPrefix
+    };
+    try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
+  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, selectedCategoryIds, simpleStock, variantColors, variantSizes, variantSkuPrefix]);
+
+  const scheduleLocalDraft = useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(persistLocalDraft, 700);
+  }, [persistLocalDraft]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -437,7 +481,47 @@ export function ProductManagement({
     setQueuedMediaFiles([]);
     setActiveEditorSection("information");
     setEditing("new");
+    try {
+      setDraftOffer(parseNewProductDraft(localStorage.getItem(draftKey)));
+    } catch {
+      setDraftOffer(null);
+    }
   };
+
+  const restoreLocalDraft = () => {
+    if (!draftOffer) return;
+    setSelectedCategoryIds(draftOffer.categoryIds);
+    setPrimaryCategoryId(draftOffer.primaryCategoryId);
+    setEditableVariants(draftOffer.variants);
+    setHasVariations(draftOffer.hasVariations);
+    setSimpleStock(draftOffer.simpleStock);
+    setVariantColors(draftOffer.variantColors ?? "");
+    setVariantSizes(draftOffer.variantSizes ?? "");
+    setVariantSkuPrefix(draftOffer.variantSkuPrefix ?? "");
+    setEditorDirty(true);
+    setDraftOffer(null);
+    requestAnimationFrame(() => {
+      const form = editorFormRef.current;
+      if (!form) return;
+      for (const [name, value] of Object.entries(draftOffer.fields)) {
+        const field = form.elements.namedItem(name);
+        if (field instanceof HTMLInputElement) {
+          if (field.type === "checkbox") field.checked = value === "on";
+          else field.value = value;
+        } else if (field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+          field.value = value;
+        }
+      }
+    });
+  };
+
+  useEffect(() => () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (editing === "new" && editorDirty) scheduleLocalDraft();
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, scheduleLocalDraft, selectedCategoryIds, simpleStock, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -547,7 +631,11 @@ export function ProductManagement({
       }
       return null;
     } catch {
-      setMessage("Não foi possível concluir a alteração agora.");
+      setMessage(
+        key === "new-product"
+          ? "Não foi possível salvar o produto agora. Seus dados continuam salvos localmente. Tente novamente."
+          : "Não foi possível concluir a alteração agora."
+      );
       return null;
     } finally {
       pendingActionRef.current = false;
@@ -641,6 +729,7 @@ export function ProductManagement({
 
     const productId = result.productId ?? (wasNew ? "" : editing.id);
     if (!productId) return;
+    if (wasNew) clearLocalDraft();
     pendingActionRef.current = true;
     setPending(`save-${productId}`);
     try {
@@ -1827,10 +1916,17 @@ export function ProductManagement({
             </nav> : null}
             <form
               ref={editorFormRef}
-              onChangeCapture={() => setEditorDirty(true)}
+              onChangeCapture={() => { setEditorDirty(true); scheduleLocalDraft(); }}
               onSubmit={(event) => void saveProduct(event)}
             >
               <div className="admin-form-grid">
+                {editing === "new" && draftOffer ? (
+                  <aside className="wide product-draft-recovery" role="status">
+                    <span>Encontramos um cadastro não concluído.</span>
+                    <button className="secondary-button" type="button" onClick={restoreLocalDraft}>Continuar cadastro</button>
+                    <button className="secondary-button" type="button" onClick={clearLocalDraft}>Descartar</button>
+                  </aside>
+                ) : null}
                 <h3 className="wide product-form-section" id="product-step-1">
                   Informações do produto
                 </h3>
@@ -2717,8 +2813,8 @@ export function ProductManagement({
                 <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending)}>Cancelar</button>
                 {editing === "new" ? (
                   <>
-                    <button className="secondary-button" type="submit" name="submitMode" value="draft" disabled={Boolean(pending)}>Salvar como rascunho</button>
-                    <button className="primary-button" type="submit" name="submitMode" value="publish" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} Publicar produto</button>
+                    <button className="secondary-button" type="submit" name="submitMode" value="draft" disabled={Boolean(pending)}>{pending ? "Salvando..." : "Salvar como rascunho"}</button>
+                    <button className="primary-button" type="submit" name="submitMode" value="publish" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : "Publicar produto"}</button>
                   </>
                 ) : (
                   <button className="primary-button" type="submit" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} Salvar alterações</button>

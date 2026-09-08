@@ -26,7 +26,7 @@ vi.mock("@/lib/admin-api", () => ({
   safePanelOrigin: () => true,
   unauthorizedAdminResponse: () => new Response(null, { status: 401 })
 }));
-import { GET, DELETE } from "../app/api/catalog/products/route";
+import { GET, PATCH, DELETE } from "../app/api/catalog/products/route";
 import { POST as createCategory, PATCH as updateCategory, DELETE as deleteCategory } from "../app/api/admin/resources/[resource]/route";
 
 const id = "20000000-0000-4000-8000-000000000001";
@@ -61,7 +61,7 @@ beforeEach(() => {
         insert: (value: Record<string, unknown>) => { mutation = value; return chain; },
         update: (value: Record<string, unknown>) => { mutation = value; return chain; },
         delete: () => chain,
-        eq: () => chain, in: () => chain, order: () => chain, range: () => chain, limit: () => chain,
+        eq: () => chain, neq: () => chain, in: () => chain, order: () => chain, range: () => chain, limit: () => chain,
         single: () => chain, maybeSingle: () => chain,
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(state.query(table, selection, mutation)).then(resolve)
       };
@@ -115,6 +115,49 @@ describe("product DELETE", () => {
     expect(response.status).toBe(409);
     expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("pedidos. Use Arquivar") as unknown });
     expect(state.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("product save", () => {
+  const savePayload = (status: "draft" | "active", variants = [{ sku: "", color: "Padrão", colorHex: "", size: "Único", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" }]) => ({
+    action: "save", name: "Produto teste", slug: "", shortDescription: "", description: "Descrição",
+    categoryId: status === "active" ? id : null, categoryIds: status === "active" ? [id] : [], modelId: null,
+    collectionId: null, status, featured: false, priceInCents: status === "active" ? 1000 : null,
+    compareAtPriceInCents: null, costInCents: null, weightGrams: null, heightCm: null, widthCm: null,
+    lengthCm: null, stockReason: "Cadastro inicial", variants
+  });
+
+  beforeEach(() => {
+    state.query.mockImplementation((table) => ({
+      data: table === "profiles" ? { status: "active" } : table === "user_roles" ? [{ role: "admin" }] : table === "categories" ? { name: "Slides" } : null,
+      error: null
+    }));
+    state.rpc.mockImplementation(async (name) => ({ data: name === "admin_save_product_authorized" ? id : true, error: null }));
+  });
+
+  it("creates draft, published and variation products through PATCH", async () => {
+    for (const payload of [
+      savePayload("draft"),
+      savePayload("active"),
+      savePayload("active", [
+        { sku: "SKU-36", color: "Azul", colorHex: "#0000ff", size: "36", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-36" },
+        { sku: "SKU-37", color: "Azul", colorHex: "#0000ff", size: "37", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-37" }
+      ])
+    ]) {
+      const response = await PATCH(request("PATCH", payload));
+      expect(response.status).toBe(200);
+      expect(await response.json() as unknown).toMatchObject({ ok: true, productId: id });
+    }
+  });
+
+  it("converts a slug lookup failure into useful JSON instead of a raw 500", async () => {
+    state.query.mockImplementation((table) => table === "products"
+      ? { data: null, error: { code: "57014", message: "internal timeout" } }
+      : { data: table === "profiles" ? { status: "active" } : [{ role: "admin" }], error: null });
+    const response = await PATCH(request("PATCH", savePayload("draft")));
+    expect(response.status).toBe(503);
+    expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("Seus dados foram mantidos") as unknown });
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ operation: "generate_slug", code: "57014" }));
   });
 });
 
