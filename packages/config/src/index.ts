@@ -25,7 +25,7 @@ export const serverEnvSchema = z.object({
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   PAYMENT_PROVIDER: z.enum(["disabled", "mock", "mercadopago", "mercado_pago"]).default("disabled"),
   SHIPPING_PROVIDER: z
-    .enum(["disabled", "mock", "melhorenvio", "melhor_envio", "correios", "custom"])
+    .enum(["disabled", "fixed", "mock", "melhorenvio", "melhor_envio", "correios", "custom"])
     .default("disabled"),
   EMAIL_PROVIDER: z.enum(["disabled", "mock", "resend"]).default("disabled"),
   WHATSAPP_PROVIDER: z.enum(["disabled", "mock", "meta"]).default("disabled"),

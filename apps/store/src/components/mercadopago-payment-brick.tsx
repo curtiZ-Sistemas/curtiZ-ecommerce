@@ -28,6 +28,8 @@ declare global {
 export type MercadoPagoBrickSession = {
   orderId: string;
   orderCode: string;
+  subtotalInCents: number;
+  shippingInCents: number;
   amountInCents: number;
   publicKey: string;
   idempotencyKey: string;

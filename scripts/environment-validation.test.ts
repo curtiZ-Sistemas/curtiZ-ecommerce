@@ -97,6 +97,18 @@ describe("environment validation", () => {
     ]));
   });
 
+  it("aceita checkout de produção com Mercado Pago de teste e frete fixo", () => {
+    expect(validateEnvironment("production", {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: "true",
+      PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true",
+      SHIPPING_PROVIDER: "fixed",
+      MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key"
+    })).toMatchObject({ valid: true, errors: [] });
+  });
+
   it("não aceita mocks nem modo demo em produção", () => {
     const result = validateEnvironment("production", stagingEnvironment);
     expect(result.errors).toEqual(

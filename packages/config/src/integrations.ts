@@ -1,6 +1,6 @@
 export type OptionalPaymentProvider = "disabled" | "mock" | "mercadopago";
 export type OptionalEmailProvider = "disabled" | "mock" | "resend";
-export type OptionalShippingProvider = "disabled" | "mock" | "melhorenvio" | "correios" | "custom";
+export type OptionalShippingProvider = "disabled" | "fixed" | "mock" | "melhorenvio" | "correios" | "custom";
 export type OptionalWhatsAppProvider = "disabled" | "mock" | "meta";
 
 const truthy = new Set(["true", "1", "yes"]);
@@ -40,6 +40,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
   const paymentEnabled =
     paymentProvider === "mock" || (paymentProvider === "mercadopago" && mercadoPagoEnabled);
   const shippingEnabled =
+    shippingProvider === "fixed" ||
     shippingProvider === "mock" ||
     shippingProvider === "correios" ||
     shippingProvider === "custom" ||

@@ -155,8 +155,8 @@ export type ShippingQuote = {
   provider: string;
   service: string;
   amountInCents: number;
-  estimatedDays: number;
-  expiresAt: string;
+  estimatedDays: number | null;
+  expiresAt: string | null;
 };
 
 export interface ShippingProvider {
@@ -166,6 +166,37 @@ export interface ShippingProvider {
   createLabel(shipmentId: string): Promise<{ trackingCode: string; labelPath: string }>;
   cancelLabel(trackingCode: string): Promise<void>;
   track(trackingCode: string): Promise<Array<{ status: string; occurredAt: string }>>;
+}
+
+export const FIXED_SHIPPING_IN_CENTS = 1_690;
+
+export class FixedShippingProvider implements ShippingProvider {
+  readonly name = "fixed_shipping";
+
+  async health(): Promise<IntegrationState> {
+    return "online";
+  }
+
+  async quote(input: ShippingQuoteInput): Promise<ShippingQuote[]> {
+    void input;
+    return [{
+      provider: this.name,
+      service: "Entrega padrão",
+      amountInCents: FIXED_SHIPPING_IN_CENTS,
+      estimatedDays: null,
+      expiresAt: null
+    }];
+  }
+
+  async createLabel(): Promise<never> {
+    throw new Error("fixed_shipping_does_not_create_labels");
+  }
+
+  async cancelLabel(): Promise<void> {}
+
+  async track(): Promise<Array<{ status: string; occurredAt: string }>> {
+    return [];
+  }
 }
 
 export interface EmailProvider {

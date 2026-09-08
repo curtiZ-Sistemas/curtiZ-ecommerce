@@ -35,7 +35,7 @@ const productionRequired = [
 const providerOptions = {
   PAYMENT_PROVIDER: ["disabled", "mock", "mercadopago", "mercado_pago"],
   EMAIL_PROVIDER: ["disabled", "mock", "resend"],
-  SHIPPING_PROVIDER: ["disabled", "mock", "melhorenvio", "melhor_envio", "correios", "custom"],
+  SHIPPING_PROVIDER: ["disabled", "fixed", "mock", "melhorenvio", "melhor_envio", "correios", "custom"],
   WHATSAPP_PROVIDER: ["disabled", "mock", "meta"]
 } as const;
 

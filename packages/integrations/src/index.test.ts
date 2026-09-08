@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  FIXED_SHIPPING_IN_CENTS,
+  FixedShippingProvider,
   isMercadoPagoTestCredential,
   isMockRuntimeAllowed,
   MercadoPagoProviderError,
@@ -44,7 +46,7 @@ describe("Mercado Pago em teste", () => {
         id: 123,
         status: "approved",
         status_detail: "accredited",
-        transaction_amount: 59.9,
+        transaction_amount: 42.4,
         currency_id: "BRL",
         external_reference: "CZT-TEST",
         payment_method_id: "visa",
@@ -57,7 +59,7 @@ describe("Mercado Pago em teste", () => {
     await provider.createPayment({
       orderId: "order-id",
       orderCode: "CZT-TEST",
-      amountInCents: 5990,
+      amountInCents: 4_240,
       currency: "BRL",
       idempotencyKey: "10000000-0000-4000-8000-000000000001",
       customerEmail: "cliente@example.com",
@@ -74,9 +76,34 @@ describe("Mercado Pago em teste", () => {
     );
     if (typeof init.body !== "string") throw new Error("request body ausente");
     expect(JSON.parse(init.body)).toMatchObject({
-      transaction_amount: 59.9,
+      transaction_amount: 42.4,
       external_reference: "CZT-TEST",
       metadata: { order_id: "order-id" }
     });
+  });
+});
+
+describe("frete fixo temporário", () => {
+  it("retorna R$ 16,90 sem prazo inventado", async () => {
+    const [quote] = await new FixedShippingProvider().quote({
+      postalCode: "01001000",
+      subtotalInCents: 2_550,
+      packages: []
+    });
+    expect(quote).toMatchObject({
+      provider: "fixed_shipping",
+      service: "Entrega padrão",
+      amountInCents: FIXED_SHIPPING_IN_CENTS,
+      estimatedDays: null
+    });
+    expect(2_550 + FIXED_SHIPPING_IN_CENTS).toBe(4_240);
+
+    const [doubleQuantityQuote] = await new FixedShippingProvider().quote({
+      postalCode: "99999999",
+      subtotalInCents: 5_100,
+      packages: []
+    });
+    expect(doubleQuantityQuote?.amountInCents).toBe(FIXED_SHIPPING_IN_CENTS);
+    expect(5_100 + (doubleQuantityQuote?.amountInCents ?? 0)).toBe(6_790);
   });
 });

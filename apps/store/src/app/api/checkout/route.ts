@@ -1,5 +1,5 @@
 import { getIntegrationConfig } from "@curtiz/config";
-import { isMercadoPagoTestCredential } from "@curtiz/integrations";
+import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -11,7 +11,7 @@ import {
   sanitizeCpf
 } from "@/lib/personal-data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult } from "@/lib/unknown-data";
+import { isUnknownRecord, readNumber, readQueryResult } from "@/lib/unknown-data";
 import { encryptPII } from "@/lib/pii";
 
 const schema = z.object({
@@ -140,20 +140,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!integrations.shipping.enabled) {
-    checkoutLog(requestId, 503, "SHIPPING_UNAVAILABLE");
-    return checkoutResponse(
-      requestId,
-      {
-        ok: false,
-        code: "SHIPPING_UNAVAILABLE",
-        message: "Não foi possível calcular a entrega para este endereço.",
-        quote: { subtotalInCents: 0 }
-      },
-      503
-    );
-  }
-
   const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
   if (!isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
@@ -210,8 +196,8 @@ export async function POST(request: NextRequest) {
     : null;
   const orderId = typeof order?.orderId === "string" ? order.orderId : "";
   const orderCode = typeof order?.orderCode === "string" ? order.orderCode : "";
-  const amountInCents = Number(order?.amountInCents);
-  if (orderResult.error || !orderId || !orderCode || !Number.isSafeInteger(amountInCents) || amountInCents <= 0) {
+  const rpcAmountInCents = Number(order?.amountInCents);
+  if (orderResult.error || !orderId || !orderCode || !Number.isSafeInteger(rpcAmountInCents)) {
     const errorCode = orderResult.error && typeof orderResult.error === "object"
       && "code" in orderResult.error && typeof orderResult.error.code === "string"
       ? orderResult.error.code
@@ -230,10 +216,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const totalsResult = readQueryResult(await supabase
+    .from("orders")
+    .select("subtotal,shipping_total,grand_total")
+    .eq("id", orderId)
+    .maybeSingle());
+  const totals = isUnknownRecord(totalsResult.data) ? totalsResult.data : null;
+  const subtotalInCents = totals ? Math.round(readNumber(totals, "subtotal") * 100) : 0;
+  const shippingInCents = totals ? Math.round(readNumber(totals, "shipping_total") * 100) : 0;
+  const amountInCents = totals ? Math.round(readNumber(totals, "grand_total") * 100) : 0;
+  const validTotals = !totalsResult.error
+    && subtotalInCents > 0
+    && shippingInCents === FIXED_SHIPPING_IN_CENTS
+    && amountInCents === subtotalInCents + shippingInCents
+    && amountInCents === rpcAmountInCents;
+  if (!validTotals) {
+    checkoutLog(requestId, 503, "INVALID_ORDER_TOTALS");
+    return checkoutResponse(
+      requestId,
+      { ok: false, message: "Não foi possível validar o total do pedido agora." },
+      503
+    );
+  }
+
   return checkoutResponse(requestId, {
     ok: true,
     orderId,
     orderCode,
+    subtotalInCents,
+    shippingInCents,
     amountInCents,
     publicKey,
     paymentMode: "test"

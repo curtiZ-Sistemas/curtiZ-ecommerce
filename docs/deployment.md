@@ -108,11 +108,15 @@ PAYMENT_PROVIDER=mercadopago
 MERCADO_PAGO_ENABLED=true
 MERCADO_PAGO_ACCESS_TOKEN=TEST-...
 NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=TEST-...
-SHIPPING_PROVIDER=<provider já configurado>
+SHIPPING_PROVIDER=fixed
 ```
 
 `MERCADO_PAGO_WEBHOOK_SECRET` permanece opcional até a ativação do webhook. O backend bloqueia
 credenciais sem o prefixo de teste.
+
+Enquanto `SHIPPING_PROVIDER=fixed`, o banco adiciona R$ 16,90 a todos os pedidos do Checkout
+Bricks. Mantenha `MELHOR_ENVIO_ENABLED=false`; a troca futura exige apenas ativar o provider e
+substituir a regra incremental de frete fixo.
 
 ## Comandos equivalentes
 

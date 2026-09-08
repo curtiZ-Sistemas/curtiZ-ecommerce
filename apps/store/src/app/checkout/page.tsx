@@ -1,6 +1,7 @@
 "use client";
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
+import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations";
 import { LoaderCircle, LockKeyhole, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -102,11 +103,11 @@ function CheckoutTotals({ subtotal }: { subtotal: number }) {
       </div>
       <div className="summary-line">
         <span>Entrega</span>
-        <strong>A calcular</strong>
+        <strong>{formatBRL(FIXED_SHIPPING_IN_CENTS)}</strong>
       </div>
       <div className="summary-line summary-total">
         <span>Total</span>
-        <strong>{formatBRL(subtotal)}</strong>
+        <strong>{formatBRL(subtotal + FIXED_SHIPPING_IN_CENTS)}</strong>
       </div>
     </div>
   );
@@ -121,6 +122,7 @@ export default function CheckoutPage() {
   const [paymentUnavailable, setPaymentUnavailable] = useState(false);
   const [supportCode, setSupportCode] = useState("");
   const [paymentSession, setPaymentSession] = useState<MercadoPagoBrickSession | null>(null);
+  const [formComplete, setFormComplete] = useState(false);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const closeDialogRef = useRef<HTMLButtonElement>(null);
   const paymentDialogRef = useRef<HTMLElement>(null);
@@ -316,6 +318,8 @@ export default function CheckoutPage() {
         ok: boolean;
         orderId?: string;
         orderCode?: string;
+        subtotalInCents?: number;
+        shippingInCents?: number;
         amountInCents?: number;
         publicKey?: string;
         paymentMode?: string;
@@ -337,6 +341,8 @@ export default function CheckoutPage() {
         !result.ok ||
         !result.orderId ||
         !result.orderCode ||
+        !result.subtotalInCents ||
+        result.shippingInCents !== FIXED_SHIPPING_IN_CENTS ||
         !result.amountInCents ||
         !result.publicKey ||
         result.paymentMode !== "test"
@@ -347,6 +353,8 @@ export default function CheckoutPage() {
       setPaymentSession({
         orderId: result.orderId,
         orderCode: result.orderCode,
+        subtotalInCents: result.subtotalInCents,
+        shippingInCents: result.shippingInCents,
         amountInCents: result.amountInCents,
         publicKey: result.publicKey,
         idempotencyKey: idempotencyKeyRef.current,
@@ -433,6 +441,14 @@ export default function CheckoutPage() {
           <aside className="checkout-summary" aria-labelledby="checkout-brick-summary-title">
             <h2 id="checkout-brick-summary-title">Resumo do pedido</h2>
             <CheckoutProducts lines={selectedLines} />
+            <div className="summary-line">
+              <span>Subtotal</span>
+              <strong>{formatBRL(paymentSession.subtotalInCents)}</strong>
+            </div>
+            <div className="summary-line">
+              <span>Entrega</span>
+              <strong>{formatBRL(paymentSession.shippingInCents)}</strong>
+            </div>
             <div className="summary-line summary-total">
               <span>Total confirmado</span>
               <strong>{formatBRL(paymentSession.amountInCents)}</strong>
@@ -462,6 +478,8 @@ export default function CheckoutPage() {
         className="checkout-layout"
         noValidate
         onSubmit={(event) => void submit(event)}
+        onInput={(event) => setFormComplete(event.currentTarget.checkValidity())}
+        onChange={(event) => setFormComplete(event.currentTarget.checkValidity())}
       >
         <div className="checkout-form-column">
           <section className="checkout-section" aria-labelledby="checkout-identification-title">
@@ -658,9 +676,11 @@ export default function CheckoutPage() {
 
           <section className="checkout-section" aria-labelledby="checkout-delivery-title">
             <h2 id="checkout-delivery-title">Entrega</h2>
-            <p className="checkout-simple-status" role="status">
-              Informe o CEP para calcular.
-            </p>
+            <div className="summary-line">
+              <span>Entrega padrão</span>
+              <strong>{formatBRL(FIXED_SHIPPING_IN_CENTS)}</strong>
+            </div>
+            <p className="checkout-simple-status">Prazo informado após o envio.</p>
           </section>
 
           <section className="checkout-section" aria-labelledby="checkout-payment-title">
@@ -698,7 +718,7 @@ export default function CheckoutPage() {
               ref={submitButtonRef}
               className="primary-button full-button checkout-button"
               type="submit"
-              disabled={loading}
+              disabled={loading || !formComplete}
               aria-busy={loading}
               aria-describedby={message ? "checkout-form-message" : undefined}
             >

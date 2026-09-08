@@ -41,6 +41,20 @@ describe("configuração opcional de integrações", () => {
     ).toBe(false);
   });
 
+  it("libera checkout com o frete fixo temporário", () => {
+    expect(
+      getIntegrationConfig({
+        CHECKOUT_ENABLED: "true",
+        PAYMENT_PROVIDER: "mercadopago",
+        MERCADO_PAGO_ENABLED: "true",
+        SHIPPING_PROVIDER: "fixed"
+      })
+    ).toMatchObject({
+      checkoutEnabled: true,
+      shipping: { provider: "fixed", enabled: true, melhorEnvioEnabled: false }
+    });
+  });
+
   it("normaliza os aliases documentados", () => {
     expect(
       getIntegrationConfig({
