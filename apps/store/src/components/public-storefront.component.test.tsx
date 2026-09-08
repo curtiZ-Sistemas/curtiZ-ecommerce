@@ -91,6 +91,7 @@ describe("public storefront components", () => {
     );
 
     expect(html).toContain("Produto disponível");
+    expect(html).toContain('title="Produto disponível"');
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
   });

@@ -10280,7 +10280,7 @@ button:not(:disabled):active,
 }
 .variant-color-group > header {
   display: grid;
-  grid-template-columns: 32px minmax(120px, 1fr) minmax(150px, 190px);
+  grid-template-columns: 32px minmax(120px, 1fr) minmax(150px, 190px) 42px;
   align-items: end;
 }
 .variant-color-group > header > div {
@@ -10350,7 +10350,7 @@ button:not(:disabled):active,
     min-width: 0;
   }
   .variant-color-group > header {
-    grid-template-columns: 32px minmax(0, 1fr) minmax(150px, 190px);
+    grid-template-columns: 32px minmax(0, 1fr) minmax(150px, 190px) 42px;
   }
   .product-variant-editor article {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10383,7 +10383,7 @@ button:not(:disabled):active,
     grid-column: 1;
   }
   .variant-color-group > header {
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: 32px minmax(0, 1fr) 42px;
     align-items: center;
   }
   .variant-color-name {
@@ -10538,29 +10538,54 @@ button:not(:disabled):active,
 }
 .product-draft-recovery > span { flex: 1 1 260px; }
 .product-draft-recovery .secondary-button { min-height: 36px; padding: 7px 10px; }
-.variant-technical-details > summary {
+.product-editor-drawer .admin-form-grid label.admin-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  width: auto;
   cursor: pointer;
-  min-height: 42px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: white;
-  font-size: .8rem;
-  font-weight: 700;
 }
-.variant-technical-details > div {
+.admin-switch input {
   position: absolute;
-  z-index: 4;
-  display: grid;
-  width: min(320px, calc(100vw - 48px));
-  gap: 10px;
-  margin-top: 6px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: white;
-  box-shadow: 0 12px 30px rgb(15 23 42 / 12%);
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
+.admin-form-grid > label.admin-switch > span,
+.admin-switch > span {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 38px;
+  order: 0;
+  border-radius: 999px;
+  background: #b8b8b5;
+  transition: background 150ms ease;
+}
+.admin-switch > span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 150ms ease;
+}
+.admin-switch input:checked + span { background: var(--brand); }
+.admin-switch input:checked + span::after { transform: translateX(16px); }
+.admin-switch input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+.admin-switch > strong { font-size: .75rem; }
+.product-size-guide-editor { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; }
+.product-size-guide-editor > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.product-size-guide-editor h3, .product-size-guide-editor p { margin: 0; }
+.product-size-guide-editor > p { color: var(--muted); font-size: .75rem; }
+.product-size-guide-rows { display: grid; gap: 8px; }
+.product-size-guide-rows > div { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(120px, 1fr) 42px; align-items: end; gap: 8px; }
+.product-size-guide-rows .icon-button { width: 42px; height: 42px; }
 .product-media-dropzone { outline: 2px dashed transparent; outline-offset: -8px; }
 .product-media-dropzone:has(input[type="file"]:focus-visible) { outline-color: var(--brand-500); }
 .product-media-queued-item video {
@@ -10611,7 +10636,7 @@ button:not(:disabled):active,
   align-items: center;
   gap: 10px;
 }
-.admin-form-grid > label:has(> input[type="checkbox"]) > span { order: 2; }
+.admin-form-grid > label:has(> input[type="checkbox"]) > span:not([aria-hidden="true"]) { order: 2; }
 
 @media (min-width: 900px) {
   .variant-size-list { overflow-x: auto; }
@@ -10625,6 +10650,8 @@ button:not(:disabled):active,
   .product-category-picker > div { grid-template-columns: minmax(0, 1fr); }
   .product-kind-picker { flex-direction: column; }
   .product-kind-picker label { width: 100%; }
+  .product-size-guide-editor > div:first-child { align-items: stretch; flex-direction: column; }
+  .product-size-guide-rows > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px; }
   .admin-modal { width: 100%; max-height: 100dvh; border-radius: 0; }
 }
 

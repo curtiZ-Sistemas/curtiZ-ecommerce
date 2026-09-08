@@ -74,6 +74,21 @@ export const publicCatalogImage = (path: string | null | undefined, slug?: strin
     : "/icon.svg";
 };
 
+export function commercialProductName(product: {
+  name: string;
+  variantColor?: string | null;
+  variantSize?: string | null;
+}) {
+  const suffixes = [
+    product.variantColor && product.variantSize
+      ? ` — ${product.variantColor} — ${product.variantSize}`
+      : "",
+    product.variantColor ? ` — ${product.variantColor}` : ""
+  ].filter(Boolean);
+  const suffix = suffixes.find((candidate) => product.name.endsWith(candidate));
+  return suffix ? product.name.slice(0, -suffix.length) : product.name;
+}
+
 export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Product {
   return {
     id: product.id,
@@ -83,7 +98,7 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
     ...(product.variantColor ? { variantColor: product.variantColor } : {}),
     ...(product.variantSize ? { variantSize: product.variantSize } : {}),
     slug: product.slug,
-    name: product.name,
+    name: commercialProductName(product),
     category: productCategory(product.category),
     description: product.description,
     priceInCents: product.priceInCents,

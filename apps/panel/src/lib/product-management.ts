@@ -19,8 +19,10 @@ export type NewProductDraft = {
   categoryIds: string[];
   primaryCategoryId: string;
   variants: EditableVariant[];
+  sizeGuide?: ProductSizeGuideEntry[];
   hasVariations: boolean;
   simpleStock: number;
+  productActive?: boolean;
   variantColors: string;
   variantSizes: string;
   variantSkuPrefix: string;
@@ -118,6 +120,12 @@ export type ManagedProduct = {
   }>;
   media?: ManagedProductMedia[];
   variants: ManagedVariant[];
+  sizeGuide?: ProductSizeGuideEntry[];
+};
+
+export type ProductSizeGuideEntry = {
+  size: string;
+  measurementCm: number | null;
 };
 
 export type ManagedProductMedia = {

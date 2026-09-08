@@ -94,7 +94,7 @@ export function ProductCard({
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
-          <Link href={href} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
+          <Link href={href} title={product.name} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
         </h3>
         {display?.rating !== false && product.reviews > 0 && <div
           className="rating"

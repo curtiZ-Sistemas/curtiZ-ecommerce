@@ -12,6 +12,7 @@ import {
   productStructuredData
 } from "@/lib/seo";
 import { getPublicProduct } from "@/lib/storefront-data";
+import { parseProductDescription } from "@/lib/product-description";
 
 export async function generateMetadata({
   params
@@ -48,11 +49,32 @@ export default async function ProductPage({
 
       <ProductPurchase detail={detail} initialVariantId={query.variant} />
 
+      {detail.sizeGuide.length ? (
+        <section className="product-size-guide" aria-labelledby="product-size-guide-title">
+          <p className="eyebrow">Guia de medidas</p>
+          <h2 id="product-size-guide-title">Tabela de tamanhos</h2>
+          <div>
+            <table>
+              <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
+              <tbody>{detail.sizeGuide.map((entry) => (
+                <tr key={entry.size}><th scope="row">{entry.size}</th><td>{entry.measurementCm.toLocaleString("pt-BR")} cm</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       <section className="product-information">
         <div>
           <p className="eyebrow">Sobre o Produto</p>
           <h2>Detalhes de {product.name}</h2>
-          <p>{product.description}</p>
+          <div className="product-description-content">
+            {parseProductDescription(product.description).map((block, index) =>
+              block.type === "list" ? (
+                <ul key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{item}</li>)}</ul>
+              ) : <p key={`paragraph-${index}`}>{block.text}</p>
+            )}
+          </div>
         </div>
         {detail.specifications.length > 0 && (
           <dl>

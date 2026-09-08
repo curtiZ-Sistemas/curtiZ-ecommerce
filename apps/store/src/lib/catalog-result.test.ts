@@ -30,7 +30,7 @@ describe("resultado virtual do catálogo", () => {
     expect(product).toMatchObject({
       id: "10000000-0000-4000-8000-000000000001",
       variantId: "20000000-0000-4000-8000-000000000001",
-      name: "Chinelo Essential — Azul",
+      name: "Chinelo Essential",
       priceInCents: 5990,
       stock: 3,
       colors: ["Azul"],

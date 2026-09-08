@@ -124,7 +124,8 @@ describe("product save", () => {
     categoryId: status === "active" ? id : null, categoryIds: status === "active" ? [id] : [], modelId: null,
     collectionId: null, status, featured: false, priceInCents: status === "active" ? 1000 : null,
     compareAtPriceInCents: null, costInCents: null, weightGrams: null, heightCm: null, widthCm: null,
-    lengthCm: null, stockReason: "Cadastro inicial", variants
+    lengthCm: null, stockReason: "Cadastro inicial", variants,
+    sizeGuide: [{ size: "36", measurementCm: 24.5 }]
   });
 
   beforeEach(() => {
@@ -148,6 +149,10 @@ describe("product save", () => {
       expect(response.status).toBe(200);
       expect(await response.json() as unknown).toMatchObject({ ok: true, productId: id });
     }
+    const saveCall = state.rpc.mock.calls.find(([name]) => name === "admin_save_product_authorized");
+    expect(saveCall?.[1]).toMatchObject({
+      p_payload: { sizeGuide: [{ size: "36", measurementCm: 24.5 }] }
+    });
   });
 
   it("converts a slug lookup failure into useful JSON instead of a raw 500", async () => {

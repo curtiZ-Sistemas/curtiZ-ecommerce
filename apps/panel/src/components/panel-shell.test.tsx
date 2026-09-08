@@ -96,6 +96,8 @@ describe("PanelShell multipainel", () => {
     );
 
     expect(markup).toContain('href="/administracao/produtos"');
+    expect(markup).toContain('href="/administracao/produtos-arquivados"');
+    expect(markup.indexOf("/administracao/produtos-arquivados")).toBeGreaterThan(markup.indexOf("/administracao/produtos"));
     expect(markup).toContain('href="/administracao/categorias"');
     expect(markup).toContain('href="/administracao/colecoes"');
     expect(markup).not.toContain('href="/administracao/variacoes"');

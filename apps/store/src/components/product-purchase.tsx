@@ -392,7 +392,6 @@ export function ProductPurchase({
               {currentStock > 0 ? "Em estoque" : "Indisponível nesta combinação"}
             </p>
           ) : null}
-          {selectedVariant?.sku ? <p className="product-sku">SKU: {selectedVariant.sku}</p> : null}
           <p className="sr-only" role="status" aria-live="polite">
             {added ? `${product.name} adicionado ao carrinho.` : ""}
           </p>

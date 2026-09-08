@@ -97,7 +97,7 @@ function showRouteHeading(role: PanelRole, section: string) {
   if (!section) return role !== "gerencia";
   if (role === "administracao") {
     const ownsHeading =
-      ["produtos", "navegacao-loja", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
+      ["produtos", "produtos-arquivados", "navegacao-loja", "construtor-home", "barra-promocional", "usuarios", "permissoes"].includes(
         section
       ) || isAdminResource(section);
     return !ownsHeading;
@@ -154,6 +154,8 @@ function Administration({ section, initialQuery, draftOwnerKey }: { section: str
   if (section === "configuracoes") redirect("/administracao");
   if (section === "produtos")
     return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} draftOwnerKey={draftOwnerKey} />;
+  if (section === "produtos-arquivados")
+    return <ProductManagement key={`${section}:${initialQuery}`} initialQuery={initialQuery} draftOwnerKey={draftOwnerKey} catalogMode="archived" />;
   if (section === "navegacao-loja") return <StoreNavigationManager />;
   if (section === "construtor-home") return <HomepageBuilder />;
   if (section === "barra-promocional") return <PromotionBarManager />;

@@ -41,7 +41,8 @@ import {
   productThumbnail,
   type ManagedProduct,
   type ManagedProductMedia,
-  type NewProductDraft
+  type NewProductDraft,
+  type ProductSizeGuideEntry
 } from "@/lib/product-management";
 
 type CatalogResponse = {
@@ -63,6 +64,22 @@ type CatalogResponse = {
   capabilityMessage?: string;
 };
 
+const includeSizeGuideRows = (
+  current: ProductSizeGuideEntry[],
+  sizes: string[]
+) => {
+  const known = new Set(current.map((entry) => entry.size.trim().toLocaleLowerCase("pt-BR")));
+  const next = [...current];
+  for (const value of sizes) {
+    const size = value.trim();
+    const normalized = size.toLocaleLowerCase("pt-BR");
+    if (!size || known.has(normalized)) continue;
+    known.add(normalized);
+    next.push({ size, measurementCm: null });
+  }
+  return next;
+};
+
 const formatBRL = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value / 100);
 
@@ -76,12 +93,12 @@ const productSlug = (value: string) =>
 
 const productStatusLabel = (status: string) =>
   ({
-    draft: "Rascunho",
-    active: "Publicado",
+    draft: "Não ativo",
+    active: "Ativo",
     archived: "Arquivado",
-    inactive: "Rascunho",
-    pending_review: "Rascunho",
-    out_of_stock: "Rascunho",
+    inactive: "Não ativo",
+    pending_review: "Não ativo",
+    out_of_stock: "Não ativo",
     rejected: "Arquivado"
   })[status] ?? status;
 
@@ -239,11 +256,13 @@ const productViewCopy: Record<ProductManagementView, { title: string; detail: st
 export function ProductManagement({
   view = "produtos",
   initialQuery = "",
-  draftOwnerKey
+  draftOwnerKey,
+  catalogMode = "current"
 }: {
   view?: ProductManagementView;
   initialQuery?: string;
   draftOwnerKey: string;
+  catalogMode?: "current" | "archived";
 }) {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [filter, setFilter] = useState<"all" | "out">("all");
@@ -264,7 +283,7 @@ export function ProductManagement({
   const [deleteTarget, setDeleteTarget] = useState<ManagedProduct | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [bulkAction, setBulkAction] = useState<"archive" | "delete" | null>(null);
+  const [bulkAction, setBulkAction] = useState<"archive" | "restore" | "delete" | null>(null);
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [draftOffer, setDraftOffer] = useState<NewProductDraft | null>(null);
@@ -292,6 +311,8 @@ export function ProductManagement({
   const [variantSkuPrefix, setVariantSkuPrefix] = useState("");
   const [hasVariations, setHasVariations] = useState(true);
   const [simpleStock, setSimpleStock] = useState(0);
+  const [productActive, setProductActive] = useState(false);
+  const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideEntry[]>([]);
   const [bulkVariantPrice, setBulkVariantPrice] = useState("");
   const [newVariantSizes, setNewVariantSizes] = useState<Record<string, string>>({});
   const [colorImageSelections, setColorImageSelections] = useState<Record<string, string>>({});
@@ -335,12 +356,14 @@ export function ProductManagement({
       variants: editableVariants,
       hasVariations,
       simpleStock,
+      productActive,
       variantColors,
       variantSizes,
-      variantSkuPrefix
+      variantSkuPrefix,
+      sizeGuide
     };
     try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
-  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, selectedCategoryIds, simpleStock, variantColors, variantSizes, variantSkuPrefix]);
+  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
 
   const scheduleLocalDraft = useCallback(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -353,7 +376,7 @@ export function ProductManagement({
     try {
       const params = new URLSearchParams({ page: String(page) });
       if (submittedQuery) params.set("q", submittedQuery);
-      if (status) params.set("status", status);
+      params.set("status", catalogMode === "archived" ? "archived" : status || "current");
       if (filter === "out") params.set("stock", "out");
       const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
       const result = (await response.json()) as CatalogResponse;
@@ -395,7 +418,7 @@ export function ProductManagement({
     } finally {
       setLoading(false);
     }
-  }, [filter, page, status, submittedQuery]);
+  }, [catalogMode, filter, page, status, submittedQuery]);
 
   useEffect(() => {
     void load();
@@ -431,6 +454,8 @@ export function ProductManagement({
       setPrimaryCategoryId("");
       setHasVariations(false);
       setSimpleStock(0);
+      setProductActive(false);
+      setSizeGuide([]);
       setNewVariantSizes({});
       setColorImageSelections({});
       setQueuedMediaFiles([]);
@@ -457,6 +482,8 @@ export function ProductManagement({
     setPrimaryCategoryId(editing.categoryId ?? editing.categoryIds?.[0] ?? "");
     setHasVariations(editing.variants.length > 1 || editing.variants.some((variant) => variant.color !== "Padrão" || variant.size !== "Único"));
     setSimpleStock(editing.variants[0]?.available ?? 0);
+    setProductActive(editing.status === "active");
+    setSizeGuide(includeSizeGuideRows(editing.sizeGuide ?? [], editing.variants.map((variant) => variant.size)));
     setColorImageSelections({});
     setVariantSkuPrefix(editing.slug);
     setVariantColors("");
@@ -495,6 +522,8 @@ export function ProductManagement({
     setEditableVariants(draftOffer.variants);
     setHasVariations(draftOffer.hasVariations);
     setSimpleStock(draftOffer.simpleStock);
+    setProductActive(draftOffer.productActive === true);
+    setSizeGuide(draftOffer.sizeGuide ?? []);
     setVariantColors(draftOffer.variantColors ?? "");
     setVariantSizes(draftOffer.variantSizes ?? "");
     setVariantSkuPrefix(draftOffer.variantSkuPrefix ?? "");
@@ -521,7 +550,7 @@ export function ProductManagement({
 
   useEffect(() => {
     if (editing === "new" && editorDirty) scheduleLocalDraft();
-  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, scheduleLocalDraft, selectedCategoryIds, simpleStock, variantColors, variantSizes, variantSkuPrefix]);
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleLocalDraft, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -543,7 +572,7 @@ export function ProductManagement({
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const viewCopy = productViewCopy[view];
-  const canCreateProduct = view === "produtos" && capabilities.create;
+  const canCreateProduct = view === "produtos" && catalogMode === "current" && capabilities.create;
   const canUpdateProduct = capabilities.update;
   const canAdjustStock = capabilities.adjustStock;
   const groupedEditableVariants = useMemo(
@@ -676,10 +705,9 @@ export function ProductManagement({
             mpn: editableVariants.length === 1 ? editableVariants[0]!.mpn : ""
           }
         ];
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    const requestedStatus = editing === "new" && submitter instanceof HTMLButtonElement
-      ? (submitter.value === "publish" ? "active" : "draft")
-      : formText("status") || "draft";
+    const requestedStatus = editing !== "new" && editing.status === "archived"
+      ? "archived"
+      : productActive ? "active" : "draft";
     const priceInCents = optionalNumber("price") === null
       ? null
       : Math.round(optionalNumber("price")! * 100);
@@ -721,7 +749,11 @@ export function ProductManagement({
         widthCm: optionalNumber("widthCm"),
         lengthCm: optionalNumber("lengthCm"),
         stockReason: form.get("stockReason"),
-        variants
+        variants,
+        sizeGuide: sizeGuide.filter(
+          (entry): entry is { size: string; measurementCm: number } =>
+            Boolean(entry.size.trim()) && entry.measurementCm !== null && entry.measurementCm > 0
+        )
       },
       wasNew ? "new-product" : editing.id
     );
@@ -782,7 +814,7 @@ export function ProductManagement({
       setEditorDirty(false);
       setMessage(
         wasNew && requestedStatus === "active"
-          ? "Produto publicado com sucesso."
+          ? "Produto ativado com sucesso."
           : wasNew
           ? queuedMediaFiles.length
             ? "Produto criado e imagens enviadas. Continue com as cores e tamanhos quando necessário."
@@ -870,6 +902,10 @@ export function ProductManagement({
 
   const updateEditableVariant = (index: number, value: Partial<EditableVariant>) => {
     setEditorDirty(true);
+    if (typeof value.size === "string" && value.size.trim()) {
+      const size = value.size;
+      setSizeGuide((current) => includeSizeGuideRows(current, [size]));
+    }
     setEditableVariants((current) =>
       current.map((variant, variantIndex) =>
         variantIndex === index ? { ...variant, ...value } : variant
@@ -880,6 +916,7 @@ export function ProductManagement({
   const generateVariants = () => {
     const productName = editorFormRef.current?.elements.namedItem("name");
     const prefix = variantSkuPrefix || (productName instanceof HTMLInputElement ? productName.value : "") || "PRODUTO";
+    setVariantSkuPrefix(prefix);
     const generated = generateVariantCombinations(variantColors || "Padrão", variantSizes, prefix);
     if (!generated.length) {
       setMessage("Informe pelo menos um tamanho.");
@@ -900,6 +937,7 @@ export function ProductManagement({
       );
       return [...current, ...additions];
     });
+    setSizeGuide((current) => includeSizeGuideRows(current, generated.map((variant) => variant.size)));
     setEditorDirty(true);
     setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.");
   };
@@ -924,6 +962,7 @@ export function ProductManagement({
     const candidate = generated[0];
     if (!candidate) return;
     setEditableVariants((current) => [...current, { ...candidate, colorHex }]);
+    setSizeGuide((current) => includeSizeGuideRows(current, [candidate.size]));
     setNewVariantSizes((current) => ({ ...current, [groupKey]: "" }));
     setEditorDirty(true);
   };
@@ -1176,7 +1215,9 @@ export function ProductManagement({
           headers: { "content-type": "application/json" },
           body: JSON.stringify(bulkAction === "delete"
             ? { productId: product.id }
-            : { action: "archive", productId: product.id, reason: "Arquivamento em lote no painel de produtos" })
+            : bulkAction === "restore"
+              ? { action: "status", productId: product.id, status: "draft", reason: "Restauração em lote no painel de produtos" }
+              : { action: "archive", productId: product.id, reason: "Arquivamento em lote no painel de produtos" })
         });
         const result = (await response.json()) as CatalogResponse;
         if (!response.ok) throw new Error(result.message);
@@ -1186,7 +1227,9 @@ export function ProductManagement({
       await load();
       setMessage(bulkAction === "delete"
         ? `${completed} produto(s) excluído(s) permanentemente.`
-        : `${completed} produto(s) arquivado(s).`);
+        : bulkAction === "restore"
+          ? `${completed} produto(s) restaurado(s) como não ativo(s).`
+          : `${completed} produto(s) arquivado(s).`);
     } catch (error) {
       await load();
       setMessage(error instanceof Error && error.message
@@ -1202,7 +1245,7 @@ export function ProductManagement({
     <section className="panel-card product-management">
       <div className="page-heading">
         <div>
-          <h1>{viewCopy.title}</h1>
+          <h1>{catalogMode === "archived" ? "Produtos arquivados" : viewCopy.title}</h1>
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? (
@@ -1213,7 +1256,7 @@ export function ProductManagement({
         </div>
       </div>
 
-      {!loading && !loadError && view === "produtos" && !canCreateProduct ? (
+      {!loading && !loadError && view === "produtos" && catalogMode === "current" && !canCreateProduct ? (
         <p className="form-message product-capability-notice" role="status">
           {capabilityNotice ||
             "Seu acesso atual n\u00e3o possui permiss\u00e3o para cadastrar produtos."}
@@ -1243,7 +1286,7 @@ export function ProductManagement({
             Buscar
           </button>
         </form>
-        <div className="product-filter-tabs" role="group" aria-label="Filtrar produtos">
+        {catalogMode === "current" ? <div className="product-filter-tabs" role="group" aria-label="Filtrar produtos">
           <button
             className={filter === "all" && !status ? "secondary-button active" : "secondary-button"}
             type="button"
@@ -1268,7 +1311,7 @@ export function ProductManagement({
               setStatus("active");
             }}
           >
-            Publicados
+            Ativos
           </button>
           <button
             className={
@@ -1283,22 +1326,7 @@ export function ProductManagement({
               setStatus("draft");
             }}
           >
-            Rascunhos
-          </button>
-          <button
-            className={
-              filter === "all" && status === "archived"
-                ? "secondary-button active"
-                : "secondary-button"
-            }
-            type="button"
-            onClick={() => {
-              setPage(1);
-              setFilter("all");
-              setStatus("archived");
-            }}
-          >
-            Arquivados
+            Não ativos
           </button>
           <button
             className={filter === "out" ? "secondary-button active" : "secondary-button"}
@@ -1311,7 +1339,7 @@ export function ProductManagement({
           >
             Sem estoque
           </button>
-        </div>
+        </div> : null}
         {query || submittedQuery || status || filter !== "all" ? (
           <button
             className="secondary-button filter-clear-button"
@@ -1337,7 +1365,7 @@ export function ProductManagement({
       {selectedProducts.length ? (
         <div className="product-bulk-actions" role="toolbar" aria-label="Ações para produtos selecionados">
           <strong>{selectedProducts.length} selecionado(s)</strong>
-          {capabilities.archive ? <button className="secondary-button" type="button" onClick={() => setBulkAction("archive")}><Archive /> Arquivar</button> : null}
+          {catalogMode === "archived" && canUpdateProduct ? <button className="secondary-button" type="button" onClick={() => setBulkAction("restore")}><RotateCcw /> Restaurar</button> : catalogMode === "current" && capabilities.archive ? <button className="secondary-button" type="button" onClick={() => setBulkAction("archive")}><Archive /> Arquivar</button> : null}
           {capabilities.delete ? <button className="secondary-button danger-button" type="button" disabled={selectedProducts.some((product) => !product.canDelete)} onClick={() => setBulkAction("delete")}><Trash2 /> Excluir</button> : null}
           <button className="secondary-button" type="button" onClick={() => setSelectedProductIds([])}>Limpar seleção</button>
         </div>
@@ -1361,7 +1389,9 @@ export function ProductManagement({
           <Boxes />
           <strong>Nenhum produto encontrado</strong>
           <span>
-            {canCreateProduct
+            {catalogMode === "archived"
+              ? "Nenhum produto foi arquivado."
+              : canCreateProduct
               ? "Cadastre um produto ou limpe os filtros para visualizar o catálogo."
               : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}
           </span>
@@ -1474,7 +1504,7 @@ export function ProductManagement({
                               disabled={Boolean(pending)}
                               onClick={() => void changeStatus(product, "draft")}
                             >
-                              <EyeOff /> Despublicar
+                              <EyeOff /> Desativar
                             </button>
                           ) : product.status === "archived" ? (
                             <button
@@ -1493,12 +1523,12 @@ export function ProductManagement({
                               }
                               title={
                                 !product.variants.some((variant) => variant.active)
-                                  ? "Cadastre e ative pelo menos uma variação antes de publicar."
-                                  : "Publicar produto"
+                                  ? "Cadastre e ative pelo menos uma variação antes de ativar."
+                                  : "Ativar produto"
                               }
                               onClick={() => void changeStatus(product, "active")}
                             >
-                              <Eye /> Publicar
+                              <Eye /> Ativar
                             </button>
                           )}
                           {product.status !== "archived" && capabilities.archive && (
@@ -1899,7 +1929,7 @@ export function ProductManagement({
           onClose={closeEditor}
         >
           {({ requestClose }) => <div className={`product-editor-drawer${editing === "new" ? " product-editor-new" : ""}`}>
-            {editing !== "new" ? <nav className="product-editor-nav" aria-label="Seções da edição">
+                <nav className="product-editor-nav" aria-label="Seções do produto">
               {productEditorSections.map((section) => (
                 <button
                   key={section.id}
@@ -1913,7 +1943,7 @@ export function ProductManagement({
                   {section.label}
                 </button>
               ))}
-            </nav> : null}
+                </nav>
             <form
               ref={editorFormRef}
               onChangeCapture={() => { setEditorDirty(true); scheduleLocalDraft(); }}
@@ -1948,15 +1978,15 @@ export function ProductManagement({
                     }}
                   />
                 </label>
-                {editing !== "new" ? <label>
+                <label>
                   <span>Slug (opcional)</span>
                   <input
                     name="slug"
                     pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                    defaultValue={editing.slug}
+                    defaultValue={editing === "new" ? "" : editing.slug}
                     placeholder="Gerado automaticamente pelo nome"
                   />
-                </label> : <input name="slug" type="hidden" value="" />}
+                </label>
                 <label className="wide">
                   <span>Descrição</span>
                   <textarea
@@ -2016,9 +2046,9 @@ export function ProductManagement({
                     })}
                   </div>
                 </fieldset>
-                {editing !== "new" ? <label>
+                <label>
                   <span>Modelo</span>
-                  <select name="modelId" defaultValue={editing.modelId}>
+                  <select name="modelId" defaultValue={editing === "new" ? "" : editing.modelId}>
                     <option value="">Sem modelo</option>
                     {models.map((item) => (
                       <option key={item.id} value={item.id}>
@@ -2026,12 +2056,12 @@ export function ProductManagement({
                       </option>
                     ))}
                   </select>
-                </label> : <input name="modelId" type="hidden" value="" />}
-                {editing !== "new" ? <label>
+                </label>
+                <label>
                   <span>Coleção</span>
                   <select
                     name="collectionId"
-                    defaultValue={editing.collectionId}
+                    defaultValue={editing === "new" ? "" : editing.collectionId}
                   >
                     <option value="">Sem coleção</option>
                     {collections.map((item) => (
@@ -2040,24 +2070,23 @@ export function ProductManagement({
                       </option>
                     ))}
                   </select>
-                </label> : <input name="collectionId" type="hidden" value="" />}
-                {editing === "new" ? (
-                  <input name="status" type="hidden" value="draft" />
+                </label>
+                {editing !== "new" && editing.status === "archived" ? (
+                  <p className="form-message">Produto arquivado. Restaure-o para alterar sua visibilidade.</p>
                 ) : (
-                  <>
-                    <label>
-                      <span>Status</span>
-                      <select name="status" defaultValue={editing.status}>
-                        <option value="draft">Rascunho</option>
-                        <option value="active">Publicado</option>
-                        {capabilities.archive || editing.status === "archived" ? (
-                          <option value="archived">Arquivado</option>
-                        ) : null}
-                      </select>
-                    </label>
-                    <input name="statusReason" type="hidden" value={editing.statusReason} />
-                  </>
+                  <label className="admin-switch">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={productActive}
+                      aria-checked={productActive}
+                      onChange={(event) => { setProductActive(event.target.checked); setEditorDirty(true); }}
+                    />
+                    <span aria-hidden="true" />
+                    <strong>{productActive ? "Ativo" : "Não ativo"}</strong>
+                  </label>
                 )}
+                <input name="statusReason" type="hidden" value={editing === "new" ? "" : editing.statusReason} />
                 <h3 className="wide product-form-section" id="product-step-3">
                   Preço
                 </h3>
@@ -2073,7 +2102,7 @@ export function ProductManagement({
                     defaultValue={editing === "new" ? "" : (editing.priceInCents / 100).toFixed(2)}
                   />
                 </label>
-                {editing !== "new" ? <label>
+                <label>
                   <span>Preço anterior/promocional (R$)</span>
                   <input
                     name="compareAtPrice"
@@ -2082,12 +2111,12 @@ export function ProductManagement({
                     min="0"
                     step="0.01"
                     defaultValue={
-                      !editing.compareAtPriceInCents
+                      editing === "new" || !editing.compareAtPriceInCents
                         ? ""
                         : (editing.compareAtPriceInCents / 100).toFixed(2)
                     }
                   />
-                </label> : <input name="compareAtPrice" type="hidden" value="" />}
+                </label>
                 <label>
                   <span>Custo (R$)</span>
                   <input
@@ -2390,14 +2419,14 @@ export function ProductManagement({
                   variações e completar depois.
                 </p>
                 <div className={`wide variant-generator ${hasVariations ? "" : "is-hidden"}`}>
-                  {editing !== "new" ? <label>
+                  <label>
                     <span>Prefixo do SKU</span>
                     <input
                       value={variantSkuPrefix}
                       onChange={(event) => setVariantSkuPrefix(event.target.value)}
                       placeholder="Ex.: SANDALIA-10"
                     />
-                  </label> : null}
+                  </label>
                   <label>
                     <span>Tamanhos *</span>
                     <input
@@ -2417,7 +2446,7 @@ export function ProductManagement({
                   <button className="secondary-button" type="button" onClick={generateVariants}>
                     Gerar combinações
                   </button>
-                  {editing !== "new" ? <label>
+                  <label>
                     <span>Aplicar preço a todas (R$)</span>
                     <input
                       value={bulkVariantPrice}
@@ -2427,8 +2456,8 @@ export function ProductManagement({
                       step="0.01"
                       onChange={(event) => setBulkVariantPrice(event.target.value)}
                     />
-                  </label> : null}
-                  {editing !== "new" ? <button
+                  </label>
+                  <button
                     className="secondary-button"
                     type="button"
                     disabled={!bulkVariantPrice || !editableVariants.length}
@@ -2441,13 +2470,13 @@ export function ProductManagement({
                     }}
                   >
                     Aplicar preço
-                  </button> : null}
+                  </button>
                 </div>
                 <div className={`wide product-variant-editor ${hasVariations ? "" : "is-hidden"}`}>
                   {editableVariants.length === 0 ? (
                     <p>
-                      Nenhuma variação configurada. Rascunhos podem ser salvos assim; publique
-                      somente após configurar os SKUs.
+                      Nenhuma variação configurada. Produtos não ativos podem ser salvos assim;
+                      ative somente após configurar os SKUs.
                     </p>
                   ) : (
                     groupedEditableVariants.map((group) => {
@@ -2486,7 +2515,7 @@ export function ProductManagement({
                               <strong>{group.color}</strong>
                               <span>{group.variants.length} tamanho(s)</span>
                             </div>
-                            {editing !== "new" ? <label className="variant-color-name">
+                            <label className="variant-color-name">
                               <span>Nome da cor</span>
                               <input
                                 required
@@ -2498,7 +2527,22 @@ export function ProductManagement({
                                   );
                                 }}
                               />
-                            </label> : null}
+                            </label>
+                            <button
+                              className="icon-button danger-button"
+                              type="button"
+                              aria-label={`Remover cor ${group.color}`}
+                              title="Remover cor"
+                              onClick={() => {
+                                const persisted = group.variants.some(({ variant }) => Boolean(variant.id));
+                                if (persisted && !window.confirm(`Remover todas as variações da cor ${group.color}?`)) return;
+                                const indexes = new Set(group.variants.map(({ index }) => index));
+                                setEditableVariants((current) => current.filter((_, index) => !indexes.has(index)));
+                                setEditorDirty(true);
+                              }}
+                            >
+                              <Trash2 />
+                            </button>
                           </header>
                           <div className="variant-size-list">
                             {group.variants.map(({ variant, index }) => (
@@ -2515,7 +2559,7 @@ export function ProductManagement({
                                     }
                                   />
                                 </label>
-                                {editing !== "new" ? <label>
+                                <label>
                                   <span>SKU *</span>
                                   <input
                                     required
@@ -2524,34 +2568,7 @@ export function ProductManagement({
                                       updateEditableVariant(index, { sku: event.target.value })
                                     }
                                   />
-                                </label> : null}
-                                {editing !== "new" ? <details className="variant-technical-details">
-                                  <summary>Detalhes técnicos</summary>
-                                  <div>
-                                    <label>
-                                      <span>GTIN / EAN</span>
-                                      <input
-                                        inputMode="numeric"
-                                        maxLength={50}
-                                        value={variant.gtin}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, { gtin: event.target.value })
-                                        }
-                                      />
-                                      <small>Use apenas o código real do fabricante.</small>
-                                    </label>
-                                    <label>
-                                      <span>MPN do fabricante</span>
-                                      <input
-                                        maxLength={70}
-                                        value={variant.mpn}
-                                        onChange={(event) =>
-                                          updateEditableVariant(index, { mpn: event.target.value })
-                                        }
-                                      />
-                                    </label>
-                                  </div>
-                                </details> : null}
+                                </label>
                                 <label>
                                   <span>Preço próprio (R$)</span>
                                   <input
@@ -2590,26 +2607,29 @@ export function ProductManagement({
                                     }
                                   />
                                 </label>
-                                {editing !== "new" ? <label className="admin-checkbox">
+                                <label className="admin-switch variant-active-switch">
                                   <input
                                     type="checkbox"
+                                    role="switch"
                                     checked={variant.active}
+                                    aria-checked={variant.active}
                                     onChange={(event) =>
                                       updateEditableVariant(index, {
                                         active: event.target.checked
                                       })
                                     }
                                   />
-                                  <span>Ativa</span>
-                                </label> : null}
-                                {editing !== "new" ? <button
+                                  <span aria-hidden="true" />
+                                  <strong>{variant.active ? "Ativo" : "Desativado"}</strong>
+                                </label>
+                                <button
                                   className="icon-button"
                                   type="button"
                                   aria-label={`Duplicar ${variant.sku}`}
                                   onClick={() => duplicateVariant(variant)}
                                 >
                                   <Copy />
-                                </button> : null}
+                                </button>
                                 <button
                                   className="icon-button danger-button"
                                   type="button"
@@ -2712,6 +2732,66 @@ export function ProductManagement({
                     })
                   )}
                 </div>
+                <section className="wide product-size-guide-editor" aria-labelledby="size-guide-editor-title">
+                  <div>
+                    <h3 id="size-guide-editor-title">Tabela de tamanhos</h3>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setSizeGuide((current) => [...current, { size: "", measurementCm: null }]);
+                        setEditorDirty(true);
+                      }}
+                    >
+                      <Plus /> Adicionar linha
+                    </button>
+                  </div>
+                  <p>Opcional. Cada tamanho aparece uma vez, mesmo quando existe em várias cores.</p>
+                  {sizeGuide.length ? (
+                    <div className="product-size-guide-rows">
+                      {sizeGuide.map((entry, index) => (
+                        <div key={`${entry.size}-${index}`}>
+                          <label>
+                            <span>Tamanho</span>
+                            <input
+                              value={entry.size}
+                              maxLength={40}
+                              onChange={(event) => {
+                                const size = event.target.value;
+                                setSizeGuide((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, size } : item));
+                                setEditorDirty(true);
+                              }}
+                            />
+                          </label>
+                          <label>
+                            <span>Medida (cm)</span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0.01"
+                              max="9999.99"
+                              step="0.01"
+                              value={entry.measurementCm ?? ""}
+                              onChange={(event) => {
+                                const measurementCm = event.target.value ? Number(event.target.value) : null;
+                                setSizeGuide((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, measurementCm } : item));
+                                setEditorDirty(true);
+                              }}
+                            />
+                          </label>
+                          <button
+                            className="icon-button danger-button"
+                            type="button"
+                            aria-label={`Remover tamanho ${entry.size || index + 1} da tabela`}
+                            onClick={() => { setSizeGuide((current) => current.filter((_, itemIndex) => itemIndex !== index)); setEditorDirty(true); }}
+                          >
+                            <Trash2 />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p>Nenhuma medida cadastrada.</p>}
+                </section>
                 {hasVariations && editableVariants.length ? (
                   <label className="wide product-stock-reason">
                     <span>Motivo da definição do estoque *</span>
@@ -2731,7 +2811,7 @@ export function ProductManagement({
                     value="Cadastro inicial sem variações de estoque"
                   />
                 )}
-                {editing !== "new" ? <><h3 className="wide product-form-section" id="product-step-7">
+                <><h3 className="wide product-form-section" id="product-step-7">
                   Dimensões e transporte
                 </h3>
                 <label>
@@ -2741,7 +2821,7 @@ export function ProductManagement({
                     type="number"
                     inputMode="numeric"
                     min="1"
-                    defaultValue={editing.weightGrams}
+                    defaultValue={editing === "new" ? "" : editing.weightGrams}
                   />
                 </label>
                 <label>
@@ -2752,7 +2832,7 @@ export function ProductManagement({
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    defaultValue={editing.heightCm}
+                    defaultValue={editing === "new" ? "" : editing.heightCm}
                   />
                 </label>
                 <label>
@@ -2763,7 +2843,7 @@ export function ProductManagement({
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    defaultValue={editing.widthCm}
+                    defaultValue={editing === "new" ? "" : editing.widthCm}
                   />
                 </label>
                 <label>
@@ -2774,34 +2854,27 @@ export function ProductManagement({
                     inputMode="decimal"
                     min="0.01"
                     step="0.01"
-                    defaultValue={editing.lengthCm}
+                    defaultValue={editing === "new" ? "" : editing.lengthCm}
                   />
-                </label></> : <>
-                  <input name="weightGrams" type="hidden" value="" />
-                  <input name="heightCm" type="hidden" value="" />
-                  <input name="widthCm" type="hidden" value="" />
-                  <input name="lengthCm" type="hidden" value="" />
-                </>}
-                {editing !== "new" ? (
-                  <section className="wide product-organization" id="product-organization">
+                </label></>
+                <section className="wide product-organization" id="product-organization">
                     <h3>Organização</h3>
                     <label>
                       <span>Resumo curto</span>
-                      <input name="shortDescription" maxLength={280} defaultValue={editing.shortDescription} />
+                      <input name="shortDescription" maxLength={280} defaultValue={editing === "new" ? "" : editing.shortDescription} />
                     </label>
                     <label className="admin-checkbox">
-                      <input name="featured" type="checkbox" defaultChecked={editing.featured} />
+                      <input name="featured" type="checkbox" defaultChecked={editing === "new" ? false : editing.featured} />
                       <span>Produto em destaque</span>
                     </label>
-                  </section>
-                ) : <input name="shortDescription" type="hidden" value="" />}
+                </section>
               </div>
-              {editing !== "new" && editing.status !== "active" ? (
+                {editing !== "new" && editing.status !== "active" && editing.status !== "archived" ? (
                 <aside className="product-publication-check" role="status">
                   <strong>
                     {missingToPublish.length
-                      ? "Rascunho salvo. Falta para publicar:"
-                      : "Este produto está pronto para publicação."}
+                      ? "Produto não ativo. Falta para ativar:"
+                      : "Este produto está pronto para ser ativado."}
                   </strong>
                   {missingToPublish.length ? <span>{missingToPublish.join(", ")}.</span> : null}
                 </aside>
@@ -2809,14 +2882,7 @@ export function ProductManagement({
               <footer className="product-editor-footer">
                 {message ? <p className="form-message product-editor-message" role="status">{message}</p> : null}
                 <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending)}>Cancelar</button>
-                {editing === "new" ? (
-                  <>
-                    <button className="secondary-button" type="submit" name="submitMode" value="draft" disabled={Boolean(pending)}>{pending ? "Salvando..." : "Salvar como rascunho"}</button>
-                    <button className="primary-button" type="submit" name="submitMode" value="publish" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : "Publicar produto"}</button>
-                  </>
-                ) : (
-                  <button className="primary-button" type="submit" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} Salvar alterações</button>
-                )}
+                <button className="primary-button" type="submit" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
               </footer>
             </form>
           </div>}
@@ -2862,9 +2928,9 @@ export function ProductManagement({
       {bulkAction ? (
         <div className="admin-modal-backdrop">
           <section className="admin-confirm" role="alertdialog" aria-modal="true" aria-labelledby="bulk-product-title">
-            <h2 id="bulk-product-title">{bulkAction === "delete" ? "Excluir produtos?" : "Arquivar produtos?"}</h2>
-            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
-            <div><button className="secondary-button" type="button" disabled={Boolean(pending)} onClick={() => setBulkAction(null)}>Cancelar</button><button className="primary-button danger-button" type="button" disabled={Boolean(pending)} onClick={() => void runBulkAction()}>{pending === `bulk-${bulkAction}` ? <LoaderCircle className="spin" /> : null}{bulkAction === "delete" ? "Excluir produtos" : "Arquivar produtos"}</button></div>
+            <h2 id="bulk-product-title">{bulkAction === "delete" ? "Excluir produtos?" : bulkAction === "restore" ? "Restaurar produtos?" : "Arquivar produtos?"}</h2>
+            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
+            <div><button className="secondary-button" type="button" disabled={Boolean(pending)} onClick={() => setBulkAction(null)}>Cancelar</button><button className={`primary-button ${bulkAction === "restore" ? "" : "danger-button"}`} type="button" disabled={Boolean(pending)} onClick={() => void runBulkAction()}>{pending === `bulk-${bulkAction}` ? <LoaderCircle className="spin" /> : null}{bulkAction === "delete" ? "Excluir produtos" : bulkAction === "restore" ? "Restaurar produtos" : "Arquivar produtos"}</button></div>
           </section>
         </div>
       ) : null}

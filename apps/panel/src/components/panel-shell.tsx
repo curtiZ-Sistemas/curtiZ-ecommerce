@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Archive,
   Bell,
   BadgeDollarSign,
   Boxes,
@@ -78,6 +79,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
   administracao: [
     ["Dashboard", "", PanelsTopLeft],
     ["Produtos", "produtos", Boxes],
+    ["Produtos arquivados", "produtos-arquivados", Archive],
     ["Categorias", "categorias", Tags],
     ["Navegação da loja", "navegacao-loja", PanelsTopLeft],
     ["Coleções", "colecoes", PanelsTopLeft],
@@ -237,10 +239,10 @@ const menuGroups: Record<PanelRole, Record<number, string>> = {
   administracao: {
     0: "Visão geral",
     1: "Catálogo",
-    4: "Comercial",
-    6: "Conteúdo",
-    11: "Representantes",
-    19: "Governança"
+    5: "Comercial",
+    7: "Conteúdo",
+    12: "Representantes",
+    20: "Governança"
   },
   gerencia: {
     0: "Visão geral",

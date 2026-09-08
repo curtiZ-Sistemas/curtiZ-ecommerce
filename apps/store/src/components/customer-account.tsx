@@ -724,7 +724,7 @@ function OrderDetails({
               </div>
               <div>
                 <strong>{item.productName}</strong>
-                <span>{item.color} · {item.size} · SKU {item.sku}</span>
+                <span>{item.color} · {item.size}</span>
                 <small>Quantidade: {item.quantity}</small>
               </div>
               <strong>{formatBRL(item.totalInCents)}</strong>

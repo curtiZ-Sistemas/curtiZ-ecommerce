@@ -84,6 +84,7 @@ export type ProductDetailData = {
   media: ProductMediaItem[];
   variants: ProductVariantOption[];
   specifications: Array<{ label: string; value: string }>;
+  sizeGuide: Array<{ size: string; measurementCm: number }>;
   reviews: ProductReview[];
   merchant?: {
     condition?: "new" | "refurbished" | "used";
@@ -690,6 +691,7 @@ const demoProductDetail = (slug: string): ProductDetailData | null => {
     }],
     variants,
     specifications: [],
+    sizeGuide: [],
     reviews: [],
     source: "demo"
   };
@@ -710,12 +712,20 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
-  const mediaResponse = await supabase
-    .from("product_media")
-    .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
-    .eq("product_id", parsed.data.id)
-    .order("sort_order")
-    .limit(60);
+  const [mediaResponse, sizeGuideResponse] = await Promise.all([
+    supabase
+      .from("product_media")
+      .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
+      .eq("product_id", parsed.data.id)
+      .order("sort_order")
+      .limit(60),
+    supabase
+      .from("product_size_guide_entries")
+      .select("size,measurement_cm,position")
+      .eq("product_id", parsed.data.id)
+      .order("position")
+      .limit(100)
+  ]);
   const media = mediaResponse.error
     ? []
     : readRows(mediaResponse.data).flatMap((item): ProductMediaItem[] => {
@@ -767,6 +777,13 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
     featured: parsed.data.featured,
     stock: parsed.data.stock
   };
+  if (sizeGuideResponse.error) {
+    console.error("[storefront-product] size guide query failed", {
+      code: sizeGuideResponse.error.code,
+      message: sizeGuideResponse.error.message,
+      details: sizeGuideResponse.error.details
+    });
+  }
   return {
     product,
     gallery,
@@ -801,6 +818,13 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         }
       : {}),
     specifications: parsed.data.specifications,
+    sizeGuide: sizeGuideResponse.error
+      ? []
+      : readRows(sizeGuideResponse.data).flatMap((entry) => {
+          const size = readString(entry, "size");
+          const measurementCm = readNumber(entry, "measurement_cm");
+          return size && measurementCm > 0 ? [{ size, measurementCm }] : [];
+        }),
     reviews: parsed.data.recentReviews.map((review) => ({
       id: review.id,
       rating: review.rating,
@@ -811,8 +835,8 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       createdAt: review.createdAt
     })),
     source: "supabase"
-  };
-});
+        };
+      });
 
 const cmsParagraphs = (value: unknown): string[] => {
   if (Array.isArray(value)) {
