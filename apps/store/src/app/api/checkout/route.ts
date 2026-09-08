@@ -1,8 +1,7 @@
 import { getIntegrationConfig } from "@curtiz/config";
-import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
+import { isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { demoProducts } from "@/lib/catalog";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import {
   CUSTOMER_EMAIL_MAX_LENGTH,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/personal-data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
+import { encryptPII } from "@/lib/pii";
 
 const schema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -43,8 +43,8 @@ const schema = z.object({
   lines: z
     .array(
       z.object({
-        productId: z.string().min(1),
-        variantId: z.string().min(1),
+        productId: z.string().uuid(),
+        variantId: z.string().uuid(),
         color: z.string().trim().min(1).max(80),
         size: z.string().trim().min(1).max(40),
         quantity: z.number().int().min(1).max(10)
@@ -93,11 +93,7 @@ export async function POST(request: NextRequest) {
   const { data: authData } = supabase
     ? await supabase.auth.getUser()
     : { data: { user: null } };
-  const demoSession =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
-  if (!authData.user && !demoSession) {
+  if (!authData.user) {
     return checkoutResponse(
       requestId,
       {
@@ -130,73 +126,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let subtotalInCents = 0;
-  if (process.env.DEMO_MODE === "true") {
-    for (const line of parsed.data.lines) {
-      const product = demoProducts.find((item) => item.id === line.productId);
-      const expectedVariantId = product
-        ? `${product.id}:${line.color}:${line.size}`
-        : "";
-      if (
-        !product ||
-        line.variantId !== expectedVariantId ||
-        !product.colors.includes(line.color) ||
-        !product.sizes.includes(line.size) ||
-        product.stock < line.quantity
-      ) {
-        return checkoutResponse(
-          requestId,
-          { ok: false, message: "Um produto ficou indisponível. Atualize o carrinho." },
-          409
-        );
-      }
-      subtotalInCents += product.priceInCents * line.quantity;
-    }
-  } else {
-    if (!supabase) {
-      checkoutLog(requestId, 503, "CATALOG_VALIDATION_UNAVAILABLE");
-      return checkoutResponse(
-        requestId,
-        { ok: false, message: "Não foi possível validar os itens agora. Tente novamente." },
-        503
-      );
-    }
-    const validationResponse: unknown = await supabase.rpc("validate_checkout_lines", {
-      p_lines: parsed.data.lines.map((line) => ({
-        product_id: line.productId,
-        variant_id: line.variantId,
-        quantity: line.quantity
-      }))
-    });
-    const validation = readQueryResult(validationResponse);
-    const valid =
-      validation.data &&
-      typeof validation.data === "object" &&
-      !Array.isArray(validation.data) &&
-      (validation.data as { valid?: unknown }).valid === true;
-    if (validation.error || !valid) {
-      return checkoutResponse(
-        requestId,
-        {
-          ok: false,
-          message:
-            "Preço, variante ou estoque mudaram. Revise o carrinho antes de continuar."
-        },
-        409
-      );
-    }
-    const validatedSubtotal = (validation.data as { subtotalInCents?: unknown }).subtotalInCents;
-    if (typeof validatedSubtotal !== "number" || !Number.isSafeInteger(validatedSubtotal)) {
-      checkoutLog(requestId, 503, "INVALID_CHECKOUT_QUOTE");
-      return checkoutResponse(
-        requestId,
-        { ok: false, message: "Não foi possível validar os itens agora. Tente novamente." },
-        503
-      );
-    }
-    subtotalInCents = validatedSubtotal;
-  }
-
   if (!integrations.payment.enabled || integrations.payment.provider !== "mercadopago") {
     checkoutLog(requestId, 503, "PAYMENT_UNAVAILABLE");
     return checkoutResponse(
@@ -205,7 +134,7 @@ export async function POST(request: NextRequest) {
         ok: false,
         code: "PAYMENT_UNAVAILABLE",
         message: "Pagamento online indisponível no momento",
-        quote: { subtotalInCents }
+        quote: { subtotalInCents: 0 }
       },
       503
     );
@@ -219,23 +148,94 @@ export async function POST(request: NextRequest) {
         ok: false,
         code: "SHIPPING_UNAVAILABLE",
         message: "Não foi possível calcular a entrega para este endereço.",
-        quote: { subtotalInCents }
+        quote: { subtotalInCents: 0 }
       },
       503
     );
   }
 
-  // O adapter transacional do provedor ainda não está conectado nesta rota. Não se cria
-  // pedido, pagamento ou reserva de estoque até receber uma confirmação real do provedor.
-  checkoutLog(requestId, 503, "PAYMENT_ADAPTER_UNAVAILABLE");
-  return checkoutResponse(
-    requestId,
-    {
-      ok: false,
-      code: "PAYMENT_UNAVAILABLE",
-      message: "Pagamento online indisponível no momento",
-      quote: { subtotalInCents }
-    },
-    503
-  );
+  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
+  const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
+  if (!isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
+    checkoutLog(requestId, 503, "TEST_CREDENTIALS_REQUIRED");
+    return checkoutResponse(
+      requestId,
+      {
+        ok: false,
+        code: "PAYMENT_UNAVAILABLE",
+        message: "O pagamento de teste está indisponível no momento."
+      },
+      503
+    );
+  }
+  if (!supabase) {
+    checkoutLog(requestId, 503, "ORDER_DATABASE_UNAVAILABLE");
+    return checkoutResponse(
+      requestId,
+      { ok: false, message: "Não foi possível preparar o pedido agora. Tente novamente." },
+      503
+    );
+  }
+
+  let cpfCiphertext: string;
+  try {
+    cpfCiphertext = encryptPII(parsed.data.customer.cpf);
+  } catch {
+    checkoutLog(requestId, 503, "PII_ENCRYPTION_UNAVAILABLE");
+    return checkoutResponse(
+      requestId,
+      { ok: false, message: "Não foi possível preparar o pedido agora. Tente novamente." },
+      503
+    );
+  }
+
+  const orderResponse: unknown = await supabase.rpc("create_mercadopago_test_order", {
+    p_idempotency_key: parsed.data.idempotencyKey,
+    p_customer_name: parsed.data.customer.name,
+    p_customer_email: parsed.data.customer.email,
+    p_customer_phone: parsed.data.customer.phone,
+    p_cpf_ciphertext: cpfCiphertext,
+    p_cpf_last_four: parsed.data.customer.cpf.slice(-4),
+    p_shipping_address: parsed.data.address,
+    p_lines: parsed.data.lines.map((line) => ({
+      product_id: line.productId,
+      variant_id: line.variantId,
+      quantity: line.quantity
+    })),
+    p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
+  });
+  const orderResult = readQueryResult(orderResponse);
+  const order = orderResult.data && typeof orderResult.data === "object" && !Array.isArray(orderResult.data)
+    ? orderResult.data as Record<string, unknown>
+    : null;
+  const orderId = typeof order?.orderId === "string" ? order.orderId : "";
+  const orderCode = typeof order?.orderCode === "string" ? order.orderCode : "";
+  const amountInCents = Number(order?.amountInCents);
+  if (orderResult.error || !orderId || !orderCode || !Number.isSafeInteger(amountInCents) || amountInCents <= 0) {
+    const errorCode = orderResult.error && typeof orderResult.error === "object"
+      && "code" in orderResult.error && typeof orderResult.error.code === "string"
+      ? orderResult.error.code
+      : "";
+    const unavailable = errorCode === "P0001" || errorCode === "22023";
+    if (!unavailable) checkoutLog(requestId, 503, "ORDER_CREATION_FAILED");
+    return checkoutResponse(
+      requestId,
+      {
+        ok: false,
+        message: unavailable
+          ? "Preço, variante ou estoque mudaram. Revise o carrinho antes de continuar."
+          : "Não foi possível preparar o pedido agora. Tente novamente."
+      },
+      unavailable ? 409 : 503
+    );
+  }
+
+  return checkoutResponse(requestId, {
+    ok: true,
+    orderId,
+    orderCode,
+    amountInCents,
+    publicKey,
+    paymentMode: "test"
+  }, 200);
 }

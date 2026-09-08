@@ -5,8 +5,12 @@ export const mercadoPagoRequest = async (
   init: RequestInit,
   idempotencyKey?: string
 ): Promise<Response> => {
+  const accessToken = requireEnv("MERCADO_PAGO_ACCESS_TOKEN").trim();
+  if (!accessToken.startsWith("TEST-")) {
+    throw new Error("Mercado Pago test credential is required");
+  }
   const headers = new Headers(init.headers);
-  headers.set("authorization", `Bearer ${requireEnv("MERCADO_PAGO_ACCESS_TOKEN")}`);
+  headers.set("authorization", `Bearer ${accessToken}`);
   headers.set("content-type", "application/json");
   if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
   return fetch(`https://api.mercadopago.com${path}`, { ...init, headers });

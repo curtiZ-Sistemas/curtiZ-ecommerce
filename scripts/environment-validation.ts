@@ -316,9 +316,21 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
   if (mercadoPagoEnabled) {
     addRequiredErrors(
       environment,
-      ["MERCADO_PAGO_ACCESS_TOKEN", "MERCADO_PAGO_PUBLIC_KEY", "MERCADO_PAGO_WEBHOOK_SECRET"],
+      ["MERCADO_PAGO_ACCESS_TOKEN", "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY"],
       errors
     );
+    if (
+      hasValue(environment, "MERCADO_PAGO_ACCESS_TOKEN") &&
+      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-")
+    ) {
+      errors.push("MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
+    }
+    if (
+      hasValue(environment, "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY") &&
+      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-")
+    ) {
+      errors.push("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
+    }
   }
 
   const emailEnabled = emailProvider === "resend" || enabledBoolean(environment.EMAIL_ENABLED);

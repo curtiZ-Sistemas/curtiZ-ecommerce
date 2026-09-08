@@ -329,7 +329,10 @@ export async function middleware(request: NextRequest) {
     imageSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
     mediaSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
 
-    scriptSources: [...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])],
+    scriptSources: [
+      ...(mercadoPagoEnabled ? ["https://sdk.mercadopago.com"] : []),
+      ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
+    ],
 
     connectSources: [
       ...(supabaseHttpOrigin ? [supabaseHttpOrigin] : []),
@@ -342,7 +345,9 @@ export async function middleware(request: NextRequest) {
     ],
 
     frameSources: [
-      ...(mercadoPagoEnabled ? ["https://www.mercadopago.com.br"] : []),
+      ...(mercadoPagoEnabled
+        ? ["https://www.mercadopago.com.br", "https://www.mercadopago.com"]
+        : []),
 
       ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
     ],

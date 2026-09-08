@@ -28,6 +28,123 @@ export interface PaymentProvider {
   validateWebhook(headers: Headers, rawBody: string): Promise<boolean>;
 }
 
+export type MercadoPagoPaymentInput = {
+  orderId: string;
+  orderCode: string;
+  amountInCents: number;
+  currency: "BRL";
+  idempotencyKey: string;
+  customerEmail: string;
+  customerName: string;
+  customerDocument: string;
+  paymentMethodId: string;
+  token?: string;
+  issuerId?: string;
+  installments: number;
+};
+
+export type MercadoPagoPayment = {
+  id: string;
+  status: string;
+  statusDetail: string;
+  amountInCents: number;
+  currency: string;
+  externalReference: string;
+  paymentMethodId: string;
+  paymentTypeId: string;
+  dateApproved: string | null;
+};
+
+export class MercadoPagoProviderError extends Error {
+  constructor(
+    readonly code: "invalid_test_credential" | "provider_unavailable" | "invalid_provider_response",
+    readonly httpStatus = 502
+  ) {
+    super(code);
+    this.name = "MercadoPagoProviderError";
+  }
+}
+
+export const isMercadoPagoTestCredential = (value: string | undefined): value is string =>
+  value?.trim().startsWith("TEST-") === true;
+
+const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new MercadoPagoProviderError("invalid_provider_response");
+  }
+  const payment = value as Record<string, unknown>;
+  const id = typeof payment.id === "number" || typeof payment.id === "string" ? String(payment.id) : "";
+  const amount = Number(payment.transaction_amount);
+  if (!id || !Number.isFinite(amount) || amount < 0) {
+    throw new MercadoPagoProviderError("invalid_provider_response");
+  }
+  return {
+    id,
+    status: typeof payment.status === "string" ? payment.status : "pending",
+    statusDetail: typeof payment.status_detail === "string" ? payment.status_detail : "",
+    amountInCents: Math.round(amount * 100),
+    currency: typeof payment.currency_id === "string" ? payment.currency_id : "",
+    externalReference:
+      typeof payment.external_reference === "string" ? payment.external_reference : "",
+    paymentMethodId:
+      typeof payment.payment_method_id === "string" ? payment.payment_method_id : "",
+    paymentTypeId: typeof payment.payment_type_id === "string" ? payment.payment_type_id : "",
+    dateApproved: typeof payment.date_approved === "string" ? payment.date_approved : null
+  };
+};
+
+export class MercadoPagoTestPaymentProvider {
+  readonly name = "mercadopago";
+
+  constructor(private readonly accessToken: string) {
+    if (!isMercadoPagoTestCredential(accessToken)) {
+      throw new MercadoPagoProviderError("invalid_test_credential", 503);
+    }
+  }
+
+  private async request(path: string, init: RequestInit, idempotencyKey?: string) {
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${this.accessToken}`);
+    headers.set("content-type", "application/json");
+    if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
+    const response = await fetch(`https://api.mercadopago.com${path}`, { ...init, headers });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new MercadoPagoProviderError("provider_unavailable", response.status);
+    return mercadoPagoPayment(body);
+  }
+
+  async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
+    return this.request(
+      "/v1/payments",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          transaction_amount: input.amountInCents / 100,
+          token: input.token,
+          description: `Pedido ${input.orderCode}`,
+          installments: input.installments,
+          payment_method_id: input.paymentMethodId,
+          issuer_id: input.issuerId,
+          payer: {
+            email: input.customerEmail,
+            first_name: input.customerName,
+            identification: { type: "CPF", number: input.customerDocument }
+          },
+          external_reference: input.orderCode,
+          statement_descriptor: "CURTIZ",
+          metadata: { order_id: input.orderId },
+          binary_mode: false
+        })
+      },
+      input.idempotencyKey
+    );
+  }
+
+  async getPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
+    return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+  }
+}
+
 export type ShippingQuoteInput = {
   postalCode: string;
   subtotalInCents: number;

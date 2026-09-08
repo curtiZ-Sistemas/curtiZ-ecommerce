@@ -16,7 +16,8 @@ export const publicEnvSchema = z.object({
       const url = new URL(value);
       return url.pathname === "/" && !url.search && !url.hash;
     }, "Use somente a origem do projeto Supabase, sem caminhos"),
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1)
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
+  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().startsWith("TEST-").optional()
 });
 
 export const serverEnvSchema = z.object({

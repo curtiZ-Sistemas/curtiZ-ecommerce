@@ -13868,6 +13868,76 @@ body:has(.checkout-transition) .help-widget {
   line-height: 1.45;
 }
 
+.checkout-payment-heading,
+.checkout-payment-brick > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.checkout-payment-heading h2,
+.checkout-payment-brick h1 {
+  margin: 0;
+}
+
+.checkout-test-badge {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--brand-200);
+  border-radius: 999px;
+  color: var(--brand-900);
+  background: var(--brand-50);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.checkout-test-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+.checkout-payment-brick {
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+}
+
+.checkout-payment-brick > header {
+  margin-bottom: 8px;
+}
+
+.checkout-payment-brick h1 {
+  font-size: 1.15rem;
+}
+
+.checkout-test-notice {
+  margin: 0 0 16px;
+  color: var(--neutral-600);
+  font-size: 0.75rem;
+}
+
+.checkout-payment-brick .checkout-simple-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 20px;
+}
+
+#mercadopago-payment-brick {
+  min-height: 140px;
+}
+
+.checkout-bricks-page .checkout-summary {
+  padding-top: 0;
+  border-top: 1px solid var(--neutral-200);
+  border-radius: var(--radius-sm);
+}
+
 .checkout-page .form-message {
   border-color: var(--brand-200);
   border-radius: var(--radius-xs);

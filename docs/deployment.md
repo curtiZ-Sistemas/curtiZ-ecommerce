@@ -100,6 +100,20 @@ TURNSTILE_ENABLED=false
 REQUIRE_INTERNAL_MFA=false
 ```
 
+Para habilitar temporariamente o Checkout Bricks apenas em teste, configure na Worker da loja:
+
+```dotenv
+CHECKOUT_ENABLED=true
+PAYMENT_PROVIDER=mercadopago
+MERCADO_PAGO_ENABLED=true
+MERCADO_PAGO_ACCESS_TOKEN=TEST-...
+NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=TEST-...
+SHIPPING_PROVIDER=<provider já configurado>
+```
+
+`MERCADO_PAGO_WEBHOOK_SECRET` permanece opcional até a ativação do webhook. O backend bloqueia
+credenciais sem o prefixo de teste.
+
 ## Comandos equivalentes
 
 Os comandos abaixo são úteis para diagnóstico ou operação manual autorizada. Execute-os na raiz do

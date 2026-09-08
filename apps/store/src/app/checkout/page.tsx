@@ -8,6 +8,10 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import {
+  MercadoPagoPaymentBrick,
+  type MercadoPagoBrickSession
+} from "@/components/mercadopago-payment-brick";
+import {
   CPF_FORMATTED_MAX_LENGTH,
   CUSTOMER_EMAIL_MAX_LENGTH,
   formatBrazilianPhone,
@@ -116,10 +120,11 @@ export default function CheckoutPage() {
   const [redirecting, setRedirecting] = useState(false);
   const [paymentUnavailable, setPaymentUnavailable] = useState(false);
   const [supportCode, setSupportCode] = useState("");
+  const [paymentSession, setPaymentSession] = useState<MercadoPagoBrickSession | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const closeDialogRef = useRef<HTMLButtonElement>(null);
   const paymentDialogRef = useRef<HTMLElement>(null);
-  const idempotencyKeyRef = useRef(crypto.randomUUID());
+  const idempotencyKeyRef = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
   const trackedCheckoutRef = useRef(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
@@ -128,6 +133,13 @@ export default function CheckoutPage() {
 
   const focusSubmitAction = useCallback(() => {
     submitButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem("curtiz-checkout-idempotency");
+    const key = stored && /^[0-9a-f-]{36}$/iu.test(stored) ? stored : crypto.randomUUID();
+    sessionStorage.setItem("curtiz-checkout-idempotency", key);
+    idempotencyKeyRef.current = key;
   }, []);
 
   useEffect(() => {
@@ -218,6 +230,18 @@ export default function CheckoutPage() {
     window.setTimeout(focusSubmitAction, 0);
   };
 
+  const completePayment = useCallback((
+    status: "approved" | "pending" | "rejected" | "cancelled" | "error",
+    orderCode: string
+  ) => {
+    sessionStorage.removeItem("curtiz-checkout-idempotency");
+    if (status === "approved" || status === "pending") {
+      removeMany(selectedLines.map((line) => line.variantId));
+    }
+    setRedirecting(true);
+    router.push(`/pedido/pendente?pedido=${encodeURIComponent(orderCode)}`);
+  }, [removeMany, router, selectedLines]);
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loading) return;
@@ -253,6 +277,10 @@ export default function CheckoutPage() {
     }
 
     setLoading(true);
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID();
+      sessionStorage.setItem("curtiz-checkout-idempotency", idempotencyKeyRef.current);
+    }
 
     try {
       const response = await fetch("/api/checkout", {
@@ -286,7 +314,11 @@ export default function CheckoutPage() {
       });
       const result = (await response.json()) as {
         ok: boolean;
+        orderId?: string;
         orderCode?: string;
+        amountInCents?: number;
+        publicKey?: string;
+        paymentMode?: string;
         code?: string;
         message?: string;
         redirectTo?: string;
@@ -301,14 +333,26 @@ export default function CheckoutPage() {
         setPaymentUnavailable(true);
         return;
       }
-      if (!result.ok || !result.orderCode) {
+      if (
+        !result.ok ||
+        !result.orderId ||
+        !result.orderCode ||
+        !result.amountInCents ||
+        !result.publicKey ||
+        result.paymentMode !== "test"
+      ) {
         setMessage(result.message ?? "Não foi possível iniciar o pagamento.");
         return;
       }
-      const purchasedVariantIds = selectedLines.map((line) => line.variantId);
-      setRedirecting(true);
-      router.push(`/pedido/pendente?pedido=${encodeURIComponent(result.orderCode)}`);
-      removeMany(purchasedVariantIds);
+      setPaymentSession({
+        orderId: result.orderId,
+        orderCode: result.orderCode,
+        amountInCents: result.amountInCents,
+        publicKey: result.publicKey,
+        idempotencyKey: idempotencyKeyRef.current,
+        email,
+        cpf: sanitizeCpf(cpf)
+      });
     } catch {
       setMessage("Não foi possível conectar ao checkout. Seus itens continuam no carrinho.");
     } finally {
@@ -372,6 +416,28 @@ export default function CheckoutPage() {
           <Link className="primary-button" href="/carrinho">
             Voltar ao carrinho
           </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (paymentSession) {
+    return (
+      <div className="container page-shell checkout-page checkout-bricks-page">
+        <header className="checkout-heading">
+          <div><p className="eyebrow">Pedido {paymentSession.orderCode}</p></div>
+          <Link className="checkout-review-cart" href="/carrinho">Voltar ao carrinho</Link>
+        </header>
+        <div className="checkout-layout">
+          <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment} />
+          <aside className="checkout-summary" aria-labelledby="checkout-brick-summary-title">
+            <h2 id="checkout-brick-summary-title">Resumo do pedido</h2>
+            <CheckoutProducts lines={selectedLines} />
+            <div className="summary-line summary-total">
+              <span>Total confirmado</span>
+              <strong>{formatBRL(paymentSession.amountInCents)}</strong>
+            </div>
+          </aside>
         </div>
       </div>
     );
@@ -598,9 +664,12 @@ export default function CheckoutPage() {
           </section>
 
           <section className="checkout-section" aria-labelledby="checkout-payment-title">
-            <h2 id="checkout-payment-title">Pagamento</h2>
+            <div className="checkout-payment-heading">
+              <h2 id="checkout-payment-title">Pagamento</h2>
+              <span className="checkout-test-badge">Ambiente de teste</span>
+            </div>
             <p className="checkout-simple-status">
-              Valores e disponibilidade serão confirmados antes do pagamento.
+              Valores e disponibilidade serão confirmados antes do pagamento. Nenhuma cobrança real será realizada.
             </p>
           </section>
 

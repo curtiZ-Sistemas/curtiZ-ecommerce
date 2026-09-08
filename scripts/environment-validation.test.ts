@@ -76,10 +76,25 @@ describe("environment validation", () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
-        "MERCADO_PAGO_PUBLIC_KEY não está configurada",
-        "MERCADO_PAGO_WEBHOOK_SECRET não está configurada"
+        "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY não está configurada"
       ])
     );
+  });
+
+  it("aceita somente credenciais de teste do Mercado Pago", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: "true",
+      PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true",
+      SHIPPING_PROVIDER: "custom",
+      MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-live",
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "APP_USR-live"
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste",
+      "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste"
+    ]));
   });
 
   it("não aceita mocks nem modo demo em produção", () => {

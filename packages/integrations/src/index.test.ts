@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { isMockRuntimeAllowed, MockShippingProvider } from "./index";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  isMercadoPagoTestCredential,
+  isMockRuntimeAllowed,
+  MercadoPagoProviderError,
+  MercadoPagoTestPaymentProvider,
+  MockShippingProvider
+} from "./index";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("runtime de providers mock", () => {
   it("permite build otimizado de staging sem confundir NODE_ENV com ambiente comercial", () => {
@@ -20,3 +28,55 @@ describe("runtime de providers mock", () => {
   });
 });
 
+describe("Mercado Pago em teste", () => {
+  it("bloqueia qualquer credencial que não seja de teste", () => {
+    expect(isMercadoPagoTestCredential("TEST-123")).toBe(true);
+    expect(isMercadoPagoTestCredential("APP_USR-live")).toBe(false);
+    expect(() => new MercadoPagoTestPaymentProvider("APP_USR-live")).toThrow(
+      MercadoPagoProviderError
+    );
+  });
+
+  it("usa valor interno e idempotência ao criar o pagamento", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        status: "approved",
+        status_detail: "accredited",
+        transaction_amount: 59.9,
+        currency_id: "BRL",
+        external_reference: "CZT-TEST",
+        payment_method_id: "visa",
+        payment_type_id: "credit_card",
+        date_approved: "2026-09-08T12:00:00Z"
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new MercadoPagoTestPaymentProvider("TEST-token");
+    await provider.createPayment({
+      orderId: "order-id",
+      orderCode: "CZT-TEST",
+      amountInCents: 5990,
+      currency: "BRL",
+      idempotencyKey: "10000000-0000-4000-8000-000000000001",
+      customerEmail: "cliente@example.com",
+      customerName: "Cliente Teste",
+      customerDocument: "12345678909",
+      paymentMethodId: "visa",
+      token: "card-token",
+      installments: 1
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("x-idempotency-key")).toBe(
+      "10000000-0000-4000-8000-000000000001"
+    );
+    if (typeof init.body !== "string") throw new Error("request body ausente");
+    expect(JSON.parse(init.body)).toMatchObject({
+      transaction_amount: 59.9,
+      external_reference: "CZT-TEST",
+      metadata: { order_id: "order-id" }
+    });
+  });
+});
