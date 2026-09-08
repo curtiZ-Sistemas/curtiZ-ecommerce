@@ -8,6 +8,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import {
   automaticProductSeo,
+  productDeletionMessage,
   productPublicationMessage
 } from "../../../../lib/product-management";
 
@@ -108,6 +109,7 @@ const deleteSchema = z.object({ productId: postgresUuidSchema });
 type CatalogError = {
   code?: string;
   message?: string;
+  details?: string;
 } | null;
 
 function logCatalogFailure(operation: string, error: CatalogError) {
@@ -115,7 +117,8 @@ function logCatalogFailure(operation: string, error: CatalogError) {
     requestId: crypto.randomUUID(),
     operation,
     code: error?.code ?? "unknown",
-    message: error?.message?.slice(0, 180) ?? "unknown"
+    message: error?.message?.slice(0, 180) ?? "unknown",
+    details: error?.details?.slice(0, 180)
   });
 }
 
@@ -554,13 +557,34 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
     });
   const legacyProductSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const compatibleProductSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,categories(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
-  const basicProductSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const productSelect =
     `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name))`;
+
+  const loadWithCompatibility = async <T extends { error: CatalogError }>(
+    run: (select: string) => PromiseLike<T>
+  ): Promise<T> => {
+    const selections = [
+      ["productSelect", productSelect],
+      ["legacyProductSelect", legacyProductSelect],
+      ["compatibleProductSelect", compatibleProductSelect]
+    ] as const;
+    for (const [index, [name, select]] of selections.entries()) {
+      const result = await run(select);
+      if (!result.error) {
+        if (index > 0) console.warn("[panel-catalog-api] compatibility select used", { select: name });
+        return result;
+      }
+      logCatalogFailure(`select:${name}`, result.error);
+      // Compatibility is only for older schemas, never permission or transport failures.
+      if (!["42703", "42P01", "PGRST200", "PGRST204", "PGRST205"].includes(result.error.code ?? "") || index === selections.length - 1) {
+        return result;
+      }
+    }
+    throw new Error("No catalog selection available");
+  };
 
   const variantMatches = queryText
     ? await (async () => {
@@ -617,11 +641,7 @@ export async function GET(request: NextRequest) {
 
       return query.order("updated_at", { ascending: false }).range(from, to);
     };
-    let result = await run(productSelect);
-    if (result.error) result = await run(legacyProductSelect);
-    if (result.error) result = await run(compatibleProductSelect);
-    if (result.error) result = await run(basicProductSelect);
-    return result;
+    return loadWithCompatibility(run);
   };
 
   const loadProducts = async () => {
@@ -632,10 +652,7 @@ export async function GET(request: NextRequest) {
           .select(select)
           .eq("id", productId.data)
           .maybeSingle();
-      let result = await loadProduct(productSelect);
-      if (result.error) result = await loadProduct(legacyProductSelect);
-      if (result.error) result = await loadProduct(compatibleProductSelect);
-      if (result.error) result = await loadProduct(basicProductSelect);
+      const result = await loadWithCompatibility(loadProduct);
       return {
         data: result.data ? [result.data] : [],
         error: result.error,
@@ -1083,12 +1100,21 @@ export async function DELETE(request: NextRequest) {
     const related = result.error.code === "23503" || normalizedErrorMessage(result.error).includes("related records");
     const forbidden = result.error.code === "42501";
     const notFound = result.error.code === "P0002";
+    let blockers: string[] = [];
+    if (related) {
+      const eligibility = await supabase.rpc("admin_product_delete_eligibility", {
+        p_product_ids: [parsed.data.productId]
+      });
+      if (eligibility.error) logCatalogFailure("delete_product_blockers", eligibility.error);
+      const reasons = record(record(eligibility.data)?.[parsed.data.productId])?.blockers;
+      if (Array.isArray(reasons)) blockers = reasons.filter((reason): reason is string => typeof reason === "string");
+    }
     return NextResponse.json(
       {
         message: forbidden
           ? "Você não possui permissão para excluir produtos."
           : related
-            ? "Este produto possui registros relacionados e não pode ser excluído. Use Arquivar para preservar o histórico."
+            ? blockers.length ? productDeletionMessage(blockers) : "Este produto possui registros relacionados e não pode ser excluído. Use Arquivar para preservar o histórico."
             : notFound
               ? "Produto não encontrado."
               : "Não foi possível excluir o produto."

@@ -73,7 +73,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     table: "categories",
     readPermission: "catalog.taxonomy.manage",
     writePermission: "catalog.taxonomy.manage",
-    select: "id,name,active,sort_order,updated_at",
+    select: "id,name,slug,active,sort_order,updated_at",
     searchColumns: ["name"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },

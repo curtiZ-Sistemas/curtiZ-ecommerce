@@ -6,6 +6,7 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
+  productDeletionMessage,
   productPublicationMessage,
   productPublishRequirements,
   productThumbnail
@@ -98,6 +99,11 @@ describe("product management", () => {
       title: "Sandália X | Feminino | curtiZ",
       description: "Sandália X na categoria Feminino. Compre online na curtiZ."
     });
+  });
+
+  it("explica bloqueios sem confundir falha de consulta com histórico comercial", () => {
+    expect(productDeletionMessage(["cart items", "pedidos"])).toContain("itens em carrinhos, pedidos. Use Arquivar");
+    expect(productDeletionMessage()).toContain("Não foi possível confirmar");
   });
 
   it("usa imagem principal, depois a primeira imagem e só então nenhum resultado", () => {

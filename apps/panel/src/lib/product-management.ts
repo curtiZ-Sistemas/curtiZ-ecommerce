@@ -1,3 +1,17 @@
+export function productDeletionMessage(blockers: readonly string[] = []): string {
+  const labels: Record<string, string> = {
+    "cart items": "itens em carrinhos",
+    "marketing events": "eventos de marketing",
+    "inventory reservations": "reservas de estoque",
+    "coupon scopes": "cupons vinculados",
+    "product questions": "perguntas de clientes",
+    "inventory count items": "contagens de estoque"
+  };
+  return blockers.length
+    ? `Não é possível excluir: ${blockers.map((blocker) => labels[blocker] ?? blocker).join(", ")}. Use Arquivar para preservar os vínculos.`
+    : "Não foi possível confirmar se o produto pode ser excluído. Atualize a listagem.";
+}
+
 export type ManagedVariant = {
   id: string;
   sku: string;

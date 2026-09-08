@@ -33,6 +33,7 @@ import {
   groupEditableVariantsByColor,
   isManagedProduct,
   partitionProductMediaFiles,
+  productDeletionMessage,
   productPublicationMessage,
   productPublishRequirements,
   productThumbnail,
@@ -256,6 +257,7 @@ export function ProductManagement({
   const [archiveTarget, setArchiveTarget] = useState<ManagedProduct | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ManagedProduct | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<"archive" | "delete" | null>(null);
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
@@ -991,6 +993,7 @@ export function ProductManagement({
     if (!deleteTarget || pendingActionRef.current) return;
     pendingActionRef.current = true;
     setPending(`delete-${deleteTarget.id}`);
+    setDeleteError("");
     setMessage("");
     try {
       const response = await fetch("/api/catalog/products", {
@@ -999,15 +1002,19 @@ export function ProductManagement({
         body: JSON.stringify({ productId: deleteTarget.id })
       });
       const result = (await response.json()) as CatalogResponse;
-      setMessage(
-        result.message ?? (response.ok ? "Produto excluído permanentemente." : "A exclusão falhou.")
-      );
       if (response.ok) {
         setDeleteTarget(null);
         await load();
+        setMessage(result.message ?? "Produto excluído permanentemente.");
+      } else {
+        setDeleteError(result.message ?? "A exclusão falhou.");
+        if (response.status === 409) {
+          setDeleteTarget((current) => current ? { ...current, canDelete: false } : current);
+          await load();
+        }
       }
     } catch {
-      setMessage("Não foi possível excluir o produto agora.");
+      setDeleteError("Não foi possível excluir o produto agora.");
     } finally {
       pendingActionRef.current = false;
       setPending("");
@@ -1422,22 +1429,25 @@ export function ProductManagement({
                             <button
                               className="danger-action"
                               type="button"
-                              onClick={() => setDeleteTarget(product)}
+                              onClick={() => { setDeleteError(""); setDeleteTarget(product); }}
                               disabled={Boolean(pending)}
                             >
                               <Trash2 /> Excluir permanentemente
                             </button>
                           ) : capabilities.delete ? (
+                            <div>
                             <button
                               className="danger-action"
                               type="button"
                               disabled
-                              title={product.deleteBlockers?.length
-                                ? `Vínculos: ${product.deleteBlockers.join(", ")}`
-                                : "Possui histórico comercial; use Arquivar."}
+                              aria-describedby={`delete-blockers-${product.id}`}
                             >
                               <Trash2 /> Excluir
                             </button>
+                            <small id={`delete-blockers-${product.id}`}>
+                              {productDeletionMessage(product.deleteBlockers)}
+                            </small>
+                            </div>
                           ) : null}
                         </div>
                       </details>
@@ -1765,6 +1775,7 @@ export function ProductManagement({
               Esta ação não poderá ser desfeita. <strong>{deleteTarget.name}</strong>, suas
               variações e imagens serão removidos.
             </p>
+            {deleteError ? <p className="form-message error" role="alert">{deleteError}</p> : null}
             <div>
               <button
                 className="secondary-button"
@@ -1778,7 +1789,7 @@ export function ProductManagement({
                 className="primary-button danger-button"
                 type="button"
                 onClick={() => void deleteProduct()}
-                disabled={Boolean(pending)}
+                disabled={Boolean(pending) || !deleteTarget.canDelete}
               >
                 {pending === `delete-${deleteTarget.id}` && <LoaderCircle className="spin" />}
                 Excluir produto
@@ -1861,30 +1872,15 @@ export function ProductManagement({
                   />
                 </label>
                 <p className="wide product-form-subsection">Organização no catálogo</p>
-                {editing === "new" ? (
-                  <label className="wide">
-                    <span>Categoria *</span>
-                    <select
-                      required
-                      value={primaryCategoryId}
-                      onChange={(event) => {
-                        const categoryId = event.target.value;
-                        setPrimaryCategoryId(categoryId);
-                        setSelectedCategoryIds(categoryId ? [categoryId] : []);
-                      }}
-                    >
-                      <option value="">Escolha uma categoria</option>
-                      {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </label>
-                ) : <fieldset className="wide product-category-picker">
+                <fieldset className="wide product-category-picker">
                   <legend>Categorias</legend>
                   <p>Selecione uma ou mais. A principal é usada onde apenas uma categoria cabe.</p>
                   <div>
                     {categories.map((item) => {
                       const selected = selectedCategoryIds.includes(item.id);
                       return (
-                        <label key={item.id}>
+                        <div className="product-category-option" key={item.id}>
+                        <label>
                           <input
                             type="checkbox"
                             checked={selected}
@@ -1905,20 +1901,25 @@ export function ProductManagement({
                             }}
                           />
                           <span>{item.name}</span>
-                          <input
-                            type="radio"
-                            name="primaryCategory"
-                            aria-label={`${item.name} como categoria principal`}
-                            checked={primaryCategoryId === item.id}
-                            disabled={!selected}
-                            onChange={() => setPrimaryCategoryId(item.id)}
-                          />
-                          <small>Principal</small>
                         </label>
+                          <button
+                            className="product-category-primary"
+                            type="button"
+                            aria-label={`${item.name} como categoria principal`}
+                            aria-pressed={primaryCategoryId === item.id}
+                            disabled={!selected}
+                            onClick={() => {
+                              setEditorDirty(true);
+                              setPrimaryCategoryId(item.id);
+                            }}
+                          >
+                            {primaryCategoryId === item.id ? "✓ Principal" : "Principal"}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
-                </fieldset>}
+                </fieldset>
                 {editing !== "new" ? <label>
                   <span>Modelo</span>
                   <select name="modelId" defaultValue={editing.modelId}>

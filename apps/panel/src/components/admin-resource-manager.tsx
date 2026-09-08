@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
+import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -506,6 +507,8 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
 
   const deleteCategory = async (): Promise<void> => {
     if (resource !== "categorias" || !deleteTarget || pending) return;
+    const dependencyMessage = categoryDeletionMessage(Number(deleteTarget.product_count) || 0, Number(deleteTarget.subcategory_count) || 0);
+    if (dependencyMessage) { setDeleteError(dependencyMessage); return; }
     setPending(true);
     setMessage("");
     try {
@@ -782,7 +785,10 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                         {canDelete ? (
                           <button
                             type="button"
-                            onClick={() => { setDeleteError(""); setDeleteTarget(item); }}
+                            onClick={() => {
+                              setDeleteError(categoryDeletionMessage(Number(item.product_count) || 0, Number(item.subcategory_count) || 0) ?? "");
+                              setDeleteTarget(item);
+                            }}
                             aria-label="Excluir permanentemente"
                           >
                             <Trash2 />
@@ -1036,7 +1042,7 @@ export function AdminResourceManager({ resource }: { resource: AdminResourceKey 
                 className="primary-button danger-button"
                 type="button"
                 onClick={() => void deleteCategory()}
-                disabled={pending}
+                disabled={pending || Boolean(categoryDeletionMessage(Number(deleteTarget.product_count) || 0, Number(deleteTarget.subcategory_count) || 0))}
               >
                 {pending ? <LoaderCircle className="spin" /> : null}
                 Excluir categoria

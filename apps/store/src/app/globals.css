@@ -717,8 +717,8 @@ select:disabled {
   min-height: 43px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 13px;
+  justify-content: safe center;
+  gap: clamp(20px, 3vw, 40px);
   overflow-x: auto;
   scrollbar-width: none;
   font-size: 0.78rem;
@@ -731,6 +731,7 @@ select:disabled {
 
 .desktop-nav a {
   position: relative;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   min-height: 43px;

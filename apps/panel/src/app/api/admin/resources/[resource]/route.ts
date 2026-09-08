@@ -73,12 +73,12 @@ const normalizedSlug = (value: string) =>
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-|-$/gu, "");
 
-function normalizeCategoryValues(values: Record<string, unknown>) {
+function normalizeCategoryValues(values: Record<string, unknown>, requestedSlug?: unknown) {
   if (values.sort_order === null) delete values.sort_order;
   const name = typeof values.name === "string" ? values.name.trim() : "";
   const slug =
-    typeof values.slug === "string" && values.slug.trim()
-      ? normalizedSlug(values.slug)
+    typeof requestedSlug === "string" && requestedSlug.trim()
+      ? normalizedSlug(requestedSlug)
       : normalizedSlug(name);
   values.slug = slug;
   const errors: Record<string, string> = {};
@@ -485,7 +485,7 @@ export async function POST(
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
     if (context.resource === "categorias") {
-      const errors = normalizeCategoryValues(values);
+      const errors = normalizeCategoryValues(values, parsed.data.values.slug);
       if (Object.keys(errors).length) {
         return NextResponse.json(
           { message: "Revise os campos destacados.", errors },
@@ -510,6 +510,7 @@ export async function POST(
       .single();
 
     if (result.error) {
+      if (context.resource === "categorias") logResourceQueryFailure(context.resource, "categories.POST", result.error);
       if (context.resource === "categorias" && result.error.code === "23505") {
         return NextResponse.json(
           {
@@ -662,7 +663,7 @@ export async function PATCH(
   try {
     const values = normalizeValues(context.definition, parsed.data.values);
     if (context.resource === "categorias") {
-      const errors = normalizeCategoryValues(values);
+      const errors = normalizeCategoryValues(values, parsed.data.values.slug);
       if (Object.keys(errors).length) {
         return NextResponse.json(
           { message: "Revise os campos destacados.", errors },
@@ -691,6 +692,7 @@ export async function PATCH(
       .maybeSingle();
 
     if (result.error || !result.data) {
+      if (context.resource === "categorias" && result.error) logResourceQueryFailure(context.resource, "categories.PATCH", result.error);
       if (context.resource === "categorias" && result.error?.code === "23505") {
         return NextResponse.json(
           {
@@ -849,6 +851,7 @@ export async function DELETE(
       .select("id")
       .maybeSingle();
     if (deleted.error || !deleted.data) {
+      if (deleted.error) logResourceQueryFailure(context.resource, "categories.DELETE", deleted.error);
       return NextResponse.json(
         { message: "A categoria possui referências que impedem a exclusão. Use Arquivar." },
         { status: 409, headers: privateNoStore }
