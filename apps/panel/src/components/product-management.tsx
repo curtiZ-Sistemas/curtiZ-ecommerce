@@ -2465,11 +2465,23 @@ export function ProductManagement({
                       return (
                         <section className="variant-color-group" key={group.key}>
                           <header>
-                            <span
+                            <label
                               className="variant-color-swatch"
                               style={{ backgroundColor: group.colorHex || "#f3f4f6" }}
-                              aria-hidden="true"
-                            />
+                              title={`Escolher cor visual de ${group.color}`}
+                            >
+                              <span className="sr-only">Cor visual de {group.color}</span>
+                              <input
+                                type="color"
+                                aria-label={`Cor visual de ${group.color}`}
+                                value={group.colorHex || "#f3f4f6"}
+                                onChange={(event) =>
+                                  group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { colorHex: event.target.value })
+                                  )
+                                }
+                              />
+                            </label>
                             <div>
                               <strong>{group.color}</strong>
                               <span>{group.variants.length} tamanho(s)</span>
@@ -2485,20 +2497,6 @@ export function ProductManagement({
                                     updateEditableVariant(index, { color })
                                   );
                                 }}
-                              />
-                            </label> : null}
-                            {editing !== "new" ? <label className="variant-color-picker">
-                              <span>Cor visual</span>
-                              <input
-                                type="color"
-                                value={group.colorHex || "#000000"}
-                                onChange={(event) =>
-                                  group.variants.forEach(({ index }) =>
-                                    updateEditableVariant(index, {
-                                      colorHex: event.target.value
-                                    })
-                                  )
-                                }
                               />
                             </label> : null}
                           </header>

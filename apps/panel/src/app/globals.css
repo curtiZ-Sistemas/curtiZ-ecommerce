@@ -5729,21 +5729,27 @@ button:not(:disabled):active,
   font-size: 0.68rem;
 }
 .variant-color-swatch {
+  position: relative;
+  display: block;
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
   border: 1px solid rgb(0 0 0 / 14%);
   border-radius: 50%;
+  cursor: pointer;
+  overflow: hidden;
 }
-.variant-color-picker {
-  display: flex !important;
-  grid-auto-flow: column;
-  align-items: center !important;
+.variant-color-swatch:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
-.variant-color-picker input {
-  width: 36px;
-  min-height: 32px;
-  padding: 2px;
+.variant-color-swatch input {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  cursor: pointer;
+  opacity: 0;
 }
 .variant-color-name {
   width: min(180px, 32%);
@@ -7169,9 +7175,6 @@ button:not(:disabled):active,
   .variant-color-name {
     width: calc(100% - 42px);
     margin-left: 38px;
-  }
-  .variant-color-picker {
-    grid-auto-flow: row;
   }
   .variant-color-tools,
   .variant-color-media {
@@ -10277,7 +10280,7 @@ button:not(:disabled):active,
 }
 .variant-color-group > header {
   display: grid;
-  grid-template-columns: 32px minmax(120px, 1fr) minmax(150px, 190px) minmax(92px, 120px);
+  grid-template-columns: 32px minmax(120px, 1fr) minmax(150px, 190px);
   align-items: end;
 }
 .variant-color-group > header > div {
@@ -10285,13 +10288,6 @@ button:not(:disabled):active,
 }
 .variant-color-name {
   width: auto;
-}
-.variant-color-picker {
-  width: 100%;
-  grid-template-columns: minmax(0, 1fr) 42px;
-}
-.variant-color-picker input {
-  width: 42px;
 }
 .product-variant-editor article {
   grid-template-columns: minmax(72px, 0.55fr) minmax(170px, 1.3fr) minmax(130px, 0.9fr) minmax(
@@ -10356,9 +10352,6 @@ button:not(:disabled):active,
   .variant-color-group > header {
     grid-template-columns: 32px minmax(0, 1fr) minmax(150px, 190px);
   }
-  .variant-color-picker {
-    grid-column: 2 / -1;
-  }
   .product-variant-editor article {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -10390,15 +10383,11 @@ button:not(:disabled):active,
     grid-column: 1;
   }
   .variant-color-group > header {
-    grid-template-columns: 32px minmax(0, 1fr) 50px;
+    grid-template-columns: 32px minmax(0, 1fr);
     align-items: center;
   }
   .variant-color-name {
     grid-column: 1 / -1;
-  }
-  .variant-color-picker {
-    grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 1fr) 50px;
   }
   .product-variant-editor article > label:not(.admin-checkbox) {
     grid-column: 1 / -1;
