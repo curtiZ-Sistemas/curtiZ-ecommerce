@@ -375,11 +375,13 @@ export async function GET(
       context.auth.supabase.from("categories").select("id,parent_id").in("parent_id", categoryIds)
     ]);
     if (primaryProducts.error || linkedProducts.error || children.error) {
-      logResourceQueryFailure(
-        context.resource,
-        context.definition.table,
-        primaryProducts.error ?? linkedProducts.error ?? children.error
-      );
+      for (const [query, error] of [
+        ["products.select(id,category_id)", primaryProducts.error],
+        ["product_categories.select(product_id,category_id)", linkedProducts.error],
+        ["categories.select(id,parent_id)", children.error]
+      ] as const) {
+        if (error) logResourceQueryFailure(context.resource, query, error);
+      }
       return NextResponse.json(
         { message: "Não foi possível carregar os vínculos das categorias." },
         { status: 503, headers: privateNoStore }

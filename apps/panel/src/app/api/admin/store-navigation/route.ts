@@ -80,6 +80,20 @@ export async function GET(request: NextRequest) {
     auth.supabase.from("collections").select("id,name,slug,active").order("name").limit(500)
   ]);
   if (items.error || categories.error || collections.error) {
+    for (const [table, error] of [
+      ["store_navigation_items", items.error],
+      ["categories", categories.error],
+      ["collections", collections.error]
+    ] as const) {
+      if (error) {
+        console.error("[panel-store-navigation-api] query failed", {
+          table,
+          code: error.code,
+          message: error.message.slice(0, 180),
+          details: error.details?.slice(0, 180)
+        });
+      }
+    }
     return NextResponse.json(
       { message: "Não foi possível carregar a navegação da loja." },
       { status: 503, headers: privateNoStore }
