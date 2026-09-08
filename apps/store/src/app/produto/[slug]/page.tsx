@@ -49,24 +49,22 @@ export default async function ProductPage({
 
       <ProductPurchase detail={detail} initialVariantId={query.variant} />
 
-      {detail.sizeGuide.length ? (
-        <section className="product-size-guide" aria-labelledby="product-size-guide-title">
-          <p className="eyebrow">Guia de medidas</p>
-          <h2 id="product-size-guide-title">Tabela de tamanhos</h2>
-          <div>
-            <table>
-              <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
-              <tbody>{detail.sizeGuide.map((entry) => (
-                <tr key={entry.size}><th scope="row">{entry.size}</th><td>{entry.measurementCm.toLocaleString("pt-BR")} cm</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
       <section className="product-information">
-        <div>
-          <p className="eyebrow">Sobre o Produto</p>
+        <p className="eyebrow">Sobre o Produto</p>
+        {detail.sizeGuide.length ? (
+          <div className="product-size-guide" aria-labelledby="product-size-guide-title">
+            <h2 id="product-size-guide-title">Guia de tamanhos</h2>
+            <div>
+              <table>
+                <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
+                <tbody>{detail.sizeGuide.map((entry) => (
+                  <tr key={entry.size}><th scope="row">{entry.size}</th><td>{entry.measurementCm.toLocaleString("pt-BR")} cm</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        <div className="product-description-section">
           <h2>Detalhes de {product.name}</h2>
           <div className="product-description-content">
             {parseProductDescription(product.description).map((block, index) =>
@@ -76,16 +74,6 @@ export default async function ProductPage({
             )}
           </div>
         </div>
-        {detail.specifications.length > 0 && (
-          <dl>
-            {detail.specifications.map((specification) => (
-              <div key={specification.label}>
-                <dt>{specification.label}</dt>
-                <dd>{specification.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
       </section>
 
       {detail.reviews.length > 0 && (

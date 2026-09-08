@@ -724,6 +724,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       .select("size,measurement_cm,position")
       .eq("product_id", parsed.data.id)
       .order("position")
+      .order("size")
       .limit(100)
   ]);
   const media = mediaResponse.error
@@ -784,6 +785,17 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       details: sizeGuideResponse.error.details
     });
   }
+  const seenGuideSizes = new Set<string>();
+  const sizeGuide = sizeGuideResponse.error
+    ? []
+    : readRows(sizeGuideResponse.data).flatMap((entry) => {
+        const size = readString(entry, "size");
+        const measurementCm = readNumber(entry, "measurement_cm");
+        const sizeKey = size.trim().toLocaleLowerCase("pt-BR");
+        if (!sizeKey || measurementCm <= 0 || seenGuideSizes.has(sizeKey)) return [];
+        seenGuideSizes.add(sizeKey);
+        return [{ size, measurementCm }];
+      });
   return {
     product,
     gallery,
@@ -818,13 +830,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         }
       : {}),
     specifications: parsed.data.specifications,
-    sizeGuide: sizeGuideResponse.error
-      ? []
-      : readRows(sizeGuideResponse.data).flatMap((entry) => {
-          const size = readString(entry, "size");
-          const measurementCm = readNumber(entry, "measurement_cm");
-          return size && measurementCm > 0 ? [{ size, measurementCm }] : [];
-        }),
+    sizeGuide,
     reviews: parsed.data.recentReviews.map((review) => ({
       id: review.id,
       rating: review.rating,

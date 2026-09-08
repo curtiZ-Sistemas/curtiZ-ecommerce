@@ -12762,6 +12762,7 @@ body:has(> #main-content > .auth-page) .site-footer {
 }
 
 .product-page .product-information {
+  display: block;
   gap: clamp(24px, 4vw, 46px);
   margin-top: 20px;
   padding: clamp(20px, 2.5vw, 28px);
@@ -12805,15 +12806,13 @@ body:has(> #main-content > .auth-page) .site-footer {
 }
 
 .product-size-guide {
-  margin-top: 20px;
-  padding: clamp(18px, 2.5vw, 26px);
-  border: 1px solid #dedede;
-  border-radius: 7px;
-  background: var(--white);
+  margin: 12px 0 22px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--neutral-200);
 }
 
 .product-size-guide h2 {
-  margin: 5px 0 14px;
+  margin: 0 0 12px;
   font-size: 1.25rem;
 }
 
@@ -12832,6 +12831,15 @@ body:has(> #main-content > .auth-page) .site-footer {
   padding: 9px 12px;
   border-bottom: 1px solid var(--neutral-200);
   text-align: left;
+}
+
+.product-size-guide tbody tr:last-child th,
+.product-size-guide tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.product-description-section h2 {
+  margin-top: 0;
 }
 
 .product-page .product-reviews,
