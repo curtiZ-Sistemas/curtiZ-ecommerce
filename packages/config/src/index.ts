@@ -39,6 +39,8 @@ export const serverEnvSchema = z.object({
   CHECKOUT_ENABLED: booleanString.default(false),
   MERCADO_PAGO_ENABLED: booleanString.default(false),
   MELHOR_ENVIO_ENABLED: booleanString.default(false),
+  MELHOR_ENVIO_OAUTH_VALIDATED: booleanString.default(false),
+  MELHOR_ENVIO_ACCESS_TOKEN_EXPIRES_AT: z.string().datetime().optional(),
   EMAIL_ENABLED: booleanString.default(false),
   TURNSTILE_ENABLED: booleanString.default(false),
   GOOGLE_MERCHANT_ENABLED: booleanString.default(false),

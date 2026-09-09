@@ -115,8 +115,15 @@ SHIPPING_PROVIDER=fixed
 credenciais sem o prefixo de teste.
 
 Enquanto `SHIPPING_PROVIDER=fixed`, o banco adiciona R$ 16,90 a todos os pedidos do Checkout
-Bricks. Mantenha `MELHOR_ENVIO_ENABLED=false`; a troca futura exige apenas ativar o provider e
-substituir a regra incremental de frete fixo.
+Bricks. O Melhor Envio permanece opcional e restrito ao Sandbox. Mesmo que
+`SHIPPING_PROVIDER=melhorenvio` seja solicitado, a configuração efetiva volta para `fixed` até que
+`MELHOR_ENVIO_ENABLED` e `MELHOR_ENVIO_OAUTH_VALIDATED` estejam ativos e Client ID, Client Secret,
+URL base, Redirect URI, Access Token e sua validade estejam presentes. A URL base aceita para essa
+etapa é somente `https://sandbox.melhorenvio.com.br`.
+
+Variáveis ausentes do Melhor Envio não invalidam o build nem bloqueiam o checkout. Mantenha
+`MELHOR_ENVIO_OAUTH_VALIDATED=false` até um fluxo backend confirmar a autorização e a validade do
+token. Falhas futuras de cotação devem continuar retornando ao provider `fixed`.
 
 ## Comandos equivalentes
 

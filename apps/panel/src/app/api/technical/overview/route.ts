@@ -1,3 +1,4 @@
+import { getIntegrationConfig } from "@curtiz/config";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeTechnicalRequest,
@@ -153,7 +154,11 @@ export async function GET(request: NextRequest) {
   }));
 
   const whatsappProvider = process.env.WHATSAPP_PROVIDER?.toLowerCase() ?? "disabled";
-  const shippingProvider = process.env.SHIPPING_PROVIDER?.toLowerCase() ?? "disabled";
+  const requestedShippingProvider = process.env.SHIPPING_PROVIDER?.toLowerCase() ?? "disabled";
+  const shippingConfig = getIntegrationConfig().shipping;
+  const shippingProvider = shippingConfig.provider;
+  const fixedShippingFallback = ["melhorenvio", "melhor_envio"].includes(requestedShippingProvider)
+    && shippingProvider === "fixed";
   const marketingProvider = process.env.MARKETING_PROVIDER?.toLowerCase() ?? "disabled";
   const environmentServices: Service[] = [
     { name: "Painel", state: "online", detail: "Esta API respondeu com sessão técnica válida", checkedAt: new Date().toISOString() },
@@ -163,7 +168,7 @@ export async function GET(request: NextRequest) {
     { name: "Cloudflare", state: configured(Boolean(process.env.NEXT_PUBLIC_PANEL_URL)), detail: "Origem pública configurada; disponibilidade é verificada pelo deploy" },
     { name: "Mercado Pago", state: configured(enabled(process.env.MERCADO_PAGO_ENABLED) && process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-") === true && process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-") === true), detail: enabled(process.env.MERCADO_PAGO_ENABLED) ? "Provider habilitado; credenciais não são exibidas" : "Provider desabilitado" },
     { name: "Resend", state: configured(enabled(process.env.EMAIL_ENABLED) && Boolean(process.env.RESEND_API_KEY)), detail: enabled(process.env.EMAIL_ENABLED) ? "E-mail habilitado; credencial não é exibida" : "E-mail desabilitado" },
-    { name: "Frete", state: shippingProvider === "mock" ? "mock" : configured(shippingProvider === "fixed" || (shippingProvider !== "disabled" && (Boolean(process.env.MELHOR_ENVIO_ACCESS_TOKEN) || Boolean(process.env.CORREIOS_API_TOKEN)))), detail: shippingProvider === "fixed" ? "Entrega padrão fixa em R$ 16,90" : shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },
+    { name: "Frete", state: shippingProvider === "mock" ? "mock" : configured(shippingProvider === "fixed" || (shippingProvider !== "disabled" && (Boolean(process.env.MELHOR_ENVIO_ACCESS_TOKEN) || Boolean(process.env.CORREIOS_API_TOKEN)))), detail: fixedShippingFallback ? "Sandbox indisponível; fallback fixo de R$ 16,90" : shippingProvider === "fixed" ? "Entrega padrão fixa em R$ 16,90" : shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },
     { name: "WhatsApp", state: whatsappProvider === "mock" ? "mock" : configured(whatsappProvider === "meta" && Boolean(process.env.WHATSAPP_ACCESS_TOKEN)), detail: whatsappProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${whatsappProvider}` },
     { name: "Turnstile", state: configured(enabled(process.env.TURNSTILE_ENABLED) && Boolean(process.env.TURNSTILE_SECRET_KEY)), detail: enabled(process.env.TURNSTILE_ENABLED) ? "Proteção habilitada; segredo não é exibido" : "Proteção desabilitada" },
     { name: "Marketing", state: marketingProvider === "mock" ? "mock" : configured(marketingProvider !== "disabled"), detail: `Provider: ${marketingProvider}` }

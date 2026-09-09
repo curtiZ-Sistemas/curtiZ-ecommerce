@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getIntegrationConfig, parseEnvironmentBoolean } from "./integrations";
+import {
+  getIntegrationConfig,
+  isMelhorEnvioSandboxReady,
+  parseEnvironmentBoolean
+} from "./integrations";
 
 describe("configuração opcional de integrações", () => {
   it.each(["true", "1", "yes"])("aceita %s como verdadeiro", (value) => {
@@ -55,15 +59,50 @@ describe("configuração opcional de integrações", () => {
     });
   });
 
-  it("normaliza os aliases documentados", () => {
+  it("mantém frete fixo quando o Sandbox solicitado ainda não está autorizado", () => {
     expect(
       getIntegrationConfig({
         PAYMENT_PROVIDER: "mercado_pago",
-        SHIPPING_PROVIDER: "melhor_envio"
+        SHIPPING_PROVIDER: "melhor_envio",
+        MELHOR_ENVIO_ENABLED: "true"
       })
     ).toMatchObject({
       payment: { provider: "mercadopago", mercadoPagoEnabled: true },
-      shipping: { provider: "melhorenvio", melhorEnvioEnabled: true }
+      shipping: { provider: "fixed", enabled: true, melhorEnvioEnabled: false }
     });
+  });
+
+  it("aceita Melhor Envio somente com OAuth validado no Sandbox", () => {
+    const environment = {
+      SHIPPING_PROVIDER: "melhor_envio",
+      MELHOR_ENVIO_ENABLED: "true",
+      MELHOR_ENVIO_OAUTH_VALIDATED: "true",
+      MELHOR_ENVIO_BASE_URL: "https://sandbox.melhorenvio.com.br",
+      MELHOR_ENVIO_REDIRECT_URI: "https://store.example.com/api/shipping/melhor-envio/callback",
+      MELHOR_ENVIO_CLIENT_ID: "client-id",
+      MELHOR_ENVIO_CLIENT_SECRET: "client-secret",
+      MELHOR_ENVIO_ACCESS_TOKEN: "sandbox-access-token",
+      MELHOR_ENVIO_ACCESS_TOKEN_EXPIRES_AT: "2099-01-01T00:00:00.000Z"
+    };
+    expect(isMelhorEnvioSandboxReady(environment)).toBe(true);
+    expect(getIntegrationConfig(environment).shipping).toMatchObject({
+      provider: "melhorenvio",
+      enabled: true,
+      melhorEnvioEnabled: true
+    });
+  });
+
+  it("nunca habilita a URL de produção do Melhor Envio", () => {
+    expect(isMelhorEnvioSandboxReady({
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      MELHOR_ENVIO_OAUTH_VALIDATED: "true",
+      MELHOR_ENVIO_BASE_URL: "https://melhorenvio.com.br",
+      MELHOR_ENVIO_REDIRECT_URI: "https://store.example.com/callback",
+      MELHOR_ENVIO_CLIENT_ID: "client-id",
+      MELHOR_ENVIO_CLIENT_SECRET: "client-secret",
+      MELHOR_ENVIO_ACCESS_TOKEN: "access-token",
+      MELHOR_ENVIO_ACCESS_TOKEN_EXPIRES_AT: "2099-01-01T00:00:00.000Z"
+    })).toBe(false);
   });
 });

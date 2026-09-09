@@ -109,6 +109,20 @@ describe("environment validation", () => {
     })).toMatchObject({ valid: true, errors: [] });
   });
 
+  it("não exige credenciais do Melhor Envio enquanto o Sandbox estiver incompleto", () => {
+    expect(validateEnvironment("production", {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: "true",
+      PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key",
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      MELHOR_ENVIO_OAUTH_VALIDATED: "false"
+    })).toMatchObject({ valid: true, errors: [] });
+  });
+
   it("não aceita mocks nem modo demo em produção", () => {
     const result = validateEnvironment("production", stagingEnvironment);
     expect(result.errors).toEqual(

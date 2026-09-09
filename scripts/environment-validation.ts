@@ -339,24 +339,6 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
     addRequiredErrors(environment, ["RESEND_API_KEY", "EMAIL_FROM"], errors);
   }
 
-  const melhorEnvioEnabled =
-    ["melhorenvio", "melhor_envio"].includes(shippingProvider) ||
-    enabledBoolean(environment.MELHOR_ENVIO_ENABLED);
-
-  if (melhorEnvioEnabled) {
-    addRequiredErrors(
-      environment,
-      [
-        "MELHOR_ENVIO_CLIENT_ID",
-        "MELHOR_ENVIO_CLIENT_SECRET",
-        "MELHOR_ENVIO_ACCESS_TOKEN",
-        "MELHOR_ENVIO_REFRESH_TOKEN",
-        "MELHOR_ENVIO_WEBHOOK_SECRET"
-      ],
-      errors
-    );
-  }
-
   if (shippingProvider === "correios") {
     addRequiredErrors(environment, ["CORREIOS_API_TOKEN"], errors);
   }
@@ -416,6 +398,7 @@ const validateCommonValues = (
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);
   validateBoolean(environment, "MELHOR_ENVIO_ENABLED", errors);
+  validateBoolean(environment, "MELHOR_ENVIO_OAUTH_VALIDATED", errors);
   validateBoolean(environment, "EMAIL_ENABLED", errors);
   validateBoolean(environment, "TURNSTILE_ENABLED", errors);
 
@@ -430,6 +413,10 @@ const validateCommonValues = (
   validateUrl(environment, "NEXT_PUBLIC_PANEL_TEST_URL", requireHttps, errors);
 
   validateUrl(environment, "NEXT_PUBLIC_SUPABASE_URL", requireHttps, errors);
+
+  validateUrl(environment, "MELHOR_ENVIO_BASE_URL", requireHttps, errors);
+
+  validateUrl(environment, "MELHOR_ENVIO_REDIRECT_URI", requireHttps, errors);
 
   validateAllowedOrigins(environment, requireHttps, errors);
 
@@ -473,13 +460,6 @@ const validateProductionRules = (environment: EnvironmentValues, errors: string[
     !["mercadopago", "mercado_pago"].includes(paymentProvider)
   ) {
     errors.push("MERCADO_PAGO_ENABLED=true requer PAYMENT_PROVIDER=mercadopago");
-  }
-
-  if (
-    enabledBoolean(environment.MELHOR_ENVIO_ENABLED) &&
-    !["melhorenvio", "melhor_envio"].includes(shippingProvider)
-  ) {
-    errors.push("MELHOR_ENVIO_ENABLED=true requer SHIPPING_PROVIDER=melhorenvio");
   }
 
   if (enabledBoolean(environment.EMAIL_ENABLED) && emailProvider !== "resend") {
