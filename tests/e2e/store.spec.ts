@@ -42,7 +42,7 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
     '[data-home-section-type="featured_products"]'
   );
   const featuredProduct = featuredSection.getByRole("link", {
-    name: "curti Z Flip-Flop Wave Preto",
+    name: "Flip-Flop Wave Preto",
     exact: true
   });
   await Promise.all([
@@ -181,23 +181,26 @@ test("seleciona produtos para compra sem confundir com remoção", async ({ page
   await page
     .getByRole("checkbox", { name: "Selecionar curti Z Flip-Flop Wave Preto 41/42" })
     .check();
-  page.once("dialog", async (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Remover selecionados" }).click();
   await expect(page.locator(".cart-item")).toHaveCount(2);
   await expect(
     page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto 41/42" })
   ).toHaveCount(0);
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toBe("Remover todos os itens da sacola?");
-    await dialog.dismiss();
-  });
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(page.locator(".cart-item")).toHaveCount(3);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("30,00");
   await page.getByRole("button", { name: "Limpar carrinho" }).click();
-  await expect(page.locator(".cart-item")).toHaveCount(2);
+  await expect(page.getByRole("dialog", { name: "Limpar carrinho?" })).toBeVisible();
+  await page.getByRole("button", { name: "Manter produtos" }).click();
+  await expect(page.locator(".cart-item")).toHaveCount(3);
 
-  page.once("dialog", async (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Limpar carrinho" }).click();
-  await expect(page.getByRole("heading", { name: "Sua sacola está vazia." })).toBeVisible();
+  await page.getByRole("button", { name: "Sim, limpar carrinho" }).click();
+  await expect(page.getByRole("heading", { name: "Seu carrinho está vazio" })).toBeVisible();
+  await page.getByRole("button", { name: "Desfazer", exact: true }).click();
+  await expect(page.locator(".cart-item")).toHaveCount(3);
+  await expect(page.getByTestId("selected-subtotal")).toContainText("30,00");
 });
 
 test("catálogo e busca carregam somente resultados paginados", async ({ page }) => {
@@ -932,7 +935,7 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
 
 test("chat flutuante responde a uma saudação e o launcher também fecha", async ({ page }) => {
   await page.goto("/");
-  const rejectCookies = page.getByRole("button", { name: "Rejeitar opcionais" });
+  const rejectCookies = page.getByRole("button", { name: "Recusar opcionais" });
   await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
   await rejectCookies.click();
   await page.getByRole("button", { name: "Abrir ajuda" }).click();

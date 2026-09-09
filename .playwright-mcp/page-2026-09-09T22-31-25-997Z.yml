@@ -1,0 +1,55 @@
+- generic:
+  - generic [active]:
+    - generic [ref=f2e3]:
+      - generic [ref=f2e4]:
+        - navigation [ref=f2e6]:
+          - button [disabled] [ref=f2e7]:
+            - img "previous" [ref=f2e8]
+          - generic [ref=f2e10]:
+            - generic [ref=f2e11]: 1/
+            - text: "1"
+          - button [disabled] [ref=f2e12]:
+            - img "next" [ref=f2e13]
+        - link "Next.js 16.2.11 (stale) Webpack" [ref=f2e16] [cursor=pointer]:
+          - /url: https://nextjs.org/docs/messages/version-staleness
+          - generic "There is a newer version (16.3.4) available, upgrade recommended!" [ref=f2e19]: Next.js 16.2.11 (stale)
+          - generic [ref=f2e20]: Webpack
+      - generic [ref=f2e21]:
+        - dialog "Runtime ReferenceError" [ref=f2e22]:
+          - generic [ref=f2e25]:
+            - generic [ref=f2e26]:
+              - generic [ref=f2e27]:
+                - generic [ref=f2e28]: Runtime ReferenceError
+                - generic [ref=f2e30]:
+                  - button "Copy Error Info" [ref=f2e31] [cursor=pointer]
+                  - button "No related documentation found" [disabled] [ref=f2e34]
+                  - button "Attach Node.js inspector" [ref=f2e37] [cursor=pointer]
+              - generic [ref=f2e46]: self is not defined
+            - generic [ref=f2e49]:
+              - generic [ref=f2e50]:
+                - paragraph [ref=f2e51]:
+                  - text: Call Stack
+                  - generic [ref=f2e52]: "22"
+                - button "Show 21 ignore-listed frame(s)" [ref=f2e53] [cursor=pointer]
+              - generic [ref=f2e56]:
+                - generic [ref=f2e57]: Object.<anonymous>
+                - text: .next\dev\server\middleware.js (9:1)
+          - generic [ref=f2e58]: "1"
+          - generic [ref=f2e59]: "2"
+        - contentinfo [ref=f2e60]:
+          - region "Error feedback" [ref=f2e61]:
+            - paragraph [ref=f2e62]:
+              - link "Was this helpful?" [ref=f2e63] [cursor=pointer]:
+                - /url: https://nextjs.org/telemetry#error-feedback
+            - button "Mark as helpful" [ref=f2e64] [cursor=pointer]
+            - button "Mark as not helpful" [ref=f2e68] [cursor=pointer]
+    - generic [ref=f2e75] [cursor=pointer]:
+      - button "Open Next.js Dev Tools" [ref=f2e76]
+      - generic [ref=f2e80]:
+        - button "Open issues overlay" [ref=f2e81]:
+          - generic [ref=f2e82]:
+            - generic [aria-hidden] [ref=f2e83]: "0"
+            - generic [ref=f2e84]: "1"
+          - generic [ref=f2e85]: Issue
+        - button "Collapse issues badge" [ref=f2e86]
+  - alert [ref=f2e89]

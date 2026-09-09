@@ -41,21 +41,22 @@ describe("public storefront components", () => {
   it("renderiza imagens distintas do hero para desktop e celular", () => {
     const html = renderToStaticMarkup(<HomepageHero banners={banners} />);
 
-    expect(html).toContain('class="hero-media"');
+    expect(html).toContain('class="campaign-picture"');
     expect(html).toContain('media="(max-width: 700px)"');
-    expect(html).toContain('srcSet="/images/hero-curtiz-mobile.avif');
-    expect(html).toContain('src="/images/hero-curtiz-desktop.webp');
-    expect(html).toContain('width="941" height="1672"');
-    expect(html).toContain('aria-label="Controles dos banners"');
+    expect(html).toContain('srcSet="/images/hero-curtiz-mobile.png');
+    expect(html).toContain('src="/images/hero-curtiz-desktop.png');
+    expect(html).toContain('<h1>Qual pegada você vai curti hoje?</h1>');
+    expect(html).toContain('Encontrar minha pegada');
+    expect(html).not.toContain('role="tablist"');
     expect(html).toContain('href="/lancamentos"');
   });
 
   it("não cria link decorativo quando o banner não possui destino", () => {
     const html = renderToStaticMarkup(
-      <HomepageHero banners={[{ ...banners[0]!, href: undefined }]} />
+      <HomepageHero banners={[{ ...banners[0]!, href: undefined }]} secondary />
     );
     expect(html).not.toContain("<a");
-    expect(html).toContain("hero-picture");
+    expect(html).toContain("campaign-picture");
   });
 
   it("expõe uma busca acessível com autocomplete", () => {

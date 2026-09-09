@@ -11,6 +11,28 @@ import { type NextRequest, NextResponse } from "next/server";
 const DEMO_SESSION_COOKIE = "curtiz-demo-session";
 const MAX_RETURN_PATH_LENGTH = 300;
 const PRODUCT_NOT_FOUND_HEADER = "x-curtiz-not-found-kind";
+// Hash estrito do pequeno script antifraude injetado pelo SDK v2 atual; evita liberar unsafe-inline.
+const MERCADO_PAGO_SCRIPT_SOURCES = [
+  "'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='",
+  "https://sdk.mercadopago.com",
+  "https://http2.mlstatic.com"
+] as const;
+const MERCADO_PAGO_CONNECT_SOURCES = [
+  "https://api.mercadopago.com",
+  "https://api-static.mercadopago.com",
+  "https://api.mercadolibre.com",
+  "https://www.mercadolibre.com",
+  "https://http2.mlstatic.com"
+] as const;
+const MERCADO_PAGO_FRAME_SOURCES = [
+  "https://secure-fields.mercadopago.com",
+  "https://sdk.mercadopago.com",
+  "https://mercadopago.com.br",
+  "https://www.mercadopago.com.br",
+  "https://mercadopago.com",
+  "https://www.mercadopago.com"
+] as const;
+const MERCADO_PAGO_IMAGE_SOURCES = ["https://http2.mlstatic.com"] as const;
 const DEMO_PRODUCT_SLUGS = new Set([
   "flip-flop-wave-preto",
   "flip-flop-slim-coral",
@@ -303,9 +325,7 @@ export async function middleware(request: NextRequest) {
   );
 
   const turnstileEnabled = isEnabled(process.env.TURNSTILE_ENABLED);
-
-  const mercadoPagoEnabled =
-    isEnabled(process.env.MERCADO_PAGO_ENABLED) && isEnabled(process.env.CHECKOUT_ENABLED);
+  const checkoutRequest = isCheckoutRoute(request.nextUrl.pathname);
 
   /*
    * crypto.randomUUID gera um valor imprevisível por requisição.
@@ -326,11 +346,14 @@ export async function middleware(request: NextRequest) {
   const csp = buildNonceContentSecurityPolicy({
     nonce,
 
-    imageSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
+    imageSources: [
+      ...(supabaseHttpOrigin ? [supabaseHttpOrigin] : []),
+      ...(checkoutRequest ? MERCADO_PAGO_IMAGE_SOURCES : [])
+    ],
     mediaSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
 
     scriptSources: [
-      ...(mercadoPagoEnabled ? ["https://sdk.mercadopago.com"] : []),
+      ...(checkoutRequest ? MERCADO_PAGO_SCRIPT_SOURCES : []),
       ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
     ],
 
@@ -339,15 +362,13 @@ export async function middleware(request: NextRequest) {
 
       ...(supabaseRealtimeOrigin ? [supabaseRealtimeOrigin] : []),
 
-      ...(mercadoPagoEnabled ? ["https://api.mercadopago.com"] : []),
+      ...(checkoutRequest ? MERCADO_PAGO_CONNECT_SOURCES : []),
 
       ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
     ],
 
     frameSources: [
-      ...(mercadoPagoEnabled
-        ? ["https://www.mercadopago.com.br", "https://www.mercadopago.com"]
-        : []),
+      ...(checkoutRequest ? MERCADO_PAGO_FRAME_SOURCES : []),
 
       ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
     ],
@@ -381,7 +402,6 @@ export async function middleware(request: NextRequest) {
   const productSlug = readProductSlug(request.nextUrl.pathname);
   const rootSlug = readSingleRootSlug(request.nextUrl.pathname);
   const unknownRootSlug = rootSlug !== null && !PUBLIC_ROOT_ROUTES.has(rootSlug);
-  const checkoutRequest = isCheckoutRoute(request.nextUrl.pathname);
   const demoSession =
     checkoutRequest && process.env.DEMO_MODE === "true"
       ? await hasValidDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)

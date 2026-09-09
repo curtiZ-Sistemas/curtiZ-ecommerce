@@ -12,6 +12,7 @@ import {
   type FacetOption
 } from "@/lib/catalog-query";
 import { ProductCard } from "./product-card";
+import { isUnknownRecord } from "../lib/unknown-data";
 
 const emptyFacets: CatalogFacets = {
   categories: [],
@@ -68,6 +69,9 @@ export function CatalogPage({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const drawerRef = useRef<HTMLElement>(null);
+  const restoredScroll = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const filters = useMemo(() => {
@@ -83,6 +87,16 @@ export function CatalogPage({
   const [priceMaxDraft, setPriceMaxDraft] = useState(
     filters.priceMax === undefined ? "" : String(filters.priceMax / 100)
   );
+
+  useEffect(() => {
+    if (loading || restoredScroll.current) return;
+    restoredScroll.current = true;
+    const state: unknown = window.history.state;
+    const saved = isUnknownRecord(state) ? state.curtizCatalogScroll : undefined;
+    if (isUnknownRecord(saved) && saved.url === window.location.href && typeof saved.y === "number" && Number.isFinite(saved.y)) {
+      window.scrollTo({ top: saved.y, behavior: "instant" });
+    }
+  }, [loading]);
 
   useEffect(() => {
     setPriceMinDraft(filters.priceMin === undefined ? "" : String(filters.priceMin / 100));
@@ -117,7 +131,7 @@ export function CatalogPage({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, preset, query, searchParams]);
+  }, [category, preset, query, searchParams, retry]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -126,6 +140,13 @@ export function CatalogPage({
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileOpen(false);
+      if (event.key === "Tab") {
+        const controls = Array.from(drawerRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select, summary, a[href]') ?? []).filter((node) => node.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -413,6 +434,7 @@ export function CatalogPage({
             aria-label="Fechar filtros"
           />
           <section
+            ref={drawerRef}
             className="filter-drawer"
             role="dialog"
             aria-modal="true"
@@ -440,10 +462,10 @@ export function CatalogPage({
                 onClick={reset}
                 disabled={!activeFilters}
               >
-                Limpar
+                Limpar filtros
               </button>
               <button className="primary-button" type="button" onClick={() => setMobileOpen(false)}>
-                Ver {result?.total ?? 0} produtos
+                {loading ? "Atualizando…" : `Mostrar ${result?.total ?? 0} produtos`}
               </button>
             </footer>
           </section>
@@ -466,7 +488,12 @@ export function CatalogPage({
           {filterContent()}
         </aside>
 
-        <section className="catalog-results" aria-live="polite" aria-busy={loading}>
+        <section className="catalog-results" aria-live="polite" aria-busy={loading} onClickCapture={(event) => {
+          if ((event.target as HTMLElement).closest('a[href^="/produto/"]')) {
+            const state: unknown = window.history.state;
+            window.history.replaceState({ ...(isUnknownRecord(state) ? state : {}), curtizCatalogScroll: { url: window.location.href, y: window.scrollY } }, "");
+          }
+        }}>
           <div className="catalog-results-bar">
             <span>
               <strong>{result?.total ?? 0}</strong>{" "}
@@ -534,7 +561,7 @@ export function CatalogPage({
               <SlidersHorizontal />
               <h2>Não foi possível carregar o catálogo</h2>
               <p>{error}</p>
-              <button className="secondary-button" type="button" onClick={() => router.refresh()}>
+              <button className="secondary-button" type="button" onClick={() => setRetry((current) => current + 1)}>
                 Tentar novamente
               </button>
             </div>

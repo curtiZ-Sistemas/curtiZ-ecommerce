@@ -34,6 +34,41 @@ describe("store security headers", () => {
     expect(getUser).not.toHaveBeenCalled();
   });
 
+  it("libera somente as origens usadas pelo Checkout Bricks na rota de checkout", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("MERCADO_PAGO_ENABLED", "");
+    vi.stubEnv("CHECKOUT_ENABLED", "");
+
+    const response = await middleware(new NextRequest("https://loja.example/checkout"));
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).toContain("https://sdk.mercadopago.com");
+    expect(csp).toContain("https://api.mercadopago.com");
+    expect(csp).toContain("https://api-static.mercadopago.com");
+    expect(csp).toContain("https://api.mercadolibre.com");
+    expect(csp).toContain("https://www.mercadolibre.com");
+    expect(csp).toContain("https://http2.mlstatic.com");
+    expect(csp).toContain("https://secure-fields.mercadopago.com");
+    expect(csp).toContain("'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toMatch(/(?:^|\s)\*(?:\s|;|$)/u);
+  });
+
+  it("não libera origens do Mercado Pago fora do checkout", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+
+    const response = await middleware(new NextRequest("https://loja.example/produtos"));
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).not.toContain("mercadopago.com");
+    expect(csp).not.toContain("mercadolibre.com");
+    expect(csp).not.toContain("mlstatic.com");
+  });
+
   it("impede indexação do alias workers.dev sem redirecionar o ambiente", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");

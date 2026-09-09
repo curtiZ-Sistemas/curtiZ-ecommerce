@@ -229,7 +229,7 @@ export function CookiePreferences() {
   const acceptedChoices = Object.fromEntries(
     visibleCategories.map((category) => [category.id, true])
   );
-  const showInventory = customizing || !hasOptional;
+  const showInventory = customizing;
 
   return (
     <div className="cookie-consent-layer" data-open="true" role="region" aria-label="Preferências de cookies">
@@ -240,7 +240,7 @@ export function CookiePreferences() {
             <h2>Cookies e privacidade</h2>
             <p>
               {hasOptional
-                ? "Usamos recursos essenciais. Preferências e medição só são ativadas com sua escolha."
+                ? "Usamos cookies essenciais. Você escolhe se permite preferências e medição."
                 : "No momento, usamos apenas recursos essenciais para segurança e funcionamento da loja."}
             </p>
           </div>
@@ -311,7 +311,7 @@ export function CookiePreferences() {
                 disabled={pending}
                 onClick={() => void save(rejectedChoices, "banner", true)}
               >
-                Rejeitar opcionais
+                Recusar opcionais
               </button>
               <button
                 type="button"
@@ -320,7 +320,7 @@ export function CookiePreferences() {
                 onClick={() => setCustomizing(true)}
               >
                 <Settings2 aria-hidden="true" />
-                Personalizar
+                Preferências
               </button>
               {customizing ? (
                 <button

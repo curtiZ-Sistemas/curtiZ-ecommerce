@@ -1,6 +1,6 @@
 "use client";
 
-import { calculateSubtotal, formatBRL } from "@curtiz/domain";
+import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
 import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -17,14 +17,16 @@ export default function CartPage() {
     syncMessage,
     retrySync,
     changeQuantity,
-    remove,
     removeMany,
+    restore,
     setSelected,
     setAllSelected,
     clear
   } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [removed, setRemoved] = useState<{ lines: CartLine[]; selectedIds: string[] } | null>(null);
+  const clearDialogRef = useRef<HTMLDialogElement>(null);
   const releaseRef = useRef<number | null>(null);
   const selectedIdSet = new Set(selectedVariantIds);
   const subtotal = calculateSubtotal(selectedLines);
@@ -39,6 +41,12 @@ export default function CartPage() {
     []
   );
 
+  useEffect(() => {
+    const forgetUndo = () => setRemoved(null);
+    window.addEventListener("curtiz-session-state-cleared", forgetUndo);
+    return () => window.removeEventListener("curtiz-session-state-cleared", forgetUndo);
+  }, []);
+
   const completeAction = (variantId: string, message: string, action: () => void) => {
     if (pendingId) return;
     setPendingId(variantId);
@@ -49,27 +57,24 @@ export default function CartPage() {
 
   const removeSelected = () => {
     if (pendingId || selectedCount === 0) return;
-    const confirmed = window.confirm(
-      selectedCount === 1
-        ? "Remover o produto selecionado do carrinho?"
-        : `Remover os ${selectedCount} produtos selecionados do carrinho?`
-    );
-    if (!confirmed) return;
-    const ids = selectedVariantIds;
-    setPendingId("bulk-selection");
+    removeWithUndo(selectedVariantIds);
+  };
+
+  const removeWithUndo = (ids: string[]) => {
+    const snapshot = lines.filter((line) => ids.includes(line.variantId));
+    setRemoved((previous) => ({
+      lines: [...(previous?.lines ?? []), ...snapshot].filter((line, index, list) => list.findIndex((item) => item.variantId === line.variantId) === index),
+      selectedIds: [...new Set([...(previous?.selectedIds ?? []), ...selectedVariantIds.filter((id) => ids.includes(id))])]
+    }));
     removeMany(ids);
-    setFeedback(
-      ids.length === 1
-        ? "1 produto removido do carrinho."
-        : `${ids.length} produtos removidos do carrinho.`
-    );
-    releaseRef.current = window.setTimeout(() => setPendingId(null), 280);
+    setFeedback(snapshot.length === 1 ? "Produto removido." : `${snapshot.length} produtos removidos.`);
   };
 
   const clearCart = () => {
-    if (!window.confirm("Remover todos os itens da sacola?")) return;
+    setRemoved({ lines: [...lines], selectedIds: [...selectedVariantIds] });
     clear();
-    setFeedback("Sacola esvaziada.");
+    clearDialogRef.current?.close();
+    setFeedback("Carrinho esvaziado.");
   };
 
   return (
@@ -110,7 +115,7 @@ export default function CartPage() {
             >
               Remover selecionados
             </button>
-            <button className="cart-clear-all" type="button" onClick={clearCart}>
+            <button className="cart-clear-all" type="button" onClick={() => clearDialogRef.current?.showModal()}>
               Limpar carrinho
             </button>
           </div>
@@ -120,6 +125,23 @@ export default function CartPage() {
       <p className="sr-only" role="status" aria-live="polite">
         {feedback}
       </p>
+      <dialog ref={clearDialogRef} className="cart-clear-dialog" aria-labelledby="clear-cart-title">
+        <h2 id="clear-cart-title">Limpar carrinho?</h2>
+        <p>Todos os produtos serão removidos. Você pode desfazer depois.</p>
+        <div className="empty-state-actions">
+          <button className="secondary-button" type="button" autoFocus onClick={() => clearDialogRef.current?.close()}>Manter produtos</button>
+          <button className="primary-button" type="button" onClick={clearCart}>Sim, limpar carrinho</button>
+        </div>
+      </dialog>
+      {removed && <div className="cart-undo-toast" role="status">
+        <span>{removed.lines.length === 1 ? "Produto removido" : `${removed.lines.length} produtos removidos`}</span>
+        <button type="button" onClick={() => {
+          restore(removed.lines, removed.selectedIds);
+          setRemoved(null);
+          setFeedback("Produtos restaurados no carrinho.");
+        }}>Desfazer</button>
+        <button type="button" aria-label="Fechar aviso de remoção" onClick={() => setRemoved(null)}>×</button>
+      </div>}
       {syncMessage && (
         <div className="cart-sync-notice" role="status">
           <span>{syncMessage}</span>
@@ -136,10 +158,10 @@ export default function CartPage() {
           <span className="empty-state-icon">
             <ShoppingBag />
           </span>
-          <h2>Sua sacola está vazia.</h2>
+          <h2>Seu carrinho está vazio</h2>
           <p>Explore a coleção curti Z e adicione seus modelos favoritos para continuar.</p>
           <Link className="primary-button" href="/produtos">
-            Continuar comprando
+            Encontrar minha pegada
           </Link>
         </div>
       ) : (
@@ -190,6 +212,7 @@ export default function CartPage() {
                     <div className="cart-item-info">
                       <h2>{line.name}</h2>
                       <p className="cart-variation">{line.color} · {line.size}</p>
+                      <small>Subtotal: {formatBRL(line.unitPriceInCents * line.quantity)}</small>
                     </div>
 
                     <div className="cart-item-purchase">
@@ -237,7 +260,7 @@ export default function CartPage() {
                           completeAction(
                             line.variantId,
                             `${line.name} removido do carrinho.`,
-                            () => remove(line.variantId)
+                            () => removeWithUndo([line.variantId])
                           )
                         }
                         disabled={pendingId !== null}

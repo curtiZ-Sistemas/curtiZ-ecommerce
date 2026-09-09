@@ -244,7 +244,7 @@ test("consentimento mobile permanece compacto e dentro da viewport", async ({ pa
     expect(bounds!.height).toBeLessThanOrEqual(190);
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    await banner.getByRole("button", { name: "Rejeitar opcionais" }).click();
+    await banner.getByRole("button", { name: "Recusar opcionais" }).click();
   }
 });
 

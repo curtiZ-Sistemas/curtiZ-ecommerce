@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
 
 type CategoryItem = {
@@ -20,7 +20,6 @@ export function CategoryCarousel({
   categories
 }: CategoryCarouselProps) {
   const viewport = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(false);
   const move = useCallback((direction: -1 | 1) => {
     const node = viewport.current;
     if (!node) return;
@@ -32,18 +31,8 @@ export function CategoryCarousel({
       : direction > 0 && atEnd
         ? 0
         : node.scrollLeft + direction * node.clientWidth * 0.82;
-    node.scrollTo({ left, behavior: "smooth" });
+    node.scrollTo({ left, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }, []);
-
-  useEffect(() => {
-    if (paused || categories.length < 2) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (reducedMotion.matches) return;
-    const timer = window.setInterval(() => {
-      if (!document.hidden) move(1);
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [categories.length, move, paused]);
 
   return (
     <div className="category-carousel">
@@ -51,9 +40,6 @@ export function CategoryCarousel({
         className="category-carousel-viewport"
         ref={viewport}
         aria-label="Carrossel de categorias"
-        onPointerDown={() => setPaused(true)}
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
       >
         <div className="category-carousel-track">
           {categories.map((category) => (
@@ -116,7 +102,7 @@ export function CategoryCarousel({
       >
         <button
           type="button"
-          onClick={() => { setPaused(true); move(-1); }}
+          onClick={() => move(-1)}
           aria-label="Categoria anterior"
         >
           <ArrowLeft aria-hidden="true" />
@@ -124,7 +110,7 @@ export function CategoryCarousel({
 
         <button
           type="button"
-          onClick={() => { setPaused(true); move(1); }}
+          onClick={() => move(1)}
           aria-label="Próxima categoria"
         >
           <ArrowRight aria-hidden="true" />

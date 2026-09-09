@@ -44,7 +44,7 @@ describe("selectHomepageSections", () => {
     ).toEqual([firstHero, benefits]);
   });
 
-  it("posiciona Para todos os momentos logo abaixo dos benefícios", () => {
+  it("leva aos produtos antes de categorias e benefícios", () => {
     const hero = section("hero", "banner_hero");
     const occasions = {
       ...section("categorias", "categories_grid"),
@@ -55,6 +55,6 @@ describe("selectHomepageSections", () => {
 
     expect(
       selectHomepageSections([hero, occasions, featured, benefits], defaults, true, false)
-    ).toEqual([hero, featured, benefits, occasions]);
+    ).toEqual([hero, featured, occasions, benefits]);
   });
 });

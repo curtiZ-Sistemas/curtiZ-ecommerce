@@ -204,7 +204,7 @@ export function HomepageSectionRenderer({
     if (!banners.length) return null;
     return (
       <HomepageMetric versionId={section.versionId}>
-        <HomepageHero banners={banners} />
+        <HomepageHero banners={banners} product={data.products.find((product) => product.stock > 0)} />
       </HomepageMetric>
     );
   }
@@ -223,8 +223,8 @@ export function HomepageSectionRenderer({
           className={`${sectionClass(section)} home-categories-minimal container`}
           aria-labelledby="homepage-categories-title"
         >
-          <h2 className="sr-only" id="homepage-categories-title">
-            Compre por categoria
+          <h2 id="homepage-categories-title">
+            Escolha sua pegada
           </h2>
           <CategoryCarousel
             categories={categories.map(({ name, href, product }) => ({

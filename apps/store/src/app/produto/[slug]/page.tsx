@@ -53,10 +53,10 @@ export default async function ProductPage({
         <p className="eyebrow">Sobre o Produto</p>
         {detail.sizeGuide.length ? (
           <div className="product-size-guide" aria-labelledby="product-size-guide-title">
-            <h2 id="product-size-guide-title">Guia de tamanhos</h2>
+            <h2 id="product-size-guide-title" tabIndex={-1}>Guia de tamanhos</h2>
             <div>
               <table>
-                <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
+                <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida informada (cm)</th></tr></thead>
                 <tbody>{detail.sizeGuide.map((entry) => (
                   <tr key={entry.size}><th scope="row">{entry.size}</th><td>{entry.measurementCm.toLocaleString("pt-BR")} cm</td></tr>
                 ))}</tbody>
