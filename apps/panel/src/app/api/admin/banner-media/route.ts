@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
   }
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
   if (!auth) return unauthorizedAdminResponse();
+  const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
+  if (permission.error || permission.data !== true) return NextResponse.json({ message: "Sua permissão não permite enviar imagens de banners." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > maxSize + 65_536)
     return NextResponse.json({ message: "Envie uma imagem de até 10 MB." }, { status: 413, headers: privateNoStore });
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
     upsert: false
   });
   if (uploaded.error) {
+    console.error("[banner-media] upload failed", { device, status: uploaded.error.statusCode });
     return NextResponse.json({ message: "Não foi possível armazenar a imagem do banner." }, { status: 409, headers: privateNoStore });
   }
   const publicUrl = auth.supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl;
@@ -68,11 +71,15 @@ export async function DELETE(request: NextRequest) {
   }
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
   if (!auth) return unauthorizedAdminResponse();
-  const parsed = z.object({ path: z.string().max(500) }).safeParse(await request.json().catch(() => null));
+  const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
+  if (permission.error || permission.data !== true) return NextResponse.json({ message: "Sua permissão não permite remover imagens de banners." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
+  const parsed = z.object({ path: z.string().max(500).regex(/^banners\/[0-9a-f-]+\/(desktop|mobile)-[0-9a-f-]+\.(jpg|png|webp)$/iu) }).safeParse(await request.json().catch(() => null));
   const expectedPrefix = `banners/${auth.userId}/`;
   if (!parsed.success || !parsed.data.path.startsWith(expectedPrefix) || parsed.data.path.includes("..")) {
     return NextResponse.json({ message: "Arquivo inválido." }, { status: 400, headers: privateNoStore });
   }
+  const references = await auth.supabase.from("banners").select("id").or(`image_path_desktop.eq.${parsed.data.path},image_path_mobile.eq.${parsed.data.path}`).limit(1);
+  if (references.error || references.data?.length) return NextResponse.json({ message: "A imagem está em uso ou não foi possível confirmar sua remoção." }, { status: 409, headers: privateNoStore });
   const removed = await auth.supabase.storage.from("catalog-public").remove([parsed.data.path]);
   if (removed.error) {
     return NextResponse.json({ message: "Não foi possível remover o upload temporário." }, { status: 409, headers: privateNoStore });

@@ -214,73 +214,28 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
   banners: {
     label: "Banners",
     singular: "banner",
-    description: "Publique imagens desktop e mobile com destino e agendamento.",
+    description: "Imagens e destinos para computador e celular.",
     table: "banners",
     readPermission: "banners.update",
     writePermission: "banners.update",
-    select:
-      "id,internal_title,title,subtitle,description,image_path_desktop,image_path_mobile,alt_text,button_text,destination_type,destination_id,destination_url,open_new_tab,position,status,starts_at,ends_at,sort_order,priority,overlay_color,content_alignment,created_by,updated_by,updated_at",
-    searchColumns: ["internal_title", "title", "position", "destination_url"],
+    select: "id,title,image_path_desktop,image_path_mobile,destination_type,destination_id,destination_url,destination_type_mobile,destination_id_mobile,destination_url_mobile,status,position,starts_at,ends_at,updated_at",
+    searchColumns: ["title", "destination_url", "destination_url_mobile"],
     fields: [
-      { key: "internal_title", label: "Título interno", type: "text", required: true },
-      { key: "title", label: "Título visível", type: "text", required: true },
-      { key: "subtitle", label: "Subtítulo", type: "textarea" },
-      { key: "description", label: "Descrição", type: "textarea" },
-      { key: "image_path_desktop", label: "Imagem desktop", type: "text", required: true },
-      { key: "image_path_mobile", label: "Imagem mobile", type: "text", required: true },
-      { key: "alt_text", label: "Texto alternativo", type: "text", required: true },
-      { key: "button_text", label: "Texto do botão", type: "text" },
-      {
-        key: "destination_type",
-        label: "Tipo de destino",
-        type: "select",
-        required: true,
-        options: [
-          "none",
-          "product",
-          "category",
-          "collection",
-          "institutional_page",
-          "guide",
-          "campaign",
-          "internal_page",
-          "predefined_search",
-          "external_url"
-        ]
-      },
-      { key: "destination_id", label: "Destino selecionado", type: "text" },
-      { key: "destination_url", label: "Destino", type: "text", required: true },
-      { key: "open_new_tab", label: "Abrir em nova guia", type: "boolean" },
-      {
-        key: "position",
-        label: "Posição",
-        type: "select",
-        required: true,
-        options: ["hero", "home", "category"]
-      },
-      {
-        key: "status",
-        label: "Status",
-        type: "select",
-        options: ["draft", "scheduled", "published", "inactive", "expired", "archived"]
-      },
-      { key: "starts_at", label: "Início", type: "datetime" },
-      { key: "ends_at", label: "Término", type: "datetime" },
-      { key: "sort_order", label: "Ordem", type: "number" },
-      { key: "priority", label: "Prioridade", type: "number" },
-      { key: "overlay_color", label: "Cor de sobreposição", type: "text" },
-      {
-        key: "content_alignment",
-        label: "Alinhamento",
-        type: "select",
-        options: ["left", "center", "right"]
-      }
+      { key: "image_path_desktop", label: "Imagem computador", type: "text", required: true },
+      { key: "image_path_mobile", label: "Imagem celular", type: "text", required: true },
+      { key: "destination_type", label: "Destino desktop", type: "text" },
+      { key: "destination_id", label: "Destino desktop", type: "text" },
+      { key: "destination_url", label: "Destino desktop", type: "text" },
+      { key: "destination_type_mobile", label: "Destino mobile", type: "text" },
+      { key: "destination_id_mobile", label: "Destino mobile", type: "text" },
+      { key: "destination_url_mobile", label: "Destino mobile", type: "text" }
     ],
     allowCreate: true,
     allowArchive: true,
+    allowDelete: true,
     archiveField: "status",
-    archiveValue: "archived",
-    restoreValue: "draft",
+    archiveValue: "inactive",
+    restoreValue: "published",
     orderColumn: "sort_order",
     createdByField: "created_by",
     updatedByField: "updated_by"

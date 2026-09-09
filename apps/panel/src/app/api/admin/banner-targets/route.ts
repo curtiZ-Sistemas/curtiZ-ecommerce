@@ -5,6 +5,7 @@ import {
   privateNoStore,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
+import { bannerPages } from "@/lib/banner-management";
 
 type Target = { id: string; label: string; detail: string; route: string };
 
@@ -23,8 +24,33 @@ function cleanSearch(input: string) {
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
   if (!auth) return unauthorizedAdminResponse();
+  const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
+  if (permission.error || permission.data !== true) return NextResponse.json({ message: "Não foi possível autorizar o acesso aos destinos." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
   const type = request.nextUrl.searchParams.get("type") ?? "";
   const search = cleanSearch(request.nextUrl.searchParams.get("q") ?? "");
+
+  if (type === "all") {
+    const targets: Array<Target & { type: string }> = bannerPages
+      .filter((page) => page.label.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")))
+      .map((page) => ({ ...page, type: "internal_page", detail: "Página interna" }));
+    for (const kind of ["product", "category", "collection", "institutional_page"] as const) {
+      const table = kind === "product" ? "products" : kind === "category" ? "categories" : kind === "collection" ? "collections" : "cms_pages";
+      const labelKey = kind === "institutional_page" ? "title" : "name";
+      let query = auth.supabase.from(table).select(`id,${labelKey},slug`).order(labelKey).limit(15);
+      query = kind === "product" ? query.eq("status", "active") : kind === "institutional_page" ? query.eq("status", "published") : query.eq("active", true);
+      if (search) query = query.ilike(labelKey, `%${search}%`);
+      const response = await query;
+      if (response.error) return NextResponse.json({ message: "Não foi possível carregar os destinos. Tente novamente." }, { status: 503, headers: privateNoStore });
+      for (const row of objectRows(response.data)) {
+        const label = value(row, labelKey);
+        const slug = value(row, "slug");
+        targets.push({ id: value(row, "id"), label, type: kind,
+          detail: kind === "product" ? "Produto" : kind === "category" ? "Categoria" : kind === "collection" ? "Coleção" : "Página",
+          route: kind === "product" ? `/produto/${slug}` : kind === "category" ? `/produtos?categoria=${encodeURIComponent(label)}` : kind === "collection" ? `/produtos?colecao=${encodeURIComponent(label)}` : `/${slug}` });
+      }
+    }
+    return NextResponse.json({ targets }, { headers: privateNoStore });
+  }
 
   if (type === "internal_page") {
     const pages: Target[] = [

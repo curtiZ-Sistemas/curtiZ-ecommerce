@@ -42,8 +42,8 @@ describe("admin resources", () => {
 
   it("mantém arquivamento reversível sem excluir o histórico", () => {
     expect(adminResources.banners).toMatchObject({
-      archiveValue: "archived",
-      restoreValue: "draft"
+      archiveValue: "inactive",
+      restoreValue: "published"
     });
     expect(adminResources.categorias).toMatchObject({
       archiveValue: false,
@@ -65,8 +65,9 @@ describe("admin resources", () => {
   });
 
   it("oferece destinos estruturados para banners e moderação reversível", () => {
-    expect(adminResources.banners.fields.find((field) => field.key === "destination_type")?.options)
-      .toEqual(expect.arrayContaining(["product", "category", "institutional_page", "predefined_search"]));
+    expect(adminResources.banners.fields.map((field) => field.key))
+      .toEqual(expect.arrayContaining(["destination_type", "destination_type_mobile", "destination_url_mobile"]));
+    expect(adminResources.banners.fields.some((field) => field.key === "internal_title")).toBe(false);
     expect(adminResources.banners.fields.find((field) => field.key === "image_path_mobile")?.required).toBe(true);
     expect(adminResources.avaliacoes).toMatchObject({
       allowArchive: true,

@@ -18,6 +18,14 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [mobileViewport, setMobileViewport] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 700px)");
+    const update = () => setMobileViewport(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [failedBannerIds, setFailedBannerIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -44,6 +52,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   }
 
   const banner = slides[Math.min(active, slides.length - 1)]!;
+  const href = mobileViewport && banner.mobileHref !== undefined ? banner.mobileHref : banner.href;
   const useFallbackImage = failedBannerIds.has(banner.id);
   const desktopImage = useFallbackImage
     ? "/images/hero-curtiz-desktop.webp"
@@ -108,7 +117,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     >
       <h1 className="sr-only">{banner.title}</h1>
 
-      {banner.href ? <Link className="hero-link" href={banner.href} aria-label={banner.title} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>{picture}</Link> : <div className="hero-link">{picture}</div>}
+      {href ? <Link className="hero-link" href={href} prefetch={false} aria-label={banner.title} target={banner.openNewTab ? "_blank" : undefined} rel={banner.openNewTab ? "noopener noreferrer" : undefined}>{picture}</Link> : <div className="hero-link">{picture}</div>}
 
       {slides.length > 1 && (
         <div

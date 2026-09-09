@@ -13,6 +13,7 @@ import {
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
+import { bannerFailure, normalizeBannerValues, validateBannerReferences } from "@/lib/banner-management";
 import { categoryDeletionMessage } from "../../../../../lib/category-management";
 
 export const dynamic = "force-dynamic";
@@ -483,7 +484,10 @@ export async function POST(
   }
 
   try {
-    const values = normalizeValues(context.definition, parsed.data.values);
+    const values = context.resource === "banners"
+      ? normalizeBannerValues(parsed.data.values, true)
+      : normalizeValues(context.definition, parsed.data.values);
+    if (context.resource === "banners") await validateBannerReferences(context.auth.supabase, values);
     if (context.resource === "categorias") {
       const errors = normalizeCategoryValues(values, parsed.data.values.slug);
       if (Object.keys(errors).length) {
@@ -510,6 +514,7 @@ export async function POST(
       .single();
 
     if (result.error) {
+      if (context.resource === "banners") return NextResponse.json({ message: bannerFailure(result.error, "create") }, { status: 409, headers: privateNoStore });
       if (context.resource === "categorias") logResourceQueryFailure(context.resource, "categories.POST", result.error);
       if (context.resource === "categorias" && result.error.code === "23505") {
         return NextResponse.json(
@@ -519,14 +524,6 @@ export async function POST(
           },
           { status: 409, headers: privateNoStore }
         );
-      }
-      if (context.resource === "banners" && result.error.message.includes("four active banners")) {
-        throw new Error(
-          "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
-        );
-      }
-      if (context.resource === "banners" && result.error.message.includes("external banner host")) {
-        throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
       }
       throw result.error;
     }
@@ -547,9 +544,11 @@ export async function POST(
         ? error.message
         : null;
 
-    const message = validationMessage ?? `Não foi possível criar ${context.definition.singular}.`;
+    const message = validationMessage ?? (context.resource === "banners"
+      ? bannerFailure({}, "create-unexpected")
+      : `Não foi possível criar ${context.definition.singular}.`);
 
-    return NextResponse.json({ message }, { status: 409, headers: privateNoStore });
+    return NextResponse.json({ message }, { status: context.resource === "banners" && validationMessage ? 400 : 409, headers: privateNoStore });
   }
 }
 
@@ -611,6 +610,10 @@ export async function PATCH(
     const values: Record<string, unknown> = {
       [context.definition.archiveField]: targetValue
     };
+    if (context.resource === "banners" && stateAction.data.action === "restore") {
+      values.starts_at = null;
+      values.ends_at = null;
+    }
 
     if (context.resource === "avaliacoes" && stateAction.data.action === "archive") {
       if (!stateAction.data.reason) {
@@ -634,7 +637,7 @@ export async function PATCH(
 
     if (result.error || !result.data?.length) {
       return NextResponse.json(
-        { message: "Não foi possível atualizar os registros selecionados." },
+        { message: context.resource === "banners" && result.error ? bannerFailure(result.error, "toggle") : "Não foi possível atualizar os registros selecionados." },
         { status: 409, headers: privateNoStore }
       );
     }
@@ -661,7 +664,15 @@ export async function PATCH(
   }
 
   try {
-    const values = normalizeValues(context.definition, parsed.data.values);
+    const values = context.resource === "banners"
+      ? normalizeBannerValues(parsed.data.values, false)
+      : normalizeValues(context.definition, parsed.data.values);
+    if (context.resource === "banners") {
+      const previous = await context.auth.supabase.from("banners").select(context.definition.select).eq("id", parsed.data.id).maybeSingle();
+      if (previous.error) return NextResponse.json({ message: bannerFailure(previous.error, "read-before-edit") }, { status: 409, headers: privateNoStore });
+      if (!previous.data) return NextResponse.json({ message: "Banner não encontrado." }, { status: 404, headers: privateNoStore });
+      await validateBannerReferences(context.auth.supabase, values, previous.data as unknown as Record<string, unknown>);
+    }
     if (context.resource === "categorias") {
       const errors = normalizeCategoryValues(values, parsed.data.values.slug);
       if (Object.keys(errors).length) {
@@ -692,6 +703,7 @@ export async function PATCH(
       .maybeSingle();
 
     if (result.error || !result.data) {
+      if (context.resource === "banners" && result.error) return NextResponse.json({ message: bannerFailure(result.error, "edit") }, { status: 409, headers: privateNoStore });
       if (context.resource === "categorias" && result.error) logResourceQueryFailure(context.resource, "categories.PATCH", result.error);
       if (context.resource === "categorias" && result.error?.code === "23505") {
         return NextResponse.json(
@@ -701,17 +713,6 @@ export async function PATCH(
           },
           { status: 409, headers: privateNoStore }
         );
-      }
-      if (context.resource === "banners" && result.error?.message.includes("four active banners")) {
-        throw new Error(
-          "Já existem quatro banners ativos. Desative ou substitua um banner para continuar."
-        );
-      }
-      if (
-        context.resource === "banners" &&
-        result.error?.message.includes("external banner host")
-      ) {
-        throw new Error("O domínio externo não está autorizado nas configurações administrativas.");
       }
       throw result.error ?? new Error("missing");
     }
@@ -730,8 +731,8 @@ export async function PATCH(
         : null;
 
     return NextResponse.json(
-      { message: validationMessage ?? "Não foi possível salvar as alterações." },
-      { status: 409, headers: privateNoStore }
+      { message: validationMessage ?? (context.resource === "banners" ? bannerFailure({}, "edit-unexpected") : "Não foi possível salvar as alterações.") },
+      { status: context.resource === "banners" && validationMessage ? 400 : 409, headers: privateNoStore }
     );
   }
 }
@@ -791,6 +792,12 @@ export async function DELETE(
       { message: "Registro inválido." },
       { status: 400, headers: privateNoStore }
     );
+  }
+
+  if (parsed.data.permanent === true && context.resource === "banners") {
+    const deleted = await context.auth.supabase.from("banners").delete().eq("id", parsed.data.id).select("id").maybeSingle();
+    if (deleted.error || !deleted.data) return NextResponse.json({ message: deleted.error ? bannerFailure(deleted.error, "delete") : "Banner não encontrado." }, { status: 409, headers: privateNoStore });
+    return NextResponse.json({ message: "Banner excluído." }, { headers: privateNoStore });
   }
 
   if (parsed.data.permanent === true && context.resource === "categorias") {

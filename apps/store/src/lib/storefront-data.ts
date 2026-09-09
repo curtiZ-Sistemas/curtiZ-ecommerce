@@ -31,6 +31,7 @@ export type PublicBanner = {
   desktopImage: string;
   mobileImage: string;
   href?: string;
+  mobileHref?: string | null;
   openNewTab?: boolean;
   position: string;
 };
@@ -412,7 +413,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     supabase
       .from("banners")
       .select(
-        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,open_new_tab,position,priority,sort_order,starts_at,ends_at"
+        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,destination_type_mobile,destination_url_mobile,open_new_tab,position,priority,sort_order,starts_at,ends_at"
       )
       .in("status", ["published", "scheduled"])
       .or(`starts_at.is.null,starts_at.lte.${now}`)
@@ -479,6 +480,9 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
         ...(readString(row, "subtitle") ? { subtitle: readString(row, "subtitle") } : {}),
         desktopImage: publicImage(desktopImage),
         mobileImage: publicImage(mobileImage),
+        mobileHref: readString(row, "destination_type_mobile") === "none"
+          ? null
+          : safeDestination(readString(row, "destination_url_mobile") || readString(row, "destination_url")),
         ...(readString(row, "destination_type") === "none"
           ? {}
           : { href: safeDestination(readString(row, "destination_url")) }),
