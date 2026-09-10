@@ -4,6 +4,8 @@ export type MercadoPagoBrickSession = {
   orderId: string;
   orderCode: string;
   subtotalInCents: number;
+  discountInCents: number;
+  couponName: string;
   shippingInCents: number;
   amountInCents: number;
   publicKey: string;
@@ -21,22 +23,26 @@ export function readMercadoPagoBrickSession(
   expectedShippingInCents: number
 ): MercadoPagoBrickSession | null {
   if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
-  const { orderId, orderCode, subtotalInCents, shippingInCents, amountInCents, publicKey } = value;
+  const { orderId, orderCode, subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
   if (
     typeof orderId !== "string" || !orderId ||
     typeof orderCode !== "string" || !orderCode ||
     typeof publicKey !== "string" || !publicKey.startsWith("TEST-") ||
     !positiveSafeInteger(subtotalInCents) ||
+    typeof discountInCents !== "number" || !Number.isSafeInteger(discountInCents) || discountInCents < 0 ||
+    typeof couponName !== "string" ||
     !positiveSafeInteger(shippingInCents) ||
     !positiveSafeInteger(amountInCents) ||
     shippingInCents !== expectedShippingInCents ||
-    amountInCents !== subtotalInCents + shippingInCents
+    amountInCents !== subtotalInCents - discountInCents + shippingInCents
   ) return null;
 
   return {
     orderId,
     orderCode,
     subtotalInCents,
+    discountInCents,
+    couponName,
     shippingInCents,
     amountInCents,
     publicKey,
@@ -51,7 +57,7 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
     payer: {
       email: session.email,
       entityType: "individual" as const,
-      identification: { type: "CPF", number: session.cpf }
+      ...(session.cpf ? { identification: { type: "CPF", number: session.cpf } } : {})
     }
   };
 }
@@ -73,13 +79,17 @@ export function createCheckoutPaymentPayload(
   const issuerId = typeof formData.issuer_id === "string" || typeof formData.issuer_id === "number"
     ? formData.issuer_id
     : undefined;
+  const payer = isUnknownRecord(formData.payer) ? formData.payer : {};
+  const identification = isUnknownRecord(payer.identification) ? payer.identification : {};
+  const document = typeof identification.number === "string" && identification.number.trim()
+    ? identification.number.trim() : session.cpf;
 
   return {
     payment_method_id: paymentMethodId.trim(),
     installments,
     payer: {
       entity_type: "individual" as const,
-      identification: { type: "CPF" as const, number: session.cpf }
+      identification: { type: "CPF" as const, number: document }
     },
     ...(token ? { token } : {}),
     ...(issuerId !== undefined ? { issuer_id: issuerId } : {})

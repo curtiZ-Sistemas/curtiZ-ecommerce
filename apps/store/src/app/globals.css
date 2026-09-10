@@ -14437,6 +14437,30 @@ body:has(.checkout-transition) .help-widget {
 .cart-unavailable-notice { font-size: .8125rem; color: #484844; font-weight: 600; }
 .hero-carousel-controls .hero-dot { width: 24px; height: 32px; border-radius: 0; background: radial-gradient(circle, #aaa 3px, transparent 4px); }
 .hero-carousel-controls .hero-dot[aria-pressed="true"] { width: 24px; background: radial-gradient(circle, var(--brand-900) 4px, transparent 5px); }
+.checkout-saved-addresses { display: grid; gap: 8px; }
+.checkout-address-card { border: 1px solid var(--neutral-200); border-radius: 8px; background: var(--white); }
+.checkout-address-card.selected { border-color: var(--brand-700); }
+.checkout-address-card-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px; }
+.checkout-address-card-heading label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.checkout-address-card-heading label span { display: grid; gap: 2px; }
+.checkout-address-card-heading small { color: var(--neutral-600); }
+.checkout-address-card-heading > button { width: 36px; height: 36px; border: 0; background: transparent; }
+.checkout-address-details { padding: 0 12px 12px 42px; color: var(--neutral-700); }
+.checkout-address-details div { display: flex; gap: 16px; }
+.checkout-address-details button { padding: 0; border: 0; color: var(--brand-800); background: transparent; text-decoration: underline; }
+.checkout-address-labels { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.checkout-address-labels > span { width: 100%; font-weight: 600; }
+.checkout-coupon-field { margin: 14px 0; }
+.checkout-coupon-field > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.checkout-coupon-field .secondary-button { min-height: 44px; padding-inline: 16px; }
+.checkout-coupon-field small { color: var(--neutral-700); }
+.pending-payment-page { max-width: 760px; }
+.order-progress { display: grid; gap: 0; margin: 24px 0; padding: 0; list-style: none; }
+.order-progress li { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--neutral-500); }
+.order-progress svg { width: 20px; height: 20px; }
+.order-progress .complete, .order-progress .active { color: var(--brand-900); font-weight: 650; }
+.pending-payment-details { display: grid; justify-items: start; gap: 14px; }
+.pending-payment-details img { max-width: 240px; height: auto; }
 @media (max-width: 700px) {
   .homepage-hero { touch-action: pan-y; }
   .hero-carousel-controls .hero-carousel-arrow { display: none; }

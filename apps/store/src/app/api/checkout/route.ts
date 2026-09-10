@@ -16,6 +16,7 @@ import { encryptPII } from "@/lib/pii";
 
 const schema = z.object({
   idempotencyKey: z.string().uuid(),
+  couponCode: z.string().trim().max(40).optional(),
   customer: z.object({
     name: z.string().trim().min(3).max(120),
     email: z.string().trim().email().max(CUSTOMER_EMAIL_MAX_LENGTH),
@@ -28,8 +29,8 @@ const schema = z.object({
     cpf: z
       .string()
       .max(20)
-      .refine(isValidCpf, "Informe um CPF válido.")
-      .transform(sanitizeCpf)
+      .refine((value) => !value || isValidCpf(value), "Informe um CPF válido.")
+      .transform((value) => value ? sanitizeCpf(value) : "")
   }),
   address: z.object({
     postalCode: z.string().regex(/^\D*\d(?:\D*\d){7}\D*$/),
@@ -163,9 +164,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let cpfCiphertext: string;
+  let cpfCiphertext = "";
+  let cpfLastFour = "";
   try {
-    cpfCiphertext = encryptPII(parsed.data.customer.cpf);
+    if (parsed.data.customer.cpf) {
+      cpfCiphertext = encryptPII(parsed.data.customer.cpf);
+      cpfLastFour = parsed.data.customer.cpf.slice(-4);
+    } else {
+      const previous = readQueryResult(await supabase.from("orders").select("cpf_ciphertext,cpf_last_four")
+        .eq("customer_id", authData.user.id).not("cpf_ciphertext", "is", null)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle());
+      if (isUnknownRecord(previous.data)) {
+        cpfCiphertext = typeof previous.data.cpf_ciphertext === "string" ? previous.data.cpf_ciphertext : "";
+        cpfLastFour = typeof previous.data.cpf_last_four === "string" ? previous.data.cpf_last_four : "";
+      }
+    }
+    if (!cpfCiphertext || !cpfLastFour) throw new Error("cpf_required");
   } catch {
     checkoutLog(requestId, 503, "PII_ENCRYPTION_UNAVAILABLE");
     return checkoutResponse(
@@ -175,19 +189,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const orderResponse: unknown = await supabase.rpc("create_mercadopago_test_order", {
+  const orderResponse: unknown = await supabase.rpc("create_professional_checkout_order", {
     p_idempotency_key: parsed.data.idempotencyKey,
     p_customer_name: parsed.data.customer.name,
     p_customer_email: parsed.data.customer.email,
     p_customer_phone: parsed.data.customer.phone,
     p_cpf_ciphertext: cpfCiphertext,
-    p_cpf_last_four: parsed.data.customer.cpf.slice(-4),
+    p_cpf_last_four: cpfLastFour,
     p_shipping_address: parsed.data.address,
     p_lines: parsed.data.lines.map((line) => ({
       product_id: line.productId,
       variant_id: line.variantId,
       quantity: line.quantity
     })),
+    p_coupon_code: parsed.data.couponCode || null,
     p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
   });
   const orderResult = readQueryResult(orderResponse);
@@ -202,6 +217,13 @@ export async function POST(request: NextRequest) {
       && "code" in orderResult.error && typeof orderResult.error.code === "string"
       ? orderResult.error.code
       : "";
+    const errorMessage = orderResult.error && typeof orderResult.error === "object"
+      && "message" in orderResult.error && typeof orderResult.error.message === "string"
+      ? orderResult.error.message
+      : "";
+    if (errorMessage.includes("coupon")) {
+      return checkoutResponse(requestId, { ok: false, code: "INVALID_COUPON", message: "Este cupom não é válido." }, 409);
+    }
     const unavailable = errorCode === "P0001" || errorCode === "22023";
     if (!unavailable) checkoutLog(requestId, 503, "ORDER_CREATION_FAILED");
     return checkoutResponse(
@@ -216,20 +238,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const couponName = typeof order?.name === "string" ? order.name : "";
+
   const totalsResult = readQueryResult(await supabase
     .from("orders")
-    .select("subtotal,shipping_total,grand_total")
+    .select("subtotal,discount_total,shipping_total,grand_total")
     .eq("id", orderId)
     .maybeSingle());
   const totals = isUnknownRecord(totalsResult.data) ? totalsResult.data : null;
   const subtotalInCents = totals ? Math.round(readNumber(totals, "subtotal") * 100) : 0;
   const shippingInCents = totals ? Math.round(readNumber(totals, "shipping_total") * 100) : 0;
+  const discountInCents = totals ? Math.round(readNumber(totals, "discount_total") * 100) : 0;
   const amountInCents = totals ? Math.round(readNumber(totals, "grand_total") * 100) : 0;
   const validTotals = !totalsResult.error
     && subtotalInCents > 0
     && shippingInCents === FIXED_SHIPPING_IN_CENTS
-    && amountInCents === subtotalInCents + shippingInCents
-    && amountInCents === rpcAmountInCents;
+    && amountInCents === subtotalInCents - discountInCents + shippingInCents
+    && (discountInCents > 0 || amountInCents === rpcAmountInCents);
   if (!validTotals) {
     checkoutLog(requestId, 503, "INVALID_ORDER_TOTALS");
     return checkoutResponse(
@@ -244,6 +269,8 @@ export async function POST(request: NextRequest) {
     orderId,
     orderCode,
     subtotalInCents,
+    discountInCents,
+    couponName,
     shippingInCents,
     amountInCents,
     publicKey,

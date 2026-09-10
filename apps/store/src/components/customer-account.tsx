@@ -658,6 +658,7 @@ function Orders({
                 >
                   Ver detalhes
                 </Link>
+                {order.paymentStatus === "pending" && order.payment ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
               </div>
             </article>
           ))}
@@ -792,6 +793,7 @@ function OrderDetails({
         </article>
       </div>
       <div className="customer-form-actions">
+        {order.paymentStatus === "pending" && order.payment ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
         <button className="primary-button" type="button" onClick={repeat}>Comprar novamente</button>
         {canCancel && (
           <button
@@ -1041,7 +1043,8 @@ function Addresses({
   const current = editing && editing !== "new" ? editing : null;
   return (
     <div className="customer-section-stack">
-      <SectionTitle eyebrow="Endereços" title="Endereços de entrega" description="Cadastre e escolha seu endereço principal." action={<button className="primary-button compact-button" type="button" onClick={() => setEditing("new")}>Adicionar endereço</button>} />
+      <SectionTitle eyebrow="Endereços" title="Endereços de entrega" description="Cadastre até 3 endereços e escolha o principal."
+        action={addresses.length < 3 ? <button className="primary-button compact-button" type="button" onClick={() => setEditing("new")}>Adicionar endereço</button> : undefined} />
       {editing && (
         <form className="customer-panel customer-form" onSubmit={submit}>
           <h3>{current ? "Editar endereço" : "Novo endereço"}</h3>
@@ -1072,7 +1075,9 @@ function Addresses({
               <div className="customer-form-actions">
                 <button className="customer-link-button" type="button" onClick={() => setEditing(address)}>Editar</button>
                 {!address.isDefault && <button className="customer-link-button" type="button" disabled={pending} onClick={() => void runAction({ action: "address_save", ...address, isDefault: true }, "Endereço definido como principal.")}>Definir principal</button>}
-                <button className="customer-link-button danger" type="button" disabled={pending || address.isDefault} title={address.isDefault ? "Defina outro endereço principal antes de excluir." : undefined} onClick={() => void runAction({ action: "address_delete", id: address.id }, "Endereço excluído.")}>Excluir</button>
+                <button className="customer-link-button danger" type="button" disabled={pending} onClick={() => {
+                  if (window.confirm("Excluir este endereço?")) void runAction({ action: "address_delete", id: address.id }, "Endereço excluído.");
+                }}>Excluir</button>
               </div>
             </article>
           ))}

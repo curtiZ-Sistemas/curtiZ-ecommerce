@@ -98,6 +98,7 @@ const friendlyError = (error: unknown) => {
   if (!isUnknownRecord(error)) return "Não foi possível concluir a ação.";
   const code = readString(error, "code");
   const message = readString(error, "message");
+  if (message.includes("address_limit_reached")) return "Você pode cadastrar no máximo 3 endereços.";
   if (code === "P0002" || message.includes("_not_found")) {
     return "O item não foi encontrado ou não pertence à sua conta.";
   }
@@ -171,24 +172,7 @@ export async function POST(request: Request) {
       break;
     case "address_delete": {
       const addressId = stringValue(data.id);
-      const defaultResponse = await supabase
-        .from("addresses")
-        .select("is_default")
-        .eq("id", addressId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const address = readQueryResult(defaultResponse).data;
-      if (isUnknownRecord(address) && address.is_default === true) {
-        return json(
-          { message: "Defina outro endereço principal antes de excluir este." },
-          409
-        );
-      }
-      response = await supabase
-        .from("addresses")
-        .delete()
-        .eq("id", addressId)
-        .eq("user_id", user.id);
+      response = await supabase.rpc("delete_customer_address", { p_id: addressId });
       break;
     }
     case "favorite_save": {

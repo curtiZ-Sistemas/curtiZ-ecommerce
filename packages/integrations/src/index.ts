@@ -54,6 +54,11 @@ export type MercadoPagoPayment = {
   paymentMethodId: string;
   paymentTypeId: string;
   dateApproved: string | null;
+  expiresAt: string | null;
+  pixCopyPaste: string;
+  pixQrCodeBase64: string;
+  boletoUrl: string;
+  digitableLine: string;
 };
 
 export class MercadoPagoProviderError extends Error {
@@ -76,6 +81,12 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
   const payment = value as Record<string, unknown>;
   const id = typeof payment.id === "number" || typeof payment.id === "string" ? String(payment.id) : "";
   const amount = Number(payment.transaction_amount);
+  const pointOfInteraction = payment.point_of_interaction && typeof payment.point_of_interaction === "object"
+    ? payment.point_of_interaction as Record<string, unknown> : {};
+  const transactionData = pointOfInteraction.transaction_data && typeof pointOfInteraction.transaction_data === "object"
+    ? pointOfInteraction.transaction_data as Record<string, unknown> : {};
+  const transactionDetails = payment.transaction_details && typeof payment.transaction_details === "object"
+    ? payment.transaction_details as Record<string, unknown> : {};
   if (!id || !Number.isFinite(amount) || amount < 0) {
     throw new MercadoPagoProviderError("invalid_provider_response");
   }
@@ -90,7 +101,13 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
     paymentMethodId:
       typeof payment.payment_method_id === "string" ? payment.payment_method_id : "",
     paymentTypeId: typeof payment.payment_type_id === "string" ? payment.payment_type_id : "",
-    dateApproved: typeof payment.date_approved === "string" ? payment.date_approved : null
+    dateApproved: typeof payment.date_approved === "string" ? payment.date_approved : null,
+    expiresAt: typeof payment.date_of_expiration === "string" ? payment.date_of_expiration : null,
+    pixCopyPaste: typeof transactionData.qr_code === "string" ? transactionData.qr_code : "",
+    pixQrCodeBase64: typeof transactionData.qr_code_base64 === "string" ? transactionData.qr_code_base64 : "",
+    boletoUrl: typeof transactionDetails.external_resource_url === "string" ? transactionDetails.external_resource_url : "",
+    digitableLine: typeof payment.barcode === "object" && payment.barcode && "content" in payment.barcode
+      && typeof payment.barcode.content === "string" ? payment.barcode.content : ""
   };
 };
 
@@ -115,6 +132,7 @@ export class MercadoPagoTestPaymentProvider {
   }
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
+    const expiration = new Date(Date.now() + (input.paymentMethodId === "pix" ? 30 * 60_000 : 3 * 24 * 60 * 60_000));
     return this.request(
       "/v1/payments",
       {
@@ -135,7 +153,10 @@ export class MercadoPagoTestPaymentProvider {
           external_reference: input.orderCode,
           statement_descriptor: "CURTIZ",
           metadata: { order_id: input.orderId },
-          binary_mode: false
+          binary_mode: false,
+          ...(input.paymentMethodId === "pix" || input.paymentMethodId.includes("bol")
+            ? { date_of_expiration: expiration.toISOString() }
+            : {})
         })
       },
       input.idempotencyKey

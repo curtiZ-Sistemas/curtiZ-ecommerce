@@ -23,14 +23,14 @@ export async function GET() {
   }
 
   const [profile, addresses] = await Promise.all([
-    supabase.from("profiles").select("full_name,phone").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name,phone,cpf_last_four").eq("id", user.id).maybeSingle(),
     supabase
       .from("addresses")
       .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")
       .eq("user_id", user.id)
       .order("is_default", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(20)
+      .limit(3)
   ]);
 
   const profileResult = readQueryResult(profile);
@@ -48,6 +48,7 @@ export async function GET() {
       profile: {
         fullName: readString(profileRow, "full_name"),
         phone: readString(profileRow, "phone"),
+        cpfLastFour: readString(profileRow, "cpf_last_four"),
         email: user.email ?? ""
       },
       addresses: readRows(addressesResult.data).map((address) => ({

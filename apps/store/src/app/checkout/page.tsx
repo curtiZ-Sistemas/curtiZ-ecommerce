@@ -72,6 +72,7 @@ type SavedAddress = {
   city: string;
   state: string;
   isDefault: boolean;
+  recipientName?: string;
 };
 
 function CheckoutProducts({ lines }: { lines: CartLine[] }) {
@@ -96,7 +97,11 @@ function CheckoutProducts({ lines }: { lines: CartLine[] }) {
   );
 }
 
-function CheckoutTotals({ subtotal }: { subtotal: number }) {
+function CheckoutTotals({ subtotal, discountInCents = 0, couponName = "" }: {
+  subtotal: number;
+  discountInCents?: number;
+  couponName?: string;
+}) {
   return (
     <div className="checkout-totals">
       <div className="summary-line">
@@ -107,9 +112,13 @@ function CheckoutTotals({ subtotal }: { subtotal: number }) {
         <span>Entrega</span>
         <strong>{formatBRL(FIXED_SHIPPING_IN_CENTS)}</strong>
       </div>
+      {discountInCents > 0 ? <div className="summary-line">
+        <span>Cupom {couponName}</span>
+        <strong>-{formatBRL(discountInCents)}</strong>
+      </div> : null}
       <div className="summary-line summary-total">
         <span>Total</span>
-        <strong>{formatBRL(subtotal + FIXED_SHIPPING_IN_CENTS)}</strong>
+        <strong>{formatBRL(subtotal - discountInCents + FIXED_SHIPPING_IN_CENTS)}</strong>
       </div>
     </div>
   );
@@ -132,8 +141,52 @@ export default function CheckoutPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const trackedCheckoutRef = useRef(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [expandedAddressId, setExpandedAddressId] = useState("");
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [cpfLastFour, setCpfLastFour] = useState("");
+  const [coupon, setCoupon] = useState({ code: "", name: "", discountInCents: 0 });
+  const [couponMessage, setCouponMessage] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<PersonalField, string>>>({});
   const subtotal = calculateSubtotal(selectedLines);
+
+  const applyCoupon = async () => {
+    const codeField = formRef.current?.elements.namedItem("couponCode");
+    const postalField = formRef.current?.elements.namedItem("postalCode");
+    const code = codeField instanceof HTMLInputElement ? codeField.value.trim() : "";
+    if (!code) {
+      setCoupon({ code: "", name: "", discountInCents: 0 });
+      setCouponMessage("Informe o código do cupom.");
+      return;
+    }
+    setCouponLoading(true);
+    setCouponMessage("");
+    try {
+      const response = await fetch("/api/checkout/coupon", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          code,
+          postalCode: postalField instanceof HTMLInputElement ? postalField.value : "",
+          lines: selectedLines.map((line) => ({
+            productId: line.productId,
+            variantId: line.variantId,
+            quantity: line.quantity
+          }))
+        })
+      });
+      const result = await response.json() as { name?: string; discountInCents?: number; message?: string };
+      if (!response.ok || !result.discountInCents) throw new Error(result.message);
+      setCoupon({ code, name: result.name ?? code, discountInCents: result.discountInCents });
+      setCouponMessage("Cupom aplicado.");
+    } catch (error) {
+      setCoupon({ code: "", name: "", discountInCents: 0 });
+      setCouponMessage(error instanceof Error && error.message ? error.message : "Não foi possível validar o cupom.");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
 
   const focusSubmitAction = useCallback(() => {
     submitButtonRef.current?.focus();
@@ -183,7 +236,7 @@ export default function CheckoutPage() {
       .then(async (response) => {
         if (!response.ok) return null;
         return (await response.json()) as {
-          profile?: { fullName?: string; email?: string; phone?: string } | null;
+          profile?: { fullName?: string; email?: string; phone?: string; cpfLastFour?: string } | null;
           addresses?: SavedAddress[];
         };
       })
@@ -192,10 +245,12 @@ export default function CheckoutPage() {
         setFieldIfEmpty("name", payload.profile?.fullName ?? "");
         setFieldIfEmpty("email", payload.profile?.email ?? "");
         setFieldIfEmpty("phone", formatBrazilianPhone(payload.profile?.phone ?? ""));
+        setCpfLastFour(payload.profile?.cpfLastFour ?? "");
         const addresses = Array.isArray(payload.addresses) ? payload.addresses : [];
         setSavedAddresses(addresses);
         const preferred = addresses.find((address) => address.isDefault) ?? addresses[0];
-        if (preferred) applyAddress(preferred);
+        if (preferred) { setSelectedAddressId(preferred.id); applyAddress(preferred); }
+        window.requestAnimationFrame(() => setFormComplete(formRef.current?.checkValidity() ?? false));
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -235,16 +290,17 @@ export default function CheckoutPage() {
   };
 
   const completePayment = useCallback((
-    status: "approved" | "pending" | "rejected" | "cancelled" | "error",
-    orderCode: string
+    status: "approved" | "pending" | "rejected" | "cancelled" | "error"
   ) => {
     sessionStorage.removeItem("curtiz-checkout-idempotency");
-    if (status === "approved" || status === "pending") {
+    if (status === "approved") {
       removeMany(selectedLines.map((line) => line.variantId));
+    } else if (status === "pending" && paymentSession?.orderId) {
+      sessionStorage.setItem("curtiz-pending-order-cleanup", paymentSession.orderId);
     }
     setRedirecting(true);
-    router.push(`/pedido/pendente?pedido=${encodeURIComponent(orderCode)}`);
-  }, [removeMany, router, selectedLines]);
+    router.push(`/pedido/${encodeURIComponent(paymentSession?.orderId ?? "")}/pagamento`);
+  }, [paymentSession?.orderId, removeMany, router, selectedLines]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -266,7 +322,7 @@ export default function CheckoutPage() {
     const errors: Partial<Record<PersonalField, string>> = {};
     if (!isValidCustomerEmail(email)) errors.email = "Informe um e-mail válido.";
     if (!isValidBrazilianPhone(phone)) errors.phone = "Informe um telefone válido com DDD.";
-    if (!isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
+    if (!cpfLastFour && !isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
     setFieldErrors(errors);
     const firstInvalid = (Object.keys(errors) as PersonalField[])[0];
     if (firstInvalid) {
@@ -287,11 +343,34 @@ export default function CheckoutPage() {
     }
 
     try {
+      const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
+      if (editingAddressId || selectedAddress) {
+        const baseLabel = formString("addressLabel") || selectedAddress?.label.replace(/\s+\d+$/u, "") || "Casa";
+        const sameTypeCount = savedAddresses.filter((address) => address.label === baseLabel || address.label.startsWith(`${baseLabel} `)).length;
+        const addressResponse = await fetch("/api/customer", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "address_save",
+            id: editingAddressId && editingAddressId !== "new" ? editingAddressId : selectedAddress?.id ?? null,
+            label: editingAddressId === "new" && sameTypeCount ? `${baseLabel} ${sameTypeCount + 1}` : selectedAddress?.label ?? baseLabel,
+            recipientName: editingAddressId ? formString("name") : selectedAddress?.recipientName ?? formString("name"),
+            postalCode: formString("postalCode"), street: formString("street"),
+            number: formString("number"), complement: formString("complement"), district: formString("district"),
+            city: formString("city"), state: formString("state"), isDefault: true }
+          )
+        });
+        if (!addressResponse.ok) {
+          const addressResult = await addressResponse.json() as { message?: string };
+          setMessage(addressResult.message ?? "Não foi possível salvar o endereço.");
+          return;
+        }
+      }
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           idempotencyKey: idempotencyKeyRef.current,
+          couponCode: form.get("couponCode"),
           customer: {
             name: form.get("name"),
             email,
@@ -418,7 +497,6 @@ export default function CheckoutPage() {
       <div className="container page-shell checkout-page checkout-bricks-page">
         <header className="checkout-heading">
           <div><p className="eyebrow">Pedido {paymentSession.orderCode}</p></div>
-          <Link className="checkout-review-cart" href="/carrinho">Voltar ao carrinho</Link>
         </header>
         <div className="checkout-layout">
           <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment} />
@@ -433,6 +511,10 @@ export default function CheckoutPage() {
               <span>Entrega</span>
               <strong>{formatBRL(paymentSession.shippingInCents)}</strong>
             </div>
+            {paymentSession.discountInCents > 0 ? <div className="summary-line">
+              <span>Cupom {paymentSession.couponName}</span>
+              <strong>-{formatBRL(paymentSession.discountInCents)}</strong>
+            </div> : null}
             <div className="summary-line summary-total">
               <span>Total confirmado</span>
               <strong>{formatBRL(paymentSession.amountInCents)}</strong>
@@ -528,7 +610,7 @@ export default function CheckoutPage() {
               </div>
               <div className="field">
                 <label htmlFor="cpf">CPF para o pedido</label>
-                <input
+                {cpfLastFour ? <div className="customer-readonly">***.***.***-{cpfLastFour}<input type="hidden" id="cpf" name="cpf" value="" /></div> : <input
                   id="cpf"
                   name="cpf"
                   inputMode="numeric"
@@ -541,7 +623,7 @@ export default function CheckoutPage() {
                   }}
                   required
                   placeholder="000.000.000-00"
-                />
+                />}
                 {fieldErrors.cpf && (
                   <p className="field-error" id="checkout-cpf-error" role="alert">
                     {fieldErrors.cpf}
@@ -555,28 +637,32 @@ export default function CheckoutPage() {
             <h2 id="checkout-address-title">Endereço de entrega</h2>
             {savedAddresses.length ? (
               <div className="checkout-saved-addresses">
-                <label htmlFor="savedAddress">Usar endereço salvo</label>
-                <select
-                  id="savedAddress"
-                  defaultValue={
-                    (savedAddresses.find((address) => address.isDefault) ?? savedAddresses[0])?.id
-                  }
-                  onChange={(event) => {
-                    const selected = savedAddresses.find(
-                      (address) => address.id === event.target.value
-                    );
-                    if (selected) applyAddress(selected);
-                  }}
-                >
-                  {savedAddresses.map((address) => (
-                    <option value={address.id} key={address.id}>
-                      {address.label}
-                    </option>
-                  ))}
-                </select>
-                <Link href="/minha-conta/enderecos?returnTo=/checkout">Gerenciar endereços</Link>
+                {savedAddresses.map((address) => <article className={`checkout-address-card${selectedAddressId === address.id ? " selected" : ""}`} key={address.id}>
+                  <div className="checkout-address-card-heading">
+                    <label><input type="radio" name="selectedAddress" value={address.id} checked={selectedAddressId === address.id}
+                      onChange={() => { setSelectedAddressId(address.id); setEditingAddressId(null); applyAddress(address); }} />
+                      <span><strong>{address.label}</strong><small>{address.street}, {address.number}</small></span></label>
+                    <button type="button" aria-expanded={expandedAddressId === address.id} aria-label={`${expandedAddressId === address.id ? "Recolher" : "Expandir"} endereço ${address.label}`}
+                      onClick={() => setExpandedAddressId((current) => current === address.id ? "" : address.id)}>⌄</button>
+                  </div>
+                  {expandedAddressId === address.id ? <div className="checkout-address-details">
+                    <p>{address.recipientName}<br />{address.street}, {address.number}<br />{address.complement}<br />{address.district}<br />{address.city} - {address.state}<br />CEP {address.postalCode.slice(0, 2)}***-***</p>
+                    <div><button type="button" onClick={() => { setSelectedAddressId(address.id); setEditingAddressId(address.id); applyAddress(address); }}>Editar</button>
+                      <button type="button" onClick={() => { void (async () => { if (!window.confirm("Excluir este endereço?")) return; const response = await fetch("/api/customer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "address_delete", id: address.id }) }); if (response.ok) { const remaining = savedAddresses.filter((item) => item.id !== address.id); setSavedAddresses(remaining); const next = remaining[0]; setSelectedAddressId(next?.id ?? ""); if (next) applyAddress(next); } else setMessage("Não foi possível excluir o endereço."); })(); }}>Excluir</button></div>
+                  </div> : null}
+                </article>)}
+                {savedAddresses.length < 3 && editingAddressId !== "new" ? <button className="customer-link-button" type="button" onClick={() => setEditingAddressId("new")}>+ Adicionar outro endereço</button> : null}
               </div>
             ) : null}
+            {savedAddresses.length && !editingAddressId ? (() => {
+              const address = savedAddresses.find((item) => item.id === selectedAddressId);
+              return address ? <>{Object.entries({ postalCode: address.postalCode, street: address.street, number: address.number,
+                complement: address.complement, district: address.district, city: address.city, state: address.state })
+                .map(([name, value]) => <input type="hidden" name={name} value={value} key={name} />)}</> : null;
+            })() : null}
+            {(!savedAddresses.length || editingAddressId) ? <><div className="checkout-address-labels"><span>Salvar este endereço como</span>
+              <label><input type="radio" name="addressLabel" value="Casa" defaultChecked /> Casa</label>
+              <label><input type="radio" name="addressLabel" value="Trabalho" /> Trabalho</label></div>
             <div className="form-grid address-grid">
               <div className="field address-postal-field">
                 <label htmlFor="postalCode">CEP</label>
@@ -655,7 +741,7 @@ export default function CheckoutPage() {
                   ))}
                 </select>
               </div>
-            </div>
+            </div></> : null}
           </section>
 
           <section className="checkout-section" aria-labelledby="checkout-delivery-title">
@@ -670,10 +756,9 @@ export default function CheckoutPage() {
           <section className="checkout-section" aria-labelledby="checkout-payment-title">
             <div className="checkout-payment-heading">
               <h2 id="checkout-payment-title">Pagamento</h2>
-              <span className="checkout-test-badge">Ambiente de teste</span>
             </div>
             <p className="checkout-simple-status">
-              Valores e disponibilidade serão confirmados antes do pagamento. Nenhuma cobrança real será realizada.
+              Valores e disponibilidade serão confirmados antes do pagamento.
             </p>
           </section>
 
@@ -697,7 +782,16 @@ export default function CheckoutPage() {
 
           <aside className="checkout-summary" aria-labelledby="checkout-summary-title">
             <h2 id="checkout-summary-title">Resumo final</h2>
-            <CheckoutTotals subtotal={subtotal} />
+            <CheckoutTotals subtotal={subtotal} discountInCents={coupon.discountInCents} couponName={coupon.name} />
+            <div className="field checkout-coupon-field">
+              <label htmlFor="couponCode">Tem um cupom?</label>
+              <div><input id="couponCode" name="couponCode" maxLength={40} autoCapitalize="characters" placeholder="CÓDIGO DO CUPOM"
+                onChange={() => { setCoupon({ code: "", name: "", discountInCents: 0 }); setCouponMessage(""); }} />
+                <button className="secondary-button" type="button" disabled={couponLoading} onClick={() => void applyCoupon()}>
+                  {couponLoading ? "Validando…" : "Aplicar"}
+                </button></div>
+              {couponMessage ? <small role="status">{couponMessage}</small> : null}
+            </div>
             <button
               ref={submitButtonRef}
               className="primary-button full-button checkout-button"
@@ -707,7 +801,7 @@ export default function CheckoutPage() {
               aria-describedby={message ? "checkout-form-message" : undefined}
             >
               {loading ? <LoaderCircle className="spin" width={24} height={24} /> : null}
-              {loading ? "Validando pedido…" : "Confirmar e pagar"}
+              {loading ? "Validando pedido…" : "Continuar para pagamento"}
             </button>
           </aside>
         </div>

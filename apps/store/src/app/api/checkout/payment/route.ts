@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
   }
   const localPayment = paymentResult.data;
   const localPaymentId = readString(localPayment, "id");
+  const existingProviderPaymentId = readString(localPayment, "provider_payment_id");
   if (!localPaymentId) {
     logFailure("INVALID_LOCAL_PAYMENT");
     return response({ ok: false, message: "Não foi possível localizar o pagamento." }, 503);
@@ -130,30 +131,50 @@ export async function POST(request: NextRequest) {
 
   try {
     const provider = new MercadoPagoTestPaymentProvider(accessToken);
-    const created = await provider.createPayment({
-      orderId,
-      orderCode,
-      amountInCents,
-      currency: "BRL",
-      idempotencyKey: parsed.data.idempotencyKey,
-      customerEmail: orderEmail,
-      customerName: orderCustomerName,
-      customerDocument,
-      entityType: parsed.data.payment.payer.entity_type,
-      paymentMethodId: parsed.data.payment.payment_method_id,
-      ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
-      ...(parsed.data.payment.issuer_id !== undefined
-        ? { issuerId: String(parsed.data.payment.issuer_id) }
-        : {}),
-      installments: parsed.data.payment.installments
-    });
-    await db.from("payments").update({
+    const created = existingProviderPaymentId
+      ? await provider.getPayment(existingProviderPaymentId)
+      : await provider.createPayment({
+          orderId,
+          orderCode,
+          amountInCents,
+          currency: "BRL",
+          idempotencyKey: parsed.data.idempotencyKey,
+          customerEmail: orderEmail,
+          customerName: orderCustomerName,
+          customerDocument,
+          entityType: parsed.data.payment.payer.entity_type,
+          paymentMethodId: parsed.data.payment.payment_method_id,
+          ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
+          ...(parsed.data.payment.issuer_id !== undefined
+            ? { issuerId: String(parsed.data.payment.issuer_id) }
+            : {}),
+          installments: parsed.data.payment.installments
+        });
+    if (
+      created.amountInCents !== amountInCents ||
+      created.currency !== "BRL" ||
+      created.externalReference !== orderCode
+    ) {
+      logFailure("PROVIDER_PAYMENT_MISMATCH");
+      return response({ ok: false, message: "O pagamento precisa de verificação." }, 409);
+    }
+    const instructionResult = readQueryResult(await db.from("payments").update({
       provider_payment_id: created.id,
       payment_method_summary: [created.paymentTypeId, created.paymentMethodId].filter(Boolean).join(":"),
+      status_detail: created.statusDetail || null,
+      expires_at: created.expiresAt,
+      pix_copy_paste: created.pixCopyPaste || null,
+      pix_qr_code_base64: created.pixQrCodeBase64 || null,
+      boleto_url: created.boletoUrl || null,
+      digitable_line: created.digitableLine || null,
       updated_at: new Date().toISOString()
-    }).eq("id", localPaymentId);
+    }).eq("id", localPaymentId));
+    if (instructionResult.error) {
+      logFailure("PAYMENT_PERSISTENCE_FAILED");
+      return response({ ok: false, message: "Não foi possível salvar o pagamento agora." }, 503);
+    }
 
-    const confirmed = await provider.getPayment(created.id);
+    const confirmed = existingProviderPaymentId ? created : await provider.getPayment(created.id);
     if (
       confirmed.amountInCents !== amountInCents ||
       confirmed.currency !== "BRL" ||
@@ -180,6 +201,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       status: publicPaymentState(normalizedStatus),
       orderCode,
+      orderId,
       providerPaymentId: confirmed.id
     }, 200);
   } catch (error) {

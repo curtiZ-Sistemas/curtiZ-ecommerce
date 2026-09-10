@@ -7,6 +7,8 @@ const validResponse = {
   orderId: "order-id",
   orderCode: "CZ-123",
   subtotalInCents: 5100,
+  discountInCents: 0,
+  couponName: "",
   shippingInCents: 1690,
   amountInCents: 6790,
   publicKey: "TEST-public-key",

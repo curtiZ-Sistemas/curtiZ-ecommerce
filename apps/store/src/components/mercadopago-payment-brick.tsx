@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, ShieldCheck } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -126,6 +126,7 @@ export function MercadoPagoPaymentBrick({
               ok?: boolean;
               status?: PaymentState;
               orderCode?: string;
+              orderId?: string;
               message?: string;
             };
             try {
@@ -233,9 +234,7 @@ export function MercadoPagoPaymentBrick({
           <p className="eyebrow">Pagamento seguro</p>
           <h1 id="mercadopago-payment-title">Finalize seu pedido</h1>
         </div>
-        <span className="checkout-test-badge"><ShieldCheck width={24} height={24} /> Ambiente de teste</span>
       </header>
-      <p className="checkout-test-notice">Use somente dados de teste. Nenhuma cobrança real será realizada.</p>
       {!brickReady && !initializationFailed ? (
         <p className="checkout-simple-status" role="status"><LoaderCircle className="spin" width={24} height={24} /> Carregando formas de pagamento…</p>
       ) : null}

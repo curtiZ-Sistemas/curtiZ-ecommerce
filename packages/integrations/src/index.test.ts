@@ -9,7 +9,10 @@ import {
   MockShippingProvider
 } from "./index";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("runtime de providers mock", () => {
   it("permite build otimizado de staging sem confundir NODE_ENV com ambiente comercial", () => {
@@ -82,6 +85,40 @@ describe("Mercado Pago em teste", () => {
       external_reference: "CZT-TEST",
       metadata: { order_id: "order-id" }
     });
+    expect(JSON.parse(init.body)).not.toHaveProperty("date_of_expiration");
+  });
+
+  it("envia Pix com vencimento de 30 minutos e preserva as instruções retornadas", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-10T12:00:00Z"));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 456,
+        status: "pending",
+        status_detail: "pending_waiting_transfer",
+        transaction_amount: 42.4,
+        currency_id: "BRL",
+        external_reference: "CZT-PIX",
+        payment_method_id: "pix",
+        payment_type_id: "bank_transfer",
+        date_of_expiration: "2026-09-10T12:30:00Z",
+        point_of_interaction: { transaction_data: { qr_code: "pix-copia-e-cola", qr_code_base64: "base64-png" } }
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const payment = await new MercadoPagoTestPaymentProvider("TEST-token").createPayment({
+      orderId: "order-id", orderCode: "CZT-PIX", amountInCents: 4_240, currency: "BRL",
+      idempotencyKey: "10000000-0000-4000-8000-000000000002", customerEmail: "cliente@example.com",
+      customerName: "Cliente Teste", customerDocument: "12345678909", entityType: "individual",
+      paymentMethodId: "pix", installments: 1
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    if (typeof init.body !== "string") throw new Error("request body ausente");
+    const requestBody: unknown = JSON.parse(init.body);
+    expect(requestBody).toMatchObject({ date_of_expiration: "2026-09-10T12:30:00.000Z" });
+    expect(payment).toMatchObject({ pixCopyPaste: "pix-copia-e-cola", pixQrCodeBase64: "base64-png" });
+    vi.useRealTimers();
   });
 });
 
