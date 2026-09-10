@@ -32,6 +32,7 @@ import {
   type FormEvent,
   type ReactNode,
   useMemo,
+  useRef,
   useState,
   useTransition
 } from "react";
@@ -91,7 +92,10 @@ export function CustomerAccount({
   const activeSection = isCustomerAccountSection(section) ? section : "visao-geral";
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [refreshing, startTransition] = useTransition();
+  const [submitting, setSubmitting] = useState(false);
+  const submissionLock = useRef(false);
+  const pending = submitting || refreshing;
   const router = useRouter();
   const localFavorites = useFavorites();
   const favoriteCount =
@@ -104,48 +108,73 @@ export function CustomerAccount({
     successMessage: string,
     files?: FileList | null
   ) => {
-    if (pending) return null;
+    if (submissionLock.current || pending) return null;
+    submissionLock.current = true;
+    setSubmitting(true);
     setMessage("");
     setError("");
-    const response = await fetch("/api/customer", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const result = (await response.json().catch(() => ({}))) as {
-      message?: string;
-      simulated?: boolean;
-      data?: { id?: string };
-    };
-    if (!response.ok) {
-      setError(result.message ?? "Não foi possível concluir a ação.");
-      return null;
-    }
-    const reviewId = result.data?.id;
-    if (files?.length && reviewId) {
-      for (const file of Array.from(files).slice(0, 4)) {
-        const form = new FormData();
-        form.set("reviewId", reviewId);
-        form.set("file", file);
-        const upload = await fetch("/api/customer/review-media", {
-          method: "POST",
-          body: form
-        });
-        if (!upload.ok) {
-          const uploadResult = (await upload.json().catch(() => ({}))) as {
-            message?: string;
-          };
-          setError(
-            uploadResult.message ??
-              "A avaliação foi salva, mas um arquivo não pôde ser enviado."
-          );
-          return result;
+    let savedResult: { message?: string; simulated?: boolean; data?: { id?: string } } | null = null;
+    try {
+      const response = await fetch("/api/customer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000)
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        simulated?: boolean;
+        data?: { id?: string };
+      };
+      if (!response.ok) {
+        setError(result.message ?? "Não foi possível concluir a ação.");
+        return null;
+      }
+      if (result?.ok !== true) {
+        setError("Não conseguimos confirmar a operação. Confira seus dados antes de tentar novamente.");
+        return null;
+      }
+      savedResult = result;
+      const reviewId = result.data?.id;
+      if (files?.length && reviewId) {
+        for (const file of Array.from(files).slice(0, 4)) {
+          const form = new FormData();
+          form.set("reviewId", reviewId);
+          form.set("file", file);
+          const upload = await fetch("/api/customer/review-media", {
+            method: "POST",
+            body: form,
+            signal: AbortSignal.timeout(60_000)
+          });
+          if (!upload.ok) {
+            const uploadResult = (await upload.json().catch(() => ({}))) as {
+              message?: string;
+            };
+            setError(
+              uploadResult.message ??
+                "A avaliação foi salva, mas um arquivo não pôde ser enviado."
+            );
+            startTransition(() => router.refresh());
+            return result;
+          }
         }
       }
+      setMessage(result.simulated ? result.message ?? successMessage : successMessage);
+      startTransition(() => router.refresh());
+      return result;
+    } catch {
+      if (savedResult) {
+        setError("A avaliação foi salva, mas não conseguimos concluir o envio dos arquivos. Confira sua avaliação antes de tentar novamente.");
+        startTransition(() => router.refresh());
+        return savedResult;
+      }
+      setError("Não conseguimos confirmar a operação. Confira seus dados antes de tentar novamente.");
+      return null;
+    } finally {
+      submissionLock.current = false;
+      setSubmitting(false);
     }
-    setMessage(result.simulated ? result.message ?? successMessage : successMessage);
-    startTransition(() => router.refresh());
-    return result;
   };
 
   return (
@@ -1005,7 +1034,7 @@ function Addresses({
         isDefault: form.get("isDefault") === "on"
       },
       "Endereço salvo."
-    ).then(() => setEditing(null));
+    ).then((result) => { if (result) setEditing(null); });
   };
   const current = editing && editing !== "new" ? editing : null;
   return (
@@ -1101,7 +1130,7 @@ function Returns({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    void runAction({ action: "return_request", orderItemId: form.get("orderItemId"), quantity: Number(form.get("quantity")), reason: form.get("reason"), description: form.get("description"), resolution: form.get("resolution") }, "Solicitação enviada para análise.").then(() => setOpen(false));
+    void runAction({ action: "return_request", orderItemId: form.get("orderItemId"), quantity: Number(form.get("quantity")), reason: form.get("reason"), description: form.get("description"), resolution: form.get("resolution") }, "Solicitação enviada para análise.").then((result) => { if (result) setOpen(false); });
   };
   return (
     <div className="customer-section-stack">

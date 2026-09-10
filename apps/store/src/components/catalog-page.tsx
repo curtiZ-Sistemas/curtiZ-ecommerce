@@ -67,6 +67,7 @@ export function CatalogPage({
   const [result, setResult] = useState<CatalogResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -107,7 +108,7 @@ export function CatalogPage({
         if (!response.ok) throw new Error("catalog_unavailable");
         return (await response.json()) as CatalogResult;
       })
-      .then(setResult)
+      .then((nextResult) => { if (!controller.signal.aborted) setResult(nextResult); })
       .catch(() => {
         if (!controller.signal.aborted) {
           setError("Não foi possível carregar os produtos. Tente novamente.");
@@ -117,7 +118,7 @@ export function CatalogPage({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, preset, query, searchParams]);
+  }, [category, preset, query, searchParams, retry]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -534,7 +535,7 @@ export function CatalogPage({
               <SlidersHorizontal />
               <h2>Não foi possível carregar o catálogo</h2>
               <p>{error}</p>
-              <button className="secondary-button" type="button" onClick={() => router.refresh()}>
+              <button className="secondary-button" type="button" onClick={() => setRetry((current) => current + 1)}>
                 Tentar novamente
               </button>
             </div>

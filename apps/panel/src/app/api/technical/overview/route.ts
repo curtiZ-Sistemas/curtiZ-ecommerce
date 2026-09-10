@@ -1,4 +1,5 @@
 import { getIntegrationConfig } from "@curtiz/config";
+import { backupStatus, httpServiceState } from "@/lib/service-health";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeTechnicalRequest,
@@ -55,8 +56,8 @@ async function checkStore(): Promise<Service> {
     const latencyMs = Date.now() - startedAt;
     return {
       name: "Loja",
-      state: response.status < 500 ? (latencyMs > 2_000 ? "degraded" : "online") : "offline",
-      detail: `HTTP ${response.status}`,
+      state: httpServiceState(response.status, latencyMs),
+      detail: `HTTP ${response.status} · verificação da página inicial, não do fluxo de compra`,
       checkedAt: new Date().toISOString(),
       latencyMs
     };
@@ -218,7 +219,7 @@ export async function GET(request: NextRequest) {
         environment: process.env.APP_ENV ?? "não configurado",
         version: process.env.APP_VERSION ?? null,
         commit: process.env.GIT_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA ?? null,
-        backup: process.env.BACKUP_PROVIDER ? "configurado" : "não configurado",
+        backup: backupStatus(process.env.BACKUP_PROVIDER),
         databaseDiagnostics: "Conexões, índices e SQL arbitrário não são expostos ao navegador."
       }
     },

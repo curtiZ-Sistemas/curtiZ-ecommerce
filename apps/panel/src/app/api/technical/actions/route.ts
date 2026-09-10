@@ -65,5 +65,10 @@ export async function POST(request: NextRequest) {
     const forbidden = result.error.code === "42501";
     return NextResponse.json({ message: forbidden ? "Sua permissão não permite esta ação técnica." : "A ação não é permitida para o estado atual." }, { status: forbidden ? 403 : result.error.code === "P0002" ? 404 : 409, headers: technicalNoStore });
   }
-  return NextResponse.json({ message: "Ação executada e registrada na auditoria." }, { headers: technicalNoStore });
+  const message = input.action === "reprocess_job" || input.action === "reprocess_webhook"
+    ? "Solicitação recolocada na fila e registrada na auditoria. A execução depende do processador da fila; acompanhe o resultado."
+    : input.action === "cancel_job"
+      ? "Cancelamento registrado na auditoria. Uma operação externa já iniciada precisa ter seu resultado conferido."
+      : "Ação executada e registrada na auditoria.";
+  return NextResponse.json({ message }, { headers: technicalNoStore });
 }
