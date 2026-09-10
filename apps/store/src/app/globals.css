@@ -14437,6 +14437,14 @@ body:has(.checkout-transition) .help-widget {
 .cart-unavailable-notice { font-size: .8125rem; color: #484844; font-weight: 600; }
 .hero-carousel-controls .hero-dot { width: 24px; height: 32px; border-radius: 0; background: radial-gradient(circle, #aaa 3px, transparent 4px); }
 .hero-carousel-controls .hero-dot[aria-pressed="true"] { width: 24px; background: radial-gradient(circle, var(--brand-900) 4px, transparent 5px); }
+.homepage-hero .hero-picture-enter { animation: hero-banner-enter 420ms ease-out both; }
+@keyframes hero-banner-enter {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .homepage-hero .hero-picture-enter { animation: none; }
+}
 .checkout-saved-addresses { display: grid; gap: 8px; }
 .checkout-address-card { border: 1px solid var(--neutral-200); border-radius: 8px; background: var(--white); }
 .checkout-address-card.selected { border-color: var(--brand-700); }

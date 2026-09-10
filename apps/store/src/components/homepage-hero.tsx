@@ -26,6 +26,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     return () => preference.removeEventListener("change", update);
   }, []);
   const [mobileViewport, setMobileViewport] = useState(false);
+  const [mobilePressing, setMobilePressing] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 700px)");
     const update = () => setMobileViewport(query.matches);
@@ -46,17 +47,18 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   useEffect(() => {
     if (
       slides.length < 2 ||
-      reducedMotion
+      reducedMotion ||
+      mobilePressing
     ) {
       return;
     }
 
     const timer = window.setInterval(() => {
       setActive((current) => (current + 1) % slides.length);
-    }, 3000);
+    }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [slides.length, reducedMotion]);
+  }, [slides.length, reducedMotion, mobilePressing]);
 
   if (!slides.length) {
     return null;
@@ -82,7 +84,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   };
 
   const picture = (
-    <picture className="hero-picture">
+    <picture className={`hero-picture${reducedMotion ? "" : " hero-picture-enter"}`} key={banner.id}>
       {bundledMobile ? (
         <source media="(max-width: 700px)" type="image/avif" srcSet={`/images/optimized/hero-mobile.430.avif 430w, /images/optimized/hero-mobile.640.avif 640w, ${bundledMobile.avif} 941w`} sizes="calc(100vw - 24px)" />
       ) : null}
@@ -118,13 +120,18 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       data-testid="homepage-primary-hero"
       aria-label="Destaques da curti Z"
       aria-roledescription="carrossel"
-      onPointerCancel={() => { pointerStart.current = null; }}
+      onPointerCancel={() => {
+        pointerStart.current = null;
+        setMobilePressing(false);
+      }}
       onPointerDown={(event) => {
         if (!mobileViewport || (event.target as HTMLElement).closest("button")) return;
         pointerStart.current = { x: event.clientX, y: event.clientY };
+        setMobilePressing(true);
       }}
       onPointerUp={(event) => {
         const start = pointerStart.current;
+        setMobilePressing(false);
         if (!start) return;
         const distance = event.clientX - start.x;
         const verticalDistance = event.clientY - start.y;
