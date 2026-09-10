@@ -495,6 +495,7 @@ export async function middleware(request: NextRequest) {
    */
   const csp = buildNonceContentSecurityPolicy({
     nonce,
+    allowUnsafeInlineStyleElements: checkoutRequest,
 
     imageSources: [
       ...(supabaseHttpOrigin
