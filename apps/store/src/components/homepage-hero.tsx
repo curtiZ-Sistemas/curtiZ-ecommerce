@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Pause, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -17,11 +17,10 @@ const bundledHero = (path: string, viewport: "desktop" | "mobile") => {
 export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
-  const [paused, setPaused] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => { setReducedMotion(preference.matches); if (preference.matches) setPaused(true); };
+    const update = () => setReducedMotion(preference.matches);
     update();
     preference.addEventListener("change", update);
     return () => preference.removeEventListener("change", update);
@@ -37,12 +36,16 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const [failedBannerIds, setFailedBannerIds] = useState<Set<string>>(
     () => new Set()
   );
-  const pointerStart = useRef<number | null>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+
+  useEffect(() => {
+    setActive((current) => slides.length ? current % slides.length : 0);
+  }, [slides.length]);
 
   useEffect(() => {
     if (
       slides.length < 2 ||
-      paused ||
       reducedMotion
     ) {
       return;
@@ -50,10 +53,10 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
     const timer = window.setInterval(() => {
       setActive((current) => (current + 1) % slides.length);
-    }, 6000);
+    }, 3000);
 
     return () => window.clearInterval(timer);
-  }, [paused, slides.length, reducedMotion]);
+  }, [slides.length, reducedMotion]);
 
   if (!slides.length) {
     return null;
@@ -72,7 +75,6 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const bundledMobile = bundledHero(mobileImage, "mobile");
 
   const go = (direction: number) => {
-    setPaused(true);
     setActive(
       (current) =>
         (current + direction + slides.length) % slides.length
@@ -116,14 +118,27 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       data-testid="homepage-primary-hero"
       aria-label="Destaques da curti Z"
       aria-roledescription="carrossel"
-      onFocusCapture={(event) => { if (!event.target.closest("button")) setPaused(true); }}
       onPointerCancel={() => { pointerStart.current = null; }}
-      onPointerDown={(event) => { if ((event.target as HTMLElement).closest("button")) return; pointerStart.current = event.clientX; setPaused(true); }}
+      onPointerDown={(event) => {
+        if (!mobileViewport || (event.target as HTMLElement).closest("button")) return;
+        pointerStart.current = { x: event.clientX, y: event.clientY };
+      }}
       onPointerUp={(event) => {
-        if (pointerStart.current === null) return;
-        const distance = event.clientX - pointerStart.current;
+        const start = pointerStart.current;
+        if (!start) return;
+        const distance = event.clientX - start.x;
+        const verticalDistance = event.clientY - start.y;
         pointerStart.current = null;
-        if (Math.abs(distance) >= 40) go(distance > 0 ? -1 : 1);
+        if (Math.abs(distance) >= 40 && Math.abs(distance) > Math.abs(verticalDistance)) {
+          swiped.current = true;
+          go(distance > 0 ? -1 : 1);
+          window.setTimeout(() => { swiped.current = false; }, 0);
+        }
+      }}
+      onClickCapture={(event) => {
+        if (!swiped.current) return;
+        event.preventDefault();
+        event.stopPropagation();
       }}
     >
       <h1 className="sr-only">{banner.title}</h1>
@@ -136,6 +151,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
           aria-label="Controles dos banners"
         >
           <button
+            className="hero-carousel-arrow hero-carousel-arrow-previous"
             type="button"
             onClick={() => go(-1)}
             aria-label="Banner anterior"
@@ -150,23 +166,20 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
                 className="hero-dot"
                 aria-pressed={active === index}
                 aria-label={`Exibir banner ${index + 1}: ${slide.title}`}
-                onClick={() => { setPaused(true); setActive(index); }}
+                onClick={() => setActive(index)}
                 key={slide.id}
               />
             ))}
           </div>
 
           <button
+            className="hero-carousel-arrow hero-carousel-arrow-next"
             type="button"
             onClick={() => go(1)}
             aria-label="Próximo banner"
           >
             <ArrowRight />
           </button>
-          <span className="hero-slide-count" aria-live={paused ? "polite" : "off"}>{active + 1} / {slides.length} · {paused || reducedMotion ? "Pausado" : "Automático"}</span>
-          {!reducedMotion && <button type="button" onClick={() => setPaused((current) => !current)} aria-label={paused ? "Reproduzir banners automaticamente" : "Pausar banners automáticos"}>
-            {paused ? <Play /> : <Pause />}
-          </button>}
         </div>
       )}
     </section>

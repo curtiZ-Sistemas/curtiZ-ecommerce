@@ -44,7 +44,10 @@ describe("public storefront components", () => {
     expect(html).toContain('class="hero-media"');
     expect(html).toContain('media="(max-width: 700px)"');
     expect(html).toContain('srcSet="/images/optimized/hero-mobile.430.avif 430w');
-    expect(html).toContain('aria-label="Pausar banners automáticos"');
+    expect(html).toContain('aria-label="Banner anterior"');
+    expect(html).toContain('aria-label="Próximo banner"');
+    expect(html).not.toContain("Pausar banners");
+    expect(html).not.toContain("Automático");
     expect(html).toContain('src="/images/hero-curtiz-desktop.webp');
     expect(html).toContain('width="941" height="1672"');
     expect(html).toContain('aria-label="Controles dos banners"');
