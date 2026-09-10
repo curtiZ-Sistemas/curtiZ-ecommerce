@@ -95,7 +95,7 @@ export const parseCatalogFilters = (params: URLSearchParams, fixedCategory?: str
     priceMin: readMoney("preco_min"),
     priceMax: readMoney("preco_max"),
     promotion: params.get("promocao") === "1",
-    inStock: params.get("estoque") === "1" || readList("cores").length > 0 || readList("tamanhos").length > 0,
+    inStock: params.get("estoque") === "1",
     newest: params.get("novidades") === "1",
     minRating: [3, 4, 4.5].includes(Number(params.get("avaliacao")))
       ? Number(params.get("avaliacao"))

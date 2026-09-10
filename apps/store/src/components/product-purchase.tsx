@@ -49,10 +49,6 @@ export function ProductPurchase({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(false);
-  const [selectionError, setSelectionError] = useState(false);
-  const sizeRef = useRef<HTMLFieldSetElement>(null);
-  const swipeStart = useRef<{ x: number; y: number } | null>(null);
-  const swiped = useRef(false);
   const galleryTriggerRef = useRef<HTMLButtonElement>(null);
   const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
@@ -162,10 +158,8 @@ export function ProductPurchase({
     const imageVariant = retainedSize ?? available.find((variant) => variant.image) ?? colorVariants[0];
     const nextSize = retainedSize?.size ?? (availableSizes.length === 1 ? availableSizes[0] ?? "" : "");
     setColor(nextColor);
-    setSelectionError(false);
     setSize(nextSize);
     setAdded(false);
-    setSelectionError(false);
     const nextMedia = detail.media.find(
       (item) => !item.variantId || item.variantId === imageVariant?.id
     );
@@ -197,12 +191,6 @@ export function ProductPurchase({
   };
 
   const addSelected = () => {
-    if (!selectedVariant) {
-      setSelectionError(true);
-      sizeRef.current?.focus();
-      sizeRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
-      return false;
-    }
     if (!selectedVariant || selectedVariant.stock <= 0 || busy) return false;
     add(product, selectedVariant.color, selectedVariant.size, {
       variantId: selectedVariant.id,
@@ -237,23 +225,7 @@ export function ProductPurchase({
             ref={galleryTriggerRef}
             className="product-gallery-trigger"
             type="button"
-            onClick={() => { if (!swiped.current) setLightboxOpen(true); }}
-            onTouchStart={(event) => {
-              const touch = event.touches[0];
-              swiped.current = false;
-              swipeStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
-            }}
-            onTouchEnd={(event) => {
-              const touch = event.changedTouches[0];
-              const start = swipeStart.current;
-              swipeStart.current = null;
-              if (!touch || !start) return;
-              const distance = touch.clientX - start.x;
-              if (Math.abs(distance) > 45 && Math.abs(distance) > Math.abs(touch.clientY - start.y)) {
-                swiped.current = true;
-                selectRelativeImage(distance < 0 ? 1 : -1);
-              }
-            }}
+            onClick={() => setLightboxOpen(true)}
             onPointerUp={() => trackIntelligence({ type: "image_interaction", productId: product.id })}
             aria-label={`Abrir visualização de ${product.name}`}
           >
@@ -385,15 +357,13 @@ export function ProductPurchase({
                     key={item}
                   >
                     <span aria-hidden="true" />
-                    <small>{item}{!available ? " · indisponível" : ""}</small>
                   </button>
                 );
               })}
             </div>
           </fieldset>
-          <fieldset ref={sizeRef} tabIndex={-1} aria-describedby={selectionError ? "size-selection-error" : undefined}>
+          <fieldset>
             <legend>Tamanho {size ? <strong>{size}</strong> : null}</legend>
-            {detail.sizeGuide.length > 0 && <a className="size-guide-link" href="#product-size-guide-title">Ver guia de tamanhos</a>}
             <div className="option-row size-options">
               {sizes.map((item) => {
                 const variant = variants.find(
@@ -414,7 +384,6 @@ export function ProductPurchase({
               })}
             </div>
           </fieldset>
-          {selectionError && <p id="size-selection-error" className="product-selection-error" role="alert">Escolha um tamanho antes de continuar.</p>}
           {!selectedVariant && variants.some((variant) => variant.color === color && variant.stock > 0) ? (
             <p className="product-selection-hint">Escolha um tamanho para continuar.</p>
           ) : null}
@@ -434,7 +403,7 @@ export function ProductPurchase({
               trackIntelligence({ type: "checkout_start", productId: product.id, variantId: selectedVariant?.id });
               router.push("/checkout?origem=comprar-agora");
             }}
-            disabled={busy || !variants.some((variant) => variant.color === color && variant.stock > 0) || Boolean(selectedVariant && selectedVariant.stock <= 0)}
+            disabled={!selectedVariant || currentStock === undefined || currentStock <= 0 || busy}
           >
             Comprar agora
           </button>
@@ -445,7 +414,7 @@ export function ProductPurchase({
               if (!addSelected()) return;
               setAdded(true);
             }}
-            disabled={busy || !variants.some((variant) => variant.color === color && variant.stock > 0) || Boolean(selectedVariant && selectedVariant.stock <= 0)}
+            disabled={!selectedVariant || currentStock === undefined || currentStock <= 0 || busy}
           >
             {added ? <Check /> : <ShoppingBag />}
             {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}

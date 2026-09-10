@@ -14,7 +14,6 @@ import { useFavorites } from "./favorites-provider";
 import { trackIntelligence } from "../lib/intelligence-client";
 import { useQualifiedImpression } from "../lib/use-qualified-impression";
 import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
-import { productCardName } from "../lib/product-card-name";
 
 export function ProductCard({
   product,
@@ -47,14 +46,14 @@ export function ProductCard({
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
   useQualifiedImpression(cardRef, `${recommendationSource ?? "catalog"}:${itemKey}`, impression);
   const favorite = hydrated && has(product);
-  const discount = product.compareAtPriceInCents && product.compareAtPriceInCents > product.priceInCents
+  const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
 
   return (
     <article className="product-card" ref={cardRef}>
       <Link href={href} prefetch={priority ? null : false} className="product-image" onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>
-        {display?.discount !== false && display?.badge !== false && discount !== null && discount > 0 && <span className="discount-badge">-{discount}%</span>}
+        {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
         {responsiveImage ? (
           <picture>
             <source type="image/webp" srcSet={responsiveImage} sizes={responsiveSizes} />
@@ -95,7 +94,7 @@ export function ProductCard({
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
-          <Link href={href} title={product.name} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{productCardName(product.name)}</Link>
+          <Link href={href} title={product.name} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
         </h3>
         {display?.rating !== false && product.reviews > 0 && <div
           className="rating"
@@ -107,10 +106,10 @@ export function ProductCard({
         </div>}
         {display?.price !== false && <div className="price-row">
           <strong>{formatBRL(product.priceInCents)}</strong>
-          {display?.discount !== false && product.compareAtPriceInCents && product.compareAtPriceInCents > product.priceInCents ? <s>{formatBRL(product.compareAtPriceInCents)}</s> : null}
+          {display?.discount !== false && product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
         </div>}
-        {display?.installments === true && <span className="installments">Consulte as condições no produto</span>}
-        {display?.stock && product.stock > 0 && product.stock <= 3 && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
+        {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
+        {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
         {display?.purchase && <Link className="secondary-button compact-button" href={href} prefetch={priority ? null : false}>Ver opções</Link>}
       </div>
     </article>

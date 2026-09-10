@@ -44,7 +44,6 @@ type CartContextValue = {
   ) => void;
   remove: (variantId: string) => void;
   removeMany: (variantIds: string[]) => void;
-  restore: (removed: CartLine[], selectedIds: string[]) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
   setSelected: (variantId: string, selected: boolean) => void;
   setAllSelected: (selected: boolean) => void;
@@ -367,18 +366,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const next = new Set(
             [...current].filter((variantId) => !removedIds.has(variantId))
           );
-          persistSelection(next);
-          return next;
-        });
-      },
-      restore(removed, selectedIds) {
-        const existing = new Set(lines.map((line) => line.variantId));
-        const restored = removed.filter((line) => isCartLine(line) && !existing.has(line.variantId));
-        for (const line of restored) trackIntelligence({ type: "cart_add", productId: line.productId, variantId: line.variantId });
-        setLines((current) => [...current, ...restored.filter((line) => !current.some((item) => item.variantId === line.variantId))]);
-        setSelectedVariantIds((current) => {
-          const next = new Set(current);
-          for (const line of restored) if (selectedIds.includes(line.variantId)) next.add(line.variantId);
           persistSelection(next);
           return next;
         });

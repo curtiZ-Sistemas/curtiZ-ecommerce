@@ -14,19 +14,26 @@ const keepSinglePrimaryHero = (sections: HomepageSection[]): HomepageSection[] =
   });
 };
 
-export const orderHomepageSections = (sections: HomepageSection[]): HomepageSection[] => {
-  const rank = (section: HomepageSection) => {
-    if (section.sectionType === "banner_hero") return 0;
-    if (section.sectionType === "categories_grid") return 2;
-    if (["image_text", "image_links", "image_mosaic", "video", "banner_secondary"].includes(section.sectionType)) return 3;
-    if (section.sectionType === "launches") return 4;
-    if (section.sectionType === "reviews_carousel") return 5;
-    if (section.sectionType === "benefits") return 6;
-    if (section.sectionType === "recommended_products") return 7;
-    return 1;
-  };
-  const ordered = [...sections].sort((left, right) => rank(left) - rank(right));
-  return ordered.every((section, index) => section === sections[index]) ? sections : ordered;
+const placeOccasionsAfterBenefits = (sections: HomepageSection[]): HomepageSection[] => {
+  const benefitsIndex = sections.findIndex((section) => section.sectionType === "benefits");
+  const occasionsIndex = sections.findIndex(
+    (section) =>
+      section.sectionType === "categories_grid" &&
+      (section.id === "default-categories" ||
+        section.title?.trim().toLocaleLowerCase("pt-BR") === "para todos os momentos")
+  );
+
+  if (benefitsIndex < 0 || occasionsIndex < 0 || occasionsIndex === benefitsIndex + 1) {
+    return sections;
+  }
+
+  const reordered = [...sections];
+  const [occasions] = reordered.splice(occasionsIndex, 1);
+  if (!occasions) return sections;
+
+  const updatedBenefitsIndex = reordered.findIndex((section) => section.sectionType === "benefits");
+  reordered.splice(updatedBenefitsIndex + 1, 0, occasions);
+  return reordered;
 };
 
 export function selectHomepageSections(
@@ -41,5 +48,5 @@ export function selectHomepageSections(
       : hasPublicContent || allowPresentationDefaults
         ? defaultSections
         : [];
-  return orderHomepageSections(keepSinglePrimaryHero(selected));
+  return placeOccasionsAfterBenefits(keepSinglePrimaryHero(selected));
 }

@@ -49,7 +49,7 @@ test("filtra no servidor, mantém URL e permite remover chips", async ({ page, i
   if (isMobile) await page.getByRole("button", { name: /Filtrar/i }).click();
   await filters.getByLabel("Preto").click();
   await expect(page).toHaveURL(/cores=Preto/);
-  if (isMobile) await page.getByRole("button", { name: /Mostrar \d+ produtos/i }).click();
+  if (isMobile) await page.getByRole("button", { name: /Ver \d+ produtos/i }).click();
   const chip = page.getByRole("button", { name: "Preto", exact: true });
   await expect(chip).toBeVisible();
   await chip.click();
@@ -107,9 +107,8 @@ test("produto exige variante real e mantém a compra compacta", async ({ page })
 
   const buyNow = page.getByRole("button", { name: "Comprar agora" });
   const addToCart = page.getByRole("button", { name: "Adicionar ao carrinho" });
-  await addToCart.click();
-  await expect(page.getByText("Escolha um tamanho antes de continuar.")).toBeVisible();
-  await expect(page.getByRole("group", { name: "Tamanho" })).toBeFocused();
+  await expect(buyNow).toBeDisabled();
+  await expect(addToCart).toBeDisabled();
   await expect(
     page.locator("#main-content").getByText("Escolha um tamanho para continuar.", { exact: true })
   ).toBeVisible();
