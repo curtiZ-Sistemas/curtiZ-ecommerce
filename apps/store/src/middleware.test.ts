@@ -7,6 +7,10 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({ auth: { getUser } })
 }));
 
+function readCspDirective(csp: string, name: string): string {
+  return csp.split("; ").find((directive) => directive.startsWith(`${name} `)) ?? "";
+}
+
 describe("store security headers", () => {
   afterEach(() => vi.unstubAllEnvs());
 
@@ -43,16 +47,24 @@ describe("store security headers", () => {
 
     const response = await middleware(new NextRequest("https://loja.example/checkout"));
     const csp = response.headers.get("content-security-policy") ?? "";
+    const scriptSources = readCspDirective(csp, "script-src");
+    const connectSources = readCspDirective(csp, "connect-src");
+    const frameSources = readCspDirective(csp, "frame-src");
+    const imageSources = readCspDirective(csp, "img-src");
 
-    expect(csp).toContain("https://sdk.mercadopago.com");
-    expect(csp).toContain("https://api.mercadopago.com");
-    expect(csp).toContain("https://api-static.mercadopago.com");
-    expect(csp).toContain("https://api.mercadolibre.com");
-    expect(csp).toContain("https://www.mercadolibre.com");
-    expect(csp).toContain("https://http2.mlstatic.com");
-    expect(csp).toContain("https://secure-fields.mercadopago.com");
-    expect(csp).toContain("'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='");
-    expect(csp).not.toContain("unsafe-eval");
+    expect(scriptSources).toContain("https://sdk.mercadopago.com");
+    expect(scriptSources).toContain("https://http2.mlstatic.com");
+    expect(scriptSources).toContain("'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='");
+    expect(connectSources).toContain("https://api.mercadopago.com");
+    expect(connectSources).toContain("https://api-static.mercadopago.com");
+    expect(connectSources).toContain("https://api.mercadolibre.com");
+    expect(connectSources).toContain("https://www.mercadolibre.com");
+    expect(connectSources).toContain("https://http2.mlstatic.com");
+    expect(frameSources).toContain("https://secure-fields.mercadopago.com");
+    expect(frameSources).toContain("https://sdk.mercadopago.com");
+    expect(imageSources).toContain("https://http2.mlstatic.com");
+    expect(scriptSources).not.toContain("unsafe-eval");
+    expect(scriptSources).not.toContain("unsafe-inline");
     expect(csp).not.toMatch(/(?:^|\s)\*(?:\s|;|$)/u);
   });
 
