@@ -11,30 +11,104 @@ import { type NextRequest, NextResponse } from "next/server";
 const DEMO_SESSION_COOKIE = "curtiz-demo-session";
 const MAX_RETURN_PATH_LENGTH = 300;
 const PRODUCT_NOT_FOUND_HEADER = "x-curtiz-not-found-kind";
+
+/*
+ * Mercado Pago Checkout Bricks / MercadoPago.js
+ *
+ * Mantemos as permissões restritas aos domínios controlados pelo
+ * Mercado Pago / Mercado Livre, sem liberar "*" na CSP.
+ *
+ * O Checkout Bricks utiliza o SDK JS v2, Secure Fields e recursos
+ * de identificação do dispositivo/antifraude.
+ */
 const MERCADO_PAGO_SCRIPT_SOURCES = [
   "https://sdk.mercadopago.com",
-  "https://http2.mlstatic.com"
+  "https://www.mercadopago.com",
+  "https://mercadopago.com",
+  "https://www.mercadopago.com.br",
+  "https://mercadopago.com.br",
+  "https://http2.mlstatic.com",
+  "https://*.mlstatic.com"
 ] as const;
+
 const MERCADO_PAGO_CONNECT_SOURCES = [
+  /*
+   * APIs principais.
+   */
   "https://api.mercadopago.com",
   "https://api-static.mercadopago.com",
-  "https://api.mercadolibre.com",
-  "https://www.mercadolibre.com",
-  "https://http2.mlstatic.com"
-] as const;
-const MERCADO_PAGO_FRAME_SOURCES = [
-  "https://secure-fields.mercadopago.com",
-  "https://sdk.mercadopago.com",
+  "https://events.mercadopago.com",
+
+  /*
+   * Mercado Pago / Mercado Livre.
+   *
+   * Alguns recursos internos do SDK e DeviceProfile podem utilizar
+   * subdomínios diferentes. Limitamos os curingas exclusivamente
+   * aos domínios oficiais envolvidos na integração.
+   */
+  "https://mercadopago.com",
+  "https://www.mercadopago.com",
+  "https://*.mercadopago.com",
+
   "https://mercadopago.com.br",
   "https://www.mercadopago.com.br",
-  "https://mercadopago.com",
-  "https://www.mercadopago.com"
+  "https://*.mercadopago.com.br",
+
+  "https://api.mercadolibre.com",
+  "https://www.mercadolibre.com",
+  "https://*.mercadolibre.com",
+
+  "https://www.mercadolivre.com",
+  "https://*.mercadolivre.com",
+
+  /*
+   * Recursos estáticos e auxiliares utilizados pelo SDK.
+   */
+  "https://http2.mlstatic.com",
+  "https://*.mlstatic.com"
 ] as const;
+
+const MERCADO_PAGO_FRAME_SOURCES = [
+  /*
+   * Secure Fields mantém os dados sensíveis do cartão fora
+   * da aplicação curtiZ.
+   */
+  "https://secure-fields.mercadopago.com",
+
+  "https://sdk.mercadopago.com",
+
+  "https://mercadopago.com",
+  "https://www.mercadopago.com",
+  "https://*.mercadopago.com",
+
+  "https://mercadopago.com.br",
+  "https://www.mercadopago.com.br",
+  "https://*.mercadopago.com.br",
+
+  "https://www.mercadolibre.com",
+  "https://*.mercadolibre.com",
+
+  "https://www.mercadolivre.com",
+  "https://*.mercadolivre.com"
+] as const;
+
 const MERCADO_PAGO_IMAGE_SOURCES = [
   "https://http2.mlstatic.com",
+  "https://*.mlstatic.com",
+
   "https://www.mercadolibre.com",
-  "https://www.mercadolivre.com"
+  "https://*.mercadolibre.com",
+
+  "https://www.mercadolivre.com",
+  "https://*.mercadolivre.com",
+
+  "https://www.mercadopago.com",
+  "https://*.mercadopago.com",
+
+  "https://www.mercadopago.com.br",
+  "https://*.mercadopago.com.br"
 ] as const;
+
 const DEMO_PRODUCT_SLUGS = new Set([
   "flip-flop-wave-preto",
   "flip-flop-slim-coral",
@@ -45,6 +119,7 @@ const DEMO_PRODUCT_SLUGS = new Set([
   "flip-flop-classic-preto",
   "slide-comfort-bege"
 ]);
+
 const PUBLIC_ROOT_ROUTES = new Set([
   "_not-found",
   "ajuda",
@@ -162,7 +237,11 @@ async function hasValidDemoSession(value: string | undefined): Promise<boolean> 
 
     const expiresAt = (session as Partial<DemoSessionPayload>).expiresAt;
 
-    return typeof expiresAt === "number" && Number.isFinite(expiresAt) && expiresAt > Date.now();
+    return (
+      typeof expiresAt === "number" &&
+      Number.isFinite(expiresAt) &&
+      expiresAt > Date.now()
+    );
   } catch {
     return false;
   }
@@ -178,11 +257,18 @@ function getSupabaseUrl(): URL | null {
   try {
     const url = new URL(configuredUrl);
 
-    const isLocalhost = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname);
+    const isLocalhost = [
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+      "::1"
+    ].includes(url.hostname);
 
     const validProtocol =
       url.protocol === "https:" ||
-      (process.env.NODE_ENV === "development" && isLocalhost && url.protocol === "http:");
+      (process.env.NODE_ENV === "development" &&
+        isLocalhost &&
+        url.protocol === "http:");
 
     if (!validProtocol) {
       return null;
@@ -213,28 +299,48 @@ function getSafeReturnPath(request: NextRequest): string {
   return requestedPath;
 }
 
-function applySecurityHeaders(response: NextResponse, csp: string, hostname: string): NextResponse {
+function applySecurityHeaders(
+  response: NextResponse,
+  csp: string,
+  hostname: string
+): NextResponse {
   response.headers.set("Content-Security-Policy", csp);
 
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Referrer-Policy",
+    "strict-origin-when-cross-origin"
+  );
 
   response.headers.set("X-Content-Type-Options", "nosniff");
 
-  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=()"
+  );
 
   response.headers.set("X-Frame-Options", "DENY");
 
   if (process.env.NODE_ENV === "production") {
-    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    response.headers.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains"
+    );
   }
+
   if (hostname.toLowerCase().endsWith(".workers.dev")) {
-    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    response.headers.set(
+      "X-Robots-Tag",
+      "noindex, nofollow, noarchive"
+    );
   }
 
   return response;
 }
 
-function copyResponseCookies(source: NextResponse, destination: NextResponse): void {
+function copyResponseCookies(
+  source: NextResponse,
+  destination: NextResponse
+): void {
   for (const cookie of source.cookies.getAll()) {
     const { name, value, ...options } = cookie;
 
@@ -245,7 +351,9 @@ function copyResponseCookies(source: NextResponse, destination: NextResponse): v
 function readSingleRootSlug(pathname: string): string | null {
   const segments = pathname.split("/").filter(Boolean);
 
-  if (segments.length !== 1) return null;
+  if (segments.length !== 1) {
+    return null;
+  }
 
   try {
     return decodeURIComponent(segments[0] ?? "");
@@ -256,7 +364,10 @@ function readSingleRootSlug(pathname: string): string | null {
 
 function readProductSlug(pathname: string): string | null {
   const match = /^\/produto\/([^/]+)\/?$/u.exec(pathname);
-  if (!match?.[1]) return null;
+
+  if (!match?.[1]) {
+    return null;
+  }
 
   try {
     return decodeURIComponent(match[1]);
@@ -273,21 +384,35 @@ function rewriteToNativeNotFound(
   kind?: "product"
 ): NextResponse {
   const destination = request.nextUrl.clone();
+
   destination.pathname = "/_not-found";
   destination.search = "";
 
   const forwardedHeaders = new Headers(requestHeaders);
-  if (kind === "product") forwardedHeaders.set(PRODUCT_NOT_FOUND_HEADER, kind);
+
+  if (kind === "product") {
+    forwardedHeaders.set(PRODUCT_NOT_FOUND_HEADER, kind);
+  }
 
   const response = NextResponse.rewrite(destination, {
     status: 404,
-    request: { headers: forwardedHeaders }
+    request: {
+      headers: forwardedHeaders
+    }
   });
 
   copyResponseCookies(currentResponse, response);
-  response.headers.set("Cache-Control", "public, max-age=0, must-revalidate");
 
-  return applySecurityHeaders(response, csp, request.nextUrl.hostname);
+  response.headers.set(
+    "Cache-Control",
+    "public, max-age=0, must-revalidate"
+  );
+
+  return applySecurityHeaders(
+    response,
+    csp,
+    request.nextUrl.hostname
+  );
 }
 
 function redirectToLogin(
@@ -302,7 +427,10 @@ function redirectToLogin(
    * O valor é criado a partir da URL interna da requisição,
    * evitando redirecionamento para domínios externos.
    */
-  loginUrl.searchParams.set("next", getSafeReturnPath(request));
+  loginUrl.searchParams.set(
+    "next",
+    getSafeReturnPath(request)
+  );
 
   const redirectResponse = NextResponse.redirect(loginUrl, 303);
 
@@ -310,24 +438,42 @@ function redirectToLogin(
    * Se o Supabase tiver renovado a sessão antes do
    * redirecionamento, os novos cookies não podem ser perdidos.
    */
-  copyResponseCookies(currentResponse, redirectResponse);
+  copyResponseCookies(
+    currentResponse,
+    redirectResponse
+  );
 
-  redirectResponse.headers.set("Cache-Control", "private, no-store");
+  redirectResponse.headers.set(
+    "Cache-Control",
+    "private, no-store"
+  );
 
-  return applySecurityHeaders(redirectResponse, csp, request.nextUrl.hostname);
+  return applySecurityHeaders(
+    redirectResponse,
+    csp,
+    request.nextUrl.hostname
+  );
 }
 
 export async function middleware(request: NextRequest) {
   const supabaseUrl = getSupabaseUrl();
 
-  const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const supabasePublishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
 
   const hasValidSupabaseConfiguration = Boolean(
-    supabaseUrl && supabasePublishableKey && supabasePublishableKey.length >= 20
+    supabaseUrl &&
+      supabasePublishableKey &&
+      supabasePublishableKey.length >= 20
   );
 
-  const turnstileEnabled = isEnabled(process.env.TURNSTILE_ENABLED);
-  const checkoutRequest = isCheckoutRoute(request.nextUrl.pathname);
+  const turnstileEnabled = isEnabled(
+    process.env.TURNSTILE_ENABLED
+  );
+
+  const checkoutRequest = isCheckoutRoute(
+    request.nextUrl.pathname
+  );
 
   /*
    * crypto.randomUUID gera um valor imprevisível por requisição.
@@ -338,7 +484,9 @@ export async function middleware(request: NextRequest) {
   const supabaseHttpOrigin = supabaseUrl?.origin;
 
   const supabaseRealtimeOrigin = supabaseUrl
-    ? `${supabaseUrl.protocol === "https:" ? "wss:" : "ws:"}//${supabaseUrl.host}`
+    ? `${
+        supabaseUrl.protocol === "https:" ? "wss:" : "ws:"
+      }//${supabaseUrl.host}`
     : undefined;
 
   /*
@@ -349,44 +497,80 @@ export async function middleware(request: NextRequest) {
     nonce,
 
     imageSources: [
-      ...(supabaseHttpOrigin ? [supabaseHttpOrigin] : []),
-      ...(checkoutRequest ? MERCADO_PAGO_IMAGE_SOURCES : [])
+      ...(supabaseHttpOrigin
+        ? [supabaseHttpOrigin]
+        : []),
+
+      ...(checkoutRequest
+        ? MERCADO_PAGO_IMAGE_SOURCES
+        : [])
     ],
-    mediaSources: [...(supabaseHttpOrigin ? [supabaseHttpOrigin] : [])],
+
+    mediaSources: [
+      ...(supabaseHttpOrigin
+        ? [supabaseHttpOrigin]
+        : [])
+    ],
 
     scriptSources: [
-      ...(checkoutRequest ? MERCADO_PAGO_SCRIPT_SOURCES : []),
-      ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
+      ...(checkoutRequest
+        ? MERCADO_PAGO_SCRIPT_SOURCES
+        : []),
+
+      ...(turnstileEnabled
+        ? ["https://challenges.cloudflare.com"]
+        : [])
     ],
 
     connectSources: [
-      ...(supabaseHttpOrigin ? [supabaseHttpOrigin] : []),
+      ...(supabaseHttpOrigin
+        ? [supabaseHttpOrigin]
+        : []),
 
-      ...(supabaseRealtimeOrigin ? [supabaseRealtimeOrigin] : []),
+      ...(supabaseRealtimeOrigin
+        ? [supabaseRealtimeOrigin]
+        : []),
 
-      ...(checkoutRequest ? MERCADO_PAGO_CONNECT_SOURCES : []),
+      ...(checkoutRequest
+        ? MERCADO_PAGO_CONNECT_SOURCES
+        : []),
 
-      ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
+      ...(turnstileEnabled
+        ? ["https://challenges.cloudflare.com"]
+        : [])
     ],
 
     frameSources: [
-      ...(checkoutRequest ? MERCADO_PAGO_FRAME_SOURCES : []),
+      ...(checkoutRequest
+        ? MERCADO_PAGO_FRAME_SOURCES
+        : []),
 
-      ...(turnstileEnabled ? ["https://challenges.cloudflare.com"] : [])
+      ...(turnstileEnabled
+        ? ["https://challenges.cloudflare.com"]
+        : [])
     ],
 
-    development: process.env.NODE_ENV === "development"
+    development:
+      process.env.NODE_ENV === "development"
   });
 
   /*
    * O Next.js precisa receber a CSP no cabeçalho interno
    * da requisição para reconhecer e aplicar o nonce.
    */
-  const requestHeaders = new Headers(request.headers);
+  const requestHeaders = new Headers(
+    request.headers
+  );
 
-  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set(
+    "x-nonce",
+    nonce
+  );
 
-  requestHeaders.set("Content-Security-Policy", csp);
+  requestHeaders.set(
+    "Content-Security-Policy",
+    csp
+  );
 
   const createNextResponse = () =>
     applySecurityHeaders(
@@ -401,21 +585,49 @@ export async function middleware(request: NextRequest) {
 
   let response = createNextResponse();
 
-  const productSlug = readProductSlug(request.nextUrl.pathname);
-  const rootSlug = readSingleRootSlug(request.nextUrl.pathname);
-  const unknownRootSlug = rootSlug !== null && !PUBLIC_ROOT_ROUTES.has(rootSlug);
+  const productSlug = readProductSlug(
+    request.nextUrl.pathname
+  );
+
+  const rootSlug = readSingleRootSlug(
+    request.nextUrl.pathname
+  );
+
+  const unknownRootSlug =
+    rootSlug !== null &&
+    !PUBLIC_ROOT_ROUTES.has(rootSlug);
+
   const demoSession =
-    checkoutRequest && process.env.DEMO_MODE === "true"
-      ? await hasValidDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
+    checkoutRequest &&
+    process.env.DEMO_MODE === "true"
+      ? await hasValidDemoSession(
+          request.cookies.get(
+            DEMO_SESSION_COOKIE
+          )?.value
+        )
       : false;
 
   if (process.env.DEMO_MODE === "true") {
-    if (productSlug !== null && !DEMO_PRODUCT_SLUGS.has(productSlug)) {
-      return rewriteToNativeNotFound(request, response, requestHeaders, csp, "product");
+    if (
+      productSlug !== null &&
+      !DEMO_PRODUCT_SLUGS.has(productSlug)
+    ) {
+      return rewriteToNativeNotFound(
+        request,
+        response,
+        requestHeaders,
+        csp,
+        "product"
+      );
     }
 
     if (unknownRootSlug) {
-      return rewriteToNativeNotFound(request, response, requestHeaders, csp);
+      return rewriteToNativeNotFound(
+        request,
+        response,
+        requestHeaders,
+        csp
+      );
     }
   }
 
@@ -423,65 +635,105 @@ export async function middleware(request: NextRequest) {
    * Falha de configuração não deve liberar checkout
    * para uma sessão inexistente.
    */
-  if (!hasValidSupabaseConfiguration || !supabaseUrl || !supabasePublishableKey) {
-    if (checkoutRequest && !demoSession) {
-      return redirectToLogin(request, response, csp);
+  if (
+    !hasValidSupabaseConfiguration ||
+    !supabaseUrl ||
+    !supabasePublishableKey
+  ) {
+    if (
+      checkoutRequest &&
+      !demoSession
+    ) {
+      return redirectToLogin(
+        request,
+        response,
+        csp
+      );
     }
 
     return response;
   }
 
-  // Rotas públicas conhecidas precisam apenas dos cabeçalhos de segurança.
-  if (!checkoutRequest && productSlug === null && !unknownRootSlug) {
+  /*
+   * Rotas públicas conhecidas precisam apenas
+   * dos cabeçalhos de segurança.
+   */
+  if (
+    !checkoutRequest &&
+    productSlug === null &&
+    !unknownRootSlug
+  ) {
     return response;
   }
 
-  const supabase = createServerClient(supabaseUrl.origin, supabasePublishableKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
+  const supabase = createServerClient(
+    supabaseUrl.origin,
+    supabasePublishableKey,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
 
-      setAll(
-        cookiesToSet: Array<{
-          name: string;
-          value: string;
-          options: CookieOptions;
-        }>
-      ) {
-        /*
-         * Atualiza a visão dos cookies na requisição atual,
-         * permitindo que o restante do processamento enxergue
-         * a sessão renovada.
-         */
-        for (const { name, value } of cookiesToSet) {
-          request.cookies.set(name, value);
-        }
+        setAll(
+          cookiesToSet: Array<{
+            name: string;
+            value: string;
+            options: CookieOptions;
+          }>
+        ) {
+          /*
+           * Atualiza a visão dos cookies na requisição atual,
+           * permitindo que o restante do processamento enxergue
+           * a sessão renovada.
+           */
+          for (const {
+            name,
+            value
+          } of cookiesToSet) {
+            request.cookies.set(
+              name,
+              value
+            );
+          }
 
-        /*
-         * Recria a resposta com os novos cabeçalhos da
-         * requisição e reaplica todos os cabeçalhos de segurança.
-         */
-        response = createNextResponse();
+          /*
+           * Recria a resposta com os novos cabeçalhos da
+           * requisição e reaplica todos os cabeçalhos
+           * de segurança.
+           */
+          response = createNextResponse();
 
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(
+          for (const {
             name,
             value,
-            sharedCookieOptions(
-              applyAuthCookiePersistence(
-                options,
-                readAuthPersistence(request.cookies.get(AUTH_PERSISTENCE_COOKIE)?.value)
-              ),
-              request.nextUrl.hostname
-            )
-          );
+            options
+          } of cookiesToSet) {
+            response.cookies.set(
+              name,
+              value,
+              sharedCookieOptions(
+                applyAuthCookiePersistence(
+                  options,
+                  readAuthPersistence(
+                    request.cookies.get(
+                      AUTH_PERSISTENCE_COOKIE
+                    )?.value
+                  )
+                ),
+                request.nextUrl.hostname
+              )
+            );
+          }
         }
       }
     }
-  });
+  );
 
-  if (process.env.DEMO_MODE !== "true" && productSlug !== null) {
+  if (
+    process.env.DEMO_MODE !== "true" &&
+    productSlug !== null
+  ) {
     const { data, error } = await supabase
       .from("products")
       .select("id")
@@ -491,11 +743,20 @@ export async function middleware(request: NextRequest) {
       .maybeSingle();
 
     if (!error && !data) {
-      return rewriteToNativeNotFound(request, response, requestHeaders, csp, "product");
+      return rewriteToNativeNotFound(
+        request,
+        response,
+        requestHeaders,
+        csp,
+        "product"
+      );
     }
   }
 
-  if (process.env.DEMO_MODE !== "true" && unknownRootSlug) {
+  if (
+    process.env.DEMO_MODE !== "true" &&
+    unknownRootSlug
+  ) {
     const { data, error } = await supabase
       .from("cms_pages")
       .select("id")
@@ -505,18 +766,28 @@ export async function middleware(request: NextRequest) {
       .maybeSingle();
 
     if (!error && !data) {
-      return rewriteToNativeNotFound(request, response, requestHeaders, csp);
+      return rewriteToNativeNotFound(
+        request,
+        response,
+        requestHeaders,
+        csp
+      );
     }
   }
 
-  if (!checkoutRequest) return response;
+  if (!checkoutRequest) {
+    return response;
+  }
 
   let authenticatedUser = false;
 
   try {
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } =
+      await supabase.auth.getUser();
 
-    authenticatedUser = !error && Boolean(data.user);
+    authenticatedUser =
+      !error &&
+      Boolean(data.user);
   } catch {
     /*
      * Em uma rota protegida, falha ao validar a sessão
@@ -525,8 +796,15 @@ export async function middleware(request: NextRequest) {
     authenticatedUser = false;
   }
 
-  if (!authenticatedUser && !demoSession) {
-    return redirectToLogin(request, response, csp);
+  if (
+    !authenticatedUser &&
+    !demoSession
+  ) {
+    return redirectToLogin(
+      request,
+      response,
+      csp
+    );
   }
 
   return response;

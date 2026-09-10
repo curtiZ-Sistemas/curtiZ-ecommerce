@@ -1,0 +1,134 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e3]:
+    - link "Skip to content" [ref=f2e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f2e9]:
+      - heading "Navigation Menu" [level=2] [ref=f2e10]
+      - generic [ref=f2e11]:
+        - link "Homepage" [ref=f2e13] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f2e16]:
+          - navigation "Global" [ref=f2e17]:
+            - list [ref=f2e18]:
+              - listitem [ref=f2e19]:
+                - button "Platform" [ref=f2e21] [cursor=pointer]
+              - listitem [ref=f2e24]:
+                - button "Solutions" [ref=f2e26] [cursor=pointer]
+              - listitem [ref=f2e29]:
+                - button "Resources" [ref=f2e31] [cursor=pointer]
+              - listitem [ref=f2e34]:
+                - button "Open Source" [ref=f2e36] [cursor=pointer]
+              - listitem [ref=f2e39]:
+                - button "Enterprise" [ref=f2e41] [cursor=pointer]
+              - listitem [ref=f2e44]:
+                - link "Pricing" [ref=f2e45] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+          - generic [ref=f2e46]:
+            - button "Search or jump to, type / to search" [ref=f2e48] [cursor=pointer]
+            - link "Sign in" [ref=f2e55] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2FcurtiZ-Sistemas%2FcurtiZ-ecommerce%2Factions%2Fruns%2F34519615859%2Fjob%2F103013562892
+            - link "Sign up" [ref=f2e58] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Factions%2Fjob%2Findex&source=header-repo&source_repo=curtiZ-Sistemas%2FcurtiZ-ecommerce
+            - button "Appearance settings" [ref=f2e61] [cursor=pointer]
+  - main [ref=f2e68]:
+    - generic [ref=f2e69]:
+      - generic [ref=f2e70]:
+        - generic [ref=f2e71]:
+          - generic [ref=f2e73]:
+            - link "curtiZ-Sistemas" [ref=f2e77] [cursor=pointer]:
+              - /url: /curtiZ-Sistemas
+            - generic [ref=f2e78]: /
+            - strong [ref=f2e79]:
+              - link "curtiZ-ecommerce" [ref=f2e80] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce
+            - generic [ref=f2e81]: Public
+          - generic [ref=f2e82]:
+            - list:
+              - listitem [ref=f2e83]:
+                - link "You must be signed in to change notification settings" [ref=f2e84] [cursor=pointer]:
+                  - /url: /login?return_to=%2FcurtiZ-Sistemas%2FcurtiZ-ecommerce
+                  - text: Notifications
+              - listitem [ref=f2e87]:
+                - link "Fork 0" [ref=f2e88] [cursor=pointer]:
+                  - /url: /login?return_to=%2FcurtiZ-Sistemas%2FcurtiZ-ecommerce
+                  - text: Fork
+                  - generic "0" [ref=f2e91]
+              - listitem [ref=f2e92]:
+                - link "You must be signed in to star a repository" [ref=f2e94] [cursor=pointer]:
+                  - /url: /login?return_to=%2FcurtiZ-Sistemas%2FcurtiZ-ecommerce
+                  - text: Star
+                  - generic "0 users starred this repository" [ref=f2e97]: "0"
+        - navigation "Repository" [ref=f2e98]:
+          - list [ref=f2e99]:
+            - listitem [ref=f2e100]:
+              - link "Code" [ref=f2e101] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce
+            - listitem [ref=f2e105]:
+              - link "Issues" [ref=f2e106] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/issues
+            - listitem [ref=f2e111]:
+              - link "Pull requests" [ref=f2e112] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/pulls
+            - listitem [ref=f2e116]:
+              - link "Actions" [ref=f2e117] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/actions
+            - listitem [ref=f2e121]:
+              - link "Projects" [ref=f2e122] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/projects
+            - listitem [ref=f2e126]:
+              - link "Security and quality" [ref=f2e127] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/security
+            - listitem [ref=f2e131]:
+              - link "Insights" [ref=f2e132] [cursor=pointer]:
+                - /url: /curtiZ-Sistemas/curtiZ-ecommerce/pulse
+      - generic [ref=f2e140]:
+        - generic [ref=f2e143]:
+          - link "CI" [ref=f2e146] [cursor=pointer]:
+            - /url: /curtiZ-Sistemas/curtiZ-ecommerce/actions/workflows/ci.yml
+          - generic [ref=f2e150]:
+            - generic [ref=f2e151]:
+              - img "currently running:" [ref=f2e156]
+              - 'heading "chore: trigger Cloudflare deploy #165" [level=1] [ref=f2e160]'
+            - link "Sign in to view logs" [ref=f2e164] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2FcurtiZ-Sistemas%2FcurtiZ-ecommerce%2Factions%2Fruns%2F34519615859%2Fjob%2F103013562892
+        - region "Check run summary" [ref=f2e168]:
+          - generic [ref=f2e169]:
+            - region "Annotations" [ref=f2e171]:
+              - generic [ref=f2e175]:
+                - button "Open job annotations" [ref=f2e177] [cursor=pointer]
+                - generic [ref=f2e182]:
+                  - heading "Annotations" [level=2] [ref=f2e183]
+                  - generic [ref=f2e184]: 1 error and 1 warning
+            - generic [ref=f2e186]:
+              - generic [ref=f2e188]:
+                - link "Banco e migrations" [ref=f2e191] [cursor=pointer]:
+                  - /url: "#logs"
+                - generic [ref=f2e193]: failed Sep 10, 20262 minutes ago in 1m 52s
+              - generic [ref=f2e195]:
+                - generic [ref=f2e196]:
+                  - group:
+                    - generic "Set up job"
+                - generic [ref=f2e197]:
+                  - group:
+                    - generic "Run actions/checkout@v4"
+                - generic [ref=f2e198]:
+                  - group:
+                    - generic "Run supabase/setup-cli@v2"
+                - generic [ref=f2e199]:
+                  - group:
+                    - generic "Run supabase start"
+                - generic [ref=f2e200]:
+                  - group:
+                    - generic "Run supabase db lint --local --fail-on error"
+                - generic [ref=f2e201]:
+                  - group:
+                    - generic "Run supabase test db"
+                - generic [ref=f2e202]:
+                  - group:
+                    - generic "Post Run supabase/setup-cli@v2"
+                - generic [ref=f2e203]:
+                  - group:
+                    - generic "Post Run actions/checkout@v4"
+                - generic [ref=f2e204]:
+                  - group:
+                    - generic "Complete job"

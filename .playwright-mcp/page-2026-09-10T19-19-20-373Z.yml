@@ -1,0 +1,199 @@
+- generic [active] [ref=e1]:
+  - link "Ir para o conteúdo principal" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - progressbar [aria-hidden]
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "curti Z — página inicial" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "curti Z" [ref=e6]
+      - search [ref=e8]:
+        - generic [ref=e9]: Buscar produtos
+        - combobox "Buscar produtos" [ref=e10]
+        - button "Buscar" [ref=e11] [cursor=pointer]
+      - navigation "Conta e compras" [ref=e15]:
+        - link "Entrar na minha conta" [ref=e16] [cursor=pointer]:
+          - /url: /login
+        - link "Favoritos" [ref=e20] [cursor=pointer]:
+          - /url: /favoritos
+        - link "Carrinho com 0 itens" [ref=e23] [cursor=pointer]:
+          - /url: /carrinho
+    - navigation "Categorias principais" [ref=e27]:
+      - link "Início" [ref=e28] [cursor=pointer]:
+        - /url: /
+      - link "Produtos" [ref=e29] [cursor=pointer]:
+        - /url: /produtos
+      - link "Atendimento" [ref=e30] [cursor=pointer]:
+        - /url: /ajuda
+  - main [ref=e31]:
+    - region "Destaques da curti Z" [ref=e33]:
+      - heading "Conheça os lançamentos da curti Z" [level=1] [ref=e34]
+      - link "Conheça os lançamentos da curti Z" [ref=e35] [cursor=pointer]:
+        - /url: /lancamentos
+        - img "Conheça os lançamentos da curti Z" [ref=e37]
+    - region "Vantagens curti Z" [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e46]:
+          - strong [ref=e47]: Carrinho preservado
+          - generic [ref=e48]: Sua seleção continua com você.
+        - generic [ref=e54]:
+          - strong [ref=e55]: Compra protegida
+          - generic [ref=e56]: Preço e estoque validados antes do pedido.
+        - generic [ref=e64]:
+          - strong [ref=e65]: Acompanhe seu pedido
+          - generic [ref=e66]: Tudo organizado na sua conta.
+        - generic [ref=e71]:
+          - strong [ref=e72]: Atendimento fácil
+          - generic [ref=e73]: Ajuda disponível durante sua compra.
+    - region [ref=e75]:
+      - heading "Compre por categoria" [level=2] [ref=e76]
+      - generic [ref=e77]:
+        - generic "Carrossel de categorias" [ref=e78]:
+          - link [ref=e81] [cursor=pointer]:
+            - /url: /feminino
+            - generic [ref=e82]:
+              - heading "Feminino" [level=3] [ref=e83]
+              - generic [ref=e84]: Ver produtos
+        - generic "Controles das categorias" [ref=e87]:
+          - button "Categoria anterior" [ref=e88] [cursor=pointer]
+          - button "Próxima categoria" [ref=e91] [cursor=pointer]
+    - region [ref=e95]:
+      - generic [ref=e96]:
+        - generic [ref=e97]:
+          - paragraph [ref=e98]: Seleção especial
+          - heading "Ofertas em destaque" [level=2] [ref=e99]
+        - link "Ver todos" [ref=e100] [cursor=pointer]:
+          - /url: /ofertas
+      - generic [ref=e103]:
+        - article [ref=e104]:
+          - link [ref=e105] [cursor=pointer]:
+            - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=0718cfdf-a99a-4747-870d-6be89ade2840
+            - img "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta da curti Z" [ref=e106]
+          - button "Favoritar Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e107] [cursor=pointer]
+          - generic [ref=e110]:
+            - paragraph [ref=e111]: Feminino
+            - heading [level=3] [ref=e112]:
+              - link "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e113] [cursor=pointer]:
+                - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=0718cfdf-a99a-4747-870d-6be89ade2840
+            - strong [ref=e115]: R$ 25,50
+        - article [ref=e116]:
+          - link [ref=e117] [cursor=pointer]:
+            - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=4b929946-8d32-412d-92fe-d17b23e7b59c
+            - img "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta da curti Z" [ref=e118]
+          - button "Favoritar Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e119] [cursor=pointer]
+          - generic [ref=e122]:
+            - paragraph [ref=e123]: Feminino
+            - heading [level=3] [ref=e124]:
+              - link "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e125] [cursor=pointer]:
+                - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=4b929946-8d32-412d-92fe-d17b23e7b59c
+            - strong [ref=e127]: R$ 25,50
+        - article [ref=e128]:
+          - link [ref=e129] [cursor=pointer]:
+            - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=66b40f46-6775-4567-8bdd-347d45f6205b
+            - img "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta da curti Z" [ref=e130]
+          - button "Favoritar Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e131] [cursor=pointer]
+          - generic [ref=e134]:
+            - paragraph [ref=e135]: Feminino
+            - heading [level=3] [ref=e136]:
+              - link "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e137] [cursor=pointer]:
+                - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=66b40f46-6775-4567-8bdd-347d45f6205b
+            - strong [ref=e139]: R$ 25,50
+        - article [ref=e140]:
+          - link [ref=e141] [cursor=pointer]:
+            - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=73e863f4-3ab7-45d3-aaf7-8add20d15dac
+            - img "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta da curti Z" [ref=e142]
+          - button "Favoritar Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e143] [cursor=pointer]
+          - generic [ref=e146]:
+            - paragraph [ref=e147]: Feminino
+            - heading [level=3] [ref=e148]:
+              - link "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e149] [cursor=pointer]:
+                - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=73e863f4-3ab7-45d3-aaf7-8add20d15dac
+            - strong [ref=e151]: R$ 25,50
+    - region [ref=e153]:
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - paragraph [ref=e156]: Os favoritos dos nossos clientes
+          - heading "Mais vendidos" [level=2] [ref=e157]
+        - link "Ver todos" [ref=e158] [cursor=pointer]:
+          - /url: /produtos
+      - generic [ref=e161]:
+        - button "Produtos anteriores" [ref=e162] [cursor=pointer]
+        - generic "Mais vendidos" [ref=e165]:
+          - article [ref=e168]:
+            - link [ref=e169] [cursor=pointer]:
+              - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=66b40f46-6775-4567-8bdd-347d45f6205b
+              - img "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta da curti Z" [ref=e170]
+            - button "Favoritar Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e171] [cursor=pointer]
+            - generic [ref=e174]:
+              - paragraph [ref=e175]: Feminino
+              - heading [level=3] [ref=e176]:
+                - link "Chinelo Feminino Slim Confortável Chinelo Strass Feminino Luxo Alto Padrão Oferta" [ref=e177] [cursor=pointer]:
+                  - /url: /produto/chinelo-feminino-slim-confortavel-chinelo-strass-feminino-luxo-alto-padrao-oferta?variant=66b40f46-6775-4567-8bdd-347d45f6205b
+              - strong [ref=e179]: R$ 25,50
+        - button "Próximos produtos" [ref=e180] [cursor=pointer]
+  - contentinfo [ref=e183]:
+    - generic [ref=e184]:
+      - generic [ref=e185]:
+        - link "curti Z — página inicial" [ref=e186] [cursor=pointer]:
+          - /url: /
+          - img "curti Z" [ref=e187]
+        - paragraph [ref=e188]: A loja oficial curti Z em curtiz.com.br reúne conforto e estilo em uma experiência de compra clara e organizada.
+        - text: Loja exclusivamente online.
+      - navigation "Comprar" [ref=e189]:
+        - generic [ref=e190]:
+          - heading "Comprar" [level=2] [ref=e191]
+          - link "Todos os produtos" [ref=e192] [cursor=pointer]:
+            - /url: /produtos
+          - link "Chinelos e slides masculinos" [ref=e193] [cursor=pointer]:
+            - /url: /masculino
+          - link "Chinelos e sandálias femininas" [ref=e194] [cursor=pointer]:
+            - /url: /feminino
+          - link "Chinelos e sandálias infantis" [ref=e195] [cursor=pointer]:
+            - /url: /infantil
+          - link "Lançamentos" [ref=e196] [cursor=pointer]:
+            - /url: /lancamentos
+      - navigation "Institucional" [ref=e197]:
+        - generic [ref=e198]:
+          - heading "Institucional" [level=2] [ref=e199]
+          - link "Quem somos" [ref=e200] [cursor=pointer]:
+            - /url: /sobre
+          - link "Fale conosco" [ref=e201] [cursor=pointer]:
+            - /url: /contato
+          - link "Atendimento" [ref=e202] [cursor=pointer]:
+            - /url: /ajuda
+      - navigation "Políticas" [ref=e203]:
+        - generic [ref=e204]:
+          - heading "Políticas" [level=2] [ref=e205]
+          - link "Centro de políticas" [ref=e206] [cursor=pointer]:
+            - /url: /politicas
+          - link "Termos" [ref=e207] [cursor=pointer]:
+            - /url: /politicas/termos-de-uso
+          - link "Privacidade" [ref=e208] [cursor=pointer]:
+            - /url: /politicas/aviso-de-privacidade
+          - link "Cookies" [ref=e209] [cursor=pointer]:
+            - /url: /politicas/politica-de-cookies
+          - link "Trocas e devoluções" [ref=e210] [cursor=pointer]:
+            - /url: /trocas-e-devolucoes
+          - link "Formas de envio" [ref=e211] [cursor=pointer]:
+            - /url: /formas-de-envio
+          - link "Formas de pagamento" [ref=e212] [cursor=pointer]:
+            - /url: /formas-de-pagamento
+          - link "Garantia" [ref=e213] [cursor=pointer]:
+            - /url: /politicas/garantia
+          - link "Acessibilidade" [ref=e214] [cursor=pointer]:
+            - /url: /politicas/acessibilidade
+      - navigation "Representantes" [ref=e215]:
+        - generic [ref=e216]:
+          - heading "Representantes" [level=2] [ref=e217]
+          - link "Termos" [ref=e218] [cursor=pointer]:
+            - /url: /politicas/termos-representante
+          - link "Kits e qualificação" [ref=e219] [cursor=pointer]:
+            - /url: /politicas/kits-e-qualificacao
+          - link "Comissões" [ref=e220] [cursor=pointer]:
+            - /url: /politicas/comissoes
+          - link "Uso da marca" [ref=e221] [cursor=pointer]:
+            - /url: /politicas/criativos
+    - generic [ref=e223]:
+      - generic [ref=e224]: © 2026 curti Z. Todos os direitos reservados.
+      - button "Preferências de cookies" [ref=e225] [cursor=pointer]
+  - alert [ref=e226]
