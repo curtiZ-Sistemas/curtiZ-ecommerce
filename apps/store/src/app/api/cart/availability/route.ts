@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { demoProducts } from "@/lib/catalog";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
-import { createPublicSupabaseClient } from "@/lib/supabase/server";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { isUnknownRecord, readRows, readString } from "@/lib/unknown-data";
 
 const headers = {
   "cache-control": "no-store"
@@ -88,7 +89,7 @@ export async function POST(
    * Faz o parse do body sem permitir que JSON inválido
    * gere uma exceção não tratada.
    */
-  const body = await request
+  const body: unknown = await request
     .json()
     .catch(() => null);
 
@@ -147,17 +148,17 @@ export async function POST(
   }
 
   /*
-   * Cria o cliente público do Supabase.
+   * Cria um cliente server-only para consultar somente
+   * as variantes solicitadas sem expor a chave secreta.
    *
-   * Se retornar null, normalmente significa problema
-   * de configuração das variáveis de ambiente.
+   * Se retornar null, falta configuração do banco no Worker.
    */
   const supabase =
-    createPublicSupabaseClient();
+    createServiceSupabaseClient();
 
   if (!supabase) {
     console.error(
-      "[cart/availability] Supabase client could not be created. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY."
+      "[cart/availability] Server database client could not be created."
     );
 
     return json(
@@ -171,23 +172,18 @@ export async function POST(
 
   try {
     /*
-     * Fonte de verdade da disponibilidade.
-     *
-     * A função deve existir no Supabase e aceitar:
-     *
-     * p_variant_ids uuid[]
+     * Consulta as tabelas existentes diretamente. Isso evita
+     * transformar uma RPC ainda não aplicada em indisponibilidade.
      */
-    const { data, error } =
-      await supabase.rpc(
-        "cart_variant_availability",
-        {
-          p_variant_ids: ids.data
-        }
-      );
+    const result = await supabase
+      .from("product_variants")
+      .select("id,active,products!inner(status)")
+      .in("id", ids.data);
+    const { error } = result;
 
     if (error) {
       logSupabaseError(
-        "cart_variant_availability RPC failed",
+        "product variant availability query failed",
         error
       );
 
@@ -204,9 +200,20 @@ export async function POST(
      * Nunca devolve null em "items".
      * Isso simplifica o consumo no frontend.
      */
-    const items = Array.isArray(data)
-      ? data
-      : [];
+    const availableIds = new Set(readRows(result.data)
+      .filter((row) => {
+        const product = row.products;
+        const productStatus = Array.isArray(product)
+          ? product.find(isUnknownRecord)?.status
+          : isUnknownRecord(product) ? product.status : undefined;
+        return row.active === true && productStatus === "active";
+      })
+      .map((row) => readString(row, "id"))
+      .filter(Boolean));
+    const items = ids.data.map((variantId) => ({
+      variantId,
+      available: availableIds.has(variantId)
+    }));
 
     return json({
       items

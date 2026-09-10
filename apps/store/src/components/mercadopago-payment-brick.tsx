@@ -4,6 +4,7 @@ import { LoaderCircle, ShieldCheck } from "lucide-react";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import {
+  createCheckoutPaymentPayload,
   createMercadoPagoInitialization,
   type MercadoPagoBrickSession
 } from "@/lib/mercadopago-brick-config";
@@ -116,6 +117,11 @@ export function MercadoPagoPaymentBrick({
           onReady: () => resolveReady?.(),
           onSubmit: async ({ formData }: { formData: unknown }) => {
             setMessage("");
+            const payment = createCheckoutPaymentPayload(formData, session);
+            if (!payment) {
+              setMessage("Revise os dados do pagamento.");
+              throw new Error("invalid_payment_form_data");
+            }
             let result: {
               ok?: boolean;
               status?: PaymentState;
@@ -129,7 +135,7 @@ export function MercadoPagoPaymentBrick({
                 body: JSON.stringify({
                   orderId: session.orderId,
                   idempotencyKey: session.idempotencyKey,
-                  payment: formData
+                  payment
                 })
               });
               result = await paymentResponse.json() as typeof result;
@@ -227,11 +233,11 @@ export function MercadoPagoPaymentBrick({
           <p className="eyebrow">Pagamento seguro</p>
           <h1 id="mercadopago-payment-title">Finalize seu pedido</h1>
         </div>
-        <span className="checkout-test-badge"><ShieldCheck /> Ambiente de teste</span>
+        <span className="checkout-test-badge"><ShieldCheck width={24} height={24} /> Ambiente de teste</span>
       </header>
       <p className="checkout-test-notice">Use somente dados de teste. Nenhuma cobrança real será realizada.</p>
       {!brickReady && !initializationFailed ? (
-        <p className="checkout-simple-status" role="status"><LoaderCircle className="spin" /> Carregando formas de pagamento…</p>
+        <p className="checkout-simple-status" role="status"><LoaderCircle className="spin" width={24} height={24} /> Carregando formas de pagamento…</p>
       ) : null}
       <div
         id={BRICK_CONTAINER_ID}

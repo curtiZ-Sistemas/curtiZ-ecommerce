@@ -372,7 +372,7 @@ export default function CheckoutPage() {
   if (redirecting) {
     return (
       <div className="container page-shell checkout-transition" role="status" aria-live="polite">
-        <LoaderCircle className="spin" aria-hidden="true" />
+        <LoaderCircle className="spin" width={24} height={24} aria-hidden="true" />
         <h1>Abrindo a confirmação do pedido</h1>
         <p>Seu carrinho já foi atualizado com segurança.</p>
       </div>
@@ -384,7 +384,7 @@ export default function CheckoutPage() {
       <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
           <span className="empty-state-icon">
-            <ShoppingBag />
+            <ShoppingBag width={24} height={24} />
           </span>
           <h1>Seu carrinho está vazio</h1>
           <p>Adicione um produto antes de iniciar o checkout.</p>
@@ -401,7 +401,7 @@ export default function CheckoutPage() {
       <div className="container page-shell checkout-page">
         <div className="empty-state cart-empty-state">
           <span className="empty-state-icon">
-            <ShoppingBag />
+            <ShoppingBag width={24} height={24} />
           </span>
           <h1>Nenhum produto selecionado</h1>
           <p>Seus produtos continuam salvos. Selecione o que deseja comprar agora.</p>
@@ -706,7 +706,7 @@ export default function CheckoutPage() {
               aria-busy={loading}
               aria-describedby={message ? "checkout-form-message" : undefined}
             >
-              {loading ? <LoaderCircle className="spin" /> : null}
+              {loading ? <LoaderCircle className="spin" width={24} height={24} /> : null}
               {loading ? "Validando pedido…" : "Confirmar e pagar"}
             </button>
           </aside>
@@ -724,7 +724,7 @@ export default function CheckoutPage() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <span className="empty-state-icon">
-              <LockKeyhole />
+              <LockKeyhole width={24} height={24} />
             </span>
             <h2 id="payment-unavailable-title">Pagamento online indisponível no momento</h2>
             <p id="payment-unavailable-description">

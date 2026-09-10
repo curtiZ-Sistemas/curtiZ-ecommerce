@@ -50,7 +50,38 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
     amount: session.amountInCents / 100,
     payer: {
       email: session.email,
+      entityType: "individual" as const,
       identification: { type: "CPF", number: session.cpf }
     }
+  };
+}
+
+export function createCheckoutPaymentPayload(
+  formData: unknown,
+  session: Pick<MercadoPagoBrickSession, "cpf">
+) {
+  if (!isUnknownRecord(formData)) return null;
+  const paymentMethodId = formData.payment_method_id;
+  if (typeof paymentMethodId !== "string" || !paymentMethodId.trim()) return null;
+
+  const installments = Number(formData.installments ?? 1);
+  if (!Number.isInteger(installments) || installments < 1 || installments > 48) return null;
+
+  const token = typeof formData.token === "string" && formData.token.trim()
+    ? formData.token.trim()
+    : undefined;
+  const issuerId = typeof formData.issuer_id === "string" || typeof formData.issuer_id === "number"
+    ? formData.issuer_id
+    : undefined;
+
+  return {
+    payment_method_id: paymentMethodId.trim(),
+    installments,
+    payer: {
+      entity_type: "individual" as const,
+      identification: { type: "CPF" as const, number: session.cpf }
+    },
+    ...(token ? { token } : {}),
+    ...(issuerId !== undefined ? { issuer_id: issuerId } : {})
   };
 }

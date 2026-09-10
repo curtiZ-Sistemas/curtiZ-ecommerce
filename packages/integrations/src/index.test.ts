@@ -65,6 +65,7 @@ describe("Mercado Pago em teste", () => {
       customerEmail: "cliente@example.com",
       customerName: "Cliente Teste",
       customerDocument: "12345678909",
+      entityType: "individual",
       paymentMethodId: "visa",
       token: "card-token",
       installments: 1
@@ -77,6 +78,7 @@ describe("Mercado Pago em teste", () => {
     if (typeof init.body !== "string") throw new Error("request body ausente");
     expect(JSON.parse(init.body)).toMatchObject({
       transaction_amount: 42.4,
+      payer: { entity_type: "individual" },
       external_reference: "CZT-TEST",
       metadata: { order_id: "order-id" }
     });

@@ -37,6 +37,7 @@ export type MercadoPagoPaymentInput = {
   customerEmail: string;
   customerName: string;
   customerDocument: string;
+  entityType: "individual" | "association";
   paymentMethodId: string;
   token?: string;
   issuerId?: string;
@@ -128,6 +129,7 @@ export class MercadoPagoTestPaymentProvider {
           payer: {
             email: input.customerEmail,
             first_name: input.customerName,
+            entity_type: input.entityType,
             identification: { type: "CPF", number: input.customerDocument }
           },
           external_reference: input.orderCode,

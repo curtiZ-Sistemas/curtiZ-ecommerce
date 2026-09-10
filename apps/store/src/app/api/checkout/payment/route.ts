@@ -20,6 +20,7 @@ const schema = z.object({
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u),
     installments: z.coerce.number().int().min(1).max(48).default(1),
     payer: z.object({
+      entity_type: z.enum(["individual", "association"]),
       identification: z.object({
         number: z.string().max(20)
       })
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
       customerEmail: orderEmail,
       customerName: orderCustomerName,
       customerDocument,
+      entityType: parsed.data.payment.payer.entity_type,
       paymentMethodId: parsed.data.payment.payment_method_id,
       ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
       ...(parsed.data.payment.issuer_id !== undefined

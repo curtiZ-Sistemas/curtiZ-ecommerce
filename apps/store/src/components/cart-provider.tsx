@@ -101,6 +101,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const lastSyncedSignatureRef = useRef("");
   const latestRequestedSignatureRef = useRef("");
   const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const availabilityRequestRef = useRef<{ signature: string; startedAt: number } | null>(null);
   const persistSelection = useCallback(
     (selection: Set<string>) => {
       if (typeof window === "undefined") return;
@@ -164,6 +165,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const controller = new AbortController();
     const check = async () => {
       if (document.visibilityState === "hidden") return;
+      const previous = availabilityRequestRef.current;
+      if (previous?.signature === variantSignature && Date.now() - previous.startedAt < 30_000) return;
+      availabilityRequestRef.current = { signature: variantSignature, startedAt: Date.now() };
       try {
         const response = await fetch("/api/cart/availability", {
           method: "POST", headers: { "content-type": "application/json" },
