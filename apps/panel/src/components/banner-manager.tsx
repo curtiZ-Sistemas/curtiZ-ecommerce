@@ -1,5 +1,7 @@
 "use client";
 
+import { optimizeBannerUpload } from "@/lib/banner-image-client";
+
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
@@ -374,7 +376,7 @@ function BannerEditor({
           const label = device === "desktop" ? "computador" : "celular";
           setProgress(`Enviando imagem para ${label}…`);
           const form = new FormData();
-          form.set("file", current.file);
+          form.set("file", await optimizeBannerUpload(current.file, device));
           form.set("device", device);
           try {
             const result = await request("/api/admin/banner-media", { method: "POST", body: form });

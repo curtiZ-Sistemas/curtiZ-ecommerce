@@ -5,7 +5,7 @@ export function BrandLogo() {
   return (
     <Link className="brand" href="/" prefetch={false} aria-label="curti Z — página inicial">
       <Image
-        src="/images/logo-curtiz.webp"
+        src="/images/optimized/logo.webp"
         alt="curti Z"
         width={336}
         height={224}

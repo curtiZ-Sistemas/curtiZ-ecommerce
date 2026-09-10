@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteAccount } from "./delete-account";
+
 import { formatBRL, type Product } from "@curtiz/domain";
 import {
   Bell,
@@ -1110,6 +1112,7 @@ function Security({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
         <div><h3>Proteção dos seus dados</h3><p>Dados sensíveis são mascarados e operações usam sua sessão autenticada.</p></div>
         <LogoutButton className="secondary-button" />
       </article>
+      <DeleteAccount />
     </div>
   );
 }

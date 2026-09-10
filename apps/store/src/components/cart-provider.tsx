@@ -1,6 +1,7 @@
 "use client";
 
 import type { CartLine, Product } from "@curtiz/domain";
+import { applyCartAvailability, parseCartAvailability, retainCartLines } from "@/lib/cart-availability";
 import {
   createContext,
   useCallback,
@@ -80,7 +81,8 @@ const cartSignature = (lines: CartLine[]) =>
       line.variantId,
       line.quantity,
       line.unitPriceInCents,
-      line.maxQuantity
+      line.maxQuantity,
+      line.unavailableAt
     ])
   );
 
@@ -124,7 +126,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           : PERSISTENT_CART_SELECTION_KEY;
       const stored = storage.getItem(storageKey) ?? localStorage.getItem(legacyCartStorageKey);
       const parsed: unknown = stored ? JSON.parse(stored) : [];
-      const restored = Array.isArray(parsed) ? parsed.filter(isCartLine) : [];
+      const restored = retainCartLines(Array.isArray(parsed) ? parsed.filter(isCartLine) : []);
       const storedSelection = storage.getItem(selectionKey);
       let parsedSelection: unknown = null;
       try {
@@ -156,6 +158,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const variantSignature = lines.map((line) => line.variantId).join(",");
+  useEffect(() => {
+    if (!hydrated || !variantSignature) return;
+    const controller = new AbortController();
+    const check = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const response = await fetch("/api/cart/availability", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ variantIds: variantSignature.split(",").slice(0, 50) }), signal: controller.signal
+        });
+        if (!response.ok) return;
+        const result: unknown = await response.json();
+        const entries = parseCartAvailability(result);
+        if (!entries) return;
+        if (!controller.signal.aborted) setLines((current) => {
+          const next = applyCartAvailability(current, entries);
+          return cartSignature(next) === cartSignature(current) ? current : next;
+        });
+      } catch { /* A network failure is not proof that a product was removed. */ }
+    };
+    void check();
+    const timer = window.setInterval(() => { setLines((current) => retainCartLines(current)); void check(); }, 60_000);
+    const onFocus = () => { void check(); };
+    window.addEventListener("focus", onFocus);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
+  }, [hydrated, variantSignature]);
+
   useEffect(() => {
     const updatePersistence = () => setPersistence(readClientPersistence());
     const clearSessionState = () => {
@@ -169,9 +199,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("curtiz-auth-persistence-changed", updatePersistence);
     window.addEventListener("curtiz-session-state-cleared", clearSessionState);
+    const onStorage = (event: StorageEvent) => { if (event.key === "curtiz-account-closed" && event.newValue) clearSessionState(); };
+    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("curtiz-auth-persistence-changed", updatePersistence);
       window.removeEventListener("curtiz-session-state-cleared", clearSessionState);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
@@ -249,7 +282,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 line.category ? ([[line.productId, line.category]] as const) : []
               )
             );
-            const safeItems = result.items.filter(isCartLine).map((line) => {
+            const remoteIds = new Set(result.items.map((line) => line.variantId));
+            const safeItems = retainCartLines([
+              ...result.items.filter(isCartLine),
+              ...snapshot.filter((line) => line.unavailableAt && !remoteIds.has(line.variantId))
+            ]).map((line) => {
               const category = localCategories.get(line.productId);
               return category ? { ...line, category } : line;
             });
@@ -288,9 +325,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<CartContextValue>(
     () => ({
       lines,
-      selectedLines: lines.filter((line) => selectedVariantIds.has(line.variantId)),
+      selectedLines: lines.filter((line) => !line.unavailableAt && selectedVariantIds.has(line.variantId)),
       selectedVariantIds: lines
-        .filter((line) => selectedVariantIds.has(line.variantId))
+        .filter((line) => !line.unavailableAt && selectedVariantIds.has(line.variantId))
         .map((line) => line.variantId),
       hydrated,
       syncMessage,
@@ -311,7 +348,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         });
         setLines((current) => {
           const found = current.find((line) => line.variantId === variantId);
-          if (found) {
+          if (found && !found.unavailableAt) {
             return current.map((line) =>
               line.variantId === variantId
                 ? { ...line, quantity: Math.min(line.quantity + 1, stock) }
@@ -319,7 +356,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             );
           }
           return [
-            ...current,
+            ...current.filter((line) => line.variantId !== variantId),
             {
               productId: product.id,
               slug: product.slug,
@@ -373,7 +410,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       changeQuantity(variantId, quantity) {
         setLines((current) =>
           current.map((line) =>
-            line.variantId === variantId
+            line.variantId === variantId && !line.unavailableAt
               ? {
                   ...line,
                   quantity: Math.min(line.maxQuantity ?? 10, Math.max(1, quantity))
@@ -383,7 +420,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         );
       },
       setSelected(variantId, selected) {
-        if (!lines.some((line) => line.variantId === variantId)) return;
+        if (!lines.some((line) => line.variantId === variantId && !line.unavailableAt)) return;
         setSelectedVariantIds((current) => {
           const next = new Set(current);
           if (selected) next.add(variantId);
@@ -394,7 +431,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       },
       setAllSelected(selected) {
         const next = selected
-          ? new Set(lines.map((line) => line.variantId))
+          ? new Set(lines.filter((line) => !line.unavailableAt).map((line) => line.variantId))
           : new Set<string>();
         persistSelection(next);
         setSelectedVariantIds(next);

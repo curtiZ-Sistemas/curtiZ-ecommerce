@@ -38,7 +38,7 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
       failSave = true;
     const mutations = [];
     const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=",
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII=",
       "base64"
     );
     await page.route("http://banner.test/**", async (route) => {
@@ -149,7 +149,9 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
     await page.locator(".banner-destination-choice").nth(1).click();
     await page.getByRole("button", { name: "Ofertas", exact: false }).click();
     await page.getByRole("button", { name: "Salvar banner", exact: true }).click();
-    await page.getByRole("alert").filter({ hasText: "Falha de salvamento simulada" }).waitFor();
+    await page.getByRole("alert").filter({ hasText: "Falha de salvamento simulada" }).waitFor({ timeout: 5000 }).catch(async (error) => {
+      throw new Error(`Unexpected save feedback: ${await page.getByRole("alert").allTextContents()}`, { cause: error });
+    });
     if (!(await dialog.isVisible())) throw Error("Closed after failed save");
     await page.getByRole("button", { name: "Salvar banner", exact: true }).click();
     await dialog.waitFor({ state: "detached" });

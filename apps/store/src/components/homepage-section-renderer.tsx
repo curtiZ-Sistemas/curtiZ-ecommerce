@@ -76,7 +76,7 @@ const bannersFor = (data: HomepageData, section: HomepageSection): PublicBanner[
     "position",
     section.sectionType === "banner_hero" ? "hero" : section.sectionType
   );
-  const matches = data.banners.filter((banner) => banner.position === position);
+  const matches = data.banners.filter((banner) => banner.position === position || (position === "hero" && banner.position === "home"));
   return (
     matches.length ? matches : section.sectionType === "banner_hero" ? data.banners : []
   ).slice(0, 4);

@@ -19,6 +19,7 @@ vi.mock("@curtiz/security", async (importOriginal) => ({
 vi.mock("@/lib/public-media", () => import("./public-media"));
 vi.mock("@/lib/postgres-uuid", () => import("./postgres-uuid"));
 vi.mock("@/lib/admin-resources", () => import("./admin-resources"));
+vi.mock("@/lib/banner-management", () => import("./banner-management"));
 vi.mock("@/lib/admin-api", () => ({
   authorizeAdminRequest: async () => ({ supabase: await state.client(), userId: "admin" }),
   objectRows: (value: unknown): unknown[] => Array.isArray(value) ? value as unknown[] : [],

@@ -44,6 +44,7 @@ const productionRequestSchema = requestSchema.extend({
 });
 
 const remoteLineSchema = z.object({
+  unavailableAt: z.string().datetime({ offset: true }).optional(),
   productId: postgresUuidSchema,
   slug: z.string(),
   variantId: postgresUuidSchema,
@@ -303,6 +304,7 @@ export async function POST(request: Request) {
   }
 
   const items: CartLine[] = remote.data.items.map((line) => ({
+    ...(line.unavailableAt ? { unavailableAt: line.unavailableAt } : {}),
     productId: line.productId,
     slug: line.slug,
     variantId: line.variantId,

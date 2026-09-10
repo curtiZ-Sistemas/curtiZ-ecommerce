@@ -7,7 +7,7 @@ export const metadata = { title: "Acesse sua conta", robots: { index: false, fol
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; account?: string }>;
 }) {
   const query = await searchParams;
   const requestedReturn = query.returnTo ?? query.next;
@@ -20,6 +20,7 @@ export default async function LoginPage({
           <header className="auth-card-header">
             <h1>Acesse sua conta</h1>
           </header>
+          {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
           <AuthForm
             mode="login"
             returnTo={returnTo}

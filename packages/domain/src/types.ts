@@ -25,6 +25,7 @@ export type Product = {
 };
 
 export type CartLine = {
+  unavailableAt?: string;
   productId: string;
   slug?: string;
   category?: Product["category"];

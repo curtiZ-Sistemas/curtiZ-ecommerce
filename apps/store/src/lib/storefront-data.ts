@@ -412,9 +412,9 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       .limit(40),
     supabase
       .from("banners")
-      .select(
-        "id,title,subtitle,image_path_desktop,image_path_mobile,alt_text,destination_type,destination_url,destination_type_mobile,destination_url_mobile,open_new_tab,position,priority,sort_order,starts_at,ends_at"
-      )
+      // Optional mobile destination columns may not exist during a rolling migration.
+      // Only the public projection below is sent to the storefront.
+      .select("*")
       .in("status", ["published", "scheduled"])
       .or(`starts_at.is.null,starts_at.lte.${now}`)
       .or(`ends_at.is.null,ends_at.gt.${now}`)
@@ -461,7 +461,9 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
   const manualProducts = mapDirectProducts(readQueryResult(manualResponse).data);
 
   const positionCounts = new Map<string, number>();
-  const banners = readRows(readQueryResult(bannersResponse).data)
+  const bannerQuery = readQueryResult(bannersResponse);
+  if (bannerQuery.error) console.error("[homepage] Banner query failed", { code: isUnknownRecord(bannerQuery.error) ? readString(bannerQuery.error, "code") : "unknown" });
+  const banners = readRows(bannerQuery.data)
     .map((row): PublicBanner | null => {
       const position = readString(row, "position") || "hero";
       const count = positionCounts.get(position) ?? 0;

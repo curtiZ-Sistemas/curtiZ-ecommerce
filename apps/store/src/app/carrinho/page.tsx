@@ -152,6 +152,7 @@ export default function CartPage() {
                   pendingId === line.variantId || (pendingId === "bulk-selection" && selected);
                 const itemClassName = [
                   "cart-item",
+                  line.unavailableAt ? "is-unavailable" : "",
                   selected ? "is-selected" : "",
                   isPending ? "is-updating" : ""
                 ]
@@ -170,13 +171,13 @@ export default function CartPage() {
                         onChange={(event) =>
                           setSelected(line.variantId, event.currentTarget.checked)
                         }
-                        disabled={isPending}
+                        disabled={isPending || Boolean(line.unavailableAt)}
                       />
                       <span className="sr-only">Selecionar {line.name}</span>
                     </label>
                     <Link
                       className="cart-item-image"
-                      href={line.slug ? `/produto/${line.slug}` : "/produtos"}
+                      href={!line.unavailableAt && line.slug ? `/produto/${line.slug}` : "/produtos"}
                     >
                       <Image
                         src={line.image}
@@ -184,12 +185,14 @@ export default function CartPage() {
                         width={150}
                         height={120}
                         sizes="(max-width: 340px) 86px, (max-width: 700px) 96px, 112px"
+                        onError={(event) => { if (line.unavailableAt && !event.currentTarget.src.endsWith("/icon.svg")) { event.currentTarget.srcset = ""; event.currentTarget.src = "/icon.svg"; } }}
                       />
                     </Link>
 
                     <div className="cart-item-info">
                       <h2>{line.name}</h2>
                       <p className="cart-variation">{line.color} · {line.size}</p>
+                      {line.unavailableAt && <p className="cart-unavailable-notice" role="status">Este produto não existe mais. Será removido do carrinho em até 3 dias.</p>}
                     </div>
 
                     <div className="cart-item-purchase">
@@ -206,7 +209,7 @@ export default function CartPage() {
                               () => changeQuantity(line.variantId, line.quantity - 1)
                             )
                           }
-                          disabled={pendingId !== null || line.quantity <= 1}
+                          disabled={Boolean(line.unavailableAt) || pendingId !== null || line.quantity <= 1}
                           aria-label={`Diminuir quantidade de ${line.name}`}
                         >
                           <Minus />
@@ -223,7 +226,7 @@ export default function CartPage() {
                               () => changeQuantity(line.variantId, line.quantity + 1)
                             )
                           }
-                          disabled={pendingId !== null || line.quantity >= (line.maxQuantity ?? 10)}
+                          disabled={Boolean(line.unavailableAt) || pendingId !== null || line.quantity >= (line.maxQuantity ?? 10)}
                           aria-label={`Aumentar quantidade de ${line.name}`}
                         >
                           <Plus />

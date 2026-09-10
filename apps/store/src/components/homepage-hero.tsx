@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pause, Play } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,6 +18,14 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => { setReducedMotion(preference.matches); if (preference.matches) setPaused(true); };
+    update();
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
   const [mobileViewport, setMobileViewport] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 700px)");
@@ -35,7 +43,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     if (
       slides.length < 2 ||
       paused ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      reducedMotion
     ) {
       return;
     }
@@ -45,7 +53,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     }, 6000);
 
     return () => window.clearInterval(timer);
-  }, [paused, slides.length]);
+  }, [paused, slides.length, reducedMotion]);
 
   if (!slides.length) {
     return null;
@@ -74,7 +82,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const picture = (
     <picture className="hero-picture">
       {bundledMobile ? (
-        <source media="(max-width: 700px)" type="image/avif" srcSet={bundledMobile.avif} />
+        <source media="(max-width: 700px)" type="image/avif" srcSet={`/images/optimized/hero-mobile.430.avif 430w, /images/optimized/hero-mobile.640.avif 640w, ${bundledMobile.avif} 941w`} sizes="calc(100vw - 24px)" />
       ) : null}
       <source
         media="(max-width: 700px)"
@@ -107,7 +115,10 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       className="hero container homepage-hero"
       data-testid="homepage-primary-hero"
       aria-label="Destaques da curti Z"
-      onPointerDown={(event) => { pointerStart.current = event.clientX; setPaused(true); }}
+      aria-roledescription="carrossel"
+      onFocusCapture={(event) => { if (!event.target.closest("button")) setPaused(true); }}
+      onPointerCancel={() => { pointerStart.current = null; }}
+      onPointerDown={(event) => { if ((event.target as HTMLElement).closest("button")) return; pointerStart.current = event.clientX; setPaused(true); }}
       onPointerUp={(event) => {
         if (pointerStart.current === null) return;
         const distance = event.clientX - pointerStart.current;
@@ -132,12 +143,12 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
             <ArrowLeft />
           </button>
 
-          <div role="tablist" aria-label="Escolher banner">
+          <div role="group" aria-label="Escolher banner">
             {slides.map((slide, index) => (
               <button
                 type="button"
-                role="tab"
-                aria-selected={active === index}
+                className="hero-dot"
+                aria-pressed={active === index}
                 aria-label={`Exibir banner ${index + 1}: ${slide.title}`}
                 onClick={() => { setPaused(true); setActive(index); }}
                 key={slide.id}
@@ -152,6 +163,10 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
           >
             <ArrowRight />
           </button>
+          <span className="hero-slide-count" aria-live={paused ? "polite" : "off"}>{active + 1} / {slides.length} · {paused || reducedMotion ? "Pausado" : "Automático"}</span>
+          {!reducedMotion && <button type="button" onClick={() => setPaused((current) => !current)} aria-label={paused ? "Reproduzir banners automaticamente" : "Pausar banners automáticos"}>
+            {paused ? <Play /> : <Pause />}
+          </button>}
         </div>
       )}
     </section>
