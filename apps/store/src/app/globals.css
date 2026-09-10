@@ -13677,7 +13677,7 @@ body:has(> #main-content > .auth-page) .site-footer {
 
 /* Checkout: fluxo claro, compacto e mobile-first. */
 body:has(.checkout-page) #main-content {
-  background: var(--neutral-50);
+  background: var(--white);
 }
 
 body:has(.checkout-page) .help-widget {

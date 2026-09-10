@@ -8,10 +8,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { MercadoPagoPaymentBrick } from "@/components/mercadopago-payment-brick";
 import {
-  MercadoPagoPaymentBrick,
+  readMercadoPagoBrickSession,
   type MercadoPagoBrickSession
-} from "@/components/mercadopago-payment-brick";
+} from "@/lib/mercadopago-brick-config";
+import { isUnknownRecord } from "@/lib/unknown-data";
 import {
   CPF_FORMATTED_MAX_LENGTH,
   CUSTOMER_EMAIL_MAX_LENGTH,
@@ -314,53 +316,35 @@ export default function CheckoutPage() {
           }))
         })
       });
-      const result = (await response.json()) as {
-        ok: boolean;
-        orderId?: string;
-        orderCode?: string;
-        subtotalInCents?: number;
-        shippingInCents?: number;
-        amountInCents?: number;
-        publicKey?: string;
-        paymentMode?: string;
-        code?: string;
-        message?: string;
-        redirectTo?: string;
-      };
-      if (response.status === 401 && result.redirectTo) {
-        router.replace(result.redirectTo);
+      const result: unknown = await response.json();
+      const resultRecord = isUnknownRecord(result) ? result : {};
+      const redirectTo = typeof resultRecord.redirectTo === "string" ? resultRecord.redirectTo : "";
+      const code = typeof resultRecord.code === "string" ? resultRecord.code : "";
+      const resultMessage = typeof resultRecord.message === "string" ? resultRecord.message : "";
+      if (response.status === 401 && redirectTo) {
+        router.replace(redirectTo);
         return;
       }
-      if (result.code === "PAYMENT_UNAVAILABLE") {
+      if (code === "PAYMENT_UNAVAILABLE") {
         const requestId = response.headers.get("x-request-id") ?? "";
         setSupportCode(requestId ? requestId.slice(0, 8).toUpperCase() : "");
         setPaymentUnavailable(true);
         return;
       }
-      if (
-        !result.ok ||
-        !result.orderId ||
-        !result.orderCode ||
-        !result.subtotalInCents ||
-        result.shippingInCents !== FIXED_SHIPPING_IN_CENTS ||
-        !result.amountInCents ||
-        !result.publicKey ||
-        result.paymentMode !== "test"
-      ) {
-        setMessage(result.message ?? "Não foi possível iniciar o pagamento.");
+      const session = readMercadoPagoBrickSession(
+        result,
+        {
+          idempotencyKey: idempotencyKeyRef.current,
+          email,
+          cpf: sanitizeCpf(cpf)
+        },
+        FIXED_SHIPPING_IN_CENTS
+      );
+      if (!session) {
+        setMessage(resultMessage || "Não foi possível iniciar o pagamento.");
         return;
       }
-      setPaymentSession({
-        orderId: result.orderId,
-        orderCode: result.orderCode,
-        subtotalInCents: result.subtotalInCents,
-        shippingInCents: result.shippingInCents,
-        amountInCents: result.amountInCents,
-        publicKey: result.publicKey,
-        idempotencyKey: idempotencyKeyRef.current,
-        email,
-        cpf: sanitizeCpf(cpf)
-      });
+      setPaymentSession(session);
     } catch {
       setMessage("Não foi possível conectar ao checkout. Seus itens continuam no carrinho.");
     } finally {
@@ -722,7 +706,7 @@ export default function CheckoutPage() {
               aria-busy={loading}
               aria-describedby={message ? "checkout-form-message" : undefined}
             >
-              {loading ? <LoaderCircle className="spin" /> : <LockKeyhole />}
+              {loading ? <LoaderCircle className="spin" /> : null}
               {loading ? "Validando pedido…" : "Confirmar e pagar"}
             </button>
           </aside>

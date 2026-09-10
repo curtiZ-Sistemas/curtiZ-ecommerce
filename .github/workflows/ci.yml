@@ -180,6 +180,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -194,7 +195,7 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
+          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Configure a variável de repositório $name antes do deploy."
               exit 1
@@ -216,7 +217,8 @@ jobs:
           pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars \
             --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
             --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}"
+            --var "BUILD_TIMESTAMP:${build_timestamp}" \
+            --var "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY:${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}"
 
   panel-worker:
     name: OpenNext / Painel

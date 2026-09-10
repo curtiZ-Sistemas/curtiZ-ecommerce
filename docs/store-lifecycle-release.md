@@ -44,3 +44,9 @@ Alertas de código legado do Next e do beacon externo da Cloudflare, CSS compart
 - Lint e TypeScript dos arquivos e workspaces envolvidos.
 
 Referências: [relatório fornecido](https://pagespeed.web.dev/analysis/https-curtiz-com-br/girmv5ung5?form_factor=mobile), [exclusão no Auth](https://supabase.com/docs/reference/javascript/auth-admin-deleteuser) e [sessões após exclusão](https://supabase.com/docs/guides/auth/managing-user-data).
+
+## Checkout Bricks
+
+A CSP de `/checkout` é emitida somente pelo middleware; `next.config.ts`, `_headers` e o Worker não adicionam uma segunda CSP. Em 10/09/2026, a resposta pública tinha um único cabeçalho. O hash fixo usado para o script de DeviceProfile já não correspondia ao widget entregue pelo SDK atual. O componente agora encaminha ao Mercado Pago o nonce gerado pelo próprio middleware, opção suportada pelo SDK, e a CSP libera em `img-src` apenas os pixels antifraude observados em `https://www.mercadolibre.com` e `https://www.mercadolivre.com`.
+
+A resposta de criação do pedido passa por validação em runtime antes da montagem do Brick: total, subtotal e frete precisam ser inteiros positivos em centavos e fechar a soma confirmada pelo servidor. Para o cenário de R$ 51,00 + R$ 16,90, somente `6790 / 100`, isto é, o número `67.9`, chega a `initialization.amount`. Valor nulo, ausente, formatado ou divergente interrompe a montagem com a mensagem de recuperação existente. A configuração de produção também valida e publica a variável pública do Mercado Pago; o Access Token continua exclusivamente no secret do Worker.

@@ -11,9 +11,7 @@ import { type NextRequest, NextResponse } from "next/server";
 const DEMO_SESSION_COOKIE = "curtiz-demo-session";
 const MAX_RETURN_PATH_LENGTH = 300;
 const PRODUCT_NOT_FOUND_HEADER = "x-curtiz-not-found-kind";
-// Hash estrito do pequeno script antifraude injetado pelo SDK v2 atual; evita liberar unsafe-inline.
 const MERCADO_PAGO_SCRIPT_SOURCES = [
-  "'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='",
   "https://sdk.mercadopago.com",
   "https://http2.mlstatic.com"
 ] as const;
@@ -32,7 +30,11 @@ const MERCADO_PAGO_FRAME_SOURCES = [
   "https://mercadopago.com",
   "https://www.mercadopago.com"
 ] as const;
-const MERCADO_PAGO_IMAGE_SOURCES = ["https://http2.mlstatic.com"] as const;
+const MERCADO_PAGO_IMAGE_SOURCES = [
+  "https://http2.mlstatic.com",
+  "https://www.mercadolibre.com",
+  "https://www.mercadolivre.com"
+] as const;
 const DEMO_PRODUCT_SLUGS = new Set([
   "flip-flop-wave-preto",
   "flip-flop-slim-coral",

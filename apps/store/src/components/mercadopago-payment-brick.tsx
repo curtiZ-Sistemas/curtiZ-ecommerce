@@ -3,6 +3,10 @@
 import { LoaderCircle, ShieldCheck } from "lucide-react";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
+import {
+  createMercadoPagoInitialization,
+  type MercadoPagoBrickSession
+} from "@/lib/mercadopago-brick-config";
 
 type PaymentState = "approved" | "pending" | "rejected" | "cancelled" | "error";
 type BrickController = { unmount?: () => void | Promise<void> };
@@ -11,7 +15,7 @@ const BRICK_INITIALIZATION_TIMEOUT_MS = 15_000;
 const BRICK_LOAD_ERROR = "Não foi possível carregar as formas de pagamento.";
 type MercadoPagoConstructor = new (
   publicKey: string,
-  options: { locale: string }
+  options: { locale: string; deviceProfileCspNonce?: string }
 ) => {
   bricks: () => {
     create: (
@@ -27,18 +31,6 @@ declare global {
     MercadoPago?: MercadoPagoConstructor;
   }
 }
-
-export type MercadoPagoBrickSession = {
-  orderId: string;
-  orderCode: string;
-  subtotalInCents: number;
-  shippingInCents: number;
-  amountInCents: number;
-  publicKey: string;
-  idempotencyKey: string;
-  email: string;
-  cpf: string;
-};
 
 export function MercadoPagoPaymentBrick({
   session,
@@ -81,11 +73,22 @@ export function MercadoPagoPaymentBrick({
         return;
       }
 
+      const initialization = createMercadoPagoInitialization(session);
+      if (!initialization) {
+        console.error("[mercadopago-bricks] initialization rejected", { cause: "invalid_amount" });
+        setInitializationFailed(true);
+        return;
+      }
+
       container.replaceChildren();
-      const mercadoPago = new window.MercadoPago(session.publicKey, { locale: "pt-BR" });
+      const documentNonce = document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce?.trim();
+      const mercadoPago = new window.MercadoPago(session.publicKey, {
+        locale: "pt-BR",
+        ...(documentNonce ? { deviceProfileCspNonce: documentNonce } : {})
+      });
       let initializationEnded = false;
       let resolveReady: (() => void) | undefined;
-      let rejectReady: (() => void) | undefined;
+      let rejectReady: ((reason?: unknown) => void) | undefined;
       const ready = new Promise<void>((resolve, reject) => {
         resolveReady = resolve;
         rejectReady = reject;
@@ -99,13 +102,7 @@ export function MercadoPagoPaymentBrick({
       });
 
       const creation = mercadoPago.bricks().create("payment", BRICK_CONTAINER_ID, {
-        initialization: {
-          amount: session.amountInCents / 100,
-          payer: {
-            email: session.email,
-            identification: { type: "CPF", number: session.cpf }
-          }
-        },
+        initialization,
         customization: {
           paymentMethods: {
             creditCard: "all",
@@ -147,7 +144,16 @@ export function MercadoPagoPaymentBrick({
             setMessage(result.message ?? "Não foi possível processar o pagamento agora.");
             throw new Error("payment_not_completed");
           },
-          onError: () => rejectReady?.()
+          onError: (error: unknown) => {
+            const safeError = error && typeof error === "object"
+              ? {
+                  cause: "cause" in error && typeof error.cause === "string" ? error.cause : "unknown",
+                  message: "message" in error && typeof error.message === "string" ? error.message : undefined
+                }
+              : { cause: "unknown" };
+            console.error("[mercadopago-bricks] initialization failed", safeError);
+            rejectReady?.(new Error("brick_on_error"));
+          }
         }
       }).then((created) => {
         if (!active || initializationEnded) void created.unmount?.();
@@ -176,7 +182,15 @@ export function MercadoPagoPaymentBrick({
       }
     });
 
-    initializationQueue.current = initialize;
+    initializationQueue.current = initialize.catch((error: unknown) => {
+      console.error("[mercadopago-bricks] initialization failed", {
+        cause: error instanceof Error ? error.message : "unexpected_initialization_error"
+      });
+      if (active) {
+        setBrickReady(false);
+        setInitializationFailed(true);
+      }
+    });
 
     return () => {
       active = false;

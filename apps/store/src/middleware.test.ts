@@ -54,7 +54,6 @@ describe("store security headers", () => {
 
     expect(scriptSources).toContain("https://sdk.mercadopago.com");
     expect(scriptSources).toContain("https://http2.mlstatic.com");
-    expect(scriptSources).toContain("'sha256-hcfb9VNshTjdhJFZ7ai3m0LsWfEy1PHyTccgciGSvNQ='");
     expect(connectSources).toContain("https://api.mercadopago.com");
     expect(connectSources).toContain("https://api-static.mercadopago.com");
     expect(connectSources).toContain("https://api.mercadolibre.com");
@@ -63,6 +62,9 @@ describe("store security headers", () => {
     expect(frameSources).toContain("https://secure-fields.mercadopago.com");
     expect(frameSources).toContain("https://sdk.mercadopago.com");
     expect(imageSources).toContain("https://http2.mlstatic.com");
+    expect(imageSources).toContain("https://www.mercadolibre.com");
+    expect(imageSources).toContain("https://www.mercadolivre.com");
+    expect(scriptSources).not.toContain("sha256-");
     expect(scriptSources).not.toContain("unsafe-eval");
     expect(scriptSources).not.toContain("unsafe-inline");
     expect(csp).not.toMatch(/(?:^|\s)\*(?:\s|;|$)/u);
