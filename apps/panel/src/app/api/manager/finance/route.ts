@@ -107,6 +107,22 @@ const actionSchemas = {
     id: uuid,
     reason: z.string().trim().min(3).max(500).optional()
   }),
+  "transfer.save": z.object({
+    source_account_id: uuid,
+    destination_account_id: uuid,
+    amount_cents: moneyCents,
+    occurred_on: dateValue,
+    description: z.string().trim().min(2).max(240),
+    external_reference: optionalText(100)
+  }).refine((value) => value.source_account_id !== value.destination_account_id, {
+    message: "Selecione contas diferentes para a transferência."
+  }),
+  "mercadopago.settings.save": z.object({
+    revenue_category_id: uuid,
+    fee_category_id: uuid,
+    refund_category_id: uuid,
+    active: z.boolean().default(true)
+  }),
   "contribution.save": z
     .object({
       id: z.union([uuid, z.literal("")]).default(""),

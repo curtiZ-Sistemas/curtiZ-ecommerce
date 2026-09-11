@@ -59,6 +59,15 @@ export type MercadoPagoPayment = {
   pixQrCodeBase64: string;
   boletoUrl: string;
   digitableLine: string;
+  providerFeeInCents: number | null;
+  netReceivedInCents: number | null;
+  installments: number | null;
+  refunds: Array<{
+    id: string;
+    amountInCents: number;
+    status: string;
+    dateCreated: string | null;
+  }>;
 };
 
 export class MercadoPagoProviderError extends Error {
@@ -87,6 +96,32 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
     ? pointOfInteraction.transaction_data as Record<string, unknown> : {};
   const transactionDetails = payment.transaction_details && typeof payment.transaction_details === "object"
     ? payment.transaction_details as Record<string, unknown> : {};
+  const feeDetails = Array.isArray(payment.fee_details) ? payment.fee_details : null;
+  const providerFeeInCents = feeDetails === null
+    ? null
+    : feeDetails.reduce<number | null>((total, entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+        const entryAmount = Number((entry as Record<string, unknown>).amount);
+        if (total === null || !Number.isFinite(entryAmount) || entryAmount < 0) return null;
+        return total + Math.round(entryAmount * 100);
+      }, 0);
+  const netReceived = Number(transactionDetails.net_received_amount);
+  const installments = Number(payment.installments);
+  const refunds = Array.isArray(payment.refunds)
+    ? payment.refunds.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+        const refund = entry as Record<string, unknown>;
+        const refundId = typeof refund.id === "number" || typeof refund.id === "string" ? String(refund.id) : "";
+        const refundAmount = Number(refund.amount);
+        if (!refundId || !Number.isFinite(refundAmount) || refundAmount <= 0) return [];
+        return [{
+          id: refundId,
+          amountInCents: Math.round(refundAmount * 100),
+          status: typeof refund.status === "string" ? refund.status : "approved",
+          dateCreated: typeof refund.date_created === "string" ? refund.date_created : null
+        }];
+      })
+    : [];
   if (!id || !Number.isFinite(amount) || amount < 0) {
     throw new MercadoPagoProviderError("invalid_provider_response");
   }
@@ -107,7 +142,11 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
     pixQrCodeBase64: typeof transactionData.qr_code_base64 === "string" ? transactionData.qr_code_base64 : "",
     boletoUrl: typeof transactionDetails.external_resource_url === "string" ? transactionDetails.external_resource_url : "",
     digitableLine: typeof payment.barcode === "object" && payment.barcode && "content" in payment.barcode
-      && typeof payment.barcode.content === "string" ? payment.barcode.content : ""
+      && typeof payment.barcode.content === "string" ? payment.barcode.content : "",
+    providerFeeInCents,
+    netReceivedInCents: Number.isFinite(netReceived) && netReceived >= 0 ? Math.round(netReceived * 100) : null,
+    installments: Number.isSafeInteger(installments) && installments > 0 ? installments : null,
+    refunds
   };
 };
 
@@ -129,6 +168,24 @@ export class MercadoPagoTestPaymentProvider {
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new MercadoPagoProviderError("provider_unavailable", response.status);
     return mercadoPagoPayment(body);
+  }
+
+  async getPaymentMethodIds(): Promise<string[]> {
+    const response = await fetch("https://api.mercadopago.com/v1/payment_methods", {
+      method: "GET",
+      headers: { authorization: `Bearer ${this.accessToken}` }
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new MercadoPagoProviderError("provider_unavailable", response.status);
+    if (!Array.isArray(body)) throw new MercadoPagoProviderError("invalid_provider_response");
+    const ids: string[] = [];
+    for (const entry of body as unknown[]) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) || !("id" in entry)) continue;
+      const id = typeof entry.id === "string" ? entry.id.trim() : "";
+      if (/^[a-z0-9_-]{2,50}$/u.test(id)) ids.push(id);
+    }
+    if (!ids.length) throw new MercadoPagoProviderError("invalid_provider_response");
+    return ids;
   }
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {

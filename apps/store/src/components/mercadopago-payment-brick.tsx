@@ -45,7 +45,7 @@ export function MercadoPagoPaymentBrick({
   onComplete
 }: {
   session: MercadoPagoBrickSession;
-  onComplete: (status: PaymentState, orderCode: string) => void;
+  onComplete: (status: PaymentState, orderCode: string, orderId: string) => void;
 }) {
   const [sdkReady, setSdkReady] = useState(() => typeof window !== "undefined" && Boolean(window.MercadoPago));
   const [brickReady, setBrickReady] = useState(false);
@@ -162,7 +162,8 @@ export function MercadoPagoPaymentBrick({
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
-                  orderId: session.orderId,
+                  ...(session.orderId ? { orderId: session.orderId } : {}),
+                  ...(session.checkout ? { checkout: session.checkout } : {}),
                   idempotencyKey: session.idempotencyKey,
                   payment
                 })
@@ -173,7 +174,11 @@ export function MercadoPagoPaymentBrick({
               throw new Error("payment_request_failed");
             }
             if (result.status && ["approved", "pending", "rejected", "cancelled"].includes(result.status)) {
-              completion.current(result.status, result.orderCode ?? session.orderCode);
+              completion.current(result.status, result.orderCode ?? session.orderCode, result.orderId ?? session.orderId);
+              return;
+            }
+            if (result.orderId) {
+              completion.current("error", result.orderCode ?? session.orderCode, result.orderId);
               return;
             }
             setMessage(result.message ?? "Não foi possível processar o pagamento agora.");

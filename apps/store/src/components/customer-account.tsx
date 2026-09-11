@@ -658,7 +658,7 @@ function Orders({
                 >
                   Ver detalhes
                 </Link>
-                {order.paymentStatus === "pending" && order.payment ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+                {["pending", "rejected"].includes(order.paymentStatus) && order.payment?.method ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
               </div>
             </article>
           ))}
@@ -793,7 +793,7 @@ function OrderDetails({
         </article>
       </div>
       <div className="customer-form-actions">
-        {order.paymentStatus === "pending" && order.payment ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+        {["pending", "rejected"].includes(order.paymentStatus) && order.payment?.method ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
         <button className="primary-button" type="button" onClick={repeat}>Comprar novamente</button>
         {canCancel && (
           <button

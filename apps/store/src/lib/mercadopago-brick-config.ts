@@ -12,6 +12,19 @@ export type MercadoPagoBrickSession = {
   idempotencyKey: string;
   email: string;
   cpf: string;
+  checkout: CheckoutConfirmationPayload | null;
+};
+
+export type CheckoutConfirmationPayload = {
+  couponCode?: string;
+  customer: { name: string; email: string; phone: string; cpf: string };
+  address: {
+    postalCode: string; street: string; number: string; complement: string;
+    district: string; city: string; state: string;
+  };
+  lines: Array<{
+    productId: string; variantId: string; color: string; size: string; quantity: number;
+  }>;
 };
 
 const positiveSafeInteger = (value: unknown): value is number =>
@@ -19,14 +32,12 @@ const positiveSafeInteger = (value: unknown): value is number =>
 
 export function readMercadoPagoBrickSession(
   value: unknown,
-  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "cpf">,
+  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "cpf" | "checkout">,
   expectedShippingInCents: number
 ): MercadoPagoBrickSession | null {
   if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
-  const { orderId, orderCode, subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
+  const { subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
   if (
-    typeof orderId !== "string" || !orderId ||
-    typeof orderCode !== "string" || !orderCode ||
     typeof publicKey !== "string" || !publicKey.startsWith("TEST-") ||
     !positiveSafeInteger(subtotalInCents) ||
     typeof discountInCents !== "number" || !Number.isSafeInteger(discountInCents) || discountInCents < 0 ||
@@ -38,8 +49,8 @@ export function readMercadoPagoBrickSession(
   ) return null;
 
   return {
-    orderId,
-    orderCode,
+    orderId: "",
+    orderCode: "",
     subtotalInCents,
     discountInCents,
     couponName,

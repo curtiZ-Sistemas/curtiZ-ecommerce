@@ -22,6 +22,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     .select("id,provider_payment_id,status,status_detail,payment_method_summary,amount,currency,expires_at,pix_copy_paste,pix_qr_code_base64,boleto_url,digitable_line")
     .eq("order_id", id).eq("provider", "mercadopago").maybeSingle());
   if (!isUnknownRecord(paymentResult.data)) return reply({ message: "Pagamento não encontrado." }, 404);
+  if (!readString(paymentResult.data, "payment_method_summary")) {
+    return reply({ message: "Este checkout não possui uma intenção de pagamento." }, 404);
+  }
   const order = orderResult.data;
   const itemResult = readQueryResult(await db.from("order_items").select("variant_id").eq("order_id", id));
   const variantIds = itemResult.error ? [] : readRows(itemResult.data).map((item) => readString(item, "variant_id")).filter(Boolean);
@@ -41,10 +44,26 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         pix_copy_paste: current.pixCopyPaste || null, pix_qr_code_base64: current.pixQrCodeBase64 || null,
         boleto_url: current.boletoUrl || null, digitable_line: current.digitableLine || null, updated_at: new Date().toISOString() })
         .eq("id", readString(payment, "id"));
-      await db.rpc("finalize_mercadopago_payment", { p_provider_event_id: `poll-${current.id}-${current.status}`,
+      const reconciliation = await db.rpc("finalize_mercadopago_payment", { p_provider_event_id: `poll-${current.id}-${current.status}`,
         p_provider_payment_id: current.id, p_external_reference: readString(order, "public_code"),
         p_amount: current.amountInCents / 100, p_currency: current.currency, p_status: status,
-        p_paid_at: current.dateApproved });
+        p_paid_at: current.dateApproved,
+        p_provider_fee: current.providerFeeInCents === null ? null : current.providerFeeInCents / 100,
+        p_net_received_amount: current.netReceivedInCents === null ? null : current.netReceivedInCents / 100,
+        p_payment_method: [current.paymentTypeId, current.paymentMethodId].filter(Boolean).join(":") || null,
+        p_installments: current.installments,
+        p_status_detail: current.statusDetail || null });
+      if (reconciliation.error || reconciliation.data === "manual_review") throw new Error("payment_reconciliation_failed");
+      for (const refund of current.refunds) {
+        if (!["approved", "completed"].includes(refund.status)) continue;
+        const reconciledRefund = await db.rpc("reconcile_mercadopago_provider_refund", {
+          p_provider_payment_id: current.id, p_provider_refund_id: refund.id,
+          p_amount: refund.amountInCents / 100,
+          p_provider_event_id: `poll-${current.id}-${current.status}`,
+          p_completed_at: refund.dateCreated
+        });
+        if (reconciledRefund.error) throw new Error("refund_reconciliation_failed");
+      }
       payment = { ...payment, status, status_detail: current.statusDetail, expires_at: current.expiresAt,
         pix_copy_paste: current.pixCopyPaste, pix_qr_code_base64: current.pixQrCodeBase64,
         boleto_url: current.boletoUrl, digitable_line: current.digitableLine };

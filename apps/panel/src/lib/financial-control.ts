@@ -22,6 +22,15 @@ export type FinancialPoint = {
 
 export type FinancialChartItem = { id?: string; name: string; value: number };
 
+export type OnlineSalesSummary = {
+  gross: number;
+  fees: number;
+  refunds: number;
+  net: number;
+  pending: number;
+  sales_count: number;
+};
+
 export type FinancialCategoryReportItem = {
   category_id: string;
   category_code: string;
@@ -67,6 +76,10 @@ export type FinancialSnapshot = {
   transactions: FinancialRecord[];
   contributions: FinancialRecord[];
   audit: FinancialRecord[];
+  integration_settings: FinancialRecord[];
+  transfers: FinancialRecord[];
+  online_sales_summary: OnlineSalesSummary;
+  online_sales_by_method: FinancialChartItem[];
 };
 
 export type FinancialExportScope =
@@ -105,7 +118,18 @@ export const emptyFinancialSnapshot: FinancialSnapshot = {
   payables: [],
   transactions: [],
   contributions: [],
-  audit: []
+  audit: [],
+  integration_settings: [],
+  transfers: [],
+  online_sales_summary: {
+    gross: 0,
+    fees: 0,
+    refunds: 0,
+    net: 0,
+    pending: 0,
+    sales_count: 0
+  },
+  online_sales_by_method: []
 };
 
 export function moneyToCents(value: string): number | null {
@@ -168,8 +192,12 @@ export function isFinancialSnapshot(value: unknown): value is FinancialSnapshot 
       "payables",
       "transactions",
       "contributions",
-      "audit"
-    ].every((key) => Array.isArray(record[key]))
+      "audit",
+      "integration_settings",
+      "transfers",
+      "online_sales_by_method"
+    ].every((key) => Array.isArray(record[key])) &&
+    Boolean(record.online_sales_summary && typeof record.online_sales_summary === "object")
   );
 }
 

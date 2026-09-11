@@ -13,13 +13,18 @@ Deno.serve(async (request) => {
   if (!userId) return json({ error: "unauthorized" }, 401);
   const { data: allowed } = await auth.rpc("has_permission", { permission_code: "finance.reconcile" });
   if (!allowed) return json({ error: "forbidden" }, 403);
-  const { payment_id, reason } = (await request.json().catch(() => ({}))) as {
+  const { payment_id, reason, amount_in_cents, idempotency_key } = (await request.json().catch(() => ({}))) as {
     payment_id?: string;
     reason?: string;
+    amount_in_cents?: number;
+    idempotency_key?: string;
   };
   if (
     !payment_id ||
     !/^[A-Za-z0-9_-]{1,100}$/.test(payment_id) ||
+    !idempotency_key ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotency_key) ||
+    (amount_in_cents !== undefined && (!Number.isSafeInteger(amount_in_cents) || amount_in_cents <= 0)) ||
     typeof reason !== "string" ||
     reason.trim().length < 3 ||
     reason.trim().length > 500
@@ -32,43 +37,41 @@ Deno.serve(async (request) => {
     .eq("provider", "mercadopago")
     .eq("provider_payment_id", payment_id)
     .single();
-  if (paymentError || !payment || payment.status !== "approved") {
+  if (paymentError || !payment || !["approved", "refunded"].includes(payment.status)) {
     return json({ error: "payment_not_refundable" }, 409);
   }
-
-  const { data: existing } = await db
+  const { data: completedRefunds, error: completedError } = await db
     .from("payment_refunds")
-    .select("id,status,provider_refund_id,attempts")
-    .eq("payment_id", payment.id)
-    .maybeSingle();
+    .select("amount")
+    .eq("payment_id", payment.id).eq("status", "completed");
+  if (completedError) return json({ error: "refund_unavailable" }, 503);
+  const completedAmount = (completedRefunds ?? []).reduce((total, refund) => total + Number(refund.amount), 0);
+  const remainingInCents = Math.round((Number(payment.amount) - completedAmount) * 100);
+  const refundAmountInCents = amount_in_cents ?? remainingInCents;
+  if (!Number.isSafeInteger(refundAmountInCents) || refundAmountInCents <= 0 || refundAmountInCents > remainingInCents) {
+    return json({ error: "invalid_refund_amount" }, 409);
+  }
+  const refundAmount = refundAmountInCents / 100;
+  const { data: refundId, error: beginError } = await db.rpc("begin_mercadopago_refund", {
+    p_payment_id: payment.id,
+    p_requested_by: userId,
+    p_refund_amount: refundAmount,
+    p_idempotency_key: idempotency_key,
+    p_reason: reason.trim()
+  });
+  if (beginError || typeof refundId !== "string") return json({ error: "refund_unavailable" }, 409);
+  const { data: existing, error: existingError } = await db
+    .from("payment_refunds")
+    .select("id,status,provider_refund_id")
+    .eq("id", refundId).single();
+  if (existingError || !existing) return json({ error: "refund_unavailable" }, 503);
   if (existing?.status === "completed") {
     return json({ ok: true, duplicate: true, refund_id: existing.provider_refund_id });
   }
-  const refundId = existing?.id ?? crypto.randomUUID();
-  if (!existing) {
-    const { error: insertError } = await db.from("payment_refunds").insert({
-      id: refundId,
-      payment_id: payment.id,
-      order_id: payment.order_id,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: "pending",
-      reason: reason.trim(),
-      requested_by: userId,
-      attempts: 1
-    });
-    if (insertError && insertError.code !== "23505") return json({ error: "refund_unavailable" }, 503);
-  } else {
-    const { error: retryError } = await db
-      .from("payment_refunds")
-      .update({ status: "pending", attempts: Number(existing.attempts ?? 0) + 1, error_summary: null })
-      .eq("id", refundId);
-    if (retryError) return json({ error: "refund_unavailable" }, 503);
-  }
   const response = await mercadoPagoRequest(
     `/v1/payments/${encodeURIComponent(payment_id)}/refunds`,
-    { method: "POST", body: JSON.stringify({ amount: Number(payment.amount) }) },
-    payment.id
+    { method: "POST", body: JSON.stringify({ amount: refundAmount }) },
+    idempotency_key
   );
   if (!response.ok) {
     await db.from("payment_refunds").update({ status: "failed", error_summary: "provider_rejected" }).eq("id", refundId);
@@ -83,7 +86,9 @@ Deno.serve(async (request) => {
   const { data: finalized, error: finalizeError } = await db.rpc("finalize_mercadopago_refund", {
     p_payment_id: payment.id,
     p_provider_refund_id: providerRefundId,
-    p_requested_by: userId
+    p_requested_by: userId,
+    p_refund_amount: refundAmount,
+    p_idempotency_key: idempotency_key
   });
   if (finalizeError || finalized !== true) return json({ error: "refund_reconciliation_failed" }, 503);
   return json({ ok: true, refund_id: providerRefundId });

@@ -2,6 +2,7 @@
 
 import {
   ArrowDownCircle,
+  ArrowRightLeft,
   ArrowUpCircle,
   BadgeDollarSign,
   CalendarDays,
@@ -84,6 +85,7 @@ type ModalState =
   | { kind: "ledger"; ledger: Ledger; item?: FinancialRecord }
   | { kind: "settle"; ledger: Ledger; item: FinancialRecord }
   | { kind: "transaction"; item?: FinancialRecord }
+  | { kind: "transfer" }
   | { kind: "contribution"; item?: FinancialRecord }
   | { kind: "account"; item?: FinancialRecord }
   | { kind: "category"; item?: FinancialRecord }
@@ -502,6 +504,7 @@ export function FinancialControl() {
             <TransactionsSection
               data={data}
               onCreate={() => setModal({ kind: "transaction" })}
+              onTransfer={() => setModal({ kind: "transfer" })}
               onEdit={(item) => setModal({ kind: "transaction", item })}
               onDelete={(item) => {
                 void (async () => {
@@ -568,6 +571,41 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
           </article>
         ))}
       </div>
+      <section className="panel-card financial-list-section">
+        <div className="financial-section-heading">
+          <div>
+            <h2>Vendas automáticas do site</h2>
+            <p>{data.online_sales_summary.sales_count} pagamento(s) recebido(s) no período.</p>
+          </div>
+        </div>
+        <div className="financial-metrics">
+          {[
+            ["Venda bruta", data.online_sales_summary.gross],
+            ["Taxas Mercado Pago", data.online_sales_summary.fees],
+            ["Reembolsos", data.online_sales_summary.refunds],
+            ["Receita líquida", data.online_sales_summary.net],
+            ["Valores pendentes", data.online_sales_summary.pending]
+          ].map(([label, value]) => (
+            <article key={String(label)}>
+              <span>{label}</span>
+              <strong>{currency.format(Number(value))}</strong>
+            </article>
+          ))}
+        </div>
+        {data.online_sales_by_method.length ? (
+          <ChartCard title="Vendas por meio de pagamento" empty={false}>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={data.online_sales_by_method} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={(value) => compactMoney.format(numberValue(value))} />
+                <YAxis type="category" dataKey="name" width={120} />
+                <Tooltip formatter={chartMoney} />
+                <Bar dataKey="value" name="Vendas brutas" fill="#982920" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        ) : null}
+      </section>
       {data.series.length === 0 ? (
         <div className="admin-empty-state">
           <h2>Sem movimentação no período</h2>
@@ -1319,6 +1357,7 @@ function LedgerSection({
               {visible.map((item) => {
                 const itemStatus = scalar(item.display_status);
                 const settled = itemStatus === "received" || itemStatus === "paid";
+                const automatic = scalar(item.origin) !== "manual";
                 return (
                   <tr key={item.id}>
                     <td data-label={ledger === "receivable" ? "Cliente" : "Fornecedor"}>
@@ -1328,6 +1367,7 @@ function LedgerSection({
                     <td data-label="Descrição">
                       {recordLabel(item, "description")}
                       <small>{recordLabel(item, "category_name")}</small>
+                      {automatic ? <small>Pedido {recordLabel(item, "order_code")} · Pagamento {recordLabel(item, "mercadopago_payment_id")}</small> : null}
                     </td>
                     <td data-label="Vencimento">{formattedDate(item.due_on)}</td>
                     <td data-label="Parcela">
@@ -1335,6 +1375,12 @@ function LedgerSection({
                     </td>
                     <td data-label="Valor">
                       <strong>{currency.format(numberValue(item.amount))}</strong>
+                      {automatic && ledger === "receivable" ? (
+                        <small>
+                          Taxa {item.provider_fee === null ? "não informada" : currency.format(numberValue(item.provider_fee))}
+                          {item.net_received_amount === null ? "" : ` · Líquido ${currency.format(numberValue(item.net_received_amount))}`}
+                        </small>
+                      ) : null}
                     </td>
                     <td data-label="Status">
                       <span className={`financial-status ${itemStatus}`}>
@@ -1342,7 +1388,7 @@ function LedgerSection({
                       </span>
                     </td>
                     <td className="financial-row-actions">
-                      {itemStatus === "pending" || itemStatus === "overdue" ? (
+                      {!automatic && (itemStatus === "pending" || itemStatus === "overdue") ? (
                         <>
                           <button
                             type="button"
@@ -1360,7 +1406,7 @@ function LedgerSection({
                             <Trash2 />
                           </button>
                         </>
-                      ) : settled ? (
+                      ) : !automatic && settled ? (
                         <button type="button" onClick={() => onReverse(item)} title="Estornar">
                           <RotateCcw />
                         </button>
@@ -1397,11 +1443,13 @@ function LedgerSection({
 function TransactionsSection({
   data,
   onCreate,
+  onTransfer,
   onEdit,
   onDelete
 }: {
   data: FinancialSnapshot;
   onCreate: () => void;
+  onTransfer: () => void;
   onEdit: (item: FinancialRecord) => void;
   onDelete: (item: FinancialRecord) => void;
 }) {
@@ -1442,10 +1490,14 @@ function TransactionsSection({
           <h2>Lançamentos / extrato</h2>
           <p>Movimentos automáticos permanecem vinculados à origem.</p>
         </div>
-        <button className="primary-button" type="button" onClick={onCreate}>
-          <Plus />
-          Novo lançamento
-        </button>
+        <div className="financial-header-actions">
+          <button className="secondary-button" type="button" onClick={onTransfer}>
+            <ArrowRightLeft /> Transferir entre contas
+          </button>
+          <button className="primary-button" type="button" onClick={onCreate}>
+            <Plus /> Novo lançamento
+          </button>
+        </div>
       </div>
       <div className="financial-list-filters">
         <label className="financial-search">
@@ -1506,7 +1558,8 @@ function TransactionsSection({
                         manual: "Manual",
                         receivable: "Conta a receber",
                         payable: "Conta a pagar",
-                        contribution: "Aporte"
+                        contribution: "Aporte",
+                        transfer: "Transferência entre contas"
                       } as Record<string, string>
                     )[scalar(item.origin)] ?? scalar(item.origin)}
                   </td>
@@ -1700,6 +1753,7 @@ function SettingsSection({
           </p>
         </div>
       </div>
+      <MercadoPagoFinancialSettings data={data} mutate={mutate} />
       <FinancialCategorySettings data={data} open={open} mutate={mutate} />
       <div className="financial-settings-grid">
         {blocks.map((block) => (
@@ -1758,6 +1812,65 @@ function SettingsSection({
         ))}
       </div>
     </div>
+  );
+}
+
+function MercadoPagoFinancialSettings({
+  data,
+  mutate
+}: {
+  data: FinancialSnapshot;
+  mutate: (action: string, payload: Record<string, unknown>, success: string) => Promise<boolean>;
+}) {
+  const settings = data.integration_settings[0];
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void mutate("mercadopago.settings.save", {
+      revenue_category_id: formValue(form, "revenue_category_id"),
+      fee_category_id: formValue(form, "fee_category_id"),
+      refund_category_id: formValue(form, "refund_category_id"),
+      active: true
+    }, "Integração financeira do Mercado Pago atualizada e vendas reconciliadas.");
+  };
+  return (
+    <section className="panel-card financial-list-section">
+      <div className="financial-section-heading">
+        <div>
+          <h3>Mercado Pago</h3>
+          <p>Define as subcontas usadas automaticamente por vendas, taxas e reembolsos.</p>
+        </div>
+        <strong>{settings ? recordLabel(settings, "account_name") : "Configuração inicial automática"}</strong>
+      </div>
+      <form className="financial-form" onSubmit={submit} key={settings?.id ?? "new"}>
+        <div className="financial-form-grid">
+          <label>
+            <span>Receita das vendas do site</span>
+            <select name="revenue_category_id" required defaultValue={settings ? scalar(settings.revenue_category_id) : ""}>
+              <option value="">Selecione</option>
+              <CategoryOptions categories={data.categories} kind="income" />
+            </select>
+          </label>
+          <label>
+            <span>Taxas do Mercado Pago</span>
+            <select name="fee_category_id" required defaultValue={settings ? scalar(settings.fee_category_id) : ""}>
+              <option value="">Selecione</option>
+              <CategoryOptions categories={data.categories} kind="expense" />
+            </select>
+          </label>
+          <label>
+            <span>Reembolsos de vendas</span>
+            <select name="refund_category_id" required defaultValue={settings ? scalar(settings.refund_category_id) : ""}>
+              <option value="">Selecione</option>
+              <CategoryOptions categories={data.categories} kind="expense" />
+            </select>
+          </label>
+        </div>
+        <div className="financial-form-actions">
+          <button className="primary-button" type="submit">Salvar integração</button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -2067,6 +2180,9 @@ function FinancialModal({
         ) : null}
         {modal.kind === "transaction" ? (
           <TransactionForm item={modal.item} data={data} pending={pending} mutate={mutate} />
+        ) : null}
+        {modal.kind === "transfer" ? (
+          <TransferForm data={data} pending={pending} mutate={mutate} />
         ) : null}
         {modal.kind === "contribution" ? (
           <ContributionForm item={modal.item} data={data} pending={pending} mutate={mutate} />
@@ -2565,6 +2681,77 @@ function TransactionForm({
         <div className="financial-form-actions">
           <SubmitButton pending={pending} />
         </div>
+      </form>
+    </>
+  );
+}
+
+function TransferForm({
+  data,
+  pending,
+  mutate
+}: {
+  data: FinancialSnapshot;
+  pending: boolean;
+  mutate: (a: string, p: Record<string, unknown>, s: string) => Promise<boolean>;
+}) {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const amount = moneyToCents(formValue(form, "amount"));
+    if (!amount) return;
+    void mutate("transfer.save", {
+      source_account_id: formValue(form, "source_account_id"),
+      destination_account_id: formValue(form, "destination_account_id"),
+      amount_cents: amount,
+      occurred_on: formValue(form, "occurred_on"),
+      description: formValue(form, "description"),
+      external_reference: formValue(form, "external_reference")
+    }, "Transferência registrada sem impacto no resultado financeiro.");
+  };
+  return (
+    <>
+      <div className="financial-modal-title">
+        <ArrowRightLeft />
+        <div>
+          <span>Movimentação interna</span>
+          <h2 id="financial-modal-title">Transferir entre contas</h2>
+        </div>
+      </div>
+      <form className="financial-form" onSubmit={submit}>
+        <div className="financial-form-grid">
+          <label>
+            <span>Conta de origem</span>
+            <select name="source_account_id" required defaultValue="">
+              <option value="">Selecione</option>
+              {activeItems(data.accounts).map((account) => <option key={account.id} value={account.id}>{recordLabel(account, "name")}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Conta de destino</span>
+            <select name="destination_account_id" required defaultValue="">
+              <option value="">Selecione</option>
+              {activeItems(data.accounts).map((account) => <option key={account.id} value={account.id}>{recordLabel(account, "name")}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Valor</span>
+            <input name="amount" inputMode="decimal" required onBlur={normalizeMoneyField} />
+          </label>
+          <label>
+            <span>Data</span>
+            <input name="occurred_on" type="date" required defaultValue={today()} />
+          </label>
+          <label className="full">
+            <span>Descrição</span>
+            <input name="description" required minLength={2} maxLength={240} defaultValue="Transferência Mercado Pago para banco" />
+          </label>
+          <label className="full">
+            <span>Referência externa (opcional)</span>
+            <input name="external_reference" maxLength={100} />
+          </label>
+        </div>
+        <div className="financial-form-actions"><SubmitButton pending={pending} label="Registrar transferência" /></div>
       </form>
     </>
   );

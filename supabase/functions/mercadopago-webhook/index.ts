@@ -72,8 +72,20 @@ Deno.serve(async (request) => {
     return json({ error: "provider_unavailable", request_id: correlationId }, 202);
   }
   const payment = await providerResponse.json();
-  const normalizedStatus = ["approved", "rejected", "cancelled", "refunded", "charged_back"]
-    .includes(String(payment.status)) ? String(payment.status) : "in_review";
+  const feeDetails = Array.isArray(payment.fee_details) ? payment.fee_details : null;
+  const providerFee = feeDetails === null ? null : feeDetails.reduce<number | null>((total, entry) => {
+    const amount = entry && typeof entry === "object" ? Number(entry.amount) : Number.NaN;
+    return total === null || !Number.isFinite(amount) || amount < 0 ? null : total + amount;
+  }, 0);
+  const netReceived = Number(payment.transaction_details?.net_received_amount);
+  const installments = Number(payment.installments);
+  const method = [payment.payment_type_id, payment.payment_method_id]
+    .filter((value) => typeof value === "string" && value.length > 0).join(":");
+  const providerStatus = String(payment.status);
+  const normalizedStatus = providerStatus === "expired"
+    ? "cancelled"
+    : ["pending", "approved", "rejected", "cancelled", "refunded", "charged_back"]
+      .includes(providerStatus) ? providerStatus : "in_review";
   const { data: result, error: reconcileError } = await db.rpc("finalize_mercadopago_payment", {
     p_provider_event_id: eventId,
     p_provider_payment_id: paymentId,
@@ -81,8 +93,34 @@ Deno.serve(async (request) => {
     p_amount: Number(payment.transaction_amount),
     p_currency: String(payment.currency_id ?? ""),
     p_status: normalizedStatus,
-    p_paid_at: payment.date_approved ?? null
+    p_paid_at: payment.date_approved ?? null,
+    p_provider_fee: providerFee,
+    p_net_received_amount: Number.isFinite(netReceived) && netReceived >= 0 ? netReceived : null,
+    p_payment_method: method || null,
+    p_installments: Number.isSafeInteger(installments) && installments > 0 ? installments : null,
+    p_status_detail: typeof payment.status_detail === "string" ? payment.status_detail : null
   });
   if (reconcileError) return json({ error: "payment_reconciliation_failed", request_id: correlationId }, 503);
-  return json({ ok: true, review: result === "manual_review", request_id: correlationId });
+  if (result === "manual_review") return json({ ok: true, review: true, request_id: correlationId });
+  if (Array.isArray(payment.refunds)) {
+    for (const providerRefund of payment.refunds) {
+      const providerRefundId = providerRefund && typeof providerRefund === "object" ? String(providerRefund.id ?? "") : "";
+      const refundAmount = providerRefund && typeof providerRefund === "object" ? Number(providerRefund.amount) : Number.NaN;
+      const refundStatus = providerRefund && typeof providerRefund === "object" ? String(providerRefund.status ?? "approved") : "";
+      if (!providerRefundId || !Number.isFinite(refundAmount) || refundAmount <= 0 || !["approved", "completed"].includes(refundStatus)) continue;
+      const { error: refundError } = await db.rpc("reconcile_mercadopago_provider_refund", {
+        p_provider_payment_id: paymentId,
+        p_provider_refund_id: providerRefundId,
+        p_amount: refundAmount,
+        p_provider_event_id: eventId,
+        p_completed_at: providerRefund.date_created ?? null
+      });
+      if (refundError) {
+        await db.from("payment_events").update({ processing_status: "retry", error_summary: "refund_reconciliation_failed" })
+          .eq("provider", "mercadopago").eq("provider_event_id", eventId);
+        return json({ error: "refund_reconciliation_failed", request_id: correlationId }, 503);
+      }
+    }
+  }
+  return json({ ok: true, review: false, request_id: correlationId });
 });

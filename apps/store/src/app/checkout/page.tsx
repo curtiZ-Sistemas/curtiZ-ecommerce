@@ -214,6 +214,8 @@ export default function CheckoutPage() {
   }, []);
 
   const applyAddress = useCallback((address: SavedAddress) => {
+    setCoupon({ code: "", name: "", discountInCents: 0 });
+    setCouponMessage("");
     const values: Record<string, string> = {
       postalCode: formatPostalCode(address.postalCode),
       street: address.street,
@@ -291,17 +293,19 @@ export default function CheckoutPage() {
   };
 
   const completePayment = useCallback((
-    status: "approved" | "pending" | "rejected" | "cancelled" | "error"
+    status: "approved" | "pending" | "rejected" | "cancelled" | "error",
+    _orderCode: string,
+    orderId: string
   ) => {
     sessionStorage.removeItem("curtiz-checkout-idempotency");
     if (status === "approved") {
       removeMany(selectedLines.map((line) => line.variantId));
-    } else if (status === "pending" && paymentSession?.orderId) {
-      sessionStorage.setItem("curtiz-pending-order-cleanup", paymentSession.orderId);
+    } else if (status === "pending" && orderId) {
+      sessionStorage.setItem("curtiz-pending-order-cleanup", orderId);
     }
     setRedirecting(true);
-    router.push(`/pedido/${encodeURIComponent(paymentSession?.orderId ?? "")}/pagamento`);
-  }, [paymentSession?.orderId, removeMany, router, selectedLines]);
+    router.push(`/pedido/${encodeURIComponent(orderId)}/pagamento`);
+  }, [removeMany, router, selectedLines]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -346,15 +350,14 @@ export default function CheckoutPage() {
 
     try {
       const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
-      if (editingAddressId || selectedAddress) {
+      if (!selectedAddress || editingAddressId) {
         const baseLabel = formString("addressLabel") || selectedAddress?.label.replace(/\s+\d+$/u, "") || "Casa";
-        const sameTypeCount = savedAddresses.filter((address) => address.label === baseLabel || address.label.startsWith(`${baseLabel} `)).length;
         const addressResponse = await fetch("/api/customer", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "address_save",
-            id: editingAddressId && editingAddressId !== "new" ? editingAddressId : selectedAddress?.id ?? null,
-            label: editingAddressId === "new" && sameTypeCount ? `${baseLabel} ${sameTypeCount + 1}` : selectedAddress?.label ?? baseLabel,
+            id: editingAddressId && editingAddressId !== "new" ? editingAddressId : null,
+            label: editingAddressId === "new" ? baseLabel : selectedAddress?.label ?? baseLabel,
             recipientName: editingAddressId ? formString("name") : selectedAddress?.recipientName ?? formString("name"),
             postalCode: formString("postalCode"), street: formString("street"),
             number: formString("number"), complement: formString("complement"), district: formString("district"),
@@ -367,34 +370,26 @@ export default function CheckoutPage() {
           return;
         }
       }
+      const checkout = {
+        ...(couponCode ? { couponCode } : {}),
+        customer: {
+          name: formString("name"), email, phone: phoneDigits(phone), cpf: sanitizeCpf(cpf)
+        },
+        address: {
+          postalCode: formString("postalCode"), street: formString("street"), number: formString("number"),
+          complement: formString("complement"), district: formString("district"), city: formString("city"), state: formString("state")
+        },
+        lines: selectedLines.map((line) => ({
+          productId: line.productId, variantId: line.variantId, color: line.color,
+          size: line.size, quantity: line.quantity
+        }))
+      };
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           idempotencyKey: idempotencyKeyRef.current,
-          ...(couponCode ? { couponCode } : {}),
-          customer: {
-            name: form.get("name"),
-            email,
-            phone: phoneDigits(phone),
-            cpf: sanitizeCpf(cpf)
-          },
-          address: {
-            postalCode: form.get("postalCode"),
-            street: form.get("street"),
-            number: form.get("number"),
-            complement: form.get("complement"),
-            district: form.get("district"),
-            city: form.get("city"),
-            state: form.get("state")
-          },
-          lines: selectedLines.map((line) => ({
-            productId: line.productId,
-            variantId: line.variantId,
-            color: line.color,
-            size: line.size,
-            quantity: line.quantity
-          }))
+          ...checkout
         })
       });
       const result: unknown = await response.json();
@@ -424,7 +419,8 @@ export default function CheckoutPage() {
         {
           idempotencyKey: idempotencyKeyRef.current,
           email,
-          cpf: sanitizeCpf(cpf)
+          cpf: sanitizeCpf(cpf),
+          checkout
         },
         FIXED_SHIPPING_IN_CENTS
       );
@@ -505,7 +501,7 @@ export default function CheckoutPage() {
     return (
       <div className="container page-shell checkout-page checkout-bricks-page">
         <header className="checkout-heading">
-          <div><p className="eyebrow">Pedido {paymentSession.orderCode}</p></div>
+          <div><p className="eyebrow">Escolha como pagar</p></div>
         </header>
         <div className="checkout-layout">
           <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment} />

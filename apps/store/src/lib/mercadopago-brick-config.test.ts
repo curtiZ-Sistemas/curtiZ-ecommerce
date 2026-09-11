@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCheckoutPaymentPayload, createMercadoPagoInitialization, readMercadoPagoBrickSession } from "./mercadopago-brick-config";
 
-const identity = { idempotencyKey: "key", email: "cliente@example.com", cpf: "12345678909" };
+const identity = { idempotencyKey: "key", email: "cliente@example.com", cpf: "12345678909", checkout: null };
 const validResponse = {
   ok: true,
   orderId: "order-id",

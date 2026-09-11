@@ -54,12 +54,16 @@ describe("Mercado Pago em teste", () => {
         external_reference: "CZT-TEST",
         payment_method_id: "visa",
         payment_type_id: "credit_card",
-        date_approved: "2026-09-08T12:00:00Z"
+        date_approved: "2026-09-08T12:00:00Z",
+        installments: 3,
+        fee_details: [{ type: "mercadopago_fee", amount: 1.7 }],
+        transaction_details: { net_received_amount: 40.7 },
+        refunds: [{ id: 9001, amount: 10.2, status: "approved", date_created: "2026-09-09T12:00:00Z" }]
       })
     });
     vi.stubGlobal("fetch", fetchMock);
     const provider = new MercadoPagoTestPaymentProvider("TEST-token");
-    await provider.createPayment({
+    const payment = await provider.createPayment({
       orderId: "order-id",
       orderCode: "CZT-TEST",
       amountInCents: 4_240,
@@ -86,6 +90,26 @@ describe("Mercado Pago em teste", () => {
       metadata: { order_id: "order-id" }
     });
     expect(JSON.parse(init.body)).not.toHaveProperty("date_of_expiration");
+    expect(payment).toMatchObject({
+      providerFeeInCents: 170,
+      netReceivedInCents: 4_070,
+      installments: 3,
+      refunds: [{ id: "9001", amountInCents: 1_020, status: "approved" }]
+    });
+  });
+
+  it("valida os meios habilitados na conta antes de criar pedido", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ id: "pix" }, { id: "visa" }, { id: "inválido" }, { name: "sem id" }]
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const methods = await new MercadoPagoTestPaymentProvider("TEST-token").getPaymentMethodIds();
+    expect(methods).toEqual(["pix", "visa"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.mercadopago.com/v1/payment_methods",
+      expect.objectContaining({ method: "GET" })
+    );
   });
 
   it("envia Pix com vencimento de 30 minutos e preserva as instruções retornadas", async () => {

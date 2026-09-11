@@ -87,6 +87,6 @@ export function PendingPayment({ orderId }: { orderId: string }) {
       <p>Valor: <strong>{formatBRL(state.amountInCents)}</strong></p>
     </section>}
     {message ? <p className="form-message" role="status">{message}</p> : null}
-    <div className="customer-form-actions"><Link className="secondary-button" href="/minha-conta/pedidos">Acompanhar pedidos</Link>{failed ? <Link className="primary-button" href="/checkout">Tentar pagar novamente</Link> : null}</div>
+    <div className="customer-form-actions"><Link className="secondary-button" href="/minha-conta/pedidos">Acompanhar pedidos</Link>{failed ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(orderId)}/pagamento?retry=1`}>Tentar outro meio de pagamento</Link> : null}</div>
   </div>;
 }

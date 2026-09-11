@@ -11,6 +11,7 @@ export const normalizeMercadoPagoStatus = (status: string): LocalMercadoPagoStat
   if (status === "approved") return "approved";
   if (status === "rejected") return "rejected";
   if (status === "cancelled") return "cancelled";
+  if (status === "expired") return "cancelled";
   if (status === "refunded") return "refunded";
   if (status === "charged_back") return "charged_back";
   if (status === "in_review") return "in_review";

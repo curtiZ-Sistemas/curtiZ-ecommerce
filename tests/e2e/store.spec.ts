@@ -418,7 +418,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
-  await page.getByRole("button", { name: "Confirmar e pagar" }).click();
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
@@ -432,7 +432,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   await page.getByLabel("Bairro").fill("Bela Vista");
   await page.getByLabel("Cidade").fill("São Paulo");
   await page.getByLabel("Estado").selectOption("SP");
-  await page.getByRole("button", { name: "Confirmar e pagar" }).click();
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
 
   const dialog = page.getByRole("alertdialog");
   await expect(
@@ -448,7 +448,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   ]);
 });
 
-test("após a compra preserva no carrinho os produtos não selecionados", async ({ page }) => {
+test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedido", async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -498,7 +498,16 @@ test("após a compra preserva no carrinho os produtos não selecionados", async 
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, orderCode: "CZ-E2E-SELECAO" })
+      body: JSON.stringify({
+        ok: true,
+        subtotalInCents: 1,
+        discountInCents: 0,
+        couponName: "",
+        shippingInCents: 1690,
+        amountInCents: 1691,
+        publicKey: "TEST-public-key",
+        paymentMode: "test"
+      })
     });
   });
 
@@ -513,17 +522,13 @@ test("após a compra preserva no carrinho os produtos não selecionados", async 
   await page.getByLabel("Bairro").fill("Bela Vista");
   await page.getByLabel("Cidade").fill("São Paulo");
   await page.getByLabel("Estado").selectOption("SP");
-  await page.getByRole("button", { name: "Confirmar e pagar" }).click();
-  await expect(page).toHaveURL(/\/pedido\/pendente\?pedido=CZ-E2E-SELECAO/u, {
-    timeout: 30_000
-  });
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.getByText("Escolha como pagar", { exact: true })).toBeVisible();
 
   await page.goto("/carrinho", { waitUntil: "commit" });
-  await expect(page.locator(".cart-item")).toHaveCount(1);
+  await expect(page.locator(".cart-item")).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Slim Coral" })).toBeVisible();
-  await expect(
-    page.locator(".cart-item").getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
 });
 
 test("preserva o retorno do login e abre atendimento humano", async ({ page }) => {

@@ -42,7 +42,8 @@ describe("financial Excel export", () => {
       "Lançamentos",
       "Aportes",
       "Categorias",
-      "Contas"
+      "Contas",
+      "Transferências"
     ]);
     const value = workbook.getWorksheet("Contas a Receber")?.getCell("L2").value;
     expect(value).toBe(1500);

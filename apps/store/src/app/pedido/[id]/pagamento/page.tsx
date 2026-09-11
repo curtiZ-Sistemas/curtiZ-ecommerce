@@ -15,18 +15,20 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const [orderResponse, paymentResponse] = await Promise.all([
     supabase.from("orders").select("id,public_code,customer_id,customer_email_snapshot,status,subtotal,discount_total,shipping_total,grand_total")
       .eq("id", id).eq("customer_id", user.id).maybeSingle(),
-    supabase.from("payments").select("provider_payment_id,status").eq("order_id", id).eq("provider", "mercadopago").maybeSingle()
+    supabase.from("payments").select("provider_payment_id,status,payment_method_summary").eq("order_id", id).eq("provider", "mercadopago").maybeSingle()
   ]);
   const order = readQueryResult(orderResponse).data;
   const payment = readQueryResult(paymentResponse).data;
   if (!isUnknownRecord(order) || !isUnknownRecord(payment)) notFound();
+  if (!readString(payment, "payment_method_summary")) notFound();
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim() ?? "";
   const subtotalInCents = Math.round(readNumber(order, "subtotal") * 100);
   const discountInCents = Math.round(readNumber(order, "discount_total") * 100);
   const shippingInCents = Math.round(readNumber(order, "shipping_total") * 100);
   const amountInCents = Math.round(readNumber(order, "grand_total") * 100);
   const canResume = readString(order, "status") === "pending_payment"
-    && !readString(payment, "provider_payment_id") && isMercadoPagoTestCredential(publicKey)
+    && (!readString(payment, "provider_payment_id") || readString(payment, "status") === "rejected")
+    && isMercadoPagoTestCredential(publicKey)
     && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents === FIXED_SHIPPING_IN_CENTS
     && amountInCents === subtotalInCents - discountInCents + shippingInCents;
   const session: MercadoPagoBrickSession | null = canResume ? {
@@ -38,9 +40,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     shippingInCents,
     amountInCents,
     publicKey,
-    idempotencyKey: id,
+    idempotencyKey: crypto.randomUUID(),
     email: readString(order, "customer_email_snapshot"),
-    cpf: ""
+    cpf: "",
+    checkout: null
   } : null;
   return <OrderPayment orderId={id} session={session} />;
 }

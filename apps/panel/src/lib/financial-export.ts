@@ -8,7 +8,10 @@ type ExportColumn = {
   kind?: "date" | "datetime" | "money";
 };
 
-const moneyKeys = new Set(["amount", "value", "initial_balance"]);
+const moneyKeys = new Set([
+  "amount", "value", "initial_balance", "gross_amount", "provider_fee",
+  "net_received_amount", "refunded_amount"
+]);
 
 function text(value: unknown): string {
   if (typeof value === "string") return value;
@@ -29,7 +32,7 @@ function configureSheet(sheet: Worksheet, columns: ExportColumn[]) {
     width: column.width ?? 18
   }));
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + columns.length)}1` };
+  sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(columns.length).letter}1` };
   const header = sheet.getRow(1);
   header.height = 24;
   header.font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -89,6 +92,15 @@ const receivableColumns: ExportColumn[] = [
   { header: "Recebimento", key: "received_on", kind: "date" },
   { header: "Status", key: "display_status" },
   { header: "Valor", key: "amount", kind: "money" },
+  { header: "Origem", key: "origin", width: 18 },
+  { header: "Pedido", key: "order_code", width: 18 },
+  { header: "ID pagamento Mercado Pago", key: "mercadopago_payment_id", width: 28 },
+  { header: "Meio de pagamento", key: "payment_method", width: 24 },
+  { header: "Parcelas do pagamento", key: "payment_installments", width: 18 },
+  { header: "Valor bruto", key: "gross_amount", kind: "money" },
+  { header: "Taxa Mercado Pago", key: "provider_fee", kind: "money" },
+  { header: "Valor líquido", key: "net_received_amount", kind: "money" },
+  { header: "Reembolsado", key: "refunded_amount", kind: "money" },
   { header: "Conta financeira", key: "account_name", width: 22 },
   { header: "Responsável", key: "responsible_name", width: 24 },
   { header: "Parcela", key: "installment_number" },
@@ -183,7 +195,12 @@ export async function buildFinancialWorkbook(
       ["Total a pagar", data.summary.payable],
       ["Saldo projetado", data.summary.projected_balance],
       ["Vencido a receber", data.summary.overdue_receivable],
-      ["Vencido a pagar", data.summary.overdue_payable]
+      ["Vencido a pagar", data.summary.overdue_payable],
+      ["Vendas brutas do site", data.online_sales_summary.gross],
+      ["Taxas Mercado Pago", data.online_sales_summary.fees],
+      ["Reembolsos", data.online_sales_summary.refunds],
+      ["Receita líquida do site", data.online_sales_summary.net],
+      ["Vendas pendentes", data.online_sales_summary.pending]
     ]);
     summary.getRow(1).font = { bold: true, size: 16, color: { argb: "FF982920" } };
     summary.getColumn(2).numFmt = "R$ #,##0.00;[Red]-R$ #,##0.00";
@@ -234,6 +251,20 @@ export async function buildFinancialWorkbook(
         { header: "Ativa", key: "active", width: 14 }
       ],
       data.accounts
+    );
+    addDataSheet(
+      workbook,
+      "Transferências",
+      [
+        { header: "Data", key: "occurred_on", kind: "date" },
+        { header: "Descrição", key: "description", width: 36 },
+        { header: "Origem", key: "source_account_name", width: 24 },
+        { header: "Destino", key: "destination_account_name", width: 24 },
+        { header: "Valor", key: "amount", kind: "money" },
+        { header: "Referência", key: "external_reference", width: 24 },
+        { header: "Responsável", key: "responsible_name", width: 24 }
+      ],
+      data.transfers
     );
   }
 

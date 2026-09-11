@@ -9,6 +9,7 @@ describe("status do Mercado Pago", () => {
     ["authorized", "pending"],
     ["rejected", "rejected"],
     ["cancelled", "cancelled"],
+    ["expired", "cancelled"],
     ["in_mediation", "in_review"]
   ])("normaliza %s", (provider, local) => {
     expect(normalizeMercadoPagoStatus(provider)).toBe(local);
