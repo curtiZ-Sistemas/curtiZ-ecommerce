@@ -2,6 +2,7 @@ import { getIntegrationConfig } from "@curtiz/config";
 import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeOptionalCouponCode, shouldResumePendingCheckout } from "@/lib/checkout-flow";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import {
   CUSTOMER_EMAIL_MAX_LENGTH,
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
       400
     );
   }
+  const couponCode = normalizeOptionalCouponCode(parsed.data.couponCode);
 
   if (!integrations.payment.enabled || integrations.payment.provider !== "mercadopago") {
     checkoutLog(requestId, 503, "PAYMENT_UNAVAILABLE");
@@ -202,7 +204,7 @@ export async function POST(request: NextRequest) {
       variant_id: line.variantId,
       quantity: line.quantity
     })),
-    p_coupon_code: parsed.data.couponCode || null,
+    p_coupon_code: couponCode ?? null,
     p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
   });
   const orderResult = readQueryResult(orderResponse);
@@ -221,7 +223,7 @@ export async function POST(request: NextRequest) {
       && "message" in orderResult.error && typeof orderResult.error.message === "string"
       ? orderResult.error.message
       : "";
-    if (errorMessage.includes("coupon")) {
+    if (couponCode && errorMessage.includes("coupon")) {
       return checkoutResponse(requestId, { ok: false, code: "INVALID_COUPON", message: "Este cupom não é válido." }, 409);
     }
     const unavailable = errorCode === "P0001" || errorCode === "22023";
@@ -239,10 +241,9 @@ export async function POST(request: NextRequest) {
   }
 
   const couponName = typeof order?.name === "string" ? order.name : "";
-
   const totalsResult = readQueryResult(await supabase
     .from("orders")
-    .select("subtotal,discount_total,shipping_total,grand_total")
+    .select("status,payment_status,subtotal,discount_total,shipping_total,grand_total")
     .eq("id", orderId)
     .maybeSingle());
   const totals = isUnknownRecord(totalsResult.data) ? totalsResult.data : null;
@@ -250,6 +251,7 @@ export async function POST(request: NextRequest) {
   const shippingInCents = totals ? Math.round(readNumber(totals, "shipping_total") * 100) : 0;
   const discountInCents = totals ? Math.round(readNumber(totals, "discount_total") * 100) : 0;
   const amountInCents = totals ? Math.round(readNumber(totals, "grand_total") * 100) : 0;
+  const resumeExistingPayment = shouldResumePendingCheckout(order, totals);
   const validTotals = !totalsResult.error
     && subtotalInCents > 0
     && shippingInCents === FIXED_SHIPPING_IN_CENTS
@@ -274,6 +276,9 @@ export async function POST(request: NextRequest) {
     shippingInCents,
     amountInCents,
     publicKey,
-    paymentMode: "test"
+    paymentMode: "test",
+    ...(resumeExistingPayment
+      ? { redirectTo: `/pedido/${encodeURIComponent(orderId)}/pagamento` }
+      : {})
   }, 200);
 }

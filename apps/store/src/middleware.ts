@@ -284,6 +284,12 @@ function isCheckoutRoute(pathname: string): boolean {
   return pathname === "/checkout" || pathname.startsWith("/checkout/");
 }
 
+function isOrderPaymentRoute(pathname: string): boolean {
+  return /^\/pedido\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/pagamento\/?$/iu.test(
+    pathname
+  );
+}
+
 function getSafeReturnPath(request: NextRequest): string {
   const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
 
@@ -475,6 +481,10 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname
   );
 
+  const mercadoPagoPage =
+    checkoutRequest ||
+    isOrderPaymentRoute(request.nextUrl.pathname);
+
   /*
    * crypto.randomUUID gera um valor imprevisível por requisição.
    * O formato hexadecimal não contém caracteres inválidos para CSP.
@@ -495,14 +505,14 @@ export async function middleware(request: NextRequest) {
    */
   const csp = buildNonceContentSecurityPolicy({
     nonce,
-    allowUnsafeInlineStyleElements: checkoutRequest,
+    allowUnsafeInlineStyleElements: mercadoPagoPage,
 
     imageSources: [
       ...(supabaseHttpOrigin
         ? [supabaseHttpOrigin]
         : []),
 
-      ...(checkoutRequest
+      ...(mercadoPagoPage
         ? MERCADO_PAGO_IMAGE_SOURCES
         : [])
     ],
@@ -514,7 +524,7 @@ export async function middleware(request: NextRequest) {
     ],
 
     scriptSources: [
-      ...(checkoutRequest
+      ...(mercadoPagoPage
         ? MERCADO_PAGO_SCRIPT_SOURCES
         : []),
 
@@ -532,7 +542,7 @@ export async function middleware(request: NextRequest) {
         ? [supabaseRealtimeOrigin]
         : []),
 
-      ...(checkoutRequest
+      ...(mercadoPagoPage
         ? MERCADO_PAGO_CONNECT_SOURCES
         : []),
 
@@ -542,7 +552,7 @@ export async function middleware(request: NextRequest) {
     ],
 
     frameSources: [
-      ...(checkoutRequest
+      ...(mercadoPagoPage
         ? MERCADO_PAGO_FRAME_SOURCES
         : []),
 

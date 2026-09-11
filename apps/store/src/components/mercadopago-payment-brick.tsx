@@ -2,7 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createCheckoutPaymentPayload,
   createMercadoPagoInitialization,
@@ -10,7 +10,14 @@ import {
 } from "@/lib/mercadopago-brick-config";
 
 type PaymentState = "approved" | "pending" | "rejected" | "cancelled" | "error";
-type BrickController = { unmount?: () => void | Promise<void> };
+type BrickController = { unmount: () => void | Promise<void> };
+const isBrickController = (value: unknown): value is BrickController =>
+  Boolean(
+    value &&
+    typeof value === "object" &&
+    "unmount" in value &&
+    typeof value.unmount === "function"
+  );
 const BRICK_CONTAINER_ID = "mercadopago-payment-brick";
 const BRICK_INITIALIZATION_TIMEOUT_MS = 15_000;
 const BRICK_LOAD_ERROR = "Não foi possível carregar as formas de pagamento.";
@@ -23,7 +30,7 @@ type MercadoPagoConstructor = new (
       type: "payment",
       containerId: string,
       settings: Record<string, unknown>
-    ) => Promise<BrickController>;
+    ) => Promise<unknown>;
   };
 };
 
@@ -47,8 +54,29 @@ export function MercadoPagoPaymentBrick({
   const [message, setMessage] = useState("");
   const controller = useRef<BrickController | null>(null);
   const initializationQueue = useRef<Promise<void>>(Promise.resolve());
+  const disposedControllers = useRef(new WeakSet<object>());
   const completion = useRef(onComplete);
   completion.current = onComplete;
+
+  const disposeController = useCallback((candidate: unknown) => {
+    if (
+      !isBrickController(candidate) ||
+      disposedControllers.current.has(candidate)
+    ) return Promise.resolve();
+
+    disposedControllers.current.add(candidate);
+    return Promise.resolve().then(() => candidate.unmount()).catch((error: unknown) => {
+      console.error("[mercadopago-bricks] cleanup failed", {
+        cause: error instanceof Error ? error.message : "unexpected_cleanup_error"
+      });
+    });
+  }, []);
+
+  const queueDisposal = useCallback((candidate: unknown) => {
+    initializationQueue.current = initializationQueue.current
+      .catch(() => undefined)
+      .then(() => disposeController(candidate));
+  }, [disposeController]);
 
   useEffect(() => {
     if (sdkReady || initializationFailed) return;
@@ -70,7 +98,7 @@ export function MercadoPagoPaymentBrick({
 
       const container = document.getElementById(BRICK_CONTAINER_ID);
       if (!container) {
-        setInitializationFailed(true);
+        if (active) setInitializationFailed(true);
         return;
       }
 
@@ -162,16 +190,18 @@ export function MercadoPagoPaymentBrick({
             rejectReady?.(new Error("brick_on_error"));
           }
         }
-      }).then((created) => {
-        if (!active || initializationEnded) void created.unmount?.();
-        return created;
       });
+
+      void creation.then((createdController) => {
+        if (!active || initializationEnded) queueDisposal(createdController);
+      }, () => undefined);
 
       try {
         const [createdController] = await Promise.race([Promise.all([creation, ready]), timeout]);
         initializationEnded = true;
+        if (!isBrickController(createdController)) throw new Error("invalid_brick_controller");
         if (!active) {
-          void createdController.unmount?.();
+          queueDisposal(createdController);
           return;
         }
         controller.current = createdController;
@@ -179,7 +209,7 @@ export function MercadoPagoPaymentBrick({
         setBrickReady(true);
       } catch {
         initializationEnded = true;
-        void creation.then((createdController) => createdController.unmount?.(), () => undefined);
+        void creation.then((createdController) => queueDisposal(createdController), () => undefined);
         if (active) {
           setBrickReady(false);
           setInitializationFailed(true);
@@ -203,15 +233,14 @@ export function MercadoPagoPaymentBrick({
       active = false;
       const current = controller.current;
       controller.current = null;
-      void current?.unmount?.();
+      queueDisposal(current);
     };
-  }, [sdkReady, session, initializationAttempt]);
+  }, [sdkReady, session, initializationAttempt, queueDisposal]);
 
   const retryInitialization = () => {
     const current = controller.current;
     controller.current = null;
-    void current?.unmount?.();
-    document.getElementById(BRICK_CONTAINER_ID)?.replaceChildren();
+    queueDisposal(current);
     setMessage("");
     setBrickReady(false);
     setInitializationFailed(false);

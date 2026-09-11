@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { MercadoPagoPaymentBrick } from "@/components/mercadopago-payment-brick";
+import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
 import {
   readMercadoPagoBrickSession,
   type MercadoPagoBrickSession
@@ -319,6 +320,7 @@ export default function CheckoutPage() {
     const email = formString("email");
     const phone = formString("phone");
     const cpf = formString("cpf");
+    const couponCode = normalizeOptionalCouponCode(form.get("couponCode"));
     const errors: Partial<Record<PersonalField, string>> = {};
     if (!isValidCustomerEmail(email)) errors.email = "Informe um e-mail válido.";
     if (!isValidBrazilianPhone(phone)) errors.phone = "Informe um telefone válido com DDD.";
@@ -370,7 +372,7 @@ export default function CheckoutPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           idempotencyKey: idempotencyKeyRef.current,
-          couponCode: form.get("couponCode"),
+          ...(couponCode ? { couponCode } : {}),
           customer: {
             name: form.get("name"),
             email,
@@ -408,6 +410,13 @@ export default function CheckoutPage() {
         const requestId = response.headers.get("x-request-id") ?? "";
         setSupportCode(requestId ? requestId.slice(0, 8).toUpperCase() : "");
         setPaymentUnavailable(true);
+        return;
+      }
+      if (
+        response.ok &&
+        /^\/pedido\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/pagamento$/iu.test(redirectTo)
+      ) {
+        router.replace(redirectTo);
         return;
       }
       const session = readMercadoPagoBrickSession(

@@ -83,6 +83,33 @@ describe("store security headers", () => {
     expect(csp).not.toContain("mlstatic.com");
   });
 
+  it("libera o Brick somente na rota estrita de pagamento do pedido", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+
+    const orderId = "11111111-1111-4111-8111-111111111111";
+    const paymentResponse = await middleware(
+      new NextRequest(`https://loja.example/pedido/${orderId}/pagamento`)
+    );
+    const paymentCsp = paymentResponse.headers.get("content-security-policy") ?? "";
+
+    expect(readCspDirective(paymentCsp, "script-src")).toContain("https://sdk.mercadopago.com");
+    expect(readCspDirective(paymentCsp, "connect-src")).toContain("https://api.mercadopago.com");
+    expect(readCspDirective(paymentCsp, "frame-src")).toContain("https://secure-fields.mercadopago.com");
+    expect(readCspDirective(paymentCsp, "img-src")).toContain("https://http2.mlstatic.com");
+    expect(readCspDirective(paymentCsp, "style-src-elem")).toContain("'unsafe-inline'");
+
+    for (const pathname of [
+      "/pedido/qualquer/pagamento",
+      `/pedido/${orderId}/pagamento/extra`,
+      `/pedido/${orderId}/resumo`
+    ]) {
+      const response = await middleware(new NextRequest(`https://loja.example${pathname}`));
+      expect(response.headers.get("content-security-policy")).not.toContain("mercadopago.com");
+    }
+  });
+
   it("impede indexação do alias workers.dev sem redirecionar o ambiente", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
