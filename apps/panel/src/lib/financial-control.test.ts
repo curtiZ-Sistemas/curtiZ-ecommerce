@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { addDays, moneyToCents, splitInstallments } from "./financial-control";
+import {
+  addDays,
+  categoryPath,
+  moneyToCents,
+  selectableCategories,
+  splitInstallments
+} from "./financial-control";
 
 describe("financial control helpers", () => {
   it("converte moeda brasileira para centavos sem float persistido", () => {
@@ -17,5 +23,22 @@ describe("financial control helpers", () => {
 
   it("calcula vencimentos em dias sem depender do fuso local", () => {
     expect(addDays("2026-01-31", 30)).toBe("2026-03-02");
+  });
+
+  it("não oferece contas totalizadoras como categoria de lançamento", () => {
+    const categories = [
+      { id: "group", name: "Administrativo", kind: "expense", active: true, is_group: true },
+      {
+        id: "child",
+        name: "Internet",
+        category_path: "Administrativo > Internet",
+        kind: "expense",
+        active: true,
+        is_group: false
+      },
+      { id: "income", name: "Vendas", kind: "income", active: true, is_group: false }
+    ];
+    expect(selectableCategories(categories, "expense").map((item) => item.id)).toEqual(["child"]);
+    expect(categoryPath(categories[1]!)).toBe("Administrativo > Internet");
   });
 });

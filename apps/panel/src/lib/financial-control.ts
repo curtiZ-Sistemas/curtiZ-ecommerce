@@ -22,6 +22,19 @@ export type FinancialPoint = {
 
 export type FinancialChartItem = { id?: string; name: string; value: number };
 
+export type FinancialCategoryReportItem = {
+  category_id: string;
+  category_code: string;
+  category_name: string;
+  group_id: string | null;
+  group_code: string;
+  group_name: string;
+  realized: number;
+  projected: number;
+  overdue: number;
+  total: number;
+};
+
 export type ContributionGroup = {
   id: string;
   name: string;
@@ -36,6 +49,10 @@ export type FinancialSnapshot = {
   series: FinancialPoint[];
   payable_by_category: FinancialChartItem[];
   receivable_by_category: FinancialChartItem[];
+  expense_by_group: FinancialChartItem[];
+  income_by_group: FinancialChartItem[];
+  expense_category_report: FinancialCategoryReportItem[];
+  income_category_report: FinancialCategoryReportItem[];
   largest_expenses: FinancialChartItem[];
   largest_receivables: FinancialChartItem[];
   account_status: FinancialChartItem[];
@@ -71,6 +88,10 @@ export const emptyFinancialSnapshot: FinancialSnapshot = {
   series: [],
   payable_by_category: [],
   receivable_by_category: [],
+  expense_by_group: [],
+  income_by_group: [],
+  expense_category_report: [],
+  income_category_report: [],
   largest_expenses: [],
   largest_receivables: [],
   account_status: [],
@@ -130,6 +151,10 @@ export function isFinancialSnapshot(value: unknown): value is FinancialSnapshot 
       "series",
       "payable_by_category",
       "receivable_by_category",
+      "expense_by_group",
+      "income_by_group",
+      "expense_category_report",
+      "income_category_report",
       "largest_expenses",
       "largest_receivables",
       "account_status",
@@ -146,4 +171,24 @@ export function isFinancialSnapshot(value: unknown): value is FinancialSnapshot 
       "audit"
     ].every((key) => Array.isArray(record[key]))
   );
+}
+
+export function categoryPath(category: FinancialRecord): string {
+  return scalarText(category.category_path) || scalarText(category.name) || "Categoria";
+}
+
+export function selectableCategories(categories: FinancialRecord[], kind: "income" | "expense") {
+  return categories
+    .filter(
+      (category) =>
+        (category.active === true || category.active === "true") &&
+        category.is_group !== true &&
+        category.is_group !== "true" &&
+        [kind, "both"].includes(scalarText(category.kind))
+    )
+    .sort((a, b) => categoryPath(a).localeCompare(categoryPath(b), "pt-BR"));
+}
+
+function scalarText(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

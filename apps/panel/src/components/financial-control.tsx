@@ -5,8 +5,11 @@ import {
   ArrowUpCircle,
   BadgeDollarSign,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileClock,
+  FolderTree,
   Landmark,
   LoaderCircle,
   Pencil,
@@ -51,7 +54,9 @@ import {
   emptyFinancialSnapshot,
   isFinancialSnapshot,
   moneyToCents,
+  selectableCategories,
   splitInstallments,
+  type FinancialCategoryReportItem,
   type FinancialExportScope,
   type FinancialRecord,
   type FinancialSnapshot
@@ -71,6 +76,7 @@ type Tab =
   | "payables"
   | "transactions"
   | "contributions"
+  | "reports"
   | "settings"
   | "audit";
 type Ledger = "receivable" | "payable";
@@ -94,7 +100,10 @@ const dateTime = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
   timeZone: "America/Sao_Paulo"
 });
-const compactMoney = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+const compactMoney = new Intl.NumberFormat("pt-BR", {
+  notation: "compact",
+  maximumFractionDigits: 1
+});
 const chartColors = ["#982920", "#d36a43", "#2d9c78", "#c94336", "#5271c4"];
 
 const tabs: Array<{ id: Tab; label: string }> = [
@@ -103,6 +112,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "payables", label: "A pagar" },
   { id: "transactions", label: "Lançamentos" },
   { id: "contributions", label: "Aportes" },
+  { id: "reports", label: "Por categoria" },
   { id: "settings", label: "Configurações" },
   { id: "audit", label: "Histórico" }
 ];
@@ -345,7 +355,9 @@ export function FinancialControl() {
             onChange={(event) => changePreset(event.target.value as ManagementPeriodPreset)}
           >
             {managementPeriodOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </label>
@@ -420,6 +432,7 @@ export function FinancialControl() {
             <LedgerSection
               ledger="receivable"
               items={data.receivables}
+              data={data}
               onCreate={() => setModal({ kind: "ledger", ledger: "receivable" })}
               onEdit={(item) => setModal({ kind: "ledger", ledger: "receivable", item })}
               onSettle={(item) => setModal({ kind: "settle", ledger: "receivable", item })}
@@ -454,6 +467,7 @@ export function FinancialControl() {
             <LedgerSection
               ledger="payable"
               items={data.payables}
+              data={data}
               onCreate={() => setModal({ kind: "ledger", ledger: "payable" })}
               onEdit={(item) => setModal({ kind: "ledger", ledger: "payable", item })}
               onSettle={(item) => setModal({ kind: "settle", ledger: "payable", item })}
@@ -508,6 +522,7 @@ export function FinancialControl() {
               onEdit={(item) => setModal({ kind: "contribution", item })}
             />
           ) : null}
+          {tab === "reports" ? <CategoryReportSection data={data} from={from} to={to} /> : null}
           {tab === "settings" ? (
             <SettingsSection data={data} open={setModal} mutate={mutate} />
           ) : null}
@@ -563,7 +578,10 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
         </div>
       ) : (
         <div className="financial-charts">
-          <ChartCard title="Entradas x saídas" empty={!data.series.some((point) => point.income !== 0 || point.expense !== 0)}>
+          <ChartCard
+            title="Entradas x saídas"
+            empty={!data.series.some((point) => point.income !== 0 || point.expense !== 0)}
+          >
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={data.series}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -579,7 +597,10 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Evolução do saldo" empty={!data.series.some((point) => point.balance !== 0)}>
+          <ChartCard
+            title="Evolução do saldo"
+            empty={!data.series.some((point) => point.balance !== 0)}
+          >
             <ResponsiveContainer width="100%" height={270}>
               <AreaChart data={data.series}>
                 <defs>
@@ -606,23 +627,18 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
               </AreaChart>
             </ResponsiveContainer>
           </ChartCard>
-          <SimpleBarChart
-            title="A pagar por categoria"
-            data={data.payable_by_category}
-            color="#d94c68"
-          />
-          <SimpleBarChart
-            title="A receber por categoria"
-            data={data.receivable_by_category}
-            color="#2d9c78"
-          />
+          <SimpleBarChart title="Despesas por grupo" data={data.expense_by_group} color="#d94c68" />
+          <SimpleBarChart title="Receitas por grupo" data={data.income_by_group} color="#2d9c78" />
           <SimpleBarChart title="Maiores despesas" data={data.largest_expenses} color="#ff6b35" />
           <SimpleBarChart
             title="Maiores clientes / valores"
             data={data.largest_receivables}
             color="#5271c4"
           />
-          <ChartCard title="Situação das contas" empty={!data.account_status.some((item) => item.value !== 0)}>
+          <ChartCard
+            title="Situação das contas"
+            empty={!data.account_status.some((item) => item.value !== 0)}
+          >
             <ResponsiveContainer width="100%" height={270}>
               <PieChart>
                 <Pie
@@ -642,7 +658,12 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
               </PieChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Aportes por grupo" empty={!data.contribution_groups.some((item) => item.ideal !== 0 || item.realized !== 0)}>
+          <ChartCard
+            title="Aportes por grupo"
+            empty={
+              !data.contribution_groups.some((item) => item.ideal !== 0 || item.realized !== 0)
+            }
+          >
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={data.contribution_groups} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -664,7 +685,15 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
   );
 }
 
-function ChartCard({ title, children, empty = false }: { title: string; children: ReactNode; empty?: boolean }) {
+function ChartCard({
+  title,
+  children,
+  empty = false
+}: {
+  title: string;
+  children: ReactNode;
+  empty?: boolean;
+}) {
   return (
     <article className="panel-card financial-chart">
       <h2>{title}</h2>
@@ -703,9 +732,345 @@ function SimpleBarChart({
   );
 }
 
+type ReportMode = "realized" | "projected" | "total";
+
+function CategoryReportSection({
+  data,
+  from,
+  to
+}: {
+  data: FinancialSnapshot;
+  from: string;
+  to: string;
+}) {
+  const [ledger, setLedger] = useState<Ledger>("payable");
+  const [mode, setMode] = useState<ReportMode>("total");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [responsibleFilter, setResponsibleFilter] = useState("");
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<FinancialCategoryReportItem | null>(null);
+  const baseReport =
+    ledger === "payable" ? data.expense_category_report : data.income_category_report;
+  const report = useMemo(() => {
+    const hasDimensionFilter = Boolean(accountFilter || responsibleFilter);
+    return baseReport
+      .filter(
+        (item) =>
+          (!groupFilter || item.group_id === groupFilter) &&
+          (!categoryFilter || item.category_id === categoryFilter)
+      )
+      .map((item) => {
+        if (!hasDimensionFilter) return item;
+        const realized = data.transactions
+          .filter(
+            (record) =>
+              scalar(record.category_id) === item.category_id &&
+              scalar(record.type) === (ledger === "payable" ? "expense" : "income") &&
+              !record.reversed_at &&
+              (!accountFilter || scalar(record.account_id) === accountFilter) &&
+              (!responsibleFilter || scalar(record.created_by) === responsibleFilter)
+          )
+          .reduce((sum, record) => sum + numberValue(record.amount), 0);
+        const pending = (ledger === "payable" ? data.payables : data.receivables).filter(
+          (record) =>
+            scalar(record.category_id) === item.category_id &&
+            ["pending", "overdue"].includes(scalar(record.display_status)) &&
+            scalar(record.due_on) >= from &&
+            scalar(record.due_on) <= to &&
+            (!accountFilter ||
+              scalar(
+                record[ledger === "payable" ? "source_account_id" : "destination_account_id"]
+              ) === accountFilter) &&
+            (!responsibleFilter || scalar(record.created_by) === responsibleFilter)
+        );
+        const projected = pending.reduce((sum, record) => sum + numberValue(record.amount), 0);
+        const overdue = pending
+          .filter((record) => scalar(record.display_status) === "overdue")
+          .reduce((sum, record) => sum + numberValue(record.amount), 0);
+        return { ...item, realized, projected, overdue, total: realized + projected };
+      });
+  }, [
+    accountFilter,
+    baseReport,
+    categoryFilter,
+    data.payables,
+    data.receivables,
+    data.transactions,
+    from,
+    groupFilter,
+    ledger,
+    responsibleFilter,
+    to
+  ]);
+  const responsibleOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const record of [...data.transactions, ...data.payables, ...data.receivables]) {
+      const id = scalar(record.created_by);
+      const name = scalar(record.responsible_name);
+      if (id && name) options.set(id, name);
+    }
+    return [...options];
+  }, [data.payables, data.receivables, data.transactions]);
+  const valueFor = (item: FinancialCategoryReportItem) =>
+    mode === "realized" ? item.realized : mode === "projected" ? item.projected : item.total;
+  const groups = useMemo(() => {
+    const result = new Map<
+      string,
+      { id: string; name: string; code: string; items: FinancialCategoryReportItem[] }
+    >();
+    for (const item of report) {
+      const id = item.group_id ?? `ungrouped:${item.category_id}`;
+      const current = result.get(id) ?? {
+        id,
+        name: item.group_id ? item.group_name : item.category_name,
+        code: item.group_id ? item.group_code : item.category_code,
+        items: []
+      };
+      current.items.push(item);
+      result.set(id, current);
+    }
+    return [...result.values()];
+  }, [report]);
+  const reportTotal = report.reduce((sum, item) => sum + valueFor(item), 0);
+  const details = selected
+    ? [
+        ...(mode !== "projected"
+          ? data.transactions.filter(
+              (item) =>
+                scalar(item.category_id) === selected.category_id &&
+                scalar(item.type) === (ledger === "payable" ? "expense" : "income") &&
+                !item.reversed_at
+            )
+          : []),
+        ...(mode !== "realized"
+          ? (ledger === "payable" ? data.payables : data.receivables).filter(
+              (item) =>
+                scalar(item.category_id) === selected.category_id &&
+                ["pending", "overdue"].includes(scalar(item.display_status)) &&
+                scalar(item.due_on) >= from &&
+                scalar(item.due_on) <= to
+            )
+          : [])
+      ]
+    : [];
+
+  return (
+    <section className="panel-card financial-list-section financial-category-report">
+      <div className="financial-section-heading">
+        <div>
+          <h2>Relatório por categoria</h2>
+          <p>Realizado e previsto sem duplicar movimentações no caixa.</p>
+        </div>
+        <div className="financial-segmented" aria-label="Tipo do relatório">
+          <button
+            type="button"
+            className={ledger === "payable" ? "active" : ""}
+            onClick={() => {
+              setLedger("payable");
+              setGroupFilter("");
+              setCategoryFilter("");
+              setSelected(null);
+            }}
+          >
+            Despesas
+          </button>
+          <button
+            type="button"
+            className={ledger === "receivable" ? "active" : ""}
+            onClick={() => {
+              setLedger("receivable");
+              setGroupFilter("");
+              setCategoryFilter("");
+              setSelected(null);
+            }}
+          >
+            Receitas
+          </button>
+        </div>
+      </div>
+      <div className="financial-report-toolbar">
+        <div className="financial-segmented" aria-label="Situação financeira">
+          {(["realized", "projected", "total"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={mode === item ? "active" : ""}
+              onClick={() => {
+                setMode(item);
+                setSelected(null);
+              }}
+            >
+              {{ realized: "Realizado", projected: "Previsto", total: "Todos" }[item]}
+            </button>
+          ))}
+        </div>
+        <strong>Total: {currency.format(reportTotal)}</strong>
+      </div>
+      <div className="financial-list-filters">
+        <select
+          aria-label="Filtrar grupo do relatório"
+          value={groupFilter}
+          onChange={(event) => {
+            setGroupFilter(event.target.value);
+            setCategoryFilter("");
+          }}
+        >
+          <option value="">Todos os grupos</option>
+          {activeItems(data.categories)
+            .filter(
+              (item) =>
+                booleanValue(item.is_group) &&
+                [ledger === "payable" ? "expense" : "income", "both"].includes(scalar(item.kind))
+            )
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {recordLabel(item, "name")}
+              </option>
+            ))}
+        </select>
+        <select
+          aria-label="Filtrar subconta do relatório"
+          value={categoryFilter}
+          onChange={(event) => setCategoryFilter(event.target.value)}
+        >
+          <option value="">Todas as subcontas</option>
+          {baseReport
+            .filter((item) => !groupFilter || item.group_id === groupFilter)
+            .map((item) => (
+              <option key={item.category_id} value={item.category_id}>
+                {item.group_id ? `${item.group_name} > ` : ""}
+                {item.category_name}
+              </option>
+            ))}
+        </select>
+        <select
+          aria-label="Filtrar conta do relatório"
+          value={accountFilter}
+          onChange={(event) => setAccountFilter(event.target.value)}
+        >
+          <option value="">Todas as contas financeiras</option>
+          {activeItems(data.accounts).map((item) => (
+            <option key={item.id} value={item.id}>
+              {recordLabel(item, "name")}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filtrar responsável do relatório"
+          value={responsibleFilter}
+          onChange={(event) => setResponsibleFilter(event.target.value)}
+        >
+          <option value="">Todos os responsáveis</option>
+          {responsibleOptions.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {groups.length === 0 ? (
+        <div className="admin-empty-state">
+          <h3>Sem categorias neste recorte</h3>
+          <p>Cadastre subcontas e movimentos para montar o relatório.</p>
+        </div>
+      ) : (
+        <div className="financial-report-groups">
+          {groups.map((group) => {
+            const total = group.items.reduce((sum, item) => sum + valueFor(item), 0);
+            const open = openGroups.has(group.id);
+            return (
+              <article key={group.id}>
+                <button
+                  type="button"
+                  className="financial-report-group"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setOpenGroups((current) => {
+                      const next = new Set(current);
+                      if (next.has(group.id)) next.delete(group.id);
+                      else next.add(group.id);
+                      return next;
+                    })
+                  }
+                >
+                  {open ? <ChevronDown /> : <ChevronRight />}
+                  <span>
+                    <small>{group.code || "Sem código"}</small>
+                    <strong>{group.name}</strong>
+                  </span>
+                  <strong>{currency.format(total)}</strong>
+                </button>
+                {open ? (
+                  <div className="financial-report-children">
+                    {group.items.map((item) => {
+                      const value = valueFor(item);
+                      const percentage = total ? (value / total) * 100 : 0;
+                      return (
+                        <button
+                          type="button"
+                          key={item.category_id}
+                          onClick={() => setSelected(item)}
+                        >
+                          <span>
+                            <small>{item.category_code || "Sem código"}</small>
+                            {item.category_name}
+                          </span>
+                          <span>
+                            <strong>{currency.format(value)}</strong>
+                            <small>
+                              {percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do
+                              grupo
+                            </small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {selected ? (
+        <div className="financial-report-drilldown">
+          <div className="financial-section-heading">
+            <div>
+              <h3>{selected.category_name}</h3>
+              <p>Lançamentos que formam o valor selecionado.</p>
+            </div>
+            <button type="button" onClick={() => setSelected(null)}>
+              <X /> Fechar
+            </button>
+          </div>
+          {details.length === 0 ? (
+            <p className="financial-chart-empty">Nenhum lançamento neste recorte.</p>
+          ) : (
+            details.map((item) => (
+              <div key={`${scalar(item.origin) || "account"}:${item.id}`}>
+                <span>
+                  {formattedDate(item.occurred_on || item.due_on)} ·{" "}
+                  {recordLabel(item, "description")}
+                </span>
+                <small>
+                  {recordLabel(item, ledger === "payable" ? "supplier" : "customer", "origin")}
+                </small>
+                <strong>{currency.format(numberValue(item.amount))}</strong>
+              </div>
+            ))
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function LedgerSection({
   ledger,
   items,
+  data,
   onCreate,
   onEdit,
   onSettle,
@@ -714,6 +1079,7 @@ function LedgerSection({
 }: {
   ledger: Ledger;
   items: FinancialRecord[];
+  data: FinancialSnapshot;
   onCreate: () => void;
   onEdit: (item: FinancialRecord) => void;
   onSettle: (item: FinancialRecord) => void;
@@ -723,6 +1089,11 @@ function LedgerSection({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [order, setOrder] = useState("due");
+  const [view, setView] = useState<"list" | "grouped">("list");
+  const [groupId, setGroupId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [responsibleId, setResponsibleId] = useState("");
   const [page, setPage] = useState(1);
   const partyKey = ledger === "receivable" ? "customer" : "supplier";
   const filtered = useMemo(
@@ -730,12 +1101,19 @@ function LedgerSection({
       items
         .filter((item) => {
           const searchable =
-            `${scalar(item[partyKey])} ${scalar(item.description)} ${scalar(item.document_number)}`.toLocaleLowerCase(
+            `${scalar(item[partyKey])} ${scalar(item.description)} ${scalar(item.document_number)} ${scalar(item.category_name)}`.toLocaleLowerCase(
               "pt-BR"
             );
           return (
             (!query || searchable.includes(query.toLocaleLowerCase("pt-BR"))) &&
-            (!status || scalar(item.display_status) === status)
+            (!status || scalar(item.display_status) === status) &&
+            (!groupId || scalar(item.group_id) === groupId) &&
+            (!categoryId || scalar(item.category_id) === categoryId) &&
+            (!accountId ||
+              scalar(
+                item[ledger === "receivable" ? "destination_account_id" : "source_account_id"]
+              ) === accountId) &&
+            (!responsibleId || scalar(item.created_by) === responsibleId)
           );
         })
         .sort((a, b) =>
@@ -743,11 +1121,26 @@ function LedgerSection({
             ? numberValue(b.amount) - numberValue(a.amount)
             : scalar(a.due_on).localeCompare(scalar(b.due_on))
         ),
-    [items, order, partyKey, query, status]
+    [accountId, categoryId, groupId, items, ledger, order, partyKey, query, responsibleId, status]
   );
+  const grouped = useMemo(() => {
+    const result = new Map<string, Map<string, FinancialRecord[]>>();
+    for (const item of filtered) {
+      const group = scalar(item.group_name) || "Sem conta totalizadora";
+      const category =
+        scalar(item.subcategory_name) || scalar(item.category_name) || "Sem categoria";
+      const categories = result.get(group) ?? new Map<string, FinancialRecord[]>();
+      categories.set(category, [...(categories.get(category) ?? []), item]);
+      result.set(group, categories);
+    }
+    return result;
+  }, [filtered]);
   const pages = Math.max(1, Math.ceil(filtered.length / 20));
   const visible = filtered.slice((page - 1) * 20, page * 20);
-  useEffect(() => setPage(1), [query, status, order]);
+  useEffect(
+    () => setPage(1),
+    [query, status, order, groupId, categoryId, accountId, responsibleId]
+  );
   return (
     <section className="panel-card financial-list-section">
       <div className="financial-section-heading">
@@ -783,6 +1176,70 @@ function LedgerSection({
           </option>
         </select>
         <select
+          aria-label="Filtrar grupo"
+          value={groupId}
+          onChange={(event) => {
+            setGroupId(event.target.value);
+            setCategoryId("");
+          }}
+        >
+          <option value="">Todos os grupos</option>
+          {activeItems(data.categories)
+            .filter((category) => booleanValue(category.is_group))
+            .map((category) => (
+              <option key={category.id} value={category.id}>
+                {recordLabel(category, "name")}
+              </option>
+            ))}
+        </select>
+        <select
+          aria-label="Filtrar subconta"
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
+        >
+          <option value="">Todas as subcontas</option>
+          {selectableCategories(data.categories, ledger === "receivable" ? "income" : "expense")
+            .filter((category) => !groupId || scalar(category.parent_id) === groupId)
+            .map((category) => (
+              <option key={category.id} value={category.id}>
+                {recordLabel(category, "category_path", "name")}
+              </option>
+            ))}
+        </select>
+        <select
+          aria-label="Filtrar conta financeira"
+          value={accountId}
+          onChange={(event) => setAccountId(event.target.value)}
+        >
+          <option value="">Todas as contas</option>
+          {activeItems(data.accounts).map((account) => (
+            <option key={account.id} value={account.id}>
+              {recordLabel(account, "name")}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filtrar responsável"
+          value={responsibleId}
+          onChange={(event) => setResponsibleId(event.target.value)}
+        >
+          <option value="">Todos os responsáveis</option>
+          {[
+            ...new Map<string, string>(
+              items
+                .map((item): [string, string] => [
+                  scalar(item.created_by),
+                  scalar(item.responsible_name)
+                ])
+                .filter(([id, name]) => Boolean(id && name))
+            )
+          ].map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="Ordenar"
           value={order}
           onChange={(event) => setOrder(event.target.value)}
@@ -790,11 +1247,57 @@ function LedgerSection({
           <option value="due">Vencimento</option>
           <option value="amount">Maior valor</option>
         </select>
+        <div className="financial-segmented" aria-label="Visualização">
+          <button
+            type="button"
+            className={view === "list" ? "active" : ""}
+            onClick={() => setView("list")}
+          >
+            Lista
+          </button>
+          <button
+            type="button"
+            className={view === "grouped" ? "active" : ""}
+            onClick={() => setView("grouped")}
+          >
+            Por categoria
+          </button>
+        </div>
       </div>
       {visible.length === 0 ? (
         <div className="admin-empty-state">
           <h3>Nenhuma conta encontrada</h3>
           <p>Altere os filtros ou cadastre o primeiro compromisso.</p>
+        </div>
+      ) : view === "grouped" ? (
+        <div className="financial-ledger-groups">
+          {[...grouped].map(([group, categories]) => (
+            <section key={group}>
+              <div>
+                <strong>{group}</strong>
+                <span>
+                  {currency.format(
+                    [...categories.values()]
+                      .flat()
+                      .reduce((sum, item) => sum + numberValue(item.amount), 0)
+                  )}
+                </span>
+              </div>
+              {[...categories].map(([category, records]) => (
+                <article key={category}>
+                  <span>
+                    <strong>{category}</strong>
+                    <small>{records.length} conta(s)</small>
+                  </span>
+                  <strong>
+                    {currency.format(
+                      records.reduce((sum, item) => sum + numberValue(item.amount), 0)
+                    )}
+                  </strong>
+                </article>
+              ))}
+            </section>
+          ))}
         </div>
       ) : (
         <div className="financial-table-wrap">
@@ -870,7 +1373,7 @@ function LedgerSection({
           </table>
         </div>
       )}
-      {pages > 1 ? (
+      {view === "list" && pages > 1 ? (
         <div className="financial-pagination">
           <button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)}>
             Anterior
@@ -1172,18 +1675,6 @@ function SettingsSection({
       detail: (item: FinancialRecord) => currency.format(numberValue(item.initial_balance))
     },
     {
-      title: "Categorias",
-      items: data.categories,
-      kind: "category" as const,
-      detail: (item: FinancialRecord) =>
-        (
-          ({ income: "Entrada", expense: "Saída", both: "Entrada e saída" }) as Record<
-            string,
-            string
-          >
-        )[scalar(item.kind)] ?? ""
-    },
-    {
       title: "Grupos de sócios",
       items: data.partner_groups,
       kind: "group" as const,
@@ -1209,6 +1700,7 @@ function SettingsSection({
           </p>
         </div>
       </div>
+      <FinancialCategorySettings data={data} open={open} mutate={mutate} />
       <div className="financial-settings-grid">
         {blocks.map((block) => (
           <section className="panel-card" key={block.title}>
@@ -1266,6 +1758,175 @@ function SettingsSection({
         ))}
       </div>
     </div>
+  );
+}
+
+function FinancialCategorySettings({
+  data,
+  open,
+  mutate
+}: {
+  data: FinancialSnapshot;
+  open: (modal: ModalState) => void;
+  mutate: (action: string, payload: Record<string, unknown>, success: string) => Promise<boolean>;
+}) {
+  const [ledger, setLedger] = useState<Ledger>("payable");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const kind = ledger === "payable" ? "expense" : "income";
+  const categories = data.categories.filter((category) =>
+    [kind, "both"].includes(scalar(category.kind))
+  );
+  const groups = categories.filter((category) => booleanValue(category.is_group));
+  const roots = categories.filter(
+    (category) => !booleanValue(category.is_group) && !scalar(category.parent_id)
+  );
+  const toggleActive = (item: FinancialRecord) =>
+    mutate(
+      "category.save",
+      {
+        id: item.id,
+        name: scalar(item.name),
+        code: scalar(item.code),
+        kind: scalar(item.kind),
+        parent_id: scalar(item.parent_id),
+        is_group: booleanValue(item.is_group),
+        sort_order: numberValue(item.sort_order),
+        active: !booleanValue(item.active)
+      },
+      booleanValue(item.active) ? "Categoria desativada." : "Categoria ativada."
+    );
+  const CategoryRow = ({ item, child = false }: { item: FinancialRecord; child?: boolean }) => (
+    <div className={`${child ? "child" : ""} ${!booleanValue(item.active) ? "inactive" : ""}`}>
+      <span>
+        <small>{scalar(item.code) || "Sem código"}</small>
+        <strong>{recordLabel(item, "name")}</strong>
+      </span>
+      <div>
+        <button type="button" title="Editar" onClick={() => open({ kind: "category", item })}>
+          <Pencil />
+        </button>
+        <button
+          type="button"
+          title={booleanValue(item.active) ? "Desativar" : "Ativar"}
+          onClick={() => void toggleActive(item)}
+        >
+          {booleanValue(item.active) ? <X /> : <RefreshCw />}
+        </button>
+      </div>
+    </div>
+  );
+  return (
+    <section className="panel-card financial-category-settings">
+      <div className="financial-section-heading">
+        <div>
+          <h3>Categorias financeiras</h3>
+          <p>Contas totalizadoras organizam subcontas; somente subcontas recebem lançamentos.</p>
+        </div>
+        <button type="button" onClick={() => open({ kind: "category" })}>
+          <Plus /> Nova categoria
+        </button>
+      </div>
+      <div className="financial-segmented" aria-label="Aplicação da categoria">
+        <button
+          type="button"
+          className={ledger === "payable" ? "active" : ""}
+          onClick={() => setLedger("payable")}
+        >
+          Contas a pagar
+        </button>
+        <button
+          type="button"
+          className={ledger === "receivable" ? "active" : ""}
+          onClick={() => setLedger("receivable")}
+        >
+          Contas a receber
+        </button>
+      </div>
+      {groups.length === 0 && roots.length === 0 ? (
+        <div className="admin-empty-state">
+          <FolderTree />
+          <h3>Você ainda não criou grupos financeiros.</h3>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => open({ kind: "category" })}
+          >
+            Criar primeiro grupo
+          </button>
+        </div>
+      ) : (
+        <>
+          {groups.length === 0 ? (
+            <div className="financial-category-notice">
+              <span>Você ainda não criou grupos financeiros.</span>
+              <button type="button" onClick={() => open({ kind: "category" })}>
+                Criar primeiro grupo
+              </button>
+            </div>
+          ) : null}
+          <div className="financial-category-tree">
+            {groups.map((group) => {
+              const children = categories.filter(
+                (category) => scalar(category.parent_id) === group.id
+              );
+              const isOpen = expanded.has(group.id);
+              return (
+                <section key={group.id} className={!booleanValue(group.active) ? "inactive" : ""}>
+                  <div className="financial-category-group-row">
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setExpanded((current) => {
+                          const next = new Set(current);
+                          if (next.has(group.id)) next.delete(group.id);
+                          else next.add(group.id);
+                          return next;
+                        })
+                      }
+                    >
+                      {isOpen ? <ChevronDown /> : <ChevronRight />}
+                      <span>
+                        <small>{scalar(group.code) || "Grupo"}</small>
+                        <strong>{recordLabel(group, "name")}</strong>
+                      </span>
+                    </button>
+                    <div>
+                      <button
+                        type="button"
+                        title="Editar"
+                        onClick={() => open({ kind: "category", item: group })}
+                      >
+                        <Pencil />
+                      </button>
+                      <button
+                        type="button"
+                        title={booleanValue(group.active) ? "Desativar" : "Ativar"}
+                        onClick={() => void toggleActive(group)}
+                      >
+                        {booleanValue(group.active) ? <X /> : <RefreshCw />}
+                      </button>
+                    </div>
+                  </div>
+                  {isOpen ? (
+                    <div className="financial-category-children">
+                      {children.length ? (
+                        children.map((child) => <CategoryRow key={child.id} item={child} child />)
+                      ) : (
+                        <p>Nenhuma subconta cadastrada neste grupo.</p>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+            {roots.map((category) => (
+              <CategoryRow key={category.id} item={category} />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -1427,6 +2088,44 @@ function formValue(form: FormData, key: string) {
 function activeItems(items: FinancialRecord[]) {
   return items.filter((item) => booleanValue(item.active));
 }
+
+function CategoryOptions({
+  categories,
+  kind
+}: {
+  categories: FinancialRecord[];
+  kind: "income" | "expense";
+}) {
+  const selectable = selectableCategories(categories, kind);
+  const groups = activeItems(categories).filter((category) => booleanValue(category.is_group));
+  const groupedIds = new Set(groups.map((group) => group.id));
+  return (
+    <>
+      {selectable
+        .filter((category) => !groupedIds.has(scalar(category.parent_id)))
+        .map((category) => (
+          <option key={category.id} value={category.id}>
+            {recordLabel(category, "category_path", "name")}
+          </option>
+        ))}
+      {groups.map((group) => {
+        const children = selectable.filter((category) => scalar(category.parent_id) === group.id);
+        return children.length ? (
+          <optgroup
+            key={group.id}
+            label={`${scalar(group.code) ? `${scalar(group.code)} · ` : ""}${recordLabel(group, "name")}`}
+          >
+            {children.map((category) => (
+              <option key={category.id} value={category.id}>
+                {recordLabel(category, "name")}
+              </option>
+            ))}
+          </optgroup>
+        ) : null;
+      })}
+    </>
+  );
+}
 function SubmitButton({ pending, label = "Salvar" }: { pending: boolean; label?: string }) {
   return (
     <button className="primary-button" type="submit" disabled={pending}>
@@ -1529,17 +2228,10 @@ function LedgerForm({
             <span>Categoria</span>
             <select name="category_id" required defaultValue={item ? scalar(item.category_id) : ""}>
               <option value="">Selecione</option>
-              {activeItems(data.categories)
-                .filter((category) =>
-                  ["both", ledger === "receivable" ? "income" : "expense"].includes(
-                    scalar(category.kind)
-                  )
-                )
-                .map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {recordLabel(category, "name")}
-                  </option>
-                ))}
+              <CategoryOptions
+                categories={data.categories}
+                kind={ledger === "receivable" ? "income" : "expense"}
+              />
             </select>
           </label>
           <label>
@@ -1762,6 +2454,9 @@ function TransactionForm({
   pending: boolean;
   mutate: (a: string, p: Record<string, unknown>, s: string) => Promise<boolean>;
 }) {
+  const [transactionType, setTransactionType] = useState<"income" | "expense">(
+    scalar(item?.type) === "income" ? "income" : "expense"
+  );
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1797,7 +2492,11 @@ function TransactionForm({
         <div className="financial-form-grid">
           <label>
             <span>Tipo</span>
-            <select name="type" defaultValue={item ? scalar(item.type) : "expense"}>
+            <select
+              name="type"
+              value={transactionType}
+              onChange={(event) => setTransactionType(event.target.value as "income" | "expense")}
+            >
               <option value="income">Entrada</option>
               <option value="expense">Saída</option>
             </select>
@@ -1825,11 +2524,7 @@ function TransactionForm({
             <span>Categoria</span>
             <select name="category_id" defaultValue={item ? scalar(item.category_id) : ""}>
               <option value="">Sem categoria</option>
-              {activeItems(data.categories).map((category) => (
-                <option key={category.id} value={category.id}>
-                  {recordLabel(category, "name")}
-                </option>
-              ))}
+              <CategoryOptions categories={data.categories} kind={transactionType} />
             </select>
           </label>
           <label>
@@ -1992,13 +2687,7 @@ function ContributionForm({
             <span>Categoria</span>
             <select name="category_id" defaultValue={item ? scalar(item.category_id) : ""}>
               <option value="">Sem categoria</option>
-              {activeItems(data.categories)
-                .filter((category) => ["income", "both"].includes(scalar(category.kind)))
-                .map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {recordLabel(category, "name")}
-                  </option>
-                ))}
+              <CategoryOptions categories={data.categories} kind="income" />
             </select>
           </label>
           <label className="full">
@@ -2031,6 +2720,10 @@ function ConfigForm({
   mutate: (a: string, p: Record<string, unknown>, s: string) => Promise<boolean>;
 }) {
   const item = modal.item;
+  const [categoryType, setCategoryType] = useState<"group" | "subaccount">(
+    booleanValue(item?.is_group) ? "group" : "subaccount"
+  );
+  const [categoryKind, setCategoryKind] = useState(scalar(item?.kind) || "both");
   const titles = {
     account: "Conta financeira",
     category: "Categoria",
@@ -2047,7 +2740,14 @@ function ConfigForm({
     };
     if (modal.kind === "account")
       payload.initial_balance_cents = moneyToCents(formValue(form, "initial_balance")) ?? 0;
-    if (modal.kind === "category") payload.kind = formValue(form, "kind");
+    if (modal.kind === "category") {
+      payload.kind = formValue(form, "kind");
+      payload.code = formValue(form, "code");
+      payload.is_group = formValue(form, "category_type") === "group";
+      payload.parent_id =
+        formValue(form, "category_type") === "group" ? "" : formValue(form, "parent_id");
+      payload.sort_order = Number(formValue(form, "sort_order")) || 0;
+    }
     if (modal.kind === "group")
       payload.expected_percentage = Number(
         formValue(form, "expected_percentage").replace(",", ".")
@@ -2096,14 +2796,69 @@ function ConfigForm({
           </label>
         ) : null}
         {modal.kind === "category" ? (
-          <label>
-            <span>Aplicação</span>
-            <select name="kind" defaultValue={item ? scalar(item.kind) : "both"}>
-              <option value="both">Entrada e saída</option>
-              <option value="income">Somente entrada</option>
-              <option value="expense">Somente saída</option>
-            </select>
-          </label>
+          <>
+            <label>
+              <span>Código (opcional)</span>
+              <input
+                name="code"
+                maxLength={40}
+                placeholder="Ex.: 2.01.03"
+                defaultValue={item ? scalar(item.code) : ""}
+              />
+            </label>
+            <label>
+              <span>Tipo da categoria</span>
+              <select
+                name="category_type"
+                value={categoryType}
+                onChange={(event) => setCategoryType(event.target.value as "group" | "subaccount")}
+              >
+                <option value="group">Conta totalizadora</option>
+                <option value="subaccount">Subconta</option>
+              </select>
+            </label>
+            <label>
+              <span>Utilização</span>
+              <select
+                name="kind"
+                value={categoryKind}
+                onChange={(event) => setCategoryKind(event.target.value)}
+              >
+                <option value="both">Contas a pagar e receber</option>
+                <option value="income">Contas a receber</option>
+                <option value="expense">Contas a pagar</option>
+              </select>
+            </label>
+            {categoryType === "subaccount" ? (
+              <label>
+                <span>Pertence a</span>
+                <select name="parent_id" defaultValue={item ? scalar(item.parent_id) : ""}>
+                  <option value="">Sem conta totalizadora</option>
+                  {activeItems(data.categories)
+                    .filter(
+                      (category) =>
+                        booleanValue(category.is_group) &&
+                        (scalar(category.kind) === "both" || scalar(category.kind) === categoryKind)
+                    )
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {recordLabel(category, "category_path", "name")}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+            <label>
+              <span>Ordem</span>
+              <input
+                name="sort_order"
+                type="number"
+                min={0}
+                max={100000}
+                defaultValue={item ? numberValue(item.sort_order) : 0}
+              />
+            </label>
+          </>
         ) : null}
         {modal.kind === "group" ? (
           <label>

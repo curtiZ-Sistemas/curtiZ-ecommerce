@@ -34,12 +34,29 @@ const actionSchemas = {
     initial_balance_cents: z.number().int().min(-999_999_999_999).max(999_999_999_999),
     active: z.boolean().optional()
   }),
-  "category.save": z.object({
-    id: z.union([uuid, z.literal("")]).default(""),
-    name: z.string().trim().min(2).max(80),
-    kind: z.enum(["income", "expense", "both"]),
-    active: z.boolean().optional()
-  }),
+  "category.save": z
+    .object({
+      id: z.union([uuid, z.literal("")]).default(""),
+      name: z.string().trim().min(2).max(80),
+      code: z.string().trim().max(40).optional().default(""),
+      kind: z.enum(["income", "expense", "both"]),
+      parent_id: z
+        .union([uuid, z.literal("")])
+        .optional()
+        .default(""),
+      is_group: z.boolean().default(false),
+      sort_order: z.number().int().min(0).max(100_000).default(0),
+      active: z.boolean().optional()
+    })
+    .superRefine((value, context) => {
+      if (value.is_group && value.parent_id) {
+        context.addIssue({
+          code: "custom",
+          message: "Uma conta totalizadora não pode pertencer a outro grupo.",
+          path: ["parent_id"]
+        });
+      }
+    }),
   "group.save": z.object({
     id: z.union([uuid, z.literal("")]).default(""),
     name: z.string().trim().min(2).max(100),
@@ -123,6 +140,22 @@ function defaultPeriod() {
   const to = now.toISOString().slice(0, 10);
   const fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   return { from: fromDate.toISOString().slice(0, 10), to };
+}
+
+function financialConflictMessage(message: string) {
+  if (message.includes("invalid analytic financial category"))
+    return "Selecione uma subconta ativa e compatível; contas totalizadoras não recebem lançamentos.";
+  if (message.includes("group with active subaccounts"))
+    return "Desative ou mova as subcontas ativas antes de desativar esta conta totalizadora.";
+  if (message.includes("category with financial history"))
+    return "Esta categoria possui histórico financeiro e não pode ser transformada em totalizadora.";
+  if (message.includes("parent must be a group"))
+    return "A categoria pai precisa ser uma conta totalizadora válida.";
+  if (message.includes("incompatible"))
+    return "A utilização da subconta deve ser compatível com a conta totalizadora.";
+  if (message.includes("duplicate key") && message.includes("financial_categories_code_unique"))
+    return "Este código de conta já está em uso.";
+  return "A operação não foi concluída. Confira o estado atual e tente novamente.";
 }
 
 export async function GET(request: NextRequest) {
@@ -233,7 +266,7 @@ export async function POST(request: NextRequest) {
   });
   if (result.error) {
     return NextResponse.json(
-      { message: "A operação não foi concluída. Confira o estado atual e tente novamente." },
+      { message: financialConflictMessage(result.error.message) },
       { status: 409, headers: managerNoStore }
     );
   }

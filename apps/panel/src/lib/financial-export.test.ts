@@ -15,6 +15,20 @@ describe("financial Excel export", () => {
             due_on: "2026-09-02",
             amount: 1500
           }
+        ],
+        expense_category_report: [
+          {
+            category_id: "c1",
+            category_code: "2.01.01",
+            category_name: "Internet",
+            group_id: "g1",
+            group_code: "2.01",
+            group_name: "Administrativo",
+            realized: 500,
+            projected: 100,
+            overdue: 0,
+            total: 600
+          }
         ]
       },
       "all",
@@ -22,6 +36,7 @@ describe("financial Excel export", () => {
     );
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
       "Resumo",
+      "Resumo por categorias",
       "Contas a Receber",
       "Contas a Pagar",
       "Lançamentos",
@@ -29,8 +44,9 @@ describe("financial Excel export", () => {
       "Categorias",
       "Contas"
     ]);
-    const value = workbook.getWorksheet("Contas a Receber")?.getCell("J2").value;
+    const value = workbook.getWorksheet("Contas a Receber")?.getCell("L2").value;
     expect(value).toBe(1500);
+    expect(workbook.getWorksheet("Resumo por categorias")?.getCell("E2").value).toBe(500);
     const buffer = await workbook.xlsx.writeBuffer();
     expect(new Uint8Array(buffer).slice(0, 2)).toEqual(new Uint8Array([0x50, 0x4b]));
   }, 20_000);
