@@ -1,6 +1,6 @@
 begin;
 
-create table public.financial_integration_settings (
+create table if not exists public.financial_integration_settings (
   provider text primary key check (provider in ('mercadopago')),
   account_id uuid not null references public.financial_accounts(id) on delete restrict,
   revenue_category_id uuid not null references public.financial_categories(id) on delete restrict,
@@ -12,12 +12,16 @@ create table public.financial_integration_settings (
   updated_at timestamptz not null default now()
 );
 
+drop trigger if exists touch_financial_integration_settings on public.financial_integration_settings;
+
 create trigger touch_financial_integration_settings
 before update on public.financial_integration_settings
 for each row execute function private.touch_updated_at();
 
 alter table public.financial_integration_settings enable row level security;
 alter table public.financial_integration_settings force row level security;
+
+drop policy if exists "finance readers integration settings" on public.financial_integration_settings;
 
 create policy "finance readers integration settings"
 on public.financial_integration_settings
@@ -38,52 +42,52 @@ on public.financial_integration_settings
 to service_role;
 
 alter table public.accounts_receivable
-  add column origin text not null default 'manual'
+  add column if not exists origin text not null default 'manual'
     check (origin in ('manual','online_store')),
-  add column order_id uuid references public.orders(id) on delete restrict,
-  add column payment_id uuid references public.payments(id) on delete restrict,
-  add column provider_payment_id text,
-  add column payment_method text,
-  add column gross_amount numeric(14,2)
+  add column if not exists order_id uuid references public.orders(id) on delete restrict,
+  add column if not exists payment_id uuid references public.payments(id) on delete restrict,
+  add column if not exists provider_payment_id text,
+  add column if not exists payment_method text,
+  add column if not exists gross_amount numeric(14,2)
     check (gross_amount is null or gross_amount >= 0),
-  add column provider_fee numeric(14,2)
+  add column if not exists provider_fee numeric(14,2)
     check (provider_fee is null or provider_fee >= 0),
-  add column net_amount numeric(14,2)
+  add column if not exists net_amount numeric(14,2)
     check (net_amount is null or net_amount >= 0),
-  add column provider_installments integer
+  add column if not exists provider_installments integer
     check (provider_installments is null or provider_installments > 0),
-  add column provider_status text,
-  add column received_at timestamptz,
-  add column refunded_amount numeric(14,2) not null default 0
+  add column if not exists provider_status text,
+  add column if not exists received_at timestamptz,
+  add column if not exists refunded_amount numeric(14,2) not null default 0
     check (refunded_amount >= 0);
 
-create unique index accounts_receivable_order_unique
+create unique index if not exists accounts_receivable_order_unique
 on public.accounts_receivable(order_id)
 where order_id is not null;
 
-create unique index accounts_receivable_payment_unique
+create unique index if not exists accounts_receivable_payment_unique
 on public.accounts_receivable(payment_id)
 where payment_id is not null;
 
-create index accounts_receivable_origin_period_idx
+create index if not exists accounts_receivable_origin_period_idx
 on public.accounts_receivable(origin, status, due_on);
 
 alter table public.accounts_payable
-  add column origin text not null default 'manual'
+  add column if not exists origin text not null default 'manual'
     check (origin in ('manual','mercadopago_fee','mercadopago_refund')),
-  add column payment_id uuid references public.payments(id) on delete restrict,
-  add column payment_refund_id uuid references public.payment_refunds(id) on delete restrict,
-  add column provider_reference text;
+  add column if not exists payment_id uuid references public.payments(id) on delete restrict,
+  add column if not exists payment_refund_id uuid references public.payment_refunds(id) on delete restrict,
+  add column if not exists provider_reference text;
 
-create unique index accounts_payable_payment_fee_unique
+create unique index if not exists accounts_payable_payment_fee_unique
 on public.accounts_payable(payment_id)
 where origin = 'mercadopago_fee';
 
-create unique index accounts_payable_payment_refund_unique
+create unique index if not exists accounts_payable_payment_refund_unique
 on public.accounts_payable(payment_refund_id)
 where payment_refund_id is not null;
 
-create index accounts_payable_origin_period_idx
+create index if not exists accounts_payable_origin_period_idx
 on public.accounts_payable(origin, status, due_on);
 
 alter table public.payments
@@ -100,13 +104,16 @@ alter table public.payment_refunds
   add column if not exists idempotency_key uuid not null default gen_random_uuid();
 
 alter table public.payment_refunds
+  drop constraint if exists payment_refunds_idempotency_unique;
+
+alter table public.payment_refunds
   add constraint payment_refunds_idempotency_unique
   unique (idempotency_key);
 
-create index payment_refunds_payment_idx
+create index if not exists payment_refunds_payment_idx
 on public.payment_refunds(payment_id, created_at desc);
 
-create table public.financial_transfers (
+create table if not exists public.financial_transfers (
   id uuid primary key default gen_random_uuid(),
   source_account_id uuid not null references public.financial_accounts(id) on delete restrict,
   destination_account_id uuid not null references public.financial_accounts(id) on delete restrict,
@@ -119,15 +126,17 @@ create table public.financial_transfers (
   check (source_account_id <> destination_account_id)
 );
 
-create unique index financial_transfers_external_reference_unique
+create unique index if not exists financial_transfers_external_reference_unique
 on public.financial_transfers(lower(external_reference))
 where external_reference is not null;
 
-create index financial_transfers_period_idx
+create index if not exists financial_transfers_period_idx
 on public.financial_transfers(occurred_on desc);
 
 alter table public.financial_transfers enable row level security;
 alter table public.financial_transfers force row level security;
+
+drop policy if exists "finance readers transfers" on public.financial_transfers;
 
 create policy "finance readers transfers"
 on public.financial_transfers
@@ -148,8 +157,8 @@ on public.financial_transfers
 to service_role;
 
 alter table public.financial_transactions
-  add column affects_result boolean not null default true,
-  add column transfer_id uuid references public.financial_transfers(id) on delete restrict;
+  add column if not exists affects_result boolean not null default true,
+  add column if not exists transfer_id uuid references public.financial_transfers(id) on delete restrict;
 
 alter table public.financial_transactions
   drop constraint if exists financial_transactions_origin_check;
@@ -214,7 +223,7 @@ alter table public.financial_transactions
       )
     );
 
-create unique index financial_transaction_transfer_side_unique
+create unique index if not exists financial_transaction_transfer_side_unique
 on public.financial_transactions(transfer_id, type)
 where transfer_id is not null;
 
@@ -269,6 +278,8 @@ begin
   return new;
 end;
 $$;
+
+drop trigger if exists validate_financial_integration_settings on public.financial_integration_settings;
 
 create trigger validate_financial_integration_settings
 before insert or update
@@ -1120,6 +1131,8 @@ begin
 end;
 $$;
 
+drop trigger if exists sync_mercadopago_payment_financial on public.payments;
+
 create trigger sync_mercadopago_payment_financial
 after insert or update of
   status,
@@ -1149,6 +1162,8 @@ begin
 end;
 $$;
 
+drop trigger if exists sync_mercadopago_refund_financial on public.payment_refunds;
+
 create trigger sync_mercadopago_refund_financial
 after insert or update of
   status,
@@ -1158,28 +1173,28 @@ on public.payment_refunds
 for each row
 execute function private.on_mercadopago_refund_financial_sync();
 
-alter function public.finalize_mercadopago_payment(
-  text,
-  text,
-  text,
-  numeric,
-  text,
-  public.payment_status,
-  timestamptz
-)
-rename to finalize_mercadopago_payment_commerce_v3;
+do $migration$
+begin
+  if to_regprocedure(
+    'public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz)'
+  ) is not null
+  and to_regprocedure(
+    'public.finalize_mercadopago_payment_commerce_v3(text,text,text,numeric,text,public.payment_status,timestamptz)'
+  ) is null then
+    execute 'alter function public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz) rename to finalize_mercadopago_payment_commerce_v3';
+  end if;
+end;
+$migration$;
 
-revoke all
-on function public.finalize_mercadopago_payment_commerce_v3(
-  text,
-  text,
-  text,
-  numeric,
-  text,
-  public.payment_status,
-  timestamptz
-)
-from public, anon, authenticated, service_role;
+do $migration$
+begin
+  if to_regprocedure(
+    'public.finalize_mercadopago_payment_commerce_v3(text,text,text,numeric,text,public.payment_status,timestamptz)'
+  ) is not null then
+    execute 'revoke all on function public.finalize_mercadopago_payment_commerce_v3(text,text,text,numeric,text,public.payment_status,timestamptz) from public, anon, authenticated, service_role';
+  end if;
+end;
+$migration$;
 
 create or replace function public.finalize_mercadopago_payment(
   p_provider_event_id text,
@@ -1488,20 +1503,26 @@ alter table public.payment_refunds
   add column if not exists source text not null default 'manager'
     check (source in ('manager','provider'));
 
-alter function public.finalize_mercadopago_refund(
-  uuid,
-  text,
-  uuid
-)
-rename to finalize_mercadopago_refund_full_v1;
+do $migration$
+begin
+  if to_regprocedure(
+    'public.finalize_mercadopago_refund(uuid,text,uuid)'
+  ) is not null
+  and to_regprocedure(
+    'public.finalize_mercadopago_refund_full_v1(uuid,text,uuid)'
+  ) is null then
+    execute 'alter function public.finalize_mercadopago_refund(uuid,text,uuid) rename to finalize_mercadopago_refund_full_v1';
+  end if;
+end;
+$migration$;
 
-revoke all
-on function public.finalize_mercadopago_refund_full_v1(
-  uuid,
-  text,
-  uuid
-)
-from public, anon, authenticated, service_role;
+do $migration$
+begin
+  if to_regprocedure('public.finalize_mercadopago_refund_full_v1(uuid,text,uuid)') is not null then
+    execute 'revoke all on function public.finalize_mercadopago_refund_full_v1(uuid,text,uuid) from public, anon, authenticated, service_role';
+  end if;
+end;
+$migration$;
 
 create or replace function public.begin_mercadopago_refund(
   p_payment_id uuid,
@@ -1963,12 +1984,22 @@ on function public.reconcile_mercadopago_provider_refund(
 )
 to service_role;
 
-alter function public.financial_control_mutate(text,jsonb)
-rename to financial_control_mutate_categories_v2;
+do $migration$
+begin
+  if to_regprocedure('public.financial_control_mutate(text,jsonb)') is not null
+  and to_regprocedure('public.financial_control_mutate_categories_v2(text,jsonb)') is null then
+    execute 'alter function public.financial_control_mutate(text,jsonb) rename to financial_control_mutate_categories_v2';
+  end if;
+end;
+$migration$;
 
-revoke all
-on function public.financial_control_mutate_categories_v2(text,jsonb)
-from public, anon, authenticated;
+do $migration$
+begin
+  if to_regprocedure('public.financial_control_mutate_categories_v2(text,jsonb)') is not null then
+    execute 'revoke all on function public.financial_control_mutate_categories_v2(text,jsonb) from public, anon, authenticated';
+  end if;
+end;
+$migration$;
 
 create or replace function public.financial_control_mutate(
   p_action text,
@@ -2292,12 +2323,22 @@ grant execute
 on function public.financial_control_mutate(text,jsonb)
 to authenticated;
 
-alter function public.financial_control_snapshot(date,date)
-rename to financial_control_snapshot_categories_v2;
+do $migration$
+begin
+  if to_regprocedure('public.financial_control_snapshot(date,date)') is not null
+  and to_regprocedure('public.financial_control_snapshot_categories_v2(date,date)') is null then
+    execute 'alter function public.financial_control_snapshot(date,date) rename to financial_control_snapshot_categories_v2';
+  end if;
+end;
+$migration$;
 
-revoke all
-on function public.financial_control_snapshot_categories_v2(date,date)
-from public, anon, authenticated;
+do $migration$
+begin
+  if to_regprocedure('public.financial_control_snapshot_categories_v2(date,date)') is not null then
+    execute 'revoke all on function public.financial_control_snapshot_categories_v2(date,date) from public, anon, authenticated';
+  end if;
+end;
+$migration$;
 
 create or replace function public.financial_control_snapshot(
   p_date_from date,
