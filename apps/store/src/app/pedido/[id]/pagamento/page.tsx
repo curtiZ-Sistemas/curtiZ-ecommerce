@@ -1,7 +1,7 @@
 import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { notFound, redirect } from "next/navigation";
 import { OrderPayment } from "@/components/order-payment";
-import { isCancelledOrderStatus } from "@/lib/checkout-flow";
+import { canContinueOrderPayment } from "@/lib/customer-account-presentation";
 import type { MercadoPagoBrickSession } from "@/lib/mercadopago-brick-config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
@@ -16,13 +16,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const [orderResponse, paymentResponse] = await Promise.all([
     supabase.from("orders").select("id,public_code,customer_id,customer_email_snapshot,status,subtotal,discount_total,shipping_total,grand_total")
       .eq("id", id).eq("customer_id", user.id).maybeSingle(),
-    supabase.from("payments").select("provider_payment_id,status,status_detail,payment_method_summary").eq("order_id", id).eq("provider", "mercadopago").maybeSingle()
+    supabase.from("payments").select("provider_payment_id,status,status_detail,payment_method_summary,expires_at").eq("order_id", id).eq("provider", "mercadopago").maybeSingle()
   ]);
   const order = readQueryResult(orderResponse).data;
   const payment = readQueryResult(paymentResponse).data;
   if (!isUnknownRecord(order) || !isUnknownRecord(payment)) notFound();
   if (!readString(payment, "payment_method_summary")) notFound();
-  if (isCancelledOrderStatus(readString(order, "status")) && readString(payment, "status_detail") !== "expired") {
+  if (!canContinueOrderPayment(readString(order, "status"), readString(payment, "status"),
+    readString(payment, "payment_method_summary"), readString(payment, "status_detail"), readString(payment, "expires_at"))) {
     redirect(`/minha-conta/pedidos?pedido=${encodeURIComponent(readString(order, "public_code"))}`);
   }
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim() ?? "";

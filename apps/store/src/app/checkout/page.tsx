@@ -14,7 +14,7 @@ import {
   readMercadoPagoBrickSession,
   type MercadoPagoBrickSession
 } from "@/lib/mercadopago-brick-config";
-import { isUnknownRecord } from "@/lib/unknown-data";
+import { isUnknownRecord, readString } from "@/lib/unknown-data";
 import {
   CPF_FORMATTED_MAX_LENGTH,
   CUSTOMER_EMAIL_MAX_LENGTH,
@@ -379,7 +379,7 @@ export default function CheckoutPage() {
 
     try {
       const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
-      if (!selectedAddress || editingAddressId || !selectedAddress.isDefault) {
+      if (!selectedAddress || editingAddressId) {
         const baseLabel = formString("addressLabel") || selectedAddress?.label.replace(/\s+\d+$/u, "") || "Casa";
         const editingExisting = Boolean(editingAddressId && editingAddressId !== "new");
         const persistedLabel = editingExisting && selectedAddress
@@ -396,7 +396,8 @@ export default function CheckoutPage() {
             recipientName: formString("name"),
             postalCode: formString("postalCode"), street: formString("street"),
             number: formString("number"), complement: formString("complement"), district: formString("district"),
-            city: formString("city"), state: formString("state"), isDefault: true }
+            city: formString("city"), state: formString("state"),
+            isDefault: editingExisting ? selectedAddress?.isDefault === true : savedAddresses.length === 0 }
           )
         });
         if (!addressResponse.ok) {
@@ -404,7 +405,7 @@ export default function CheckoutPage() {
           setMessage(addressResult.message ?? "Não foi possível salvar o endereço.");
           return;
         }
-        const addressResult = await addressResponse.json() as { data?: unknown };
+        const addressResult = await addressResponse.json() as { data?: unknown; address?: unknown };
         const savedId = typeof addressResult.data === "string" ? addressResult.data : "";
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(savedId)) {
           setMessage("O endereço foi salvo, mas não foi possível confirmar seu identificador.");
@@ -412,7 +413,7 @@ export default function CheckoutPage() {
         }
         const savedAddress: SavedAddress = {
           id: savedId,
-          label: editingExisting ? persistedLabel : selectedAddress?.label ?? nextAddressLabel(savedAddresses, baseLabel),
+          label: editingExisting ? persistedLabel : nextAddressLabel(savedAddresses, baseLabel),
           recipientName: formString("name"),
           postalCode: formString("postalCode"),
           street: formString("street"),
@@ -421,12 +422,23 @@ export default function CheckoutPage() {
           district: formString("district"),
           city: formString("city"),
           state: formString("state"),
-          isDefault: true
+          isDefault: editingExisting ? selectedAddress?.isDefault === true : savedAddresses.length === 0
         };
+        if (isUnknownRecord(addressResult.address) && addressResult.address.id === savedId) {
+          const persisted = addressResult.address;
+          Object.assign(savedAddress, {
+            label: readString(persisted, "label"), recipientName: readString(persisted, "recipient_name"),
+            postalCode: readString(persisted, "postal_code"), street: readString(persisted, "street"),
+            number: readString(persisted, "number"), complement: readString(persisted, "complement"),
+            district: readString(persisted, "district"), city: readString(persisted, "city"),
+            state: readString(persisted, "state"), isDefault: persisted.is_default === true
+          });
+        }
         setSavedAddresses((current) => [
           savedAddress,
           ...current.filter((address) => address.id !== savedId)
-        ].map((address) => ({ ...address, isDefault: address.id === savedId })));
+        ].map((address) => savedAddress.isDefault
+          ? { ...address, isDefault: address.id === savedId } : address));
         setSelectedAddressId(savedId);
         setEditingAddressId(null);
       }

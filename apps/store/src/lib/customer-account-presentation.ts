@@ -33,10 +33,15 @@ export const customerStatusLabel = (status: string) =>
 export const canContinueOrderPayment = (
   orderStatus: string,
   paymentStatus: string,
-  paymentMethod: string | undefined
+  paymentMethod: string | undefined,
+  statusDetail = "",
+  expiresAt = "",
+  now = Date.now()
 ) => orderStatus === "pending_payment"
   && ["pending", "rejected"].includes(paymentStatus)
-  && Boolean(paymentMethod);
+  && Boolean(paymentMethod)
+  && statusDetail !== "expired"
+  && (!expiresAt || Date.parse(expiresAt) > now);
 
 export const customerOrderActionLabel = (status: string) => {
   if (status === "shipped") return "Rastrear pedido";

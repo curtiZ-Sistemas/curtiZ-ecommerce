@@ -295,6 +295,13 @@ export async function POST(request: Request) {
 
   const result = readQueryResult(response);
   if (result.error) return json({ message: friendlyError(result.error) }, 409);
+  if (action === "address_save" && typeof result.data === "string") {
+    const saved = readQueryResult(await supabase.from("addresses")
+      .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")
+      .eq("id", result.data).eq("user_id", user.id).single());
+    revalidatePath("/minha-conta", "layout");
+    return json({ ok: true, data: result.data, address: saved.error ? null : saved.data });
+  }
   revalidatePath("/minha-conta", "layout");
   return json({ ok: true, data: result.data });
 }

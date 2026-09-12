@@ -4,6 +4,10 @@ import { isCustomerOrderVisible } from "./customer-order-visibility";
 const now = Date.parse("2026-09-12T12:00:00.000Z");
 
 describe("customer order visibility", () => {
+  it.each(["draft", "cancelled", "cancellation_requested", "pending_payment"])("hides %s without any payment attempt", (orderStatus) => {
+    expect(isCustomerOrderVisible({ orderStatus, paymentStatus: "pending", paymentStatusDetail: "",
+      hasPaymentAttempt: false, hasPaymentMethod: true }, now)).toBe(false);
+  });
   it("hides a pending checkout without a real payment attempt", () => {
     expect(isCustomerOrderVisible({
       orderStatus: "pending_payment",

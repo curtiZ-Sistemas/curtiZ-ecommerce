@@ -282,6 +282,8 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
             provider: readString(payment, "provider"),
             method: readString(payment, "payment_method_summary"),
             status: readString(payment, "status"),
+            statusDetail: readString(payment, "status_detail"),
+            expiresAt: readString(payment, "expires_at"),
             paidAt: readString(payment, "paid_at")
           }
         : null,

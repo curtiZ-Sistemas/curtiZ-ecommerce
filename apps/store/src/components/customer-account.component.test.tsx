@@ -25,6 +25,10 @@ describe("customer account presentation", () => {
     ["pending_payment", "rejected", "credit_card:visa", true],
     ["cancellation_requested", "pending", "selected:pix", false],
     ["cancelled", "pending", "selected:pix", false],
+    ["expired", "pending", "selected:pix", false],
+    ["payment_approved", "pending", "selected:pix", false],
+    ["preparing", "pending", "selected:pix", false],
+    ["refunded", "pending", "selected:pix", false],
     ["processing", "pending", "selected:pix", false],
     ["shipped", "pending", "selected:pix", false],
     ["delivered", "pending", "selected:pix", false],
@@ -32,6 +36,13 @@ describe("customer account presentation", () => {
     ["pending_payment", "pending", "", false]
   ])("controls payment resumption for order=%s payment=%s", (order, payment, method, expected) => {
     expect(canContinueOrderPayment(order, payment, method)).toBe(expected);
+  });
+
+  it("blocks expired payments even before order housekeeping runs", () => {
+    const now = Date.parse("2026-09-12T12:00:00Z");
+    expect(canContinueOrderPayment("pending_payment", "pending", "pix", "expired", "", now)).toBe(false);
+    expect(canContinueOrderPayment("pending_payment", "pending", "pix", "", "2026-09-12T12:00:00Z", now)).toBe(false);
+    expect(canContinueOrderPayment("pending_payment", "pending", "pix", "", "2026-09-12T12:01:00Z", now)).toBe(true);
   });
 
   it.each([

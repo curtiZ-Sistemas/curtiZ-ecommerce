@@ -19,8 +19,7 @@ export const isCustomerOrderVisible = (
       && Number.isFinite(expiresAt)
       && expiresAt <= now);
 
-  if (isExpired) return false;
+  if (isExpired || order.orderStatus === "expired" || order.paymentStatus === "expired") return false;
 
-  return order.orderStatus !== "pending_payment"
-    || (order.hasPaymentAttempt && order.hasPaymentMethod);
+  return order.hasPaymentAttempt && order.hasPaymentMethod;
 };

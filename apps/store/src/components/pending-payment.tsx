@@ -23,6 +23,14 @@ export function PendingPayment({ orderId }: { orderId: string }) {
       try {
         const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/payment`, { cache: "no-store" });
         const result = await response.json() as State & { message?: string };
+        if (response.status === 409) {
+          if (active) {
+            if (result.status === "approved" && Array.isArray(result.variantIds)) removeMany(result.variantIds);
+            sessionStorage.removeItem("curtiz-pending-order-cleanup");
+            window.location.assign("/minha-conta/pedidos");
+          }
+          return;
+        }
         if (!response.ok) throw new Error(result.message);
         if (!active) return;
         setState(result);
@@ -34,7 +42,7 @@ export function PendingPayment({ orderId }: { orderId: string }) {
     };
     void load();
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer); };
-  }, [orderId]);
+  }, [orderId, removeMany]);
   useEffect(() => {
     if (!state || sessionStorage.getItem("curtiz-pending-order-cleanup") !== orderId) return;
     if (state.status === "approved" && state.variantIds.length) {

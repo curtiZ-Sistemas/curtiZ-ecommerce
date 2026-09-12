@@ -665,7 +665,7 @@ function Orders({
                 >
                   {customerOrderActionLabel(order.status)}
                 </Link>
-                {canContinueOrderPayment(order.status, order.paymentStatus, order.payment?.method) ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+                {canContinueOrderPayment(order.status, order.payment?.status ?? "", order.payment?.method, order.payment?.statusDetail, order.payment?.expiresAt) ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
               </div>
             </article>
           ))}
@@ -803,7 +803,7 @@ function OrderDetails({
         </article>
       </div>
       <div className="customer-form-actions">
-        {canContinueOrderPayment(order.status, order.paymentStatus, order.payment?.method) ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+        {canContinueOrderPayment(order.status, order.payment?.status ?? "", order.payment?.method, order.payment?.statusDetail, order.payment?.expiresAt) ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
         <button className="primary-button" type="button" onClick={repeat}>Comprar novamente</button>
         {canCancel && (
           <button

@@ -1,7 +1,7 @@
 import { isMercadoPagoTestCredential, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
 import { NextResponse } from "next/server";
 import { normalizeMercadoPagoStatus } from "@/lib/mercadopago-payment";
-import { isCancelledOrderStatus } from "@/lib/checkout-flow";
+import { canContinueOrderPayment } from "@/lib/customer-account-presentation";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
@@ -27,9 +27,15 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return reply({ message: "Este checkout não possui uma intenção de pagamento." }, 404);
   }
   let order = orderResult.data;
-  const expiredPayment = readString(paymentResult.data, "status_detail") === "expired";
-  if (isCancelledOrderStatus(readString(order, "status")) && !expiredPayment) {
-    return reply({ message: "Este pedido não aceita pagamento." }, 409);
+  if (!canContinueOrderPayment(readString(order, "status"), readString(paymentResult.data, "status"),
+    readString(paymentResult.data, "payment_method_summary"), readString(paymentResult.data, "status_detail"),
+    readString(paymentResult.data, "expires_at"))) {
+    const approved = readString(order, "payment_status") === "approved"
+      && ["payment_approved", "processing", "picking", "ready_to_ship", "shipped", "delivered"].includes(readString(order, "status"));
+    const items = approved ? readQueryResult(await db.from("order_items").select("variant_id").eq("order_id", id)) : null;
+    return reply({ message: "Este pedido não aceita pagamento.", status: approved ? "approved" : "unavailable",
+      variantIds: items && !items.error ? readRows(items.data).map((item) => readString(item, "variant_id")).filter(Boolean) : []
+    }, 409);
   }
   const itemResult = readQueryResult(await db.from("order_items").select("variant_id").eq("order_id", id));
   const variantIds = itemResult.error ? [] : readRows(itemResult.data).map((item) => readString(item, "variant_id")).filter(Boolean);

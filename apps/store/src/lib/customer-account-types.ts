@@ -44,6 +44,8 @@ export type CustomerOrder = {
     method: string;
     status: string;
     paidAt: string;
+    statusDetail?: string;
+    expiresAt?: string;
   } | null;
   shipment: {
     provider: string;

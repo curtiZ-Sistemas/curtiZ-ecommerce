@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(28);
 
 insert into auth.users(id,instance_id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) values
 ('cb000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','checkout-one@test.local','{}','{"full_name":"Checkout One"}',now(),now()),
@@ -72,6 +72,10 @@ select is((select string_agg(label,',' order by created_at) from public.addresse
 select lives_ok($$select public.save_customer_address(null,'Trabalho','Checkout One','01310102','Av Paulista','3','','Bela Vista','Sao Paulo','SP',false)$$,'Salva terceiro endereco');
 select throws_ok($$select public.save_customer_address(null,'Trabalho','Checkout One','01310103','Av Paulista','4','','Bela Vista','Sao Paulo','SP',false)$$,
   '23514',null,'Banco bloqueia quarto endereco');
+select is((select count(*)::integer from public.addresses where user_id=auth.uid() and is_default),1,'Somente um endereco padrao');
+select lives_ok($$select public.delete_customer_address((select id from public.addresses where user_id=auth.uid() and is_default))$$,'Exclui endereco padrao');
+select is((select count(*)::integer from public.addresses where user_id=auth.uid() and is_default),1,'Exclusao escolhe um unico substituto');
+select is((select shipping_address_snapshot->>'postal_code' from public.orders where customer_id=auth.uid()),'01310100','Exclusao preserva snapshot do pedido');
 select set_config('request.jwt.claims','{"sub":"cb000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select is((select count(*)::integer from public.addresses),0,'Outro cliente nao enxerga enderecos alheios por RLS');
 
