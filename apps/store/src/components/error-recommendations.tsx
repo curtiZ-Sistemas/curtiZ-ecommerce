@@ -47,9 +47,7 @@ export function ErrorRecommendations({ excludeProductId }: { excludeProductId?: 
   return (
     <section className="error-recommendations" aria-labelledby="error-recommendations-title">
       <div className="error-recommendations-heading">
-        <p className="eyebrow">Continue explorando</p>
-        <h2 id="error-recommendations-title">Produtos que podem te interessar</h2>
-        <p>Selecionamos algumas opções disponíveis na curti Z.</p>
+        <h2 id="error-recommendations-title">Talvez você goste</h2>
       </div>
 
       {state.status === "loading" ? (

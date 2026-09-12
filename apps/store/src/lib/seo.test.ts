@@ -72,6 +72,7 @@ describe("SEO da loja", () => {
     const breadcrumb = productBreadcrumbStructuredData(product);
 
     expect(metadata.title).toEqual({ absolute: "Slide Wave Preto | curti Z" });
+    expect(metadata.robots).toEqual({ index: true, follow: true });
     expect(metadata.alternates).toEqual({
       canonical: "https://curtiz.com.br/produto/slide-wave-preto"
     });
@@ -97,6 +98,34 @@ describe("SEO da loja", () => {
 
   it("escapa conteúdo perigoso ao serializar JSON-LD", () => {
     expect(serializeJsonLd({ value: "</script>" })).not.toContain("</script>");
+  });
+
+  it("mantém produto sem estoque indexável e informa OutOfStock", () => {
+    const outOfStock = {
+      ...detail,
+      product: { ...product, stock: 0 },
+      variants: detail.variants.map((variant) => ({ ...variant, stock: 0 }))
+    };
+
+    expect(productMetadata(outOfStock).robots).toEqual({ index: true, follow: true });
+    expect(productStructuredData(outOfStock)).toMatchObject({
+      "@type": "Product",
+      offers: {
+        "@type": "Offer",
+        availability: "https://schema.org/OutOfStock",
+        priceCurrency: "BRL"
+      }
+    });
+  });
+
+  it("transforma imagens relativas em URLs oficiais no JSON-LD", () => {
+    const schema = productStructuredData({
+      ...detail,
+      product: { ...product, image: "/images/products/slide.webp" },
+      gallery: [{ src: "/images/products/slide.webp" }]
+    });
+
+    expect(schema.image).toEqual(["https://curtiz.com.br/images/products/slide.webp"]);
   });
 
   it("inclui identificadores e condição reais da variação no Product e Offer", () => {

@@ -34,22 +34,6 @@ export const demoProducts: Product[] = [
     stock: 73
   },
   {
-    id: "bold-marinho",
-    slug: "slide-bold-marinho",
-    name: "curti Z Slide Bold Marinho",
-    category: "Slides",
-    description: "Slide marcante com tira acolchoada e base anatômica.",
-    priceInCents: 7990,
-    compareAtPriceInCents: 9990,
-    rating: 4.7,
-    reviews: 756,
-    colors: ["Marinho", "Branco"],
-    sizes: ["35/36", "37/38", "39/40", "41/42"],
-    image: "/images/products/bold-marinho.webp",
-    featured: true,
-    stock: 98
-  },
-  {
     id: "comfort-areia",
     slug: "sandalia-comfort-areia",
     name: "curti Z Sandália Comfort Areia",

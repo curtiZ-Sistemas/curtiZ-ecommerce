@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { isGoogleMerchantEnabled } from "@curtiz/config";
 import { buildGoogleMerchantFeed } from "@/lib/google-merchant";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
+import { storefrontFreshnessHeaders } from "@/lib/storefront-cache";
 
 export const dynamic = "force-dynamic";
 
 const feedHeaders = {
   "content-type": "application/rss+xml; charset=utf-8",
-  "cache-control": "public, max-age=300, s-maxage=300, stale-while-revalidate=3600",
+  ...storefrontFreshnessHeaders,
   "x-content-type-options": "nosniff",
   "x-robots-tag": "noindex, follow"
 };

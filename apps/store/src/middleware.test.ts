@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
 
-const { getUser } = vi.hoisted(() => ({ getUser: vi.fn() }));
+const { getUser, rpc } = vi.hoisted(() => ({ getUser: vi.fn(), rpc: vi.fn() }));
 vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({ auth: { getUser } })
+  createServerClient: () => ({ auth: { getUser }, rpc })
 }));
 
 function readCspDirective(csp: string, name: string): string {
@@ -12,7 +12,42 @@ function readCspDirective(csp: string, name: string): string {
 }
 
 describe("store security headers", () => {
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("retorna 404 HTTP real para produto removido e não o entrega como página indexável", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    rpc.mockResolvedValue({ data: false, error: null });
+
+    const response = await middleware(
+      new NextRequest("https://curtiz.com.br/produto/slide-bold-marinho")
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/_not-found");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, follow");
+    expect(rpc).toHaveBeenCalledWith("storefront_product_exists", {
+      p_slug: "slide-bold-marinho"
+    });
+  });
+
+  it("mantém produto comercialmente visível com resposta normal", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    rpc.mockResolvedValue({ data: true, error: null });
+
+    const response = await middleware(
+      new NextRequest("https://curtiz.com.br/produto/slide-ativo")
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
 
   it("protege conteúdo, recursos do navegador e enquadramento em produção", async () => {
     vi.stubEnv("NODE_ENV", "production");

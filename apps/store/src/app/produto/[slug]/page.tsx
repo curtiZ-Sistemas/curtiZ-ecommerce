@@ -14,6 +14,9 @@ import {
 import { getPublicProduct } from "@/lib/storefront-data";
 import { parseProductDescription } from "@/lib/product-description";
 
+// O status, preço e estoque vêm do Supabase e precisam refletir a alteração seguinte.
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({
   params
 }: {

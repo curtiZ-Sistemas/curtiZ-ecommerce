@@ -151,6 +151,7 @@ export function productMetadata(detail: ProductSeoDetail): Metadata {
   return {
     title: { absolute: title },
     description,
+    robots: { index: true, follow: true },
     alternates: { canonical: officialUrl(path) },
     openGraph: {
       type: "website",
@@ -182,6 +183,9 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
   const priceInCents = selectedVariant?.priceInCents ?? product.priceInCents;
   const images = [...new Set([detail.gallery[0]?.src, ...detail.gallery.map((image) => image.src), product.image])]
     .filter((image): image is string => Boolean(image));
+  const absoluteImages = images.map((image) =>
+    image.startsWith("https://") ? image : officialUrl(image)
+  );
 
   const gtin = selectedVariant?.gtin?.trim();
   const gtinProperty = gtin && isValidGtin(gtin)
@@ -209,7 +213,7 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
     url: officialUrl(path),
     name: product.name,
     description: productSeoDescription(product),
-    image: images,
+    image: absoluteImages,
     category: product.category,
     color: product.colors,
     size: product.sizes,

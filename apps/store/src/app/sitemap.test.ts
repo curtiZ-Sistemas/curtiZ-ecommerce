@@ -26,5 +26,10 @@ describe("sitemap público", () => {
     expect(urls.some((url) => /\/(?:login|checkout|carrinho|minha-conta)(?:\/|$)/u.test(url))).toBe(
       false
     );
+    expect(urls.every((url) => url.startsWith("https://curtiz.com.br/"))).toBe(true);
+    expect(urls).not.toContain("https://curtiz.com.br/produto/slide-bold-marinho");
+    expect(entries.find((entry) => entry.url.endsWith("slide-wave-preto"))?.lastModified).toEqual(
+      new Date("2026-08-30T12:00:00.000Z")
+    );
   });
 });

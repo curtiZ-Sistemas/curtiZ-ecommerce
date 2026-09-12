@@ -1,46 +1,26 @@
 import "server-only";
 
 import { cache } from "react";
-import { demoProducts } from "./catalog";
 import { createPublicSupabaseClient } from "./supabase/server";
 import { readQueryResult, readRows, readString } from "./unknown-data";
 
 export type SitemapProduct = { slug: string; updatedAt?: string };
 
-const SITEMAP_PAGE_SIZE = 500;
+const SITEMAP_PAGE_SIZE = 50_000;
 
 export const getActiveProductSitemapEntries = cache(async (): Promise<SitemapProduct[]> => {
-  if (process.env.DEMO_MODE === "true") {
-    return demoProducts.map((product) => ({ slug: product.slug }));
-  }
-
   const supabase = createPublicSupabaseClient();
   if (!supabase) return [];
+  const response = await supabase.rpc("get_storefront_product_seo_entries", {
+    p_limit: SITEMAP_PAGE_SIZE
+  });
+  const result = readQueryResult(response);
+  if (result.error) return [];
 
-  const products: SitemapProduct[] = [];
-  let offset = 0;
-
-  while (true) {
-    const response = await supabase
-      .from("products")
-      .select("slug,updated_at")
-      .eq("status", "active")
-      .order("slug")
-      .range(offset, offset + SITEMAP_PAGE_SIZE - 1);
-    const result = readQueryResult(response);
-    if (result.error) return [];
-
-    const rows = readRows(result.data);
-    for (const row of rows) {
-      const slug = readString(row, "slug");
-      if (!slug) continue;
-      const updatedAt = readString(row, "updated_at");
-      products.push({ slug, ...(updatedAt ? { updatedAt } : {}) });
-    }
-
-    if (rows.length < SITEMAP_PAGE_SIZE) break;
-    offset += SITEMAP_PAGE_SIZE;
-  }
-
-  return products;
+  return readRows(result.data).flatMap((row): SitemapProduct[] => {
+    const slug = readString(row, "slug");
+    if (!slug) return [];
+    const updatedAt = readString(row, "updatedAt");
+    return [{ slug, ...(updatedAt ? { updatedAt } : {}) }];
+  });
 });

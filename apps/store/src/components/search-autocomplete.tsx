@@ -108,7 +108,7 @@ export function SearchAutocomplete({
           signal: controller.signal
         })
       : fetch("/api/intelligence/recommendations?source=most_wanted&limit=3&seed=search", {
-          cache: "force-cache",
+          cache: "no-store",
           signal: controller.signal
         });
 

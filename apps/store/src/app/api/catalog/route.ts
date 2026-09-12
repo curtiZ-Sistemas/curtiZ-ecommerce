@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseCatalogFilters, queryDemoCatalog } from "@/lib/catalog-query";
 import { parseCatalogRpcResult } from "@/lib/catalog-result";
 import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
+import { storefrontFreshnessHeaders } from "@/lib/storefront-cache";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
 import { readQueryResult } from "@/lib/unknown-data";
 
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       });
       if (result) {
         return NextResponse.json(compact ? { products: result.products } : result, {
-          headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" }
+          headers: storefrontFreshnessHeaders
         });
       }
     }

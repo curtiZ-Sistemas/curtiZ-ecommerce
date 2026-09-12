@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "../../../../lib/catalog";
 import { parseRpcProductList } from "../../../../lib/catalog-result";
+import { storefrontFreshnessHeaders } from "../../../../lib/storefront-cache";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
 import { hasServerConsent } from "../../../../lib/privacy/consent-server";
 import {
@@ -52,7 +53,7 @@ async function recommendationResponse(input: z.infer<typeof inputSchema>, person
         headers: {
           "cache-control": personalized
             ? "private, no-store"
-            : "public, s-maxage=120, stale-while-revalidate=600"
+            : storefrontFreshnessHeaders["cache-control"]
         }
       }
     );
@@ -90,7 +91,7 @@ async function recommendationResponse(input: z.infer<typeof inputSchema>, person
       headers: {
         "cache-control": personalized
           ? "private, no-store"
-          : "public, s-maxage=120, stale-while-revalidate=600",
+          : storefrontFreshnessHeaders["cache-control"],
         vary: "accept-encoding"
       }
     }

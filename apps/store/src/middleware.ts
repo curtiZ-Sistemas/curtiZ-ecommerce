@@ -112,7 +112,6 @@ const MERCADO_PAGO_IMAGE_SOURCES = [
 const DEMO_PRODUCT_SLUGS = new Set([
   "flip-flop-wave-preto",
   "flip-flop-slim-coral",
-  "slide-bold-marinho",
   "sandalia-comfort-areia",
   "infantil-joy-rosa",
   "slide-soft-preto",
@@ -413,6 +412,7 @@ function rewriteToNativeNotFound(
     "Cache-Control",
     "public, max-age=0, must-revalidate"
   );
+  response.headers.set("X-Robots-Tag", "noindex, follow");
 
   return applySecurityHeaders(
     response,
@@ -745,15 +745,13 @@ export async function middleware(request: NextRequest) {
     process.env.DEMO_MODE !== "true" &&
     productSlug !== null
   ) {
-    const { data, error } = await supabase
-      .from("products")
-      .select("id")
-      .eq("slug", productSlug)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
+    const productLookup: unknown = await supabase.rpc(
+      "storefront_product_exists",
+      { p_slug: productSlug }
+    );
+    const lookup = productLookup as { data?: unknown; error?: unknown };
 
-    if (!error && !data) {
+    if (!lookup.error && lookup.data !== true) {
       return rewriteToNativeNotFound(
         request,
         response,
