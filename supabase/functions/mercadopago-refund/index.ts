@@ -40,6 +40,14 @@ Deno.serve(async (request) => {
   if (paymentError || !payment || !["approved", "refunded"].includes(payment.status)) {
     return json({ error: "payment_not_refundable" }, 409);
   }
+  const { data: idempotentRefund, error: idempotentError } = await db
+    .from("payment_refunds")
+    .select("status,provider_refund_id")
+    .eq("idempotency_key", idempotency_key).maybeSingle();
+  if (idempotentError) return json({ error: "refund_unavailable" }, 503);
+  if (idempotentRefund?.status === "completed") {
+    return json({ ok: true, duplicate: true, refund_id: idempotentRefund.provider_refund_id });
+  }
   const { data: completedRefunds, error: completedError } = await db
     .from("payment_refunds")
     .select("amount")

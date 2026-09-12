@@ -1377,8 +1377,8 @@ function LedgerSection({
                       <strong>{currency.format(numberValue(item.amount))}</strong>
                       {automatic && ledger === "receivable" ? (
                         <small>
-                          Taxa {item.provider_fee === null ? "não informada" : currency.format(numberValue(item.provider_fee))}
-                          {item.net_received_amount === null ? "" : ` · Líquido ${currency.format(numberValue(item.net_received_amount))}`}
+                          Taxa {item.provider_fee === null || item.provider_fee === undefined ? "não informada" : currency.format(numberValue(item.provider_fee))}
+                          {item.net_received_amount === null || item.net_received_amount === undefined ? "" : ` · Líquido ${currency.format(numberValue(item.net_received_amount))}`}
                         </small>
                       ) : null}
                     </td>
@@ -1725,7 +1725,8 @@ function SettingsSection({
       title: "Contas financeiras",
       items: data.accounts,
       kind: "account" as const,
-      detail: (item: FinancialRecord) => currency.format(numberValue(item.initial_balance))
+      detail: (item: FinancialRecord) =>
+        `Saldo ${currency.format(numberValue(item.current_balance))} · inicial ${currency.format(numberValue(item.initial_balance))}`
     },
     {
       title: "Grupos de sócios",
@@ -2110,7 +2111,14 @@ function auditActionLabel(action: string) {
     "category.save": "Categoria configurada",
     "group.save": "Grupo de sócios configurado",
     "partner.save": "Sócio configurado",
-    "export.log": "Excel financeiro exportado"
+    "export.log": "Excel financeiro exportado",
+    "mercadopago.settings.save": "Integração Mercado Pago configurada",
+    "transfer.save": "Transferência entre contas registrada",
+    "financial.mercadopago.approved": "Pagamento Mercado Pago recebido",
+    "financial.mercadopago.rejected": "Pagamento Mercado Pago recusado",
+    "financial.mercadopago.cancelled": "Pagamento Mercado Pago cancelado",
+    "financial.mercadopago.refunded": "Pagamento Mercado Pago reembolsado",
+    "financial.mercadopago.refund": "Reembolso Mercado Pago reconciliado"
   };
   return map[action] ?? action;
 }

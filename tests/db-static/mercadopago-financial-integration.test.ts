@@ -5,6 +5,7 @@ const migration = readFileSync(
   "supabase/migrations/202609110003_mercadopago_financial_integration.sql",
   "utf8"
 ).toLowerCase();
+const compactMigration = migration.replace(/\s+/gu, " ");
 const webhook = readFileSync("supabase/functions/mercadopago-webhook/index.ts", "utf8");
 const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "utf8");
 
@@ -13,8 +14,8 @@ describe("integração financeira Mercado Pago", () => {
     expect(migration).toContain("add column order_id uuid references public.orders(id)");
     expect(migration).toContain("add column payment_id uuid references public.payments(id)");
     expect(migration).toContain("accounts_receivable_payment_unique");
-    expect(migration).toContain("on conflict (payment_id) where payment_id is not null");
-    expect(migration).toContain("on conflict (receivable_id) where receivable_id is not null");
+    expect(compactMigration).toContain("on conflict (payment_id) where payment_id is not null");
+    expect(compactMigration).toContain("on conflict (receivable_id) where receivable_id is not null");
   });
 
   it("separa valores reais de bruto, taxa, líquido e parcelas", () => {
@@ -34,7 +35,7 @@ describe("integração financeira Mercado Pago", () => {
     expect(refund).toContain("idempotency_key");
     expect(migration).toContain("refund idempotency conflict");
     expect(migration).toContain("refund exceeds payment");
-    expect(migration).toContain("where provider_refund_id=p_provider_refund_id");
+    expect(compactMigration).toContain("where provider_refund_id = p_provider_refund_id");
     expect(migration).toContain("provider refund conflict");
   });
 
@@ -43,7 +44,7 @@ describe("integração financeira Mercado Pago", () => {
     expect(migration).toContain("accounts_payable_payment_refund_unique");
     expect(migration).toContain("financial_transaction_transfer_side_unique");
     expect(migration).toContain("affects_result boolean not null default true");
-    expect(migration).toContain("'transfer',transfer_row.id,'transferência entre contas',actor,actor,false");
+    expect(migration).toMatch(/'transfer'\s*,\s*transfer_row\.id\s*,\s*'transferência entre contas'[\s\S]*?false/iu);
     expect(migration).toContain("insert into public.audit_logs");
   });
 

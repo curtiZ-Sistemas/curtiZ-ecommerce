@@ -10,7 +10,7 @@ type ExportColumn = {
 
 const moneyKeys = new Set([
   "amount", "value", "initial_balance", "gross_amount", "provider_fee",
-  "net_received_amount", "refunded_amount"
+  "net_received_amount", "refunded_amount", "current_balance"
 ]);
 
 function text(value: unknown): string {
@@ -248,6 +248,7 @@ export async function buildFinancialWorkbook(
       [
         { header: "Nome", key: "name", width: 30 },
         { header: "Saldo inicial", key: "initial_balance", kind: "money", width: 22 },
+        { header: "Saldo atual", key: "current_balance", kind: "money", width: 22 },
         { header: "Ativa", key: "active", width: 14 }
       ],
       data.accounts

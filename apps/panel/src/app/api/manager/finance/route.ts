@@ -159,6 +159,12 @@ function defaultPeriod() {
 }
 
 function financialConflictMessage(message: string) {
+  if (message.includes("automatic receivable") || message.includes("automatic payable"))
+    return "Este registro é automático e só pode ser atualizado pela conciliação do Mercado Pago.";
+  if (message.includes("integration account must remain active"))
+    return "A conta Mercado Pago precisa permanecer ativa e com esse nome enquanto recebe vendas do site.";
+  if (message.includes("integration category must remain compatible"))
+    return "Esta subconta está vinculada ao Mercado Pago e precisa permanecer ativa e compatível.";
   if (message.includes("invalid analytic financial category"))
     return "Selecione uma subconta ativa e compatível; contas totalizadoras não recebem lançamentos.";
   if (message.includes("group with active subaccounts"))
