@@ -173,6 +173,15 @@ export async function POST(
 
   try {
     /*
+     * Libera em lote reservas de cobranças vencidas antes de responder
+     * disponibilidade. Falhas de housekeeping não mascaram o estoque atual.
+     */
+    await supabase.rpc(
+      "expire_stale_mercadopago_orders",
+      { p_limit: 50 }
+    );
+
+    /*
      * Consulta as tabelas existentes diretamente. Isso evita
      * transformar uma RPC ainda não aplicada em indisponibilidade.
      */

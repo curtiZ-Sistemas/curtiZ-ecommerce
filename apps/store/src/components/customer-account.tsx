@@ -50,7 +50,13 @@ import { useFavorites } from "./favorites-provider";
 import { LogoutButton } from "./logout-button";
 import { SupportCenter } from "./support-center";
 import { FavoritesPanel } from "./favorites-panel";
-import { canContinueOrderPayment, customerStatusLabel } from "../lib/customer-account-presentation";
+import {
+  canContinueOrderPayment,
+  customerOrderActionLabel,
+  customerOrderProgress,
+  matchesCustomerOrderFilter,
+  customerStatusLabel
+} from "../lib/customer-account-presentation";
 import { ProfileAvatarManager } from "./profile-avatar-manager";
 import { UserAvatar } from "./user-avatar";
 import {
@@ -581,7 +587,7 @@ function Orders({
     () =>
       orders.filter(
         (order) =>
-          (filter === "all" || order.status === filter) &&
+          matchesCustomerOrderFilter(order.status, filter) &&
           (!search ||
             order.publicCode.toLowerCase().includes(search.toLowerCase()) ||
             order.items.some((item) =>
@@ -617,9 +623,10 @@ function Orders({
         <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filtrar por status">
           <option value="all">Todos os status</option>
           <option value="pending_payment">Aguardando pagamento</option>
-          <option value="processing">Em preparação</option>
+          <option value="preparing">Em preparação</option>
           <option value="shipped">Enviado</option>
           <option value="delivered">Entregue</option>
+          <option value="cancellation_requested">Cancelamento solicitado</option>
           <option value="cancelled">Cancelado</option>
         </select>
       </div>
@@ -656,7 +663,7 @@ function Orders({
                   className="secondary-button compact-button"
                   href={`/minha-conta/pedidos?pedido=${encodeURIComponent(order.publicCode)}`}
                 >
-                  Ver detalhes
+                  {customerOrderActionLabel(order.status)}
                 </Link>
                 {canContinueOrderPayment(order.status, order.paymentStatus, order.payment?.method) ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
               </div>
@@ -725,17 +732,20 @@ function OrderDetails({
           <h3>Acompanhamento</h3>
           <span className={`customer-status status-${order.status}`}>{customerStatusLabel(order.status)}</span>
         </div>
-        <ol>
-          {(order.shipment?.events.length
-            ? order.shipment.events
-            : order.history
-          ).map((event) => (
-            <li key={event.id}>
-              <span aria-hidden="true" />
+        <ol aria-label="Progresso do pedido">
+          {customerOrderProgress(order.status).map((step) => (
+            <li
+              key={step.label}
+              style={step.state === "upcoming" ? { color: "var(--muted)" } : undefined}
+            >
+              <span
+                aria-hidden="true"
+                style={step.state === "upcoming"
+                  ? { borderColor: "#ddd5d2", background: "#fff" }
+                  : undefined}
+              />
               <div>
-                <strong>{customerStatusLabel("status" in event ? event.status : "")}</strong>
-                <p>{"description" in event ? event.description : event.reason}</p>
-                <small>{formatDate("occurredAt" in event ? event.occurredAt : event.createdAt)}</small>
+                <strong aria-current={step.state === "current" ? "step" : undefined}>{step.label}</strong>
               </div>
             </li>
           ))}

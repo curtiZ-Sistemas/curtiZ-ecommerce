@@ -26,7 +26,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!readString(paymentResult.data, "payment_method_summary")) {
     return reply({ message: "Este checkout não possui uma intenção de pagamento." }, 404);
   }
-  const order = orderResult.data;
+  let order = orderResult.data;
   const expiredPayment = readString(paymentResult.data, "status_detail") === "expired";
   if (isCancelledOrderStatus(readString(order, "status")) && !expiredPayment) {
     return reply({ message: "Este pedido não aceita pagamento." }, 409);
@@ -75,8 +75,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         boleto_url: current.boletoUrl, digitable_line: current.digitableLine };
     } catch { /* Preserve the last trusted database state during provider outages. */ }
   }
+  const expiresAt = Date.parse(readString(payment, "expires_at"));
+  const paymentStatus = normalizeMercadoPagoStatus(readString(payment, "status"));
+  const isLocallyExpired = ["pending", "rejected"].includes(paymentStatus)
+    && Number.isFinite(expiresAt)
+    && expiresAt <= Date.now();
+  if (isLocallyExpired) {
+    const expiration = readQueryResult(await db.rpc("expire_stale_mercadopago_order", {
+      p_order_id: id
+    }));
+    if (!expiration.error && expiration.data === true) {
+      payment = { ...payment, status: "cancelled", status_detail: "expired" };
+      order = { ...order, status: "cancelled", payment_status: "cancelled" };
+    }
+  }
   return reply({ orderId: id, orderCode: readString(order, "public_code"), orderStatus: readString(order, "status"), variantIds,
-    status: readString(payment, "status_detail") === "expired" ? "expired" : readString(payment, "status"),
+    status: readString(payment, "status_detail") === "expired" || isLocallyExpired ? "expired" : readString(payment, "status"),
     statusDetail: readString(payment, "status_detail"),
     method: readString(payment, "payment_method_summary"), amountInCents: Math.round(readNumber(payment, "amount") * 100),
     expiresAt: readString(payment, "expires_at"), pixCopyPaste: readString(payment, "pix_copy_paste"),

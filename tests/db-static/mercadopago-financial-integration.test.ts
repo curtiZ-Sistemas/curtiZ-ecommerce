@@ -11,8 +11,8 @@ const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "u
 
 describe("integração financeira Mercado Pago", () => {
   it("vincula pedido, pagamento, conta a receber e lançamento com unicidade", () => {
-    expect(migration).toContain("add column order_id uuid references public.orders(id)");
-    expect(migration).toContain("add column payment_id uuid references public.payments(id)");
+    expect(migration).toMatch(/add column (?:if not exists )?order_id uuid references public\.orders\(id\)/u);
+    expect(migration).toMatch(/add column (?:if not exists )?payment_id uuid references public\.payments\(id\)/u);
     expect(migration).toContain("accounts_receivable_payment_unique");
     expect(compactMigration).toContain("on conflict (payment_id) where payment_id is not null");
     expect(compactMigration).toContain("on conflict (receivable_id) where receivable_id is not null");

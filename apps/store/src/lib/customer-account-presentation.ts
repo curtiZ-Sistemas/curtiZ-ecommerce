@@ -37,3 +37,52 @@ export const canContinueOrderPayment = (
 ) => orderStatus === "pending_payment"
   && ["pending", "rejected"].includes(paymentStatus)
   && Boolean(paymentMethod);
+
+export const customerOrderActionLabel = (status: string) => {
+  if (status === "shipped") return "Rastrear pedido";
+  if (status === "cancellation_requested") return "Cancelamento solicitado";
+  if (status === "cancelled") return "Cancelado";
+  if (["payment_approved", "processing", "picking", "ready_to_ship"].includes(status)) {
+    return "Acompanhar pedido";
+  }
+  return "Ver detalhes";
+};
+
+export const matchesCustomerOrderFilter = (status: string, filter: string) => {
+  if (filter === "all") return true;
+  if (filter === "preparing") {
+    return ["payment_approved", "processing", "picking", "ready_to_ship"].includes(status);
+  }
+  return status === filter;
+};
+
+type CustomerOrderProgressState = "complete" | "current" | "upcoming";
+
+export type CustomerOrderProgressStep = {
+  label: string;
+  state: CustomerOrderProgressState;
+};
+
+export const customerOrderProgress = (status: string): CustomerOrderProgressStep[] => {
+  const stages = [
+    { statuses: ["pending_payment"], label: "Pedido realizado" },
+    { statuses: ["payment_approved"], label: "Pagamento confirmado" },
+    { statuses: ["processing", "picking", "ready_to_ship"], label: "Preparando pedido" },
+    { statuses: ["shipped"], label: "Enviado" },
+    { statuses: ["delivered"], label: "Entregue" }
+  ];
+  const stageIndex = stages.findIndex((stage) => stage.statuses.includes(status));
+
+  if (stageIndex < 0) {
+    return [{ label: customerStatusLabel(status), state: "current" }];
+  }
+
+  return stages.map((stage, index) => ({
+    label: status === "pending_payment" && index === 1 ? "Processando pagamento" : stage.label,
+    state: index < stageIndex || (status === "pending_payment" && index === 0)
+      ? "complete"
+      : index === stageIndex || (status === "pending_payment" && index === 1)
+        ? "current"
+        : "upcoming"
+  }));
+};

@@ -13,6 +13,7 @@ import {
   type CustomerOrder,
   type CustomerOrderItem
 } from "@/lib/customer-account-types";
+import { isCustomerOrderVisible } from "@/lib/customer-order-visibility";
 import {
   isUnknownRecord,
   readNumber,
@@ -134,6 +135,10 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
     };
   }
 
+  // Housekeeping is scoped by auth.uid() in the RPC. PostgREST returns failures
+  // as data, so a deployment still converging on the migration loads the account.
+  await supabase.rpc("expire_my_stale_checkout_orders");
+
   const [
     profileResponse,
     addressesResponse,
@@ -205,7 +210,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const orderRows = readRows(readQueryResult(ordersResponse).data);
   const orderIds = orderRows.map((item) => readString(item, "id")).filter(Boolean);
 
-  const [itemsResponse, paymentResponse, shipmentResponse, historyResponse] =
+  const [itemsResponse, paymentResponse, paymentAttemptResponse, shipmentResponse, historyResponse] =
     orderIds.length > 0
       ? await Promise.all([
           supabase
@@ -214,7 +219,12 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
             .in("order_id", orderIds),
           supabase
             .from("payments")
-            .select("id,order_id,provider,status,payment_method_summary,paid_at,created_at")
+            .select("id,order_id,provider,provider_payment_id,status,status_detail,expires_at,payment_method_summary,paid_at,created_at")
+            .in("order_id", orderIds)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("payment_attempts")
+            .select("id,order_id,status,created_at")
             .in("order_id", orderIds)
             .order("created_at", { ascending: false }),
           supabase
@@ -228,19 +238,32 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
             .in("order_id", orderIds)
             .order("created_at", { ascending: true })
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const itemRows = readRows(readQueryResult(itemsResponse).data);
   const paymentRows = readRows(readQueryResult(paymentResponse).data);
+  const paymentAttemptRows = readRows(readQueryResult(paymentAttemptResponse).data);
   const shipmentRows = readRows(readQueryResult(shipmentResponse).data);
   const historyRows = readRows(readQueryResult(historyResponse).data);
 
-  const orders: CustomerOrder[] = orderRows.map((row) => {
+  const orders: CustomerOrder[] = orderRows.flatMap((row) => {
     const id = readString(row, "id");
     const payment = paymentRows.find((entry) => readString(entry, "order_id") === id);
+    const hasPaymentAttempt = Boolean(
+      (payment && readString(payment, "provider_payment_id"))
+      || paymentAttemptRows.some((entry) => readString(entry, "order_id") === id)
+    );
+    if (!isCustomerOrderVisible({
+      orderStatus: readString(row, "status"),
+      paymentStatus: payment ? readString(payment, "status") : "",
+      paymentStatusDetail: payment ? readString(payment, "status_detail") : "",
+      paymentExpiresAt: payment ? readString(payment, "expires_at") : undefined,
+      hasPaymentAttempt,
+      hasPaymentMethod: Boolean(payment && readString(payment, "payment_method_summary"))
+    })) return [];
     const shipment = shipmentRows.find((entry) => readString(entry, "order_id") === id);
     const trackingRows = shipment ? readRows(shipment.tracking_events) : [];
-    return {
+    return [{
       id,
       publicCode: readString(row, "public_code"),
       status: readString(row, "status"),
@@ -287,7 +310,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
           reason: readString(entry, "reason"),
           createdAt: readString(entry, "created_at")
         }))
-    };
+    }];
   });
 
   const reviewRows = readRows(readQueryResult(reviewsResponse).data);

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canContinueOrderPayment, customerStatusLabel } from "../lib/customer-account-presentation";
+import {
+  canContinueOrderPayment,
+  customerOrderActionLabel,
+  customerOrderProgress,
+  matchesCustomerOrderFilter,
+  customerStatusLabel
+} from "../lib/customer-account-presentation";
 
 describe("customer account presentation", () => {
   it("uses clear pt-BR labels for commerce states", () => {
@@ -26,5 +32,36 @@ describe("customer account presentation", () => {
     ["pending_payment", "pending", "", false]
   ])("controls payment resumption for order=%s payment=%s", (order, payment, method, expected) => {
     expect(canContinueOrderPayment(order, payment, method)).toBe(expected);
+  });
+
+  it.each([
+    ["payment_approved", "Acompanhar pedido"],
+    ["processing", "Acompanhar pedido"],
+    ["shipped", "Rastrear pedido"],
+    ["delivered", "Ver detalhes"],
+    ["cancellation_requested", "Cancelamento solicitado"],
+    ["cancelled", "Cancelado"]
+  ])("labels the primary order action for %s", (status, expected) => {
+    expect(customerOrderActionLabel(status)).toBe(expected);
+  });
+
+  it("groups all fulfillment preparation states in the same useful filter", () => {
+    expect(matchesCustomerOrderFilter("payment_approved", "preparing")).toBe(true);
+    expect(matchesCustomerOrderFilter("picking", "preparing")).toBe(true);
+    expect(matchesCustomerOrderFilter("ready_to_ship", "preparing")).toBe(true);
+    expect(matchesCustomerOrderFilter("shipped", "preparing")).toBe(false);
+  });
+
+  it("builds progress from the backend status without time-based advancement", () => {
+    expect(customerOrderProgress("pending_payment")).toEqual([
+      { label: "Pedido realizado", state: "complete" },
+      { label: "Processando pagamento", state: "current" },
+      { label: "Preparando pedido", state: "upcoming" },
+      { label: "Enviado", state: "upcoming" },
+      { label: "Entregue", state: "upcoming" }
+    ]);
+    expect(customerOrderProgress("shipped").map((step) => step.state)).toEqual([
+      "complete", "complete", "complete", "current", "upcoming"
+    ]);
   });
 });
