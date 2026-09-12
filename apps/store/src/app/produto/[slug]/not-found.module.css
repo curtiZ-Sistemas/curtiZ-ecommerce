@@ -3,12 +3,12 @@
 }
 
 .recovery {
-  max-width: 720px;
+  max-width: 760px;
   padding: clamp(28px, 5vw, 52px) 0;
 }
 
 .recovery h1 {
-  max-width: 19ch;
+  max-width: 18ch;
   margin: 8px 0 14px;
   color: var(--ink);
   font-size: clamp(2rem, 5vw, 3.4rem);
@@ -17,7 +17,7 @@
 }
 
 .description {
-  max-width: 58ch;
+  max-width: 60ch;
   margin: 0;
   color: var(--neutral-700);
   line-height: 1.65;
@@ -25,7 +25,29 @@
 
 .actions {
   justify-content: flex-start;
+  align-items: center;
   margin-top: 24px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--neutral-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.backLink:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
 }
 
 .page :global(.error-recommendations) {
@@ -44,5 +66,13 @@
 
   .recovery h1 {
     font-size: clamp(1.9rem, 10vw, 2.5rem);
+  }
+
+  .actions {
+    align-items: stretch;
+  }
+
+  .backLink {
+    justify-content: center;
   }
 }
