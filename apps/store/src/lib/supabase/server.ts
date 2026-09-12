@@ -64,7 +64,12 @@ export function createPublicSupabaseClient() {
 /** Server-only client for narrowly scoped public endpoints after their own abuse checks. */
 export function createServiceSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  // Prefer Supabase's current secret-key name, with compatibility for Workers
+  // that still use the legacy service-role variable.
+  const secretKey = (
+    process.env.SUPABASE_SECRET_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )?.trim();
   if (!url || !secretKey) return null;
   return createClient(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false }

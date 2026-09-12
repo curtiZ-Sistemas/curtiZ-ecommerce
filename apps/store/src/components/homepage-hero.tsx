@@ -55,7 +55,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
     const timer = window.setInterval(() => {
       setActive((current) => (current + 1) % slides.length);
-    }, 5000);
+    }, 3000);
 
     return () => window.clearInterval(timer);
   }, [slides.length, reducedMotion, mobilePressing]);

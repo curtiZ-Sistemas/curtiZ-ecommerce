@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOptionalCouponCode, shouldResumePendingCheckout } from "./checkout-flow";
+import { isCancelledOrderStatus, normalizeOptionalCouponCode, shouldResumePendingCheckout } from "./checkout-flow";
 
 describe("checkout flow", () => {
   it.each([undefined, null, "", "   "])("trata %j como cupom ausente", (value) => {
@@ -8,6 +8,12 @@ describe("checkout flow", () => {
 
   it("normaliza somente um cupom realmente informado", () => {
     expect(normalizeOptionalCouponCode("  SAVE10  ")).toBe("SAVE10");
+  });
+
+  it("bloqueia pagamento direto durante e depois do cancelamento", () => {
+    expect(isCancelledOrderStatus("cancellation_requested")).toBe(true);
+    expect(isCancelledOrderStatus("cancelled")).toBe(true);
+    expect(isCancelledOrderStatus("pending_payment")).toBe(false);
   });
 
   it("retoma somente um pedido idempotente com pagamento pendente", () => {

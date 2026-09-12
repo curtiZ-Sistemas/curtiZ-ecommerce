@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { demoProducts } from "@/lib/catalog";
+import { isVariantActuallyAvailable } from "@/lib/cart-availability";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
-import { isUnknownRecord, readRows, readString } from "@/lib/unknown-data";
+import { readRows, readString } from "@/lib/unknown-data";
 
 const headers = {
   "cache-control": "no-store"
@@ -158,7 +159,7 @@ export async function POST(
 
   if (!supabase) {
     console.error(
-      "[cart/availability] Server database client could not be created."
+      "[cart/availability] Server database client could not be created. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)."
     );
 
     return json(
@@ -177,7 +178,7 @@ export async function POST(
      */
     const result = await supabase
       .from("product_variants")
-      .select("id,active,products!inner(status)")
+      .select("id,active,inventory(available_quantity),products!inner(status)")
       .in("id", ids.data);
     const { error } = result;
 
@@ -201,13 +202,7 @@ export async function POST(
      * Isso simplifica o consumo no frontend.
      */
     const availableIds = new Set(readRows(result.data)
-      .filter((row) => {
-        const product = row.products;
-        const productStatus = Array.isArray(product)
-          ? product.find(isUnknownRecord)?.status
-          : isUnknownRecord(product) ? product.status : undefined;
-        return row.active === true && productStatus === "active";
-      })
+      .filter(isVariantActuallyAvailable)
       .map((row) => readString(row, "id"))
       .filter(Boolean));
     const items = ids.data.map((variantId) => ({

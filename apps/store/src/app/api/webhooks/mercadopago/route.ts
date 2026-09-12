@@ -64,6 +64,7 @@ export async function POST(request: Request) {
   try {
     const payment = await new MercadoPagoTestPaymentProvider(accessToken).getPayment(dataId);
     const method = [payment.paymentTypeId, payment.paymentMethodId].filter(Boolean).join(":");
+    const statusDetail = payment.status === "expired" ? "expired" : payment.statusDetail;
     const result = await db.rpc("finalize_mercadopago_payment", { p_provider_event_id: eventId,
       p_provider_payment_id: payment.id, p_external_reference: payment.externalReference,
       p_amount: payment.amountInCents / 100, p_currency: payment.currency,
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
       p_provider_fee: payment.providerFeeInCents === null ? null : payment.providerFeeInCents / 100,
       p_net_received_amount: payment.netReceivedInCents === null ? null : payment.netReceivedInCents / 100,
       p_payment_method: method || null, p_installments: payment.installments,
-      p_status_detail: payment.statusDetail || null });
+      p_status_detail: statusDetail || null });
     if (result.error) return NextResponse.json({ ok: false }, { status: 503 });
     if (result.data === "manual_review") return NextResponse.json({ ok: true, review: true });
     for (const refund of payment.refunds) {

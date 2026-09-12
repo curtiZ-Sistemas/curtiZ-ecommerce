@@ -76,6 +76,24 @@ type SavedAddress = {
   recipientName?: string;
 };
 
+const addressBaseLabel = (label: string) => label.replace(/\s+\d+$/u, "");
+
+const nextAddressLabel = (addresses: SavedAddress[], baseLabel: string) => {
+  const suffixes = addresses
+    .filter((address) => addressBaseLabel(address.label) === baseLabel)
+    .map((address) => {
+      const match = /\s+(\d+)$/u.exec(address.label);
+      return match?.[1] ? Number(match[1]) : 1;
+    });
+  const suffix = (suffixes.length ? Math.max(...suffixes) : 0) + 1;
+  return suffix === 1 ? baseLabel : `${baseLabel} ${suffix}`;
+};
+
+const maskPhone = (phone: string) => {
+  const digits = phoneDigits(phone);
+  return digits.length >= 4 ? `(**) *****-${digits.slice(-4)}` : "";
+};
+
 function CheckoutProducts({ lines }: { lines: CartLine[] }) {
   return (
     <div className="checkout-products">
@@ -145,7 +163,9 @@ export default function CheckoutPage() {
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [expandedAddressId, setExpandedAddressId] = useState("");
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [addressLabel, setAddressLabel] = useState("Casa");
   const [cpfLastFour, setCpfLastFour] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
   const [coupon, setCoupon] = useState({ code: "", name: "", discountInCents: 0 });
   const [couponMessage, setCouponMessage] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
@@ -158,7 +178,7 @@ export default function CheckoutPage() {
     const code = codeField instanceof HTMLInputElement ? codeField.value.trim() : "";
     if (!code) {
       setCoupon({ code: "", name: "", discountInCents: 0 });
-      setCouponMessage("Informe o código do cupom.");
+      setCouponMessage("");
       return;
     }
     setCouponLoading(true);
@@ -233,6 +253,14 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    if (!editingAddressId || editingAddressId === "new") return;
+    const address = savedAddresses.find((item) => item.id === editingAddressId);
+    if (!address) return;
+    setAddressLabel(addressBaseLabel(address.label));
+    applyAddress(address);
+  }, [applyAddress, editingAddressId, savedAddresses]);
+
+  useEffect(() => {
     if (!hydrated || !selectedLines.length) return;
     const controller = new AbortController();
     void fetch("/api/checkout/profile", { cache: "no-store", signal: controller.signal })
@@ -248,6 +276,7 @@ export default function CheckoutPage() {
         setFieldIfEmpty("name", payload.profile?.fullName ?? "");
         setFieldIfEmpty("email", payload.profile?.email ?? "");
         setFieldIfEmpty("phone", formatBrazilianPhone(payload.profile?.phone ?? ""));
+        setProfilePhone(payload.profile?.phone ?? "");
         setCpfLastFour(payload.profile?.cpfLastFour ?? "");
         const addresses = Array.isArray(payload.addresses) ? payload.addresses : [];
         setSavedAddresses(addresses);
@@ -350,15 +379,21 @@ export default function CheckoutPage() {
 
     try {
       const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
-      if (!selectedAddress || editingAddressId) {
+      if (!selectedAddress || editingAddressId || !selectedAddress.isDefault) {
         const baseLabel = formString("addressLabel") || selectedAddress?.label.replace(/\s+\d+$/u, "") || "Casa";
+        const editingExisting = Boolean(editingAddressId && editingAddressId !== "new");
+        const persistedLabel = editingExisting && selectedAddress
+          ? addressBaseLabel(selectedAddress.label) === baseLabel
+            ? selectedAddress.label
+            : nextAddressLabel(savedAddresses.filter((address) => address.id !== selectedAddress.id), baseLabel)
+          : baseLabel;
         const addressResponse = await fetch("/api/customer", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "address_save",
             id: editingAddressId && editingAddressId !== "new" ? editingAddressId : null,
-            label: editingAddressId === "new" ? baseLabel : selectedAddress?.label ?? baseLabel,
-            recipientName: editingAddressId ? formString("name") : selectedAddress?.recipientName ?? formString("name"),
+            label: persistedLabel,
+            recipientName: formString("name"),
             postalCode: formString("postalCode"), street: formString("street"),
             number: formString("number"), complement: formString("complement"), district: formString("district"),
             city: formString("city"), state: formString("state"), isDefault: true }
@@ -369,6 +404,31 @@ export default function CheckoutPage() {
           setMessage(addressResult.message ?? "Não foi possível salvar o endereço.");
           return;
         }
+        const addressResult = await addressResponse.json() as { data?: unknown };
+        const savedId = typeof addressResult.data === "string" ? addressResult.data : "";
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(savedId)) {
+          setMessage("O endereço foi salvo, mas não foi possível confirmar seu identificador.");
+          return;
+        }
+        const savedAddress: SavedAddress = {
+          id: savedId,
+          label: editingExisting ? persistedLabel : selectedAddress?.label ?? nextAddressLabel(savedAddresses, baseLabel),
+          recipientName: formString("name"),
+          postalCode: formString("postalCode"),
+          street: formString("street"),
+          number: formString("number"),
+          complement: formString("complement"),
+          district: formString("district"),
+          city: formString("city"),
+          state: formString("state"),
+          isDefault: true
+        };
+        setSavedAddresses((current) => [
+          savedAddress,
+          ...current.filter((address) => address.id !== savedId)
+        ].map((address) => ({ ...address, isDefault: address.id === savedId })));
+        setSelectedAddressId(savedId);
+        setEditingAddressId(null);
       }
       const checkout = {
         ...(couponCode ? { couponCode } : {}),
@@ -651,12 +711,37 @@ export default function CheckoutPage() {
                       onClick={() => setExpandedAddressId((current) => current === address.id ? "" : address.id)}>⌄</button>
                   </div>
                   {expandedAddressId === address.id ? <div className="checkout-address-details">
-                    <p>{address.recipientName}<br />{address.street}, {address.number}<br />{address.complement}<br />{address.district}<br />{address.city} - {address.state}<br />CEP {address.postalCode.slice(0, 2)}***-***</p>
-                    <div><button type="button" onClick={() => { setSelectedAddressId(address.id); setEditingAddressId(address.id); applyAddress(address); }}>Editar</button>
-                      <button type="button" onClick={() => { void (async () => { if (!window.confirm("Excluir este endereço?")) return; const response = await fetch("/api/customer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "address_delete", id: address.id }) }); if (response.ok) { const remaining = savedAddresses.filter((item) => item.id !== address.id); setSavedAddresses(remaining); const next = remaining[0]; setSelectedAddressId(next?.id ?? ""); if (next) applyAddress(next); } else setMessage("Não foi possível excluir o endereço."); })(); }}>Excluir</button></div>
+                    <p>{address.recipientName}<br />{address.street}, {address.number}<br />{address.complement}<br />{address.district}<br />{address.city} - {address.state}<br />CEP {address.postalCode.slice(0, 2)}***-***{maskPhone(profilePhone) ? <><br />Telefone {maskPhone(profilePhone)}</> : null}</p>
+                    <div><button type="button" onClick={() => { setSelectedAddressId(address.id); setAddressLabel(addressBaseLabel(address.label)); setEditingAddressId(address.id); }}>Editar</button>
+                      <button type="button" onClick={() => { void (async () => {
+                        if (!window.confirm("Excluir este endereço?")) return;
+                        const response = await fetch("/api/customer", {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ action: "address_delete", id: address.id })
+                        });
+                        if (!response.ok) {
+                          setMessage("Não foi possível excluir o endereço.");
+                          return;
+                        }
+                        const profileResponse = await fetch("/api/checkout/profile", { cache: "no-store" });
+                        const profile = profileResponse.ok
+                          ? await profileResponse.json() as { addresses?: SavedAddress[] }
+                          : null;
+                        const remaining = Array.isArray(profile?.addresses)
+                          ? profile.addresses
+                          : savedAddresses.filter((item) => item.id !== address.id);
+                        setSavedAddresses(remaining);
+                        const next = remaining.find((item) => item.id === selectedAddressId)
+                          ?? remaining.find((item) => item.isDefault)
+                          ?? remaining[0];
+                        setSelectedAddressId(next?.id ?? "");
+                        setEditingAddressId(null);
+                        if (next) applyAddress(next);
+                      })(); }}>Excluir</button></div>
                   </div> : null}
                 </article>)}
-                {savedAddresses.length < 3 && editingAddressId !== "new" ? <button className="customer-link-button" type="button" onClick={() => setEditingAddressId("new")}>+ Adicionar outro endereço</button> : null}
+                {savedAddresses.length < 3 && editingAddressId !== "new" ? <button className="customer-link-button" type="button" onClick={() => { setAddressLabel("Casa"); setEditingAddressId("new"); }}>+ Adicionar outro endereço</button> : null}
               </div>
             ) : null}
             {savedAddresses.length && !editingAddressId ? (() => {
@@ -666,8 +751,8 @@ export default function CheckoutPage() {
                 .map(([name, value]) => <input type="hidden" name={name} value={value} key={name} />)}</> : null;
             })() : null}
             {(!savedAddresses.length || editingAddressId) ? <><div className="checkout-address-labels"><span>Salvar este endereço como</span>
-              <label><input type="radio" name="addressLabel" value="Casa" defaultChecked /> Casa</label>
-              <label><input type="radio" name="addressLabel" value="Trabalho" /> Trabalho</label></div>
+              <label><input type="radio" name="addressLabel" value="Casa" checked={addressLabel === "Casa"} onChange={() => setAddressLabel("Casa")} /> Casa</label>
+              <label><input type="radio" name="addressLabel" value="Trabalho" checked={addressLabel === "Trabalho"} onChange={() => setAddressLabel("Trabalho")} /> Trabalho</label></div>
             <div className="form-grid address-grid">
               <div className="field address-postal-field">
                 <label htmlFor="postalCode">CEP</label>

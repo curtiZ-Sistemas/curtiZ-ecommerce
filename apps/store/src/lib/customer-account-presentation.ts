@@ -29,3 +29,11 @@ const statusLabels: Record<string, string> = {
 
 export const customerStatusLabel = (status: string) =>
   statusLabels[status] ?? status.replaceAll("_", " ");
+
+export const canContinueOrderPayment = (
+  orderStatus: string,
+  paymentStatus: string,
+  paymentMethod: string | undefined
+) => orderStatus === "pending_payment"
+  && ["pending", "rejected"].includes(paymentStatus)
+  && Boolean(paymentMethod);

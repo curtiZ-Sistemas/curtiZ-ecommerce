@@ -9,7 +9,7 @@ import { useCart } from "@/components/cart-provider";
 
 type State = { orderCode: string; orderStatus: string; status: string; method: string; amountInCents: number;
   expiresAt: string; pixCopyPaste: string; pixQrCodeBase64: string; boletoUrl: string; digitableLine: string; variantIds: string[] };
-const terminal = new Set(["approved", "rejected", "cancelled", "refunded", "charged_back"]);
+const terminal = new Set(["approved", "rejected", "expired", "cancelled", "refunded", "charged_back"]);
 
 export function PendingPayment({ orderId }: { orderId: string }) {
   const { removeMany } = useCart();
@@ -40,7 +40,7 @@ export function PendingPayment({ orderId }: { orderId: string }) {
     if (state.status === "approved" && state.variantIds.length) {
       removeMany(state.variantIds);
       sessionStorage.removeItem("curtiz-pending-order-cleanup");
-    } else if (["rejected", "cancelled", "refunded", "charged_back"].includes(state.status)) {
+    } else if (["rejected", "expired", "cancelled", "refunded", "charged_back"].includes(state.status)) {
       sessionStorage.removeItem("curtiz-pending-order-cleanup");
     }
   }, [orderId, removeMany, state]);
@@ -50,7 +50,13 @@ export function PendingPayment({ orderId }: { orderId: string }) {
     return () => window.clearInterval(timer);
   }, [state?.expiresAt, state?.status]);
   const approved = state?.status === "approved";
-  const failed = state ? ["rejected", "cancelled"].includes(state.status) : false;
+  const expired = state?.status === "expired";
+  const failed = state ? ["rejected", "expired", "cancelled", "refunded", "charged_back"].includes(state.status) : false;
+  const title = approved ? "Pagamento aprovado"
+    : expired ? "Pagamento expirado"
+      : state?.status === "refunded" ? "Pagamento reembolsado"
+        : state?.status === "charged_back" ? "Pagamento contestado"
+          : failed ? "Pagamento não aprovado" : "Processando pagamento";
   const pix = state?.method.includes("pix");
   const boleto = state?.method.includes("ticket") || state?.method.includes("bol");
   const progress = state?.orderStatus === "delivered" ? 4
@@ -69,13 +75,13 @@ export function PendingPayment({ orderId }: { orderId: string }) {
     }
   };
   return <div className="container page-shell pending-payment-page">
-    <header><p className="eyebrow">Pedido {state?.orderCode ?? ""}</p><h1>{approved ? "Pagamento aprovado" : failed ? "Pagamento não aprovado" : "Processando pagamento"}</h1></header>
-    <ol className="order-progress" aria-label="Andamento do pedido">
+    <header><p className="eyebrow">Pedido {state?.orderCode ?? ""}</p><h1>{title}</h1></header>
+    {!failed ? <ol className="order-progress" aria-label="Andamento do pedido">
       {["Pedido realizado", approved ? "Pagamento confirmado" : "Processando pagamento", "Preparando pedido", "Enviado", "Entregue"].map((label, index) =>
         <li className={index <= progress ? "complete" : index === progress + 1 ? "active" : ""} key={label}>
           {index <= progress ? <Check aria-hidden="true" /> : index === progress + 1 ? <Clock3 aria-hidden="true" /> : <Circle aria-hidden="true" />}<span>{label}</span>
         </li>)}
-    </ol>
+    </ol> : null}
     {state && !approved && !failed && <section className="checkout-section pending-payment-details">
       <h2>{pix ? "Aguardando pagamento via Pix" : boleto ? "Aguardando pagamento do boleto" : "Pagamento em análise"}</h2>
       {pix && state.pixQrCodeBase64 ? <Image unoptimized src={`data:image/png;base64,${state.pixQrCodeBase64}`} width={240} height={240} alt="QR Code Pix deste pedido" /> : null}
@@ -87,6 +93,6 @@ export function PendingPayment({ orderId }: { orderId: string }) {
       <p>Valor: <strong>{formatBRL(state.amountInCents)}</strong></p>
     </section>}
     {message ? <p className="form-message" role="status">{message}</p> : null}
-    <div className="customer-form-actions"><Link className="secondary-button" href="/minha-conta/pedidos">Acompanhar pedidos</Link>{failed ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(orderId)}/pagamento?retry=1`}>Tentar outro meio de pagamento</Link> : null}</div>
+    <div className="customer-form-actions"><Link className="secondary-button" href="/minha-conta/pedidos">Acompanhar pedidos</Link>{["rejected", "expired", "cancelled"].includes(state?.status ?? "") ? <Link className="primary-button" href={expired || state?.status === "cancelled" ? "/checkout" : `/pedido/${encodeURIComponent(orderId)}/pagamento?retry=1`}>Tentar outro meio de pagamento</Link> : null}</div>
   </div>;
 }

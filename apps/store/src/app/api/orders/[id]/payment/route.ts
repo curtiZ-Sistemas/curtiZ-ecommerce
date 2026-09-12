@@ -1,6 +1,7 @@
 import { isMercadoPagoTestCredential, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
 import { NextResponse } from "next/server";
 import { normalizeMercadoPagoStatus } from "@/lib/mercadopago-payment";
+import { isCancelledOrderStatus } from "@/lib/checkout-flow";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
@@ -26,6 +27,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return reply({ message: "Este checkout não possui uma intenção de pagamento." }, 404);
   }
   const order = orderResult.data;
+  const expiredPayment = readString(paymentResult.data, "status_detail") === "expired";
+  if (isCancelledOrderStatus(readString(order, "status")) && !expiredPayment) {
+    return reply({ message: "Este pedido não aceita pagamento." }, 409);
+  }
   const itemResult = readQueryResult(await db.from("order_items").select("variant_id").eq("order_id", id));
   const variantIds = itemResult.error ? [] : readRows(itemResult.data).map((item) => readString(item, "variant_id")).filter(Boolean);
   let payment = paymentResult.data;
@@ -40,7 +45,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         || current.amountInCents !== Math.round(readNumber(order, "grand_total") * 100)
         || current.currency !== readString(order, "currency")) throw new Error("payment_mismatch");
       const status = normalizeMercadoPagoStatus(current.status);
-      await db.from("payments").update({ status_detail: current.statusDetail, expires_at: current.expiresAt,
+      const statusDetail = current.status === "expired" ? "expired" : current.statusDetail;
+      await db.from("payments").update({ status_detail: statusDetail, expires_at: current.expiresAt,
         pix_copy_paste: current.pixCopyPaste || null, pix_qr_code_base64: current.pixQrCodeBase64 || null,
         boleto_url: current.boletoUrl || null, digitable_line: current.digitableLine || null, updated_at: new Date().toISOString() })
         .eq("id", readString(payment, "id"));
@@ -52,7 +58,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         p_net_received_amount: current.netReceivedInCents === null ? null : current.netReceivedInCents / 100,
         p_payment_method: [current.paymentTypeId, current.paymentMethodId].filter(Boolean).join(":") || null,
         p_installments: current.installments,
-        p_status_detail: current.statusDetail || null });
+        p_status_detail: statusDetail || null });
       if (reconciliation.error || reconciliation.data === "manual_review") throw new Error("payment_reconciliation_failed");
       for (const refund of current.refunds) {
         if (!["approved", "completed"].includes(refund.status)) continue;
@@ -64,13 +70,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         });
         if (reconciledRefund.error) throw new Error("refund_reconciliation_failed");
       }
-      payment = { ...payment, status, status_detail: current.statusDetail, expires_at: current.expiresAt,
+      payment = { ...payment, status, status_detail: statusDetail, expires_at: current.expiresAt,
         pix_copy_paste: current.pixCopyPaste, pix_qr_code_base64: current.pixQrCodeBase64,
         boleto_url: current.boletoUrl, digitable_line: current.digitableLine };
     } catch { /* Preserve the last trusted database state during provider outages. */ }
   }
   return reply({ orderId: id, orderCode: readString(order, "public_code"), orderStatus: readString(order, "status"), variantIds,
-    status: readString(payment, "status"), statusDetail: readString(payment, "status_detail"),
+    status: readString(payment, "status_detail") === "expired" ? "expired" : readString(payment, "status"),
+    statusDetail: readString(payment, "status_detail"),
     method: readString(payment, "payment_method_summary"), amountInCents: Math.round(readNumber(payment, "amount") * 100),
     expiresAt: readString(payment, "expires_at"), pixCopyPaste: readString(payment, "pix_copy_paste"),
     pixQrCodeBase64: readString(payment, "pix_qr_code_base64"), boletoUrl: readString(payment, "boleto_url"),

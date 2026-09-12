@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CartLine } from "@curtiz/domain";
-import { applyCartAvailability, retainCartLines, unavailableRetentionMs } from "./cart-availability";
+import { applyCartAvailability, isVariantActuallyAvailable, retainCartLines, unavailableRetentionMs } from "./cart-availability";
 const line: CartLine = { productId: "p", variantId: "v", name: "Produto", image: "/icon.svg", color: "Preto", size: "37", quantity: 1, unitPriceInCents: 1000 };
 describe("produtos removidos no carrinho", () => {
+  it("exige variante e produto ativos com estoque real positivo", () => {
+    expect(isVariantActuallyAvailable({ active: true, products: { status: "active" }, inventory: { available_quantity: 2 } })).toBe(true);
+    expect(isVariantActuallyAvailable({ active: true, products: { status: "active" }, inventory: { available_quantity: 0 } })).toBe(false);
+    expect(isVariantActuallyAvailable({ active: false, products: { status: "active" }, inventory: { available_quantity: 2 } })).toBe(false);
+    expect(isVariantActuallyAvailable({ active: true, products: { status: "inactive" }, inventory: { available_quantity: 2 } })).toBe(false);
+  });
+
   it("não considera ausência de resposta como exclusão", () => {
     expect(applyCartAvailability([line], [])).toEqual([line]);
   });

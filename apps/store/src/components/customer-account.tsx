@@ -50,7 +50,7 @@ import { useFavorites } from "./favorites-provider";
 import { LogoutButton } from "./logout-button";
 import { SupportCenter } from "./support-center";
 import { FavoritesPanel } from "./favorites-panel";
-import { customerStatusLabel } from "../lib/customer-account-presentation";
+import { canContinueOrderPayment, customerStatusLabel } from "../lib/customer-account-presentation";
 import { ProfileAvatarManager } from "./profile-avatar-manager";
 import { UserAvatar } from "./user-avatar";
 import {
@@ -658,7 +658,7 @@ function Orders({
                 >
                   Ver detalhes
                 </Link>
-                {["pending", "rejected"].includes(order.paymentStatus) && order.payment?.method ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+                {canContinueOrderPayment(order.status, order.paymentStatus, order.payment?.method) ? <Link className="primary-button compact-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
               </div>
             </article>
           ))}
@@ -793,7 +793,7 @@ function OrderDetails({
         </article>
       </div>
       <div className="customer-form-actions">
-        {["pending", "rejected"].includes(order.paymentStatus) && order.payment?.method ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
+        {canContinueOrderPayment(order.status, order.paymentStatus, order.payment?.method) ? <Link className="primary-button" href={`/pedido/${encodeURIComponent(order.id)}/pagamento`}>Continuar pagamento</Link> : null}
         <button className="primary-button" type="button" onClick={repeat}>Comprar novamente</button>
         {canCancel && (
           <button

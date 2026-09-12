@@ -174,16 +174,17 @@ export async function POST(request: NextRequest) {
       return response({ ok: false, message: "O pagamento precisa de verificação." }, 409);
     }
     const normalizedStatus = normalizeMercadoPagoStatus(created.status);
+    const statusDetail = created.status === "expired" ? "expired" : created.statusDetail;
     const methodSummary = [created.paymentTypeId, created.paymentMethodId || method].filter(Boolean).join(":");
     const persistence = readQueryResult(await db.from("payments").update({
-      provider_payment_id: created.id, payment_method_summary: methodSummary, status_detail: created.statusDetail || null,
+      provider_payment_id: created.id, payment_method_summary: methodSummary, status_detail: statusDetail || null,
       expires_at: created.expiresAt, pix_copy_paste: created.pixCopyPaste || null,
       pix_qr_code_base64: created.pixQrCodeBase64 || null, boleto_url: created.boletoUrl || null,
       digitable_line: created.digitableLine || null, updated_at: new Date().toISOString()
     }).eq("id", paymentId));
     const attemptPersistence = readQueryResult(await db.from("payment_attempts").update({
       provider_payment_id: created.id, payment_method: methodSummary || method, status: normalizedStatus,
-      status_detail: created.statusDetail || null, updated_at: new Date().toISOString()
+      status_detail: statusDetail || null, updated_at: new Date().toISOString()
     }).eq("id", attemptId));
     if (persistence.error || attemptPersistence.error) return response({ ok: false, message: "Não foi possível salvar o pagamento agora." }, 503);
 
@@ -195,7 +196,7 @@ export async function POST(request: NextRequest) {
       p_net_received_amount: created.netReceivedInCents === null ? null : created.netReceivedInCents / 100,
       p_payment_method: methodSummary || method,
       p_installments: created.installments,
-      p_status_detail: created.statusDetail || null
+      p_status_detail: statusDetail || null
     }) as unknown);
     if (finalizeResult.error || finalizeResult.data === "manual_review") return response({ ok: false, message: "O pagamento precisa de verificação." }, 503);
     return response({ ok: true, status: publicPaymentState(normalizedStatus), orderCode, orderId, providerPaymentId: created.id }, 200);
