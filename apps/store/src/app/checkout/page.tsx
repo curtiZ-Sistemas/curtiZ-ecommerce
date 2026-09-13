@@ -157,6 +157,8 @@ export default function CheckoutPage() {
   const closeDialogRef = useRef<HTMLButtonElement>(null);
   const paymentDialogRef = useRef<HTMLElement>(null);
   const idempotencyKeyRef = useRef("");
+  const submitInFlightRef = useRef(false);
+  const checkoutRecoveryRef = useRef<MercadoPagoBrickSession["checkout"]>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const trackedCheckoutRef = useRef(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
@@ -215,7 +217,8 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const stored = sessionStorage.getItem("curtiz-checkout-idempotency");
-    const key = stored && /^[0-9a-f-]{36}$/iu.test(stored) ? stored : crypto.randomUUID();
+    const key = stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(stored)
+      ? stored : crypto.randomUUID();
     sessionStorage.setItem("curtiz-checkout-idempotency", key);
     idempotencyKeyRef.current = key;
   }, []);
@@ -250,7 +253,24 @@ export default function CheckoutPage() {
       if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement)
         field.value = value;
     }
+    setFormComplete(formRef.current?.checkValidity() ?? false);
   }, []);
+
+  useEffect(() => {
+    if (paymentSession || !formRef.current) return;
+    const previousCheckout = checkoutRecoveryRef.current;
+    if (previousCheckout) {
+      const values = { ...previousCheckout.customer, ...previousCheckout.address,
+        couponCode: previousCheckout.couponCode ?? "" };
+      for (const [name, value] of Object.entries(values)) {
+        const field = formRef.current.elements.namedItem(name);
+        if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) field.value = value;
+      }
+      checkoutRecoveryRef.current = null;
+      submitButtonRef.current?.focus();
+    }
+    setFormComplete(formRef.current.checkValidity());
+  }, [paymentSession, cpfLastFour, profilePhone, selectedAddressId, editingAddressId, hydrated]);
 
   useEffect(() => {
     if (!editingAddressId || editingAddressId === "new") return;
@@ -338,7 +358,7 @@ export default function CheckoutPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (loading) return;
+    if (submitInFlightRef.current || loading || paymentSession) return;
     if (!selectedLines.length) {
       setMessage("Selecione pelo menos um produto no carrinho antes de finalizar.");
       return;
@@ -371,6 +391,7 @@ export default function CheckoutPage() {
       return;
     }
 
+    submitInFlightRef.current = true;
     setLoading(true);
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = crypto.randomUUID();
@@ -504,6 +525,7 @@ export default function CheckoutPage() {
     } catch {
       setMessage("Não foi possível conectar ao checkout. Seus itens continuam no carrinho.");
     } finally {
+      submitInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -576,7 +598,13 @@ export default function CheckoutPage() {
           <div><p className="eyebrow">Escolha como pagar</p></div>
         </header>
         <div className="checkout-layout">
-          <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment} />
+          <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment}
+            onReviewCheckout={(reason, code) => {
+              checkoutRecoveryRef.current = paymentSession.checkout;
+              if (code === "CUSTOMER_IDENTITY_REQUIRED" || code === "INVALID_CUSTOMER_CPF") setCpfLastFour("");
+              setPaymentSession(null);
+              setMessage(reason);
+            }} />
           <aside className="checkout-summary" aria-labelledby="checkout-brick-summary-title">
             <h2 id="checkout-brick-summary-title">Resumo do pedido</h2>
             <CheckoutProducts lines={selectedLines} />

@@ -45,6 +45,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     shippingInCents,
     amountInCents,
     publicKey,
+    paymentMode: "test",
     idempotencyKey: crypto.randomUUID(),
     email: readString(order, "customer_email_snapshot"),
     cpf: "",

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createCheckoutPaymentPayload, createMercadoPagoInitialization, readMercadoPagoBrickSession } from "./mercadopago-brick-config";
 
-const identity = { idempotencyKey: "key", email: "cliente@example.com", cpf: "12345678909", checkout: null };
+const identity = { idempotencyKey: "key", email: "cliente@example.com", cpf: "52998224725", checkout: null,
+  paymentMode: "test" as const };
 const validResponse = {
   ok: true,
   orderId: "order-id",
@@ -28,10 +29,24 @@ describe("configuração do Payment Brick", () => {
     { payment_method_id: "pix" },
     { payment_method_id: "visa", token: "card-token", issuer_id: "25", installments: 2 }
   ])("normaliza o payload de Pix e cartao enviado ao backend", (formData) => {
-    expect(createCheckoutPaymentPayload(formData, identity)).toMatchObject({
+    expect(createCheckoutPaymentPayload({ ...formData,
+      payer: { identification: { type: "CPF", number: "12345678909" } } }, identity)).toMatchObject({
       payment_method_id: formData.payment_method_id,
-      payer: { entity_type: "individual", identification: { type: "CPF", number: identity.cpf } }
+      payer: { entity_type: "individual", identification: { type: "CPF", number: "12345678909" } }
     });
+  });
+
+  it("não preenche TEST com CPF real nem o usa como fallback", () => {
+    const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
+    expect(session.paymentMode).toBe("test");
+    expect(createMercadoPagoInitialization(session)?.payer).not.toHaveProperty("identification");
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, identity)).toBeNull();
+  });
+
+  it("preserva identificação real na inicialização de produção", () => {
+    const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
+    expect(createMercadoPagoInitialization({ ...session, paymentMode: "production" })?.payer)
+      .toMatchObject({ identification: { type: "CPF", number: identity.cpf } });
   });
 
   it.each([

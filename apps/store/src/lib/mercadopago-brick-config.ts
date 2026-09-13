@@ -1,4 +1,5 @@
 import { isUnknownRecord } from "./unknown-data";
+import { readMercadoPagoPayerDocument, type MercadoPagoPaymentMode } from "./mercadopago-payer-identity";
 
 export type MercadoPagoBrickSession = {
   orderId: string;
@@ -9,6 +10,7 @@ export type MercadoPagoBrickSession = {
   shippingInCents: number;
   amountInCents: number;
   publicKey: string;
+  paymentMode: MercadoPagoPaymentMode;
   idempotencyKey: string;
   email: string;
   cpf: string;
@@ -57,6 +59,7 @@ export function readMercadoPagoBrickSession(
     shippingInCents,
     amountInCents,
     publicKey,
+    paymentMode: "test",
     ...identity
   };
 }
@@ -68,14 +71,15 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
     payer: {
       email: session.email,
       entityType: "individual" as const,
-      ...(session.cpf ? { identification: { type: "CPF", number: session.cpf } } : {})
+      ...(session.paymentMode !== "test" && session.cpf
+        ? { identification: { type: "CPF", number: session.cpf } } : {})
     }
   };
 }
 
 export function createCheckoutPaymentPayload(
   formData: unknown,
-  session: Pick<MercadoPagoBrickSession, "cpf">
+  session: Pick<MercadoPagoBrickSession, "cpf" | "paymentMode">
 ) {
   if (!isUnknownRecord(formData)) return null;
   const paymentMethodId = formData.payment_method_id;
@@ -92,8 +96,11 @@ export function createCheckoutPaymentPayload(
     : undefined;
   const payer = isUnknownRecord(formData.payer) ? formData.payer : {};
   const identification = isUnknownRecord(payer.identification) ? payer.identification : {};
-  const document = typeof identification.number === "string" && identification.number.trim()
-    ? identification.number.trim() : session.cpf;
+  if (identification.type !== undefined && identification.type !== "CPF") return null;
+  const suppliedDocument = typeof identification.number === "string" && identification.number.trim()
+    ? identification.number.trim() : session.paymentMode === "test" ? "" : session.cpf;
+  const document = readMercadoPagoPayerDocument(suppliedDocument, session.paymentMode);
+  if (!document) return null;
 
   return {
     payment_method_id: paymentMethodId.trim(),
