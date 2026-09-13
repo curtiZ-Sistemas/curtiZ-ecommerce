@@ -65,7 +65,7 @@ const responseSchema = z.object({
 function publicCatalogImage(path: string | null | undefined) {
   if (!path) return "/icon.svg";
   if (path.startsWith("/") || path.startsWith("https://")) return path;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
     : "/icon.svg";

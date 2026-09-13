@@ -1,7 +1,7 @@
 "use client";
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
-import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations";
+import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations/client";
 import { BriefcaseBusiness, ChevronDown, House, LoaderCircle, LockKeyhole, Plus, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";

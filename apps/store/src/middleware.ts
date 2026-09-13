@@ -247,7 +247,7 @@ async function hasValidDemoSession(value: string | undefined): Promise<boolean> 
 }
 
 function getSupabaseUrl(): URL | null {
-  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const configuredUrl = process.env.SUPABASE_URL?.trim();
 
   if (!configuredUrl) {
     return null;
@@ -465,7 +465,7 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = getSupabaseUrl();
 
   const supabasePublishableKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+    process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
 
   const hasValidSupabaseConfiguration = Boolean(
     supabaseUrl &&
@@ -493,16 +493,6 @@ export async function middleware(request: NextRequest) {
 
   const supabaseHttpOrigin = supabaseUrl?.origin;
 
-  const supabaseRealtimeOrigin = supabaseUrl
-    ? `${
-        supabaseUrl.protocol === "https:" ? "wss:" : "ws:"
-      }//${supabaseUrl.host}`
-    : undefined;
-
-  /*
-   * Permite somente o projeto Supabase realmente configurado,
-   * em vez de liberar todos os subdomínios *.supabase.co.
-   */
   const csp = buildNonceContentSecurityPolicy({
     nonce,
     allowUnsafeInlineStyleElements: mercadoPagoPage,
@@ -534,14 +524,6 @@ export async function middleware(request: NextRequest) {
     ],
 
     connectSources: [
-      ...(supabaseHttpOrigin
-        ? [supabaseHttpOrigin]
-        : []),
-
-      ...(supabaseRealtimeOrigin
-        ? [supabaseRealtimeOrigin]
-        : []),
-
       ...(mercadoPagoPage
         ? MERCADO_PAGO_CONNECT_SOURCES
         : []),

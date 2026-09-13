@@ -1,7 +1,8 @@
+import { logServerEvent } from "@curtiz/security";
 import { safeDatabaseError } from "./checkout-diagnostics";
 
 type HousekeepingEnvironment = {
-  NEXT_PUBLIC_SUPABASE_URL?: string;
+  SUPABASE_URL?: string;
   SUPABASE_SECRET_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
 };
@@ -21,13 +22,13 @@ export async function runExpirationHousekeeping(
 ): Promise<HousekeepingResult> {
   let baseUrl: string | null = null;
   try {
-    const url = new URL(environment.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "");
+    const url = new URL(environment.SUPABASE_URL?.trim() ?? "");
     if (url.protocol === "https:" && url.pathname === "/" && !url.search && !url.hash
       && !url.username && !url.password) baseUrl = url.origin;
   } catch { /* Invalid configuration is reported without exposing its value. */ }
   const secret = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
   if (!baseUrl || !secret) {
-    console.error("[checkout-housekeeping] configuration missing", {
+    logServerEvent("error", "checkout_housekeeping_configuration_missing", {
       requestId,
       code: "SUPABASE_SERVICE_CONFIGURATION_MISSING",
       message: null,
@@ -53,13 +54,13 @@ export async function runExpirationHousekeeping(
       });
       const payload: unknown = await response.json().catch(() => null);
       if (response.ok && typeof payload === "number" && Number.isSafeInteger(payload) && payload >= 0) {
-        console.info("[checkout-housekeeping] completed", { requestId, expired: payload, attempts: attempt });
+        logServerEvent("info", "checkout_housekeeping_completed", { requestId, expired: payload, attempts: attempt });
         return { ok: true, expired: payload, attempts: attempt };
       }
 
       const failure = safeDatabaseError(payload);
       const shouldRetry = response.status >= 500 && attempt === 1;
-      console.error("[checkout-housekeeping] RPC failed", {
+      logServerEvent("error", "checkout_housekeeping_rpc_failed", {
         requestId,
         code: "EXPIRATION_RPC_FAILED",
         status: response.status,
@@ -71,7 +72,7 @@ export async function runExpirationHousekeeping(
       });
       if (!shouldRetry) return { ok: false, expired: 0, attempts: attempt };
     } catch {
-      console.error("[checkout-housekeeping] runtime failure", {
+      logServerEvent("error", "checkout_housekeeping_runtime_failure", {
         requestId,
         code: "EXPIRATION_RUNTIME_FAILURE",
         attempt,

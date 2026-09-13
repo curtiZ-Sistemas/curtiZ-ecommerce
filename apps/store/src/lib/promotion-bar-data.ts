@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import "server-only";
 
 import {
@@ -54,10 +55,7 @@ export async function getPromotionBarMessages(): Promise<PromotionBarMessage[]> 
   try {
     return selectCurrentPromotionBarMessages(await loadPromotionBarMessages());
   } catch (error) {
-    console.error(
-      "[promotion-bar] Não foi possível carregar as mensagens.",
-      error instanceof Error ? error.message : "Erro desconhecido."
-    );
+    logServerEvent("error", "promotion_bar_n_o_foi_poss_vel_carregar_as_mensagens", { error });
     return [];
   }
 }

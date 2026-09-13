@@ -3,6 +3,7 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
   transpilePackages: ["@curtiz/config", "@curtiz/domain", "@curtiz/integrations", "@curtiz/security"],
   async headers() {

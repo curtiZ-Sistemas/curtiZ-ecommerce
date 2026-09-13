@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
 
   const actor = await audienceFor(request);
   if (typeof actor === "string" || !actor.supabase) {
-    console.error("[help-api] public search unavailable", {
+    logServerEvent("error", "help_api_public_search_unavailable", {
       requestId: crypto.randomUUID(),
       reason: "supabase_client_unavailable"
     });
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
   ]);
   const result = readQueryResult(response as unknown);
   if (result.error || categoryResponse.error) {
-    console.error("[help-api] published search failed", {
+    logServerEvent("error", "help_api_published_search_failed", {
       requestId: crypto.randomUUID(),
       searchCode: safeErrorCode(result.error),
       categoryCode: safeErrorCode(categoryResponse.error)

@@ -6,6 +6,7 @@ dist/
 coverage/
 .turbo/
 playwright-report/
+.playwright-mcp/
 test-results/
 .env
 .env.local

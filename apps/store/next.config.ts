@@ -16,6 +16,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
   transpilePackages: ["@curtiz/domain", "@curtiz/integrations", "@curtiz/security", "@curtiz/config"],
   images: {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runExpirationHousekeeping } from "./housekeeping";
 
 const environment = {
-  NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
+  SUPABASE_URL: "https://project.supabase.co",
   SUPABASE_SECRET_KEY: "server-secret"
 };
 
@@ -13,7 +13,7 @@ describe("checkout expiration housekeeping", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetcher = vi.fn();
     await expect(runExpirationHousekeeping({
-      NEXT_PUBLIC_SUPABASE_URL: environment.NEXT_PUBLIC_SUPABASE_URL
+      SUPABASE_URL: environment.SUPABASE_URL
     }, "request-id", fetcher)).resolves.toEqual({ ok: false, expired: 0, attempts: 0 });
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -68,7 +68,7 @@ describe("checkout expiration housekeeping", () => {
   it("does not send secrets to malformed or credential-bearing URLs", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetcher = vi.fn();
-    await runExpirationHousekeeping({ ...environment, NEXT_PUBLIC_SUPABASE_URL: "https://user:pass@project.supabase.co" }, "request-id", fetcher);
+    await runExpirationHousekeeping({ ...environment, SUPABASE_URL: "https://user:pass@project.supabase.co" }, "request-id", fetcher);
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

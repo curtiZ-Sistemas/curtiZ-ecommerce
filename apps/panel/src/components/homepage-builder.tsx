@@ -1,5 +1,7 @@
 "use client";
 
+import { panelMediaUrl } from "@/lib/public-media";
+
 import {
   Archive, ArrowDown, ArrowUp, BarChart3, Check, ChevronDown, ChevronUp, Copy,
   Eye, FileClock, GripVertical, History, ImagePlus, LoaderCircle, Lock, Monitor,
@@ -119,13 +121,12 @@ function editorForSectionType(editor: Editor, sectionType: string): Editor {
   };
   return { ...editor, sectionType };
 }
-const targetImage = (path?: string): CSSProperties | undefined => path && process.env.NEXT_PUBLIC_SUPABASE_URL ? { backgroundImage: `url(${JSON.stringify(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/catalog-public/${path}`)})` } : undefined;
+const targetImage = (path?: string): CSSProperties | undefined => path ? { backgroundImage: `url(${JSON.stringify(panelMediaUrl(path))})` } : undefined;
 function thumbnailStyle(section: Section): CSSProperties | undefined {
   for (const item of section.home_section_items) {
     const media = Array.isArray(item.home_section_item_media) ? item.home_section_item_media.find(isRecord) : null;
     const path = media && typeof media.storage_path === "string" ? media.storage_path : "";
-    const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (path && base) return { backgroundImage: `url(${JSON.stringify(`${base}/storage/v1/object/public/homepage-public/${path}`)})`, backgroundPosition: "center", backgroundSize: "cover" };
+    if (path) return { backgroundImage: `url(${JSON.stringify(panelMediaUrl(path, "homepage-public"))})`, backgroundPosition: "center", backgroundSize: "cover" };
   }
   return undefined;
 }

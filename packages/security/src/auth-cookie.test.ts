@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configuredCookieDomains,
   cookieDomainMatchesHost,
@@ -7,6 +7,12 @@ import {
 } from "./auth-cookie";
 
 describe("cookies compartilhados entre aplicações", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("impede que o SDK exponha a sessão ao JavaScript em produção", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(sharedCookieOptions({ httpOnly: false, secure: false }, "store.example.invalid", ""))
+      .toMatchObject({ httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+  });
   it("normaliza e valida domínio sem aceitar URL ou host local", () => {
     expect(normalizeCookieDomain(".example.com")).toBe("example.com");
     expect(normalizeCookieDomain("https://example.com")).toBeNull();
@@ -26,7 +32,7 @@ describe("cookies compartilhados entre aplicações", () => {
       "sistemas-curtiz.workers.dev"
     ]);
     expect(sharedCookieOptions({ httpOnly: true }, "painel.curtiz.com.br", domains)).toEqual({
-      httpOnly: true,
+      httpOnly: true, secure: false, sameSite: "lax", path: "/",
       domain: ".curtiz.com.br"
     });
     expect(
@@ -36,18 +42,18 @@ describe("cookies compartilhados entre aplicações", () => {
         domains
       )
     ).toEqual({
-      httpOnly: true,
+      httpOnly: true, secure: false, sameSite: "lax", path: "/",
       domain: ".sistemas-curtiz.workers.dev"
     });
   });
 
   it("não aplica Domain quando o host não corresponde", () => {
     expect(sharedCookieOptions({ httpOnly: true }, "store.example.com", "example.com")).toEqual({
-      httpOnly: true,
+      httpOnly: true, secure: false, sameSite: "lax", path: "/",
       domain: ".example.com"
     });
     expect(sharedCookieOptions({ httpOnly: true }, "attacker.test", "example.com")).toEqual({
-      httpOnly: true
+      httpOnly: true, secure: false, sameSite: "lax", path: "/"
     });
   });
 

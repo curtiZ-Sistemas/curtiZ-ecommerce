@@ -3,6 +3,19 @@ type PublicMediaOptions = {
   supabaseUrl?: string;
 };
 
+export function panelMediaUrl(path: string, bucket = "catalog-public", storeUrl?: string): string {
+  if (!path) return "";
+  if (path.startsWith("/") && !path.startsWith("//")) {
+    return storeUrl ? new URL(path, storeUrl).toString() : path;
+  }
+  return `/api/media?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(path)}`;
+}
+
+export function publicCatalogUploadSource(supabaseUrl?: string): string | null {
+  const origin = safeOrigin(supabaseUrl);
+  return origin ? `${origin}/storage/v1/object/upload/sign/catalog-public/products/` : null;
+}
+
 function safeOrigin(value?: string): string | null {
   if (!value) return null;
   try {

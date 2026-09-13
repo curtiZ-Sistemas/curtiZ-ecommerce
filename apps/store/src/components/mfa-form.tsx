@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { type FormEvent, useEffect, useState } from "react";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
-type Enrollment = { factorId: string; qrCode: string; secret: string };
+type Enrollment = { qrCode: string; secret: string };
+type MfaResponse = { ok: boolean; factorId?: string | null; enrollment?: Enrollment };
 
 export function MfaForm({ destination }: { destination: string }) {
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
@@ -13,45 +13,33 @@ export function MfaForm({ destination }: { destination: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
+  const preparing = useRef<Promise<MfaResponse> | null>(null);
+
   useEffect(() => {
     let active = true;
-    const prepare = async () => {
-      const supabase = createBrowserSupabaseClient();
-      if (!supabase) {
-        if (active) setMessage("A autenticação multifator não está configurada.");
-        return;
-      }
-      const listed = await supabase.auth.mfa.listFactors();
-      if (listed.error) {
-        if (active) setMessage("Não foi possível carregar os fatores de segurança.");
-        return;
-      }
-      const verified = listed.data.totp.find((factor) => factor.status === "verified");
-      if (verified) {
-        if (active) setFactorId(verified.id);
-        return;
-      }
-      for (const factor of listed.data.totp.filter((item) => item.status !== "verified")) {
-        await supabase.auth.mfa.unenroll({ factorId: factor.id });
-      }
-      const enrolled = await supabase.auth.mfa.enroll({
-        factorType: "totp",
-        friendlyName: "Acesso interno curti Z"
+    // Share preparation across Strict Mode effect replay; enrollment is a mutation.
+    preparing.current ??= (async () => {
+      const response = await fetch("/api/auth/mfa", { credentials: "same-origin", cache: "no-store" });
+      const state = await response.json() as MfaResponse;
+      if (!response.ok || !state.ok) throw new Error("mfa_unavailable");
+      if (state.factorId) return state;
+      const enrolled = await fetch("/api/auth/mfa", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enroll" })
       });
-      if (enrolled.error) {
-        if (active) setMessage("Não foi possível preparar o autenticador.");
-        return;
-      }
-      if (active) {
-        setFactorId(enrolled.data.id);
-        setEnrollment({
-          factorId: enrolled.data.id,
-          qrCode: enrolled.data.totp.qr_code,
-          secret: enrolled.data.totp.secret
-        });
-      }
-    };
-    void prepare().finally(() => active && setLoading(false));
+      const result = await enrolled.json() as MfaResponse;
+      if (!enrolled.ok || !result.ok) throw new Error("mfa_unavailable");
+      return result;
+    })();
+    void preparing.current.then((result) => {
+      if (!active) return;
+      setFactorId(result.factorId ?? "");
+      setEnrollment(result.enrollment ?? null);
+      preparing.current = null;
+    }).catch(() => {
+      if (active) setMessage("Não foi possível preparar o autenticador. Recarregue a página para tentar novamente.");
+      preparing.current = null;
+    }).finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
@@ -69,16 +57,25 @@ export function MfaForm({ destination }: { destination: string }) {
     }
     setSubmitting(true);
     setMessage("");
-    const supabase = createBrowserSupabaseClient();
-    const result = supabase
-      ? await supabase.auth.mfa.challengeAndVerify({ factorId, code })
-      : { error: new Error("Supabase indisponível") };
-    if (result.error) {
-      setMessage("Código inválido ou expirado. Confira o autenticador e tente novamente.");
+    try {
+      const response = await fetch("/api/auth/mfa", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "verify", factorId, code })
+      });
+      if (!response.ok) {
+        setMessage("Código inválido ou expirado, ou limite de tentativas atingido. Aguarde e tente novamente.");
+        return;
+      }
+      setEnrollment(null);
+      setFactorId("");
+      preparing.current = null;
+      window.location.assign(destination);
+    } catch {
+      setMessage("Não foi possível conectar. Tente novamente.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-    window.location.assign(destination);
   };
 
   return (

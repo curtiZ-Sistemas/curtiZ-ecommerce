@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     upsert: false
   });
   if (uploaded.error) {
-    console.error("[banner-media] upload failed", { device, status: uploaded.error.statusCode });
+    logServerEvent("error", "banner_media_upload_failed", { device, status: uploaded.error.statusCode });
     return NextResponse.json({ message: "Não foi possível armazenar a imagem do banner." }, { status: 409, headers: privateNoStore });
   }
   const publicUrl = auth.supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl;
@@ -82,6 +83,7 @@ export async function DELETE(request: NextRequest) {
   if (references.error || references.data?.length) return NextResponse.json({ message: "A imagem está em uso ou não foi possível confirmar sua remoção." }, { status: 409, headers: privateNoStore });
   const removed = await auth.supabase.storage.from("catalog-public").remove([parsed.data.path]);
   if (removed.error) {
+    logServerEvent("warn", "banner_media_cleanup_failed", { code: "STORAGE_REMOVE_FAILED" });
     return NextResponse.json({ message: "Não foi possível remover o upload temporário." }, { status: 409, headers: privateNoStore });
   }
   return NextResponse.json({ message: "Upload temporário removido." }, { headers: privateNoStore });

@@ -9,18 +9,18 @@ export const publicEnvSchema = z.object({
   NEXT_PUBLIC_PANEL_URL: z.string().url(),
   NEXT_PUBLIC_STORE_TEST_URL: z.string().url().optional(),
   NEXT_PUBLIC_PANEL_TEST_URL: z.string().url().optional(),
-  NEXT_PUBLIC_SUPABASE_URL: z
+  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().startsWith("TEST-").optional()
+});
+
+export const serverEnvSchema = z.object({
+  SUPABASE_URL: z
     .string()
     .url()
     .refine((value) => {
       const url = new URL(value);
       return url.pathname === "/" && !url.search && !url.hash;
     }, "Use somente a origem do projeto Supabase, sem caminhos"),
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
-  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().startsWith("TEST-").optional()
-});
-
-export const serverEnvSchema = z.object({
+  SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   PAYMENT_PROVIDER: z.enum(["disabled", "mock", "mercadopago", "mercado_pago"]).default("disabled"),

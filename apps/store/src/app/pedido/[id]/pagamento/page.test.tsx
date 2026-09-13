@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import Page from "./page";
 

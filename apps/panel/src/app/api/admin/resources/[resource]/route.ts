@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -13,7 +14,8 @@ import {
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
-import { bannerFailure, normalizeBannerValues, validateBannerReferences } from "@/lib/banner-management";
+import { normalizeBannerValues } from "@/lib/banner-management";
+import { bannerFailure, validateBannerReferences } from "@/lib/banner-management-server";
 import { categoryDeletionMessage } from "../../../../../lib/category-management";
 
 export const dynamic = "force-dynamic";
@@ -94,7 +96,7 @@ function logResourceQueryFailure(
   table: string,
   error: { code?: string; message?: string; details?: string } | null
 ): void {
-  console.error("[panel-admin-resource-api] query failed", {
+  logServerEvent("error", "panel_admin_resource_api_query_failed", {
     requestId: crypto.randomUUID(),
     resource,
     table,

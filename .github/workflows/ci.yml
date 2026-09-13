@@ -99,8 +99,8 @@ jobs:
       NEXT_PUBLIC_PANEL_URL: https://panel.example.invalid
       NEXT_PUBLIC_STORE_TEST_URL: https://store-test.example.invalid
       NEXT_PUBLIC_PANEL_TEST_URL: https://panel-test.example.invalid
-      NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
+      SUPABASE_URL: https://project.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
       SUPABASE_SECRET_KEY: ci-secret-placeholder
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-site-placeholder
       TURNSTILE_SECRET_KEY: ci-turnstile-placeholder
@@ -118,6 +118,7 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm check:exposure
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -192,8 +193,8 @@ jobs:
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
       NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
       NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
-      NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
       SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
@@ -263,8 +264,8 @@ jobs:
             --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
             --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
             --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL}" \
-            --var "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+            --var "SUPABASE_URL:${SUPABASE_URL}" \
+            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}" \
             --var "NEXT_PUBLIC_TURNSTILE_SITE_KEY:${NEXT_PUBLIC_TURNSTILE_SITE_KEY}" \
             --var "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY:${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}"
       - name: Smoke test pós-deploy sem cobrança
@@ -295,8 +296,8 @@ jobs:
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
       NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
       NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
-      NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
       SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
@@ -354,5 +355,5 @@ jobs:
             --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
             --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
             --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL}" \
-            --var "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}"
+            --var "SUPABASE_URL:${SUPABASE_URL}" \
+            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}"

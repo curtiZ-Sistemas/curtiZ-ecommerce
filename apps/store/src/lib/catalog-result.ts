@@ -68,7 +68,7 @@ export const publicCatalogImage = (path: string | null | undefined, slug?: strin
   if (!path) return demoProducts.find((product) => product.slug === slug)?.image ?? "/icon.svg";
   if (path.startsWith("/images/")) return path.replace(/\.png$/iu, ".webp");
   if (path.startsWith("/") || path.startsWith("https://")) return path;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
     : "/icon.svg";

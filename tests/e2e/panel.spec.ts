@@ -10,6 +10,7 @@ async function loginAs(page: Page, email: string) {
   const destination = destinationByAccount[email as keyof typeof destinationByAccount];
   if (!destination) throw new Error(`Conta interna de teste não mapeada: ${email}`);
   const response = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email, password: "1234567890" }
   });
   if (!response.ok()) throw new Error(`Login demo falhou com HTTP ${response.status()}`);

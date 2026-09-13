@@ -1,8 +1,8 @@
 export {};
 
 async function main() {
-  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const rawUrl = process.env.SUPABASE_URL?.trim();
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
   if (!rawUrl || !publishableKey) throw new Error("Configuração pública do Supabase ausente.");
 
   const endpoint = new URL("/rest/v1/rpc/cart_variant_stock_availability", rawUrl);

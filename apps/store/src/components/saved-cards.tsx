@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MercadoPagoSavedCard } from "@curtiz/integrations";
+import type { MercadoPagoSavedCard } from "@curtiz/integrations/client-types";
 import { isUnknownRecord } from "@/lib/unknown-data";
 
 export function SavedCards() {

@@ -26,22 +26,36 @@ export {
 } from "./referral-attribution";
 
 const sensitiveKeys =
-  /password|token|authorization|cookie|access_token|refresh_token|card|cvv|cpf/i;
+  /password|token|authorization|cookie|secret|apikey|servicerole|credential|privatekey|encryption|document|cpf|card|cvv|cvc|securitycode|pix|qrcode|bankaccount|accountnumber|address|street|postalcode|email|phone|stack|message|cause|details|hint/i;
 const unsafeProtocols = /^(javascript|data|vbscript):/i;
 
 export const createRequestId = (): string => randomUUID();
 
 export const redact = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(redact);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        sensitiveKeys.test(key) ? "[REDACTED]" : redact(item)
-      ])
-    );
-  }
-  return value;
+  const seen = new WeakSet<object>();
+  const visit = (item: unknown, depth: number): unknown => {
+    if (depth > 12) return "[REDACTED]";
+    if (item instanceof Error) return { name: "Error" };
+    if (item && typeof item === "object") {
+      if (seen.has(item)) return "[REDACTED]";
+      seen.add(item);
+      if (Array.isArray(item)) return item.slice(0, 100).map((entry) => visit(entry, depth + 1));
+      return Object.fromEntries(Object.entries(item).slice(0, 100).map(([key, entry]) => [key,
+        sensitiveKeys.test(key.replace(/[^a-z0-9]/giu, "")) ? "[REDACTED]" : visit(entry, depth + 1)
+      ]));
+    }
+    if (typeof item === "string") return item
+      .replace(/\b(?:Bearer\s+\S+|sb_secret_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/giu, "[REDACTED]")
+      .replace(/https?:\/\/[^\s]+/giu, "[URL REDACTED]")
+      .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/gu, "[REDACTED]")
+      .slice(0, 1000);
+    return item;
+  };
+  return visit(value, 0);
+};
+
+export const logServerEvent = (level: "info" | "warn" | "error", event: string, context: unknown): void => {
+  console[level](/^[a-z0-9_.-]{1,80}$/u.test(event) ? event : "application_event", redact(context));
 };
 
 export const sanitizePlainText = (value: string, maximum = 4_000): string =>

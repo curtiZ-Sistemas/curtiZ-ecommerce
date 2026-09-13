@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { getIntegrationConfig } from "@curtiz/config";
 import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
@@ -45,7 +46,7 @@ const infrastructureErrorCodes = new Set(["PGRST200", "PGRST202", "42P01", "4270
 
 function logFailure(requestId: string, code: string, error?: unknown) {
   const database = readDatabaseError(error);
-  console.error("[checkout-api] checkout not prepared", {
+  logServerEvent("error", "checkout_api_checkout_not_prepared", {
     requestId,
     route: "/api/checkout",
     code,

@@ -26,7 +26,7 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
       "process.env": "{}",
       "process.env.NODE_ENV": '"production"',
       "process.env.NEXT_PUBLIC_STORE_URL": '"http://banner.test"',
-      "process.env.NEXT_PUBLIC_SUPABASE_URL": '"http://banner.test"'
+      "process.env.SUPABASE_URL": '"http://banner.test"'
     }
   });
   const browser = await chromium.launch({ channel: "chrome", headless: true });

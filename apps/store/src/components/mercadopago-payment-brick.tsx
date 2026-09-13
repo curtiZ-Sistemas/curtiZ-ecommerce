@@ -112,10 +112,8 @@ export function MercadoPagoPaymentBrick({
     ) return Promise.resolve();
 
     disposedControllers.current.add(candidate);
-    return Promise.resolve().then(() => candidate.unmount()).catch((error: unknown) => {
-      console.error("[mercadopago-bricks] cleanup failed", {
-        cause: error instanceof Error ? error.message : "unexpected_cleanup_error"
-      });
+    return Promise.resolve().then(() => candidate.unmount()).catch(() => {
+      setMessage("Não foi possível encerrar o formulário de pagamento. Recarregue a página antes de tentar novamente.");
     });
   }, []);
 
@@ -167,7 +165,6 @@ export function MercadoPagoPaymentBrick({
 
       const initialization = createMercadoPagoInitialization({ ...session, savedCards });
       if (!initialization) {
-        console.error("[mercadopago-bricks] initialization rejected", { cause: "invalid_amount" });
         setInitializationFailed(true);
         return;
       }
@@ -289,14 +286,7 @@ export function MercadoPagoPaymentBrick({
               setProcessing(false);
             }
           },
-          onError: (error: unknown) => {
-            const safeError = error && typeof error === "object"
-              ? {
-                  cause: "cause" in error && typeof error.cause === "string" ? error.cause : "unknown",
-                  message: "message" in error && typeof error.message === "string" ? error.message : undefined
-                }
-              : { cause: "unknown" };
-            console.error("[mercadopago-bricks] initialization failed", safeError);
+          onError: () => {
             rejectReady?.(new Error("brick_on_error"));
           }
         }
@@ -329,10 +319,7 @@ export function MercadoPagoPaymentBrick({
       }
     });
 
-    initializationQueue.current = initialize.catch((error: unknown) => {
-      console.error("[mercadopago-bricks] initialization failed", {
-        cause: error instanceof Error ? error.message : "unexpected_initialization_error"
-      });
+    initializationQueue.current = initialize.catch(() => {
       if (active) {
         setBrickReady(false);
         setInitializationFailed(true);

@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { evaluateMerchantEligibility, type MerchantCatalogItem } from "@curtiz/domain";
 import { type NextRequest, NextResponse } from "next/server";
@@ -118,7 +119,7 @@ type CatalogError = {
 } | null;
 
 function logCatalogFailure(operation: string, error: CatalogError) {
-  console.error("[panel-catalog-api] operation failed", {
+  logServerEvent("error", "panel_catalog_api_operation_failed", {
     requestId: crypto.randomUUID(),
     operation,
     code: error?.code ?? "unknown",
@@ -568,7 +569,7 @@ export async function GET(request: NextRequest) {
   const mediaUrl = (path: string) =>
     publicCatalogMediaUrl(path, {
       storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+      supabaseUrl: process.env.SUPABASE_URL
     });
   const legacyProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
@@ -588,7 +589,7 @@ export async function GET(request: NextRequest) {
     for (const [index, [name, select]] of selections.entries()) {
       const result = await run(select);
       if (!result.error) {
-        if (index > 0) console.warn("[panel-catalog-api] compatibility select used", { select: name });
+        if (index > 0) logServerEvent("warn", "panel_catalog_api_compatibility_select_used", { select: name });
         return result;
       }
       logCatalogFailure(`select:${name}`, result.error);

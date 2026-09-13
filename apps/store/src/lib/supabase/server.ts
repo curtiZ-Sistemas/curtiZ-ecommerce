@@ -29,8 +29,8 @@ const validSupabaseOrigin = (value: string | undefined) => {
 };
 
 export async function createServerSupabaseClient(options?: { persistence?: AuthPersistence }) {
-  const url = validSupabaseOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const url = validSupabaseOrigin(process.env.SUPABASE_URL);
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
 
   if (!url || !publishableKey) return null;
 
@@ -64,8 +64,8 @@ export async function createServerSupabaseClient(options?: { persistence?: AuthP
 
 /** Public, stateless client for RPCs explicitly granted to the anon role. */
 export function createPublicSupabaseClient() {
-  const url = validSupabaseOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const url = validSupabaseOrigin(process.env.SUPABASE_URL);
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
 
   if (!url || !publishableKey) return null;
 
@@ -80,7 +80,7 @@ export function createPublicSupabaseClient() {
 
 /** Server-only client for narrowly scoped public endpoints after their own abuse checks. */
 export function createServiceSupabaseClient() {
-  const url = validSupabaseOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const url = validSupabaseOrigin(process.env.SUPABASE_URL);
   // Prefer Supabase's current secret-key name, with compatibility for Workers
   // that still use the legacy service-role variable.
   const secretKey = (

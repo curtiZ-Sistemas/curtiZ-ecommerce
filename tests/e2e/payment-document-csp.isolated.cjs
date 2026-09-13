@@ -20,8 +20,8 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
     storeRequire, policyModule, policyModule.exports
   );
   process.env.NODE_ENV = "production";
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "";
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "";
+  process.env.SUPABASE_URL = "";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "";
   const { NextRequest } = storeRequire("next/server");
   const policies = new Map();
   const orderPayment = "/pedido/11111111-1111-4111-8111-111111111111/pagamento";

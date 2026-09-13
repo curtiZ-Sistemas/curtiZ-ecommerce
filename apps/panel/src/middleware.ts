@@ -5,7 +5,7 @@ import {
   readAuthPersistence
 } from "@curtiz/security/auth-persistence";
 import { buildNonceContentSecurityPolicy } from "@curtiz/security/content-security-policy";
-import { publicCatalogMediaOrigins } from "@/lib/public-media";
+import { publicCatalogMediaOrigins, publicCatalogUploadSource } from "@/lib/public-media";
 import { resolvePublicAppUrls } from "@curtiz/config";
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
@@ -16,8 +16,10 @@ export async function middleware(request: NextRequest) {
   const storeOrigin = resolvePublicAppUrls(request.url).storeUrl;
   const mediaOrigins = publicCatalogMediaOrigins({
     storeUrl: storeOrigin,
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+    supabaseUrl: process.env.SUPABASE_URL
   });
+  // Large videos use a short-lived, object-scoped upload grant; no Data API or Realtime.
+  const videoUploadSource = publicCatalogUploadSource(process.env.SUPABASE_URL);
   const localDevelopment =
     process.env.NODE_ENV === "development" ||
     ["localhost", "127.0.0.1", "::1"].includes(request.nextUrl.hostname);
@@ -27,8 +29,7 @@ export async function middleware(request: NextRequest) {
     mediaSources: [...mediaOrigins],
     connectSources: [
       storeOrigin,
-      "https://*.supabase.co",
-      "wss://*.supabase.co",
+      ...(videoUploadSource ? [videoUploadSource] : []),
       ...(process.env.NODE_ENV === "development" ? ["http:", "ws:"] : [])
     ],
     development: localDevelopment
@@ -51,8 +52,8 @@ export async function middleware(request: NextRequest) {
   };
 
   let response = createNextResponse();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
   if (!supabaseUrl || !supabasePublishableKey || process.env.DEMO_MODE === "true") {
     return response;
   }

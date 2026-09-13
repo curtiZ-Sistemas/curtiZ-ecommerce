@@ -35,7 +35,7 @@ const record = (value: unknown): UnknownRecord =>
 const publicImage = (path: string) => {
   if (!path) return "";
   if (/^https?:\/\//u.test(path)) return path;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
     : "";

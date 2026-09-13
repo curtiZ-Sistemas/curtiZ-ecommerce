@@ -6,7 +6,6 @@ import {
   supportStatusLabels,
   type SupportConversationView
 } from "@curtiz/domain";
-import { createBrowserClient } from "@supabase/ssr";
 import {
   FileText,
   LoaderCircle,
@@ -48,12 +47,20 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
   const [rated, setRated] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(crypto.randomUUID());
 
+  const etagRef = useRef<string | null>(null);
+  const loadingRef = useRef(false);
+
   const loadConversations = useCallback(async (silent = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!silent) setLoading(true);
     try {
-      const response = await fetch("/api/support", { cache: "no-store", credentials: "include" });
+      const response = await fetch("/api/support", { cache: "no-store", credentials: "include", signal: AbortSignal.timeout(10_000),
+        headers: silent && etagRef.current ? { "if-none-match": etagRef.current } : {} });
+      if (response.status === 304) return;
       const result = (await response.json()) as SupportResponse;
-      if (response.status === 401 || result.requiresAuthentication) {
+      etagRef.current = response.ok ? response.headers.get("etag") : null;
+      if (response.status === 401 || response.status === 403 || result.requiresAuthentication) {
         setAuthenticated(false);
         setConversations([]);
         return;
@@ -68,6 +75,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
         "Não foi possível carregar os atendimentos. Verifique a conexão e tente novamente."
       );
     } finally {
+      loadingRef.current = false;
       if (!silent) setLoading(false);
     }
   }, []);
@@ -78,29 +86,17 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
 
   useEffect(() => {
     if (!authenticated) return;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (url && key) {
-      const supabase = createBrowserClient(url, key);
-      const channel = supabase
-        .channel("customer-support-updates")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "support_conversations" },
-          () => void loadConversations(true)
-        )
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "support_messages" },
-          () => void loadConversations(true)
-        )
-        .subscribe();
-      return () => {
-        void supabase.removeChannel(channel);
-      };
-    }
-    const fallback = window.setInterval(() => void loadConversations(true), 30_000);
-    return () => window.clearInterval(fallback);
+    const refresh = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) void loadConversations(true);
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
+    };
   }, [authenticated, loadConversations]);
 
   const requireCustomerAccount = () => {

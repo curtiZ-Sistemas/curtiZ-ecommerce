@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { getIntegrationConfig } from "@curtiz/config";
 import { isMercadoPagoTestCredential, MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
@@ -93,7 +94,7 @@ const checkoutConflict = (error: unknown) => {
 };
 const logFailure = (code: string, status?: number, requestId?: string, error?: unknown) => {
   const database = safeDatabaseError(error);
-  console.error("[mercadopago-bricks] payment not completed", {
+  logServerEvent("error", "mercadopago_bricks_payment_not_completed", {
     code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
     message: database.message || null, details: database.details || null, hint: database.hint || null
   });

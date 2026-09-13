@@ -4,7 +4,7 @@ import { optimizeBannerUpload } from "@/lib/banner-image-client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
-import { publicCatalogMediaUrl } from "@/lib/public-media";
+import { panelMediaUrl } from "@/lib/public-media";
 import { normalizeBannerValues } from "@/lib/banner-management";
 
 type Row = Record<string, unknown>;
@@ -15,11 +15,7 @@ const none: Destination = { type: "none", id: "", route: "/", label: "Nenhum des
 const string = (row: Row, key: string) => (typeof row[key] === "string" ? row[key] : "");
 const record = (value: unknown): value is Row =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-const mediaUrl = (path: string) =>
-  publicCatalogMediaUrl(path, {
-    storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
-  });
+const mediaUrl = (path: string) => panelMediaUrl(path, "catalog-public", process.env.NEXT_PUBLIC_STORE_URL);
 const endpoint = "/api/admin/resources/banners";
 
 async function request(url: string, init?: RequestInit): Promise<Row> {
@@ -324,9 +320,7 @@ function BannerEditor({
         void request("/api/admin/banner-media", {
           ...json("DELETE", { path }),
           keepalive: true
-        }).catch(() => {
-          console.warn("[banner-editor] temporary upload cleanup could not be confirmed");
-        });
+        }).catch(() => undefined);
       }
     };
   }, []);

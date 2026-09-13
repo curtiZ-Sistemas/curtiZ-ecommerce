@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -43,7 +44,7 @@ async function handle(request: Request, operation: "list" | "save" | "delete") {
   } catch (error) {
     const code = error instanceof SavedCardsError ? error.code : "SAVED_CARDS_UNAVAILABLE";
     // Never log provider payload, tokens, personal identity or error.message from the SDK.
-    console.error("[mercadopago-cards] operation failed", { operation, code, requestId });
+    logServerEvent("error", "mercadopago_cards_operation_failed", { operation, code, requestId });
     return reply({ ok: false, code, message: "Não foi possível atualizar seus cartões. Seu pagamento permanece seguro." },
       error instanceof SavedCardsError ? error.status : 503);
   }

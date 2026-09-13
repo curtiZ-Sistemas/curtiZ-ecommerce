@@ -1,3 +1,5 @@
+import { publicEnvironmentErrors } from "./public-environment";
+
 export type DeploymentEnvironment = "development" | "staging" | "production";
 
 export type EnvironmentValues = Readonly<Record<string, string | undefined>>;
@@ -12,8 +14,8 @@ const stagingRequired = [
   "APP_ENV",
   "NEXT_PUBLIC_STORE_URL",
   "NEXT_PUBLIC_PANEL_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_URL",
+  "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SECRET_KEY",
   "PII_ENCRYPTION_KEY",
   "AUDIT_HASH_KEY",
@@ -142,11 +144,11 @@ const validateUrl = (
     } else if (requireHttps && url.protocol !== "https:") {
       errors.push(`${key} deve usar HTTPS`);
     } else if (
-      key === "NEXT_PUBLIC_SUPABASE_URL" &&
+      key === "SUPABASE_URL" &&
       (url.pathname !== "/" || url.search || url.hash || url.username || url.password)
     ) {
       errors.push(
-        "NEXT_PUBLIC_SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
+        "SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
       );
     }
   } catch {
@@ -411,6 +413,7 @@ const validateCommonValues = (
   requireHttps: boolean,
   errors: string[]
 ): void => {
+  errors.push(...publicEnvironmentErrors(environment));
   validateEnum(environment, "PAYMENT_PROVIDER", errors);
   validateEnum(environment, "EMAIL_PROVIDER", errors);
   validateEnum(environment, "SHIPPING_PROVIDER", errors);
@@ -436,7 +439,7 @@ const validateCommonValues = (
 
   validateUrl(environment, "NEXT_PUBLIC_PANEL_TEST_URL", requireHttps, errors);
 
-  validateUrl(environment, "NEXT_PUBLIC_SUPABASE_URL", requireHttps, errors);
+  validateUrl(environment, "SUPABASE_URL", requireHttps, errors);
 
   validateUrl(environment, "MELHOR_ENVIO_BASE_URL", requireHttps, errors);
 

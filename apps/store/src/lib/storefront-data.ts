@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import "server-only";
 
 import {
@@ -260,7 +261,7 @@ const optimizedBundledImage = (path: string) =>
 
 const publicImage = (path: string) => {
   if (path.startsWith("/") || path.startsWith("https://")) return optimizedBundledImage(path);
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
     : "/icon.svg";
@@ -268,7 +269,7 @@ const publicImage = (path: string) => {
 
 const homepageMedia = (path: string) => {
   if (path.startsWith("/") || path.startsWith("https://")) return path;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/homepage-public/${path.replace(/^homepage-public\//u, "")}`
     : "/icon.svg";
@@ -462,7 +463,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
 
   const positionCounts = new Map<string, number>();
   const bannerQuery = readQueryResult(bannersResponse);
-  if (bannerQuery.error) console.error("[homepage] Banner query failed", { code: isUnknownRecord(bannerQuery.error) ? readString(bannerQuery.error, "code") : "unknown" });
+  if (bannerQuery.error) logServerEvent("error", "homepage_banner_query_failed", { code: isUnknownRecord(bannerQuery.error) ? readString(bannerQuery.error, "code") : "unknown" });
   const banners = readRows(bannerQuery.data)
     .map((row): PublicBanner | null => {
       const position = readString(row, "position") || "hero";
@@ -785,7 +786,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
     stock: parsed.data.stock
   };
   if (sizeGuideResponse.error) {
-    console.error("[storefront-product] size guide query failed", {
+    logServerEvent("error", "storefront_product_size_guide_query_failed", {
       code: sizeGuideResponse.error.code,
       message: sizeGuideResponse.error.message,
       details: sizeGuideResponse.error.details

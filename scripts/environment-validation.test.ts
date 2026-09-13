@@ -8,8 +8,8 @@ const stagingEnvironment: EnvironmentValues = {
   NEXT_PUBLIC_PANEL_URL: "https://panel-staging.example.com",
   NEXT_PUBLIC_STORE_TEST_URL: "https://store-test.example.net",
   NEXT_PUBLIC_PANEL_TEST_URL: "https://panel-test.example.net",
-  NEXT_PUBLIC_SUPABASE_URL: "https://staging.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
+  SUPABASE_URL: "https://staging.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
   SUPABASE_SECRET_KEY: "staging-secret-key",
   PII_ENCRYPTION_KEY: "staging-pii-key",
   AUDIT_HASH_KEY: "staging-audit-key",
@@ -234,10 +234,10 @@ describe("environment validation", () => {
     expect(
       validateEnvironment("production", {
         ...disabledProduction,
-        NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co/rest/v1/"
+        SUPABASE_URL: "https://project.supabase.co/rest/v1/"
       }).errors
     ).toContain(
-      "NEXT_PUBLIC_SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
+      "SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
     );
   });
 

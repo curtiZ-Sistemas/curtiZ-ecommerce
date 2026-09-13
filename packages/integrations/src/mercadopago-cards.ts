@@ -1,8 +1,8 @@
+import "server-only";
 import { isMercadoPagoTestCredential, MercadoPagoProviderError } from "./index";
+import type { MercadoPagoSavedCard } from "./client-types";
+export type { MercadoPagoSavedCard } from "./client-types";
 
-export type MercadoPagoSavedCard = {
-  id: string; brand: string; lastFour: string; expirationMonth: number; expirationYear: number;
-};
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 export const providerReference = (value: unknown): string => {

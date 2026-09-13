@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -48,7 +49,7 @@ function databaseError(value: unknown): DatabaseError {
 
 function logFailure(requestId: string, code: string, error?: unknown) {
   const details = databaseError(error);
-  console.error("[cart/availability] request failed", {
+  logServerEvent("error", "cart_availability_request_failed", {
     requestId,
     code,
     message: details.message ?? null,

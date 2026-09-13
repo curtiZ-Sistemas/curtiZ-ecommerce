@@ -8,7 +8,6 @@ import {
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
-import { createBrowserClient } from "@supabase/ssr";
 import {
   ArrowUpRight,
   CircleCheck,
@@ -21,7 +20,7 @@ import {
   Send,
   UserRoundCheck
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelPrompt } from "./panel-prompt";
 
 type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
@@ -80,14 +79,26 @@ export function SupportConsole({ role }: { role: PanelRole }) {
   const [transferOpen, setTransferOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
 
+  const etagRef = useRef<string | null>(null);
+  const loadingRef = useRef(false);
+
   const load = useCallback(async (silent = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!silent) setLoading(true);
     try {
       const response = await fetch(`${storeUrl()}/api/support`, {
+        signal: AbortSignal.timeout(10_000),
         cache: "no-store",
-        credentials: "include"
+        credentials: "include",
+        headers: silent && etagRef.current ? { "if-none-match": etagRef.current } : {}
       });
+      if (response.status === 304) return;
       const result = (await response.json()) as SupportResponse;
+      etagRef.current = response.ok ? response.headers.get("etag") : null;
+      if (response.status === 401 || response.status === 403) {
+        setConversations([]); setTeam([]); setQuickReplies([]);
+      }
       if (!response.ok || !result.ok) throw new Error(result.message ?? "support_load_failed");
       setConversations(result.conversations ?? []);
       setTeam(result.team ?? []);
@@ -100,6 +111,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
     } catch {
       setError("Não foi possível carregar a fila. Verifique sua sessão e tente novamente.");
     } finally {
+      loadingRef.current = false;
       if (!silent) setLoading(false);
     }
   }, []);
@@ -109,29 +121,17 @@ export function SupportConsole({ role }: { role: PanelRole }) {
   }, [load]);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (url && key) {
-      const supabase = createBrowserClient(url, key);
-      const channel = supabase
-        .channel("panel-support-updates")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "support_conversations" },
-          () => void load(true)
-        )
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "support_messages" },
-          () => void load(true)
-        )
-        .subscribe();
-      return () => {
-        void supabase.removeChannel(channel);
-      };
-    }
-    const timer = window.setInterval(() => void load(true), 30_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) void load(true);
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
+    };
   }, [load]);
 
   const filtered = useMemo(() => {
@@ -404,7 +404,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
                   <p>{message.content}</p>
                   {message.attachments?.map((attachment) =>
                     attachment.available && attachment.url ? (
-                      <a href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
+                      <a href={attachment.url?.startsWith("/") ? `${storeUrl()}${attachment.url}` : attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
                         <FileText />
                         {attachment.name}
                       </a>

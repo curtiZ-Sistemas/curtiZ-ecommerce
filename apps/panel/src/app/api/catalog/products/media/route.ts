@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -308,7 +309,7 @@ export async function DELETE(request: NextRequest) {
     ? await auth.supabase.storage.from("catalog-public").remove([storagePath])
     : { error: null };
   if (removedFile.error)
-    console.error("[product-media-api] orphaned object", {
+    logServerEvent("error", "product_media_api_orphaned_object", {
       requestId: crypto.randomUUID(),
       code: removedFile.error.message.slice(0, 120)
     });

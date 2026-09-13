@@ -27,7 +27,7 @@ Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
 - variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
   `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
-  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`,
+  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`,
   `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_ENABLED`, `SHIPPING_PROVIDER`,
   `MELHOR_ENVIO_ENABLED`, `EMAIL_PROVIDER`, `EMAIL_ENABLED`, `TURNSTILE_ENABLED`,
   `REQUIRE_INTERNAL_MFA`, `AUTH_RATE_LIMIT_ENABLED`, `ALLOWED_ORIGINS` e
@@ -211,3 +211,36 @@ O CI inicia Supabase e Docker somente no runner Linux, aplica todas as migration
 Aplicar migrations no Supabase remoto é uma operação separada do deploy dos Workers. Produção exige
 aprovação explícita, backup verificado e conferência prévia da lista com `supabase migration list
 --linked`. Nunca execute seed de demonstração em produção.
+
+## Migração da fronteira de navegador (2026-09-13)
+
+Antes de publicar esta versão, aplique a migration incremental
+`202609130003_private_api_rate_limits.sql` no ambiente de destino. Ela mantém as policies/grants
+existentes e acrescenta limites fixos por usuário autenticado para MFA e suporte; sem ela, essas
+rotas falham de forma fechada com 503. Os testes pgTAP correspondentes devem passar no Supabase efêmero.
+
+Renomeie `NEXT_PUBLIC_SUPABASE_URL` para `SUPABASE_URL` e
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` para `SUPABASE_PUBLISHABLE_KEY` nas variables do GitHub,
+no runtime de **ambos** os Workers e nos ambientes locais seguros. Remova os nomes antigos;
+não mantenha duas cópias. Nenhum arquivo real de credenciais é alterado automaticamente.
+A chave publishable continua sem privilégio administrativo, mas agora é usada somente pelo servidor.
+`SUPABASE_SECRET_KEY` continua como secret exclusivo do servidor.
+
+Suporte usa polling de 15 segundos com ETag específico por identidade, suspenso em abas ocultas/offline.
+As consultas e downloads repetem a autorização/RLS em cada chamada, inclusive ao responder 304.
+Anexos privados são transmitidos por uma rota autenticada da loja; a interface não recebe URLs assinadas
+nem caminhos do Storage. MFA usa rotas próprias com cookies HttpOnly, Secure em produção e SameSite=Lax;
+enrollment só devolve QR/secret ao dono da sessão e a UI limpa esses dados ao concluir.
+
+O navegador ainda pode conhecer URLs de imagens/vídeos **públicos** vindos dos DTOs de catálogo e as
+origens oficiais de Mercado Pago/Turnstile. Isso não concede acesso a dados privados. O SDK e a chave
+pública do Mercado Pago permanecem no navegador; cartão/CVV continuam nos Secure Fields oficiais.
+Vídeos de produtos de até 80 MB preservam upload direto assinado, autorizado no servidor e limitado
+ao objeto preparado. A CSP do painel permite apenas o caminho de upload assinado de produtos no
+projeto configurado; ela não libera Data API nem Realtime. As URLs assinadas temporárias de documentos
+e contratos da área de representantes continuam restritas aos dados autorizados desse fluxo existente.
+
+`pnpm check:exposure` verifica imports transitivos do cliente, configuração pública e artefatos
+versionados. Os builds Next/OpenNext e comandos de deploy verificam os assets públicos, rejeitando
+source maps e exposições proibidas. Mapas internos do Worker não são tratados como assets de navegador.
+Esses gates não substituem RLS, autorização nem rotação de credenciais quando necessária.

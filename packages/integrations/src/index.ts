@@ -1,3 +1,6 @@
+import "server-only";
+import { FIXED_SHIPPING_IN_CENTS } from "./client";
+export { FIXED_SHIPPING_IN_CENTS } from "./client";
 import type { IntegrationState, RequestContext } from "@curtiz/domain";
 export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./mercadopago-cards";
 
@@ -250,8 +253,6 @@ export interface ShippingProvider {
   cancelLabel(trackingCode: string): Promise<void>;
   track(trackingCode: string): Promise<Array<{ status: string; occurredAt: string }>>;
 }
-
-export const FIXED_SHIPPING_IN_CENTS = 1_690;
 
 export class FixedShippingProvider implements ShippingProvider {
   readonly name = "fixed_shipping";

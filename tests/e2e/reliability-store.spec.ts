@@ -23,6 +23,7 @@ test("catálogo repete a consulta depois de uma falha", async ({ page }) => {
 
 test("cliente mantém endereço preenchido em falha e bloqueia reenvio", async ({ page }) => {
   const login = await page.request.post("/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok(), "Este teste exige o ambiente demo isolado").toBe(true);

@@ -312,6 +312,7 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
     }
   });
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);
@@ -490,6 +491,7 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
     );
   });
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);
@@ -800,6 +802,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 test("oferece o Painel do representante sem remover a conta de cliente", async ({ page }) => {
   test.setTimeout(90_000);
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);
@@ -823,6 +826,7 @@ test("oferece o Painel do representante sem remover a conta de cliente", async (
 
 test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);
@@ -852,6 +856,7 @@ test("portal da representante mantém a identidade visual da área do cliente", 
     }
   });
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
+    headers: { origin: "http://localhost:3000" },
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
   });
   expect(login.ok()).toBe(true);

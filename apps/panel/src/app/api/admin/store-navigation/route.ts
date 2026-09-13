@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
       ["collections", collections.error]
     ] as const) {
       if (error) {
-        console.error("[panel-store-navigation-api] query failed", {
+        logServerEvent("error", "panel_store_navigation_api_query_failed", {
           table,
           code: error.code,
           message: error.message.slice(0, 180),

@@ -11,8 +11,8 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 
 export async function createServerSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return null;
 
   const cookieStore = await cookies();
@@ -40,7 +40,7 @@ export async function createServerSupabaseClient() {
 }
 
 export function createServiceSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
   if (!url || !secretKey) return null;
 

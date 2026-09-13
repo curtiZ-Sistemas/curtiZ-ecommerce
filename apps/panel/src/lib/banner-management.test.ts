@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   bannerFailure,
-  normalizeBannerValues,
   validateBannerReferences
-} from "./banner-management";
+} from "./banner-management-server";
+import { normalizeBannerValues } from "./banner-management";
+vi.mock("server-only", () => ({}));
 
 const image =
   "banners/10000000-0000-4000-8000-000000000001/desktop-10000000-0000-4000-8000-000000000002.webp";

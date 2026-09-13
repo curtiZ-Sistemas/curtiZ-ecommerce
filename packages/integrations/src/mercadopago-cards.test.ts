@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { MercadoPagoCustomerCardsProvider } from "./mercadopago-cards";
 afterEach(() => vi.unstubAllGlobals());
 const provider = () => new MercadoPagoCustomerCardsProvider("TEST-secret");

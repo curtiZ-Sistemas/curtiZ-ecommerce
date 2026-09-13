@@ -1,3 +1,6 @@
+import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
+import { logServerEvent } from "@curtiz/security";
 import {
   DEMO_SESSION_COOKIE,
   AUTH_PERSISTENCE_COOKIE,
@@ -12,7 +15,7 @@ import {
   verifyReferralAttribution,
   verifyDemoSession
 } from "@curtiz/security";
-import { configuredPublicOrigins, resolvePublicAppUrls } from "@curtiz/config";
+import { resolvePublicAppUrls } from "@curtiz/config";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
@@ -94,7 +97,7 @@ function readSupabaseAuthError(error: unknown): SupabaseAuthErrorDetails {
 }
 
 function logSupabaseAuthError(error: SupabaseAuthErrorDetails) {
-  console.error("Supabase Auth login error", {
+  logServerEvent("error", "supabase_auth_login_error", {
     code: error.code,
     status: error.status,
     message: error.message
@@ -263,44 +266,10 @@ function demoLoginResponse(
   return response;
 }
 
-function isAllowedRequest(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  const requestOrigin = new URL(request.url).origin;
-  const configuredOrigins = new Set([
-    ...configuredPublicOrigins(),
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()),
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001"
-  ]);
-  if (origin === requestOrigin || configuredOrigins.has(origin)) return true;
-  if (process.env.DEMO_MODE !== "true") return false;
-  try {
-    const requestUrl = new URL(request.url);
-    const originUrl = new URL(origin);
-    return (
-      requestUrl.hostname === originUrl.hostname &&
-      (originUrl.port === "3000" || originUrl.port === "3001")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function corsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get("origin");
-  if (!origin || !isAllowedRequest(request)) return { "cache-control": "no-store" };
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-credentials": "true",
-    "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
-    "cache-control": "no-store",
-    vary: "Origin"
-  };
-}
+const isAllowedRequest = isAllowedRequestOrigin;
+const corsHeaders = (request: Request): Record<string, string> => ({
+  ...corsHeadersFor(request), "cache-control": "private, no-store"
+});
 
 export function OPTIONS(request: Request) {
   if (!isAllowedRequest(request)) {
@@ -314,12 +283,12 @@ export async function POST(
   { params }: { params: Promise<{ mode: string }> }
 ) {
   if (!isAllowedRequest(request)) {
-    return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
+    return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: corsHeaders(request) });
   }
 
   const mode = (await params).mode;
   if (mode !== "login" && mode !== "signup" && mode !== "resend" && mode !== "logout") {
-    return NextResponse.json({ message: "Operação inválida." }, { status: 404 });
+    return NextResponse.json({ message: "Operação inválida." }, { status: 404, headers: corsHeaders(request) });
   }
 
   if (mode === "logout") {
@@ -368,11 +337,11 @@ export async function POST(
 
   let payload: unknown;
   try {
-    payload = await request.json();
-  } catch {
+    payload = await readPrivateJson(request);
+  } catch (error) {
     return NextResponse.json(
       { message: "Dados de acesso inválidos." },
-      { status: 400, headers: corsHeaders(request) }
+      { status: error instanceof PrivateRequestError ? error.status : 400, headers: corsHeaders(request) }
     );
   }
   const parsed =
