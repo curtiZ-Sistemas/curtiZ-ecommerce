@@ -98,8 +98,11 @@ export function createCheckoutPaymentPayload(
   const identification = isUnknownRecord(payer.identification) ? payer.identification : {};
   if (identification.type !== undefined && identification.type !== "CPF") return null;
   const suppliedDocument = typeof identification.number === "string" && identification.number.trim()
-    ? identification.number.trim() : session.paymentMode === "test" ? "" : session.cpf;
-  const document = readMercadoPagoPayerDocument(suppliedDocument, session.paymentMode);
+    ? identification.number.trim() : null;
+  // A session fallback is the customer's real CPF and must pass its checksum even in TEST.
+  const document = readMercadoPagoPayerDocument(
+    suppliedDocument ?? session.cpf, suppliedDocument ? session.paymentMode : "production"
+  );
   if (!document) return null;
 
   return {

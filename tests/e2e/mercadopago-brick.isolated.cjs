@@ -19,6 +19,15 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
             window.__probe.creates += 1;
             window.__probe.container = container;
             window.__probe.settings = settings;
+            window.__probe.clicksCompleted = 0;
+            const pay = document.createElement("button");
+            pay.textContent = "Pagar";
+            pay.addEventListener("click", async () => {
+              try { await settings.callbacks.onSubmit({ formData: window.__probe.formData }); }
+              catch (error) { window.__probe.clickError = error.message; }
+              finally { window.__probe.clicksCompleted += 1; }
+            });
+            document.getElementById(container).appendChild(pay);
             settings.callbacks.onReady();
             return { unmount: () => { window.__probe.unmounts += 1; } };
           } }; }
@@ -61,6 +70,7 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
       const pathname = new URL(route.request().url()).pathname;
       if (pathname === "/app.js") return route.fulfill({ contentType: "text/javascript", body: built.outputFiles[0].text });
       if (pathname === "/api/checkout/payment") {
+        assert.equal(route.request().method(), "POST");
         requests.push(route.request().postDataJSON());
         const next = responses.shift();
         if (typeof next === "function") return next(route);
@@ -95,6 +105,26 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
 
     await submit({ ...formData, payer: { identification: { type: "CPF", number: "11111111111" } } });
     assert.equal(requests.length, 0, "Invalid local document must not submit");
+
+    const clickCases = [
+      { data: { payment_method_id: "pix" }, document: "52998224725" },
+      { data: { payment_method_id: "pix", payer: { identification: { number: "12345678900" } } }, document: "12345678900" },
+      { data: { payment_method_id: "visa", token: "card-token", issuer_id: 25, installments: 2 }, document: "52998224725" },
+      { data: { payment_method_id: "bolbradesco", payer: { email: "cliente@example.com", identification: {} } }, document: "52998224725" }
+    ];
+    for (const [index, scenario] of clickCases.entries()) {
+      responses.push({ status: 200, body: { ok: true, status: "rejected", recovery: "new_attempt", message: "Recusa simulada para testar nova tentativa." } });
+      await page.evaluate(data => { window.__probe.formData = data; }, scenario.data);
+      const post = page.waitForRequest("**/api/checkout/payment");
+      await page.getByRole("button", { name: "Pagar", exact: true }).click();
+      await post;
+      await page.waitForFunction(count => window.__probe.clicksCompleted === count, index + 1);
+      assert.equal(requests[index].payment.payment_method_id, scenario.data.payment_method_id);
+      assert.equal(requests[index].payment.payer.identification.number, scenario.document);
+      assert.equal(requests[index].checkout.customer.cpf, "52998224725", "Provider document must not overwrite checkout identity");
+      if (scenario.data.token) assert.equal(requests[index].payment.token, scenario.data.token);
+    }
+    requests.length = 0;
     responses.push({ status: 400, body: { ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt", message: "Revise o CPF de teste." } });
     assert.equal(await submit(formData), "payment_not_completed");
     assert.equal(requests[0].checkout.customer.cpf, "52998224725");
@@ -152,7 +182,8 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
     await page.waitForFunction(() => window.__probe?.unmounts === 1);
     console.log(JSON.stringify({ result: "PASS", amount: probe.amount, nonceForwarded: true, creates: probe.creates,
       retryAfter400: true, retryAfterRejected: true, concurrentSubmitBlocked: true, uncertainRetryPreserved: true,
-      logicalCheckoutKeyPreserved: true, conflictsExplained: true, realCpfPreserved: true }));
+      logicalCheckoutKeyPreserved: true, conflictsExplained: true, realCpfPreserved: true,
+      payClickReachedPost: true, pixFallback: true, pixProviderDocument: true, cardFallback: true, boletoFallback: true }));
   } finally {
     await browser.close();
   }

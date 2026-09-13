@@ -36,11 +36,56 @@ describe("configuração do Payment Brick", () => {
     });
   });
 
-  it("não preenche TEST com CPF real nem o usa como fallback", () => {
+  it("não preenche a inicialização TEST com CPF real", () => {
     const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
     expect(session.paymentMode).toBe("test");
     expect(createMercadoPagoInitialization(session)?.payer).not.toHaveProperty("identification");
-    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, identity)).toBeNull();
+  });
+
+  it.each([
+    { payment_method_id: "pix" },
+    { payment_method_id: "pix", payer: {} },
+    { payment_method_id: "pix", payer: { identification: {} } },
+    { payment_method_id: "pix", payer: { identification: { type: "CPF", number: "" } } },
+    { payment_method_id: "visa", token: "card-token", issuer_id: 25, installments: 2 },
+    { payment_method_id: "bolbradesco", payer: { email: identity.email } }
+  ])("usa CPF válido da sessão quando o Brick TEST omite o documento: %j", formData => {
+    const payload = createCheckoutPaymentPayload(formData, identity);
+    expect(payload).toMatchObject({
+      payment_method_id: formData.payment_method_id,
+      payer: { identification: { type: "CPF", number: identity.cpf } }
+    });
+    if ("token" in formData) {
+      expect(payload).toMatchObject({ token: "card-token", issuer_id: 25, installments: 2 });
+    }
+  });
+
+  it.each(["pix", "visa", "bolbradesco"])("prioriza o documento TEST fornecido pelo Brick em %s", paymentMethodId => {
+    const session = { ...identity };
+    const payload = createCheckoutPaymentPayload({ payment_method_id: paymentMethodId,
+      token: paymentMethodId === "visa" ? "card-token" : undefined,
+      payer: { identification: { type: "CPF", number: "12345678900" } } }, session);
+    expect(payload?.payer.identification.number).toBe("12345678900");
+    expect(session.cpf).toBe(identity.cpf);
+  });
+
+  it.each(["", "11111111111", "12345678900"])("recusa fallback inválido mesmo em TEST: %s", cpf => {
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, { ...identity, cpf })).toBeNull();
+  });
+
+  it.each(["test", "production"] as const)("não substitui documento malformado fornecido em %s", paymentMode => {
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix",
+      payer: { identification: { type: "CPF", number: "11111111111" } } },
+    { ...identity, paymentMode })).toBeNull();
+  });
+
+  it("mantém validação forte do documento fornecido e do fallback em produção", () => {
+    const session = { ...identity, paymentMode: "production" as const };
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, session)?.payer.identification.number)
+      .toBe(identity.cpf);
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix",
+      payer: { identification: { type: "CPF", number: "12345678900" } } }, session)).toBeNull();
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, { ...session, cpf: "12345678900" })).toBeNull();
   });
 
   it("preserva identificação real na inicialização de produção", () => {
