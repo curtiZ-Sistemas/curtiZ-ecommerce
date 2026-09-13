@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MercadoPagoProviderError, type MercadoPagoPayment, type MercadoPagoPaymentInput } from "@curtiz/integrations";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
+import { validateSavedCardCustomer, validateSavedCardPayer } from "@/lib/mercadopago-saved-cards";
 
 const state = vi.hoisted(() => ({ checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn() }));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled }) }));
@@ -25,6 +26,7 @@ vi.mock("@/lib/pii", () => ({ encryptPII: (cpf: string) => `encrypted:${cpf}` })
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../lib/mercadopago-payment"));
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
+vi.mock("@/lib/mercadopago-saved-cards", () => ({ validateSavedCardCustomer: vi.fn(), validateSavedCardPayer: vi.fn(), SavedCardsError: class extends Error {} }));
 
 const orderId = "11111111-1111-4111-8111-111111111111";
 const checkoutKey = "22222222-2222-4222-8222-222222222222";
@@ -63,10 +65,13 @@ function database() {
     const filters = new Map<string, unknown>();
     let patch: Record<string, unknown> | null = null;
     const result = (): QueryResult => {
+      const attempt = filters.has("idempotency_key") ? attempts.get(String(filters.get("idempotency_key")))
+        : [...attempts.values()].find(a => a.id === filters.get("id"));
       const row = table === "orders" ? order : table === "payments" ? payment
-        : table === "payment_attempts" ? [...attempts.values()].find(a => a.id === filters.get("id")) : { resource_id: orderId };
+        : table === "payment_attempts" ? attempt : { resource_id: orderId };
       if (patch && row) Object.assign(row, patch);
-      return { data: row, error: null };
+      return { data: table === "payment_attempts" && filters.has("idempotency_key") && attempt
+        ? { ...attempt, request_fingerprint: attempt.fingerprint } : row, error: null };
     };
     const query = {
       select: () => query,
@@ -123,6 +128,8 @@ describe("confirmação de pagamento", () => {
     vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public-key");
     state.createPayment.mockReset().mockResolvedValue(providerPayment());
     state.getPayment.mockReset().mockResolvedValue(providerPayment());
+    vi.mocked(validateSavedCardPayer).mockReset();
+    vi.mocked(validateSavedCardCustomer).mockReset().mockResolvedValue("customer-owned");
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -140,10 +147,60 @@ describe("confirmação de pagamento", () => {
     expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ customerDocument: "12345678909", idempotencyKey: firstKey }));
     expect(db.order.cpf_last_four).toBe("4725");
   });
+  it("paga cartão salvo com Customer verificado no servidor e token novo", async () => {
+    database();
+    vi.mocked(validateSavedCardCustomer).mockResolvedValue("customer-owned");
+    expect((await POST(request({ ...body, payment: { ...body.payment,
+      payer: { entity_type: "individual", type: "customer", id: "customer-owned" } } }))).status).toBe(200);
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ providerCustomerId: "customer-owned", token: "first-card-token" }));
+  });
+  it("rejeita Customer arbitrário antes de criar pedido ou cobrança", async () => {
+    const db = database();
+    vi.mocked(validateSavedCardCustomer).mockRejectedValue(new Error("not_owned"));
+    expect((await POST(request({ ...body, payment: { ...body.payment,
+      payer: { entity_type: "individual", type: "customer", id: "customer-other" } } }))).status).toBe(503);
+    expect(db.rpc).not.toHaveBeenCalled(); expect(state.createPayment).not.toHaveBeenCalled();
+  });
   it("reutiliza a identidade privada quando o CPF real já está salvo", async () => {
     const db = database();
     expect((await POST(request({ ...body, checkout: { ...body.checkout, customer: { ...body.checkout.customer, cpf: "" } } }))).status).toBe(200);
     expect(db.rpc).toHaveBeenCalledWith("confirm_professional_checkout_order", expect.objectContaining({ p_cpf_ciphertext: "", p_cpf_last_four: "" }));
+  });
+  it("retry do cartão salvo com cobrança conhecida não revalida token consumido", async () => {
+    database();
+    state.createPayment.mockResolvedValue(providerPayment("pending"));
+    state.getPayment.mockResolvedValue(providerPayment("pending"));
+    const payload = { ...body, payment: { ...body.payment, payer: { entity_type: "individual", type: "customer", id: "customer-owned" } } };
+    expect((await POST(request(payload))).status).toBe(200);
+    vi.mocked(validateSavedCardPayer).mockRejectedValue(new Error("token_consumed"));
+    expect((await POST(request(payload))).status).toBe(200);
+    expect(validateSavedCardPayer).toHaveBeenCalledTimes(1);
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+    expect(state.getPayment).toHaveBeenCalledTimes(1);
+  });
+  it("falha antes de enviar a cobrança libera uma tentativa limpa de cartão salvo", async () => {
+    const db = database();
+    vi.mocked(validateSavedCardPayer).mockRejectedValue(new Error("token_lookup_failed"));
+    const payload = { ...body, payment: { ...body.payment, payer: { entity_type: "individual", type: "customer", id: "customer-owned" } } };
+    expect((await POST(request(payload))).status).toBe(503);
+    expect(db.attempts.has(firstKey)).toBe(false);
+    expect(state.createPayment).not.toHaveBeenCalled();
+    vi.mocked(validateSavedCardPayer).mockResolvedValue("customer-owned");
+    expect((await POST(request({ ...payload, idempotencyKey: secondKey }))).status).toBe(200);
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+  });
+  it("cartão salvo com resposta perdida repete somente a mesma chave sem revalidar token consumido", async () => {
+    const db = database();
+    const payload = { ...body, payment: { ...body.payment, payer: { entity_type: "individual", type: "customer", id: "customer-owned" } } };
+    state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("provider_unavailable", 500));
+    expect((await POST(request(payload))).status).toBe(502);
+    vi.mocked(validateSavedCardPayer).mockRejectedValue(new Error("token_consumed"));
+    expect((await POST(request(payload))).status).toBe(200);
+    expect(validateSavedCardPayer).toHaveBeenCalledTimes(1);
+    expect(db.attempts.size).toBe(1);
+    expect(state.createPayment).toHaveBeenCalledTimes(2);
+    expect(state.createPayment).toHaveBeenNthCalledWith(1, expect.objectContaining({ idempotencyKey: firstKey }));
+    expect(state.createPayment).toHaveBeenNthCalledWith(2, expect.objectContaining({ idempotencyKey: firstKey }));
   });
   it.each(["", "11111111111", "123456789012", "abc12345678909"])("CPF de pagador inválido não cria tentativa: %s", async number => {
     const db = database();

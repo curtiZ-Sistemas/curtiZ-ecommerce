@@ -1,6 +1,7 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
+import { MercadoPagoSaveCard } from "./mercadopago-save-card";
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -28,7 +29,7 @@ type MercadoPagoConstructor = new (
 ) => {
   bricks: () => {
     create: (
-      type: "payment",
+      type: "payment" | "cardPayment",
       containerId: string,
       settings: Record<string, unknown>
     ) => Promise<unknown>;
@@ -44,11 +45,13 @@ declare global {
 export function MercadoPagoPaymentBrick({
   session,
   onComplete,
-  onReviewCheckout
+  onReviewCheckout,
+  onBack
 }: {
   session: MercadoPagoBrickSession;
   onComplete: (status: PaymentState, orderCode: string, orderId: string) => void;
   onReviewCheckout?: (message: string, code: string) => void;
+  onBack?: () => void;
 }) {
   const [sdkReady, setSdkReady] = useState(() => typeof window !== "undefined" && Boolean(window.MercadoPago));
   const [brickReady, setBrickReady] = useState(false);
@@ -59,6 +62,15 @@ export function MercadoPagoPaymentBrick({
   const [recovery, setRecovery] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryOrderId, setRecoveryOrderId] = useState("");
+  const [cardsLoaded, setCardsLoaded] = useState(false);
+  const [cardsEnabled, setCardsEnabled] = useState(false);
+  const [savedCards, setSavedCards] = useState<MercadoPagoBrickSession["savedCards"]>();
+  const [consentVisible, setConsentVisible] = useState(false);
+  const [saveCard, setSaveCard] = useState(false);
+  const consentResolver = useRef<((consent: boolean) => void) | null>(null);
+  const [approvedSave, setApprovedSave] = useState<{ orderId: string; orderCode: string } | null>(null);
+  const saveOptIn = useRef(false);
+  const consentInput = useRef<HTMLInputElement>(null);
   const submitting = useRef(false);
   const attempt = useRef<{ key: string; orderId: string; orderCode: string; body: string | null } | null>(null);
   const controller = useRef<BrickController | null>(null);
@@ -68,6 +80,20 @@ export function MercadoPagoPaymentBrick({
   completion.current = onComplete;
   const reviewCheckout = useRef(onReviewCheckout);
   reviewCheckout.current = onReviewCheckout;
+  useEffect(() => { if (consentVisible) consentInput.current?.focus(); }, [consentVisible]);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/customer/cards", { cache: "no-store", signal: AbortSignal.timeout(3_000) }).then(response => response.json()).then((value: unknown) => {
+      if (!active || !isUnknownRecord(value) || value.ok !== true || value.enabled !== true) return;
+      setCardsEnabled(true);
+      if (typeof value.customerId !== "string" || !/^[a-zA-Z0-9_+-]{1,100}$/u.test(value.customerId) || !Array.isArray(value.cards)) return;
+      const cardIds = value.cards.flatMap(card => isUnknownRecord(card) && typeof card.id === "string"
+        && /^[a-zA-Z0-9_+-]{1,100}$/u.test(card.id) ? [card.id] : []);
+      if (cardIds.length) setSavedCards({ customerId: value.customerId, cardIds });
+    }).catch(() => undefined).finally(() => { if (active) setCardsLoaded(true); });
+    return () => { active = false; consentResolver.current?.(false); consentResolver.current = null; };
+  }, []);
 
   const persistAttempt = useCallback(() => {
     if (!attempt.current) return;
@@ -110,7 +136,7 @@ export function MercadoPagoPaymentBrick({
   }, [sdkReady, initializationAttempt, initializationFailed]);
 
   useEffect(() => {
-    if (!sdkReady || !window.MercadoPago) return;
+    if (!sdkReady || !cardsLoaded || !window.MercadoPago) return;
 
     let active = true;
     const previousInitialization = initializationQueue.current.catch(() => undefined);
@@ -139,7 +165,7 @@ export function MercadoPagoPaymentBrick({
         return;
       }
 
-      const initialization = createMercadoPagoInitialization(session);
+      const initialization = createMercadoPagoInitialization({ ...session, savedCards });
       if (!initialization) {
         console.error("[mercadopago-bricks] initialization rejected", { cause: "invalid_amount" });
         setInitializationFailed(true);
@@ -180,7 +206,7 @@ export function MercadoPagoPaymentBrick({
         },
         callbacks: {
           onReady: () => resolveReady?.(),
-          onSubmit: async ({ formData }: { formData: unknown }) => {
+          onSubmit: async ({ formData, selectedPaymentMethod, paymentMethod }: { formData: unknown; selectedPaymentMethod?: string; paymentMethod?: string }) => {
             if (submitting.current) throw new Error("payment_submission_in_progress");
             submitting.current = true;
             setProcessing(true);
@@ -194,6 +220,16 @@ export function MercadoPagoPaymentBrick({
                   setMessage("Revise o documento do pagador e os dados do pagamento.");
                   throw new Error("invalid_payment_form_data");
                 }
+                const selectedMethod = selectedPaymentMethod ?? paymentMethod;
+                const isCard = selectedMethod ? ["credit_card", "debit_card"].includes(selectedMethod)
+                  : Boolean(payment.token && payment.payment_method_id !== "pix" && !payment.payment_method_id.includes("bol"));
+                if (cardsEnabled && isCard && payment.token && payment.payer.type !== "customer") {
+                  setSaveCard(false);
+                  setConsentVisible(true);
+                  saveOptIn.current = await new Promise<boolean>(resolve => { consentResolver.current = resolve; });
+                  setConsentVisible(false);
+                  consentResolver.current = null;
+                } else saveOptIn.current = false;
                 // Cache only in memory: a transport retry must send the same token and payer.
                 current.body = JSON.stringify({
                   ...(current.orderId ? { orderId: current.orderId } : { checkout: session.checkout }),
@@ -228,7 +264,12 @@ export function MercadoPagoPaymentBrick({
                   sessionStorage.removeItem(`curtiz-payment-attempt:${session.orderId || session.idempotencyKey}`);
                   if (current.orderId) sessionStorage.removeItem(`curtiz-payment-attempt:${current.orderId}`);
                 } catch { /* Terminal status is also enforced by the server. */ }
-                completion.current(resultStatus, current.orderCode, current.orderId);
+                if (resultStatus === "approved" && saveOptIn.current && current.orderId) {
+                  const existingController = controller.current;
+                  controller.current = null;
+                  await disposeController(existingController);
+                  setApprovedSave({ orderId: current.orderId, orderCode: current.orderCode });
+                } else completion.current(resultStatus, current.orderCode, current.orderId);
                 return;
               }
               if (resultRecovery === "new_attempt" || resultRecovery === "review_checkout" ||
@@ -304,7 +345,7 @@ export function MercadoPagoPaymentBrick({
       controller.current = null;
       queueDisposal(current);
     };
-  }, [sdkReady, session, initializationAttempt, queueDisposal, persistAttempt]);
+  }, [sdkReady, cardsLoaded, cardsEnabled, savedCards, session, initializationAttempt, queueDisposal, persistAttempt, disposeController]);
 
   const retryInitialization = () => {
     const current = controller.current;
@@ -319,6 +360,21 @@ export function MercadoPagoPaymentBrick({
 
   return (
     <section className="checkout-section checkout-payment-brick" aria-labelledby="mercadopago-payment-title">
+      {onBack ? <button className="checkout-payment-back" type="button" disabled={processing} onClick={() => {
+        if (submitting.current) return;
+        if (approvedSave) { completion.current("approved", approvedSave.orderCode, approvedSave.orderId); return; }
+        const current = attempt.current;
+        if (current?.orderId) { window.location.assign(`/pedido/${encodeURIComponent(current.orderId)}/pagamento`); return; }
+        if (current?.body) { setMessage("Verifique o resultado da mesma tentativa antes de voltar."); return; }
+        submitting.current = true;
+        setProcessing(true);
+        void initializationQueue.current.catch(() => undefined).then(async () => {
+          const existingController = controller.current;
+          controller.current = null;
+          await disposeController(existingController);
+          onBack();
+        });
+      }}><ArrowLeft aria-hidden="true" /> Voltar</button> : null}
       <Script
         key={initializationAttempt}
         src="https://sdk.mercadopago.com/js/v2"
@@ -340,8 +396,16 @@ export function MercadoPagoPaymentBrick({
         id={BRICK_CONTAINER_ID}
         aria-busy={processing || (!brickReady && !initializationFailed)}
         inert={processing}
-        hidden={initializationFailed}
+        hidden={initializationFailed || Boolean(approvedSave)}
       />
+      {consentVisible ? <div className="checkout-card-consent" role="group" aria-label="Opção de salvar cartão">
+        <label><input ref={consentInput} type="checkbox" checked={saveCard} onChange={event => setSaveCard(event.target.checked)} />
+          Salvar este cartão para próximas compras</label>
+        <p>Se você optar por salvar, confirmará o cartão após a aprovação.</p>
+        <button className="secondary-button" type="button" onClick={() => consentResolver.current?.(saveCard)}>Confirmar pagamento</button>
+      </div> : null}
+      {approvedSave ? <MercadoPagoSaveCard session={session} orderId={approvedSave.orderId}
+        onDone={() => completion.current("approved", approvedSave.orderCode, approvedSave.orderId)} /> : null}
       {initializationFailed ? (
         <>
           <p className="form-message" role="alert">{BRICK_LOAD_ERROR}</p>

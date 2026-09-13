@@ -9,6 +9,7 @@ import { encryptPII } from "@/lib/pii";
 import { normalizeMercadoPagoStatus, publicPaymentState } from "@/lib/mercadopago-payment";
 import { readMercadoPagoPayerDocument } from "@/lib/mercadopago-payer-identity";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
+import { validateSavedCardCustomer, validateSavedCardPayer, SavedCardsError } from "@/lib/mercadopago-saved-cards";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 
@@ -35,9 +36,10 @@ const schema = z.object({
   payment: z.object({
     token: z.string().trim().min(1).max(500).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u), installments: z.coerce.number().int().min(1).max(48).default(1),
-    payer: z.object({ entity_type: z.enum(["individual", "association"]), identification: z.object({
+    payer: z.object({ entity_type: z.enum(["individual", "association"]), type: z.literal("customer").optional(),
+      id: z.string().regex(/^[a-zA-Z0-9_+-]{1,100}$/u).optional(), identification: z.object({
       type: z.literal("CPF").default("CPF"), number: z.string().max(20)
-    }) })
+    }).optional() })
   })
 }).refine((value) => Boolean(value.orderId || value.checkout), "Pedido ou checkout obrigatório.");
 
@@ -134,8 +136,9 @@ async function handlePost(request: NextRequest, requestId: string) {
     return response({ ok: false, message: "O pagamento de teste está indisponível." }, 503);
   }
   // This mode is established by server credentials, never by the submitted payload.
-  const customerDocument = readMercadoPagoPayerDocument(parsed.data.payment.payer.identification.number, paymentMode);
-  if (!customerDocument) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
+  const savedPayer = parsed.data.payment.payer.type === "customer";
+  const customerDocument = readMercadoPagoPayerDocument(parsed.data.payment.payer.identification?.number ?? "", paymentMode) ?? "";
+  if (!customerDocument && (parsed.data.payment.payer.identification?.number || !savedPayer)) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
     message: "Revise o CPF de teste informado no pagamento." }, 400);
   const db = createServiceSupabaseClient();
   if (!db) {
@@ -146,6 +149,16 @@ async function handlePost(request: NextRequest, requestId: string) {
     }, 503);
   }
   const provider = new MercadoPagoTestPaymentProvider(accessToken);
+  let providerCustomerId: string | undefined;
+  if (savedPayer) {
+    try {
+      providerCustomerId = await validateSavedCardCustomer(db, user, parsed.data.payment.payer.id ?? "");
+    } catch (error) {
+      return response({ ok: false, code: "SAVED_CARD_UNAVAILABLE", recovery: "new_attempt",
+        message: "Este cartão não está disponível. Selecione outro cartão ou meio de pagamento." }, error instanceof SavedCardsError ? error.status : 503);
+    }
+  } else if (parsed.data.payment.payer.id) return response({ ok: false, code: "INVALID_PAYMENT_REQUEST", recovery: "new_attempt",
+    message: "Revise os dados do pagamento." }, 400);
   try {
     const availableMethods = await provider.getPaymentMethodIds();
     if (!availableMethods.includes(parsed.data.payment.payment_method_id)) {
@@ -218,7 +231,7 @@ async function handlePost(request: NextRequest, requestId: string) {
   const orderCode = readString(order, "public_code");
   const orderContext = { orderId, orderCode };
   const orderFailure = (body: Record<string, unknown>, status: number) => response({ ok: false, ...orderContext, ...body }, status);
-  if (!readMercadoPagoPayerDocument(customerDocument, paymentMode, readString(order, "cpf_last_four"))) {
+  if (!providerCustomerId && !readMercadoPagoPayerDocument(customerDocument, paymentMode, readString(order, "cpf_last_four"))) {
     return orderFailure({ code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
       message: "Revise o CPF informado no pagamento." }, 400);
   }
@@ -250,6 +263,25 @@ async function handlePost(request: NextRequest, requestId: string) {
       payer: { ...parsed.data.payment.payer, identification: { type: "CPF", number: customerDocument } } }
   })));
   const requestFingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (providerCustomerId) {
+    const findAttempt = async () => readQueryResult(await db.from("payment_attempts").select("id,request_fingerprint")
+      .eq("provider", "mercadopago").eq("order_id", orderId).eq("idempotency_key", parsed.data.idempotencyKey).maybeSingle());
+    const previousAttempt = await findAttempt();
+    if (previousAttempt.error) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
+      message: "Verifique o resultado da mesma tentativa." }, 503);
+    // A saved-card attempt is registered only after ownership/token validation. Its immutable
+    // fingerprint then permits exact HTTP replay, including a lost provider response.
+    if (!isUnknownRecord(previousAttempt.data) || !readString(previousAttempt.data, "request_fingerprint")) {
+      try { await validateSavedCardPayer(db, user, providerCustomerId, parsed.data.payment.token ?? ""); }
+      catch {
+        const concurrentAttempt = await findAttempt();
+        if (concurrentAttempt.error || isUnknownRecord(concurrentAttempt.data)) return orderFailure({ code: "PAYMENT_RESULT_UNCERTAIN",
+          recovery: "retry_attempt", message: "Verifique o resultado da mesma tentativa." }, 502);
+        return orderFailure({ code: "SAVED_CARD_UNAVAILABLE", recovery: "new_attempt",
+          message: "Este cartão não está disponível. Selecione outro cartão ou meio de pagamento." }, 503);
+      }
+    }
+  }
   const attemptResult = readQueryResult(await db.rpc("begin_mercadopago_payment_attempt", {
     p_order_id: orderId, p_idempotency_key: parsed.data.idempotencyKey, p_payment_method: method,
     p_request_fingerprint: requestFingerprint
@@ -285,6 +317,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       orderId, orderCode, amountInCents, currency: "BRL", idempotencyKey: parsed.data.idempotencyKey,
       customerEmail: readString(order, "customer_email_snapshot"), customerName: readString(order, "customer_name_snapshot"),
       customerDocument, entityType: parsed.data.payment.payer.entity_type, paymentMethodId: method,
+      ...(providerCustomerId ? { providerCustomerId } : {}),
       ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
       ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: String(parsed.data.payment.issuer_id) } : {}),
       installments: parsed.data.payment.installments

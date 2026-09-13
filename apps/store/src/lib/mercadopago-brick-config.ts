@@ -15,6 +15,7 @@ export type MercadoPagoBrickSession = {
   email: string;
   cpf: string;
   checkout: CheckoutConfirmationPayload | null;
+  savedCards?: { customerId: string; cardIds: string[] };
 };
 
 export type CheckoutConfirmationPayload = {
@@ -71,6 +72,8 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
     payer: {
       email: session.email,
       entityType: "individual" as const,
+      ...(session.savedCards?.customerId && session.savedCards.cardIds.length
+        ? { customerId: session.savedCards.customerId, cardsIds: session.savedCards.cardIds } : {}),
       ...(session.paymentMode !== "test" && session.cpf
         ? { identification: { type: "CPF", number: session.cpf } } : {})
     }
@@ -95,6 +98,9 @@ export function createCheckoutPaymentPayload(
     ? formData.issuer_id
     : undefined;
   const payer = isUnknownRecord(formData.payer) ? formData.payer : {};
+  const savedCustomerId = payer.type === "customer" && typeof payer.id === "string"
+    && /^[a-zA-Z0-9_+-]{1,100}$/u.test(payer.id) ? payer.id : "";
+  if (payer.type === "customer" && (!savedCustomerId || !token)) return null;
   const identification = isUnknownRecord(payer.identification) ? payer.identification : {};
   if (identification.type !== undefined && identification.type !== "CPF") return null;
   const suppliedDocument = typeof identification.number === "string" && identification.number.trim()
@@ -103,14 +109,15 @@ export function createCheckoutPaymentPayload(
   const document = readMercadoPagoPayerDocument(
     suppliedDocument ?? session.cpf, suppliedDocument ? session.paymentMode : "production"
   );
-  if (!document) return null;
+  if (!document && (suppliedDocument || !savedCustomerId)) return null;
 
   return {
     payment_method_id: paymentMethodId.trim(),
     installments,
     payer: {
       entity_type: "individual" as const,
-      identification: { type: "CPF" as const, number: document }
+      ...(savedCustomerId ? { type: "customer" as const, id: savedCustomerId } : {}),
+      ...(document ? { identification: { type: "CPF" as const, number: document } } : {})
     },
     ...(token ? { token } : {}),
     ...(issuerId !== undefined ? { issuer_id: issuerId } : {})

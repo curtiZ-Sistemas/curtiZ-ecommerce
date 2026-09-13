@@ -58,6 +58,7 @@ import {
   customerStatusLabel
 } from "../lib/customer-account-presentation";
 import { ProfileAvatarManager } from "./profile-avatar-manager";
+import { SavedCards } from "./saved-cards";
 import { UserAvatar } from "./user-avatar";
 import {
   customerAccountHref,
@@ -252,11 +253,11 @@ export function CustomerAccount({
             <Overview snapshot={snapshot} favoriteCount={favoriteCount} />
           )}
           {activeSection === "perfil" && (
-            <Profile
+            <><Profile
               snapshot={snapshot}
               runAction={runAction}
               pending={pending}
-            />
+            />{!snapshot.demo ? <SavedCards /> : null}</>
           )}
           {activeSection === "pedidos" && (
             <Orders

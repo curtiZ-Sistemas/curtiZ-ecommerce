@@ -2,7 +2,7 @@
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
 import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations";
-import { LoaderCircle, LockKeyhole, ShoppingBag } from "lucide-react";
+import { BriefcaseBusiness, ChevronDown, House, LoaderCircle, LockKeyhole, Plus, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -599,6 +599,11 @@ export default function CheckoutPage() {
         </header>
         <div className="checkout-layout">
           <MercadoPagoPaymentBrick session={paymentSession} onComplete={completePayment}
+            onBack={() => {
+              checkoutRecoveryRef.current = paymentSession.checkout;
+              setPaymentSession(null);
+              setMessage("");
+            }}
             onReviewCheckout={(reason, code) => {
               checkoutRecoveryRef.current = paymentSession.checkout;
               if (code === "CUSTOMER_IDENTITY_REQUIRED" || code === "INVALID_CUSTOMER_CPF") setCpfLastFour("");
@@ -746,13 +751,20 @@ export default function CheckoutPage() {
                   <div className="checkout-address-card-heading">
                     <label><input type="radio" name="selectedAddress" value={address.id} checked={selectedAddressId === address.id}
                       onChange={() => { setSelectedAddressId(address.id); setEditingAddressId(null); applyAddress(address); }} />
+                      {addressBaseLabel(address.label) === "Trabalho" ? <BriefcaseBusiness aria-hidden="true" /> : <House aria-hidden="true" />}
                       <span><strong>{address.label}</strong><small>{address.street}, {address.number}</small></span></label>
-                    <button type="button" aria-expanded={expandedAddressId === address.id} aria-label={`${expandedAddressId === address.id ? "Recolher" : "Expandir"} endereço ${address.label}`}
-                      onClick={() => setExpandedAddressId((current) => current === address.id ? "" : address.id)}>⌄</button>
+                    {address.isDefault ? <span className="checkout-address-default">Padrão</span> : null}
+                    <button className="checkout-address-toggle" type="button" aria-expanded={expandedAddressId === address.id}
+                      aria-controls={`checkout-address-${address.id}`} aria-label={`${expandedAddressId === address.id ? "Recolher" : "Expandir"} endereço ${address.label}`}
+                      onClick={() => setExpandedAddressId((current) => current === address.id ? "" : address.id)}><ChevronDown aria-hidden="true" /></button>
                   </div>
-                  {expandedAddressId === address.id ? <div className="checkout-address-details">
-                    <p>{address.recipientName}<br />{address.street}, {address.number}<br />{address.complement}<br />{address.district}<br />{address.city} - {address.state}<br />CEP {address.postalCode.slice(0, 2)}***-***{maskPhone(profilePhone) ? <><br />Telefone {maskPhone(profilePhone)}</> : null}</p>
-                    <div><button type="button" onClick={() => { setSelectedAddressId(address.id); setAddressLabel(addressBaseLabel(address.label)); setEditingAddressId(address.id); }}>Editar</button>
+                  <div className="checkout-address-expansion" data-expanded={expandedAddressId === address.id}
+                    id={`checkout-address-${address.id}`} inert={expandedAddressId !== address.id} aria-hidden={expandedAddressId !== address.id}>
+                    <div className="checkout-address-expansion-inner"><div className="checkout-address-details">
+                    {address.recipientName ? <p><span>Destinatário</span>{address.recipientName}</p> : null}
+                    <p>{address.complement ? <>{address.complement}<br /></> : null}{address.district}<br />{address.city} / {address.state}</p>
+                    <p>CEP {address.postalCode.slice(0, 2)}***-***{maskPhone(profilePhone) ? <><br />Telefone {maskPhone(profilePhone)}</> : null}</p>
+                    <div className="checkout-address-actions"><button type="button" onClick={() => { setSelectedAddressId(address.id); setAddressLabel(addressBaseLabel(address.label)); setEditingAddressId(address.id); }}>Editar</button>
                       <button type="button" onClick={() => { void (async () => {
                         if (!window.confirm("Excluir este endereço?")) return;
                         const response = await fetch("/api/customer", {
@@ -779,9 +791,9 @@ export default function CheckoutPage() {
                         setEditingAddressId(null);
                         if (next) applyAddress(next);
                       })(); }}>Excluir</button></div>
-                  </div> : null}
+                  </div></div></div>
                 </article>)}
-                {savedAddresses.length < 3 && editingAddressId !== "new" ? <button className="customer-link-button" type="button" onClick={() => { setAddressLabel("Casa"); setEditingAddressId("new"); }}>+ Adicionar outro endereço</button> : null}
+                {savedAddresses.length < 3 && editingAddressId !== "new" ? <button className="secondary-button checkout-address-add" type="button" onClick={() => { setAddressLabel("Casa"); setEditingAddressId("new"); }}><Plus aria-hidden="true" /> Adicionar endereço</button> : null}
               </div>
             ) : null}
             {savedAddresses.length && !editingAddressId ? (() => {

@@ -65,7 +65,7 @@ describe("configuração do Payment Brick", () => {
     const payload = createCheckoutPaymentPayload({ payment_method_id: paymentMethodId,
       token: paymentMethodId === "visa" ? "card-token" : undefined,
       payer: { identification: { type: "CPF", number: "12345678900" } } }, session);
-    expect(payload?.payer.identification.number).toBe("12345678900");
+    expect(payload?.payer.identification?.number).toBe("12345678900");
     expect(session.cpf).toBe(identity.cpf);
   });
 
@@ -81,7 +81,7 @@ describe("configuração do Payment Brick", () => {
 
   it("mantém validação forte do documento fornecido e do fallback em produção", () => {
     const session = { ...identity, paymentMode: "production" as const };
-    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, session)?.payer.identification.number)
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, session)?.payer.identification?.number)
       .toBe(identity.cpf);
     expect(createCheckoutPaymentPayload({ payment_method_id: "pix",
       payer: { identification: { type: "CPF", number: "12345678900" } } }, session)).toBeNull();
@@ -92,6 +92,24 @@ describe("configuração do Payment Brick", () => {
     const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
     expect(createMercadoPagoInitialization({ ...session, paymentMode: "production" })?.payer)
       .toMatchObject({ identification: { type: "CPF", number: identity.cpf } });
+  });
+
+  it("inicializa cartões salvos exclusivamente com referências oficiais", () => {
+    const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
+    expect(createMercadoPagoInitialization({ ...session, savedCards: { customerId: "customer-1", cardIds: ["card-1"] } })?.payer)
+      .toMatchObject({ customerId: "customer-1", cardsIds: ["card-1"] });
+  });
+  it("encaminha o token novo do cartão salvo para validação de ownership no servidor", () => {
+    expect(createCheckoutPaymentPayload({ payment_method_id: "visa", token: "new-cvv-token",
+      payer: { type: "customer", id: "customer-1" } }, { ...identity, cpf: "" })).toMatchObject({
+      token: "new-cvv-token", payer: { type: "customer", id: "customer-1" }
+    });
+  });
+  it("não aceita cartão salvo sem token novo nem CPF malformado em produção", () => {
+    expect(createCheckoutPaymentPayload({ payment_method_id: "visa", payer: { type: "customer", id: "customer-1" } }, identity)).toBeNull();
+    expect(createCheckoutPaymentPayload({ payment_method_id: "visa", token: "new-token",
+      payer: { type: "customer", id: "customer-1", identification: { number: "11111111111" } } },
+    { ...identity, paymentMode: "production" })).toBeNull();
   });
 
   it.each([

@@ -1,4 +1,5 @@
 import type { IntegrationState, RequestContext } from "@curtiz/domain";
+export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./mercadopago-cards";
 
 export type CheckoutRequest = {
   orderId: string;
@@ -42,6 +43,7 @@ export type MercadoPagoPaymentInput = {
   token?: string;
   issuerId?: string;
   installments: number;
+  providerCustomerId?: string;
 };
 
 export type MercadoPagoPayment = {
@@ -202,10 +204,11 @@ export class MercadoPagoTestPaymentProvider {
           payment_method_id: input.paymentMethodId,
           issuer_id: input.issuerId,
           payer: {
+            ...(input.providerCustomerId ? { type: "customer", id: input.providerCustomerId } : {}),
             email: input.customerEmail,
             first_name: input.customerName,
             entity_type: input.entityType,
-            identification: { type: "CPF", number: input.customerDocument }
+            ...(input.providerCustomerId ? {} : { identification: { type: "CPF", number: input.customerDocument } })
           },
           external_reference: input.orderCode,
           statement_descriptor: "CURTIZ",
