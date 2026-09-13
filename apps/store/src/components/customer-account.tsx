@@ -1,5 +1,7 @@
 "use client";
 
+import { CustomerCpfField } from "./customer-cpf-field";
+
 import { DeleteAccount } from "./delete-account";
 
 import { formatBRL, type Product } from "@curtiz/domain";
@@ -540,12 +542,7 @@ function Profile({
             <input name="birthDate" type="date" defaultValue={snapshot.profile.birthDate} />
           </label>
           <div className="customer-field">
-            <span>CPF</span>
-            <div className="customer-readonly">
-              {snapshot.profile.cpfLastFour
-                ? `•••.•••.•••-${snapshot.profile.cpfLastFour}`
-                : "Não informado"}
-            </div>
+            <CustomerCpfField lastFour={snapshot.profile.cpfLastFour} />
           </div>
           <div className="customer-field">
             <span>Endereço principal</span>

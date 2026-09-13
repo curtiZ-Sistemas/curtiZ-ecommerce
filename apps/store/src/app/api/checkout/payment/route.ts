@@ -7,6 +7,7 @@ import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { CUSTOMER_EMAIL_MAX_LENGTH, isValidBrazilianPhone, isValidCpf, phoneDigits, sanitizeCpf } from "@/lib/personal-data";
 import { encryptPII } from "@/lib/pii";
+import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "../../../../lib/checkout-identity";
 import { normalizeMercadoPagoStatus, publicPaymentState } from "@/lib/mercadopago-payment";
 import { readMercadoPagoPayerDocument } from "@/lib/mercadopago-payer-identity";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
@@ -138,8 +139,9 @@ async function handlePost(request: NextRequest, requestId: string) {
   }
   // This mode is established by server credentials, never by the submitted payload.
   const savedPayer = parsed.data.payment.payer.type === "customer";
-  const customerDocument = readMercadoPagoPayerDocument(parsed.data.payment.payer.identification?.number ?? "", paymentMode) ?? "";
-  if (!customerDocument && (parsed.data.payment.payer.identification?.number || !savedPayer)) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
+  const suppliedDocument = parsed.data.payment.payer.identification?.number?.trim() ?? "";
+  let customerDocument = readMercadoPagoPayerDocument(suppliedDocument, paymentMode) ?? "";
+  if (suppliedDocument && !customerDocument) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
     message: "Revise o CPF de teste informado no pagamento." }, 400);
   const db = createServiceSupabaseClient();
   if (!db) {
@@ -232,6 +234,17 @@ async function handlePost(request: NextRequest, requestId: string) {
   const orderCode = readString(order, "public_code");
   const orderContext = { orderId, orderCode };
   const orderFailure = (body: Record<string, unknown>, status: number) => response({ ok: false, ...orderContext, ...body }, status);
+  if (!providerCustomerId || suppliedDocument) {
+    try {
+      customerDocument = await resolveCheckoutPayerDocument(db, user.id, suppliedDocument, paymentMode);
+    } catch (error) {
+      const code = error instanceof CheckoutIdentityError ? error.code : "CUSTOMER_IDENTITY_UNAVAILABLE";
+      return orderFailure({ code, recovery: code === "CUSTOMER_IDENTITY_REQUIRED" ? "review_checkout" : "retry_attempt",
+        message: code === "CUSTOMER_IDENTITY_REQUIRED" ? "Informe e salve o CPF do cliente no checkout."
+          : "Não foi possível validar a identificação do cliente agora." },
+      error instanceof CheckoutIdentityError ? error.status : 503);
+    }
+  }
   if (!providerCustomerId && !readMercadoPagoPayerDocument(customerDocument, paymentMode, readString(order, "cpf_last_four"))) {
     return orderFailure({ code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
       message: "Revise o CPF informado no pagamento." }, 400);

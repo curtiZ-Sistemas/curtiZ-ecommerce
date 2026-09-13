@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCheckoutPaymentPayload, createMercadoPagoInitialization, readMercadoPagoBrickSession } from "./mercadopago-brick-config";
 
-const identity = { idempotencyKey: "key", email: "cliente@example.com", cpf: "52998224725", checkout: null,
+const identity = { idempotencyKey: "key", email: "cliente@example.com", checkout: null,
   paymentMode: "test" as const };
 const validResponse = {
   ok: true,
@@ -49,12 +49,13 @@ describe("configuração do Payment Brick", () => {
     { payment_method_id: "pix", payer: { identification: { type: "CPF", number: "" } } },
     { payment_method_id: "visa", token: "card-token", issuer_id: 25, installments: 2 },
     { payment_method_id: "bolbradesco", payer: { email: identity.email } }
-  ])("usa CPF válido da sessão quando o Brick TEST omite o documento: %j", formData => {
+  ])("delega documento ausente ao servidor quando o CPF já foi salvo: %j", formData => {
     const payload = createCheckoutPaymentPayload(formData, identity);
     expect(payload).toMatchObject({
       payment_method_id: formData.payment_method_id,
-      payer: { identification: { type: "CPF", number: identity.cpf } }
+      payer: { entity_type: "individual" }
     });
+    expect(payload?.payer).not.toHaveProperty("identification");
     if ("token" in formData) {
       expect(payload).toMatchObject({ token: "card-token", issuer_id: 25, installments: 2 });
     }
@@ -66,11 +67,11 @@ describe("configuração do Payment Brick", () => {
       token: paymentMethodId === "visa" ? "card-token" : undefined,
       payer: { identification: { type: "CPF", number: "12345678900" } } }, session);
     expect(payload?.payer.identification?.number).toBe("12345678900");
-    expect(session.cpf).toBe(identity.cpf);
+    expect(session).toEqual(identity);
   });
 
-  it.each(["", "11111111111", "12345678900"])("recusa fallback inválido mesmo em TEST: %s", cpf => {
-    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, { ...identity, cpf })).toBeNull();
+  it("deixa o fallback do documento ausente exclusivamente no servidor", () => {
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, identity)?.payer).not.toHaveProperty("identification");
   });
 
   it.each(["test", "production"] as const)("não substitui documento malformado fornecido em %s", paymentMode => {
@@ -79,19 +80,20 @@ describe("configuração do Payment Brick", () => {
     { ...identity, paymentMode })).toBeNull();
   });
 
-  it("mantém validação forte do documento fornecido e do fallback em produção", () => {
+  it("valida o documento fornecido e delega fallback de produção ao servidor", () => {
     const session = { ...identity, paymentMode: "production" as const };
     expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, session)?.payer.identification?.number)
-      .toBe(identity.cpf);
+      .toBeUndefined();
     expect(createCheckoutPaymentPayload({ payment_method_id: "pix",
       payer: { identification: { type: "CPF", number: "12345678900" } } }, session)).toBeNull();
-    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, { ...session, cpf: "12345678900" })).toBeNull();
+    expect(createCheckoutPaymentPayload({ payment_method_id: "pix" }, session)?.payer)
+      .not.toHaveProperty("identification");
   });
 
-  it("preserva identificação real na inicialização de produção", () => {
+  it("não envia identidade real do cliente ao browser em produção", () => {
     const session = readMercadoPagoBrickSession(validResponse, identity, 1690)!;
     expect(createMercadoPagoInitialization({ ...session, paymentMode: "production" })?.payer)
-      .toMatchObject({ identification: { type: "CPF", number: identity.cpf } });
+      .not.toHaveProperty("identification");
   });
 
   it("inicializa cartões salvos exclusivamente com referências oficiais", () => {
@@ -101,7 +103,7 @@ describe("configuração do Payment Brick", () => {
   });
   it("encaminha o token novo do cartão salvo para validação de ownership no servidor", () => {
     expect(createCheckoutPaymentPayload({ payment_method_id: "visa", token: "new-cvv-token",
-      payer: { type: "customer", id: "customer-1" } }, { ...identity, cpf: "" })).toMatchObject({
+      payer: { type: "customer", id: "customer-1" } }, identity)).toMatchObject({
       token: "new-cvv-token", payer: { type: "customer", id: "customer-1" }
     });
   });

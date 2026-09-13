@@ -6,8 +6,8 @@ import { z } from "zod";
 import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { CUSTOMER_EMAIL_MAX_LENGTH, isValidBrazilianPhone, isValidCpf, phoneDigits, sanitizeCpf } from "@/lib/personal-data";
-import { encryptPII } from "@/lib/pii";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { saveCustomerCheckoutIdentity } from "../../../lib/checkout-identity";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../lib/checkout-diagnostics";
 
@@ -147,12 +147,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (parsed.data.customer.cpf) {
-      const identityResult = readQueryResult(await supabase.rpc("save_my_checkout_identity", {
-        p_cpf_ciphertext: encryptPII(parsed.data.customer.cpf),
-        p_cpf_last_four: parsed.data.customer.cpf.slice(-4)
-      }));
-      if (identityResult.error) {
-        logFailure(requestId, "IDENTITY_PERSISTENCE_FAILED", identityResult.error);
+      try {
+        const identityDb = createServiceSupabaseClient();
+        if (!identityDb) throw new Error();
+        await saveCustomerCheckoutIdentity(identityDb, auth.data.user.id, parsed.data.customer.cpf);
+      } catch {
+        logFailure(requestId, "IDENTITY_PERSISTENCE_FAILED");
         return reply(requestId, { ok: false, code: "IDENTITY_PERSISTENCE_FAILED", message: "Não foi possível salvar sua identificação agora." }, 503);
       }
     }

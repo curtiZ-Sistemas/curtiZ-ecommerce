@@ -23,7 +23,11 @@ select lives_ok($$select public.preview_professional_checkout(
   '[{"product_id":"cb200000-0000-4000-8000-000000000001","variant_id":"cb300000-0000-4000-8000-000000000001","quantity":1}]',null,'01310100')$$,
   'Preencher endereco e frete apenas cota');
 select is((select count(*)::integer from public.orders where customer_id=auth.uid()),0,'Chegar ao pagamento sem metodo nao cria pedido');
-select lives_ok($$select public.save_my_checkout_identity('cipher','0001')$$,'Identificacao criptografada pode ser salva sem pedido');
+reset role;
+set local role service_role;
+select lives_ok($$select public.save_customer_checkout_identity('cb000000-0000-4000-8000-000000000001','cipher','0001')$$,'Servidor salva identificacao criptografada sem pedido');
+reset role;
+set local role authenticated;
 select is((select cpf_last_four from public.profiles where id=auth.uid()),'0001','Perfil reutiliza apenas os ultimos quatro digitos');
 select throws_ok($$select public.confirm_professional_checkout_order(
   'cb400000-0000-4000-8000-000000000099','cb000000-0000-4000-8000-000000000001','pix','Checkout One','checkout-one@test.local','11999999999','cipher','0001',

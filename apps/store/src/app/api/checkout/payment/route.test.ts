@@ -4,8 +4,10 @@ import { MercadoPagoProviderError, type MercadoPagoPayment, type MercadoPagoPaym
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 import { validateSavedCardCustomer, validateSavedCardPayer } from "@/lib/mercadopago-saved-cards";
+import { decryptPII, encryptPII } from "../../../../lib/pii";
 
 const state = vi.hoisted(() => ({ checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn() }));
+vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled }) }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
@@ -13,7 +15,7 @@ vi.mock("@curtiz/integrations", () => ({
     constructor(code: string, readonly httpStatus = 502) { super(code); }
   },
   MercadoPagoTestPaymentProvider: class {
-    getPaymentMethodIds() { return Promise.resolve(["pix", "visa"]); }
+    getPaymentMethodIds() { return Promise.resolve(["pix", "visa", "bolbradesco"]); }
     createPayment = state.createPayment;
     getPayment = state.getPayment;
   }
@@ -22,7 +24,7 @@ vi.mock("@/lib/checkout-flow", () => import("../../../../lib/checkout-flow"));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/personal-data", () => import("../../../../lib/personal-data"));
 vi.mock("@/lib/mercadopago-payer-identity", () => import("../../../../lib/mercadopago-payer-identity"));
-vi.mock("@/lib/pii", () => ({ encryptPII: (cpf: string) => `encrypted:${cpf}` }));
+vi.mock("@/lib/pii", () => import("../../../../lib/pii"));
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../lib/mercadopago-payment"));
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
@@ -55,6 +57,7 @@ type QueryResult = { data: unknown; error: unknown };
 type Attempt = { id: string; provider_payment_id: string; status: string; payment_method: string; fingerprint: unknown };
 
 function database() {
+  const identity = { customerId: "customer-id", cpfCiphertext: encryptPII(body.checkout.customer.cpf), cpfLastFour: "4725" };
   const order = { id: orderId, public_code: "CZ-123", customer_id: "customer-id", customer_email_snapshot: "cliente@example.com",
     customer_name_snapshot: "Cliente Teste", cpf_last_four: "4725", status: "pending_payment", grand_total: 67.9, currency: "BRL" };
   const payment = { id: "local-payment", status: "pending", provider_payment_id: "", amount: 67.9, currency: "BRL" };
@@ -69,6 +72,7 @@ function database() {
         : [...attempts.values()].find(a => a.id === filters.get("id"));
       const row = table === "orders" ? order : table === "payments" ? payment
         : table === "payment_attempts" ? attempt : { resource_id: orderId };
+      if (table === "orders" && filters.get("customer_id") !== order.customer_id) return { data: null, error: null };
       if (patch && row) Object.assign(row, patch);
       return { data: table === "payment_attempts" && filters.has("idempotency_key") && attempt
         ? { ...attempt, request_fingerprint: attempt.fingerprint } : row, error: null };
@@ -85,6 +89,7 @@ function database() {
     return query;
   }
   const rpc = vi.fn((name: string, args: Record<string, unknown>): Promise<QueryResult> => {
+    if (name === "get_customer_checkout_identity") return Promise.resolve({ data: identity, error: null });
     if (name === "confirm_professional_checkout_order") {
       if (failures.creation) return Promise.resolve({ data: null, error: { code: "22023", message: failures.creation } });
       creationKeys.add(args.p_idempotency_key);
@@ -118,7 +123,7 @@ function database() {
   });
   vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser: () => Promise.resolve({ data: { user: { id: "customer-id" } }, error: null }) } } as never);
   vi.mocked(createServiceSupabaseClient).mockReturnValue({ from, rpc } as never);
-  return { order, payment, attempts, creationKeys, failures, rpc };
+  return { order, payment, attempts, creationKeys, failures, rpc, identity };
 }
 
 describe("confirmação de pagamento", () => {
@@ -126,6 +131,7 @@ describe("confirmação de pagamento", () => {
     vi.clearAllMocks(); state.checkoutEnabled = true;
     vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-access-token");
     vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public-key");
+    vi.stubEnv("PII_ENCRYPTION_KEY", "isolated-payment-cpf-secret-32-bytes");
     state.createPayment.mockReset().mockResolvedValue(providerPayment());
     state.getPayment.mockReset().mockResolvedValue(providerPayment());
     vi.mocked(validateSavedCardPayer).mockReset();
@@ -141,9 +147,13 @@ describe("confirmação de pagamento", () => {
   it("envia documento TEST e armazena exclusivamente o CPF real", async () => {
     const db = database();
     expect((await POST(request())).status).toBe(200);
-    expect(db.rpc).toHaveBeenCalledWith("confirm_professional_checkout_order", expect.objectContaining({
-      p_idempotency_key: checkoutKey, p_cpf_ciphertext: "encrypted:52998224725", p_cpf_last_four: "4725"
-    }));
+    const calls = db.rpc.mock.calls as Array<[string, Record<string, unknown>]>;
+    const creationArgs = calls.find(call => call[0] === "confirm_professional_checkout_order")?.[1];
+    expect(creationArgs).toMatchObject({ p_idempotency_key: checkoutKey, p_cpf_last_four: "4725" });
+    const ciphertext = creationArgs?.p_cpf_ciphertext;
+    expect(ciphertext).toMatch(/^v1\./u);
+    if (typeof ciphertext !== "string") throw new Error("Expected encrypted checkout identity");
+    expect(decryptPII(ciphertext)).toBe(body.checkout.customer.cpf);
     expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ customerDocument: "12345678909", idempotencyKey: firstKey }));
     expect(db.order.cpf_last_four).toBe("4725");
   });
@@ -165,6 +175,39 @@ describe("confirmação de pagamento", () => {
     const db = database();
     expect((await POST(request({ ...body, checkout: { ...body.checkout, customer: { ...body.checkout.customer, cpf: "" } } }))).status).toBe(200);
     expect(db.rpc).toHaveBeenCalledWith("confirm_professional_checkout_order", expect.objectContaining({ p_cpf_ciphertext: "", p_cpf_last_four: "" }));
+    expect(db.rpc).not.toHaveBeenCalledWith("get_customer_checkout_identity", expect.anything());
+    expect(decryptPII(db.identity.cpfCiphertext)).toBe(body.checkout.customer.cpf);
+  });
+  it.each(["pix", "bolbradesco", "visa"])("CPF salvo e cpf vazio permitem %s sem documento do Brick", async method => {
+    const db = database();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await POST(request({ ...body,
+      checkout: { ...body.checkout, customer: { ...body.checkout.customer, cpf: "" } },
+      payment: { ...body.payment, payment_method_id: method, payer: { entity_type: "individual" } }
+    }));
+    expect(result.status).toBe(200);
+    expect(db.rpc).toHaveBeenCalledWith("get_customer_checkout_identity", { p_customer_id: "customer-id" });
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ customerDocument: body.checkout.customer.cpf }));
+    const output = await result.text();
+    expect(output).not.toContain(body.checkout.customer.cpf);
+    expect(output).not.toContain(db.identity.cpfCiphertext);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(body.checkout.customer.cpf);
+    log.mockRestore();
+  });
+  it("falha fechado se a identidade criptografada estiver inválida", async () => {
+    const db = database(); db.identity.cpfCiphertext = "invalid-ciphertext";
+    const result = await POST(request({ orderId, idempotencyKey: firstKey,
+      payment: { payment_method_id: "pix", payer: { entity_type: "individual", identification: { number: "" } } } }));
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ code: "CUSTOMER_IDENTITY_UNAVAILABLE" });
+    expect(state.createPayment).not.toHaveBeenCalled(); expect(db.attempts.size).toBe(0);
+  });
+  it("não recupera CPF nem cobra pedido de outro cliente", async () => {
+    const db = database(); db.order.customer_id = "customer-other";
+    const result = await POST(request({ orderId, idempotencyKey: firstKey,
+      payment: { payment_method_id: "pix", payer: { entity_type: "individual" } } }));
+    expect(result.status).toBe(404);
+    expect(db.rpc).not.toHaveBeenCalled(); expect(state.createPayment).not.toHaveBeenCalled();
   });
   it("retry do cartão salvo com cobrança conhecida não revalida token consumido", async () => {
     database();
@@ -202,7 +245,7 @@ describe("confirmação de pagamento", () => {
     expect(state.createPayment).toHaveBeenNthCalledWith(1, expect.objectContaining({ idempotencyKey: firstKey }));
     expect(state.createPayment).toHaveBeenNthCalledWith(2, expect.objectContaining({ idempotencyKey: firstKey }));
   });
-  it.each(["", "11111111111", "123456789012", "abc12345678909"])("CPF de pagador inválido não cria tentativa: %s", async number => {
+  it.each(["11111111111", "123456789012", "abc12345678909"])("CPF de pagador inválido não cria tentativa: %s", async number => {
     const db = database();
     const result = await POST(request({ ...body, payment: { ...body.payment, payer: { ...body.payment.payer, identification: { number } } } }));
     expect(result.status).toBe(400);

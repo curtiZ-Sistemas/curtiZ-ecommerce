@@ -48,7 +48,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     paymentMode: "test",
     idempotencyKey: crypto.randomUUID(),
     email: readString(order, "customer_email_snapshot"),
-    cpf: "",
     checkout: null
   } : null;
   return <OrderPayment orderId={id} session={session} />;

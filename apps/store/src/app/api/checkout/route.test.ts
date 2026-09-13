@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
 const integrationState = vi.hoisted(() => ({ checkoutEnabled: true }));
+vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
   checkoutEnabled: integrationState.checkoutEnabled,
   payment: { enabled: true, provider: "mercadopago" }
@@ -27,7 +28,7 @@ vi.mock("@/lib/unknown-data", () => ({
   readQueryResult: (value: unknown) => value,
   readString: (record: Record<string, unknown>, key: string) => typeof record[key] === "string" ? record[key] : ""
 }));
-vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 
 const mockedClient = vi.mocked(createServerSupabaseClient);
 const body = {
@@ -60,6 +61,8 @@ function mockCheckout(discountInCents = 0) {
 describe("checkout sem criação prematura de pedido", () => {
   beforeEach(() => {
     mockedClient.mockReset();
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: true, error: null }) } as never);
+    vi.stubEnv("PII_ENCRYPTION_KEY", "isolated-checkout-cpf-secret-32-bytes");
     integrationState.checkoutEnabled = true;
     vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public-key");
     vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-access-token");

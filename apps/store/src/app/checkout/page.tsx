@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { CustomerCpfField } from "@/components/customer-cpf-field";
 import { MercadoPagoPaymentBrick } from "@/components/mercadopago-payment-brick";
 import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
 import {
@@ -167,6 +168,7 @@ export default function CheckoutPage() {
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [addressLabel, setAddressLabel] = useState("Casa");
   const [cpfLastFour, setCpfLastFour] = useState("");
+  const [editingCpf, setEditingCpf] = useState(false);
   const [profilePhone, setProfilePhone] = useState("");
   const [coupon, setCoupon] = useState({ code: "", name: "", discountInCents: 0 });
   const [couponMessage, setCouponMessage] = useState("");
@@ -359,6 +361,7 @@ export default function CheckoutPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitInFlightRef.current || loading || paymentSession) return;
+    if (editingCpf) { setMessage("Salve ou cancele a alteração do CPF antes de continuar."); return; }
     if (!selectedLines.length) {
       setMessage("Selecione pelo menos um produto no carrinho antes de finalizar.");
       return;
@@ -377,7 +380,7 @@ export default function CheckoutPage() {
     const errors: Partial<Record<PersonalField, string>> = {};
     if (!isValidCustomerEmail(email)) errors.email = "Informe um e-mail válido.";
     if (!isValidBrazilianPhone(phone)) errors.phone = "Informe um telefone válido com DDD.";
-    if (!cpfLastFour && !isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
+    if ((cpf || !cpfLastFour) && !isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
     setFieldErrors(errors);
     const firstInvalid = (Object.keys(errors) as PersonalField[])[0];
     if (firstInvalid) {
@@ -512,8 +515,7 @@ export default function CheckoutPage() {
         {
           idempotencyKey: idempotencyKeyRef.current,
           email,
-          cpf: sanitizeCpf(cpf),
-          checkout
+          checkout: { ...checkout, customer: { ...checkout.customer, cpf: "" } }
         },
         FIXED_SHIPPING_IN_CENTS
       );
@@ -521,6 +523,9 @@ export default function CheckoutPage() {
         setMessage(resultMessage || "Não foi possível iniciar o pagamento.");
         return;
       }
+      if (cpf) setCpfLastFour(sanitizeCpf(cpf).slice(-4));
+      const cpfInput = formRef.current?.elements.namedItem("cpf");
+      if (cpfInput instanceof HTMLInputElement) cpfInput.value = "";
       setPaymentSession(session);
     } catch {
       setMessage("Não foi possível conectar ao checkout. Seus itens continuam no carrinho.");
@@ -719,8 +724,11 @@ export default function CheckoutPage() {
                 )}
               </div>
               <div className="field">
-                <label htmlFor="cpf">CPF para o pedido</label>
-                {cpfLastFour ? <div className="customer-readonly">***.***.***-{cpfLastFour}<input type="hidden" id="cpf" name="cpf" value="" /></div> : <input
+                {!cpfLastFour && <label htmlFor="cpf">CPF para o pedido</label>}
+                {cpfLastFour ? <>
+                  <CustomerCpfField lastFour={cpfLastFour} onSaved={setCpfLastFour} onEditingChange={setEditingCpf} />
+                  <input type="hidden" id="cpf" name="cpf" value="" />
+                </> : <input
                   id="cpf"
                   name="cpf"
                   inputMode="numeric"

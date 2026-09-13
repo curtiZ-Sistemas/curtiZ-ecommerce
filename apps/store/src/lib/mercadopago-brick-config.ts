@@ -13,7 +13,6 @@ export type MercadoPagoBrickSession = {
   paymentMode: MercadoPagoPaymentMode;
   idempotencyKey: string;
   email: string;
-  cpf: string;
   checkout: CheckoutConfirmationPayload | null;
   savedCards?: { customerId: string; cardIds: string[] };
 };
@@ -35,7 +34,7 @@ const positiveSafeInteger = (value: unknown): value is number =>
 
 export function readMercadoPagoBrickSession(
   value: unknown,
-  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "cpf" | "checkout">,
+  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "checkout">,
   expectedShippingInCents: number
 ): MercadoPagoBrickSession | null {
   if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
@@ -74,15 +73,13 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
       entityType: "individual" as const,
       ...(session.savedCards?.customerId && session.savedCards.cardIds.length
         ? { customerId: session.savedCards.customerId, cardsIds: session.savedCards.cardIds } : {}),
-      ...(session.paymentMode !== "test" && session.cpf
-        ? { identification: { type: "CPF", number: session.cpf } } : {})
     }
   };
 }
 
 export function createCheckoutPaymentPayload(
   formData: unknown,
-  session: Pick<MercadoPagoBrickSession, "cpf" | "paymentMode">
+  session: Pick<MercadoPagoBrickSession, "paymentMode">
 ) {
   if (!isUnknownRecord(formData)) return null;
   const paymentMethodId = formData.payment_method_id;
@@ -105,11 +102,9 @@ export function createCheckoutPaymentPayload(
   if (identification.type !== undefined && identification.type !== "CPF") return null;
   const suppliedDocument = typeof identification.number === "string" && identification.number.trim()
     ? identification.number.trim() : null;
-  // A session fallback is the customer's real CPF and must pass its checksum even in TEST.
-  const document = readMercadoPagoPayerDocument(
-    suppliedDocument ?? session.cpf, suppliedDocument ? session.paymentMode : "production"
-  );
-  if (!document && (suppliedDocument || !savedCustomerId)) return null;
+  // Missing identification is resolved from private customer identity by the backend.
+  const document = suppliedDocument ? readMercadoPagoPayerDocument(suppliedDocument, session.paymentMode) : null;
+  if (suppliedDocument && !document) return null;
 
   return {
     payment_method_id: paymentMethodId.trim(),
