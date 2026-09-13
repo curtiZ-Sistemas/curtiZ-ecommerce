@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { connection } from "next/server";
+import { headers } from "next/headers";
+import { PaymentDocumentBoundary } from "@/components/payment-document-boundary";
 import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
 import { RouteFeedback } from "@/components/route-feedback";
@@ -51,6 +53,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     getPromotionBarMessages(),
     getStoreNavigation()
   ]);
+  const csp = (await headers()).get("content-security-policy") ?? "";
+  const mercadoPagoAllowed = csp.includes("https://sdk.mercadopago.com");
 
   return (
     <html lang="pt-BR" className={manrope.variable} data-scroll-behavior="smooth">
@@ -66,7 +70,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <IntelligenceBootstrap />
             <PromotionBar messages={promotionMessages} />
             <SiteHeader navigation={navigation} />
-            <main id="main-content">{children}</main>
+            <main id="main-content">
+              <PaymentDocumentBoundary mercadoPagoAllowed={mercadoPagoAllowed}>
+                {children}
+              </PaymentDocumentBoundary>
+            </main>
             <SiteFooter />
             {/* Chat temporariamente desativado. */}
             <CookiePreferences />
