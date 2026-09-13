@@ -25,9 +25,15 @@ const productionRequired = [
   ...stagingRequired,
   "NEXT_PUBLIC_STORE_TEST_URL",
   "NEXT_PUBLIC_PANEL_TEST_URL",
+  "DEMO_MODE",
+  "CHECKOUT_ENABLED",
   "PAYMENT_PROVIDER",
+  "MERCADO_PAGO_ENABLED",
   "EMAIL_PROVIDER",
+  "EMAIL_ENABLED",
   "SHIPPING_PROVIDER",
+  "MELHOR_ENVIO_ENABLED",
+  "TURNSTILE_ENABLED",
   "REQUIRE_INTERNAL_MFA",
   "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
@@ -137,7 +143,7 @@ const validateUrl = (
       errors.push(`${key} deve usar HTTPS`);
     } else if (
       key === "NEXT_PUBLIC_SUPABASE_URL" &&
-      (url.pathname !== "/" || url.search || url.hash)
+      (url.pathname !== "/" || url.search || url.hash || url.username || url.password)
     ) {
       errors.push(
         "NEXT_PUBLIC_SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
@@ -304,19 +310,41 @@ const validateTestUrlPair = (environment: EnvironmentValues, errors: string[]): 
   }
 };
 
+export function requiredDeploymentSecrets(environment: EnvironmentValues): string[] {
+  const required = new Set(["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY"]);
+  if (["mercadopago", "mercado_pago"].includes(normalize(environment.PAYMENT_PROVIDER))
+    || enabledBoolean(environment.MERCADO_PAGO_ENABLED)) {
+    required.add("MERCADO_PAGO_ACCESS_TOKEN");
+    required.add("MERCADO_PAGO_WEBHOOK_SECRET");
+  }
+  if (normalize(environment.EMAIL_PROVIDER) === "resend" || enabledBoolean(environment.EMAIL_ENABLED)) {
+    required.add("RESEND_API_KEY");
+  }
+  if (normalize(environment.SHIPPING_PROVIDER) === "correios") required.add("CORREIOS_API_TOKEN");
+  if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
+    required.add("TURNSTILE_SECRET_KEY");
+  }
+  return [...required].sort();
+}
+
 const validateProviderCredentials = (environment: EnvironmentValues, errors: string[]): void => {
   const paymentProvider = normalize(environment.PAYMENT_PROVIDER);
   const emailProvider = normalize(environment.EMAIL_PROVIDER);
-  const shippingProvider = normalize(environment.SHIPPING_PROVIDER);
 
   const mercadoPagoEnabled =
     ["mercadopago", "mercado_pago"].includes(paymentProvider) ||
     enabledBoolean(environment.MERCADO_PAGO_ENABLED);
 
+  addRequiredErrors(environment, requiredDeploymentSecrets(environment).filter((name) =>
+    !["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY", "TURNSTILE_SECRET_KEY"].includes(name)
+  ), errors);
+
   if (mercadoPagoEnabled) {
     addRequiredErrors(
       environment,
-      ["MERCADO_PAGO_ACCESS_TOKEN", "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY"],
+      [
+        "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY"
+      ],
       errors
     );
     if (
@@ -336,11 +364,7 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
   const emailEnabled = emailProvider === "resend" || enabledBoolean(environment.EMAIL_ENABLED);
 
   if (emailEnabled) {
-    addRequiredErrors(environment, ["RESEND_API_KEY", "EMAIL_FROM"], errors);
-  }
-
-  if (shippingProvider === "correios") {
-    addRequiredErrors(environment, ["CORREIOS_API_TOKEN"], errors);
+    addRequiredErrors(environment, ["EMAIL_FROM"], errors);
   }
 };
 

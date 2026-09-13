@@ -27,11 +27,25 @@ Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
 - variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
   `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
-  `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`;
-- variable opcional: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, quando o Turnstile estiver habilitado.
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`,
+  `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_ENABLED`, `SHIPPING_PROVIDER`,
+  `MELHOR_ENVIO_ENABLED`, `EMAIL_PROVIDER`, `EMAIL_ENABLED`, `TURNSTILE_ENABLED`,
+  `REQUIRE_INTERNAL_MFA`, `AUTH_RATE_LIMIT_ENABLED`, `ALLOWED_ORIGINS` e
+  `AUTH_COOKIE_DOMAINS`;
+- variables condicionais: `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` quando o Mercado Pago estiver
+  habilitado, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` quando o Turnstile estiver habilitado e `EMAIL_FROM`
+  quando o envio de e-mail estiver habilitado.
 
 O token Cloudflare deve ter somente as permissões necessárias para publicar os dois Workers na
 conta correta. Não armazene tokens em variables públicas.
+
+Antes do build, o workflow consulta somente os **nomes** dos secrets já presentes em cada Worker.
+Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY` e `AUDIT_HASH_KEY`; quando a integração
+correspondente está habilitada, exige também `MERCADO_PAGO_ACCESS_TOKEN`,
+`MERCADO_PAGO_WEBHOOK_SECRET`, `TURNSTILE_SECRET_KEY` e/ou `RESEND_API_KEY`. Valores secretos não
+são copiados para o GitHub nem impressos. Placeholders efêmeros servem exclusivamente para permitir
+que o validador de presença rode durante o build; o runtime mantém os secrets reais com
+`--keep-vars`.
 
 ## Domínios públicos e aliases de teste
 
@@ -76,8 +90,9 @@ O ambiente local mantém as URLs adicionais definidas em `supabase/config.toml`.
 Para republicar sem criar commit, abra **Actions → CI → Run workflow** e escolha `store`, `panel` ou
 `both`. A execução manual passa pelas mesmas validações antes do deploy.
 
-Cada deploy injeta apenas metadados não sensíveis (`GIT_COMMIT_SHA`, `BUILD_ID` e
-`BUILD_TIMESTAMP`). O commit ativo pode ser consultado em `/api/version` na URL de cada aplicação.
+Cada deploy injeta metadados (`GIT_COMMIT_SHA`, `BUILD_ID` e `BUILD_TIMESTAMP`) e espelha as
+variáveis **não secretas** validadas do GitHub. O commit ativo pode ser consultado em `/api/version`
+na URL de cada aplicação. Secrets de runtime permanecem somente no Cloudflare.
 
 ## Validação dos ambientes
 
@@ -111,8 +126,14 @@ NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=TEST-...
 SHIPPING_PROVIDER=fixed
 ```
 
-`MERCADO_PAGO_WEBHOOK_SECRET` permanece opcional até a ativação do webhook. O backend bloqueia
-credenciais sem o prefixo de teste.
+`MERCADO_PAGO_WEBHOOK_SECRET` é obrigatório quando o Mercado Pago está habilitado; o webhook é
+parte da reconciliação idempotente. O backend continua bloqueando credenciais sem o prefixo de teste.
+
+Uma futura mudança para produção deve ser explícita e revisada no adapter compartilhado de
+`packages/integrations`, com configuração de ambiente de pagamento, credenciais e testes de
+assinatura/reconciliação. A interface de pagamento, as transações locais e a idempotência podem ser
+reutilizadas; não basta trocar o token. Nesta etapa, os guards `TEST-` permanecem obrigatórios e não
+há modo live habilitado.
 
 Enquanto `SHIPPING_PROVIDER=fixed`, o banco adiciona R$ 16,90 a todos os pedidos do Checkout
 Bricks. O Melhor Envio permanece opcional e restrito ao Sandbox. Mesmo que
@@ -131,16 +152,56 @@ Os comandos abaixo são úteis para diagnóstico ou operação manual autorizada
 monorepo após gerar o artefato OpenNext da aplicação correta:
 
 ```powershell
-pnpm --filter @curtiz/store build:worker
+pnpm validate:production
+pnpm exec tsx scripts/validate-supabase-readiness.ts
+pnpm build:worker
 pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars
 
-pnpm --filter @curtiz/panel build:worker
+pnpm build:worker:panel
 pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars
 ```
 
 O `wrangler.jsonc` da raiz continua apontando exclusivamente para a loja por compatibilidade. Para o
 painel, sempre informe `apps/panel/wrangler.jsonc`; apontar o painel para `apps/store` publica a loja
 no Worker errado.
+
+Esses comandos não ativam deploy automaticamente. Para uma publicação manual autorizada, confira
+também a presença dos secrets do Worker usando `wrangler secret list --config <config da aplicação>
+--env production --format json` e `scripts/cloudflare-secret-validation.ts <arquivo JSON>`.
+Não imprima valores nem coloque secrets em argumentos `--var`. Fora do CI, o build usa a
+configuração server-side do ambiente seguro do operador; o script de presença não recupera secrets.
+
+## Preflight, smoke e housekeeping
+
+O deploy da loja executa `pnpm build:worker`, que reutiliza `validate:production`. Antes de publicar,
+o CI confirma os secrets do Worker e chama a RPC pública
+`cart_variant_stock_availability` no Supabase remoto. Portanto, aplique a migration incremental
+`202609120006_production_checkout_operations.sql` antes de liberar o commit; se ela estiver ausente,
+o deploy para antes de substituir a versão ativa.
+
+Depois da publicação, `pnpm smoke:storefront -- <URL>` valida homepage, catálogo, configuração
+pública, API de versão e disponibilidade/Supabase sem criar pedido ou cobrança. A mesma verificação
+pode ser executada manualmente contra a URL `workers.dev` ou o domínio canônico.
+
+A loja possui um Cron Trigger Cloudflare a cada cinco minutos. O handler chama somente
+`expire_stale_mercadopago_orders` com lote de 50, faz no máximo uma repetição para falha transitória
+e registra resultado sem credenciais. A função usa advisory lock não bloqueante, e a expiração por
+pedido permanece idempotente. Após o primeiro deploy, confira em **Workers & Pages → Triggers** se
+o cron `*/5 * * * *` aparece e acompanhe os eventos `checkout-housekeeping` nos logs.
+
+O código e a configuração do cron estão preparados, mas não significam ativação ou execução remota
+verificada. Chaves modernas `sb_secret_`/`sb_publishable_` são enviadas no header `apikey`, não como
+JWT Bearer; chaves legadas JWT continuam compatíveis ([documentação Supabase](https://supabase.com/docs/guides/getting-started/api-keys)).
+
+### Proteção de tráfego
+
+Os endpoints preservam validação de origem, sessão nas operações de compra, idempotência e lote
+máximo de 50 variantes. A proteção distribuída de tráfego desses endpoints depende da zona
+Cloudflare: em **Security → WAF → Rate limiting rules**, configurar POST nos caminhos
+`/api/cart/availability`, `/api/checkout` e `/api/checkout/payment`, com contagem por IP e limites
+compatíveis com uso normal e compartilhamento de rede. Verificar também a cobertura dos aliases
+`workers.dev` antes de considerar a proteção completa. Essa regra externa não foi ativada nem
+testada por esta alteração; não há rate limiter em memória fingindo proteção distribuída.
 
 ## Migrations
 

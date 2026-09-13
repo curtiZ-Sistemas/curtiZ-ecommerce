@@ -1,3 +1,4 @@
+import { getIntegrationConfig } from "@curtiz/config";
 import { isMercadoPagoTestCredential, MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import { encryptPII } from "@/lib/pii";
 import { normalizeMercadoPagoStatus, publicPaymentState } from "@/lib/mercadopago-payment";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
+import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 
 const checkoutSchema = z.object({
   couponCode: z.string().trim().max(40).optional(),
@@ -37,16 +39,34 @@ const schema = z.object({
 
 const noStore = { "cache-control": "private, no-store" };
 const response = (body: Record<string, unknown>, status: number) => NextResponse.json(body, { status, headers: noStore });
-const logFailure = (code: string, status?: number) => console.error("[mercadopago-bricks] payment not completed", {
-  code, ...(status ? { providerStatus: status } : {})
-});
+const logFailure = (code: string, status?: number, requestId?: string, error?: unknown) => {
+  const database = safeDatabaseError(error);
+  console.error("[mercadopago-bricks] payment not completed", {
+    code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
+    message: database.message || null, details: database.details || null, hint: database.hint || null
+  });
+};
 
-export async function POST(request: NextRequest) {
-  if (!isAllowedRequestOrigin(request)) return response({ ok: false, message: "Origem não permitida." }, 403);
+async function handlePost(request: NextRequest, requestId: string) {
+  const reportFailure = (code: string, status?: number, error?: unknown) => logFailure(code, status, requestId, error);
   const auth = await createServerSupabaseClient();
-  const authData = auth ? await auth.auth.getUser() : null;
+  if (!auth) {
+    reportFailure("PAYMENT_CONFIGURATION_MISSING");
+    return response({
+      ok: false, code: "PAYMENT_CONFIGURATION_MISSING",
+      message: "O pagamento está temporariamente indisponível."
+    }, 503);
+  }
+  const authData = await auth.auth.getUser();
   const user = authData?.data.user;
-  if (!auth || !user) return response({ ok: false, message: "Entre na sua conta para pagar." }, 401);
+  if (authData.error && !isMissingAuthentication(authData.error)) {
+    reportFailure("AUTHENTICATION_UNAVAILABLE", undefined, authData.error);
+    return response({
+      ok: false, code: "AUTHENTICATION_UNAVAILABLE",
+      message: "Não foi possível validar sua sessão agora."
+    }, 503);
+  }
+  if (!user) return response({ ok: false, message: "Entre na sua conta para pagar." }, 401);
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return response({ ok: false, message: "Revise os dados do pagamento." }, 400);
   const customerDocument = sanitizeCpf(parsed.data.payment.payer.identification.number);
@@ -55,11 +75,17 @@ export async function POST(request: NextRequest) {
   const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
   if (!isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
-    logFailure("TEST_CREDENTIALS_REQUIRED");
+    reportFailure("TEST_CREDENTIALS_REQUIRED");
     return response({ ok: false, message: "O pagamento de teste está indisponível." }, 503);
   }
   const db = createServiceSupabaseClient();
-  if (!db) return response({ ok: false, message: "Não foi possível confirmar o pagamento agora." }, 503);
+  if (!db) {
+    reportFailure("PAYMENT_SERVER_CONFIGURATION_MISSING");
+    return response({
+      ok: false, code: "PAYMENT_SERVER_CONFIGURATION_MISSING",
+      message: "Não foi possível confirmar o pagamento agora."
+    }, 503);
+  }
   const provider = new MercadoPagoTestPaymentProvider(accessToken);
   try {
     const availableMethods = await provider.getPaymentMethodIds();
@@ -68,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const providerStatus = error instanceof MercadoPagoProviderError ? error.httpStatus : undefined;
-    logFailure("PAYMENT_METHOD_VALIDATION_FAILED", providerStatus);
+    reportFailure("PAYMENT_METHOD_VALIDATION_FAILED", providerStatus);
     return response({ ok: false, message: "Não foi possível validar os meios de pagamento agora." }, 502);
   }
 
@@ -111,6 +137,10 @@ export async function POST(request: NextRequest) {
     const created = isUnknownRecord(creation.data) ? creation.data : null;
     orderId = created ? readString(created, "orderId") : "";
     if (creation.error || !orderId) {
+      if (!isCheckoutBusinessError(creation.error)) {
+        reportFailure("CHECKOUT_ORDER_CREATION_UNAVAILABLE", undefined, creation.error);
+        return response({ ok: false, code: "CHECKOUT_SERVICE_UNAVAILABLE", message: "O checkout está temporariamente indisponível." }, 503);
+      }
       const message = isUnknownRecord(creation.error) ? readString(creation.error, "message") : "";
       const invalidCoupon = message.includes("coupon");
       return response({
@@ -123,7 +153,11 @@ export async function POST(request: NextRequest) {
   const orderResult = readQueryResult(await db.from("orders")
     .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency")
     .eq("id", orderId).eq("customer_id", user.id).maybeSingle());
-  if (orderResult.error || !isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
+  if (orderResult.error) {
+    reportFailure("ORDER_QUERY_FAILED", undefined, orderResult.error);
+    return response({ ok: false, code: "ORDER_QUERY_FAILED", message: "Não foi possível consultar o pedido agora." }, 503);
+  }
+  if (!isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
   const order = orderResult.data;
   const orderCode = readString(order, "public_code");
   if (!orderCode || readString(order, "status") !== "pending_payment") {
@@ -154,7 +188,7 @@ export async function POST(request: NextRequest) {
     p_order_id: orderId, p_idempotency_key: parsed.data.idempotencyKey, p_payment_method: method
   }));
   if (attemptResult.error || !isUnknownRecord(attemptResult.data)) {
-    logFailure("PAYMENT_ATTEMPT_PERSISTENCE_FAILED");
+    reportFailure("PAYMENT_ATTEMPT_PERSISTENCE_FAILED", undefined, attemptResult.error);
     return response({ ok: false, message: "Não foi possível registrar a tentativa de pagamento." }, 503);
   }
   const attemptId = readString(attemptResult.data, "id");
@@ -205,9 +239,37 @@ export async function POST(request: NextRequest) {
     await db.from("payment_attempts").update({
       status: "rejected", status_detail: "provider_request_failed", updated_at: new Date().toISOString()
     }).eq("id", attemptId);
-    logFailure("PROVIDER_REQUEST_FAILED", providerStatus);
+    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus);
     return response({ ok: false, orderId, orderCode, message: providerStatus && providerStatus < 500
       ? "Pagamento recusado. Revise os dados e tente novamente." : "Não foi possível processar o pagamento agora." },
     providerStatus && providerStatus < 500 ? 422 : 502);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID();
+  try {
+    if (!isAllowedRequestOrigin(request)) {
+      return NextResponse.json({ ok: false, code: "ORIGIN_NOT_ALLOWED", message: "Origem não permitida." },
+        { status: 403, headers: { ...noStore, "x-request-id": requestId } });
+    }
+    if (!getIntegrationConfig().checkoutEnabled) {
+      logFailure("CHECKOUT_DISABLED", undefined, requestId);
+      return NextResponse.json({
+        ok: false,
+        code: "CHECKOUT_DISABLED",
+        message: "Novos pagamentos estão temporariamente indisponíveis."
+      }, { status: 503, headers: { ...noStore, "x-request-id": requestId } });
+    }
+    const result = await handlePost(request, requestId);
+    result.headers.set("x-request-id", requestId);
+    return result;
+  } catch {
+    logFailure("PAYMENT_RUNTIME_FAILURE", undefined, requestId);
+    return NextResponse.json({
+      ok: false,
+      code: "PAYMENT_SERVICE_UNAVAILABLE",
+      message: "Não foi possível processar o pagamento agora."
+    }, { status: 503, headers: { ...noStore, "x-request-id": requestId } });
   }
 }

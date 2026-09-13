@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(19);
 
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -77,6 +77,36 @@ select throws_ok(
   '42501',
   null,
   '5. Cliente não altera prioridade'
+);
+select lives_ok(
+  $$insert into public.support_attachments(message_id,storage_path,original_name_sanitized,mime_type,size_bytes,scan_status)
+    values('c0000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000001/support/pending.png','pending.png','image/png',100,'pending')$$,
+  'Cliente associa anexo somente como pendente'
+);
+select throws_ok(
+  $$insert into public.support_attachments(message_id,storage_path,original_name_sanitized,mime_type,size_bytes,scan_status)
+    values('c0000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000001/support/forged-clean.png','forged-clean.png','image/png',100,'clean')$$,
+  '42501',
+  null,
+  'Cliente não marca o próprio anexo como limpo'
+);
+insert into storage.objects(bucket_id,name)
+values('customer-private','a0000000-0000-0000-000000000001/support/pending.png');
+select is(
+  (select count(*) from storage.objects where bucket_id='customer-private'
+    and name='a0000000-0000-0000-0000-000000000001/support/pending.png'),
+  0::bigint,
+  'Dono do upload não acessa bytes pendentes diretamente pelo Storage'
+);
+reset role;
+update public.support_attachments set scan_status='clean'
+where storage_path='a0000000-0000-0000-000000000001/support/pending.png';
+set local role authenticated;
+select is(
+  (select count(*) from storage.objects where bucket_id='customer-private'
+    and name='a0000000-0000-0000-000000000001/support/pending.png'),
+  1::bigint,
+  'Dono acessa bytes somente após o backend marcar o anexo como limpo'
 );
 
 reset role;

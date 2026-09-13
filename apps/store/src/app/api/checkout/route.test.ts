@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
-vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ payment: { enabled: true, provider: "mercadopago" } }) }));
+const integrationState = vi.hoisted(() => ({ checkoutEnabled: true }));
+vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
+  checkoutEnabled: integrationState.checkoutEnabled,
+  payment: { enabled: true, provider: "mercadopago" }
+}) }));
 vi.mock("@curtiz/integrations", () => ({
   FIXED_SHIPPING_IN_CENTS: 1_690,
   isMercadoPagoTestCredential: (value: unknown) => typeof value === "string" && value.startsWith("TEST-")
@@ -56,6 +60,7 @@ function mockCheckout(discountInCents = 0) {
 describe("checkout sem criação prematura de pedido", () => {
   beforeEach(() => {
     mockedClient.mockReset();
+    integrationState.checkoutEnabled = true;
     vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public-key");
     vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-access-token");
   });
@@ -77,5 +82,64 @@ describe("checkout sem criação prematura de pedido", () => {
     const result = await POST(request(" SAVE10 "));
     expect(rpc).toHaveBeenCalledWith("preview_professional_checkout", expect.objectContaining({ p_coupon_code: "SAVE10" }));
     await expect(result.json()).resolves.toMatchObject({ discountInCents: 1_000, shippingInCents: 1_690, amountInCents: 10_690 });
+  });
+
+  it("usa CHECKOUT_ENABLED como bloqueio server-side antes de consultar banco", async () => {
+    integrationState.checkoutEnabled = false;
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_DISABLED" });
+    expect(mockedClient).not.toHaveBeenCalled();
+  });
+
+  it("diferencia configuração Supabase ausente de sessão ausente", async () => {
+    mockedClient.mockResolvedValue(null);
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_CONFIGURATION_MISSING" });
+  });
+
+  it("retorna JSON diagnóstico quando a RPC obrigatória não foi aplicada", async () => {
+    mockedClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "customer-id" } }, error: null }) },
+      rpc: vi.fn().mockResolvedValue({ data: null, error: {
+        code: "PGRST202", message: "function not found", details: "", hint: "reload schema"
+      } })
+    } as never);
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_CONFIGURATION_INVALID" });
+  });
+
+  it("mantém 401 para sessão ausente, em vez de confundir com indisponibilidade", async () => {
+    mockedClient.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({
+      data: { user: null }, error: { name: "AuthSessionMissingError" }
+    }) } } as never);
+    const result = await POST(request());
+    expect(result.status).toBe(401);
+    await expect(result.json()).resolves.toMatchObject({ code: "AUTHENTICATION_REQUIRED" });
+  });
+
+  it("não mascara falha de banco desconhecida como alteração de estoque", async () => {
+    const rpc = mockCheckout();
+    rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "database failure" } });
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_SERVICE_UNAVAILABLE" });
+  });
+
+  it("preserva conflito comercial real sem retry", async () => {
+    const rpc = mockCheckout();
+    rpc.mockResolvedValue({ data: null, error: { code: "P0001", message: "checkout_line_unavailable" } });
+    const result = await POST(request());
+    expect(result.status).toBe(409);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("transforma exceção de runtime em JSON controlado", async () => {
+    mockedClient.mockRejectedValue(new Error("runtime failure"));
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_SERVICE_UNAVAILABLE" });
   });
 });

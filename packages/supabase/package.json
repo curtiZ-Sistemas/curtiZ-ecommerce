@@ -11,7 +11,7 @@
     "build": "tsc --outDir dist --declaration --noEmit false --incremental false",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

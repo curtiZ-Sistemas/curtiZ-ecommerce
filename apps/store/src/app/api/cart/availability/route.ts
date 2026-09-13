@@ -2,249 +2,145 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { demoProducts } from "@/lib/catalog";
-import { isVariantActuallyAvailable } from "@/lib/cart-availability";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
-import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { createPublicSupabaseClient } from "@/lib/supabase/server";
 import { readRows, readString } from "@/lib/unknown-data";
+import { safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 
-const headers = {
-  "cache-control": "no-store"
+const headers = { "cache-control": "no-store" };
+const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const requestSchema = z.object({
+  variantIds: z.array(z.string().trim().min(1).max(180)).max(50)
+});
+const uuidArraySchema = z.array(z.string().uuid()).max(50);
+
+type DatabaseError = {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
 };
 
-const requestSchema = z.object({
-  variantIds: z
-    .array(z.string().trim().min(1).max(180))
-    .max(50)
-});
+const requestIdFor = (request: Request) => {
+  const incoming = request.headers.get("x-request-id")?.trim() ?? "";
+  return requestIdPattern.test(incoming) ? incoming : crypto.randomUUID();
+};
 
-const uuidArraySchema = z
-  .array(z.string().uuid())
-  .max(50);
-
-function json(
-  body: unknown,
-  status = 200
-) {
-  return NextResponse.json(body, {
+const json = (requestId: string, body: unknown, status = 200) =>
+  NextResponse.json(body, {
     status,
-    headers
+    headers: { ...headers, "x-request-id": requestId }
   });
-}
 
-function getDemoAvailability(
-  variantIds: string[]
-) {
-  return variantIds.map((variantId) => ({
+const getDemoAvailability = (variantIds: string[]) =>
+  variantIds.map((variantId) => ({
     variantId,
     available: demoProducts.some((product) =>
       product.colors.some((color) =>
-        product.sizes.some(
-          (size) =>
-            `${product.id}:${color}:${size}` ===
-            variantId
-        )
+        product.sizes.some((size) => `${product.id}:${color}:${size}` === variantId)
       )
     )
   }));
+
+function databaseError(value: unknown): DatabaseError {
+  return safeDatabaseError(value);
 }
 
-function logSupabaseError(
-  context: string,
-  error: {
-    code?: string | null;
-    message?: string | null;
-    details?: string | null;
-    hint?: string | null;
-  }
-) {
-  /*
-   * Não registre URLs, tokens, cookies ou chaves.
-   * Estes campos são suficientes para diagnosticar
-   * erros de RPC/Postgres nos logs da Cloudflare.
-   */
-  console.error(`[cart/availability] ${context}`, {
-    code: error.code ?? null,
-    message: error.message ?? null,
-    details: error.details ?? null,
-    hint: error.hint ?? null
+function logFailure(requestId: string, code: string, error?: unknown) {
+  const details = databaseError(error);
+  console.error("[cart/availability] request failed", {
+    requestId,
+    code,
+    message: details.message ?? null,
+    details: details.details ?? null,
+    hint: details.hint ?? null,
+    databaseCode: details.code ?? null
   });
 }
 
-export async function POST(
-  request: Request
-) {
-  /*
-   * Protege o endpoint contra requisições vindas
-   * de origens não autorizadas.
-   */
-  if (!isAllowedRequestOrigin(request)) {
-    return json(
-      {
-        error: "origin_not_allowed"
-      },
-      403
-    );
-  }
+const isMissingAvailabilityMigration = (error: DatabaseError) =>
+  error.code === "PGRST202" || error.code === "42883";
 
-  /*
-   * Faz o parse do body sem permitir que JSON inválido
-   * gere uma exceção não tratada.
-   */
-  const body: unknown = await request
-    .json()
-    .catch(() => null);
-
-  const parsed = requestSchema.safeParse(body);
-
-  if (!parsed.success) {
-    return json(
-      {
-        error: "invalid_request"
-      },
-      400
-    );
-  }
-
-  /*
-   * Evita consultar a mesma variação várias vezes
-   * dentro de uma única requisição.
-   */
-  const variantIds = [
-    ...new Set(parsed.data.variantIds)
-  ];
-
-  if (variantIds.length === 0) {
-    return json({
-      items: []
-    });
-  }
-
-  /*
-   * DEMO_MODE utiliza IDs próprios que não precisam
-   * necessariamente ser UUID.
-   */
-  if (process.env.DEMO_MODE === "true") {
-    return json({
-      items: getDemoAvailability(
-        variantIds
-      )
-    });
-  }
-
-  /*
-   * Fora do modo demo, as variantes reais precisam
-   * ser UUIDs válidos antes de chegarem ao Postgres.
-   */
-  const ids = uuidArraySchema.safeParse(
-    variantIds
-  );
-
-  if (!ids.success) {
-    return json(
-      {
-        error: "invalid_variant_ids"
-      },
-      400
-    );
-  }
-
-  /*
-   * Cria um cliente server-only para consultar somente
-   * as variantes solicitadas sem expor a chave secreta.
-   *
-   * Se retornar null, falta configuração do banco no Worker.
-   */
-  const supabase =
-    createServiceSupabaseClient();
-
-  if (!supabase) {
-    console.error(
-      "[cart/availability] Server database client could not be created. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)."
-    );
-
-    return json(
-      {
-        error:
-          "availability_service_unavailable"
-      },
-      503
-    );
-  }
-
+export async function POST(request: Request) {
+  const requestId = requestIdFor(request);
   try {
-    /*
-     * Libera em lote reservas de cobranças vencidas antes de responder
-     * disponibilidade. Falhas de housekeeping não mascaram o estoque atual.
-     */
-    await supabase.rpc(
-      "expire_stale_mercadopago_orders",
-      { p_limit: 50 }
-    );
-
-    /*
-     * Consulta as tabelas existentes diretamente. Isso evita
-     * transformar uma RPC ainda não aplicada em indisponibilidade.
-     */
-    const result = await supabase
-      .from("product_variants")
-      .select("id,active,inventory(available_quantity),products!inner(status)")
-      .in("id", ids.data);
-    const { error } = result;
-
-    if (error) {
-      logSupabaseError(
-        "product variant availability query failed",
-        error
-      );
-
-      return json(
-        {
-          error:
-            "availability_query_failed"
-        },
-        503
-      );
+    if (!isAllowedRequestOrigin(request)) {
+      return json(requestId, { error: "origin_not_allowed", requestId }, 403);
     }
 
-    /*
-     * Nunca devolve null em "items".
-     * Isso simplifica o consumo no frontend.
-     */
-    const availableIds = new Set(readRows(result.data)
-      .filter(isVariantActuallyAvailable)
-      .map((row) => readString(row, "id"))
-      .filter(Boolean));
-    const items = ids.data.map((variantId) => ({
-      variantId,
-      available: availableIds.has(variantId)
-    }));
+    const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return json(requestId, { error: "invalid_request", requestId }, 400);
+    }
 
-    return json({
-      items
+    const variantIds = [...new Set(parsed.data.variantIds)];
+    if (variantIds.length === 0) return json(requestId, { items: [], requestId });
+    if (process.env.DEMO_MODE === "true") {
+      return json(requestId, { items: getDemoAvailability(variantIds), requestId });
+    }
+
+    const ids = uuidArraySchema.safeParse(variantIds);
+    if (!ids.success) {
+      return json(requestId, { error: "invalid_variant_ids", requestId }, 400);
+    }
+
+    // A public request needs only this narrowly granted RPC. It must not depend
+    // on service_role or expose direct inventory relations.
+    const supabase = createPublicSupabaseClient();
+    if (!supabase) {
+      logFailure(requestId, "SUPABASE_PUBLIC_CONFIGURATION_MISSING");
+      return json(requestId, {
+        error: "availability_configuration_missing",
+        requestId
+      }, 503);
+    }
+
+    const result = await supabase.rpc("cart_variant_stock_availability", {
+      p_variant_ids: ids.data
+    });
+    if (result.error) {
+      const error = databaseError(result.error);
+      const code = isMissingAvailabilityMigration(error)
+        ? "AVAILABILITY_MIGRATION_REQUIRED"
+        : "AVAILABILITY_QUERY_FAILED";
+      logFailure(requestId, code, result.error);
+      return json(requestId, {
+        error: code === "AVAILABILITY_MIGRATION_REQUIRED"
+          ? "availability_migration_required"
+          : "availability_query_failed",
+        requestId
+      }, 503);
+    }
+
+    const rows = readRows(result.data);
+    const byId = new Map(rows.flatMap((row) => {
+      const variantId = readString(row, "variantId");
+      return variantId && typeof row.available === "boolean"
+        ? [[variantId, row] as const]
+        : [];
+    }));
+    if (byId.size !== ids.data.length || ids.data.some((id) => !byId.has(id))) {
+      logFailure(requestId, "AVAILABILITY_INVALID_RESULT");
+      return json(requestId, { error: "availability_invalid_result", requestId }, 503);
+    }
+
+    return json(requestId, {
+      items: ids.data.map((variantId) => {
+        const row = byId.get(variantId);
+        const unavailableAt = row ? readString(row, "unavailableAt") : "";
+        return {
+          variantId,
+          available: row?.available === true,
+          ...(unavailableAt ? { unavailableAt } : {})
+        };
+      }),
+      requestId
     });
   } catch (error) {
-    /*
-     * Captura inclusive erros de rede ou exceções
-     * inesperadas do cliente Supabase.
-     */
-    console.error(
-      "[cart/availability] Unexpected availability error",
-      error instanceof Error
-        ? {
-            name: error.name,
-            message: error.message
-          }
-        : {
-            message: "Unknown error"
-          }
-    );
-
-    return json(
-      {
-        error:
-          "availability_service_unavailable"
-      },
-      503
-    );
+    logFailure(requestId, "AVAILABILITY_RUNTIME_FAILURE", error);
+    return json(requestId, {
+      error: "availability_service_unavailable",
+      requestId
+    }, 503);
   }
 }

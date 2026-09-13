@@ -10,7 +10,7 @@
     "build": "tsc --outDir dist --declaration --noEmit false --incremental false",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^4.0.10"

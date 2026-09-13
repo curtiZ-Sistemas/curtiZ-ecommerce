@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
+const integrationState = vi.hoisted(() => ({ checkoutEnabled: true }));
+vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
+  checkoutEnabled: integrationState.checkoutEnabled
+}) }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: () => true,
   MercadoPagoProviderError: class MercadoPagoProviderError extends Error { httpStatus = 502; },
@@ -28,6 +32,18 @@ vi.mock("@/lib/unknown-data", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 
 describe("confirmação de pagamento", () => {
+  it("não inicia pagamento quando CHECKOUT_ENABLED está desligado", async () => {
+    integrationState.checkoutEnabled = false;
+    const result = await POST(new NextRequest("https://loja.example/api/checkout/payment", {
+      method: "POST", headers: { origin: "https://loja.example", "content-type": "application/json" },
+      body: "{}"
+    }));
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_DISABLED" });
+    expect(createServerSupabaseClient).not.toHaveBeenCalled();
+    integrationState.checkoutEnabled = true;
+  });
+
   it("rejeita checkout sem método antes de criar pedido", async () => {
     const rpc = vi.fn();
     vi.mocked(createServerSupabaseClient).mockResolvedValue({

@@ -35,3 +35,20 @@ O banner mobile existente tem proporção 941 × 1672 e texto até a base.
 Uma redução expressiva da altura sem diminuir a legibilidade depende de nova
 arte comercial aprovada. A implementação preserva a imagem inteira e reduz
 o espaço ao redor.
+
+## Onboarding e recuperação antes de habilitar
+
+1. Cadastre e verifique um fator TOTP para pelo menos dois administradores de contingência.
+2. Confirme login, desafio AAL2, logout e nova autenticação para cada papel interno. Cliente e
+   representante sem papel interno não devem ser enviados ao desafio.
+3. Teste perda do autenticador em conta não crítica: um administrador autorizado remove o fator no
+   Supabase Auth após verificar a identidade; o usuário cadastra e verifica um novo fator antes de
+   recuperar acesso interno. Não existe código de recuperação local no projeto.
+4. Confirme que páginas e APIs do painel recusam AAL1 e que chamadas diretas ao banco continuam
+   recusadas pelas policies/funções quando a configuração privada exige MFA.
+5. Registre responsáveis e canal de escalonamento. Só depois habilite primeiro o banco e então
+   `REQUIRE_INTERNAL_MFA=true` nos dois Workers.
+
+Essa preparação é manual. Enquanto não houver evidência de dois fatores de contingência e teste de
+recuperação por papel, mantenha as duas configurações desativadas; ativar apenas a flag pode bloquear
+todos os administradores e não conclui a proteção do banco.

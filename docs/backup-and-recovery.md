@@ -39,6 +39,19 @@ Mensalmente e depois de mudanças importantes, restaure em projeto isolado segui
 
 Confira usuários, RLS, permissões, catálogo, variantes, pedidos, itens, estoque, reservas e arquivos públicos/privados. Registre duração, data da cópia e resultado. Cópia diária pode perder até um dia de alterações; avalie PITR se isso for inaceitável.
 
+Use um registro protegido por execução com estes campos mínimos: identificador do backup, início e
+fim UTC, projeto de origem, revisão do schema, hashes, contagem por bucket, destino criptografado,
+classe de retenção (`diária` ou `semanal`), data prevista de descarte e responsável. Para um teste de
+restore, acrescente projeto isolado de destino, duração, contagens comparadas, consultas funcionais
+executadas, divergências e decisão `aprovado`/`reprovado`. Um backup sem esse registro ou um restore
+com divergência permanece **não verificado**.
+
+No ciclo diário, remova somente cópias cuja retenção venceu e que tenham outra cópia íntegra na
+classe exigida. No teste mensal, selecione uma cópia já armazenada (não uma exportação criada apenas
+para o teste), restaure banco e Storage, valide autenticação/RLS sem enviar e-mails e destrua o
+projeto isolado apenas após guardar o relatório. Essas ações dependem do provedor de armazenamento,
+do cofre de chaves e de um projeto Supabase isolado; não são ativadas por este repositório.
+
 ## Quando houver infraestrutura
 
 Automatize exportação, cópia de Storage, criptografia, retenção, alertas e testes de restauração. O painel só deve indicar backup verificado com evidências reais: última cópia, cobertura, integridade e último teste de restauração. Não há automação nem restauração remota implementada nesta etapa.

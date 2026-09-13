@@ -173,14 +173,32 @@ jobs:
     if: needs.changes.outputs.store == 'true'
     runs-on: ubuntu-latest
     env:
+      PANEL_DEPLOYMENT_MODE: separate
+      DEMO_MODE: ${{ github.event_name == 'pull_request' && 'false' || vars.DEMO_MODE }}
+      CHECKOUT_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.CHECKOUT_ENABLED }}
+      PAYMENT_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.PAYMENT_PROVIDER }}
+      MERCADO_PAGO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MERCADO_PAGO_ENABLED }}
+      SHIPPING_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.SHIPPING_PROVIDER }}
+      MELHOR_ENVIO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MELHOR_ENVIO_ENABLED }}
+      EMAIL_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.EMAIL_PROVIDER }}
+      EMAIL_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.EMAIL_ENABLED }}
+      EMAIL_FROM: ${{ github.event_name != 'pull_request' && vars.EMAIL_FROM || '' }}
+      TURNSTILE_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.TURNSTILE_ENABLED }}
+      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
+      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
+      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
+      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
       NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
       NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
+      SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
+      PII_ENCRYPTION_KEY: ${{ github.event_name == 'pull_request' && 'ci-pii-placeholder-with-at-least-32-characters' || '' }}
+      AUDIT_HASH_KEY: ${{ github.event_name == 'pull_request' && 'ci-audit-placeholder' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -191,17 +209,24 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Validar variáveis públicas de produção
+      - name: Validar secrets de runtime no Cloudflare
         if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
-          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Configure a variável de repositório $name antes do deploy."
-              exit 1
-            fi
-          done
-      - run: pnpm --filter @curtiz/store build:worker
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Configure as credenciais de deploy do Cloudflare."
+            exit 1
+          fi
+          pnpm exec wrangler secret list --config apps/store/wrangler.jsonc --env production --format json > "$RUNNER_TEMP/store-worker-secrets.json"
+          pnpm exec tsx scripts/cloudflare-secret-validation.ts "$RUNNER_TEMP/store-worker-secrets.json"
+      - name: Validar migration obrigatória no Supabase remoto
+        if: github.event_name != 'pull_request'
+        run: pnpm exec tsx scripts/validate-supabase-readiness.ts
+      - name: Validar produção e compilar Worker da loja
+        run: pnpm build:worker
       - name: Publicar curtiz-ecommerce
         if: github.event_name != 'pull_request'
         env:
@@ -218,7 +243,33 @@ jobs:
             --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
             --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --var "BUILD_TIMESTAMP:${build_timestamp}" \
+            --var "APP_ENV:${APP_ENV}" \
+            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
+            --var "DEMO_MODE:${DEMO_MODE}" \
+            --var "CHECKOUT_ENABLED:${CHECKOUT_ENABLED}" \
+            --var "PAYMENT_PROVIDER:${PAYMENT_PROVIDER}" \
+            --var "MERCADO_PAGO_ENABLED:${MERCADO_PAGO_ENABLED}" \
+            --var "SHIPPING_PROVIDER:${SHIPPING_PROVIDER}" \
+            --var "MELHOR_ENVIO_ENABLED:${MELHOR_ENVIO_ENABLED}" \
+            --var "EMAIL_PROVIDER:${EMAIL_PROVIDER}" \
+            --var "EMAIL_ENABLED:${EMAIL_ENABLED}" \
+            --var "EMAIL_FROM:${EMAIL_FROM}" \
+            --var "TURNSTILE_ENABLED:${TURNSTILE_ENABLED}" \
+            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
+            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
+            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
+            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
+            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
+            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
+            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
+            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
+            --var "NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL}" \
+            --var "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+            --var "NEXT_PUBLIC_TURNSTILE_SITE_KEY:${NEXT_PUBLIC_TURNSTILE_SITE_KEY}" \
             --var "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY:${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}"
+      - name: Smoke test pós-deploy sem cobrança
+        if: github.event_name != 'pull_request'
+        run: pnpm smoke:storefront -- "$NEXT_PUBLIC_STORE_TEST_URL"
 
   panel-worker:
     name: OpenNext / Painel
@@ -226,12 +277,31 @@ jobs:
     if: needs.changes.outputs.panel == 'true'
     runs-on: ubuntu-latest
     env:
+      PANEL_DEPLOYMENT_MODE: separate
+      DEMO_MODE: "false"
+      CHECKOUT_ENABLED: "false"
+      PAYMENT_PROVIDER: disabled
+      MERCADO_PAGO_ENABLED: "false"
+      SHIPPING_PROVIDER: disabled
+      MELHOR_ENVIO_ENABLED: "false"
+      EMAIL_PROVIDER: disabled
+      EMAIL_ENABLED: "false"
+      TURNSTILE_ENABLED: "false"
+      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
+      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
+      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
+      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
       NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
       NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
       NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
+      SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
+      PII_ENCRYPTION_KEY: ${{ github.event_name == 'pull_request' && 'ci-pii-placeholder-with-at-least-32-characters' || '' }}
+      AUDIT_HASH_KEY: ${{ github.event_name == 'pull_request' && 'ci-audit-placeholder' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -242,17 +312,21 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Validar variáveis públicas de produção
+      - name: Validar secrets de runtime no Cloudflare
         if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
-          for name in NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Configure a variável de repositório $name antes do deploy."
-              exit 1
-            fi
-          done
-      - run: pnpm --filter @curtiz/panel build:worker
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Configure as credenciais de deploy do Cloudflare."
+            exit 1
+          fi
+          pnpm exec wrangler secret list --config apps/panel/wrangler.jsonc --env production --format json > "$RUNNER_TEMP/panel-worker-secrets.json"
+          pnpm exec tsx scripts/cloudflare-secret-validation.ts "$RUNNER_TEMP/panel-worker-secrets.json"
+      - name: Validar produção e compilar Worker do painel
+        run: pnpm build:worker:panel
       - name: Publicar curtiz-panel
         if: github.event_name != 'pull_request'
         env:
@@ -268,4 +342,17 @@ jobs:
           pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars \
             --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
             --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}"
+            --var "BUILD_TIMESTAMP:${build_timestamp}" \
+            --var "APP_ENV:${APP_ENV}" \
+            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
+            --var "DEMO_MODE:${DEMO_MODE}" \
+            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
+            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
+            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
+            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
+            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
+            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
+            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
+            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
+            --var "NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL}" \
+            --var "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}"

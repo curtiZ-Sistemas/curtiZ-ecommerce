@@ -162,12 +162,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       .eq("user_id", user.id)
       .order("is_default", { ascending: false })
       .order("created_at", { ascending: false }),
-    supabase
-      .from("orders")
-      .select("id,public_code,status,payment_status,subtotal,discount_total,shipping_total,grand_total,shipping_address_snapshot,cpf_last_four,placed_at,created_at")
-      .eq("customer_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50),
+    supabase.rpc("list_my_visible_orders", { p_limit: 50 }),
     supabase
       .from("favorites")
       .select("product_id,variant_id,created_at,products(id,name,slug,status,base_price,product_images(storage_path,variant_id,is_primary,sort_order),product_variants(id,color_name,size,active,price_override,inventory(available_quantity,reserved_quantity)))")

@@ -76,6 +76,7 @@ describe("environment validation", () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
+        "MERCADO_PAGO_WEBHOOK_SECRET não está configurada",
         "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY não está configurada"
       ])
     );
@@ -89,6 +90,7 @@ describe("environment validation", () => {
       MERCADO_PAGO_ENABLED: "true",
       SHIPPING_PROVIDER: "custom",
       MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-live",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "APP_USR-live"
     });
     expect(result.errors).toEqual(expect.arrayContaining([
@@ -105,6 +107,7 @@ describe("environment validation", () => {
       MERCADO_PAGO_ENABLED: "true",
       SHIPPING_PROVIDER: "fixed",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key"
     })).toMatchObject({ valid: true, errors: [] });
   });
@@ -116,6 +119,7 @@ describe("environment validation", () => {
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key",
       SHIPPING_PROVIDER: "melhorenvio",
       MELHOR_ENVIO_ENABLED: "true",
@@ -142,8 +146,8 @@ describe("environment validation", () => {
       errors: []
     });
     expect(
-      validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).valid
-    ).toBe(true);
+      validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).errors
+    ).toContain("DEMO_MODE não está configurada");
   });
 
   it("exige rate limit de autenticação em produção", () => {
@@ -155,13 +159,30 @@ describe("environment validation", () => {
     ).toContain("AUTH_RATE_LIMIT_ENABLED deve ser true em produção");
   });
 
+  it("exige estado explícito das flags críticas no deploy de produção", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: undefined,
+      MERCADO_PAGO_ENABLED: undefined,
+      TURNSTILE_ENABLED: undefined
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      "CHECKOUT_ENABLED não está configurada",
+      "MERCADO_PAGO_ENABLED não está configurada",
+      "TURNSTILE_ENABLED não está configurada"
+    ]));
+  });
+
   it("exige segredos somente quando a integração é habilitada", () => {
     expect(
       validateEnvironment("production", {
         ...disabledProduction,
         MERCADO_PAGO_ENABLED: "true"
       }).errors
-    ).toEqual(expect.arrayContaining(["MERCADO_PAGO_ACCESS_TOKEN não está configurada"]));
+    ).toEqual(expect.arrayContaining([
+      "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
+      "MERCADO_PAGO_WEBHOOK_SECRET não está configurada"
+    ]));
     expect(
       validateEnvironment("production", { ...disabledProduction, EMAIL_ENABLED: "true" }).errors
     ).toEqual(expect.arrayContaining(["RESEND_API_KEY não está configurada"]));

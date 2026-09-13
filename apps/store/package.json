@@ -12,7 +12,7 @@
     "start": "next start --port 3000",
     "lint": "eslint src",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:components": "vitest run src/components"
   },
   "dependencies": {

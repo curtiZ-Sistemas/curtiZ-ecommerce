@@ -1,7 +1,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "curtiz-ecommerce",
-  "main": ".open-next/worker.js",
+  "main": "custom-worker.ts",
   "keep_vars": true,
   "compatibility_date": "2026-07-31",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -24,6 +24,9 @@
     },
     "production": {
       "name": "curtiz-ecommerce",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
       "images": {
         "binding": "IMAGES"
       }
