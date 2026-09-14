@@ -77,7 +77,7 @@ export type MercadoPagoPayment = {
 
 export class MercadoPagoProviderError extends Error {
   constructor(
-    readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response",
+    readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
     readonly httpStatus = 502
   ) {
     super(code);
@@ -231,6 +231,30 @@ export class MercadoPagoTestPaymentProvider {
 
   async getPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
     return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+  }
+
+  async cancelPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
+    return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, {
+      method: "PUT", body: JSON.stringify({ status: "cancelled" }), signal: AbortSignal.timeout(15_000)
+    });
+  }
+
+  async refundPayment(providerPaymentId: string, amountInCents: number, idempotencyKey: string) {
+    if (!Number.isSafeInteger(amountInCents) || amountInCents <= 0 || !idempotencyKey) {
+      throw new MercadoPagoProviderError("invalid_refund", 400);
+    }
+    const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
+      method: "POST", headers: { authorization: `Bearer ${this.accessToken}`, "content-type": "application/json", "x-idempotency-key": idempotencyKey },
+      body: JSON.stringify({ amount: amountInCents / 100 }), signal: AbortSignal.timeout(15_000)
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok || !body || typeof body !== "object") throw new MercadoPagoProviderError("refund_unavailable", 503);
+    const refund = body as Record<string, unknown>;
+    if ((typeof refund.id !== "string" && typeof refund.id !== "number")
+      || !String(refund.id).trim() || Number(refund.amount) !== amountInCents / 100 || refund.status !== "approved") {
+      throw new MercadoPagoProviderError("refund_unconfirmed", 503);
+    }
+    return { id: String(refund.id) };
   }
 }
 

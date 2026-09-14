@@ -518,6 +518,10 @@ function Section({
     return (
       <>
         <SectionHeading title="Pendências operacionais" description="Tarefas bloqueadas, atrasadas e ocorrências abertas." />
+        {data.orders.map(order => <article className="operational-row" key={order.id}>
+          <strong>{order.publicCode}</strong><span className="status red">{label(order.status)}</span>
+          <p>Pedido bloqueado para separação e despacho. Acompanhar confirmação do cancelamento/reembolso.</p>
+        </article>)}
         <TaskList tasks={data.tasks.filter((task) => task.status !== "completed")} run={run} processing={processing} canExecute={capabilities.executeTasks} />
         <OccurrenceList occurrences={data.occurrences.filter((item) => !["resolved", "rejected"].includes(item.status))} />
       </>
@@ -1211,6 +1215,8 @@ const label = (value: string) =>
     shipped: "Enviado",
     delivered: "Entregue",
     manual_review: "Revisão manual",
+    refund_pending: "Cancelamento: reembolso em processamento",
+    cancellation_requested: "Cancelamento: pagamento em verificação",
     separation: "Separação",
     expedition: "Expedição",
     shipping: "Envio",

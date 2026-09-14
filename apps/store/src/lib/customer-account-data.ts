@@ -256,7 +256,9 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       hasPaymentAttempt,
       hasPaymentMethod: Boolean(payment && readString(payment, "payment_method_summary"))
     })) return [];
-    const shipment = shipmentRows.find((entry) => readString(entry, "order_id") === id);
+    const shipment = shipmentRows.find((entry) => readString(entry, "order_id") === id
+      && (readString(entry, "dispatched_at") || ["dispatched", "in_transit", "delivered", "returned"].includes(readString(entry, "status"))))
+      ?? shipmentRows.find((entry) => readString(entry, "order_id") === id);
     const trackingRows = shipment ? readRows(shipment.tracking_events) : [];
     return [{
       id,

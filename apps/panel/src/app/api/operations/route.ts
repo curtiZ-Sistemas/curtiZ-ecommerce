@@ -28,6 +28,8 @@ const orderStatuses = [
   "shipped",
   "delivered",
   "manual_review",
+  "refund_pending",
+  "cancellation_requested",
   "return_requested",
   "returned"
 ] as const;
@@ -209,7 +211,7 @@ export async function GET(request: NextRequest) {
   const supabase = authorized.supabase;
   const dashboard = section === "";
   const needsMetrics = dashboard || section === "relatorios-operacionais";
-  const needsOrders = section === "pedidos";
+  const needsOrders = section === "pedidos" || section === "pendencias";
   const needsTasks =
     dashboard || ["separacao", "expedicao", "envio", "pendencias"].includes(section);
   const needsInventory = ["estoque", "reposicao", "danificados"].includes(section);
@@ -234,6 +236,8 @@ export async function GET(request: NextRequest) {
     .range(from, to);
   if (search) orderQuery = orderQuery.or(`public_code.ilike.%${search}%,customer_name_snapshot.ilike.%${search}%`);
   if (status && (orderStatuses as readonly string[]).includes(status)) orderQuery = orderQuery.eq("status", status);
+  if (section === "pendencias") orderQuery = orderQuery.in("status", ["manual_review", "refund_pending", "cancellation_requested"]);
+  else orderQuery = orderQuery.neq("status", "cancellation_requested");
 
   let taskQuery = supabase
     .from("operational_tasks")
@@ -243,6 +247,7 @@ export async function GET(request: NextRequest) {
     )
     .order("created_at", { ascending: false })
     .range(from, to);
+  taskQuery = taskQuery.neq("status", "cancelled");
   if (status && (taskStatuses as readonly string[]).includes(status)) taskQuery = taskQuery.eq("status", status);
   const taskTypeForSection: Record<string, string> = {
     separacao: "separation",

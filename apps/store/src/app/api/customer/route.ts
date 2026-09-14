@@ -7,6 +7,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { isValidBrazilianPhone, normalizeBrazilianPhone } from "@/lib/personal-data";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
+import { cancelCustomerOrder } from "@/lib/customer-order-cancellation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -271,11 +272,11 @@ export async function POST(request: Request) {
             .eq("user_id", user.id)
             .is("read_at", null);
       break;
-    case "order_cancel":
-      response = await supabase.rpc("request_customer_order_cancellation", {
-        p_order_id: data.orderId
-      });
-      break;
+    case "order_cancel": {
+      const result = await cancelCustomerOrder(stringValue(data.orderId), user.id);
+      revalidatePath("/minha-conta", "layout");
+      return json(result.body, result.statusCode);
+    }
     case "return_request":
       response = await supabase.rpc("request_customer_return", {
         p_order_item_id: data.orderItemId,

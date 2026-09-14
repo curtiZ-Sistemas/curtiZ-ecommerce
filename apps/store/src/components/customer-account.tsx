@@ -54,6 +54,7 @@ import { SupportCenter } from "./support-center";
 import { FavoritesPanel } from "./favorites-panel";
 import {
   canContinueOrderPayment,
+  canCancelCustomerOrder,
   customerOrderActionLabel,
   customerOrderProgress,
   matchesCustomerOrderFilter,
@@ -171,7 +172,7 @@ export function CustomerAccount({
           }
         }
       }
-      setMessage(result.simulated ? result.message ?? successMessage : successMessage);
+      setMessage(result.simulated || body.action === "order_cancel" ? result.message ?? successMessage : successMessage);
       startTransition(() => router.refresh());
       return result;
     } catch {
@@ -690,7 +691,10 @@ function OrderDetails({
   pending: boolean;
 }) {
   const { add } = useCart();
-  const canCancel = ["pending_payment", "payment_approved", "processing"].includes(order.status);
+  const canCancel = canCancelCustomerOrder(order.status, order.shipment?.status, order.shipment?.dispatchedAt);
+  const cancellationDialog = useRef<HTMLDialogElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const awaitingCancellation = ["cancellation_requested", "refund_pending"].includes(order.status);
   const repeat = () => {
     order.items.forEach((item) => {
       if (!item.variantId || !item.slug) return;
@@ -805,18 +809,35 @@ function OrderDetails({
         <button className="primary-button" type="button" onClick={repeat}>Comprar novamente</button>
         {canCancel && (
           <button
+            ref={cancelButton}
             className="secondary-button"
             type="button"
             disabled={pending}
-            onClick={() => void runAction({ action: "order_cancel", orderId: order.id }, "Solicitação de cancelamento enviada.")}
+            onClick={() => cancellationDialog.current?.showModal()}
           >
-            Solicitar cancelamento
+            Cancelar pedido
           </button>
         )}
+        {awaitingCancellation ? <><p role="status">Cancelamento recebido. Não enviaremos este pedido enquanto verificamos o pagamento/reembolso.</p>
+          <button className="secondary-button" type="button" disabled={pending}
+            onClick={() => void runAction({ action: "order_cancel", orderId: order.id }, "Cancelamento confirmado. Reembolso em processamento.")}>Verificar cancelamento</button></> : null}
         <Link className="secondary-button" href={`/minha-conta/atendimento?new=1&pedido=${encodeURIComponent(order.publicCode)}`}>
           Preciso de ajuda
         </Link>
       </div>
+      <dialog ref={cancellationDialog} aria-labelledby={`cancel-order-${order.id}`} onClose={() => cancelButton.current?.focus()}>
+        <h2 id={`cancel-order-${order.id}`}>Cancelar este pedido?</h2>
+        <p>{order.paymentStatus === "approved"
+          ? "O pedido ainda não foi despachado. O pagamento será reembolsado pelo mesmo meio utilizado."
+          : "Este pedido ainda não foi pago e será cancelado."}</p>
+        <div className="customer-form-actions">
+          <button className="secondary-button" type="button" autoFocus disabled={pending} onClick={() => cancellationDialog.current?.close()}>Voltar</button>
+          <button className="primary-button" type="button" disabled={pending} onClick={() => {
+            cancellationDialog.current?.close();
+            void runAction({ action: "order_cancel", orderId: order.id }, "Pedido cancelado.");
+          }}>Confirmar cancelamento</button>
+        </div>
+      </dialog>
     </div>
   );
 }

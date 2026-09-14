@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
+import { cancelCustomerOrder } from "@/lib/customer-order-cancellation";
 
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock("@/lib/customer-order-cancellation", () => ({ cancelCustomerOrder: vi.fn() }));
 vi.mock("@curtiz/security", () => ({ DEMO_SESSION_COOKIE: "demo", verifyDemoSession: () => null }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -16,6 +18,14 @@ const body = { action: "address_save", id: savedId, label: "Casa 2", recipientNa
   city: "Sao Paulo", state: "sp", isDefault: false };
 
 describe("saved address response", () => {
+  it("cancellation passes only the authenticated customer and order ID to the backend", async () => {
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) } } as never);
+    vi.mocked(cancelCustomerOrder).mockResolvedValue({ statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } });
+    const response = await POST(new Request("https://store.example/api/customer", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "order_cancel", orderId: savedId, customer_id: "attacker", payment_id: "arbitrary", amount: 1 }) }));
+    expect(response.status).toBe(200);
+    expect(cancelCustomerOrder).toHaveBeenCalledWith(savedId,"owner");
+  });
   it.each([false, true])("preserves the saved ID even if reading the canonical address fails (%s)", async (readFails) => {
     const address = { id: savedId, label: "Casa 2", state: "SP", postal_code: "01310100", is_default: false };
     const rpc = vi.fn(async () => ({ data: savedId, error: null }));
