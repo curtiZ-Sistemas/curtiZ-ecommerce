@@ -1,7 +1,8 @@
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { CheckoutIdentityError, readCustomerCheckoutCpf } from "../../../../lib/checkout-identity";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readQueryResult, readRows, readString } from "@/lib/unknown-data";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +23,27 @@ export async function GET() {
     return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers: noStore });
   }
 
+  const identityDb = createServiceSupabaseClient();
+  if (!identityDb) {
+    return NextResponse.json(
+      { message: "Não foi possível carregar seus dados salvos." },
+      { status: 503, headers: noStore }
+    );
+  }
+  let verifiedCpfLastFour = "";
+  try {
+    verifiedCpfLastFour = (await readCustomerCheckoutCpf(identityDb, user.id)).slice(-4);
+  } catch (error) {
+    if (!(error instanceof CheckoutIdentityError) || error.code !== "CUSTOMER_IDENTITY_REQUIRED") {
+      return NextResponse.json(
+        { message: "Não foi possível carregar seus dados salvos." },
+        { status: 503, headers: noStore }
+      );
+    }
+  }
+
   const [profile, addresses] = await Promise.all([
-    supabase.from("profiles").select("full_name,phone,cpf_last_four").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name,phone").eq("id", user.id).maybeSingle(),
     supabase
       .from("addresses")
       .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")
@@ -48,7 +68,8 @@ export async function GET() {
       profile: {
         fullName: readString(profileRow, "full_name"),
         phone: readString(profileRow, "phone"),
-        cpfLastFour: readString(profileRow, "cpf_last_four"),
+        cpfConfigured: Boolean(verifiedCpfLastFour),
+        cpfLastFour: verifiedCpfLastFour,
         email: user.email ?? ""
       },
       addresses: readRows(addressesResult.data).map((address) => ({

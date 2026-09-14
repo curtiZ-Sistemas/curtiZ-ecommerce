@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
+import { encryptPII } from "../../../lib/pii";
 import { POST } from "./route";
 
 const integrationState = vi.hoisted(() => ({ checkoutEnabled: true }));
+const identityState = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
   checkoutEnabled: integrationState.checkoutEnabled,
@@ -13,14 +15,9 @@ vi.mock("@curtiz/integrations", () => ({
   FIXED_SHIPPING_IN_CENTS: 1_690,
   isMercadoPagoTestCredential: (value: unknown) => typeof value === "string" && value.startsWith("TEST-")
 }));
-vi.mock("@/lib/checkout-flow", () => ({
-  normalizeOptionalCouponCode: (value: unknown) => typeof value === "string" ? value.trim() || undefined : undefined
-}));
+vi.mock("@/lib/checkout-flow", () => import("../../../lib/checkout-flow"));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
-vi.mock("@/lib/personal-data", () => ({
-  CUSTOMER_EMAIL_MAX_LENGTH: 254, isValidBrazilianPhone: () => true, isValidCpf: () => true,
-  phoneDigits: (value: string) => value.replace(/\D/gu, ""), sanitizeCpf: (value: string) => value.replace(/\D/gu, "")
-}));
+vi.mock("@/lib/personal-data", () => import("../../../lib/personal-data"));
 vi.mock("@/lib/pii", () => ({ encryptPII: () => "encrypted-cpf" }));
 vi.mock("@/lib/unknown-data", () => ({
   isUnknownRecord: (value: unknown) => Boolean(value && typeof value === "object" && !Array.isArray(value)),
@@ -37,9 +34,9 @@ const body = {
   address: { postalCode: "01310100", street: "Avenida Paulista", number: "1000", complement: "", district: "Bela Vista", city: "Sao Paulo", state: "SP" },
   lines: [{ productId: "33333333-3333-4333-8333-333333333333", variantId: "44444444-4444-4444-8444-444444444444", color: "Preto", size: "39/40", quantity: 1 }]
 };
-const request = (couponCode?: string) => new NextRequest("https://loja.example/api/checkout", {
+const request = (payload: unknown = body) => new NextRequest("https://loja.example/api/checkout", {
   method: "POST", headers: { origin: "https://loja.example", "content-type": "application/json" },
-  body: JSON.stringify({ ...body, ...(couponCode === undefined ? {} : { couponCode }) })
+  body: JSON.stringify(payload)
 });
 
 function mockCheckout(discountInCents = 0) {
@@ -61,8 +58,22 @@ function mockCheckout(discountInCents = 0) {
 describe("checkout sem criação prematura de pedido", () => {
   beforeEach(() => {
     mockedClient.mockReset();
-    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: true, error: null }) } as never);
     vi.stubEnv("PII_ENCRYPTION_KEY", "isolated-checkout-cpf-secret-32-bytes");
+    identityState.value = {
+      customerId: "customer-id", cpfCiphertext: encryptPII("52998224725"), cpfLastFour: "4725"
+    };
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc: vi.fn((name: string, args: Record<string, string>) => {
+      if (name === "save_customer_checkout_identity") {
+        identityState.value = {
+          customerId: args.p_customer_id, cpfCiphertext: args.p_cpf_ciphertext, cpfLastFour: args.p_cpf_last_four
+        };
+        return Promise.resolve({ data: true, error: null });
+      }
+      if (name === "get_customer_checkout_identity") {
+        return Promise.resolve({ data: identityState.value, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }) } as never);
     integrationState.checkoutEnabled = true;
     vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public-key");
     vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-access-token");
@@ -82,7 +93,7 @@ describe("checkout sem criação prematura de pedido", () => {
 
   it("mantém cupom opcional e devolve totais recalculados pelo banco", async () => {
     const rpc = mockCheckout(1_000);
-    const result = await POST(request(" SAVE10 "));
+    const result = await POST(request({ ...body, couponCode: " SAVE10 " }));
     expect(rpc).toHaveBeenCalledWith("preview_professional_checkout", expect.objectContaining({ p_coupon_code: "SAVE10" }));
     await expect(result.json()).resolves.toMatchObject({ discountInCents: 1_000, shippingInCents: 1_690, amountInCents: 10_690 });
   });
@@ -144,5 +155,55 @@ describe("checkout sem criação prematura de pedido", () => {
     const result = await POST(request());
     expect(result.status).toBe(503);
     await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_SERVICE_UNAVAILABLE" });
+  });
+
+  it("não abre o pagamento quando a identidade privada está ausente", async () => {
+    mockCheckout();
+    identityState.value = null;
+    const result = await POST(request({ ...body, customer: { ...body.customer, cpf: "" } }));
+    expect(result.status).toBe(409);
+    await expect(result.json()).resolves.toEqual(expect.objectContaining({
+      ok: false, code: "CHECKOUT_INCOMPLETE", missingFields: ["cpf"]
+    }));
+  });
+
+  it("salva CPF novo, confirma a identidade privada e só então abre o pagamento", async () => {
+    mockCheckout();
+    identityState.value = null;
+    const service = createServiceSupabaseClient() as unknown as { rpc: ReturnType<typeof vi.fn> };
+    const result = await POST(request());
+    expect(result.status).toBe(200);
+    const responseText = await result.text();
+    expect(responseText).not.toContain(body.customer.cpf);
+    expect(responseText).not.toContain("cpfCiphertext");
+    expect(service.rpc).toHaveBeenCalledWith("save_customer_checkout_identity", expect.any(Object));
+    expect(service.rpc).toHaveBeenCalledWith("get_customer_checkout_identity", { p_customer_id: "customer-id" });
+  });
+
+  it("abre o pagamento com identidade privada válida sem redigitar CPF", async () => {
+    mockCheckout();
+    const service = createServiceSupabaseClient() as unknown as { rpc: ReturnType<typeof vi.fn> };
+    const result = await POST(request({ ...body, customer: { ...body.customer, cpf: "" } }));
+    expect(result.status).toBe(200);
+    expect(service.rpc).not.toHaveBeenCalledWith("save_customer_checkout_identity", expect.anything());
+    expect(service.rpc).toHaveBeenCalledWith("get_customer_checkout_identity", { p_customer_id: "customer-id" });
+  });
+
+  it.each([
+    ["name", { ...body.customer, name: "X" }],
+    ["email", { ...body.customer, email: "email-invalido" }],
+    ["phone", { ...body.customer, phone: "119999" }]
+  ])("bloqueia checkout com %s inválido", async (field, customer) => {
+    mockCheckout();
+    const result = await POST(request({ ...body, customer }));
+    expect(result.status).toBe(409);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_INCOMPLETE", missingFields: [field] });
+  });
+
+  it("bloqueia endereço incompleto antes do pagamento", async () => {
+    mockCheckout();
+    const result = await POST(request({ ...body, address: { ...body.address, district: "" } }));
+    expect(result.status).toBe(409);
+    await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_INCOMPLETE", missingFields: ["district"] });
   });
 });

@@ -10,7 +10,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useCart } from "@/components/cart-provider";
 import { CustomerCpfField } from "@/components/customer-cpf-field";
 import { MercadoPagoPaymentBrick } from "@/components/mercadopago-payment-brick";
-import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
+import { checkoutMissingFields, normalizeOptionalCouponCode, type CheckoutRequiredField } from "@/lib/checkout-flow";
 import {
   readMercadoPagoBrickSession,
   type MercadoPagoBrickSession
@@ -22,9 +22,6 @@ import {
   formatBrazilianPhone,
   formatCpf,
   formatPostalCode,
-  isValidBrazilianPhone,
-  isValidCpf,
-  isValidCustomerEmail,
   phoneDigits,
   PHONE_FORMATTED_MAX_LENGTH,
   sanitizeCpf
@@ -62,6 +59,28 @@ const states = [
 ];
 
 type PersonalField = "email" | "phone" | "cpf";
+
+const formValue = (form: FormData, name: string) => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+};
+
+const checkoutReadiness = (form: HTMLFormElement, cpfConfigured: boolean, itemCount: number) => {
+  const data = new FormData(form);
+  return checkoutMissingFields({
+    customer: {
+      name: formValue(data, "name"), email: formValue(data, "email"),
+      phone: formValue(data, "phone"), cpf: formValue(data, "cpf")
+    },
+    address: {
+      postalCode: formValue(data, "postalCode"), street: formValue(data, "street"),
+      number: formValue(data, "number"), complement: formValue(data, "complement"),
+      district: formValue(data, "district"), city: formValue(data, "city"), state: formValue(data, "state")
+    },
+    cpfConfigured,
+    itemCount
+  });
+};
 
 type SavedAddress = {
   id: string;
@@ -167,6 +186,7 @@ export default function CheckoutPage() {
   const [expandedAddressId, setExpandedAddressId] = useState("");
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [addressLabel, setAddressLabel] = useState("Casa");
+  const [cpfConfigured, setCpfConfigured] = useState(false);
   const [cpfLastFour, setCpfLastFour] = useState("");
   const [editingCpf, setEditingCpf] = useState(false);
   const [profilePhone, setProfilePhone] = useState("");
@@ -238,6 +258,11 @@ export default function CheckoutPage() {
     }
   }, []);
 
+  const updateFormReadiness = useCallback((form = formRef.current) => {
+    if (!form) return;
+    setFormComplete(!editingCpf && checkoutReadiness(form, cpfConfigured, selectedLines.length).length === 0);
+  }, [cpfConfigured, editingCpf, selectedLines.length]);
+
   const applyAddress = useCallback((address: SavedAddress) => {
     setCoupon({ code: "", name: "", discountInCents: 0 });
     setCouponMessage("");
@@ -255,7 +280,6 @@ export default function CheckoutPage() {
       if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement)
         field.value = value;
     }
-    setFormComplete(formRef.current?.checkValidity() ?? false);
   }, []);
 
   useEffect(() => {
@@ -271,8 +295,8 @@ export default function CheckoutPage() {
       checkoutRecoveryRef.current = null;
       submitButtonRef.current?.focus();
     }
-    setFormComplete(formRef.current.checkValidity());
-  }, [paymentSession, cpfLastFour, profilePhone, selectedAddressId, editingAddressId, hydrated]);
+    updateFormReadiness(formRef.current);
+  }, [paymentSession, cpfConfigured, profilePhone, selectedAddressId, editingAddressId, hydrated, updateFormReadiness]);
 
   useEffect(() => {
     if (!editingAddressId || editingAddressId === "new") return;
@@ -289,7 +313,7 @@ export default function CheckoutPage() {
       .then(async (response) => {
         if (!response.ok) return null;
         return (await response.json()) as {
-          profile?: { fullName?: string; email?: string; phone?: string; cpfLastFour?: string } | null;
+          profile?: { fullName?: string; email?: string; phone?: string; cpfConfigured?: boolean; cpfLastFour?: string } | null;
           addresses?: SavedAddress[];
         };
       })
@@ -299,12 +323,14 @@ export default function CheckoutPage() {
         setFieldIfEmpty("email", payload.profile?.email ?? "");
         setFieldIfEmpty("phone", formatBrazilianPhone(payload.profile?.phone ?? ""));
         setProfilePhone(payload.profile?.phone ?? "");
-        setCpfLastFour(payload.profile?.cpfLastFour ?? "");
+        const configured = payload.profile?.cpfConfigured === true
+          && /^\d{4}$/u.test(payload.profile.cpfLastFour ?? "");
+        setCpfConfigured(configured);
+        setCpfLastFour(configured ? payload.profile?.cpfLastFour ?? "" : "");
         const addresses = Array.isArray(payload.addresses) ? payload.addresses : [];
         setSavedAddresses(addresses);
         const preferred = addresses.find((address) => address.isDefault) ?? addresses[0];
         if (preferred) { setSelectedAddressId(preferred.id); applyAddress(preferred); }
-        window.requestAnimationFrame(() => setFormComplete(formRef.current?.checkValidity() ?? false));
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -369,28 +395,22 @@ export default function CheckoutPage() {
 
     setMessage("");
     const form = new FormData(event.currentTarget);
-    const formString = (name: string) => {
-      const value = form.get(name);
-      return typeof value === "string" ? value : "";
-    };
+    const formString = (name: string) => formValue(form, name);
     const email = formString("email");
     const phone = formString("phone");
     const cpf = formString("cpf");
     const couponCode = normalizeOptionalCouponCode(form.get("couponCode"));
+    const missingFields = checkoutReadiness(event.currentTarget, cpfConfigured, selectedLines.length);
     const errors: Partial<Record<PersonalField, string>> = {};
-    if (!isValidCustomerEmail(email)) errors.email = "Informe um e-mail válido.";
-    if (!isValidBrazilianPhone(phone)) errors.phone = "Informe um telefone válido com DDD.";
-    if ((cpf || !cpfLastFour) && !isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
+    if (missingFields.includes("email")) errors.email = "Informe um e-mail válido.";
+    if (missingFields.includes("phone")) errors.phone = "Informe um telefone válido com DDD.";
+    if (missingFields.includes("cpf")) errors.cpf = "Informe um CPF válido.";
     setFieldErrors(errors);
-    const firstInvalid = (Object.keys(errors) as PersonalField[])[0];
+    const firstInvalid = missingFields[0];
     if (firstInvalid) {
-      setMessage("Revise os dados de identificação informados.");
+      setMessage("Complete os dados obrigatórios antes de continuar.");
       const invalidField = formRef.current?.elements.namedItem(firstInvalid);
       if (invalidField instanceof HTMLElement) invalidField.focus();
-      return;
-    }
-    if (!event.currentTarget.checkValidity()) {
-      event.currentTarget.reportValidity();
       return;
     }
 
@@ -503,6 +523,27 @@ export default function CheckoutPage() {
         setPaymentUnavailable(true);
         return;
       }
+      if (code === "CHECKOUT_INCOMPLETE") {
+        const allowedFields: CheckoutRequiredField[] = [
+          "name", "email", "phone", "cpf", "postalCode", "street", "number", "district", "city", "state", "items"
+        ];
+        const serverMissingFields = Array.isArray(resultRecord.missingFields)
+          ? resultRecord.missingFields.filter((field): field is CheckoutRequiredField =>
+            typeof field === "string" && allowedFields.includes(field as CheckoutRequiredField))
+          : [];
+        if (serverMissingFields.includes("cpf")) {
+          setCpfConfigured(false);
+          setCpfLastFour("");
+          setFieldErrors((current) => ({ ...current, cpf: "Informe um CPF válido." }));
+        }
+        setMessage(resultMessage || "Complete os dados obrigatórios antes de continuar.");
+        const firstMissing = serverMissingFields[0];
+        if (firstMissing) window.requestAnimationFrame(() => {
+          const field = formRef.current?.elements.namedItem(firstMissing);
+          if (field instanceof HTMLElement) field.focus();
+        });
+        return;
+      }
       if (
         response.ok &&
         /^\/pedido\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/pagamento$/iu.test(redirectTo)
@@ -523,7 +564,10 @@ export default function CheckoutPage() {
         setMessage(resultMessage || "Não foi possível iniciar o pagamento.");
         return;
       }
-      if (cpf) setCpfLastFour(sanitizeCpf(cpf).slice(-4));
+      if (cpf) {
+        setCpfConfigured(true);
+        setCpfLastFour(sanitizeCpf(cpf).slice(-4));
+      }
       const cpfInput = formRef.current?.elements.namedItem("cpf");
       if (cpfInput instanceof HTMLInputElement) cpfInput.value = "";
       setPaymentSession(session);
@@ -659,8 +703,8 @@ export default function CheckoutPage() {
         className="checkout-layout"
         noValidate
         onSubmit={(event) => void submit(event)}
-        onInput={(event) => setFormComplete(event.currentTarget.checkValidity())}
-        onChange={(event) => setFormComplete(event.currentTarget.checkValidity())}
+        onInput={(event) => updateFormReadiness(event.currentTarget)}
+        onChange={(event) => updateFormReadiness(event.currentTarget)}
       >
         <div className="checkout-form-column">
           <section className="checkout-section" aria-labelledby="checkout-identification-title">
@@ -724,9 +768,11 @@ export default function CheckoutPage() {
                 )}
               </div>
               <div className="field">
-                {!cpfLastFour && <label htmlFor="cpf">CPF para o pedido</label>}
-                {cpfLastFour ? <>
-                  <CustomerCpfField lastFour={cpfLastFour} onSaved={setCpfLastFour} onEditingChange={setEditingCpf} />
+                {!cpfConfigured && <label htmlFor="cpf">CPF para o pedido</label>}
+                {cpfConfigured ? <>
+                  <CustomerCpfField lastFour={cpfLastFour} onSaved={(lastFour) => {
+                    setCpfConfigured(true); setCpfLastFour(lastFour);
+                  }} onEditingChange={setEditingCpf} />
                   <input type="hidden" id="cpf" name="cpf" value="" />
                 </> : <input
                   id="cpf"

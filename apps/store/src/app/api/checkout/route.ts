@@ -3,10 +3,10 @@ import { getIntegrationConfig } from "@curtiz/config";
 import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
+import { checkoutMissingFields, normalizeOptionalCouponCode, type CheckoutRequiredField } from "@/lib/checkout-flow";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { CUSTOMER_EMAIL_MAX_LENGTH, isValidBrazilianPhone, isValidCpf, phoneDigits, sanitizeCpf } from "@/lib/personal-data";
-import { saveCustomerCheckoutIdentity } from "../../../lib/checkout-identity";
+import { CheckoutIdentityError, readCustomerCheckoutCpf, saveCustomerCheckoutIdentity } from "../../../lib/checkout-identity";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../lib/checkout-diagnostics";
@@ -43,6 +43,20 @@ const reply = (requestId: string, body: Record<string, unknown>, status: number)
 const readDatabaseError = safeDatabaseError;
 
 const infrastructureErrorCodes = new Set(["PGRST200", "PGRST202", "42P01", "42703", "42883"]);
+
+const incompleteFields = (error: z.ZodError): CheckoutRequiredField[] => {
+  const fields = new Set<CheckoutRequiredField>();
+  for (const issue of error.issues) {
+    const [section, field] = issue.path;
+    if (section === "customer" && ["name", "email", "phone", "cpf"].includes(String(field))) {
+      fields.add(field as CheckoutRequiredField);
+    } else if (section === "address"
+      && ["postalCode", "street", "number", "district", "city", "state"].includes(String(field))) {
+      fields.add(field as CheckoutRequiredField);
+    } else if (section === "lines") fields.add("items");
+  }
+  return [...fields];
+};
 
 function logFailure(requestId: string, code: string, error?: unknown) {
   const database = readDatabaseError(error);
@@ -100,7 +114,13 @@ export async function POST(request: NextRequest) {
     }, 401);
 
     const parsed = schema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return reply(requestId, { ok: false, code: "INVALID_REQUEST", message: "Revise os dados do checkout." }, 400);
+    if (!parsed.success) {
+      const missingFields = incompleteFields(parsed.error);
+      return missingFields.length
+        ? reply(requestId, { ok: false, code: "CHECKOUT_INCOMPLETE", missingFields,
+          message: "Complete os dados obrigatórios antes de continuar." }, 409)
+        : reply(requestId, { ok: false, code: "INVALID_REQUEST", message: "Revise os dados do checkout." }, 400);
+    }
 
     const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
     const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
@@ -146,16 +166,38 @@ export async function POST(request: NextRequest) {
       return reply(requestId, { ok: false, code: "INVALID_QUOTE", message: "Não foi possível validar o total do checkout." }, 503);
     }
 
+    const identityDb = createServiceSupabaseClient();
+    if (!identityDb) {
+      logFailure(requestId, "IDENTITY_CONFIGURATION_MISSING");
+      return reply(requestId, { ok: false, code: "CHECKOUT_SERVICE_UNAVAILABLE",
+        message: "O checkout está temporariamente indisponível." }, 503);
+    }
     if (parsed.data.customer.cpf) {
       try {
-        const identityDb = createServiceSupabaseClient();
-        if (!identityDb) throw new Error();
         await saveCustomerCheckoutIdentity(identityDb, auth.data.user.id, parsed.data.customer.cpf);
       } catch {
         logFailure(requestId, "IDENTITY_PERSISTENCE_FAILED");
         return reply(requestId, { ok: false, code: "IDENTITY_PERSISTENCE_FAILED", message: "Não foi possível salvar sua identificação agora." }, 503);
       }
     }
+    try {
+      await readCustomerCheckoutCpf(identityDb, auth.data.user.id);
+    } catch (error) {
+      if (error instanceof CheckoutIdentityError && error.code === "CUSTOMER_IDENTITY_REQUIRED") {
+        return reply(requestId, { ok: false, code: "CHECKOUT_INCOMPLETE", missingFields: ["cpf"],
+          message: "Informe e salve o CPF antes de continuar." }, 409);
+      }
+      logFailure(requestId, "IDENTITY_VALIDATION_FAILED");
+      return reply(requestId, { ok: false, code: "CHECKOUT_SERVICE_UNAVAILABLE",
+        message: "Não foi possível validar sua identificação agora." }, 503);
+    }
+
+    const missingFields = checkoutMissingFields({
+      customer: parsed.data.customer, address: parsed.data.address,
+      cpfConfigured: true, itemCount: parsed.data.lines.length
+    });
+    if (missingFields.length) return reply(requestId, { ok: false, code: "CHECKOUT_INCOMPLETE", missingFields,
+      message: "Complete os dados obrigatórios antes de continuar." }, 409);
 
     const profileResult = readQueryResult(await supabase.from("profiles").update({
       full_name: parsed.data.customer.name, phone: parsed.data.customer.phone || null, updated_at: new Date().toISOString()
