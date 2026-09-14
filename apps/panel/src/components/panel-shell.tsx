@@ -322,6 +322,7 @@ export function PanelShell({
   const [signingOut, setSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const closeMenu = (restoreFocus = false) => {
@@ -381,7 +382,10 @@ export function PanelShell({
   useEffect(() => {
     if (!searchOpen) return;
     const closeSearch = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setSearchOpen(false);
+      if (event.key === "Escape") {
+        setSearchOpen(false);
+        searchButtonRef.current?.focus();
+      }
     };
     document.addEventListener("keydown", closeSearch);
     return () => document.removeEventListener("keydown", closeSearch);
@@ -570,15 +574,20 @@ export function PanelShell({
           </nav>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
-              <PanelGlobalSearch role={role} onNavigate={() => setSearchOpen(false)} />
+              <PanelGlobalSearch role={role} onNavigate={() => setSearchOpen(false)} onClose={() => {
+                setSearchOpen(false);
+                searchButtonRef.current?.focus();
+              }} />
             )}
             <button
+              ref={searchButtonRef}
               type="button"
               onClick={() => setSearchOpen((current) => !current)}
               aria-label={searchOpen ? "Fechar busca" : "Abrir busca"}
               aria-expanded={searchOpen}
+              aria-controls={searchOpen ? "panel-global-search" : undefined}
             >
-              {searchOpen ? <X /> : <Search />}
+              <Search aria-hidden="true" />
             </button>
           </div>
           <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">

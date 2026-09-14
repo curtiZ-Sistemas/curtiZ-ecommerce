@@ -14447,10 +14447,9 @@ body:has(.checkout-transition) .help-widget {
 }
 .checkout-saved-addresses { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 12px; }
 .checkout-address-card { min-width: 0; border: 1px solid var(--neutral-200); border-radius: var(--radius-sm); background: var(--white); transition: border-color 200ms ease; }
-.checkout-address-card.selected { border-color: var(--neutral-900); }
 .checkout-address-card-heading { display: flex; align-items: center; gap: 8px; padding: 14px 12px; }
 .checkout-address-card-heading label { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
-.checkout-address-card-heading input { flex: 0 0 auto; accent-color: #111; }
+.checkout-address-card-heading input { flex: 0 0 auto; accent-color: #62130f; }
 .checkout-address-card-heading label > svg { flex: 0 0 auto; width: 18px; height: 18px; color: var(--neutral-700); }
 .checkout-address-card-heading label span { display: grid; min-width: 0; gap: 2px; overflow-wrap: anywhere; }
 .checkout-address-card-heading small { color: var(--neutral-600); font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }

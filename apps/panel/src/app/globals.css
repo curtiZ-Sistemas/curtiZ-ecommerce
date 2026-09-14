@@ -9705,38 +9705,79 @@ button:not(:disabled):active,
 
 /* Busca global protegida, agrupada pelos recursos disponíveis para a função atual. */
 .panel-global-search {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(440px, calc(100vw - 24px));
+  height: 40px;
+  animation: panel-search-reveal 180ms ease-out both;
+}
+
+.topbar-search,
+.topbar-search.open {
   position: relative;
-  width: 0;
-  opacity: 0;
-  transition:
-    width 220ms ease,
-    opacity 180ms ease;
+  inset: auto;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 40px;
+  z-index: 2;
+  background: transparent;
 }
 
-.topbar-search.open .panel-global-search {
-  width: min(42vw, 460px);
-  opacity: 1;
-}
-
-.panel-global-search > svg:first-child {
+.panel-global-search-icon {
   position: absolute;
   z-index: 1;
   top: 50%;
   left: 12px;
   width: 17px;
+  height: 17px;
+  pointer-events: none;
   transform: translateY(-50%);
   color: var(--muted);
 }
 
-.panel-global-search input {
-  padding-left: 38px;
+.topbar-search .panel-global-search input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 68px 0 38px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font: inherit;
+  font-size: .8rem;
+  background: white;
+  box-shadow: 0 4px 14px rgb(32 31 30 / 8%);
+}
+
+.topbar-search .panel-global-search input:focus-visible {
+  outline: 2px solid var(--brand-800);
+  outline-offset: 2px;
+}
+
+.topbar-search.open > button { border-radius: 3px; }
+.topbar-search .panel-global-search-close {
+  position: absolute;
+  inset: 1px 1px auto auto;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--muted);
+}
+.panel-global-search-close svg { width: 17px; height: 17px; }
+.panel-global-search-close:focus-visible { outline: 2px solid var(--brand-800); outline-offset: -3px; }
+@keyframes panel-search-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .panel-global-search-loader {
   position: absolute;
   top: 10px;
-  right: 10px;
+  right: 44px;
   width: 18px;
+  height: 18px;
   color: var(--brand-800);
 }
 
@@ -9745,14 +9786,14 @@ button:not(:disabled):active,
   z-index: var(--z-overlay);
   top: calc(100% + 8px);
   right: 0;
-  width: min(92vw, 460px);
-  max-height: min(520px, calc(100dvh - 90px));
+  width: 100%;
+  max-height: min(520px, calc(100dvh - 150px));
   overflow-y: auto;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 3px;
   background: white;
-  box-shadow: 0 14px 30px rgb(32 31 30 / 13%);
+  box-shadow: 0 8px 24px rgb(32 31 30 / 10%);
 }
 
 .panel-global-search-results section + section {
@@ -9776,6 +9817,7 @@ button:not(:disabled):active,
   padding: 9px;
   border-radius: 5px;
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .panel-global-search-results a:hover,
@@ -9798,15 +9840,16 @@ button:not(:disabled):active,
   text-align: center;
 }
 
-@media (max-width: 800px) {
-  .topbar-search.open .panel-global-search {
-    width: 100%;
+@media (max-width: 1200px) {
+  .topbar-search, .topbar-search.open { position: static; }
+  .topbar-search .panel-global-search {
+    top: calc(100% + 8px);
+    right: 12px;
+    width: min(440px, calc(100% - 24px));
   }
-
-  .panel-global-search-results {
-    right: -42px;
-    width: calc(100vw - 24px);
-  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-global-search { animation: none; }
 }
 
 /* Camada final: estes estados precisam prevalecer sobre o legado durante a migração. */

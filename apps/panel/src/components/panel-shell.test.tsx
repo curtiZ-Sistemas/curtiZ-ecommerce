@@ -1,9 +1,20 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PanelShell, panelSearchRoute, panelSectionLabel } from "./panel-shell";
+import { PanelGlobalSearch } from "./panel-global-search";
 
 describe("PanelShell multipainel", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("mantém os controles acessíveis dentro do campo da busca", () => {
+    vi.stubGlobal("React", React);
+    const markup = renderToStaticMarkup(<PanelGlobalSearch role="administracao" onNavigate={() => {}} onClose={() => {}} />);
+    expect(markup).toContain('panel-global-search-icon');
+    expect(markup).toContain('aria-label="Fechar busca"');
+    expect(markup).toContain('class="panel-global-search-close"');
+    expect(markup).toContain('for="panel-search"');
+    expect(markup).toContain('aria-controls="panel-search-results"');
+  });
   it("mostra a troca no cabeçalho e no menu quando há múltiplos painéis", () => {
     const markup = renderToStaticMarkup(
       <PanelShell role="administracao" section="" canSwitchPanel>
