@@ -36,7 +36,7 @@ const schema = z.object({
   orderId: z.string().uuid().optional(), idempotencyKey: z.string().uuid(),
   checkoutIdempotencyKey: z.string().uuid().optional(), checkout: checkoutSchema.optional(),
   payment: z.object({
-    token: z.string().trim().min(1).max(500).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
+    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u), installments: z.coerce.number().int().min(1).max(48).default(1),
     payer: z.object({ entity_type: z.enum(["individual", "association"]), type: z.literal("customer").optional(),
       id: z.string().regex(/^[a-zA-Z0-9_+-]{1,100}$/u).optional(), identification: z.object({
@@ -44,6 +44,20 @@ const schema = z.object({
     }).optional() })
   })
 }).refine((value) => Boolean(value.orderId || value.checkout), "Pedido ou checkout obrigatório.");
+
+const mercadoPagoCardMethodIds = new Set([
+  "amex", "debcabal", "debmaster", "debvisa", "diners", "elo", "hipercard", "master", "visa"
+]);
+const validatePaymentMethod = (payment: z.infer<typeof schema>["payment"]) => {
+  if (payment.payment_method_id === "pix" || payment.payment_method_id === "bolbradesco") return null;
+  if (!mercadoPagoCardMethodIds.has(payment.payment_method_id)) return {
+    code: "INVALID_PAYMENT_METHOD", message: "O meio de pagamento selecionado é inválido."
+  };
+  if (!payment.token) return {
+    code: "INVALID_CARD_TOKEN", message: "Revise os dados do cartão e gere uma nova tentativa."
+  };
+  return null;
+};
 
 const noStore = { "cache-control": "private, no-store" };
 const response = (body: Record<string, unknown>, status: number) => NextResponse.json(body, { status, headers: noStore });
@@ -137,6 +151,8 @@ async function handlePost(request: NextRequest, requestId: string) {
     reportFailure("TEST_CREDENTIALS_REQUIRED");
     return response({ ok: false, message: "O pagamento de teste está indisponível." }, 503);
   }
+  const methodValidation = validatePaymentMethod(parsed.data.payment);
+  if (methodValidation) return response({ ok: false, ...methodValidation, recovery: "new_attempt" }, 400);
   // This mode is established by server credentials, never by the submitted payload.
   const savedPayer = parsed.data.payment.payer.type === "customer";
   const suppliedDocument = parsed.data.payment.payer.identification?.number?.trim() ?? "";
@@ -162,18 +178,6 @@ async function handlePost(request: NextRequest, requestId: string) {
     }
   } else if (parsed.data.payment.payer.id) return response({ ok: false, code: "INVALID_PAYMENT_REQUEST", recovery: "new_attempt",
     message: "Revise os dados do pagamento." }, 400);
-  try {
-    const availableMethods = await provider.getPaymentMethodIds();
-    if (!availableMethods.includes(parsed.data.payment.payment_method_id)) {
-      return response({ ok: false, code: "INVALID_PAYMENT_METHOD", recovery: "new_attempt",
-        message: "O meio de pagamento selecionado não está disponível." }, 400);
-    }
-  } catch (error) {
-    const providerStatus = error instanceof MercadoPagoProviderError ? error.httpStatus : undefined;
-    reportFailure("PAYMENT_METHOD_VALIDATION_FAILED", providerStatus);
-    return response({ ok: false, message: "Não foi possível validar os meios de pagamento agora." }, 502);
-  }
-
   let orderId = parsed.data.orderId ?? "";
   if (!orderId && parsed.data.checkout) {
     const checkout = parsed.data.checkout;

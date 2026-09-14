@@ -77,7 +77,7 @@ export type MercadoPagoPayment = {
 
 export class MercadoPagoProviderError extends Error {
   constructor(
-    readonly code: "invalid_test_credential" | "provider_unavailable" | "invalid_provider_response",
+    readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response",
     readonly httpStatus = 502
   ) {
     super(code);
@@ -171,7 +171,10 @@ export class MercadoPagoTestPaymentProvider {
     if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
     const response = await fetch(`https://api.mercadopago.com${path}`, { ...init, headers });
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw new MercadoPagoProviderError("provider_unavailable", response.status);
+    if (!response.ok) throw new MercadoPagoProviderError(
+      response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
+      response.status
+    );
     return mercadoPagoPayment(body);
   }
 

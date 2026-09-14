@@ -6,7 +6,9 @@ import { POST } from "./route";
 import { validateSavedCardCustomer, validateSavedCardPayer } from "@/lib/mercadopago-saved-cards";
 import { decryptPII, encryptPII } from "../../../../lib/pii";
 
-const state = vi.hoisted(() => ({ checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn() }));
+const state = vi.hoisted(() => ({
+  checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn(), getPaymentMethodIds: vi.fn()
+}));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled }) }));
 vi.mock("@curtiz/integrations", () => ({
@@ -15,7 +17,7 @@ vi.mock("@curtiz/integrations", () => ({
     constructor(code: string, readonly httpStatus = 502) { super(code); }
   },
   MercadoPagoTestPaymentProvider: class {
-    getPaymentMethodIds() { return Promise.resolve(["pix", "visa", "bolbradesco"]); }
+    getPaymentMethodIds = state.getPaymentMethodIds;
     createPayment = state.createPayment;
     getPayment = state.getPayment;
   }
@@ -134,6 +136,7 @@ describe("confirmação de pagamento", () => {
     vi.stubEnv("PII_ENCRYPTION_KEY", "isolated-payment-cpf-secret-32-bytes");
     state.createPayment.mockReset().mockResolvedValue(providerPayment());
     state.getPayment.mockReset().mockResolvedValue(providerPayment());
+    state.getPaymentMethodIds.mockReset().mockResolvedValue(["visa"]);
     vi.mocked(validateSavedCardPayer).mockReset();
     vi.mocked(validateSavedCardCustomer).mockReset().mockResolvedValue("customer-owned");
   });
@@ -156,6 +159,42 @@ describe("confirmação de pagamento", () => {
     expect(decryptPII(ciphertext)).toBe(body.checkout.customer.cpf);
     expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ customerDocument: "12345678909", idempotencyKey: firstKey }));
     expect(db.order.cpf_last_four).toBe("4725");
+  });
+  it("envia Pix ao provider mesmo quando o diagnóstico de meios não contém pix", async () => {
+    const db = database();
+    const result = await POST(request({ ...body, payment: {
+      payment_method_id: "pix", payer: { entity_type: "individual", identification: { type: "CPF", number: "12345678909" } }
+    } }));
+    expect(result.status).toBe(200);
+    expect(state.getPaymentMethodIds).not.toHaveBeenCalled();
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ paymentMethodId: "pix" }));
+    expect(db.attempts.get(firstKey)?.payment_method).toBe("pix");
+  });
+  it("aceita o boleto bolbradesco devolvido pelo Brick", async () => {
+    const db = database();
+    const result = await POST(request({ ...body, payment: {
+      payment_method_id: "bolbradesco", payer: { entity_type: "individual", identification: { type: "CPF", number: "12345678909" } }
+    } }));
+    expect(result.status).toBe(200);
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ paymentMethodId: "bolbradesco" }));
+    expect(db.attempts.get(firstKey)?.payment_method).toBe("bolbradesco");
+  });
+  it("aceita cartão conhecido somente com token gerado pelo Brick", async () => {
+    database();
+    expect((await POST(request())).status).toBe(200);
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({
+      paymentMethodId: "visa", token: "first-card-token"
+    }));
+  });
+  it("recusa cartão sem token antes de criar pedido", async () => {
+    const db = database();
+    const result = await POST(request({ ...body, payment: {
+      payment_method_id: "visa", payer: body.payment.payer
+    } }));
+    expect(result.status).toBe(400);
+    expect(await result.json()).toMatchObject({ code: "INVALID_CARD_TOKEN", recovery: "new_attempt" });
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(state.createPayment).not.toHaveBeenCalled();
   });
   it("paga cartão salvo com Customer verificado no servidor e token novo", async () => {
     database();
@@ -265,14 +304,18 @@ describe("confirmação de pagamento", () => {
   });
   it.each(["", "forged_method"])("recusa método inválido antes de criar pedido: %s", async payment_method_id => {
     const db = database();
-    expect((await POST(request({ ...body, payment: { ...body.payment, payment_method_id } }))).status).toBe(400);
-    expect(db.rpc).not.toHaveBeenCalled();
+    const result = await POST(request({ ...body, payment: { ...body.payment, payment_method_id } }));
+    expect(result.status).toBe(400);
+    expect(await result.json()).toMatchObject({
+      code: payment_method_id ? "INVALID_PAYMENT_METHOD" : "INVALID_PAYMENT_REQUEST"
+    });
+    expect(db.rpc).not.toHaveBeenCalled(); expect(state.createPayment).not.toHaveBeenCalled();
   });
-  it("recusa 400 não envenena a próxima chave de tentativa", async () => {
+  it.each([400, 422])("recusa %s do /v1/payments não é mascarada nem envenena nova tentativa", async providerStatus => {
     const db = database();
-    state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("provider_unavailable", 400));
+    state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("payment_rejected", providerStatus));
     const first = await POST(request()); expect(first.status).toBe(422);
-    expect(await first.json()).toMatchObject({ recovery: "new_attempt", orderId });
+    expect(await first.json()).toMatchObject({ code: "PROVIDER_PAYMENT_REJECTED", recovery: "new_attempt", orderId });
     expect((await POST(request({ ...body, idempotencyKey: secondKey, payment: { ...body.payment, token: "corrected-token" } }))).status).toBe(200);
     expect(db.creationKeys.size).toBe(1); expect(db.attempts.size).toBe(2);
     expect(state.createPayment.mock.calls.map(([input]) => (input as MercadoPagoPaymentInput).idempotencyKey)).toEqual([firstKey, secondKey]);
