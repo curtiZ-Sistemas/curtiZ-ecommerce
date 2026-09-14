@@ -46,6 +46,10 @@ const body = {
   payment: { payment_method_id: "visa", token: "first-card-token", installments: 1,
     payer: { entity_type: "individual", identification: { type: "CPF", number: "12345678909" } } }
 };
+const pixBody = { ...body, payment: {
+  payment_method_id: "pix", installments: 1,
+  payer: { entity_type: "individual", identification: { type: "CPF", number: "12345678909" } }
+} };
 const request = (payload: unknown = body) => new NextRequest("https://loja.example/api/checkout/payment", {
   method: "POST", headers: { origin: "https://loja.example", "content-type": "application/json" }, body: JSON.stringify(payload)
 });
@@ -55,6 +59,10 @@ const providerPayment = (status = "approved"): MercadoPagoPayment => ({
   pixCopyPaste: "", pixQrCodeBase64: "", boletoUrl: "", digitableLine: "", providerFeeInCents: null,
   netReceivedInCents: null, installments: 1, refunds: []
 });
+const providerPixPayment = (): MercadoPagoPayment => ({
+  ...providerPayment("pending"), paymentMethodId: "pix", paymentTypeId: "bank_transfer",
+  expiresAt: "2099-01-01T00:30:00.000Z", pixCopyPaste: "pix-copia-e-cola", pixQrCodeBase64: "pix-qr-base64"
+});
 type QueryResult = { data: unknown; error: unknown };
 type Attempt = { id: string; provider_payment_id: string; status: string; payment_method: string; fingerprint: unknown };
 
@@ -62,7 +70,8 @@ function database() {
   const identity = { customerId: "customer-id", cpfCiphertext: encryptPII(body.checkout.customer.cpf), cpfLastFour: "4725" };
   const order = { id: orderId, public_code: "CZ-123", customer_id: "customer-id", customer_email_snapshot: "cliente@example.com",
     customer_name_snapshot: "Cliente Teste", cpf_last_four: "4725", status: "pending_payment", grand_total: 67.9, currency: "BRL" };
-  const payment = { id: "local-payment", status: "pending", provider_payment_id: "", amount: 67.9, currency: "BRL" };
+  const payment = { id: "local-payment", status: "pending", provider_payment_id: "", payment_method_summary: "",
+    pix_copy_paste: "", pix_qr_code_base64: "", amount: 67.9, currency: "BRL" };
   const attempts = new Map<string, Attempt>();
   const creationKeys = new Set<unknown>();
   const failures = { creation: "", attempt: "", finalize: "" };
@@ -339,6 +348,57 @@ describe("confirmação de pagamento", () => {
     expect(await (await POST(request())).json()).toMatchObject({ status: "approved" });
     expect(state.createPayment).toHaveBeenCalledTimes(1);
     expect(state.getPayment).toHaveBeenCalledWith("provider-1");
+  });
+  it("Pix persistido usa estado local quando getPayment falha, sem criar cobrança duplicada", async () => {
+    const db = database();
+    state.createPayment.mockResolvedValueOnce(providerPixPayment());
+    expect(await (await POST(request(pixBody))).json()).toMatchObject({ status: "pending" });
+    expect(db.payment).toMatchObject({
+      provider_payment_id: "provider-1", payment_method_summary: "bank_transfer:pix",
+      pix_copy_paste: "pix-copia-e-cola", pix_qr_code_base64: "pix-qr-base64"
+    });
+    state.getPayment.mockRejectedValueOnce(new MercadoPagoProviderError("provider_unavailable", 500));
+    const retry = await POST(request(pixBody));
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({
+      ok: true, status: "pending", recovery: "view_order", orderId, orderCode: "CZ-123"
+    });
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+    expect(state.getPayment).toHaveBeenCalledExactlyOnceWith("provider-1");
+    expect(db.payment.pix_copy_paste).toBe("pix-copia-e-cola");
+    expect(db.payment.pix_qr_code_base64).toBe("pix-qr-base64");
+  });
+  it("provider_payment_id e QR Pix locais recuperam até uma tentativa ainda sem provider id", async () => {
+    const db = database();
+    Object.assign(db.payment, {
+      provider_payment_id: "provider-pix", payment_method_summary: "bank_transfer:pix",
+      pix_copy_paste: "pix-existente", pix_qr_code_base64: "qr-existente"
+    });
+    state.getPayment.mockRejectedValueOnce(new MercadoPagoProviderError("provider_unavailable", 503));
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ ok: true, status: "pending", recovery: "view_order" });
+    expect(state.getPayment).toHaveBeenCalledWith("provider-pix");
+    expect(state.createPayment).not.toHaveBeenCalled();
+    expect(db.payment).toMatchObject({ pix_copy_paste: "pix-existente", pix_qr_code_base64: "qr-existente" });
+  });
+  it("Pix salvo antes de falha na finalização retorna pending/view_order", async () => {
+    const db = database(); db.failures.finalize = "failed";
+    state.createPayment.mockResolvedValueOnce(providerPixPayment());
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ ok: true, status: "pending", recovery: "view_order" });
+    expect(db.payment).toMatchObject({ provider_payment_id: "provider-1", pix_copy_paste: "pix-copia-e-cola" });
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+  });
+  it("mantém 502 quando Pix falha sem provider_payment_id nem QR persistido", async () => {
+    const db = database();
+    state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("provider_unavailable", 500));
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(502);
+    expect(await result.json()).toMatchObject({ code: "PAYMENT_RESULT_UNCERTAIN", recovery: "retry_attempt" });
+    expect(db.payment.provider_payment_id).toBe("");
+    expect(db.payment.pix_copy_paste).toBe("");
   });
   it("falha na finalização retenta a cobrança existente, sem criar outra", async () => {
     const db = database(); db.failures.finalize = "failed";

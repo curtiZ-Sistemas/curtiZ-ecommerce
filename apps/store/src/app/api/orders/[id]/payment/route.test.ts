@@ -21,7 +21,9 @@ function setup(status = "pending_payment", paymentStatus = "pending", expiresAt 
       eq: vi.fn(() => query),
       maybeSingle: vi.fn(async () => ({ data: table === "orders"
         ? { id: "order-id", customer_id: "customer-id", public_code: "ORDER", status, payment_status: paymentStatus }
-        : { id: "payment-id", status: paymentStatus, status_detail: detail, expires_at: expiresAt, payment_method_summary: "pix" }, error: null }))
+        : { id: "payment-id", provider_payment_id: "provider-pix", status: paymentStatus, status_detail: detail,
+          expires_at: expiresAt, payment_method_summary: "pix", pix_copy_paste: "pix-salvo",
+          pix_qr_code_base64: "qr-salvo", amount: 67.9, currency: "BRL" }, error: null }))
     };
     return query;
   });
@@ -53,7 +55,9 @@ describe("payment endpoint resumption guard", () => {
     const from = setup();
     const response = await GET(request, context);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expect.objectContaining({ status: "pending" }));
+    expect(await response.json()).toEqual(expect.objectContaining({
+      status: "pending", pixCopyPaste: "pix-salvo", pixQrCodeBase64: "qr-salvo"
+    }));
     expect(from).toHaveBeenCalledWith("orders");
   });
   it("requires authentication", async () => {

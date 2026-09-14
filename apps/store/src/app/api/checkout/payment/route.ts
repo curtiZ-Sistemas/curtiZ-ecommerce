@@ -114,6 +114,15 @@ const logFailure = (code: string, status?: number, requestId?: string, error?: u
     message: database.message || null, details: database.details || null, hint: database.hint || null
   });
 };
+const isPersistedPendingPix = (payment: Record<string, unknown>) => {
+  const method = readString(payment, "payment_method_summary");
+  return Boolean(
+    readString(payment, "provider_payment_id")
+    && normalizeMercadoPagoStatus(readString(payment, "status")) === "pending"
+    && (method === "pix" || method.endsWith(":pix"))
+    && (readString(payment, "pix_copy_paste") || readString(payment, "pix_qr_code_base64"))
+  );
+};
 
 async function handlePost(request: NextRequest, requestId: string) {
   const reportFailure = (code: string, status?: number, error?: unknown) => logFailure(code, status, requestId, error);
@@ -255,12 +264,14 @@ async function handlePost(request: NextRequest, requestId: string) {
   }
 
   const paymentResult = readQueryResult(await db.from("payments")
-    .select("id,status,provider_payment_id,amount,currency").eq("order_id", orderId).eq("provider", "mercadopago").maybeSingle());
+    .select("id,status,provider_payment_id,payment_method_summary,pix_copy_paste,pix_qr_code_base64,amount,currency")
+    .eq("order_id", orderId).eq("provider", "mercadopago").maybeSingle());
   if (paymentResult.error || !isUnknownRecord(paymentResult.data)) return response({ ok: false, message: "Não foi possível localizar o pagamento." }, 503);
   const localPayment = paymentResult.data;
   const paymentId = readString(localPayment, "id");
   const existingStatus = normalizeMercadoPagoStatus(readString(localPayment, "status"));
   const existingProviderPaymentId = readString(localPayment, "provider_payment_id");
+  let recoverablePendingPix = isPersistedPendingPix(localPayment);
   if (!paymentId) return response({ ok: false, message: "Não foi possível localizar o pagamento." }, 503);
   if (["approved", "cancelled", "refunded", "charged_back"].includes(existingStatus)) {
     return response({ ok: true, status: publicPaymentState(existingStatus), orderCode, orderId }, 200);
@@ -330,6 +341,7 @@ async function handlePost(request: NextRequest, requestId: string) {
   }
 
   const providerId = attemptProviderId || (existingStatus !== "rejected" ? existingProviderPaymentId : "");
+  const recoverPendingPix = () => response({ ok: true, status: "pending", recovery: "view_order", ...orderContext }, 200);
   try {
     const created = providerId ? await provider.getPayment(providerId) : await provider.createPayment({
       orderId, orderCode, amountInCents, currency: "BRL", idempotencyKey: parsed.data.idempotencyKey,
@@ -357,8 +369,16 @@ async function handlePost(request: NextRequest, requestId: string) {
       provider_payment_id: created.id,
       status_detail: statusDetail || null, updated_at: new Date().toISOString()
     }).eq("id", attemptId));
-    if (persistence.error || attemptPersistence.error) return orderFailure({ code: "PAYMENT_SAVE_UNAVAILABLE", recovery: "retry_attempt",
-      message: "Não foi possível salvar o pagamento agora. Verifique a mesma tentativa." }, 503);
+    recoverablePendingPix = recoverablePendingPix || Boolean(!persistence.error
+      && normalizedStatus === "pending"
+      && created.id
+      && (created.paymentMethodId === "pix" || method === "pix")
+      && (created.pixCopyPaste || created.pixQrCodeBase64));
+    if (persistence.error || attemptPersistence.error) {
+      if (recoverablePendingPix) return recoverPendingPix();
+      return orderFailure({ code: "PAYMENT_SAVE_UNAVAILABLE", recovery: "retry_attempt",
+        message: "Não foi possível salvar o pagamento agora. Verifique a mesma tentativa." }, 503);
+    }
 
     const finalizeResult = readQueryResult(await db.rpc("finalize_mercadopago_payment", {
       p_provider_event_id: `test-check-${created.id}-${created.status}`, p_provider_payment_id: created.id,
@@ -370,12 +390,19 @@ async function handlePost(request: NextRequest, requestId: string) {
       p_installments: created.installments,
       p_status_detail: statusDetail || null
     }) as unknown);
-    if (finalizeResult.error || finalizeResult.data === "manual_review") return orderFailure({ code: "PAYMENT_VERIFICATION_REQUIRED",
-      recovery: "view_order", message: "O pagamento precisa de verificação." }, 503);
+    if (finalizeResult.error || finalizeResult.data === "manual_review") {
+      if (recoverablePendingPix) return recoverPendingPix();
+      return orderFailure({ code: "PAYMENT_VERIFICATION_REQUIRED",
+        recovery: "view_order", message: "O pagamento precisa de verificação." }, 503);
+    }
     return response({ ok: true, status: publicPaymentState(normalizedStatus), orderCode, orderId, providerPaymentId: created.id,
       ...(normalizedStatus === "rejected" ? { recovery: "new_attempt", message: "Pagamento recusado. Revise os dados e tente novamente." } : {}) }, 200);
   } catch (error) {
     const providerStatus = error instanceof MercadoPagoProviderError ? error.httpStatus : undefined;
+    if (recoverablePendingPix) {
+      reportFailure("PROVIDER_RECONCILIATION_DEFERRED", providerStatus);
+      return recoverPendingPix();
+    }
     const definitelyRejected = !providerId && (providerStatus === 400 || providerStatus === 422);
     if (definitelyRejected) {
       const rejection = readQueryResult(await db.from("payment_attempts").update({
