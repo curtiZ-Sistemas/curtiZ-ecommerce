@@ -124,6 +124,7 @@ function database() {
       return Promise.resolve({ data: { id: attempt.id, providerPaymentId: attempt.provider_payment_id, status: attempt.status }, error: null });
     }
     if (name === "finalize_mercadopago_payment") {
+      if (failures.finalize === "manual_review") return Promise.resolve({ data: "manual_review", error: null });
       if (failures.finalize) return Promise.resolve({ data: null, error: { code: "XX000", message: "failed" } });
       payment.status = String(args.p_status);
       if (payment.status === "approved") order.status = "payment_approved";
@@ -389,6 +390,49 @@ describe("confirmação de pagamento", () => {
     expect(result.status).toBe(200);
     expect(await result.json()).toMatchObject({ ok: true, status: "pending", recovery: "view_order" });
     expect(db.payment).toMatchObject({ provider_payment_id: "provider-1", pix_copy_paste: "pix-copia-e-cola" });
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+  });
+  it("nova chave com Pix persistido recupera o pedido sem segunda cobrança", async () => {
+    database(); state.createPayment.mockResolvedValueOnce(providerPixPayment());
+    await POST(request(pixBody));
+    const result = await POST(request({ ...pixBody, orderId, idempotencyKey: secondKey }));
+    expect(await result.json()).toMatchObject({ ok: true, status: "pending", recovery: "view_order", orderId });
+    expect(state.createPayment).toHaveBeenCalledTimes(1);
+  });
+  it.each(["expired", "unknown", "no_qr"])("estado %s não é apresentado como Pix recuperável", async scenario => {
+    const db = database();
+    Object.assign(db.payment, { provider_payment_id: "existing", payment_method_summary: "pix",
+      status: scenario === "unknown" ? "unknown" : "pending",
+      expires_at: scenario === "expired" ? "2020-01-01T00:00:00Z" : "",
+      pix_copy_paste: scenario === "no_qr" ? "" : "stored-code" });
+    state.getPayment.mockRejectedValueOnce(new Error("offline"));
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ code: "PAYMENT_VERIFICATION_REQUIRED", recovery: "view_order" });
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
+  it.each(["approved", "cancelled", "rejected"])("resposta definitiva %s não recupera pending antigo quando finalização falha", async status => {
+    const db = database(); db.failures.finalize = "failed";
+    Object.assign(db.payment, { provider_payment_id: "provider-1", payment_method_summary: "pix", pix_copy_paste: "stored-code" });
+    state.getPayment.mockResolvedValueOnce({ ...providerPixPayment(), status });
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ code: "PAYMENT_VERIFICATION_REQUIRED" });
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
+  it("manual_review não é escondido pela recuperação do QR", async () => {
+    const db = database(); db.failures.finalize = "manual_review";
+    state.createPayment.mockResolvedValueOnce(providerPixPayment());
+    const result = await POST(request(pixBody));
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ code: "PAYMENT_VERIFICATION_REQUIRED" });
+  });
+  it("consulta sem QR não apaga as instruções Pix já persistidas", async () => {
+    const db = database(); state.createPayment.mockResolvedValueOnce(providerPixPayment());
+    await POST(request(pixBody));
+    state.getPayment.mockResolvedValueOnce({ ...providerPixPayment(), pixCopyPaste: "", pixQrCodeBase64: "", expiresAt: null });
+    expect((await POST(request(pixBody))).status).toBe(200);
+    expect(db.payment).toMatchObject({ pix_copy_paste: "pix-copia-e-cola", pix_qr_code_base64: "pix-qr-base64", expires_at: "2099-01-01T00:30:00.000Z" });
     expect(state.createPayment).toHaveBeenCalledTimes(1);
   });
   it("mantém 502 quando Pix falha sem provider_payment_id nem QR persistido", async () => {

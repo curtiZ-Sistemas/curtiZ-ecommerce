@@ -3,7 +3,9 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 import { GET } from "./route";
 
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
-vi.mock("@curtiz/integrations", () => ({ isMercadoPagoTestCredential: () => false }));
+const provider = vi.hoisted(() => ({ enabled: false, getPayment: vi.fn(), createPayment: vi.fn() }));
+vi.mock("@curtiz/integrations", () => ({ isMercadoPagoTestCredential: () => provider.enabled,
+  MercadoPagoTestPaymentProvider: class { getPayment = provider.getPayment; createPayment = provider.createPayment; } }));
 vi.mock("@/lib/customer-account-presentation", () => import("../../../../../lib/customer-account-presentation"));
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../../lib/mercadopago-payment"));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
@@ -33,7 +35,18 @@ function setup(status = "pending_payment", paymentStatus = "pending", expiresAt 
 }
 
 describe("payment endpoint resumption guard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); provider.enabled = false; });
+  it("refresh durante indisponibilidade conserva QR local sem criar cobrança", async () => {
+    setup(); provider.enabled = true; provider.getPayment.mockRejectedValue(new Error("offline"));
+    for (let refresh = 0; refresh < 2; refresh++) {
+      const response = await GET(request, context);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ status: "pending", pixCopyPaste: "pix-salvo", pixQrCodeBase64: "qr-salvo" });
+    }
+    expect(provider.getPayment).toHaveBeenCalledTimes(2);
+    expect(provider.getPayment).toHaveBeenCalledWith("provider-pix");
+    expect(provider.createPayment).not.toHaveBeenCalled();
+  });
   it.each(["cancellation_requested", "cancelled", "expired", "payment_approved", "processing", "preparing", "shipped", "delivered", "refunded"])("blocks %s without returning payment instructions", async (status) => {
     const from = setup(status);
     const response = await GET(request, context);

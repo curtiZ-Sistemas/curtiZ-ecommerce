@@ -14486,13 +14486,59 @@ body:has(.checkout-transition) .help-widget {
 .checkout-coupon-field > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .checkout-coupon-field .secondary-button { min-height: 44px; padding-inline: 16px; }
 .checkout-coupon-field small { color: var(--neutral-700); }
-.pending-payment-page { max-width: 760px; }
-.order-progress { display: grid; gap: 0; margin: 24px 0; padding: 0; list-style: none; }
-.order-progress li { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--neutral-500); }
-.order-progress svg { width: 20px; height: 20px; }
-.order-progress .complete, .order-progress .active { color: var(--brand-900); font-weight: 650; }
-.pending-payment-details { display: grid; justify-items: start; gap: 14px; }
-.pending-payment-details img { max-width: 240px; height: auto; }
+.customer-cpf-field { display: grid; gap: 6px; min-width: 0; }
+.customer-cpf-input { position: relative; min-width: 0; }
+.customer-cpf-input input[readonly] { padding-right: 48px; }
+.customer-cpf-edit { position: absolute; inset: 0 0 0 auto; width: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--brand-900); cursor: pointer; }
+.customer-cpf-edit:focus-visible, .customer-cpf-actions button:focus-visible { outline: 2px solid #62130f; outline-offset: 2px; }
+.customer-cpf-actions { display: flex; justify-content: flex-end; gap: 16px; }
+.customer-cpf-actions button { min-height: 36px; padding: 4px 8px; border: 0; background: transparent; color: #62130f; font: inherit; cursor: pointer; }
+.customer-cpf-actions button:disabled { opacity: .45; cursor: default; }
+.customer-cpf-field > p { margin: 0; font-size: .78rem; }
+.customer-cpf-field > p:empty { display: none; }
+.pending-payment-page { max-width: 1050px; }
+.pending-payment-page > header h1 { margin-bottom: 8px; font-size: clamp(1.3rem, 3vw, 1.8rem); overflow-wrap: anywhere; }
+.pending-payment-page > header p { color: var(--neutral-600); }
+.pending-payment-page .order-progress { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 32px 0 40px; padding: 0; list-style: none; }
+.pending-payment-page .order-progress li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; color: var(--neutral-500); text-align: center; font-size: .75rem; line-height: 1.4; }
+.pending-payment-page .order-progress li::before { content: ""; position: absolute; top: 13px; right: 50%; width: 100%; height: 2px; background: var(--neutral-200); }
+.pending-payment-page .order-progress li:first-child::before { display: none; }
+.pending-payment-page .order-progress .complete::before { background: #62130f; }
+.pending-payment-page .order-progress .complete, .pending-payment-page .order-progress .active { color: #62130f; font-weight: 650; }
+.order-progress-marker { position: relative; z-index: 1; display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--neutral-300); border-radius: 50%; background: white; font-size: .7rem; }
+.order-progress-marker svg { width: 15px; height: 15px; }
+.complete .order-progress-marker { border-color: #62130f; background: #62130f; color: white; }
+.active .order-progress-marker { border: 2px solid #62130f; }
+.pending-payment-page .order-progress .active::after { content: ""; position: absolute; top: 11px; left: calc(-50% + 16px); width: 6px; height: 6px; border-radius: 50%; background: #62130f; animation: payment-progress 2.4s ease-in-out infinite alternate; }
+@keyframes payment-progress { to { left: calc(50% - 22px); } }
+.pending-payment-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.pending-payment-details, .pending-payment-summary { min-width: 0; padding: 28px; border: 1px solid var(--neutral-200); border-radius: var(--radius-sm); background: white; }
+.pending-payment-details { display: grid; justify-items: center; gap: 20px; text-align: center; }
+.pending-payment-layout h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.pending-payment-layout p { margin: 0; color: var(--neutral-600); font-size: .85rem; }
+.pending-payment-details img { max-width: min(240px, 100%); height: auto; }
+.pending-payment-details .primary-button { max-width: 100%; gap: 8px; }
+.pending-payment-details button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.pending-payment-amount { font-size: 1.65rem; }
+.pending-payment-expiration strong { display: block; margin-bottom: 6px; font-size: 1.1rem; color: #62130f; }
+.pending-payment-summary dl { margin: 24px 0; }
+.pending-payment-summary dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; font-size: .85rem; }
+.pending-payment-summary dt { color: var(--neutral-600); }
+.pending-payment-summary dd { margin: 0; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.pending-payment-summary .payment-summary-total { margin-top: 12px; padding-top: 20px; border-top: 1px solid var(--neutral-200); font-weight: 700; }
+.pending-payment-summary > a { color: #62130f; text-underline-offset: 4px; font-size: .85rem; }
+.pending-payment-page > .customer-form-actions { margin-top: 24px; }
+.pix-manual-copy { width: 100%; font-size: .75rem; color: var(--neutral-600); }
+.pix-manual-copy summary { cursor: pointer; padding: 8px; }
+.pix-manual-copy textarea { width: 100%; margin-top: 8px; min-height: 90px; padding: 8px; border: 1px solid var(--neutral-300); font: inherit; resize: vertical; }
+.payment-confirmed > svg { width: 32px; height: 32px; margin: 8px auto 16px; color: #62130f; }
+@media (max-width: 700px) {
+  .pending-payment-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .pending-payment-details, .pending-payment-summary { padding: 24px 16px; }
+  .pending-payment-page .order-progress { margin: 28px 0; }
+  .pending-payment-page .order-progress li { font-size: clamp(.6rem, 2.5vw, .75rem); }
+}
+@media (prefers-reduced-motion: reduce) { .pending-payment-page .order-progress .active::after { animation: none; } }
 @media (max-width: 700px) {
   .homepage-hero { touch-action: pan-y; }
   .hero-carousel-controls .hero-carousel-arrow { display: none; }

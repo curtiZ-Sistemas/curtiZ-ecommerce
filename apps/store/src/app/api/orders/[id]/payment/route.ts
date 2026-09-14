@@ -33,7 +33,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const approved = readString(order, "payment_status") === "approved"
       && ["payment_approved", "processing", "picking", "ready_to_ship", "shipped", "delivered"].includes(readString(order, "status"));
     const items = approved ? readQueryResult(await db.from("order_items").select("variant_id").eq("order_id", id)) : null;
-    return reply({ message: "Este pedido não aceita pagamento.", status: approved ? "approved" : "unavailable",
+    const expired = readString(paymentResult.data, "status_detail") === "expired"
+      || Date.parse(readString(paymentResult.data, "expires_at")) <= Date.now();
+    return reply({ message: "Este pedido não aceita pagamento.", status: approved ? "approved"
+      : expired ? "expired" : ["rejected", "cancelled", "refunded", "charged_back"].includes(readString(paymentResult.data, "status"))
+        ? readString(paymentResult.data, "status") : "unavailable",
+      orderCode: readString(order, "public_code"), orderStatus: readString(order, "status"),
+      amountInCents: Math.round(readNumber(paymentResult.data, "amount") * 100),
+      method: readString(paymentResult.data, "payment_method_summary"),
       variantIds: items && !items.error ? readRows(items.data).map((item) => readString(item, "variant_id")).filter(Boolean) : []
     }, 409);
   }
@@ -52,8 +59,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         || current.currency !== readString(order, "currency")) throw new Error("payment_mismatch");
       const status = normalizeMercadoPagoStatus(current.status);
       const statusDetail = current.status === "expired" ? "expired" : current.statusDetail;
-      await db.from("payments").update({ status_detail: statusDetail, expires_at: current.expiresAt,
-        pix_copy_paste: current.pixCopyPaste || null, pix_qr_code_base64: current.pixQrCodeBase64 || null,
+      const pixCopyPaste = current.pixCopyPaste || readString(payment, "pix_copy_paste");
+      const pixQrCodeBase64 = current.pixQrCodeBase64 || readString(payment, "pix_qr_code_base64");
+      const expiresAt = current.expiresAt || readString(payment, "expires_at") || null;
+      await db.from("payments").update({ status_detail: statusDetail, expires_at: expiresAt,
+        pix_copy_paste: pixCopyPaste || null, pix_qr_code_base64: pixQrCodeBase64 || null,
         boleto_url: current.boletoUrl || null, digitable_line: current.digitableLine || null, updated_at: new Date().toISOString() })
         .eq("id", readString(payment, "id"));
       const reconciliation = await db.rpc("finalize_mercadopago_payment", { p_provider_event_id: `poll-${current.id}-${current.status}`,
@@ -76,8 +86,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         });
         if (reconciledRefund.error) throw new Error("refund_reconciliation_failed");
       }
-      payment = { ...payment, status, status_detail: statusDetail, expires_at: current.expiresAt,
-        pix_copy_paste: current.pixCopyPaste, pix_qr_code_base64: current.pixQrCodeBase64,
+      payment = { ...payment, status, status_detail: statusDetail, expires_at: expiresAt,
+        pix_copy_paste: pixCopyPaste, pix_qr_code_base64: pixQrCodeBase64,
         boleto_url: current.boletoUrl, digitable_line: current.digitableLine };
     } catch { /* Preserve the last trusted database state during provider outages. */ }
   }

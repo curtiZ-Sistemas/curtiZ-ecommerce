@@ -1,5 +1,5 @@
 import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { OrderPayment } from "@/components/order-payment";
 import { canContinueOrderPayment } from "@/lib/customer-account-presentation";
 import type { MercadoPagoBrickSession } from "@/lib/mercadopago-brick-config";
@@ -22,17 +22,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const payment = readQueryResult(paymentResponse).data;
   if (!isUnknownRecord(order) || !isUnknownRecord(payment)) notFound();
   if (!readString(payment, "payment_method_summary")) notFound();
-  if (!canContinueOrderPayment(readString(order, "status"), readString(payment, "status"),
-    readString(payment, "payment_method_summary"), readString(payment, "status_detail"), readString(payment, "expires_at"))) {
-    redirect(`/minha-conta/pedidos?pedido=${encodeURIComponent(readString(order, "public_code"))}`);
-  }
+  const payable = canContinueOrderPayment(readString(order, "status"), readString(payment, "status"),
+    readString(payment, "payment_method_summary"), readString(payment, "status_detail"), readString(payment, "expires_at"));
   const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim() ?? "";
   const subtotalInCents = Math.round(readNumber(order, "subtotal") * 100);
   const discountInCents = Math.round(readNumber(order, "discount_total") * 100);
   const shippingInCents = Math.round(readNumber(order, "shipping_total") * 100);
   const amountInCents = Math.round(readNumber(order, "grand_total") * 100);
-  const canResume = readString(order, "status") === "pending_payment"
-    && (!readString(payment, "provider_payment_id") || readString(payment, "status") === "rejected")
+  const canResume = payable && readString(order, "status") === "pending_payment"
+    && !readString(payment, "provider_payment_id")
     && isMercadoPagoTestCredential(publicKey)
     && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents === FIXED_SHIPPING_IN_CENTS
     && amountInCents === subtotalInCents - discountInCents + shippingInCents;
