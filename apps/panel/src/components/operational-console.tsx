@@ -578,6 +578,8 @@ function Orders({
           <option value="ready_to_ship">Pronto para envio</option>
           <option value="shipped">Enviado</option>
           <option value="manual_review">Revisão manual</option>
+          <option value="cancelled">Cancelado</option>
+          <option value="refunded">Reembolsado</option>
         </select>
         <button className="primary-button"><Search /> Buscar</button>
       </form>

@@ -11,7 +11,7 @@ const statusLabels: Record<string, string> = {
   cancelled: "Cancelado",
   return_requested: "Devolução solicitada",
   returned: "Devolvido",
-  refund_pending: "Reembolso pendente",
+  refund_pending: "Reembolso em processamento",
   refunded: "Reembolsado",
   manual_review: "Em análise",
   pending: "Pendente",

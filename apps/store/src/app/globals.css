@@ -6419,6 +6419,17 @@ select:disabled {
   font-size: 0.72rem;
 }
 
+.customer-order-history-note {
+  margin: 0;
+  padding: 0 18px 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.customer-tracking .customer-order-history-note {
+  padding: 0;
+}
+
 .customer-order-products img,
 .customer-order-products > div > svg {
   width: 54px;

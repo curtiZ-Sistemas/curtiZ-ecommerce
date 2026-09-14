@@ -244,6 +244,9 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const orders: CustomerOrder[] = orderRows.flatMap((row) => {
     const id = readString(row, "id");
     const payment = paymentRows.find((entry) => readString(entry, "order_id") === id);
+    const cancellationCompletedAt = readString(row, "cancellation_completed_at");
+    const refundStatus = readString(row, "refund_status");
+    const refundCompletedAt = readString(row, "refund_completed_at");
     const hasPaymentAttempt = Boolean(
       (payment && readString(payment, "provider_payment_id"))
       || paymentAttemptRows.some((entry) => readString(entry, "order_id") === id)
@@ -253,6 +256,10 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       paymentStatus: payment ? readString(payment, "status") : "",
       paymentStatusDetail: payment ? readString(payment, "status_detail") : "",
       paymentExpiresAt: payment ? readString(payment, "expires_at") : undefined,
+      cancellationCompletedAt,
+      refundStatus,
+      refundCompletedAt,
+      hadApprovedPayment: row.had_approved_payment === true,
       hasPaymentAttempt,
       hasPaymentMethod: Boolean(payment && readString(payment, "payment_method_summary"))
     })) return [];
@@ -270,6 +277,10 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       shippingInCents: cents(row.shipping_total),
       totalInCents: cents(row.grand_total),
       placedAt: readString(row, "placed_at") || readString(row, "created_at"),
+      cancellationCompletedAt,
+      refundStatus,
+      refundCompletedAt,
+      customerVisibleUntil: readString(row, "customer_visible_until"),
       address: record(row.shipping_address_snapshot),
       items: itemRows
         .filter((entry) => readString(entry, "order_id") === id)

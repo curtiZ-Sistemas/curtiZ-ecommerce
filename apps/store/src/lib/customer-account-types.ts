@@ -37,6 +37,10 @@ export type CustomerOrder = {
   shippingInCents: number;
   totalInCents: number;
   placedAt: string;
+  cancellationCompletedAt: string;
+  refundStatus: string;
+  refundCompletedAt: string;
+  customerVisibleUntil: string;
   address: Record<string, unknown>;
   items: CustomerOrderItem[];
   payment: {

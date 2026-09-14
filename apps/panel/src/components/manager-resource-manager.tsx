@@ -75,6 +75,14 @@ function scalar(value: unknown): string {
 
 function display(value: unknown, column: ManagerColumn): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (column.format === "refunds") {
+    if (!Array.isArray(value) || value.length === 0) return "—";
+    let refunded = 0;
+    for (const entry of value as unknown[]) {
+      if (isItem(entry)) refunded += numberValue(entry.refunded_amount);
+    }
+    return currency.format(refunded);
+  }
   if (column.format === "cents") return currency.format(numberValue(value) / 100);
   if (column.format === "money") return currency.format(numberValue(value));
   if (column.format === "status") {

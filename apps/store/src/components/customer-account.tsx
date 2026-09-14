@@ -89,6 +89,14 @@ const formatDate = (value: string) =>
       }).format(new Date(value))
     : "Não informado";
 
+const formatShortDate = (value: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo"
+  }).format(new Date(value));
+
 const addressValue = (address: Record<string, unknown>, key: string) => {
   const value = address[key];
   return typeof value === "string" ? value : "";
@@ -627,6 +635,8 @@ function Orders({
           <option value="delivered">Entregue</option>
           <option value="cancellation_requested">Cancelamento solicitado</option>
           <option value="cancelled">Cancelado</option>
+          <option value="refund_pending">Reembolso em processamento</option>
+          <option value="refunded">Reembolsado</option>
         </select>
       </div>
       {visible.length ? (
@@ -655,6 +665,17 @@ function Orders({
                   </div>
                 ))}
               </div>
+              {order.status === "cancelled" ? (
+                <p className="customer-order-history-note">Este pedido foi cancelado.</p>
+              ) : order.status === "refund_pending" ? (
+                <p className="customer-order-history-note">Reembolso em processamento</p>
+              ) : order.status === "refunded" ? (
+                <p className="customer-order-history-note">
+                  {order.refundCompletedAt
+                    ? `Reembolso realizado em ${formatShortDate(order.refundCompletedAt)}`
+                    : "Reembolso concluído"}
+                </p>
+              ) : null}
               <div className="customer-order-foot">
                 <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns)</span>
                 <strong>{formatBRL(order.totalInCents)}</strong>
@@ -752,6 +773,19 @@ function OrderDetails({
             </li>
           ))}
         </ol>
+        {order.status === "cancelled" ? (
+          <p className="customer-order-history-note">
+            {order.cancellationCompletedAt
+              ? `Cancelado em: ${formatShortDate(order.cancellationCompletedAt)}`
+              : "Este pedido foi cancelado."}
+          </p>
+        ) : order.status === "refund_pending" ? (
+          <p className="customer-order-history-note">Reembolso em processamento</p>
+        ) : order.status === "refunded" ? (
+          <p className="customer-order-history-note">
+            Reembolso concluído{order.refundCompletedAt ? ` em: ${formatShortDate(order.refundCompletedAt)}` : ""}
+          </p>
+        ) : null}
         {order.shipment?.trackingCode && (
           <p className="customer-tracking-code">
             Código de rastreio: <strong>{order.shipment.trackingCode}</strong>

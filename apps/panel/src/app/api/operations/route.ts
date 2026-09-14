@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
+import { isOperationallyActiveOrder } from "@/lib/operational-order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,9 @@ const orderStatuses = [
   "refund_pending",
   "cancellation_requested",
   "return_requested",
-  "returned"
+  "returned",
+  "cancelled",
+  "refunded"
 ] as const;
 const taskStatuses = ["queued", "in_progress", "blocked", "completed"] as const;
 const returnStatuses = [
@@ -436,7 +439,10 @@ export async function GET(request: NextRequest) {
       }))
     };
   });
-  const tasks = rows(tasksResult.data).map((task) => {
+  const tasks = rows(tasksResult.data).filter((task) => {
+    const sourceOrder = record(task.orders);
+    return !sourceOrder || isOperationallyActiveOrder(text(sourceOrder.status));
+  }).map((task) => {
     const sourceOrder = record(task.orders);
     const sourceKit = record(task.kit_orders);
     const sourceReturn = record(task.returns);
