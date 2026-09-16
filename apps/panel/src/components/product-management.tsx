@@ -808,20 +808,21 @@ export function ProductManagement({
           throw new Error(association.message ?? "Falha ao associar a imagem à cor.");
       }
       if (Object.keys(colorImageSelections).length) savedProduct = await readProduct(productId);
+      await load();
       setEditing(savedProduct);
       setQueuedMediaFiles([]);
       setColorImageSelections({});
       setEditorDirty(false);
-      setMessage(
+      const successMessage =
         wasNew && requestedStatus === "active"
           ? "Produto ativado com sucesso."
           : wasNew
           ? queuedMediaFiles.length
             ? "Produto criado e imagens enviadas. Continue com as cores e tamanhos quando necessário."
             : "Produto criado como rascunho."
-          : "Produto atualizado."
-      );
-      if (wasNew) closeEditor();
+          : "Produto atualizado com sucesso.";
+      closeEditor();
+      setMessage(successMessage);
     } catch (error) {
       try {
         setEditing(await readProduct(productId));
