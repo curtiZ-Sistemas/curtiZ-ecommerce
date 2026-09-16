@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoProducts } from "./catalog";
-import { parseCatalogFilters, queryDemoCatalog } from "./catalog-query";
+import { parseCatalogFilters, queryDemoCatalog, resolveColorSwatch } from "./catalog-query";
 
 describe("catalog query", () => {
   it("restaura filtros previsíveis da URL", () => {
@@ -66,5 +66,20 @@ describe("catalog query", () => {
     const color = queryDemoCatalog(parseCatalogFilters(new URLSearchParams("q=marínho")));
     expect(typo.products.some((product) => product.category === "Sandálias")).toBe(true);
     expect(color.products.some((product) => product.colors.includes("Marinho"))).toBe(true);
+  });
+});
+
+describe("resolveColorSwatch", () => {
+  it("prioriza o HEX real da variante para Bege Strass", () => {
+    expect(resolveColorSwatch({
+      value: "Bege Strass", label: "Bege Strass", count: 1, hex: "#C7A77B"
+    })).toBe("#C7A77B");
+  });
+
+  it("usa o nome apenas como fallback quando não há HEX válido", () => {
+    expect(resolveColorSwatch({ value: "Bege Strass", label: "Bege Strass", count: 1 }))
+      .toBe("#d8c7ae");
+    expect(resolveColorSwatch({ value: "Especial", label: "Especial", count: 1, hex: "inválido" }))
+      .toBe("#dedbd5");
   });
 });

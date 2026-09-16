@@ -34,6 +34,35 @@ export type CatalogFilters = {
 
 export type FacetOption = { value: string; label: string; count: number; hex?: string };
 
+const colorSwatches: Record<string, string> = {
+  preto: "#171717", branco: "#ffffff", marinho: "#18294a", coral: "#d96b55",
+  rosa: "#e994b3", areia: "#d8c2a5", caramelo: "#a96e45", bege: "#d8c7ae",
+  azul: "#3c70ad", lilas: "#c8a2c8", roxo: "#7e57c2", verde: "#4f8a5b",
+  vermelho: "#c93b3b", amarelo: "#e8c547", cinza: "#9b9b9b",
+  dourado: "#c9a646", prata: "#b8b8b8", nude: "#d7b8a3"
+};
+
+const normalizeColorSwatchKey = (value: string) =>
+  value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\bstrass\b/gu, " ").replace(/\bcom\b/gu, " ").replace(/\s+/gu, " ").trim();
+
+const isValidHexColor = (value: string | null | undefined): value is string =>
+  Boolean(value && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(value.trim()));
+
+export function resolveColorSwatch(option: FacetOption): string {
+  if (isValidHexColor(option.hex)) return option.hex.trim();
+  const normalizedValue = normalizeColorSwatchKey(option.value);
+  const normalizedLabel = normalizeColorSwatchKey(option.label);
+  const matchedColor = Object.keys(colorSwatches)
+    .sort((first, second) => second.length - first.length)
+    .find((color) =>
+      normalizedValue === color || normalizedLabel === color ||
+      normalizedValue.startsWith(`${color} `) || normalizedLabel.startsWith(`${color} `) ||
+      normalizedValue.includes(` ${color} `) || normalizedLabel.includes(` ${color} `)
+    );
+  return matchedColor ? colorSwatches[matchedColor]! : "#dedbd5";
+}
+
 export type CatalogFacets = {
   categories: FacetOption[];
   collections: FacetOption[];

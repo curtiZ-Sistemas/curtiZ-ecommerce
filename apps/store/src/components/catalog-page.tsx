@@ -21,6 +21,7 @@ import {
 } from "react";
 import {
   parseCatalogFilters,
+  resolveColorSwatch,
   type CatalogFacets,
   type CatalogResult,
   type FacetOption
@@ -50,114 +51,16 @@ const sortOptions = [
   ["name_desc", "Nome Z–A"]
 ] as const;
 
-/*
- * Fallback visual para produtos antigos ou situações em que
- * o catálogo não possuir um HEX válido salvo para a cor.
- *
- * A fonte principal de verdade continua podendo ser option.hex.
- */
-const colorSwatches: Record<string, string> = {
-  preto: "#171717",
-  branco: "#ffffff",
-  marinho: "#18294a",
-  coral: "#d96b55",
-  rosa: "#e994b3",
-  areia: "#d8c2a5",
-  caramelo: "#a96e45",
-  bege: "#d8c7ae",
-  azul: "#3c70ad",
-  lilas: "#c8a2c8",
-  roxo: "#7e57c2",
-  verde: "#4f8a5b",
-  vermelho: "#c93b3b",
-  amarelo: "#e8c547",
-  cinza: "#9b9b9b",
-  dourado: "#c9a646",
-  prata: "#b8b8b8",
-  nude: "#d7b8a3"
-};
-
-function normalizeColorSwatchKey(value: string): string {
-  return value
-    .toLocaleLowerCase("pt-BR")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\bstrass\b/gu, " ")
-    .replace(/\bcom\b/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-function isValidHexColor(value: string | null | undefined): value is string {
-  if (!value) return false;
-
-  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(
-    value.trim()
-  );
-}
-
-function resolveColorSwatch(option: FacetOption): string {
-  const normalizedValue = normalizeColorSwatchKey(option.value);
-  const normalizedLabel = normalizeColorSwatchKey(option.label);
-
-  /*
-   * Primeiro tentamos reconhecer a cor pelo nome.
-   *
-   * Isso corrige casos como:
-   *
-   * Bege Strass
-   * Branco Strass
-   * Lilás Strass
-   * Preto Strass
-   *
-   * que anteriormente podiam cair todos no mesmo cinza.
-   */
-  const knownColors = Object.keys(colorSwatches).sort(
-    (first, second) => second.length - first.length
-  );
-
-  const matchedColor = knownColors.find(
-    (color) =>
-      normalizedValue === color ||
-      normalizedLabel === color ||
-      normalizedValue.startsWith(`${color} `) ||
-      normalizedLabel.startsWith(`${color} `) ||
-      normalizedValue.includes(` ${color} `) ||
-      normalizedLabel.includes(` ${color} `)
-  );
-
-  if (matchedColor) {
-    return colorSwatches[matchedColor]!;
-  }
-
-  /*
-   * Para cores personalizadas que não conseguimos identificar
-   * pelo nome, usamos o HEX salvo pelo backend, desde que válido.
-   */
-  const optionWithHex = option as FacetOption & {
-    hex?: string | null;
-  };
-
-  if (isValidHexColor(optionWithHex.hex)) {
-    return optionWithHex.hex.trim();
-  }
-
-  /*
-   * Fallback apenas para registros antigos sem cor válida.
-   */
-  return "#dedbd5";
-}
-
 function isLightSwatch(color: string): boolean {
-  const normalized = color.trim().toLowerCase();
-
-  return [
-    "#fff",
-    "#ffffff",
-    "#f7f7f5",
-    "#f8f8f8",
-    "#fafafa"
-  ].includes(normalized);
+  const normalized = color.trim().replace(/^#/u, "").slice(0, 6);
+  const hex = normalized.length === 3
+    ? normalized.split("").map((character) => character.repeat(2)).join("")
+    : normalized;
+  if (!/^[0-9a-f]{6}$/iu.test(hex)) return false;
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  return (red * 299 + green * 587 + blue * 114) / 1000 >= 225;
 }
 
 export function CatalogPage({

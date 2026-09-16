@@ -60,4 +60,18 @@ describe("resultado virtual do catálogo", () => {
     expect(result?.products).toHaveLength(2);
     expect(result?.products[1]?.stock).toBe(0);
   });
+
+  it("preserva o HEX real retornado pela facet de cor", () => {
+    const result = parseCatalogRpcResult({
+      products: [], total: 0,
+      facets: {
+        categories: [], collections: [],
+        colors: [{ value: "Bege Strass", label: "Bege Strass", count: 1, hex: "#C7A77B" }],
+        sizes: [], price: { min: 0, max: 0 }, promotionCount: 0,
+        inStockCount: 0, newestCount: 0
+      }
+    }, { page: 1, pageSize: 12 });
+
+    expect(result?.facets.colors[0]?.hex).toBe("#C7A77B");
+  });
 });
