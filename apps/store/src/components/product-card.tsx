@@ -6,10 +6,11 @@ import {
   storefrontProductHref,
   type Product
 } from "@curtiz/domain";
-import { Heart, Star } from "lucide-react";
+import { Check, Heart, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
 import { trackIntelligence } from "../lib/intelligence-client";
 import { useQualifiedImpression } from "../lib/use-qualified-impression";
@@ -37,8 +38,11 @@ export function ProductCard({
     purchase?: boolean;
   };
 }) {
+  const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
+  const [added, setAdded] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
   const itemKey = storefrontItemKey(product);
   const href = storefrontProductHref(product);
   const responsiveImage = bundledProductSrcSet(product.image);
@@ -49,6 +53,22 @@ export function ProductCard({
   const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
+
+  useEffect(() => () => {
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
+  }, []);
+
+  const handleQuickAdd = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (product.stock < 1 || added) return;
+
+    const color = product.variantColor ?? product.colors[0] ?? "";
+    const size = product.variantSize ?? product.sizes[0] ?? "";
+    add(product, color, size, product.variantId ? { variantId: product.variantId } : undefined);
+    setAdded(true);
+    feedbackTimerRef.current = window.setTimeout(() => setAdded(false), 1800);
+  };
 
   return (
     <article className="product-card" ref={cardRef}>
@@ -91,6 +111,24 @@ export function ProductCard({
       >
         <Heart fill={favorite ? "currentColor" : "none"} />
       </button>}
+      <button
+        className={`favorite-button product-card-cart-button${display?.favorite === false ? " standalone" : ""}${added ? " added" : ""}`}
+        type="button"
+        onClick={handleQuickAdd}
+        disabled={product.stock < 1 || added}
+        aria-label={
+          product.stock < 1
+            ? `${product.name} sem estoque`
+            : added
+              ? `${product.name} adicionado ao carrinho`
+              : `Adicionar ${product.name} ao carrinho`
+        }
+      >
+        {added ? <Check aria-hidden="true" /> : <ShoppingCart aria-hidden="true" />}
+      </button>
+      <span className="sr-only" role="status" aria-live="polite">
+        {added ? `${product.name} adicionado ao carrinho.` : ""}
+      </span>
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>

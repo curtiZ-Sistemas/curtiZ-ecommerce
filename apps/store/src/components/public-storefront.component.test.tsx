@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("./favorites-provider", () => ({
   useFavorites: () => ({ hydrated: true, has: () => false, toggle: vi.fn() })
 }));
+vi.mock("./cart-provider", () => ({
+  useCart: () => ({ add: vi.fn() })
+}));
 vi.stubGlobal("React", React);
 
 const banners: PublicBanner[] = [
@@ -98,6 +101,8 @@ describe("public storefront components", () => {
     expect(html).toContain('title="Produto disponível"');
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
+    expect(html).toContain("product-card-cart-button");
+    expect(html).toContain("ao carrinho");
   });
 
   it("renderiza um card virtual com imagem, preço e link da variação", () => {

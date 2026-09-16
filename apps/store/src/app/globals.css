@@ -1552,6 +1552,29 @@ select:disabled {
   width: 18px;
 }
 
+.product-card-cart-button {
+  top: 55px;
+  border-radius: 50%;
+}
+
+.product-card-cart-button.standalone {
+  top: 9px;
+}
+
+.product-card-cart-button.added {
+  background: var(--brand-50);
+}
+
+.product-card-cart-button:focus-visible {
+  outline: 3px solid var(--brand-200);
+  outline-offset: 2px;
+}
+
+.product-card-cart-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .product-card-body {
   padding: 16px;
 }
@@ -12044,6 +12067,17 @@ body:has(> #main-content > .auth-page) .site-footer {
     height: 40px;
     top: 6px;
     right: 6px;
+  }
+
+  .product-card .product-card-cart-button {
+    top: 52px;
+    right: 6px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .product-card .product-card-cart-button.standalone {
+    top: 6px;
   }
 
   .product-card .discount-badge {
