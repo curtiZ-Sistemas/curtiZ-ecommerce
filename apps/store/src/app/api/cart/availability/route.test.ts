@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
+import { publicBudgetResponse } from "@/lib/public-request";
 import { POST } from "./route";
 
 vi.mock("@/lib/catalog", () => ({ demoProducts: [] }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/supabase/server", () => ({ createPublicSupabaseClient: vi.fn() }));
+vi.mock("@/lib/public-request", () => ({ publicBudgetResponse: vi.fn(async () => null as Response | null) }));
 vi.mock("@/lib/unknown-data", () => ({
   isUnknownRecord: (value: unknown) => Boolean(value && typeof value === "object" && !Array.isArray(value)),
   readRows: (value: unknown): Record<string, unknown>[] => Array.isArray(value)
@@ -23,7 +25,17 @@ const request = () => new Request("https://store.example/api/cart/availability",
 describe("cart availability API", () => {
   beforeEach(() => {
     vi.mocked(createPublicSupabaseClient).mockReset();
+    vi.mocked(publicBudgetResponse).mockReset().mockResolvedValue(null);
     vi.stubEnv("DEMO_MODE", "false");
+  });
+
+  it.each([429, 503])("blocks inventory queries before reading a body when the shared budget returns %s", async (status) => {
+    vi.mocked(publicBudgetResponse).mockResolvedValue(Response.json({ message: "Unavailable" }, { status }));
+    const input = request();
+    expect((await POST(input)).status).toBe(status);
+    expect(input.bodyUsed).toBe(false);
+    expect(createPublicSupabaseClient).not.toHaveBeenCalled();
+    expect(publicBudgetResponse).toHaveBeenCalledWith(input, "availability");
   });
 
   it("returns diagnostic JSON when public Supabase configuration is absent", async () => {

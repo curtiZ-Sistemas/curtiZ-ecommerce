@@ -1,3 +1,5 @@
+import { readJsonResponse } from "@curtiz/security";
+import { publicBudgetResponse } from "../../../../lib/public-request";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "../../../../lib/catalog";
@@ -99,6 +101,8 @@ async function recommendationResponse(input: z.infer<typeof inputSchema>, person
 }
 
 export async function GET(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "intelligence");
+  if (budget) return budget;
   const parsed = inputSchema.safeParse({
     source: request.nextUrl.searchParams.get("source") ?? undefined,
     category: request.nextUrl.searchParams.get("category"),
@@ -111,13 +115,17 @@ export async function GET(request: NextRequest) {
   return recommendationResponse(parsed.data, false);
 }
 export async function POST(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "intelligence");
+  if (budget) return budget;
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ products: [] }, { status: 403 });
   if (!hasServerConsent(request, "analytics"))
     return NextResponse.json(
       { products: [], enabled: false },
       { status: 403, headers: { "cache-control": "private, no-store" } }
     );
-  const parsed = inputSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = inputSchema.safeParse(boundedBody);
   if (!parsed.success) return NextResponse.json({ products: [] }, { status: 400 });
   return recommendationResponse(parsed.data, true);
 }

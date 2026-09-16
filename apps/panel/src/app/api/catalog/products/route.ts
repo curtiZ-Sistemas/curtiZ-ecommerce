@@ -1,3 +1,5 @@
+import { readJsonResponse, isAllowedBrowserRequest } from "@curtiz/security";
+import { consumePanelMutationBudget, panelRateLimitStatus } from "../../../../lib/api-rate-limit";
 import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { evaluateMerchantEligibility, type MerchantCatalogItem } from "@curtiz/domain";
@@ -256,14 +258,11 @@ function saveProductError(
 }
 
 const safeOrigin = (request: NextRequest) => {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
   const configured = new Set([
-    new URL(request.url).origin,
     process.env.NEXT_PUBLIC_PANEL_URL,
     ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
-  ]);
-  return configured.has(origin);
+  ].filter((value): value is string => Boolean(value)));
+  return isAllowedBrowserRequest(request, configured);
 };
 
 async function authorizedClient(request: NextRequest) {
@@ -289,6 +288,7 @@ async function authorizedClient(request: NextRequest) {
     return null;
   }
   if (!(await hasRequiredInternalMfa(supabase))) return null;
+  if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return supabase;
 }
 
@@ -523,7 +523,7 @@ export async function GET(request: NextRequest) {
   if (!supabase) {
     return NextResponse.json(
       { message: "Acesso não autorizado ou catálogo indisponível." },
-      { status: 401, headers: noStore }
+      { status: panelRateLimitStatus(request), headers: noStore }
     );
   }
 
@@ -850,11 +850,13 @@ export async function PATCH(request: NextRequest) {
   if (!supabase) {
     return NextResponse.json(
       { message: "Acesso não autorizado." },
-      { status: 401, headers: noStore }
+      { status: panelRateLimitStatus(request), headers: noStore }
     );
   }
 
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Revise os dados informados." },
@@ -1116,11 +1118,13 @@ export async function DELETE(request: NextRequest) {
   if (!supabase) {
     return NextResponse.json(
       { message: "Acesso não autorizado." },
-      { status: 401, headers: noStore }
+      { status: panelRateLimitStatus(request), headers: noStore }
     );
   }
 
-  const parsed = deleteSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = deleteSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Identificador de produto inválido." },

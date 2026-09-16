@@ -1,4 +1,4 @@
-import { corsHeaders, json, requestId } from "../_shared/http.ts";
+import { corsHeaders, json, readJson, requestId } from "../_shared/http.ts";
 import { mercadoPagoRequest } from "../_shared/mercadopago.ts";
 import { serviceClient, userClient } from "../_shared/supabase.ts";
 import { integrationDisabledPayload, isMercadoPagoEnabled } from "../_shared/integrations.ts";
@@ -10,12 +10,18 @@ Deno.serve(async (request) => {
   if (!isMercadoPagoEnabled()) return json(integrationDisabledPayload(correlationId), 503);
   const authorization = request.headers.get("authorization") ?? "";
   const authClient = userClient(authorization);
-  const { data: claims } = await authClient.auth.getClaims();
-  const userId = claims?.claims?.sub;
+  const { data: session, error: sessionError } = await authClient.auth.getUser();
+  const userId = sessionError ? null : session.user?.id;
   if (!userId) return json({ error: "unauthorized", request_id: correlationId }, 401);
 
-  const { order_id } = (await request.json()) as { order_id?: string };
-  if (!order_id) return json({ error: "invalid_order", request_id: correlationId }, 400);
+  const body = await readJson(request, 2048);
+  if (body instanceof Response) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "invalid_order", request_id: correlationId }, 400);
+  const { order_id } = body as { order_id?: string };
+  if (typeof order_id !== "string" || !/^[0-9a-f-]{36}$/i.test(order_id)) return json({ error: "invalid_order", request_id: correlationId }, 400);
+  const budget = await authClient.rpc("claim_payment_reconciliation", { p_order_id: order_id });
+  if (budget.error || typeof budget.data !== "boolean") return json({ error: "payment_unavailable", request_id: correlationId }, 503);
+  if (!budget.data) return json({ error: "rate_limited", request_id: correlationId }, 429);
 
   const db = serviceClient();
   const { data: order, error } = await db

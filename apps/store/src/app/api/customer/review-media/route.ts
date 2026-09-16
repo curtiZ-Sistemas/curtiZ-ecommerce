@@ -5,6 +5,8 @@ import { inspectUpload, type AcceptedUploadMime } from "@/lib/file-validation";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
+import { PrivateRequestError, readPrivateFormData, requirePrivateRateLimit } from "@/lib/private-request";
+import { prepareUploadImage } from "@/lib/image-upload";
 
 const allowedTypes = new Set<AcceptedUploadMime>([
   "image/jpeg",
@@ -17,13 +19,6 @@ const multipartOverheadBytes = 512 * 1024;
 const noStore = { "cache-control": "private, no-store" };
 
 export async function POST(request: NextRequest) {
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes + multipartOverheadBytes) {
-    return NextResponse.json(
-      { message: "Arquivo acima do limite de 15 MB." },
-      { status: 413, headers: noStore }
-    );
-  }
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json(
       { message: "Origem não autorizada." },
@@ -31,17 +26,33 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const form = await request.formData().catch(() => null);
-  const file = form?.get("file");
-  const reviewId = form?.get("reviewId");
+  const demoSession = process.env.DEMO_MODE === "true" && process.env.APP_ENV !== "production"
+    ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value) : null;
+  const supabase = demoSession ? null : await createServerSupabaseClient();
+  const userResult = supabase ? await supabase.auth.getUser() : null;
+  const user = userResult?.data.user;
+  if (!demoSession && (!supabase || !user || userResult?.error)) {
+    return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers: noStore });
+  }
+  if (supabase) {
+    try { await requirePrivateRateLimit(supabase, "customer_upload"); }
+    catch (error) { return NextResponse.json({ message: "Upload indisponível no momento." },
+      { status: error instanceof PrivateRequestError ? error.status : 503, headers: noStore }); }
+  }
+  let form: FormData;
+  try { form = await readPrivateFormData(request, maximumBytes + multipartOverheadBytes); }
+  catch (error) { return NextResponse.json({ message: "Arquivo inválido ou acima do limite de 15 MB." },
+    { status: error instanceof PrivateRequestError ? error.status : 400, headers: noStore }); }
+  const file = form.get("file");
+  const reviewId = form.get("reviewId");
   if (!(file instanceof File) || typeof reviewId !== "string") {
     return NextResponse.json(
       { message: "Arquivo inválido." },
       { status: 400, headers: noStore }
     );
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspectUpload(bytes, file.type, allowedTypes);
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspectUpload(bytes, file.type, allowedTypes);
   if (
     !inspected ||
     !allowedTypes.has(file.type as AcceptedUploadMime) ||
@@ -54,10 +65,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const demoSession =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
   if (demoSession) {
     if (!demoSession.roles.includes("customer")) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
@@ -65,9 +72,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: randomUUID(), demo: true }, { status: 201, headers: noStore });
   }
 
-  const supabase = await createServerSupabaseClient();
-  const userResult = supabase ? await supabase.auth.getUser() : null;
-  const user = userResult?.data.user;
   if (!supabase || !user) {
     return NextResponse.json(
       { message: "Entre para continuar." },
@@ -92,6 +96,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (inspected.mime.startsWith("image/")) {
+    try {
+      bytes = await prepareUploadImage(bytes, maximumBytes);
+      inspected = { mime: "image/webp", extension: "webp" };
+    } catch (error) {
+      return NextResponse.json({ message: "Não foi possível validar a imagem." },
+        { status: error instanceof PrivateRequestError ? error.status : 422, headers: noStore });
+    }
+  }
   const path = `${user.id}/reviews/${reviewId}/${randomUUID()}.${inspected.extension}`;
   const upload = await supabase.storage
     .from("customer-private")
@@ -110,7 +123,7 @@ export async function POST(request: NextRequest) {
       storage_path: path,
       media_type: inspected.mime === "video/mp4" ? "video" : "image",
       mime_type: inspected.mime,
-      size_bytes: file.size
+      size_bytes: bytes.byteLength
     })
     .select("id")
     .single();

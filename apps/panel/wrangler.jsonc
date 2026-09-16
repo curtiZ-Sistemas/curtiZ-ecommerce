@@ -9,15 +9,20 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "enabled": true
   },
   "env": {
     "staging": {
-      "name": "curtiz-panel-staging"
+      "name": "curtiz-panel-staging",
+      "images": { "binding": "IMAGES" }
     },
     "production": {
-      "name": "curtiz-panel"
+      "name": "curtiz-panel",
+      "images": { "binding": "IMAGES" }
     }
   }
 }

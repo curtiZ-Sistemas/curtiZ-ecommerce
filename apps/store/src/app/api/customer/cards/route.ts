@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { deleteMyMercadoPagoCard, listMyMercadoPagoCards, saveMyMercadoPagoCard, savedCardsEnabled, SavedCardsError } from "@/lib/mercadopago-saved-cards";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
 
 export const dynamic = "force-dynamic";
 const save = z.object({ orderId: z.string().uuid(), key: z.string().uuid(), token: z.string().regex(/^[a-zA-Z0-9_-]{1,256}$/u), consent: z.literal(true) }).strict();
@@ -30,7 +31,11 @@ async function handle(request: Request, operation: "list" | "save" | "delete") {
     if (rate.error || rate.data !== true) return reply({ ok: false, code: "RATE_LIMITED", message: "Aguarde um momento e tente novamente." }, 429);
     const user = result.data.user;
     if (operation === "list") return reply({ ok: true, ...await listMyMercadoPagoCards(db, user) });
-    const body: unknown = await request.json().catch(() => null);
+    let body: unknown;
+    try { body = await readPrivateJson(request, 4 * 1024); }
+    catch (error) { return reply({ ok: false, code: error instanceof PrivateRequestError && error.status === 413
+      ? "REQUEST_TOO_LARGE" : "INVALID_CARD_REQUEST", message: "Dados do cartão inválidos." },
+      error instanceof PrivateRequestError ? error.status : 400); }
     if (operation === "save") {
       const parsed = save.safeParse(body);
       if (!parsed.success) return reply({ ok: false, code: "INVALID_CARD_REQUEST", message: "Confirme os dados e sua opção de salvar o cartão." }, 400);

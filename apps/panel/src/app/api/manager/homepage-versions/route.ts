@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -16,7 +17,7 @@ const restoreSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const result = await auth.supabase
     .from("homepage_section_versions")
@@ -43,9 +44,11 @@ export async function POST(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
-  const parsed = restoreSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = restoreSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Informe a versão e uma justificativa válida." },

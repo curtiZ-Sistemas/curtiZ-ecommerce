@@ -20,6 +20,7 @@ export function missingCloudflareSecrets(
 const placeholderFor = (name: string) => {
   if (name === "MERCADO_PAGO_ACCESS_TOKEN") return "TEST-cloudflare-secret-present";
   if (name === "PII_ENCRYPTION_KEY") return "cloudflare-secret-present-at-runtime";
+  if (name.endsWith("_HMAC_KEY")) return "cloudflare-hmac-secret-present-at-runtime";
   return "cloudflare-secret-present";
 };
 

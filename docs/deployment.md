@@ -40,8 +40,9 @@ O token Cloudflare deve ter somente as permissões necessárias para publicar os
 conta correta. Não armazene tokens em variables públicas.
 
 Antes do build, o workflow consulta somente os **nomes** dos secrets já presentes em cada Worker.
-Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY` e `AUDIT_HASH_KEY`; quando a integração
-correspondente está habilitada, exige também `MERCADO_PAGO_ACCESS_TOKEN`,
+Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY`, `AUDIT_HASH_KEY`,
+`ACCOUNT_DELETION_HMAC_KEY`, `RATE_LIMIT_HMAC_KEY` e `REFERRAL_ATTRIBUTION_HMAC_KEY`; quando a
+integração correspondente está habilitada, exige também `MERCADO_PAGO_ACCESS_TOKEN`,
 `MERCADO_PAGO_WEBHOOK_SECRET`, `TURNSTILE_SECRET_KEY` e/ou `RESEND_API_KEY`. Valores secretos não
 são copiados para o GitHub nem impressos. Placeholders efêmeros servem exclusivamente para permitir
 que o validador de presença rode durante o build; o runtime mantém os secrets reais com
@@ -121,6 +122,7 @@ Para habilitar temporariamente o Checkout Bricks apenas em teste, configure na W
 CHECKOUT_ENABLED=true
 PAYMENT_PROVIDER=mercadopago
 MERCADO_PAGO_ENABLED=true
+MERCADO_PAGO_ENVIRONMENT=test
 MERCADO_PAGO_ACCESS_TOKEN=TEST-...
 NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=TEST-...
 SHIPPING_PROVIDER=fixed
@@ -128,6 +130,10 @@ SHIPPING_PROVIDER=fixed
 
 `MERCADO_PAGO_WEBHOOK_SECRET` é obrigatório quando o Mercado Pago está habilitado; o webhook é
 parte da reconciliação idempotente. O backend continua bloqueando credenciais sem o prefixo de teste.
+Configure no Mercado Pago a URL canônica `https://<loja>/api/webhooks/mercadopago`. A Edge Function
+homônima é apenas um relay de compatibilidade para essa rota e requer `NEXT_PUBLIC_STORE_URL`; ela
+não processa nem persiste eventos. `ACCOUNT_DELETION_HMAC_KEY` também deve ser um secret aleatório,
+independente das chaves do Supabase, e não deve ser exposto como variável `NEXT_PUBLIC_*`.
 
 Uma futura mudança para produção deve ser explícita e revisada no adapter compartilhado de
 `packages/integrations`, com configuração de ambiente de pagamento, credenciais e testes de
@@ -244,3 +250,14 @@ e contratos da área de representantes continuam restritas aos dados autorizados
 versionados. Os builds Next/OpenNext e comandos de deploy verificam os assets públicos, rejeitando
 source maps e exposições proibidas. Mapas internos do Worker não são tratados como assets de navegador.
 Esses gates não substituem RLS, autorização nem rotação de credenciais quando necessária.
+# Hardening adicional de uploads e webhook
+
+- O binding `IMAGES` deve estar operacional em store e panel. Imagens de clientes são decodificadas/reencodadas como WebP sem metadados; sem o decoder, o upload falha fechado. Testes unitários não substituem validação do binding no Worker.
+- Aplique também `202609140004_payment_webhook_leases.sql`: deduplicação inclui reembolsos, com lease de 60 segundos e orçamento compartilhado por pagamento.
+- Antes de liberar os Workers, aplique as migrations incrementais `202609140003` a `202609140008` e execute DB lint/pgTAP em banco efêmero. Elas cobrem autoridade de roles, orçamentos privados/públicos, leases de webhook, devoluções, fila de análise e cooldown de reconciliação. Rotas dependentes falham fechadas enquanto suas RPCs não estiverem disponíveis.
+- A migration `202609160001_auth_rate_limit_result_contract.sql` deve ser aplicada antes do Worker da loja. O preflight exige a versão 2 do contrato; sem ela, autenticação falha com 503 em vez de transformar indisponibilidade do Supabase em um bloqueio 429 falso.
+- Os novos HMACs devem ser independentes, aleatórios e ter pelo menos 32 caracteres. Não reutilize a chave de webhook ou a service role. A configuração versionada do painel agora inclui `IMAGES` em staging/produção; confirme a disponibilidade do serviço e teste upload real em staging.
+- O adaptador Mercado Pago permanece restrito a `MERCADO_PAGO_ENVIRONMENT=test` e credenciais `TEST-`. Não habilite produção simplesmente trocando credenciais: o adaptador live e sua homologação ainda não estão implementados.
+- A auditoria foi corrigida para Next.js/eslint-config-next `16.3.3` e versões transitivas vulneráveis via overrides restritos. OpenNext `1.20.2` e Wrangler `4.86.0` foram preservados. A instalação aponta peers WASM opcionais do resolver ESLint; lint no host não equivale à validação dessa plataforma opcional.
+- No Windows, o build Next passou, mas o empacotamento OpenNext encontrou `EPERM` ao criar symlinks. Confirme os builds completos dos dois Workers no CI Linux antes de publicar; o suporte de versão declarado pelo pacote não comprova execução do Worker.
+- Os jobs de segurança fazem parte dos requisitos do deploy. CodeQL/dependency review dependem das funcionalidades disponíveis no plano GitHub; a Action oficial do Gitleaks exige licença para repositórios de organizações. Configure essas permissões/licença externamente quando aplicável, sem silenciar falhas.

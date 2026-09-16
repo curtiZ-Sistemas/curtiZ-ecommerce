@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeManagerRequest,
@@ -70,7 +71,7 @@ function statusForError(code: string | undefined): number {
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const filters = normalizeFilters(request.nextUrl.searchParams);
   const page = Math.max(1, Math.min(100_000, Number(request.nextUrl.searchParams.get("page")) || 1));
@@ -103,14 +104,10 @@ export async function POST(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ message: "Solicitação inválida." }, { status: 400, headers: managerNoStore });
-  }
+  const body = await readJsonResponse(request, 32_000);
+  if (body instanceof Response) return body;
   if (body === null || typeof body !== "object" || Array.isArray(body) || (body as { action?: unknown }).action !== "export") {
     return NextResponse.json({ message: "Ação inválida." }, { status: 400, headers: managerNoStore });
   }

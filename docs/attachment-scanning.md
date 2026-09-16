@@ -1,27 +1,17 @@
-# Varredura de anexos de atendimento
+# Anexos em quarentena
 
-O fluxo atual é **fail-closed**: uploads novos recebem `scan_status=pending` e permanecem no bucket
-privado. A API de atendimento só cria URL assinada quando o registro está `clean`; `pending`,
-`infected`, `failed` ou qualquer valor desconhecido nunca disponibiliza o arquivo.
+Uploads são privados, limitados e associados a uma mensagem autorizada. Imagens passam pelo decoder do binding `IMAGES` e são reencodadas. O SHA-256 dos bytes armazenados acompanha o anexo. O estado inicial é sempre `pending`; RLS do Storage e a API só liberam download em `clean`.
 
-## Pendência externa
+## Única integração externa restante
 
-O repositório ainda não contém nem configura um mecanismo antimalware. Para ativar anexos em
-produção é necessário contratar/configurar um scanner real capaz de ler objetos do bucket
-`customer-private`, verificar o conteúdo e atualizar o metadado por um backend server-only. Não
-marque arquivos como limpos por extensão, MIME, assinatura inicial ou sucesso do upload: essas
-checagens já bloqueiam formatos inválidos, mas não substituem varredura antimalware.
+Conecte um executor confiável a um scanner real, implementando `AttachmentScanner` de `@curtiz/security`. Nenhum fornecedor ou resultado simulado está habilitado. Enquanto isso, arquivos permanecem em quarentena e não podem ser baixados.
 
-Checklist de integração:
+O executor deve:
 
-1. Consumir somente registros `pending`, em lote limitado, com idempotência e tentativas limitadas.
-2. Baixar o objeto por credencial server-only sem gerar URL pública.
-3. Marcar `clean` somente após resultado conclusivo do scanner; marcar `infected` ou `failed` nos
-   demais resultados e registrar código técnico sem conteúdo do arquivo ou credenciais.
-4. Restringir a atualização de `scan_status` ao papel técnico/backend; clientes e operadores não
-   podem aprovar o próprio anexo.
-5. Testar arquivo limpo, arquivo de teste EICAR, timeout, objeto ausente e repetição do mesmo evento.
-6. Só então habilitar a experiência comercial que dependa do download desses anexos.
+1. Usar credencial server-only com acesso restrito; chamar `claim_support_attachment_scan` para obter um job e seu token de lease.
+2. Baixar do bucket privado `customer-private` o caminho do job, com limite efetivo de 10 MB. Não aceitar URL do cliente nem publicar URL assinada.
+3. Confirmar o SHA-256 esperado e chamar `scanAttachment` com um scanner real. A interface aplica timeout e nunca converte ausência, erro ou verdict desconhecido em `clean`.
+4. Chamar `finish_support_attachment_scan` com job, token, SHA-256 e verdict. Somente o lease vigente e o objeto esperado podem finalizar a análise.
+5. Registrar somente IDs, resultado e duração. Não registrar bytes, nomes originais, URLs privadas, tokens ou dados da mensagem.
 
-Até essa integração existir e ser testada, anexos pendentes continuarão visíveis apenas como
-“aguardando verificação”, sem link de download.
+Jobs abandonados podem ser retomados após cinco minutos, até cinco tentativas. Jobs falhos permanecem bloqueados e exigem investigação/reagendamento confiável. Anexos pendentes anteriores à migration não têm checksum: um operador confiável deve calcular o hash dos bytes privados antes de permitir sua análise; não atribua `clean` manualmente para liberar a fila.

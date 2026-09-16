@@ -11,6 +11,11 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/personal-data", () => import("../../../lib/personal-data"));
 vi.mock("@/lib/unknown-data", () => import("../../../lib/unknown-data"));
+vi.mock("@/lib/private-request", () => ({
+  PrivateRequestError: class extends Error { constructor(readonly status: number) { super(); } },
+  readPrivateJson: (request: Request) => request.json(),
+  requirePrivateRateLimit: async () => undefined
+}));
 
 const savedId = "11111111-1111-4111-8111-111111111111";
 const body = { action: "address_save", id: savedId, label: "Casa 2", recipientName: "Cliente Teste",

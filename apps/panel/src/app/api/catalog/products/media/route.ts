@@ -1,3 +1,5 @@
+import { readJsonResponse, readFormResponse, RequestBodyError } from "@curtiz/security";
+import { prepareUploadImage } from "@/lib/image-upload";
 import { logServerEvent } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
@@ -114,14 +116,15 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024 + 65_536)
     return NextResponse.json(
       { message: "Envie uma imagem de até 10 MB." },
       { status: 413, headers: privateNoStore }
     );
-  const form = await request.formData().catch(() => null);
+  const form = await readFormResponse(request, 10 * 1024 * 1024 + 65_536);
+  if (form instanceof Response) return form;
   const file = form?.get("file");
   const parsed = z
     .object({
@@ -141,14 +144,22 @@ export async function POST(request: NextRequest) {
       { message: "Envie JPG, PNG ou WebP de até 10 MB." },
       { status: 400, headers: privateNoStore }
     );
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const image = inspectImage(bytes);
-  if (!image || image.width < 1 || image.height < 1)
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let image = inspectImage(bytes);
+  if (!image || image.mime !== file.type || image.width < 1 || image.height < 1
+    || image.width > 12_000 || image.height > 12_000 || image.width * image.height > 40_000_000)
     return NextResponse.json(
       { message: "O arquivo não contém uma imagem válida." },
       { status: 415, headers: privateNoStore }
     );
 
+  try {
+    bytes = await prepareUploadImage(bytes, 10 * 1024 * 1024);
+    image = { ...image, mime: "image/webp", extension: "webp" };
+  } catch (error) {
+    return NextResponse.json({ message: "Não foi possível validar a imagem." },
+      { status: error instanceof RequestBodyError ? error.status : 422, headers: privateNoStore });
+  }
   const product = await auth.supabase
     .from("products")
     .select("id")
@@ -273,10 +284,12 @@ export async function DELETE(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
   const parsed = z
     .object({ imageId: postgresUuidSchema })
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json(
       { message: "Imagem inválida." },
@@ -323,7 +336,9 @@ export async function PATCH(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
   const parsed = z
     .discriminatedUnion("action", [
       z.object({ action: z.literal("primary"), imageId: postgresUuidSchema }),
@@ -348,7 +363,7 @@ export async function PATCH(request: NextRequest) {
         imageId: postgresUuidSchema.nullable()
       })
     ])
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json(
       { message: "Ação de mídia inválida." },

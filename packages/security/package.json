@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./safe-path": "./src/safe-path.ts",
     "./auth-persistence": "./src/auth-persistence.ts",
     "./auth-cookie": "./src/auth-cookie.ts",
     "./postgres-uuid": "./src/postgres-uuid.ts",

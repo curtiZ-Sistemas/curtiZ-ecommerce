@@ -169,7 +169,9 @@ export class MercadoPagoTestPaymentProvider {
     headers.set("authorization", `Bearer ${this.accessToken}`);
     headers.set("content-type", "application/json");
     if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
-    const response = await fetch(`https://api.mercadopago.com${path}`, { ...init, headers });
+    const response = await fetch(`https://api.mercadopago.com${path}`, {
+      ...init, headers, signal: init.signal ?? AbortSignal.timeout(15_000)
+    });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new MercadoPagoProviderError(
       response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
@@ -181,7 +183,8 @@ export class MercadoPagoTestPaymentProvider {
   async getPaymentMethodIds(): Promise<string[]> {
     const response = await fetch("https://api.mercadopago.com/v1/payment_methods", {
       method: "GET",
-      headers: { authorization: `Bearer ${this.accessToken}` }
+      headers: { authorization: `Bearer ${this.accessToken}` },
+      signal: AbortSignal.timeout(15_000)
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new MercadoPagoProviderError("provider_unavailable", response.status);

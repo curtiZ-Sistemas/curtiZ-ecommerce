@@ -28,6 +28,7 @@ vi.mock("@/lib/personal-data", () => import("../../../../lib/personal-data"));
 vi.mock("@/lib/mercadopago-payer-identity", () => import("../../../../lib/mercadopago-payer-identity"));
 vi.mock("@/lib/pii", () => import("../../../../lib/pii"));
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../lib/mercadopago-payment"));
+vi.mock("@/lib/private-request", () => import("../../../../lib/private-request"));
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 vi.mock("@/lib/mercadopago-saved-cards", () => ({ validateSavedCardCustomer: vi.fn(), validateSavedCardPayer: vi.fn(), SavedCardsError: class extends Error {} }));
@@ -133,7 +134,10 @@ function database() {
     }
     return Promise.resolve({ data: null, error: null });
   });
-  vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser: () => Promise.resolve({ data: { user: { id: "customer-id" } }, error: null }) } } as never);
+  vi.mocked(createServerSupabaseClient).mockResolvedValue({
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: "customer-id" } }, error: null }) },
+    rpc: () => Promise.resolve({ data: true, error: null })
+  } as never);
   vi.mocked(createServiceSupabaseClient).mockReturnValue({ from, rpc } as never);
   return { order, payment, attempts, creationKeys, failures, rpc, identity };
 }
@@ -156,6 +160,22 @@ describe("confirmação de pagamento", () => {
     state.checkoutEnabled = false;
     expect((await POST(request())).status).toBe(503);
     expect(createServerSupabaseClient).not.toHaveBeenCalled();
+  });
+  it("bloqueia rate limit e corpo excessivo antes de chamar o provedor", async () => {
+    database();
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({
+      auth: { getUser: () => Promise.resolve({ data: { user: { id: "customer-id" } }, error: null }) },
+      rpc: () => Promise.resolve({ data: false, error: null })
+    } as never);
+    expect((await POST(request())).status).toBe(429);
+    expect(state.createPayment).not.toHaveBeenCalled();
+
+    database();
+    const oversized = new NextRequest("https://loja.example/api/checkout/payment", { method: "POST",
+      headers: { origin: "https://loja.example", "content-type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(49 * 1024) }) });
+    expect((await POST(oversized)).status).toBe(413);
+    expect(state.createPayment).not.toHaveBeenCalled();
   });
   it("envia documento TEST e armazena exclusivamente o CPF real", async () => {
     const db = database();

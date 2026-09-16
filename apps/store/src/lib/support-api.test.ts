@@ -10,6 +10,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/private-request", () => import("./private-request"));
 vi.mock("@/lib/http-origin", () => import("./http-origin"));
 vi.mock("@/lib/unknown-data", () => import("./unknown-data"));
+vi.mock("@/lib/file-validation", () => import("./file-validation"));
+vi.mock("@/lib/image-upload", () => ({ prepareUploadImage: async (bytes: Uint8Array) => bytes }));
 vi.mock("@/lib/demo-support-store", () => ({ DemoSupportError: class extends Error {} }));
 vi.mock("@/lib/support-actor", async () => {
   const { PrivateRequestError } = await import("./private-request");

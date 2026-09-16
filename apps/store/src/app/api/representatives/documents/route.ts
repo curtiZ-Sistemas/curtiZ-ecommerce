@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFormResponse } from "@curtiz/security";
+import { PrivateRequestError, requirePrivateRateLimit } from "@/lib/private-request";
+import { prepareUploadImage } from "@/lib/image-upload";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -37,7 +40,21 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: noStore }
     );
   }
-  const form = await request.formData().catch(() => null);
+  const demoSession = process.env.DEMO_MODE === "true" && process.env.APP_ENV !== "production"
+    ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value) : null;
+  const supabase = demoSession ? null : await createServerSupabaseClient();
+  const userResult = supabase ? await supabase.auth.getUser() : null;
+  const user = userResult?.data.user;
+  if (!demoSession && (!supabase || !user || userResult?.error)) {
+    return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers: noStore });
+  }
+  if (supabase) {
+    try { await requirePrivateRateLimit(supabase, "customer_upload"); }
+    catch (error) { return NextResponse.json({ message: "Upload indisponível no momento." },
+      { status: error instanceof PrivateRequestError ? error.status : 503, headers: noStore }); }
+  }
+  const form = await readFormResponse(request, maximumBytes + multipartOverheadBytes);
+  if (form instanceof Response) return form;
   const file = form?.get("file");
   const documentType = form?.get("documentType");
   if (
@@ -47,8 +64,8 @@ export async function POST(request: NextRequest) {
   ) {
     return NextResponse.json({ message: "Documento inválido." }, { status: 400, headers: noStore });
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspectUpload(bytes, file.type, allowedTypes);
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspectUpload(bytes, file.type, allowedTypes);
   if (!inspected) {
     return NextResponse.json(
       { message: "O conteúdo do documento não corresponde ao formato informado." },
@@ -66,10 +83,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const demoSession =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
   if (demoSession) {
     if (!demoSession.roles.includes("customer")) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
@@ -80,9 +93,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = await createServerSupabaseClient();
-  const userResult = supabase ? await supabase.auth.getUser() : null;
-  const user = userResult?.data.user;
   if (!supabase || !user) {
     return NextResponse.json(
       { message: "Entre para continuar." },
@@ -104,6 +114,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (inspected.mime.startsWith("image/")) {
+    try {
+      bytes = await prepareUploadImage(bytes, maximumBytes);
+      inspected = { mime: "image/webp", extension: "webp" };
+    } catch (error) {
+      return NextResponse.json({ message: "Não foi possível validar a imagem." },
+        { status: error instanceof PrivateRequestError ? error.status : 422, headers: noStore });
+    }
+  }
   const checksum = createHash("sha256").update(bytes).digest("hex");
   const applicationId = readString(application, "id");
   if (!applicationId) {

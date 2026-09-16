@@ -26,6 +26,10 @@ describe("publicCatalogMediaUrl", () => {
   });
 
   it("rejeita URL absoluta fora das origens configuradas", () => {
+    const options = { storeUrl: "https://loja.curtiz.test" };
+    expect(publicCatalogMediaUrl("//evil.example/image.png", options)).toBe("");
+    expect(publicCatalogMediaUrl("/\\evil.example/image.png", options)).toBe("");
+    expect(publicCatalogMediaUrl("https://user:password@loja.curtiz.test/image.png", options)).toBe("");
     expect(
       publicCatalogMediaUrl("https://cdn-invalido.test/produto.webp", {
         storeUrl: "https://loja.curtiz.test",

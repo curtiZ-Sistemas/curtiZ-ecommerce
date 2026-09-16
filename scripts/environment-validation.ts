@@ -17,8 +17,11 @@ const stagingRequired = [
   "SUPABASE_URL",
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SECRET_KEY",
+  "ACCOUNT_DELETION_HMAC_KEY",
   "PII_ENCRYPTION_KEY",
   "AUDIT_HASH_KEY",
+  "RATE_LIMIT_HMAC_KEY",
+  "REFERRAL_ATTRIBUTION_HMAC_KEY",
   "ALLOWED_ORIGINS",
   "AUTH_COOKIE_DOMAINS"
 ] as const;
@@ -314,6 +317,11 @@ const validateTestUrlPair = (environment: EnvironmentValues, errors: string[]): 
 
 export function requiredDeploymentSecrets(environment: EnvironmentValues): string[] {
   const required = new Set(["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY"]);
+  if (normalize(environment.DEPLOY_TARGET) !== "panel") {
+    required.add("ACCOUNT_DELETION_HMAC_KEY");
+    required.add("RATE_LIMIT_HMAC_KEY");
+    required.add("REFERRAL_ATTRIBUTION_HMAC_KEY");
+  }
   if (["mercadopago", "mercado_pago"].includes(normalize(environment.PAYMENT_PROVIDER))
     || enabledBoolean(environment.MERCADO_PAGO_ENABLED)) {
     required.add("MERCADO_PAGO_ACCESS_TOKEN");
@@ -338,17 +346,23 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
     enabledBoolean(environment.MERCADO_PAGO_ENABLED);
 
   addRequiredErrors(environment, requiredDeploymentSecrets(environment).filter((name) =>
-    !["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY", "TURNSTILE_SECRET_KEY"].includes(name)
+    !["SUPABASE_SECRET_KEY", "ACCOUNT_DELETION_HMAC_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY",
+      "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY", "TURNSTILE_SECRET_KEY"].includes(name)
   ), errors);
 
   if (mercadoPagoEnabled) {
     addRequiredErrors(
       environment,
       [
-        "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY"
+        "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY",
+        "MERCADO_PAGO_ENVIRONMENT"
       ],
       errors
     );
+    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT")
+      && normalize(environment.MERCADO_PAGO_ENVIRONMENT) !== "test") {
+      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test enquanto o adapter live não estiver habilitado");
+    }
     if (
       hasValue(environment, "MERCADO_PAGO_ACCESS_TOKEN") &&
       !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-")
@@ -450,6 +464,13 @@ const validateCommonValues = (
   validateTestUrlPair(environment, errors);
 
   validateProviderCredentials(environment, errors);
+  if (requireHttps) {
+    for (const name of ["ACCOUNT_DELETION_HMAC_KEY", "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY"] as const) {
+      if (hasValue(environment, name) && (environment[name]?.trim().length ?? 0) < 32) {
+        errors.push(`${name} deve possuir ao menos 32 caracteres`);
+      }
+    }
+  }
 };
 
 const validateProductionRules = (environment: EnvironmentValues, errors: string[]): void => {

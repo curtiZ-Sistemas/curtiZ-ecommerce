@@ -9,6 +9,7 @@ vi.mock("@/lib/technical-sanitizer", () => import("./technical-sanitizer"));
 vi.mock("@/lib/internal-mfa", () => import("./internal-mfa"));
 vi.mock("@/lib/public-media", () => import("./public-media"));
 vi.mock("@/lib/postgres-uuid", () => import("./postgres-uuid"));
+vi.mock("@/lib/operational-order-status", () => import("./operational-order-status"));
 vi.mock("@curtiz/security", async (importOriginal) => ({
   ...await importOriginal<typeof Security>(),
   verifyDemoSession: () => null
@@ -37,7 +38,8 @@ describe("API operacional", () => {
     mocks.roles = ["operational"];
     mocks.assurance.mockClear();
     expect((await readOperations(new NextRequest("http://localhost:3001/api/operations"))).status).toBe(403);
-    expect((await changeOperations(new NextRequest("http://localhost:3001/api/operations", { method: "POST" }))).status).toBe(403);
+    expect((await changeOperations(new NextRequest("http://localhost:3001/api/operations", { method: "POST",
+      headers: { origin: "http://localhost:3001" } }))).status).toBe(403);
     expect(mocks.assurance).toHaveBeenCalledTimes(2);
   });
 });
@@ -47,8 +49,8 @@ describe("API de produtos", () => {
     mocks.assurance.mockClear();
     const url = "http://localhost:3001/api/catalog/products";
     expect((await readProducts(new NextRequest(url))).status).toBe(401);
-    expect((await changeProducts(new NextRequest(url, { method: "PATCH" }))).status).toBe(401);
-    expect((await deleteProducts(new NextRequest(url, { method: "DELETE" }))).status).toBe(401);
+    expect((await changeProducts(new NextRequest(url, { method: "PATCH", headers: { origin: new URL(url).origin } }))).status).toBe(401);
+    expect((await deleteProducts(new NextRequest(url, { method: "DELETE", headers: { origin: new URL(url).origin } }))).status).toBe(401);
     expect(mocks.assurance).toHaveBeenCalledTimes(3);
   });
 });
@@ -57,7 +59,8 @@ describe("API de navegação da loja", () => {
     mocks.roles = ["admin"];
     const url = "http://localhost:3001/api/admin/store-navigation";
     expect((await readNavigation(new NextRequest(url))).status).toBe(401);
-    expect((await changeNavigation(new NextRequest(url, { method: "PATCH" }))).status).toBe(401);
+    expect((await changeNavigation(new NextRequest(url, { method: "PATCH",
+      headers: { origin: "http://localhost:3001", "sec-fetch-site": "same-origin" } }))).status).toBe(401);
   });
 });
 afterEach(() => vi.unstubAllEnvs());

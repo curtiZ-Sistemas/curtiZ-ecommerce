@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const parsed = filtersSchema.safeParse({
     from: request.nextUrl.searchParams.get("from"),

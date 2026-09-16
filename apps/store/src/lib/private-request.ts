@@ -1,50 +1,18 @@
 import "server-only";
+export {
+  RequestBodyError as PrivateRequestError,
+  readBoundedBody,
+  readBoundedJson as readPrivateJson
+} from "@curtiz/security";
 
-export class PrivateRequestError extends Error {
-  constructor(public readonly status: number) {
-    super("private_request_rejected");
-  }
-}
+import { readBoundedBody as readBody, RequestBodyError as PrivateRequestError } from "@curtiz/security";
 
-/** Enforce actual streamed bytes, including requests without Content-Length. */
-export async function readBoundedBody(request: Request, maximumBytes: number): Promise<Uint8Array> {
-  if (Number(request.headers.get("content-length")) > maximumBytes) {
-    throw new PrivateRequestError(413);
-  }
-  const reader = request.body?.getReader();
-  if (!reader) return new Uint8Array();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
+export async function readPrivateFormData(request: Request, maximumBytes: number): Promise<FormData> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data;")) throw new PrivateRequestError(415);
+  const body = await readBody(request, maximumBytes);
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      length += value.byteLength;
-      if (length > maximumBytes) {
-        await reader.cancel();
-        throw new PrivateRequestError(413);
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const body = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
-}
-
-export async function readPrivateJson(request: Request, maximumBytes = 16_384): Promise<unknown> {
-  if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
-    throw new PrivateRequestError(415);
-  }
-  const body = await readBoundedBody(request, maximumBytes);
-  try {
-    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+    return await new Response(body as BodyInit, { headers: { "content-type": contentType } }).formData();
   } catch {
     throw new PrivateRequestError(400);
   }

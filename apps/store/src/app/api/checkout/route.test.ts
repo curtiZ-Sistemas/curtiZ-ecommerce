@@ -19,6 +19,7 @@ vi.mock("@/lib/checkout-flow", () => import("../../../lib/checkout-flow"));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/personal-data", () => import("../../../lib/personal-data"));
 vi.mock("@/lib/pii", () => ({ encryptPII: () => "encrypted-cpf" }));
+vi.mock("@/lib/private-request", () => import("../../../lib/private-request"));
 vi.mock("@/lib/unknown-data", () => ({
   isUnknownRecord: (value: unknown) => Boolean(value && typeof value === "object" && !Array.isArray(value)),
   readNumber: (record: Record<string, unknown>, key: string) => Number(record[key] ?? 0),
@@ -41,10 +42,12 @@ const request = (payload: unknown = body) => new NextRequest("https://loja.examp
 
 function mockCheckout(discountInCents = 0) {
   const amountInCents = 10_000 - discountInCents + 1_690;
-  const rpc = vi.fn().mockResolvedValue({ data: {
+  const quote = { data: {
     subtotalInCents: 10_000, discountInCents, couponName: discountInCents ? "Cupom teste" : "",
     shippingInCents: 1_690, amountInCents
-  }, error: null });
+  }, error: null };
+  const rpc = vi.fn<(name: string) => Promise<{ data: unknown; error: unknown }>>((name: string) => Promise.resolve(name === "consume_private_api_rate_limit"
+    ? { data: true, error: null } : quote));
   const update = vi.fn();
   const eq = vi.fn().mockResolvedValue({ data: null, error: null });
   update.mockReturnValue({ eq });
@@ -106,6 +109,21 @@ describe("checkout sem criação prematura de pedido", () => {
     expect(mockedClient).not.toHaveBeenCalled();
   });
 
+  it("bloqueia abuso e corpo acima do limite antes de consultar a cotação", async () => {
+    const rpc = mockCheckout();
+    rpc.mockImplementation((name: string) => Promise.resolve(name === "consume_private_api_rate_limit"
+      ? { data: false, error: null } : { data: null, error: null }));
+    const limited = await POST(request());
+    expect(limited.status).toBe(429);
+    expect(rpc).not.toHaveBeenCalledWith("preview_professional_checkout", expect.anything());
+
+    mockCheckout();
+    const oversized = new NextRequest("https://loja.example/api/checkout", { method: "POST",
+      headers: { origin: "https://loja.example", "content-type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(33 * 1024) }) });
+    expect((await POST(oversized)).status).toBe(413);
+  });
+
   it("diferencia configuração Supabase ausente de sessão ausente", async () => {
     mockedClient.mockResolvedValue(null);
     const result = await POST(request());
@@ -116,9 +134,9 @@ describe("checkout sem criação prematura de pedido", () => {
   it("retorna JSON diagnóstico quando a RPC obrigatória não foi aplicada", async () => {
     mockedClient.mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "customer-id" } }, error: null }) },
-      rpc: vi.fn().mockResolvedValue({ data: null, error: {
-        code: "PGRST202", message: "function not found", details: "", hint: "reload schema"
-      } })
+      rpc: vi.fn((name: string) => Promise.resolve(name === "consume_private_api_rate_limit"
+        ? { data: true, error: null }
+        : { data: null, error: { code: "PGRST202", message: "function not found", details: "", hint: "reload schema" } }))
     } as never);
     const result = await POST(request());
     expect(result.status).toBe(503);
@@ -136,7 +154,9 @@ describe("checkout sem criação prematura de pedido", () => {
 
   it("não mascara falha de banco desconhecida como alteração de estoque", async () => {
     const rpc = mockCheckout();
-    rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "database failure" } });
+    rpc.mockImplementation((name: string) => Promise.resolve(name === "consume_private_api_rate_limit"
+      ? { data: true, error: null }
+      : { data: null, error: { code: "XX000", message: "database failure" } }));
     const result = await POST(request());
     expect(result.status).toBe(503);
     await expect(result.json()).resolves.toMatchObject({ code: "CHECKOUT_SERVICE_UNAVAILABLE" });
@@ -144,10 +164,12 @@ describe("checkout sem criação prematura de pedido", () => {
 
   it("preserva conflito comercial real sem retry", async () => {
     const rpc = mockCheckout();
-    rpc.mockResolvedValue({ data: null, error: { code: "P0001", message: "checkout_line_unavailable" } });
+    rpc.mockImplementation((name: string) => Promise.resolve(name === "consume_private_api_rate_limit"
+      ? { data: true, error: null }
+      : { data: null, error: { code: "P0001", message: "checkout_line_unavailable" } }));
     const result = await POST(request());
     expect(result.status).toBe(409);
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("transforma exceção de runtime em JSON controlado", async () => {

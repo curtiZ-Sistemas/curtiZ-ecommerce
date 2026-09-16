@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
     );
   }
   const auth = await authorizeTechnicalRequest(request);
-  if (!auth) return unauthorizedTechnicalResponse();
+  if (!auth) return unauthorizedTechnicalResponse(request);
 
   const since = new Date(Date.now() - 86_400_000).toISOString();
   const [

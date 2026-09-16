@@ -6,6 +6,8 @@ import { inspectUpload, type AcceptedUploadMime } from "@/lib/file-validation";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
+import { PrivateRequestError, readPrivateFormData, requirePrivateRateLimit } from "@/lib/private-request";
+import { prepareUploadImage } from "@/lib/image-upload";
 
 const allowedTypes = new Set<AcceptedUploadMime>([
   "image/jpeg",
@@ -22,22 +24,32 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: noStore }
     );
   }
-  if (Number(request.headers.get("content-length") ?? 0) > maximumBytes + 256 * 1024) {
-    return NextResponse.json(
-      { message: "Imagem acima do limite de 5 MB." },
-      { status: 413, headers: noStore }
-    );
+  const demo = process.env.DEMO_MODE === "true" && process.env.APP_ENV !== "production"
+    ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value) : null;
+  const supabase = demo ? null : await createServerSupabaseClient();
+  const userResult = supabase ? await supabase.auth.getUser() : null;
+  const user = userResult?.data.user;
+  if (!demo && (!supabase || !user || userResult?.error)) {
+    return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers: noStore });
   }
-  const form = await request.formData().catch(() => null);
-  const file = form?.get("file");
+  if (supabase) {
+    try { await requirePrivateRateLimit(supabase, "customer_upload"); }
+    catch (error) { return NextResponse.json({ message: "Upload indisponível no momento." },
+      { status: error instanceof PrivateRequestError ? error.status : 503, headers: noStore }); }
+  }
+  let form: FormData;
+  try { form = await readPrivateFormData(request, maximumBytes + 256 * 1024); }
+  catch (error) { return NextResponse.json({ message: "Imagem inválida ou acima do limite de 5 MB." },
+    { status: error instanceof PrivateRequestError ? error.status : 400, headers: noStore }); }
+  const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json(
       { message: "Selecione uma imagem válida." },
       { status: 400, headers: noStore }
     );
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspectUpload(bytes, file.type, allowedTypes);
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspectUpload(bytes, file.type, allowedTypes);
   if (!inspected || file.size < 1 || file.size > maximumBytes) {
     return NextResponse.json(
       { message: "Envie JPG, PNG ou WebP com até 5 MB." },
@@ -45,10 +57,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const demo =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
   if (demo) {
     if (!demo.roles.includes("customer")) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
@@ -59,14 +67,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = await createServerSupabaseClient();
-  const userResult = supabase ? await supabase.auth.getUser() : null;
-  const user = userResult?.data.user;
   if (!supabase || !user) {
     return NextResponse.json(
       { message: "Entre para continuar." },
       { status: 401, headers: noStore }
     );
+  }
+  try {
+    bytes = await prepareUploadImage(bytes, maximumBytes);
+    inspected = { mime: "image/webp", extension: "webp" };
+  } catch (error) {
+    return NextResponse.json({ message: "Não foi possível validar a imagem." },
+      { status: error instanceof PrivateRequestError ? error.status : 422, headers: noStore });
   }
   const currentResponse = await supabase
     .from("profiles")

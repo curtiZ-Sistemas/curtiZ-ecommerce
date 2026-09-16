@@ -1,7 +1,8 @@
-import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
+import { DEMO_SESSION_COOKIE, isAllowedBrowserRequest, readBoundedJson, RequestBodyError, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "./internal-mfa";
+import { consumePanelMutationBudget, panelRateLimitStatus } from "./api-rate-limit";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -17,14 +18,23 @@ export function objectRows(value: unknown): UnknownRecord[] {
 }
 
 export function safePanelOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
   const configured = new Set([
-    new URL(request.url).origin,
     process.env.NEXT_PUBLIC_PANEL_URL,
     ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
-  ]);
-  return configured.has(origin);
+  ].filter((value): value is string => Boolean(value)));
+  return isAllowedBrowserRequest(request, configured);
+}
+
+export async function readPanelJson(request: NextRequest, maximumBytes = 64 * 1024): Promise<unknown> {
+  try {
+    return await readBoundedJson(request, maximumBytes);
+  } catch (error) {
+    const status = error instanceof RequestBodyError ? error.status : 400;
+    return NextResponse.json(
+      { message: status === 413 ? "A requisição excede o limite permitido." : "Corpo JSON inválido." },
+      { status, headers: privateNoStore }
+    );
+  }
 }
 
 export async function authorizeAdminRequest(
@@ -55,12 +65,13 @@ export async function authorizeAdminRequest(
     return null;
   }
   if (!(await hasRequiredInternalMfa(supabase))) return null;
+  if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return { supabase, userId: user.id };
 }
 
-export function unauthorizedAdminResponse() {
+export function unauthorizedAdminResponse(request?: NextRequest) {
   return NextResponse.json(
     { message: "Sua sessão não permite esta operação." },
-    { status: 401, headers: privateNoStore }
+    { status: panelRateLimitStatus(request), headers: privateNoStore }
   );
 }

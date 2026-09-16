@@ -8,6 +8,7 @@ import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { isValidBrazilianPhone, normalizeBrazilianPhone } from "@/lib/personal-data";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
 import { cancelCustomerOrder } from "@/lib/customer-order-cancellation";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,7 +116,11 @@ const stringValue = (value: unknown) => (typeof value === "string" ? value : "")
 export async function POST(request: Request) {
   if (!isAllowedRequestOrigin(request)) return json({ message: "Origem não permitida." }, 403);
 
-  const body: unknown = await request.json().catch(() => null);
+  let body: unknown;
+  try { body = await readPrivateJson(request, 16 * 1024); }
+  catch (error) { return json({ message: error instanceof PrivateRequestError && error.status === 413
+    ? "Os dados excedem o limite permitido." : "Dados inválidos." },
+    error instanceof PrivateRequestError ? error.status : 400); }
   if (!isUnknownRecord(body) || typeof body.action !== "string") {
     return json({ message: "Dados inválidos." }, 400);
   }
@@ -140,6 +145,15 @@ export async function POST(request: Request) {
   const userResult = supabase ? await supabase.auth.getUser() : { data: { user: null } };
   const user = userResult.data.user;
   if (!supabase || !user) return json({ message: "Faça login para continuar." }, 401);
+
+  {
+    try { await requirePrivateRateLimit(supabase, action === "order_cancel" || action === "return_request" ? action : "customer_write"); }
+    catch (error) {
+      const status = error instanceof PrivateRequestError ? error.status : 503;
+      return json({ message: status === 429 ? "Muitas tentativas. Aguarde antes de tentar novamente."
+        : "A proteção da conta está temporariamente indisponível." }, status);
+    }
+  }
 
   let response: unknown;
   const data = parsed.data as Record<string, unknown>;

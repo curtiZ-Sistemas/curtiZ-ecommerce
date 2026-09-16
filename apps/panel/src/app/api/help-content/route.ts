@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -157,7 +158,7 @@ function permissionForAction(
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeSupportContentRequest(request, "support_content.view");
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const [
     contents,
     categories,
@@ -245,13 +246,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!safePanelOrigin(request))
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
-  const parsed = createSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 131072);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = createSchema.safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os campos informados." }, { status: 400 });
   const permission: SupportContentPermission =
     parsed.data.kind === "content" ? "support_content.create" : "support_settings.manage";
   const auth = await authorizeSupportContentRequest(request, permission);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   let result: unknown;
   if (parsed.data.kind === "content")
     result = await auth.supabase.rpc("create_help_content", { p_payload: parsed.data.payload });
@@ -296,7 +299,9 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (!safePanelOrigin(request))
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 131072);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = updateSchema.safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os campos informados." }, { status: 400 });
   const auth = await authorizeSupportContentRequest(
@@ -306,7 +311,7 @@ export async function PATCH(request: NextRequest) {
       parsed.data.kind === "transition" ? parsed.data.action : undefined
     )
   );
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   let result: unknown;
   if (parsed.data.kind === "content")
     result = await auth.supabase.rpc("save_help_content", {
@@ -367,13 +372,15 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   if (!safePanelOrigin(request))
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403 });
+  const boundedBody = await readJsonResponse(request, 131072);
+  if (boundedBody instanceof Response) return boundedBody;
   const parsed = z
     .object({ id: z.string().uuid(), confirmation: z.literal("EXCLUIR") })
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json({ message: "Confirmação inválida." }, { status: 400 });
   const auth = await authorizeSupportContentRequest(request, "support_content.edit");
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const result = await auth.supabase.rpc("delete_help_content_draft", {
     p_id: parsed.data.id,
     p_confirmation: parsed.data.confirmation

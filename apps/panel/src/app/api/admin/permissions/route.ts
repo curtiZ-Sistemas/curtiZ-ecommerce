@@ -4,6 +4,7 @@ import {
   authorizeAdminRequest,
   objectRows,
   privateNoStore,
+  readPanelJson,
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
@@ -18,7 +19,7 @@ const overrideSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const [permissions, users, overrides] = await Promise.all([
     auth.supabase.from("permissions").select("id,code,description").order("code"),
     auth.supabase
@@ -58,8 +59,10 @@ export async function POST(request: NextRequest) {
     );
   }
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
-  const parsed = overrideSchema.safeParse(await request.json().catch(() => null));
+  if (!auth) return unauthorizedAdminResponse(request);
+  const body = await readPanelJson(request, 8 * 1024);
+  if (body instanceof NextResponse) return body;
+  const parsed = overrideSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Revise usuário, permissão, validade e justificativa." },

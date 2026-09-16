@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -18,8 +19,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: managerNoStore });
   }
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  if (!auth) return unauthorizedManagerResponse(request);
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ message: "Informe a transição e uma justificativa válida." }, { status: 400, headers: managerNoStore });
   }

@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -21,8 +22,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: technicalNoStore });
   }
   const auth = await authorizeTechnicalRequest(request);
-  if (!auth) return unauthorizedTechnicalResponse();
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  if (!auth) return unauthorizedTechnicalResponse(request);
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ message: "Revise a ação técnica e sua justificativa." }, { status: 400, headers: technicalNoStore });
   }

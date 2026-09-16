@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFormResponse } from "@curtiz/security";
+import { PrivateRequestError, requirePrivateRateLimit } from "@/lib/private-request";
+import { prepareUploadImage } from "@/lib/image-upload";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -33,7 +36,24 @@ export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   }
-  const form = await request.formData().catch(() => null);
+  const demo = process.env.DEMO_MODE === "true" && process.env.APP_ENV !== "production"
+    ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value) : null;
+  const supabase = demo ? null : await createServerSupabaseClient();
+  const userResult = supabase ? await supabase.auth.getUser() : null;
+  if (!demo && (!supabase || !userResult?.data.user || userResult?.error)) {
+    return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers });
+  }
+  if (supabase) {
+    const permission = await supabase.rpc("has_permission", { permission_code: "creatives.manage" });
+    if (permission.error || permission.data !== true) {
+      return NextResponse.json({ message: "Acesso negado." }, { status: permission.error ? 503 : 403, headers });
+    }
+    try { await requirePrivateRateLimit(supabase, "admin_mutation"); }
+    catch (error) { return NextResponse.json({ message: "Upload indisponível no momento." },
+      { status: error instanceof PrivateRequestError ? error.status : 503, headers }); }
+  }
+  const form = await readFormResponse(request, maximumBytes + multipartOverheadBytes);
+  if (form instanceof Response) return form;
   const file = form?.get("file");
   const creativeId = form?.get("creativeId");
   if (
@@ -53,8 +73,8 @@ export async function POST(request: NextRequest) {
       { status: 422, headers }
     );
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspectUpload(bytes, file.type, allowedTypes);
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspectUpload(bytes, file.type, allowedTypes);
   if (!inspected) {
     return NextResponse.json(
       { message: "O conteúdo do arquivo não corresponde a um formato seguro permitido." },
@@ -62,10 +82,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const demo =
-    process.env.DEMO_MODE === "true"
-      ? verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)
-      : null;
   if (demo) {
     if (!["admin", "manager"].includes(demo.role)) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers });
@@ -76,10 +92,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = await createServerSupabaseClient();
-  const userResult = supabase ? await supabase.auth.getUser() : null;
   if (!supabase || !userResult?.data.user) {
     return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers });
+  }
+  if (inspected.mime.startsWith("image/")) {
+    if (bytes.byteLength > 20 * 1024 * 1024) return NextResponse.json({ message: "Imagem acima do limite de 20 MB." }, { status: 413, headers });
+    try {
+      bytes = await prepareUploadImage(bytes, 20 * 1024 * 1024);
+      inspected = { mime: "image/webp", extension: "webp" };
+    } catch (error) {
+      return NextResponse.json({ message: "Não foi possível validar a imagem." },
+        { status: error instanceof PrivateRequestError ? error.status : 422, headers });
+    }
   }
   const checksum = createHash("sha256").update(bytes).digest("hex");
   const path = `${creativeId}/${randomUUID()}.${inspected.extension}`;
@@ -94,7 +118,7 @@ export async function POST(request: NextRequest) {
     .update({
       storage_path: path,
       mime_type: inspected.mime,
-      size_bytes: file.size,
+      size_bytes: bytes.byteLength,
       checksum_sha256: checksum
     })
     .eq("id", creativeId)

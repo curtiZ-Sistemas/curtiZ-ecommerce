@@ -24,7 +24,7 @@ import {
   resolveLoginRole,
   resolvePostLoginDestination
 } from "@/lib/auth-routing";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
 import { parseSignupInput, type NormalizedSignupInput } from "@/lib/signup-validation";
@@ -369,15 +369,15 @@ export async function POST(
     process.env.APP_ENV === "production" ||
     process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
 
-  if (
-    authRateLimitEnabled &&
-    !(await enforceAuthRateLimit({
+  const rateLimit = authRateLimitEnabled
+    ? await enforceAuthRateLimit({
       request,
       email: authInput.email,
       scope: mode === "resend" ? "signup" : mode,
-      supabase
-    }))
-  ) {
+      supabase: createServiceSupabaseClient()
+    })
+    : { status: "allowed" as const };
+  if (rateLimit.status === "blocked") {
     return NextResponse.json(
       {
         message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
@@ -386,9 +386,15 @@ export async function POST(
         status: 429,
         headers: {
           ...corsHeaders(request),
-          "retry-after": "900"
+          "retry-after": String(rateLimit.retryAfterSeconds)
         }
       }
+    );
+  }
+  if (rateLimit.status === "error") {
+    return NextResponse.json(
+      { message: "A prote\u00e7\u00e3o de acesso est\u00e1 temporariamente indispon\u00edvel." },
+      { status: 503, headers: corsHeaders(request) }
     );
   }
   if (
@@ -606,7 +612,7 @@ export async function POST(
   let referralClaimed = false;
   const referral = verifyReferralAttribution(
     request.cookies.get(REFERRAL_ATTRIBUTION_COOKIE)?.value,
-    process.env.AUDIT_HASH_KEY ?? ""
+    process.env.REFERRAL_ATTRIBUTION_HMAC_KEY ?? ""
   );
   if (referral) {
     const referralResult: unknown = await supabase.rpc("claim_referral_attribution", {

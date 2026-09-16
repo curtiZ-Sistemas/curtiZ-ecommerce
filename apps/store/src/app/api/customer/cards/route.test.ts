@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/private-request", () => import("../../../../lib/private-request"));
 import { GET, POST, DELETE } from "./route";
 const state = vi.hoisted(() => ({ enabled: true, user: { id: "user-a" }, rate: true, save: vi.fn(), remove: vi.fn(), list: vi.fn() }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));

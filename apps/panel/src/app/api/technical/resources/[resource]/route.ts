@@ -109,7 +109,7 @@ export async function GET(
     );
   }
   const auth = await authorizeTechnicalRequest(request);
-  if (!auth) return unauthorizedTechnicalResponse();
+  if (!auth) return unauthorizedTechnicalResponse(request);
 
   const definition = technicalResources[resource];
   const page = Math.max(1, Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1));

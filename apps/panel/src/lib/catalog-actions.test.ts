@@ -26,6 +26,7 @@ vi.mock("@/lib/admin-api", () => ({
   authorizeAdminRequest: async () => ({ supabase: await state.client(), userId: "admin" }),
   objectRows: (value: unknown): unknown[] => Array.isArray(value) ? value as unknown[] : [],
   privateNoStore: { "cache-control": "private, no-store" },
+  readPanelJson: (request: Request) => request.json(),
   safePanelOrigin: () => true,
   unauthorizedAdminResponse: () => new Response(null, { status: 401 })
 }));
@@ -37,7 +38,8 @@ const image = { id, storage_path: "/test.webp", alt_text: "Teste", is_primary: t
 const product = { id, name: "Produto teste", slug: "teste", status: "draft", base_price: 10, product_images: [image], product_variants: [{ id, sku: "TEST", color_name: "Azul", size: "36", active: true, inventory: { available_quantity: 2, reserved_quantity: 0 } }] };
 const permissionError = { code: "42501", message: "internal permission detail", details: "internal query detail" };
 const request = (method = "GET", body?: unknown) => new NextRequest("http://localhost:3001/api/catalog/products", {
-  method, ...(body ? { body: JSON.stringify(body), headers: { "content-type": "application/json" } } : {})
+  method, headers: { "origin": "http://localhost:3001", "content-type": "application/json" },
+  ...(body ? { body: JSON.stringify(body) } : {})
 });
 const categoryContext = { params: Promise.resolve({ resource: "categorias" }) };
 
@@ -49,7 +51,7 @@ beforeEach(() => {
     error: null, count: table === "products" ? 1 : 0
   }));
   state.rpc.mockReset().mockImplementation((name: string) => Promise.resolve({
-    data: name === "has_permission" ? true : name === "admin_delete_product" ? { deleted: true, storagePaths: ["products/test.webp"] } : { [id]: { canDelete: true, blockers: [] } }, error: null
+    data: name === "has_permission" || name === "consume_private_api_rate_limit" ? true : name === "admin_delete_product" ? { deleted: true, storagePaths: ["products/test.webp"] } : { [id]: { canDelete: true, blockers: [] } }, error: null
   }));
   state.remove.mockReset().mockResolvedValue({ error: null });
   state.client.mockResolvedValue({
@@ -104,6 +106,20 @@ describe("catalog GET essentials", () => {
 });
 
 describe("product DELETE", () => {
+  it("rejects cross-origin mutations before reading the body", async () => {
+    const input = request("DELETE", { productId: id });
+    input.headers.set("origin", "https://attacker.example");
+    expect((await DELETE(input)).status).toBe(403);
+    expect(input.bodyUsed).toBe(false);
+    expect(state.remove).not.toHaveBeenCalled();
+  });
+  it.each([[false, 429], [null, 503]])("fails closed for a denied or malformed mutation budget (%s)", async (budget, status) => {
+    state.rpc.mockImplementation(async () => ({ data: budget, error: null }));
+    const input = request("DELETE", { productId: id });
+    expect((await DELETE(input)).status).toBe(status);
+    expect(input.bodyUsed).toBe(false);
+    expect(state.remove).not.toHaveBeenCalled();
+  });
   it("returns success and removes the media paths returned by the RPC", async () => {
     const response = await DELETE(request("DELETE", { productId: id }));
     expect(response.status).toBe(200);
@@ -113,7 +129,7 @@ describe("product DELETE", () => {
   it("keeps a legitimate conflict and returns its readable blockers", async () => {
     state.rpc.mockImplementation(async (name: string) => name === "admin_delete_product"
       ? { data: null, error: { code: "23503", message: "product has related records" } }
-      : { data: { [id]: { canDelete: false, blockers: ["pedidos"] } }, error: null });
+      : { data: name === "consume_private_api_rate_limit" ? true : { [id]: { canDelete: false, blockers: ["pedidos"] } }, error: null });
     const response = await DELETE(request("DELETE", { productId: id }));
     expect(response.status).toBe(409);
     expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("pedidos. Use Arquivar") as unknown });

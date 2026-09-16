@@ -8,11 +8,14 @@ const migration = readFileSync(
 const statusCheck = readFileSync("supabase/functions/mercadopago-status-check/index.ts", "utf8");
 const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "utf8");
 const preference = readFileSync("supabase/functions/mercadopago-create-preference/index.ts", "utf8");
-const webhook = readFileSync("supabase/functions/mercadopago-webhook/index.ts", "utf8");
+const webhook = readFileSync("apps/store/src/app/api/webhooks/mercadopago/route.ts", "utf8");
+const lease = readFileSync("supabase/migrations/202609140004_payment_webhook_leases.sql", "utf8");
+const relay = readFileSync("supabase/functions/mercadopago-webhook/index.ts", "utf8");
 
 describe("Mercado Pago hardening", () => {
   it("requires an authenticated local payment for status checks", () => {
-    expect(statusCheck).toContain("auth.getClaims()");
+    expect(statusCheck).toContain("auth.getUser()");
+    expect(statusCheck).toContain('"claim_payment_reconciliation"');
     expect(statusCheck).toContain('.from("payments")');
     expect(statusCheck).not.toContain("external_reference:");
   });
@@ -36,7 +39,10 @@ describe("Mercado Pago hardening", () => {
     expect(migration).toContain("perform private.convert_order_reservations");
     expect(migration).toContain("processing_status = 'processed'");
     expect(migration).toContain("set search_path = ''");
-    expect(webhook).toContain('["processed", "manual_review"].includes');
-    expect(webhook).toContain('existingEvent.payload_hash !== payloadHash');
+    expect(webhook).toContain('claim.data === "duplicate"');
+    expect(lease).toContain('event.payload_hash <> p_payload_hash');
+    expect(lease).toContain('processing_completed_at is not null');
+    expect(relay).not.toContain('finalize_mercadopago_payment');
+    expect(relay).toContain('/api/webhooks/mercadopago');
   });
 });

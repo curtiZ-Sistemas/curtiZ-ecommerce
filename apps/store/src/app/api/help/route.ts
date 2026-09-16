@@ -1,3 +1,5 @@
+import { readJsonResponse } from "@curtiz/security";
+import { publicBudgetResponse } from "../../../lib/public-request";
 import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
@@ -118,6 +120,8 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "help_read");
+  if (budget) return budget;
   const query = request.nextUrl.searchParams.get("q")?.trim().slice(0, 160) ?? "";
   const category = request.nextUrl.searchParams.get("category")?.trim().slice(0, 100) ?? "";
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page")) || 1);
@@ -188,8 +192,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "help_write");
+  if (budget) return budget;
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false }, { status: 403 });
-  const parsed = writeSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = writeSchema.safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json({ ok: false, message: "Feedback inválido." }, { status: 400 });
   if (process.env.DEMO_MODE === "true") return NextResponse.json({ ok: true });

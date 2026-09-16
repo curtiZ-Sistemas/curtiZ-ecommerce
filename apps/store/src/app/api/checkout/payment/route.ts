@@ -14,6 +14,7 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 import { validateSavedCardCustomer, validateSavedCardPayer, SavedCardsError } from "@/lib/mercadopago-saved-cards";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 const checkoutSchema = z.object({
   couponCode: z.string().trim().max(40).optional(),
@@ -146,7 +147,22 @@ async function handlePost(request: NextRequest, requestId: string) {
     }, 503);
   }
   if (!user) return response({ ok: false, code: "AUTHENTICATION_REQUIRED", message: "Entre na sua conta para pagar." }, 401);
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  try {
+    await requirePrivateRateLimit(auth, "payment_attempt");
+  } catch (error) {
+    const status = error instanceof PrivateRequestError ? error.status : 503;
+    return response({ ok: false, code: status === 429 ? "RATE_LIMITED" : "ABUSE_PROTECTION_UNAVAILABLE",
+      message: status === 429 ? "Muitas tentativas de pagamento. Aguarde antes de tentar novamente."
+        : "O pagamento está temporariamente indisponível." }, status);
+  }
+  let body: unknown;
+  try { body = await readPrivateJson(request, 48 * 1024); }
+  catch (error) {
+    const status = error instanceof PrivateRequestError ? error.status : 400;
+    return response({ ok: false, code: status === 413 ? "REQUEST_TOO_LARGE" : "INVALID_PAYMENT_REQUEST",
+      message: status === 413 ? "Os dados do pagamento excedem o limite permitido." : "Revise os dados do pagamento." }, status);
+  }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     const invalidCustomerCpf = parsed.error.issues.some((issue) => issue.path.join(".") === "checkout.customer.cpf");
     return response({ ok: false, code: invalidCustomerCpf ? "INVALID_CUSTOMER_CPF" : "INVALID_PAYMENT_REQUEST",

@@ -1,4 +1,5 @@
 import { configuredPublicOrigins } from "@curtiz/config";
+import { isAllowedBrowserRequest } from "@curtiz/security";
 
 const configuredOrigins = () =>
   new Set(
@@ -12,13 +13,8 @@ const configuredOrigins = () =>
     ].filter((value): value is string => Boolean(value))
   );
 
-export const isAllowedRequestOrigin = (request: Request) => {
-  const origin = request.headers.get("origin");
-  if (origin) return origin === new URL(request.url).origin || configuredOrigins().has(origin);
-  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
-  return ["GET", "HEAD", "OPTIONS"].includes(request.method)
-    || request.headers.get("sec-fetch-site") === "same-origin";
-};
+export const isAllowedRequestOrigin = (request: Request) =>
+  isAllowedBrowserRequest(request, configuredOrigins());
 
 export const corsHeadersFor = (request: Request): Record<string, string> => {
   const origin = request.headers.get("origin");

@@ -36,15 +36,14 @@ function setup(status = "pending_payment", paymentStatus = "pending", expiresAt 
 
 describe("payment endpoint resumption guard", () => {
   beforeEach(() => { vi.clearAllMocks(); provider.enabled = false; });
-  it("refresh durante indisponibilidade conserva QR local sem criar cobrança", async () => {
+  it("refresh retorna estado local sem consultar nem criar cobrança no provedor", async () => {
     setup(); provider.enabled = true; provider.getPayment.mockRejectedValue(new Error("offline"));
     for (let refresh = 0; refresh < 2; refresh++) {
       const response = await GET(request, context);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ status: "pending", pixCopyPaste: "pix-salvo", pixQrCodeBase64: "qr-salvo" });
     }
-    expect(provider.getPayment).toHaveBeenCalledTimes(2);
-    expect(provider.getPayment).toHaveBeenCalledWith("provider-pix");
+    expect(provider.getPayment).not.toHaveBeenCalled();
     expect(provider.createPayment).not.toHaveBeenCalled();
   });
   it.each(["cancellation_requested", "cancelled", "expired", "payment_approved", "processing", "preparing", "shipped", "delivered", "refunded"])("blocks %s without returning payment instructions", async (status) => {

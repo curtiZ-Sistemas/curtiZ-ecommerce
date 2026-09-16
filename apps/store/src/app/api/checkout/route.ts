@@ -10,6 +10,7 @@ import { CheckoutIdentityError, readCustomerCheckoutCpf, saveCustomerCheckoutIde
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../lib/checkout-diagnostics";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 const schema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -113,7 +114,22 @@ export async function POST(request: NextRequest) {
       redirectTo: "/login?returnTo=/checkout"
     }, 401);
 
-    const parsed = schema.safeParse(await request.json().catch(() => null));
+    try {
+      await requirePrivateRateLimit(supabase, "checkout_quote");
+    } catch (error) {
+      const status = error instanceof PrivateRequestError ? error.status : 503;
+      return reply(requestId, { ok: false, code: status === 429 ? "RATE_LIMITED" : "ABUSE_PROTECTION_UNAVAILABLE",
+        message: status === 429 ? "Aguarde antes de recalcular o checkout." : "O checkout está temporariamente indisponível." }, status);
+    }
+
+    let body: unknown;
+    try { body = await readPrivateJson(request, 32 * 1024); }
+    catch (error) {
+      const status = error instanceof PrivateRequestError ? error.status : 400;
+      return reply(requestId, { ok: false, code: status === 413 ? "REQUEST_TOO_LARGE" : "INVALID_REQUEST",
+        message: status === 413 ? "Os dados do checkout excedem o limite permitido." : "Revise os dados do checkout." }, status);
+    }
+    const parsed = schema.safeParse(body);
     if (!parsed.success) {
       const missingFields = incompleteFields(parsed.error);
       return missingFields.length

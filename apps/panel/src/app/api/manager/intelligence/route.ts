@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       { headers: managerNoStore }
     );
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
   const result = await auth.supabase.rpc("get_intelligence_insights", { p_days: parsed.data });
   if (result.error)
     return NextResponse.json(

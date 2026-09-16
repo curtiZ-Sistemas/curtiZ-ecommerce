@@ -115,31 +115,134 @@ revoke all on function private.restore_customer_cancellation_inventory() from pu
 drop trigger if exists restore_customer_cancellation_inventory on public.orders;
 create trigger restore_customer_cancellation_inventory after update on public.orders for each row execute function private.restore_customer_cancellation_inventory();
 
-create or replace function public.prepare_customer_order_cancellation(p_order_id uuid,p_customer_id uuid,p_paid boolean)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare o public.orders%rowtype; p public.payments%rowtype; c private.customer_order_cancellations%rowtype;
+create or replace function public.prepare_customer_order_cancellation(
+  p_order_id uuid,
+  p_customer_id uuid,
+  p_paid boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  o public.orders%rowtype;
+  p public.payments%rowtype;
+  c private.customer_order_cancellations%rowtype;
+  target_status public.order_status;
 begin
-  select * into o from public.orders where id = p_order_id and customer_id = p_customer_id for update;
-  select * into c from private.customer_order_cancellations where order_id = o.id and customer_id = p_customer_id for update;
-  if c.order_id is null or o.status not in ('cancellation_requested','refund_pending','manual_review') then raise exception 'cancellation_not_allowed'; end if;
-  if exists(select 1 from public.shipments where order_id = o.id and (dispatched_at is not null or status in ('dispatched','in_transit','delivered','returned'))) then raise exception 'cancellation_not_allowed'; end if;
-  select * into p from public.payments where order_id = o.id and provider = 'mercadopago' for update;
+  select *
+  into o
+  from public.orders
+  where id = p_order_id
+    and customer_id = p_customer_id
+  for update;
+
+  select *
+  into c
+  from private.customer_order_cancellations
+  where order_id = o.id
+    and customer_id = p_customer_id
+  for update;
+
+  if c.order_id is null
+    or o.status not in ('cancellation_requested','refund_pending','manual_review')
+  then
+    raise exception 'cancellation_not_allowed';
+  end if;
+
+  if exists (
+    select 1
+    from public.shipments
+    where order_id = o.id
+      and (
+        dispatched_at is not null
+        or status in ('dispatched','in_transit','delivered','returned')
+      )
+  ) then
+    raise exception 'cancellation_not_allowed';
+  end if;
+
+  select *
+  into p
+  from public.payments
+  where order_id = o.id
+    and provider = 'mercadopago'
+  for update;
+
+  target_status := case
+    when p_paid then 'refund_pending'::public.order_status
+    else 'cancelled'::public.order_status
+  end;
+
   if p_paid then
-    update public.payments set status = 'approved',updated_at = now() where id = p.id and status not in ('approved','refunded');
-    update public.orders set status = 'refund_pending',payment_status = 'approved',updated_at = now() where id = o.id;
-    perform public.begin_mercadopago_refund(p.id,p_customer_id,p.amount,c.idempotency_key,'Cancelamento pelo cliente antes do despacho');
+    update public.payments
+    set status = 'approved',
+        updated_at = now()
+    where id = p.id
+      and status not in ('approved','refunded');
+
+    update public.orders
+    set status = target_status,
+        payment_status = 'approved',
+        updated_at = now()
+    where id = o.id;
+
+    perform public.begin_mercadopago_refund(
+      p.id,
+      p_customer_id,
+      p.amount,
+      c.idempotency_key,
+      'Cancelamento pelo cliente antes do despacho'
+    );
   else
-    if p.status in ('approved','refunded') or o.payment_status = 'approved' then raise exception 'payment_requires_refund'; end if;
-    update public.payments set status = 'cancelled',updated_at = now() where id = p.id;
-    update public.payment_attempts set status = 'cancelled',updated_at = now() where order_id = o.id and status in ('pending','rejected');
-    update public.orders set status = 'cancelled',payment_status = 'cancelled',updated_at = now() where id = o.id;
+    if p.status in ('approved','refunded')
+      or o.payment_status = 'approved'
+    then
+      raise exception 'payment_requires_refund';
+    end if;
+
+    update public.payments
+    set status = 'cancelled',
+        updated_at = now()
+    where id = p.id;
+
+    update public.payment_attempts
+    set status = 'cancelled',
+        updated_at = now()
+    where order_id = o.id
+      and status in ('pending','rejected');
+
+    update public.orders
+    set status = target_status,
+        payment_status = 'cancelled',
+        updated_at = now()
+    where id = o.id;
   end if;
-  if o.status <> case when p_paid then 'refund_pending'::public.order_status else 'cancelled'::public.order_status end then
-    insert into public.order_status_history(order_id,previous_status,new_status,reason,changed_by)
-      values(o.id,o.status,case when p_paid then 'refund_pending'::public.order_status else 'cancelled'::public.order_status end,'Cancelamento confirmado pelo backend',p_customer_id);
+
+  if o.status <> target_status then
+    insert into public.order_status_history(
+      order_id,
+      previous_status,
+      new_status,
+      reason,
+      changed_by
+    )
+    values (
+      o.id,
+      o.status,
+      target_status,
+      'Cancelamento confirmado pelo backend',
+      p_customer_id
+    );
   end if;
-  return jsonb_build_object('paymentId',p.id,'idempotencyKey',c.idempotency_key);
-end; $$;
+
+  return jsonb_build_object(
+    'paymentId', p.id,
+    'idempotencyKey', c.idempotency_key
+  );
+end;
+$$;
 revoke all on function public.prepare_customer_order_cancellation(uuid,uuid,boolean) from public,anon,authenticated;
 grant execute on function public.prepare_customer_order_cancellation(uuid,uuid,boolean) to service_role;
 

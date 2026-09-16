@@ -5,6 +5,7 @@ import {
   authorizeAdminRequest,
   objectRows,
   privateNoStore,
+  readPanelJson,
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
@@ -312,7 +313,7 @@ export async function GET(
     );
   }
 
-  if (!context.auth) return unauthorizedAdminResponse();
+  if (!context.auth) return unauthorizedAdminResponse(request);
 
   const [readPermission, writePermission] = await Promise.all([
     permissionGranted(context.auth.supabase, context.definition.readPermission),
@@ -454,7 +455,7 @@ export async function POST(
     );
   }
 
-  if (!context.auth) return unauthorizedAdminResponse();
+  if (!context.auth) return unauthorizedAdminResponse(request);
 
   if (!context.definition.writePermission) {
     return NextResponse.json(
@@ -476,7 +477,9 @@ export async function POST(
     );
   }
 
-  const parsed = mutationSchema.safeParse(await request.json().catch(() => null));
+  const createBody = await readPanelJson(request, 64 * 1024);
+  if (createBody instanceof NextResponse) return createBody;
+  const parsed = mutationSchema.safeParse(createBody);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -574,7 +577,7 @@ export async function PATCH(
     );
   }
 
-  if (!context.auth) return unauthorizedAdminResponse();
+  if (!context.auth) return unauthorizedAdminResponse(request);
 
   if (!context.definition.writePermission) {
     return NextResponse.json(
@@ -589,7 +592,8 @@ export async function PATCH(
   if (writePermission.error) return permissionCheckFailureResponse();
   if (!writePermission.allowed) return forbiddenPermissionResponse();
 
-  const body: unknown = await request.json().catch(() => null);
+  const body = await readPanelJson(request, 64 * 1024);
+  if (body instanceof NextResponse) return body;
   const stateAction = stateActionSchema.safeParse(body);
 
   if (stateAction.success) {
@@ -759,7 +763,7 @@ export async function DELETE(
     );
   }
 
-  if (!context.auth) return unauthorizedAdminResponse();
+  if (!context.auth) return unauthorizedAdminResponse(request);
 
   if (!context.definition.writePermission) {
     return NextResponse.json(
@@ -785,9 +789,11 @@ export async function DELETE(
     );
   }
 
+  const deleteBody = await readPanelJson(request, 8 * 1024);
+  if (deleteBody instanceof NextResponse) return deleteBody;
   const parsed = z
     .object({ id: postgresUuidSchema, permanent: z.boolean().optional() })
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(deleteBody);
 
   if (!parsed.success) {
     return NextResponse.json(

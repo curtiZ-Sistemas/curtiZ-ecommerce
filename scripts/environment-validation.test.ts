@@ -11,8 +11,11 @@ const stagingEnvironment: EnvironmentValues = {
   SUPABASE_URL: "https://staging.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
   SUPABASE_SECRET_KEY: "staging-secret-key",
+  ACCOUNT_DELETION_HMAC_KEY: "staging-account-deletion-key-with-32-characters",
   PII_ENCRYPTION_KEY: "staging-pii-key",
   AUDIT_HASH_KEY: "staging-audit-key",
+  RATE_LIMIT_HMAC_KEY: "staging-rate-limit-key-with-32-characters",
+  REFERRAL_ATTRIBUTION_HMAC_KEY: "staging-referral-key-with-32-characters",
   ALLOWED_ORIGINS:
     "https://store-staging.example.com,https://panel-staging.example.com,https://store-test.example.net,https://panel-test.example.net",
   AUTH_COOKIE_DOMAINS: "example.com,example.net",
@@ -56,13 +59,19 @@ describe("environment validation", () => {
     const result = validateEnvironment("staging", {
       ...stagingEnvironment,
       SUPABASE_SECRET_KEY: "",
+      ACCOUNT_DELETION_HMAC_KEY: "",
       PII_ENCRYPTION_KEY: undefined,
+      RATE_LIMIT_HMAC_KEY: undefined,
+      REFERRAL_ATTRIBUTION_HMAC_KEY: undefined,
       ALLOWED_ORIGINS: ""
     });
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "SUPABASE_SECRET_KEY não está configurada",
+        "ACCOUNT_DELETION_HMAC_KEY não está configurada",
         "PII_ENCRYPTION_KEY não está configurada",
+        "RATE_LIMIT_HMAC_KEY não está configurada",
+        "REFERRAL_ATTRIBUTION_HMAC_KEY não está configurada",
         "ALLOWED_ORIGINS não está configurada"
       ])
     );
@@ -88,6 +97,7 @@ describe("environment validation", () => {
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       SHIPPING_PROVIDER: "custom",
       MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-live",
       MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
@@ -105,6 +115,7 @@ describe("environment validation", () => {
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       SHIPPING_PROVIDER: "fixed",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
       MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
@@ -118,6 +129,7 @@ describe("environment validation", () => {
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
       MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key",

@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import type { CartLine } from "@curtiz/domain";
 import { postgresUuidSchema } from "@curtiz/security";
 import { NextResponse } from "next/server";
@@ -114,7 +115,9 @@ export async function POST(request: Request) {
       { status: 403, headers: responseHeaders(requestId) }
     );
   }
-  const payload: unknown = await request.json().catch(() => null);
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const payload: unknown = boundedBody;
   const parsed = requestSchema.safeParse(payload);
   if (!parsed.success) {
     return NextResponse.json(

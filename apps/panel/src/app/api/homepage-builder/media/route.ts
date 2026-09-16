@@ -1,3 +1,5 @@
+import { readJsonResponse, readFormResponse, RequestBodyError } from "@curtiz/security";
+import { prepareUploadImage } from "@/lib/image-upload";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -30,35 +32,47 @@ function inspect(bytes: Uint8Array): Inspected | null {
 export async function POST(request: NextRequest) {
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   const auth = await authorizeHomepageRequest(request, "homepage.media.manage");
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > 52_428_800 + 65_536)
     return NextResponse.json({ message: "A requisição excede o limite de 50 MB." }, { status: 413, headers: privateNoStore });
-  const form = await request.formData().catch(() => null);
+  const form = await readFormResponse(request, 52_428_800 + 65_536);
+  if (form instanceof Response) return form;
   const file = form?.get("file");
   const roleValue = form?.get("role");
   const role = typeof roleValue === "string" ? roleValue : "desktop";
   if (!(file instanceof File) || !["desktop", "tablet", "mobile", "video", "background", "thumbnail"].includes(role) || file.size < 1 || file.size > 52_428_800) {
     return NextResponse.json({ message: "Envie JPG, PNG ou WebP até 10 MB, ou MP4/WebM até 50 MB." }, { status: 400, headers: privateNoStore });
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspect(bytes);
-  if (!inspected || (inspected.kind === "image" && file.size > 10_485_760) || (role === "video") !== (inspected.kind === "video")) {
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspect(bytes);
+  if (!inspected || inspected.mime !== file.type || (inspected.kind === "image" && file.size > 10_485_760) || (role === "video") !== (inspected.kind === "video")) {
     return NextResponse.json({ message: "O conteúdo do arquivo não corresponde ao formato e função selecionados." }, { status: 415, headers: privateNoStore });
+  }
+  if (inspected.kind === "image") {
+    try {
+      bytes = await prepareUploadImage(bytes, 10_485_760);
+      inspected = { mime: "image/webp", extension: "webp", kind: "image" };
+    } catch (error) {
+      return NextResponse.json({ message: "Não foi possível validar a imagem." },
+        { status: error instanceof RequestBodyError ? error.status : 422, headers: privateNoStore });
+    }
   }
   const folder = inspected.kind === "video" ? "home-section-videos" : role === "mobile" ? "home-section-mobile-images" : role === "thumbnail" ? "home-section-thumbnails" : "home-section-images";
   const path = `${folder}/${auth.userId}/${role}-${randomUUID()}.${inspected.extension}`;
   const uploaded = await auth.supabase.storage.from("homepage-public").upload(path, bytes, { contentType: inspected.mime, cacheControl: "31536000", upsert: false });
   if (uploaded.error) return NextResponse.json({ message: "Não foi possível armazenar a mídia." }, { status: 409, headers: privateNoStore });
   const publicUrl = auth.supabase.storage.from("homepage-public").getPublicUrl(path).data.publicUrl;
-  return NextResponse.json({ path, publicUrl, mimeType: inspected.mime, sizeBytes: file.size, role }, { status: 201, headers: privateNoStore });
+  return NextResponse.json({ path, publicUrl, mimeType: inspected.mime, sizeBytes: bytes.byteLength, role }, { status: 201, headers: privateNoStore });
 }
 
 export async function DELETE(request: NextRequest) {
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   const auth = await authorizeHomepageRequest(request, "homepage.media.manage");
-  if (!auth) return unauthorizedAdminResponse();
-  const parsed = z.object({ path: z.string().trim().max(500) }).safeParse(await request.json().catch(() => null));
+  if (!auth) return unauthorizedAdminResponse(request);
+  const boundedBody = await readJsonResponse(request, 131072);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = z.object({ path: z.string().trim().max(500) }).safeParse(boundedBody);
   if (!parsed.success || parsed.data.path.includes("..") || !parsed.data.path.includes(`/${auth.userId}/`)) {
     return NextResponse.json({ message: "Arquivo inválido." }, { status: 400, headers: privateNoStore });
   }

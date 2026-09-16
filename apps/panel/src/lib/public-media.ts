@@ -1,3 +1,5 @@
+import { safeInternalPath } from "@curtiz/security/safe-path";
+
 type PublicMediaOptions = {
   storeUrl?: string;
   supabaseUrl?: string;
@@ -6,6 +8,7 @@ type PublicMediaOptions = {
 export function panelMediaUrl(path: string, bucket = "catalog-public", storeUrl?: string): string {
   if (!path) return "";
   if (path.startsWith("/") && !path.startsWith("//")) {
+    if (!safeInternalPath(path, "")) return "";
     return storeUrl ? new URL(path, storeUrl).toString() : path;
   }
   return `/api/media?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(path)}`;
@@ -39,7 +42,8 @@ export function publicCatalogMediaUrl(
   if (!path) return "";
   if (path.startsWith("https://")) {
     try {
-      return publicCatalogMediaOrigins({ storeUrl, supabaseUrl }).includes(new URL(path).origin)
+      const url = new URL(path);
+      return !url.username && !url.password && publicCatalogMediaOrigins({ storeUrl, supabaseUrl }).includes(url.origin)
         ? path
         : "";
     } catch {
@@ -48,6 +52,7 @@ export function publicCatalogMediaUrl(
   }
 
   if (path.startsWith("/")) {
+    if (!safeInternalPath(path, "")) return "";
     if (!storeUrl) return path;
     try {
       return new URL(path, storeUrl).toString();

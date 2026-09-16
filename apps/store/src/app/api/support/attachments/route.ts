@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sanitizePlainText } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -6,7 +6,9 @@ import { addDemoSupportMessage } from "@/lib/demo-support-store";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { getSupportActor } from "@/lib/support-actor";
 import { PrivateRequestError, readBoundedBody } from "@/lib/private-request";
+import { inspectUpload, type AcceptedUploadMime } from "@/lib/file-validation";
 import { readQueryResult } from "@/lib/unknown-data";
+import { prepareUploadImage } from "@/lib/image-upload";
 
 const inputSchema = z.object({
   conversationId: z.string().uuid(),
@@ -20,18 +22,7 @@ const allowedTypes = new Map([
   ["image/webp", "webp"],
   ["application/pdf", "pdf"]
 ]);
-
-function hasExpectedSignature(bytes: Uint8Array, type: string) {
-  if (type === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (type === "image/png") return bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
-  if (type === "image/webp")
-    return (
-      new TextDecoder().decode(bytes.slice(0, 4)) === "RIFF" &&
-      new TextDecoder().decode(bytes.slice(8, 12)) === "WEBP"
-    );
-  if (type === "application/pdf") return new TextDecoder().decode(bytes.slice(0, 4)) === "%PDF";
-  return false;
-}
+const acceptedTypes = new Set<AcceptedUploadMime>(allowedTypes.keys() as IterableIterator<AcceptedUploadMime>);
 
 const response = (request: Request, body: unknown, status = 200) =>
   NextResponse.json(body, {
@@ -62,7 +53,8 @@ async function upload(request: NextRequest) {
   if (!parsed.success || !(file instanceof File)) {
     return response(request, { ok: false, message: "Revise a mensagem e o arquivo." }, 400);
   }
-  const extension = allowedTypes.get(file.type);
+  let extension = allowedTypes.get(file.type);
+  let mimeType = file.type;
   if (!extension || file.size < 1 || file.size > 10 * 1024 * 1024) {
     return response(
       request,
@@ -70,8 +62,8 @@ async function upload(request: NextRequest) {
       400
     );
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!hasExpectedSignature(bytes, file.type)) {
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  if (!inspectUpload(bytes, file.type, acceptedTypes)) {
     return response(
       request,
       { ok: false, message: "O conteúdo do arquivo não corresponde ao formato informado." },
@@ -80,7 +72,7 @@ async function upload(request: NextRequest) {
   }
   const message = sanitizePlainText(parsed.data.message);
   if (!message) throw new PrivateRequestError(400);
-  const safeName =
+  let safeName =
     file.name.replace(/[^A-Za-z0-9._-]/gu, "_").slice(0, 160) || `anexo.${extension}`;
   if (actor.kind === "demo") {
     addDemoSupportMessage(
@@ -108,10 +100,16 @@ async function upload(request: NextRequest) {
   const senderRole = actor.role;
   if (parsed.data.internal === "true" && senderRole === "customer")
     return response(request, { ok: false }, 403);
+  if (mimeType.startsWith("image/")) {
+    bytes = await prepareUploadImage(bytes, 10 * 1024 * 1024);
+    mimeType = "image/webp";
+    extension = "webp";
+    safeName = safeName.replace(/\.(?:jpe?g|png|webp)$/iu, ".webp");
+  }
   const storagePath = `${actor.userId}/support/${parsed.data.conversationId}/${randomUUID()}.${extension}`;
   const upload = await supabase.storage
     .from("customer-private")
-    .upload(storagePath, bytes, { contentType: file.type, upsert: false });
+    .upload(storagePath, bytes, { contentType: mimeType, upsert: false });
   if (upload.error)
     return response(request, { ok: false, message: "Não foi possível armazenar o arquivo." }, 503);
   const messageInsert = await supabase
@@ -133,9 +131,10 @@ async function upload(request: NextRequest) {
     message_id: messageInsert.data.id,
     storage_path: storagePath,
     original_name_sanitized: safeName,
-    mime_type: file.type,
-    size_bytes: file.size,
-    scan_status: "pending"
+    mime_type: mimeType,
+    size_bytes: bytes.byteLength,
+    scan_status: "pending",
+    scan_sha256: createHash("sha256").update(bytes).digest("hex")
   });
   const attachment = readQueryResult(attachmentResponse);
   if (attachment.error) {

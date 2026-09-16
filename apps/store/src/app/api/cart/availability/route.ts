@@ -1,9 +1,11 @@
+import { readJsonResponse } from "@curtiz/security";
 import { logServerEvent } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { demoProducts } from "@/lib/catalog";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
+import { publicBudgetResponse } from "@/lib/public-request";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
 import { readRows, readString } from "@/lib/unknown-data";
 import { safeDatabaseError } from "../../../../lib/checkout-diagnostics";
@@ -69,7 +71,12 @@ export async function POST(request: Request) {
       return json(requestId, { error: "origin_not_allowed", requestId }, 403);
     }
 
-    const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+    const budget = await publicBudgetResponse(request, "availability");
+    if (budget) return budget;
+
+    const boundedBody = await readJsonResponse(request, 32768);
+    if (boundedBody instanceof Response) return boundedBody;
+    const parsed = requestSchema.safeParse(boundedBody);
     if (!parsed.success) {
       return json(requestId, { error: "invalid_request", requestId }, 400);
     }

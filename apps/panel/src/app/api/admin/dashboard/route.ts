@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   }
 
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
 
   const [
     orderCount,

@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
@@ -585,7 +586,9 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: responseHeaders(request) }
     );
   }
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ message: "Dados inválidos." }, { status: 400, headers: noStore });
   }

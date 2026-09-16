@@ -3,8 +3,9 @@ import { z } from "zod";
 import { resolvePublicAppUrls } from "@curtiz/config";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
 
 const requestSchema = z.object({
   action: z.literal("request"),
@@ -28,7 +29,11 @@ export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   }
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  let body: unknown;
+  try { body = await readPrivateJson(request, 8 * 1024); }
+  catch (error) { return NextResponse.json({ message: "Revise os dados informados." },
+    { status: error instanceof PrivateRequestError ? error.status : 400, headers }); }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ message: "Revise os dados informados." }, { status: 400, headers });
   }
@@ -40,17 +45,22 @@ export async function POST(request: NextRequest) {
     );
   }
   if (parsed.data.action === "request") {
-    if (
-      !(await enforceAuthRateLimit({
+    const rateLimit = await enforceAuthRateLimit({
         request,
         email: parsed.data.email,
         scope: "password_reset",
-        supabase
-      }))
-    ) {
+        supabase: createServiceSupabaseClient()
+      });
+    if (rateLimit.status === "blocked") {
       return NextResponse.json(
         { message: "Aguarde antes de solicitar outro link." },
-        { status: 429, headers: { ...headers, "retry-after": "3600" } }
+        { status: 429, headers: { ...headers, "retry-after": String(rateLimit.retryAfterSeconds) } }
+      );
+    }
+    if (rateLimit.status === "error") {
+      return NextResponse.json(
+        { message: "A prote\u00e7\u00e3o da recupera\u00e7\u00e3o est\u00e1 temporariamente indispon\u00edvel." },
+        { status: 503, headers }
       );
     }
     if (!(await verifyTurnstile(request, parsed.data.turnstileToken))) {

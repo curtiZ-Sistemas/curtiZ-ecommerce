@@ -6,6 +6,8 @@ import {
   createServiceSupabaseClient
 } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { isAllowedRequestOrigin } from "@/lib/http-origin";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
 
 const schema = z.object({
   requestType: z.enum([
@@ -25,36 +27,35 @@ const schema = z.object({
   details: z.string().trim().min(10).max(2000),
   turnstileToken: z.string().max(4096).optional()
 });
-function allowedOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  return new Set([
-    new URL(request.url).origin,
-    process.env.NEXT_PUBLIC_STORE_URL,
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
-  ]).has(origin);
-}
 export async function POST(request: NextRequest) {
-  if (!allowedOrigin(request))
+  if (!isAllowedRequestOrigin(request))
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  let body: unknown;
+  try { body = await readPrivateJson(request, 8 * 1024); }
+  catch (error) { return NextResponse.json({ message: "Revise os dados da solicitação." },
+    { status: error instanceof PrivateRequestError ? error.status : 400 }); }
+  const parsed = schema.safeParse(body);
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os dados da solicitação." }, { status: 400 });
   if (!(await verifyTurnstile(request, parsed.data.turnstileToken)))
     return NextResponse.json({ message: "Verificação de segurança inválida." }, { status: 400 });
   const publicClient = await createServerSupabaseClient();
-  if (
-    !(await enforcePrivacyRequestRateLimit({
+  const supabase = createServiceSupabaseClient();
+  const rateLimit = await enforcePrivacyRequestRateLimit({
       request,
       email: parsed.data.email,
-      supabase: publicClient
-    }))
-  )
+      supabase
+    });
+  if (rateLimit.status === "blocked")
     return NextResponse.json(
       { message: "Muitas solicitações. Aguarde antes de tentar novamente." },
-      { status: 429 }
+      { status: 429, headers: { "retry-after": String(rateLimit.retryAfterSeconds) } }
     );
-  const supabase = createServiceSupabaseClient();
+  if (rateLimit.status === "error")
+    return NextResponse.json(
+      { message: "A prote\u00e7\u00e3o do canal est\u00e1 temporariamente indispon\u00edvel." },
+      { status: 503 }
+    );
   if (!supabase)
     return NextResponse.json({ message: "Canal temporariamente indisponível." }, { status: 503 });
   const userResult = publicClient ? await publicClient.auth.getUser() : null;

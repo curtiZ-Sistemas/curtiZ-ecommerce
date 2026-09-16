@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -143,7 +144,7 @@ function message(error: unknown) {
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeLegalRequest(request, "legal_content.view");
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const permissionEntries = Promise.all(
     legalPermissions.map(async (permission) => {
       const result = await auth.supabase.rpc("has_legal_permission", { p_permission: permission });
@@ -247,7 +248,9 @@ export async function POST(request: NextRequest) {
       { message: "Origem não permitida." },
       { status: 403, headers: privateNoStore }
     );
-  const body: unknown = await request.json().catch(() => null);
+  const boundedBody = await readJsonResponse(request, 262144);
+  if (boundedBody instanceof Response) return boundedBody;
+  const body: unknown = boundedBody;
   const parsed = createSchema.safeParse(body);
   if (!parsed.success)
     return NextResponse.json(
@@ -261,7 +264,7 @@ export async function POST(request: NextRequest) {
         ? "legal_content.edit"
         : "legal_content.create";
   const auth = await authorizeLegalRequest(request, permission);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   try {
     if (parsed.data.kind === "document") {
       const result = await auth.supabase.rpc("create_legal_document", {
@@ -329,7 +332,9 @@ export async function PATCH(request: NextRequest) {
       { message: "Origem não permitida." },
       { status: 403, headers: privateNoStore }
     );
-  const body: unknown = await request.json().catch(() => null);
+  const boundedBody = await readJsonResponse(request, 262144);
+  if (boundedBody instanceof Response) return boundedBody;
+  const body: unknown = boundedBody;
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success)
     return NextResponse.json(
@@ -355,7 +360,7 @@ export async function PATCH(request: NextRequest) {
                     ? "legal_content.archive"
                     : "legal_content.publish";
   const auth = await authorizeLegalRequest(request, permission);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   try {
     if (parsed.data.kind === "document") {
       const result = await auth.supabase.rpc("save_legal_document", {

@@ -4,6 +4,7 @@ import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createPublicSupabaseClient, createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { deletionToken, validDeletionToken } from "@/lib/account-deletion-token";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("verify"), password: z.string().min(1).max(256) }),
@@ -14,23 +15,34 @@ const reply = (message: string, status: number) => NextResponse.json({ message }
 
 async function handleDeletion(request: Request) {
   if (!isAllowedRequestOrigin(request)) return reply("Origem não autorizada.", 403);
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  let body: unknown;
+  try { body = await readPrivateJson(request, 2 * 1024); }
+  catch (error) { return reply("Confira os dados informados.", error instanceof PrivateRequestError ? error.status : 400); }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) return reply("Confira os dados informados.", 400);
   const supabase = await createServerSupabaseClient();
   const service = createServiceSupabaseClient();
-  const secret = process.env.SUPABASE_SECRET_KEY;
-  if (!supabase || !service || !secret) return reply("A exclusão está temporariamente indisponível.", 503);
+  const secret = process.env.ACCOUNT_DELETION_HMAC_KEY;
+  if (!supabase || !service || !secret || secret.length < 32) return reply("A exclusão está temporariamente indisponível.", 503);
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user?.email) return reply("Entre novamente para continuar.", 401);
+  try { await requirePrivateRateLimit(supabase, "account_delete"); }
+  catch (rateError) {
+    const status = rateError instanceof PrivateRequestError ? rateError.status : 503;
+    return reply(status === 429 ? "Muitas tentativas. Aguarde antes de tentar novamente."
+      : "A proteção da conta está temporariamente indisponível.", status);
+  }
   const roles = await service.from("user_roles").select("role").eq("user_id", user.id);
   if (roles.error) return reply("Não conseguimos verificar sua conta.", 503);
   if (!roles.data?.length || roles.data.some((entry) => entry.role !== "customer")) {
     return reply("Contas com acesso a painéis precisam ser encerradas pela administração.", 403);
   }
   if (parsed.data.action === "verify") {
-    if (!await enforceAuthRateLimit({ request, email: user.email, scope: "login", supabase })) {
-      return reply("Muitas tentativas. Aguarde antes de tentar novamente.", 429);
-    }
+    const rateLimit = await enforceAuthRateLimit({ request, email: user.email, scope: "login", supabase: service });
+    if (rateLimit.status === "blocked")
+      return NextResponse.json({ message: "Muitas tentativas. Aguarde antes de tentar novamente." },
+        { status: 429, headers: { ...headers, "retry-after": String(rateLimit.retryAfterSeconds) } });
+    if (rateLimit.status === "error") return reply("A prote\u00e7\u00e3o da conta est\u00e1 temporariamente indispon\u00edvel.", 503);
     const verifier = createPublicSupabaseClient();
     if (!verifier) return reply("Não conseguimos verificar a senha.", 503);
     const verified = await verifier.auth.signInWithPassword({ email: user.email, password: parsed.data.password });

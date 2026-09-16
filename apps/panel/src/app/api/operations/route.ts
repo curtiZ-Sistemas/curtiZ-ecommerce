@@ -1,3 +1,5 @@
+import { readJsonResponse, isAllowedBrowserRequest } from "@curtiz/security";
+import { consumePanelMutationBudget, panelRateLimitStatus } from "../../../lib/api-rate-limit";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -121,14 +123,11 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 
 const safeOrigin = (request: NextRequest) => {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  const requestOrigin = new URL(request.url).origin;
-  const configured = [
+  const configured = new Set([
     process.env.NEXT_PUBLIC_PANEL_URL,
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",")
-  ].filter(Boolean);
-  return origin === requestOrigin || configured.includes(origin);
+    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
+  ].filter((value): value is string => Boolean(value)));
+  return isAllowedBrowserRequest(request, configured);
 };
 
 async function access(request: NextRequest) {
@@ -149,6 +148,7 @@ async function access(request: NextRequest) {
   const roles = rows(rolesData).map((item) => text(item.role));
   if (profile?.status !== "active" || !roles.includes("operational")) return null;
   if (!(await hasRequiredInternalMfa(supabase))) return null;
+  if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return { demo: false as const, supabase, userId: user.id };
 }
 
@@ -194,7 +194,7 @@ const demoSnapshot = (section: string, page: number, pageSize: number) => ({
 export async function GET(request: NextRequest) {
   const authorized = await access(request);
   if (!authorized) {
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
+    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: panelRateLimitStatus(request) === 401 ? 403 : panelRateLimitStatus(request), headers: noStore });
   }
   const section = request.nextUrl.searchParams.get("section")?.slice(0, 40) ?? "";
   const search =
@@ -664,9 +664,11 @@ export async function POST(request: NextRequest) {
   }
   const authorized = await access(request);
   if (!authorized) {
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
+    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: panelRateLimitStatus(request) === 401 ? 403 : panelRateLimitStatus(request), headers: noStore });
   }
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "Dados inválidos." }, { status: 400, headers: noStore });
   }

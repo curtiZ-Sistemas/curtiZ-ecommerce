@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -40,8 +41,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   }
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return unauthorizedAdminResponse();
-  const payload: unknown = await request.json().catch(() => null);
+  if (!auth) return unauthorizedAdminResponse(request);
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
+  const payload: unknown = boundedBody;
   const prepared = prepareSchema.safeParse(payload);
   const finalized = finalizeSchema.safeParse(payload);
 

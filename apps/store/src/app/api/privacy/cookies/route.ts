@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { REFERRAL_ATTRIBUTION_COOKIE } from "@curtiz/security";
 import { z } from "zod";
@@ -188,7 +189,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   if (!allowedOrigin(request))
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
-  const parsed = consentSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = consentSchema.safeParse(boundedBody);
   if (!parsed.success || parsed.data.categories.essential !== true)
     return NextResponse.json({ message: "Preferências inválidas." }, { status: 400 });
   const normalizedCategories = normalizeConsentCategories(parsed.data.categories);

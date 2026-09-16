@@ -23,7 +23,7 @@ function cleanSearch(input: string) {
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
   if (permission.error || permission.data !== true) return NextResponse.json({ message: "Não foi possível autorizar o acesso aos destinos." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
   const type = request.nextUrl.searchParams.get("type") ?? "";

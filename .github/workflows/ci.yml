@@ -30,6 +30,7 @@ env:
   CHECKOUT_ENABLED: "false"
   PAYMENT_PROVIDER: disabled
   MERCADO_PAGO_ENABLED: "false"
+  MERCADO_PAGO_ENVIRONMENT: test
   SHIPPING_PROVIDER: disabled
   MELHOR_ENVIO_ENABLED: "false"
   EMAIL_PROVIDER: disabled
@@ -39,6 +40,15 @@ env:
   AUTH_RATE_LIMIT_ENABLED: "true"
 
 jobs:
+  security:
+    name: Segurança
+    uses: ./.github/workflows/security.yml
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+    permissions:
+      contents: read
+      security-events: write
+
   changes:
     name: Detectar aplicações alteradas
     runs-on: ubuntu-latest
@@ -102,10 +112,13 @@ jobs:
       SUPABASE_URL: https://project.supabase.co
       SUPABASE_PUBLISHABLE_KEY: ci-publishable-placeholder
       SUPABASE_SECRET_KEY: ci-secret-placeholder
+      ACCOUNT_DELETION_HMAC_KEY: ci-account-deletion-key-with-at-least-32-characters
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-turnstile-site-placeholder
       TURNSTILE_SECRET_KEY: ci-turnstile-placeholder
       PII_ENCRYPTION_KEY: ci-pii-placeholder
       AUDIT_HASH_KEY: ci-audit-placeholder
+      RATE_LIMIT_HMAC_KEY: ci-rate-limit-placeholder-with-32-characters
+      REFERRAL_ATTRIBUTION_HMAC_KEY: ci-referral-placeholder-with-32-characters
       ALLOWED_ORIGINS: https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid
       AUTH_COOKIE_DOMAINS: example.invalid
     steps:
@@ -170,10 +183,11 @@ jobs:
 
   store-worker:
     name: OpenNext / Loja
-    needs: [changes, quality, database, e2e]
+    needs: [changes, quality, database, e2e, security]
     if: needs.changes.outputs.store == 'true'
     runs-on: ubuntu-latest
     env:
+      DEPLOY_TARGET: store
       PANEL_DEPLOYMENT_MODE: separate
       DEMO_MODE: ${{ github.event_name == 'pull_request' && 'false' || vars.DEMO_MODE }}
       CHECKOUT_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.CHECKOUT_ENABLED }}
@@ -198,8 +212,11 @@ jobs:
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
       SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
+      ACCOUNT_DELETION_HMAC_KEY: ${{ github.event_name == 'pull_request' && 'ci-account-deletion-key-with-at-least-32-characters' || '' }}
       PII_ENCRYPTION_KEY: ${{ github.event_name == 'pull_request' && 'ci-pii-placeholder-with-at-least-32-characters' || '' }}
       AUDIT_HASH_KEY: ${{ github.event_name == 'pull_request' && 'ci-audit-placeholder' || '' }}
+      RATE_LIMIT_HMAC_KEY: ${{ github.event_name == 'pull_request' && 'ci-rate-limit-placeholder-with-32-characters' || '' }}
+      REFERRAL_ATTRIBUTION_HMAC_KEY: ${{ github.event_name == 'pull_request' && 'ci-referral-placeholder-with-32-characters' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -245,6 +262,7 @@ jobs:
             --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --var "BUILD_TIMESTAMP:${build_timestamp}" \
             --var "APP_ENV:${APP_ENV}" \
+            --var "MERCADO_PAGO_ENVIRONMENT:${MERCADO_PAGO_ENVIRONMENT}" \
             --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
             --var "DEMO_MODE:${DEMO_MODE}" \
             --var "CHECKOUT_ENABLED:${CHECKOUT_ENABLED}" \
@@ -274,10 +292,11 @@ jobs:
 
   panel-worker:
     name: OpenNext / Painel
-    needs: [changes, quality, database, e2e]
+    needs: [changes, quality, database, e2e, security]
     if: needs.changes.outputs.panel == 'true'
     runs-on: ubuntu-latest
     env:
+      DEPLOY_TARGET: panel
       PANEL_DEPLOYMENT_MODE: separate
       DEMO_MODE: "false"
       CHECKOUT_ENABLED: "false"
@@ -301,8 +320,11 @@ jobs:
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: ${{ github.event_name == 'pull_request' && 'TEST-ci-public-key' || vars.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY }}
       SUPABASE_SECRET_KEY: ${{ github.event_name == 'pull_request' && 'ci-secret-placeholder' || '' }}
+      ACCOUNT_DELETION_HMAC_KEY: ci-account-deletion-key-with-at-least-32-characters
       PII_ENCRYPTION_KEY: ${{ github.event_name == 'pull_request' && 'ci-pii-placeholder-with-at-least-32-characters' || '' }}
       AUDIT_HASH_KEY: ${{ github.event_name == 'pull_request' && 'ci-audit-placeholder' || '' }}
+      RATE_LIMIT_HMAC_KEY: ci-rate-limit-placeholder-with-32-characters
+      REFERRAL_ATTRIBUTION_HMAC_KEY: ci-referral-placeholder-with-32-characters
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

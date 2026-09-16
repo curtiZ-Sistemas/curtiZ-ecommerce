@@ -6,7 +6,9 @@ const migration = readFileSync(
   "utf8"
 ).toLowerCase();
 const compactMigration = migration.replace(/\s+/gu, " ");
-const webhook = readFileSync("supabase/functions/mercadopago-webhook/index.ts", "utf8");
+const webhook = readFileSync("apps/store/src/app/api/webhooks/mercadopago/route.ts", "utf8");
+const provider = readFileSync("packages/integrations/src/index.ts", "utf8");
+const lease = readFileSync("supabase/migrations/202609140004_payment_webhook_leases.sql", "utf8");
 const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "utf8");
 
 describe("integração financeira Mercado Pago", () => {
@@ -22,14 +24,15 @@ describe("integração financeira Mercado Pago", () => {
     expect(migration).toContain("provider_fee_confirmed");
     expect(migration).toContain("net_received_amount");
     expect(migration).toContain("provider_installments");
-    expect(webhook).toContain("payment.fee_details");
-    expect(webhook).toContain("payment.transaction_details?.net_received_amount");
+    expect(provider).toContain("payment.fee_details");
+    expect(provider).toContain("transactionDetails.net_received_amount");
+    expect(webhook).toContain("payment.providerFeeInCents === null ? null");
     expect(webhook).not.toMatch(/estim|estimate/i);
   });
 
   it("torna webhooks e reembolsos totais ou parciais idempotentes", () => {
-    expect(webhook).toContain('existingEvent.payload_hash !== payloadHash');
-    expect(webhook).toContain('["processed", "manual_review"].includes');
+    expect(lease).toContain('event.payload_hash <> p_payload_hash');
+    expect(webhook).toContain('claim.data === "duplicate"');
     expect(refund).toContain('db.rpc("begin_mercadopago_refund"');
     expect(refund).toContain("amount_in_cents");
     expect(refund).toContain("idempotency_key");
