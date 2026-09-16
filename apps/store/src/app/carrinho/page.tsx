@@ -7,6 +7,23 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { CartRecommendations } from "@/components/cart-recommendations";
+import type { CartVariantSelection } from "@/lib/cart-variant";
+import { trackIntelligence } from "@/lib/intelligence-client";
+
+const isCartVariant = (value: unknown): value is CartVariantSelection => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const variant = value as Record<string, unknown>;
+  return (
+    typeof variant.id === "string" &&
+    typeof variant.color === "string" &&
+    typeof variant.size === "string" &&
+    Number.isInteger(variant.stock) &&
+    Number(variant.stock) >= 0 &&
+    Number.isInteger(variant.priceInCents) &&
+    Number(variant.priceInCents) >= 0 &&
+    (variant.image === undefined || typeof variant.image === "string")
+  );
+};
 
 export default function CartPage() {
   const {
@@ -17,6 +34,7 @@ export default function CartPage() {
     syncMessage,
     retrySync,
     changeQuantity,
+    changeVariant,
     remove,
     removeMany,
     setSelected,
@@ -24,8 +42,12 @@ export default function CartPage() {
     clear
   } = useCart();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingVariantIds, setPendingVariantIds] = useState<Set<string>>(() => new Set());
+  const [variantsByProduct, setVariantsByProduct] = useState<Record<string, CartVariantSelection[]>>({});
   const [feedback, setFeedback] = useState("");
   const releaseRef = useRef<number | null>(null);
+  const variantReleaseRefs = useRef(new Map<string, number>());
+  const requestedProductsRef = useRef(new Set<string>());
   const selectedIdSet = new Set(selectedVariantIds);
   const subtotal = calculateSubtotal(selectedLines);
   const selectedCount = selectedLines.length;
@@ -35,9 +57,33 @@ export default function CartPage() {
   useEffect(
     () => () => {
       if (releaseRef.current) window.clearTimeout(releaseRef.current);
+      for (const timer of variantReleaseRefs.current.values()) window.clearTimeout(timer);
     },
     []
   );
+
+  useEffect(() => {
+    for (const line of lines) {
+      if (!line.slug || line.unavailableAt || requestedProductsRef.current.has(line.productId)) continue;
+      requestedProductsRef.current.add(line.productId);
+      void fetch(`/api/catalog/${encodeURIComponent(line.slug)}/variants`, { cache: "no-store" })
+        .then(async (response) => {
+          const result: unknown = await response.json();
+          if (!response.ok || !result || typeof result !== "object" || !("variants" in result)) {
+            throw new Error("Não foi possível carregar os tamanhos.");
+          }
+          const variants = (result as { variants?: unknown }).variants;
+          if (!Array.isArray(variants) || !variants.every(isCartVariant)) {
+            throw new Error("Resposta de tamanhos inválida.");
+          }
+          setVariantsByProduct((current) => ({ ...current, [line.productId]: variants }));
+        })
+        .catch(() => {
+          requestedProductsRef.current.delete(line.productId);
+          setFeedback(`Não foi possível carregar os tamanhos de ${line.name}.`);
+        });
+    }
+  }, [lines]);
 
   const completeAction = (variantId: string, message: string, action: () => void) => {
     if (pendingId) return;
@@ -70,6 +116,23 @@ export default function CartPage() {
     if (!window.confirm("Remover todos os itens da sacola?")) return;
     clear();
     setFeedback("Sacola esvaziada.");
+  };
+
+  const selectSize = (oldVariantId: string, productId: string, name: string, nextVariant: CartVariantSelection) => {
+    if (nextVariant.stock < 1 || pendingVariantIds.has(oldVariantId) || pendingVariantIds.has(nextVariant.id)) return;
+    setPendingVariantIds((current) => new Set(current).add(nextVariant.id));
+    changeVariant(oldVariantId, nextVariant);
+    trackIntelligence({ type: "variant_select", productId, variantId: nextVariant.id });
+    setFeedback(`Tamanho de ${name} alterado para ${nextVariant.size}.`);
+    const timer = window.setTimeout(() => {
+      setPendingVariantIds((current) => {
+        const next = new Set(current);
+        next.delete(nextVariant.id);
+        return next;
+      });
+      variantReleaseRefs.current.delete(nextVariant.id);
+    }, 280);
+    variantReleaseRefs.current.set(nextVariant.id, timer);
   };
 
   return (
@@ -148,6 +211,9 @@ export default function CartPage() {
             <section className="cart-list" aria-label="Produtos no carrinho">
               {lines.map((line) => {
                 const selected = selectedIdSet.has(line.variantId);
+                const sizeVariants = (variantsByProduct[line.productId] ?? []).filter(
+                  (variant) => variant.color === line.color
+                );
                 const isPending =
                   pendingId === line.variantId || (pendingId === "bulk-selection" && selected);
                 const itemClassName = [
@@ -191,7 +257,36 @@ export default function CartPage() {
 
                     <div className="cart-item-info">
                       <h2>{line.name}</h2>
-                      <p className="cart-variation">{line.color} · {line.size}</p>
+                      <p className="cart-variation">
+                        <span>{line.color} · </span>
+                        <label>
+                          <span className="sr-only">Tamanho de {line.name}</span>
+                          <select
+                            className="cart-size-select"
+                            value={line.variantId}
+                            onChange={(event) => {
+                              const nextVariant = sizeVariants.find(
+                                (variant) => variant.id === event.currentTarget.value
+                              );
+                              if (nextVariant) selectSize(line.variantId, line.productId, line.name, nextVariant);
+                            }}
+                            disabled={
+                              Boolean(line.unavailableAt) ||
+                              sizeVariants.length < 2 ||
+                              pendingVariantIds.has(line.variantId)
+                            }
+                            aria-label={`Tamanho de ${line.name}`}
+                          >
+                            {sizeVariants.length === 0 ? (
+                              <option value={line.variantId}>{line.size}</option>
+                            ) : sizeVariants.map((variant) => (
+                              <option value={variant.id} disabled={variant.stock < 1} key={variant.id}>
+                                {variant.size}{variant.stock < 1 ? " — indisponível" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </p>
                       {line.unavailableAt && <p className="cart-unavailable-notice" role="status">Este produto não existe mais. Será removido do carrinho em até 3 dias.</p>}
                     </div>
 

@@ -2139,6 +2139,29 @@ select:disabled {
   line-height: 1.35;
 }
 
+.cart-size-select {
+  min-width: 52px;
+  height: 28px;
+  padding: 2px 22px 2px 8px;
+  color: var(--ink);
+  background-color: var(--white);
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cart-size-select:focus-visible {
+  outline: 2px solid var(--brand-300);
+  outline-offset: 2px;
+}
+
+.cart-size-select:disabled {
+  color: var(--neutral-600);
+  background: var(--neutral-50);
+  cursor: not-allowed;
+}
+
 .quantity-control {
   min-width: 108px;
   height: 38px;

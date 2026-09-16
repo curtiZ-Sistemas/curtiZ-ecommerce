@@ -7,12 +7,26 @@ import { useEffect, useRef, useState } from "react";
 import type { PublicBanner } from "@/lib/storefront-data";
 
 const bundledHero = (path: string, viewport: "desktop" | "mobile") => {
-  if (!path.startsWith(`/images/hero-curtiz-${viewport}`)) return null;
+  const basePath = `/images/hero-curtiz-${viewport}`;
+  if (![`${basePath}.png`, `${basePath}.webp`, `${basePath}.avif`].includes(path)) return null;
   return {
     avif: `/images/hero-curtiz-${viewport}.avif`,
     webp: `/images/hero-curtiz-${viewport}.webp`
   };
 };
+
+export const nextHeroSlide = (current: number, slideCount: number, direction = 1) =>
+  slideCount > 0 ? (current + direction + slideCount) % slideCount : 0;
+
+export function startHeroAutoplay(
+  slideCount: number,
+  reducedMotion: boolean,
+  advance: () => void
+) {
+  if (slideCount < 2 || reducedMotion) return () => undefined;
+  const timer = globalThis.setInterval(advance, 3000);
+  return () => globalThis.clearInterval(timer);
+}
 
 export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
@@ -26,7 +40,6 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     return () => preference.removeEventListener("change", update);
   }, []);
   const [mobileViewport, setMobileViewport] = useState(false);
-  const [mobilePressing, setMobilePressing] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 700px)");
     const update = () => setMobileViewport(query.matches);
@@ -45,20 +58,10 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   }, [slides.length]);
 
   useEffect(() => {
-    if (
-      slides.length < 2 ||
-      reducedMotion ||
-      mobilePressing
-    ) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setActive((current) => (current + 1) % slides.length);
-    }, 3000);
-
-    return () => window.clearInterval(timer);
-  }, [slides.length, reducedMotion, mobilePressing]);
+    return startHeroAutoplay(slides.length, reducedMotion, () => {
+      setActive((current) => nextHeroSlide(current, slides.length));
+    });
+  }, [slides.length, reducedMotion]);
 
   if (!slides.length) {
     return null;
@@ -77,10 +80,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const bundledMobile = bundledHero(mobileImage, "mobile");
 
   const go = (direction: number) => {
-    setActive(
-      (current) =>
-        (current + direction + slides.length) % slides.length
-    );
+    setActive((current) => nextHeroSlide(current, slides.length, direction));
   };
 
   const picture = (
@@ -122,16 +122,13 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       aria-roledescription="carrossel"
       onPointerCancel={() => {
         pointerStart.current = null;
-        setMobilePressing(false);
       }}
       onPointerDown={(event) => {
         if (!mobileViewport || (event.target as HTMLElement).closest("button")) return;
         pointerStart.current = { x: event.clientX, y: event.clientY };
-        setMobilePressing(true);
       }}
       onPointerUp={(event) => {
         const start = pointerStart.current;
-        setMobilePressing(false);
         if (!start) return;
         const distance = event.clientX - start.x;
         const verticalDistance = event.clientY - start.y;

@@ -3,6 +3,10 @@
 import type { CartLine, Product } from "@curtiz/domain";
 import { applyCartAvailability, parseCartAvailability, retainCartLines } from "@/lib/cart-availability";
 import {
+  changeCartVariantState,
+  type CartVariantSelection
+} from "@/lib/cart-variant";
+import {
   createContext,
   useCallback,
   useContext,
@@ -46,6 +50,7 @@ type CartContextValue = {
   remove: (variantId: string) => void;
   removeMany: (variantIds: string[]) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
+  changeVariant: (oldVariantId: string, nextVariant: CartVariantSelection) => void;
   setSelected: (variantId: string, selected: boolean) => void;
   setAllSelected: (selected: boolean) => void;
   clear: () => void;
@@ -422,6 +427,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               : line
           )
         );
+      },
+      changeVariant(oldVariantId, nextVariant) {
+        const next = changeCartVariantState(lines, selectedVariantIds, oldVariantId, nextVariant);
+        setLines(next.lines);
+        persistSelection(next.selectedVariantIds);
+        setSelectedVariantIds(next.selectedVariantIds);
       },
       setSelected(variantId, selected) {
         if (!lines.some((line) => line.variantId === variantId && !line.unavailableAt)) return;
