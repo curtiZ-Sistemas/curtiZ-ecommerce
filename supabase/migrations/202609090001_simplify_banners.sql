@@ -1,14 +1,10 @@
--- Keep the existing table and desktop destination contract. Backfill mobile before defaults.
+-- Keep the existing table and desktop destination contract. Configure the schema before
+-- backfilling because banners has a deferred audit trigger that leaves pending events.
 begin;
 alter table public.banners
-  add column destination_type_mobile text,
+  add column destination_type_mobile text not null default 'none',
   add column destination_id_mobile uuid,
-  add column destination_url_mobile text;
-
-update public.banners set
-  destination_type_mobile = destination_type,
-  destination_id_mobile = destination_id,
-  destination_url_mobile = destination_url;
+  add column destination_url_mobile text not null default '/';
 
 alter table public.banners
   alter column title set default 'Destaque curti Z',
@@ -17,10 +13,6 @@ alter table public.banners
   alter column position set default 'hero',
   alter column destination_type set default 'none',
   alter column destination_url set default '/',
-  alter column destination_type_mobile set default 'none',
-  alter column destination_type_mobile set not null,
-  alter column destination_url_mobile set default '/',
-  alter column destination_url_mobile set not null,
   add constraint banners_mobile_destination_type_check check (destination_type_mobile in (
     'none','product','category','collection','institutional_page','guide','campaign',
     'internal_page','predefined_search','external_url'
@@ -29,6 +21,11 @@ alter table public.banners
     (destination_type_mobile <> 'external_url' and destination_url_mobile like '/%' and destination_url_mobile not like '//%')
     or (destination_type_mobile = 'external_url' and destination_url_mobile like 'https://%')
   );
+
+update public.banners set
+  destination_type_mobile = destination_type,
+  destination_id_mobile = destination_id,
+  destination_url_mobile = destination_url;
 
 create or replace function private.validate_banner_destination()
 returns trigger language plpgsql security definer set search_path = '' as $$

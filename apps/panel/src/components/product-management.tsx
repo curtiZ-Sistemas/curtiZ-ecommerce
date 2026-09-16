@@ -1929,7 +1929,7 @@ export function ProductManagement({
           busy={Boolean(pending)}
           onClose={closeEditor}
         >
-          {({ requestClose }) => <div className={`product-editor-drawer${editing === "new" ? " product-editor-new" : ""}`}>
+          {({ requestClose }) => <div className="product-editor-drawer">
                 <nav className="product-editor-nav" aria-label="Seções do produto">
               {productEditorSections.map((section) => (
                 <button

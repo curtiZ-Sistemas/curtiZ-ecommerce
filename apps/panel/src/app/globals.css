@@ -10515,9 +10515,6 @@ button:not(:disabled):active,
 .product-editor-drawer {
   grid-template-columns: 150px minmax(0, 1fr);
 }
-.product-editor-drawer.product-editor-new {
-  grid-template-columns: minmax(0, 1fr);
-}
 .product-editor-drawer > form {
   container-name: product-editor;
   container-type: inline-size;

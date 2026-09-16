@@ -81,7 +81,8 @@ describe("catalog GET essentials", () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
     const body: unknown = await response.json();
-    expect(body).toMatchObject({ products: [{ images: [{ primary: true, url: "http://localhost:3000/test.webp" }], variants: [{ sku: "TEST", available: 2 }] }] });
+    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+    expect(body).toMatchObject({ products: [{ images: [{ primary: true, url: new URL("/test.webp", storeUrl).toString() }], variants: [{ sku: "TEST", available: 2 }] }] });
     expect(state.query.mock.calls.find(([table]) => table === "products")?.[1]).toContain("categories!products_category_id_fkey(name)");
   });
   it("keeps essential data in the older-schema fallback and logs the selected fallback", async () => {
