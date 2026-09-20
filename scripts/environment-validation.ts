@@ -331,6 +331,11 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("RESEND_API_KEY");
   }
   if (normalize(environment.SHIPPING_PROVIDER) === "correios") required.add("CORREIOS_API_TOKEN");
+  if (["melhorenvio", "melhor_envio"].includes(normalize(environment.SHIPPING_PROVIDER))
+    || enabledBoolean(environment.MELHOR_ENVIO_ENABLED)) {
+    required.add("MELHOR_ENVIO_CLIENT_SECRET");
+    required.add("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
+  }
   if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
     required.add("TURNSTILE_SECRET_KEY");
   }
@@ -340,6 +345,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
 const validateProviderCredentials = (environment: EnvironmentValues, errors: string[]): void => {
   const paymentProvider = normalize(environment.PAYMENT_PROVIDER);
   const emailProvider = normalize(environment.EMAIL_PROVIDER);
+  const shippingProvider = normalize(environment.SHIPPING_PROVIDER);
 
   const mercadoPagoEnabled =
     ["mercadopago", "mercado_pago"].includes(paymentProvider) ||
@@ -374,6 +380,50 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
       !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-")
     ) {
       errors.push("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
+    }
+  }
+
+  if (["melhorenvio", "melhor_envio"].includes(shippingProvider)) {
+    addRequiredErrors(environment, ["MELHOR_ENVIO_ENVIRONMENT", "MELHOR_ENVIO_REDIRECT_URI",
+      "MELHOR_ENVIO_CLIENT_ID", "MELHOR_ENVIO_CLIENT_SECRET", "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY",
+      "MELHOR_ENVIO_APP_NAME", "MELHOR_ENVIO_TECHNICAL_CONTACT", "MELHOR_ENVIO_WEBHOOK_CONFIGURED",
+      "MELHOR_ENVIO_ORIGIN_NAME", "MELHOR_ENVIO_ORIGIN_EMAIL", "MELHOR_ENVIO_ORIGIN_PHONE",
+      "MELHOR_ENVIO_ORIGIN_ADDRESS", "MELHOR_ENVIO_ORIGIN_NUMBER", "MELHOR_ENVIO_ORIGIN_DISTRICT",
+      "MELHOR_ENVIO_ORIGIN_CITY", "MELHOR_ENVIO_ORIGIN_STATE", "MELHOR_ENVIO_ORIGIN_POSTAL_CODE"], errors);
+    if (!hasValue(environment, "MELHOR_ENVIO_ORIGIN_DOCUMENT")
+      && !hasValue(environment, "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_DOCUMENT ou MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT deve ser configurada");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ENVIRONMENT")
+      && !["sandbox", "production"].includes(normalize(environment.MELHOR_ENVIO_ENVIRONMENT))) {
+      errors.push("MELHOR_ENVIO_ENVIRONMENT deve ser sandbox ou production");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_POSTAL_CODE")
+      && !/^\d{8}$/u.test(environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_POSTAL_CODE deve conter 8 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_PHONE")
+      && !/^\d{10,11}$/u.test(environment.MELHOR_ENVIO_ORIGIN_PHONE?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_PHONE deve conter 10 ou 11 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY")
+      && !/^[A-Za-z0-9+/]{43}=$/u.test(environment.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "")) {
+      errors.push("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY deve codificar exatamente 32 bytes em base64");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_STATE")
+      && !/^[A-Za-z]{2}$/u.test(environment.MELHOR_ENVIO_ORIGIN_STATE?.trim() ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_STATE deve conter a sigla com 2 letras");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_DOCUMENT")
+      && !/^\d{11}$/u.test(environment.MELHOR_ENVIO_ORIGIN_DOCUMENT?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_DOCUMENT deve conter 11 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")
+      && !/^\d{14}$/u.test(environment.MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT deve conter 14 dígitos");
+    }
+    if (normalize(environment.MELHOR_ENVIO_ENVIRONMENT) === "production") {
+      addRequiredErrors(environment, ["MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT", "MELHOR_ENVIO_ORIGIN_STATE_REGISTER"], errors);
     }
   }
 
@@ -439,7 +489,7 @@ const validateCommonValues = (
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);
   validateBoolean(environment, "MELHOR_ENVIO_ENABLED", errors);
-  validateBoolean(environment, "MELHOR_ENVIO_OAUTH_VALIDATED", errors);
+  validateBoolean(environment, "MELHOR_ENVIO_WEBHOOK_CONFIGURED", errors);
   validateBoolean(environment, "EMAIL_ENABLED", errors);
   validateBoolean(environment, "TURNSTILE_ENABLED", errors);
 
@@ -512,6 +562,15 @@ const validateProductionRules = (environment: EnvironmentValues, errors: string[
 
   if (enabledBoolean(environment.EMAIL_ENABLED) && emailProvider !== "resend") {
     errors.push("EMAIL_ENABLED=true requer EMAIL_PROVIDER=resend");
+  }
+
+  if (["melhorenvio", "melhor_envio"].includes(shippingProvider)) {
+    if (!enabledBoolean(environment.MELHOR_ENVIO_ENABLED)) {
+      errors.push("SHIPPING_PROVIDER=melhorenvio requer MELHOR_ENVIO_ENABLED=true");
+    }
+    if (!enabledBoolean(environment.MELHOR_ENVIO_WEBHOOK_CONFIGURED)) {
+      errors.push("Melhor Envio em produção requer MELHOR_ENVIO_WEBHOOK_CONFIGURED=true");
+    }
   }
 
   if (

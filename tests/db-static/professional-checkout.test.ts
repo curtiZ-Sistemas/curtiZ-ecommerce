@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync("supabase/migrations/202609100004_professional_checkout.sql", "utf8");
+const migration = readFileSync("supabase/migrations/202609100005_professional_checkout.sql", "utf8");
 
 describe("checkout profissional", () => {
   it("limita endereços no banco e mantém operações vinculadas ao usuário autenticado", () => {

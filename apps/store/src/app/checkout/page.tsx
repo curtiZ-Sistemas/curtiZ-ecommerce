@@ -1,7 +1,6 @@
 "use client";
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
-import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations/client";
 import { BriefcaseBusiness, ChevronDown, House, LoaderCircle, LockKeyhole, Plus, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -136,8 +135,18 @@ function CheckoutProducts({ lines }: { lines: CartLine[] }) {
   );
 }
 
-function CheckoutTotals({ subtotal, discountInCents = 0, couponName = "" }: {
+type ShippingQuoteOption = {
+  id: string;
+  service: string;
+  carrier: string;
+  amountInCents: number;
+  estimatedDays: number | null;
+  expiresAt: string | null;
+};
+
+function CheckoutTotals({ subtotal, shippingInCents, discountInCents = 0, couponName = "" }: {
   subtotal: number;
+  shippingInCents: number | null;
   discountInCents?: number;
   couponName?: string;
 }) {
@@ -149,7 +158,7 @@ function CheckoutTotals({ subtotal, discountInCents = 0, couponName = "" }: {
       </div>
       <div className="summary-line">
         <span>Entrega</span>
-        <strong>{formatBRL(FIXED_SHIPPING_IN_CENTS)}</strong>
+        <strong>{shippingInCents === null ? "A calcular" : formatBRL(shippingInCents)}</strong>
       </div>
       {discountInCents > 0 ? <div className="summary-line">
         <span>Cupom {couponName}</span>
@@ -157,7 +166,7 @@ function CheckoutTotals({ subtotal, discountInCents = 0, couponName = "" }: {
       </div> : null}
       <div className="summary-line summary-total">
         <span>Total</span>
-        <strong>{formatBRL(subtotal - discountInCents + FIXED_SHIPPING_IN_CENTS)}</strong>
+        <strong>{shippingInCents === null ? "—" : formatBRL(subtotal - discountInCents + shippingInCents)}</strong>
       </div>
     </div>
   );
@@ -193,8 +202,63 @@ export default function CheckoutPage() {
   const [coupon, setCoupon] = useState({ code: "", name: "", discountInCents: 0 });
   const [couponMessage, setCouponMessage] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
+  const [shippingQuotes, setShippingQuotes] = useState<ShippingQuoteOption[]>([]);
+  const [selectedShippingQuoteId, setSelectedShippingQuoteId] = useState("");
+  const [shippingState, setShippingState] = useState<"waiting" | "loading" | "options" | "empty" | "error">("waiting");
+  const [shippingMessage, setShippingMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<PersonalField, string>>>({});
   const subtotal = calculateSubtotal(selectedLines);
+  const selectedLineFingerprint = selectedLines.map((line) => `${line.variantId}:${line.quantity}`).sort().join("|");
+  const selectedShippingQuote = shippingQuotes.find((quote) => quote.id === selectedShippingQuoteId) ?? null;
+
+  const resetShippingQuote = useCallback(() => {
+    setShippingQuotes([]);
+    setSelectedShippingQuoteId("");
+    setShippingState("waiting");
+    setShippingMessage("");
+  }, []);
+
+  const calculateShipping = async () => {
+    const postalField = formRef.current?.elements.namedItem("postalCode");
+    const postalCode = postalField instanceof HTMLInputElement ? postalField.value : "";
+    if (postalCode.replace(/\D/gu, "").length !== 8) {
+      setShippingState("waiting");
+      setShippingMessage("Informe um CEP válido para calcular o frete.");
+      if (postalField instanceof HTMLInputElement) postalField.focus();
+      return;
+    }
+    setShippingState("loading");
+    setShippingMessage("");
+    setSelectedShippingQuoteId("");
+    try {
+      const response = await fetch("/api/shipping/quote", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ postalCode, lines: selectedLines.map((line) => ({
+          productId: line.productId, variantId: line.variantId, quantity: line.quantity
+        })) }) });
+      const result: unknown = await response.json();
+      const record = isUnknownRecord(result) ? result : {};
+      const quotes = Array.isArray(record.quotes) ? record.quotes.flatMap((entry): ShippingQuoteOption[] => {
+        if (!isUnknownRecord(entry) || typeof entry.id !== "string" || typeof entry.service !== "string"
+          || typeof entry.carrier !== "string" || typeof entry.amountInCents !== "number"
+          || !Number.isSafeInteger(entry.amountInCents) || entry.amountInCents < 0) return [];
+        return [{ id: entry.id, service: entry.service, carrier: entry.carrier, amountInCents: entry.amountInCents,
+          estimatedDays: typeof entry.estimatedDays === "number" ? entry.estimatedDays : null,
+          expiresAt: typeof entry.expiresAt === "string" ? entry.expiresAt : null }];
+      }) : [];
+      if (!response.ok) {
+        setShippingState("error");
+        setShippingMessage(typeof record.message === "string" ? record.message : "Não foi possível calcular o frete. Tente novamente.");
+        return;
+      }
+      setShippingQuotes(quotes);
+      setShippingState(quotes.length ? "options" : "empty");
+      setShippingMessage(quotes.length ? "Selecione uma opção de entrega." : "Nenhuma opção de entrega está disponível para este CEP.");
+      if (quotes.length === 1 && quotes[0]) setSelectedShippingQuoteId(quotes[0].id);
+    } catch {
+      setShippingState("error");
+      setShippingMessage("Não foi possível calcular o frete. Tente novamente.");
+    }
+  };
 
   const applyCoupon = async () => {
     const codeField = formRef.current?.elements.namedItem("couponCode");
@@ -266,6 +330,7 @@ export default function CheckoutPage() {
   const applyAddress = useCallback((address: SavedAddress) => {
     setCoupon({ code: "", name: "", discountInCents: 0 });
     setCouponMessage("");
+    resetShippingQuote();
     const values: Record<string, string> = {
       postalCode: formatPostalCode(address.postalCode),
       street: address.street,
@@ -280,7 +345,9 @@ export default function CheckoutPage() {
       if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement)
         field.value = value;
     }
-  }, []);
+  }, [resetShippingQuote]);
+
+  useEffect(() => { resetShippingQuote(); }, [resetShippingQuote, selectedLineFingerprint]);
 
   useEffect(() => {
     if (paymentSession || !formRef.current) return;
@@ -413,6 +480,16 @@ export default function CheckoutPage() {
       if (invalidField instanceof HTMLElement) invalidField.focus();
       return;
     }
+    if (!selectedShippingQuote) {
+      setMessage("Calcule e selecione uma opção de frete antes de continuar.");
+      return;
+    }
+    if (selectedShippingQuote.expiresAt && Date.parse(selectedShippingQuote.expiresAt) <= Date.now()) {
+      resetShippingQuote();
+      setShippingState("error");
+      setShippingMessage("A cotação expirou. Calcule o frete novamente.");
+      return;
+    }
 
     submitInFlightRef.current = true;
     setLoading(true);
@@ -488,6 +565,7 @@ export default function CheckoutPage() {
       }
       const checkout = {
         ...(couponCode ? { couponCode } : {}),
+        ...(selectedShippingQuote.id !== "fixed" ? { shippingQuoteId: selectedShippingQuote.id } : {}),
         customer: {
           name: formString("name"), email, phone: phoneDigits(phone), cpf: sanitizeCpf(cpf)
         },
@@ -505,6 +583,7 @@ export default function CheckoutPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           idempotencyKey: idempotencyKeyRef.current,
+          ...(selectedShippingQuote.id !== "fixed" ? { shippingQuoteId: selectedShippingQuote.id } : {}),
           ...checkout
         })
       });
@@ -558,7 +637,7 @@ export default function CheckoutPage() {
           email,
           checkout: { ...checkout, customer: { ...checkout.customer, cpf: "" } }
         },
-        FIXED_SHIPPING_IN_CENTS
+        selectedShippingQuote.amountInCents
       );
       if (!session) {
         setMessage(resultMessage || "Não foi possível iniciar o pagamento.");
@@ -868,9 +947,10 @@ export default function CheckoutPage() {
                   inputMode="numeric"
                   autoComplete="postal-code"
                   maxLength={9}
-                  onInput={(event) => {
-                    event.currentTarget.value = formatPostalCode(event.currentTarget.value);
-                  }}
+                   onInput={(event) => {
+                     event.currentTarget.value = formatPostalCode(event.currentTarget.value);
+                     resetShippingQuote();
+                   }}
                   required
                   placeholder="00000-000"
                 />
@@ -942,11 +1022,24 @@ export default function CheckoutPage() {
 
           <section className="checkout-section" aria-labelledby="checkout-delivery-title">
             <h2 id="checkout-delivery-title">Entrega</h2>
-            <div className="summary-line">
-              <span>Entrega padrão</span>
-              <strong>{formatBRL(FIXED_SHIPPING_IN_CENTS)}</strong>
-            </div>
-            <p className="checkout-simple-status">Prazo informado após o envio.</p>
+            <button className="secondary-button" type="button" disabled={shippingState === "loading"}
+              onClick={() => void calculateShipping()}>
+              {shippingState === "loading" ? <LoaderCircle className="spin" width={20} height={20} /> : null}
+              {shippingState === "loading" ? "Calculando…" : shippingState === "error" ? "Tentar novamente" : "Calcular frete"}
+            </button>
+            {shippingQuotes.length ? <fieldset className="checkout-shipping-options">
+              <legend className="sr-only">Opções de entrega</legend>
+              {shippingQuotes.map((quote) => <label key={quote.id}>
+                <input type="radio" name="shippingQuote" value={quote.id}
+                  checked={selectedShippingQuoteId === quote.id}
+                  onChange={() => { setSelectedShippingQuoteId(quote.id); setShippingMessage("Opção de entrega selecionada."); }} />
+                <span><strong>{quote.service}</strong><small>{quote.carrier}{quote.estimatedDays ? ` · até ${quote.estimatedDays} dias úteis` : ""}</small></span>
+                <strong>{formatBRL(quote.amountInCents)}</strong>
+              </label>)}
+            </fieldset> : null}
+            <p className="checkout-simple-status" role={shippingState === "error" ? "alert" : "status"}>
+              {shippingMessage || "Informe o CEP e calcule as opções disponíveis."}
+            </p>
           </section>
 
           <section className="checkout-section" aria-labelledby="checkout-payment-title">
@@ -978,7 +1071,8 @@ export default function CheckoutPage() {
 
           <aside className="checkout-summary" aria-labelledby="checkout-summary-title">
             <h2 id="checkout-summary-title">Resumo final</h2>
-            <CheckoutTotals subtotal={subtotal} discountInCents={coupon.discountInCents} couponName={coupon.name} />
+            <CheckoutTotals subtotal={subtotal} shippingInCents={selectedShippingQuote?.amountInCents ?? null}
+              discountInCents={coupon.discountInCents} couponName={coupon.name} />
             <div className="field checkout-coupon-field">
               <label htmlFor="couponCode">Tem um cupom?</label>
               <div><input id="couponCode" name="couponCode" maxLength={40} autoCapitalize="characters" placeholder="CÓDIGO DO CUPOM"

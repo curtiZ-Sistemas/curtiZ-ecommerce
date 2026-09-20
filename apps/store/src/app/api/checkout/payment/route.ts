@@ -15,9 +15,11 @@ import { validateSavedCardCustomer, validateSavedCardPayer, SavedCardsError } fr
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
+import { resolveShippingProducts } from "../../../../lib/melhor-envio-server";
 
 const checkoutSchema = z.object({
   couponCode: z.string().trim().max(40).optional(),
+  shippingQuoteId: z.string().uuid().optional(),
   customer: z.object({
     name: z.string().trim().min(3).max(120), email: z.string().trim().email().max(CUSTOMER_EMAIL_MAX_LENGTH),
     phone: z.string().trim().max(20).refine(isValidBrazilianPhone).transform(phoneDigits),
@@ -208,6 +210,11 @@ async function handlePost(request: NextRequest, requestId: string) {
   let orderId = parsed.data.orderId ?? "";
   if (!orderId && parsed.data.checkout) {
     const checkout = parsed.data.checkout;
+    const shippingConfig = getIntegrationConfig().shipping;
+    if (shippingConfig.provider === "melhorenvio" && !checkout.shippingQuoteId) {
+      return response({ ok: false, code: "SHIPPING_QUOTE_REQUIRED", recovery: "review_checkout",
+        message: "Calcule e selecione uma opção de frete antes de pagar." }, 409);
+    }
     let cpfCiphertext = "";
     let cpfLastFour = "";
     try {
@@ -220,7 +227,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       return response({ ok: false, code: "CUSTOMER_IDENTITY_UNAVAILABLE", recovery: "retry_attempt",
         message: "Não foi possível proteger a identificação do cliente agora." }, 503);
     }
-    const creation = readQueryResult(await db.rpc("confirm_professional_checkout_order", {
+    const commonCheckoutArgs = {
       p_idempotency_key: parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey,
       p_customer_id: user.id,
       p_payment_method_id: parsed.data.payment.payment_method_id,
@@ -230,7 +237,17 @@ async function handlePost(request: NextRequest, requestId: string) {
       p_lines: checkout.lines.map((line) => ({ product_id: line.productId, variant_id: line.variantId, quantity: line.quantity })),
       p_coupon_code: normalizeOptionalCouponCode(checkout.couponCode) ?? null,
       p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
-    }));
+    };
+    let creation: { data: unknown; error: unknown };
+    if (shippingConfig.provider === "melhorenvio" && checkout.shippingQuoteId) {
+      const resolved = await resolveShippingProducts(checkout.lines);
+      creation = readQueryResult(await db.rpc("confirm_shipping_checkout_order", {
+        ...commonCheckoutArgs, p_shipping_quote_id: checkout.shippingQuoteId,
+        p_cart_fingerprint: resolved.fingerprint
+      }));
+    } else {
+      creation = readQueryResult(await db.rpc("confirm_professional_checkout_order", commonCheckoutArgs));
+    }
     const created = isUnknownRecord(creation.data) ? creation.data : null;
     orderId = created ? readString(created, "orderId") : "";
     if (creation.error || !orderId) {

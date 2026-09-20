@@ -120,9 +120,9 @@ type CatalogError = {
   details?: string;
 } | null;
 
-function logCatalogFailure(operation: string, error: CatalogError) {
+function logCatalogFailure(operation: string, error: CatalogError, requestId = crypto.randomUUID()) {
   logServerEvent("error", "panel_catalog_api_operation_failed", {
-    requestId: crypto.randomUUID(),
+    requestId,
     operation,
     code: error?.code ?? "unknown",
     message: error?.message?.slice(0, 180) ?? "unknown",
@@ -190,6 +190,13 @@ function saveProductError(
     return {
       message: "Você não possui permissão para salvar produtos.",
       statusCode: 403
+    };
+  }
+
+  if (["23502", "42703", "42P01", "PGRST202", "PGRST204", "PGRST205"].includes(error?.code ?? "")) {
+    return {
+      message: "O cadastro de produtos está com uma atualização de banco pendente. Tente novamente após a sincronização do sistema.",
+      statusCode: 503
     };
   }
 
@@ -948,6 +955,7 @@ export async function PATCH(request: NextRequest) {
 
   if (parsed.data.action === "save") {
     let saveOperation = "prepare_product";
+    const requestId = crypto.randomUUID();
     try {
     const categoryIds = [
       ...new Set([
@@ -1036,9 +1044,9 @@ export async function PATCH(request: NextRequest) {
       ? await supabase.from("categories").select("name").eq("id", payload.categoryId).maybeSingle()
       : null;
     if (categoryResult?.error) {
-      logCatalogFailure(saveOperation, categoryResult.error);
+      logCatalogFailure(saveOperation, categoryResult.error, requestId);
       return NextResponse.json(
-        { message: "A categoria selecionada não está disponível." },
+        { message: "A categoria selecionada não está disponível.", requestId },
         { status: 409, headers: noStore }
       );
     }
@@ -1057,11 +1065,11 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (result.error || typeof result.data !== "string") {
-      logCatalogFailure("save_product", result.error);
+      logCatalogFailure("save_product", result.error, requestId);
       const mappedError = saveProductError(result.error);
 
       return NextResponse.json(
-        { message: mappedError.message },
+        { message: mappedError.message, requestId },
         { status: mappedError.statusCode, headers: noStore }
       );
     }
@@ -1079,10 +1087,10 @@ export async function PATCH(request: NextRequest) {
         : error && typeof error === "object"
           ? error
           : null;
-      logCatalogFailure(saveOperation, catalogError);
+      logCatalogFailure(saveOperation, catalogError, requestId);
       const mappedError = saveProductError(catalogError);
       return NextResponse.json(
-        { message: mappedError.message },
+        { message: mappedError.message, requestId },
         { status: mappedError.statusCode, headers: noStore }
       );
     }

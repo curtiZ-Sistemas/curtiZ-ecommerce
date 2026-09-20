@@ -11,9 +11,11 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../lib/checkout-diagnostics";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
+import { resolveShippingProducts } from "../../../lib/melhor-envio-server";
 
 const schema = z.object({
   idempotencyKey: z.string().uuid(),
+  shippingQuoteId: z.string().uuid().optional(),
   couponCode: z.string().trim().max(40).optional(),
   customer: z.object({
     name: z.string().trim().min(3).max(120),
@@ -172,11 +174,32 @@ export async function POST(request: NextRequest) {
 
     const subtotalInCents = readNumber(quote, "subtotalInCents");
     const discountInCents = readNumber(quote, "discountInCents");
-    const shippingInCents = readNumber(quote, "shippingInCents");
-    const amountInCents = readNumber(quote, "amountInCents");
+    let shippingInCents = readNumber(quote, "shippingInCents");
+    let shippingQuoteId: string | null = null;
+    if (integrations.shipping.provider === "melhorenvio") {
+      if (!parsed.data.shippingQuoteId) return reply(requestId, { ok: false, code: "SHIPPING_QUOTE_REQUIRED",
+        message: "Calcule e selecione uma opção de frete antes de continuar." }, 409);
+      const resolved = await resolveShippingProducts(parsed.data.lines);
+      const selectedResult = readQueryResult(await supabase.from("shipping_quotes")
+        .select("id,provider,amount,destination_postal_code,cart_fingerprint,expires_at,used_at")
+        .eq("id", parsed.data.shippingQuoteId).eq("customer_id", auth.data.user.id).maybeSingle());
+      const selected = isUnknownRecord(selectedResult.data) ? selectedResult.data : null;
+      const postalCode = parsed.data.address.postalCode.replace(/\D/gu, "");
+      if (selectedResult.error || !selected || readString(selected, "provider") !== "melhorenvio"
+        || readString(selected, "destination_postal_code") !== postalCode
+        || readString(selected, "cart_fingerprint") !== resolved.fingerprint
+        || Date.parse(readString(selected, "expires_at")) <= Date.now() || readString(selected, "used_at")) {
+        return reply(requestId, { ok: false, code: "SHIPPING_QUOTE_EXPIRED",
+          message: "A cotação expirou ou o carrinho mudou. Calcule o frete novamente." }, 409);
+      }
+      shippingInCents = Math.round(readNumber(selected, "amount") * 100);
+      shippingQuoteId = readString(selected, "id");
+    }
+    const amountInCents = subtotalInCents - discountInCents + shippingInCents;
     if (!Number.isSafeInteger(subtotalInCents) || subtotalInCents <= 0
       || !Number.isSafeInteger(discountInCents) || discountInCents < 0
-      || shippingInCents !== FIXED_SHIPPING_IN_CENTS
+      || !Number.isSafeInteger(shippingInCents) || shippingInCents < 0
+      || (integrations.shipping.provider === "fixed" && shippingInCents !== FIXED_SHIPPING_IN_CENTS)
       || amountInCents !== subtotalInCents - discountInCents + shippingInCents) {
       logFailure(requestId, "INVALID_QUOTE");
       return reply(requestId, { ok: false, code: "INVALID_QUOTE", message: "Não foi possível validar o total do checkout." }, 503);
@@ -225,7 +248,7 @@ export async function POST(request: NextRequest) {
 
     return reply(requestId, {
       ok: true, subtotalInCents, discountInCents, couponName: readString(quote, "couponName"),
-      shippingInCents, amountInCents, publicKey, paymentMode: "test"
+      shippingInCents, shippingQuoteId, amountInCents, publicKey, paymentMode: "test"
     }, 200);
   } catch {
     logFailure(requestId, "CHECKOUT_RUNTIME_FAILURE");

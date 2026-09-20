@@ -32,7 +32,7 @@ export function safeTechnicalOrigin(request: NextRequest): boolean {
   return isAllowedBrowserRequest(request, configured);
 }
 
-export async function authorizeTechnicalRequest(request: NextRequest) {
+export async function authorizeTechnicalRequest(request: NextRequest, options: { mutation?: boolean } = {}) {
   const demo = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (demo) return null;
   const supabase = await createServerSupabaseClient();
@@ -56,7 +56,7 @@ export async function authorizeTechnicalRequest(request: NextRequest) {
     return null;
   }
   if (!(await hasRequiredInternalMfa(supabase))) return null;
-  if (!(await consumePanelMutationBudget(request, supabase))) return null;
+  if (options.mutation !== false && !(await consumePanelMutationBudget(request, supabase))) return null;
   return { supabase, userId: user.id };
 }
 

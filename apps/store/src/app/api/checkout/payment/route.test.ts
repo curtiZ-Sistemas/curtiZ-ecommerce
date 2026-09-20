@@ -10,7 +10,8 @@ const state = vi.hoisted(() => ({
   checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn(), getPaymentMethodIds: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled }) }));
+vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled,
+  shipping: { enabled: true, provider: "fixed", melhorEnvioEnabled: false } }) }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoProviderError: class extends Error {
@@ -32,6 +33,7 @@ vi.mock("@/lib/private-request", () => import("../../../../lib/private-request")
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 vi.mock("@/lib/mercadopago-saved-cards", () => ({ validateSavedCardCustomer: vi.fn(), validateSavedCardPayer: vi.fn(), SavedCardsError: class extends Error {} }));
+vi.mock("../../../../lib/melhor-envio-server", () => ({ resolveShippingProducts: vi.fn() }));
 
 const orderId = "11111111-1111-4111-8111-111111111111";
 const checkoutKey = "22222222-2222-4222-8222-222222222222";

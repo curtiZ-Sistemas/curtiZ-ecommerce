@@ -18,6 +18,9 @@
   "env": {
     "staging": {
       "name": "curtiz-ecommerce-staging",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
       "images": {
         "binding": "IMAGES"
       }

@@ -123,7 +123,7 @@ describe("environment validation", () => {
     })).toMatchObject({ valid: true, errors: [] });
   });
 
-  it("não exige credenciais do Melhor Envio enquanto o Sandbox estiver incompleto", () => {
+  it("rejeita o Melhor Envio enquanto a configuração estiver incompleta", () => {
     expect(validateEnvironment("production", {
       ...disabledProduction,
       CHECKOUT_ENABLED: "true",
@@ -135,8 +135,21 @@ describe("environment validation", () => {
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key",
       SHIPPING_PROVIDER: "melhorenvio",
       MELHOR_ENVIO_ENABLED: "true",
-      MELHOR_ENVIO_OAUTH_VALIDATED: "false"
-    })).toMatchObject({ valid: true, errors: [] });
+      MELHOR_ENVIO_ENVIRONMENT: "sandbox"
+    })).toMatchObject({ valid: false });
+  });
+
+  it("rejeita chave de tokens do Melhor Envio que não seja AES-256 em base64", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      MELHOR_ENVIO_ENVIRONMENT: "sandbox",
+      MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY: "chave-invalida"
+    });
+    expect(result.errors).toContain(
+      "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY deve codificar exatamente 32 bytes em base64"
+    );
   });
 
   it("não aceita mocks nem modo demo em produção", () => {

@@ -26,4 +26,13 @@ describe("Cloudflare secret validation", () => {
       { name: "RATE_LIMIT_HMAC_KEY" }, { name: "REFERRAL_ATTRIBUTION_HMAC_KEY" }
     ], environment)).toEqual(["MERCADO_PAGO_ACCESS_TOKEN", "MERCADO_PAGO_WEBHOOK_SECRET", "TURNSTILE_SECRET_KEY"]);
   });
+
+  it("exige OAuth, criptografia e um documento de origem quando o Melhor Envio está ativo", () => {
+    const environment = { DEPLOY_TARGET: "panel", SHIPPING_PROVIDER: "melhorenvio", MELHOR_ENVIO_ENABLED: "true" };
+    expect(missingCloudflareSecrets([
+      { name: "SUPABASE_SECRET_KEY" }, { name: "PII_ENCRYPTION_KEY" }, { name: "AUDIT_HASH_KEY" },
+      { name: "MELHOR_ENVIO_CLIENT_SECRET" }, { name: "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY" },
+      { name: "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT" }
+    ], environment)).toEqual([]);
+  });
 });

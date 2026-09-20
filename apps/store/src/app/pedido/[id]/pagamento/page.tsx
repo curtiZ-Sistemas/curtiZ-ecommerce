@@ -1,4 +1,4 @@
-import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
+import { isMercadoPagoTestCredential } from "@curtiz/integrations";
 import { notFound } from "next/navigation";
 import { OrderPayment } from "@/components/order-payment";
 import { canContinueOrderPayment } from "@/lib/customer-account-presentation";
@@ -32,7 +32,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const canResume = payable && readString(order, "status") === "pending_payment"
     && !readString(payment, "provider_payment_id")
     && isMercadoPagoTestCredential(publicKey)
-    && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents === FIXED_SHIPPING_IN_CENTS
+    && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents >= 0
     && amountInCents === subtotalInCents - discountInCents + shippingInCents;
   const session: MercadoPagoBrickSession | null = canResume ? {
     orderId: id,

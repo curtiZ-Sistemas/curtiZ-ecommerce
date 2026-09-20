@@ -64,8 +64,12 @@ type CatalogResponse = {
   capabilityMessage?: string;
 };
 
+type ProductSizeGuideRow = ProductSizeGuideEntry & { clientRowId: string };
+const withSizeGuideRowIds = (entries: ProductSizeGuideEntry[]): ProductSizeGuideRow[] =>
+  entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
+
 const includeSizeGuideRows = (
-  current: ProductSizeGuideEntry[],
+  current: ProductSizeGuideRow[],
   sizes: string[]
 ) => {
   const known = new Set(current.map((entry) => entry.size.trim().toLocaleLowerCase("pt-BR")));
@@ -75,7 +79,7 @@ const includeSizeGuideRows = (
     const normalized = size.toLocaleLowerCase("pt-BR");
     if (!size || known.has(normalized)) continue;
     known.add(normalized);
-    next.push({ size, measurementCm: null });
+    next.push({ clientRowId: crypto.randomUUID(), size, measurementCm: null });
   }
   return next;
 };
@@ -312,7 +316,7 @@ export function ProductManagement({
   const [hasVariations, setHasVariations] = useState(true);
   const [simpleStock, setSimpleStock] = useState(0);
   const [productActive, setProductActive] = useState(false);
-  const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideEntry[]>([]);
+  const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideRow[]>([]);
   const [bulkVariantPrice, setBulkVariantPrice] = useState("");
   const [newVariantSizes, setNewVariantSizes] = useState<Record<string, string>>({});
   const [colorImageSelections, setColorImageSelections] = useState<Record<string, string>>({});
@@ -329,8 +333,35 @@ export function ProductManagement({
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
   const reasons = useRef<Record<string, HTMLInputElement | null>>({});
   const editorFormRef = useRef<HTMLFormElement | null>(null);
+  const editorBaselineRef = useRef<string | null>(null);
+  const [initializedEditorKey, setInitializedEditorKey] = useState("");
+  const [editorRevision, setEditorRevision] = useState(0);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftKey = productDraftStorageKey(draftOwnerKey);
+
+  const editorSnapshot = () => {
+    const form = editorFormRef.current;
+    if (!form) return null;
+    const fields = [...new FormData(form).entries()]
+      .filter(([, value]) => typeof value === "string")
+      .map(([key, value]) => [key, value] as const)
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+        leftKey.localeCompare(rightKey) || String(leftValue).localeCompare(String(rightValue)));
+    return JSON.stringify({
+      fields,
+      categoryIds: [...selectedCategoryIds].sort(),
+      primaryCategoryId,
+      variants: [...editableVariants].sort((left, right) =>
+        (left.id ?? left.sku).localeCompare(right.id ?? right.sku)),
+      sizeGuide: sizeGuide.map(({ size, measurementCm }) => ({ size, measurementCm }))
+        .sort((left, right) => left.size.localeCompare(right.size, "pt-BR")),
+      hasVariations, simpleStock, productActive, variantColors, variantSizes,
+      variantSkuPrefix, colorImageSelections,
+      queuedMediaFiles: queuedMediaFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`).sort()
+    });
+  };
+  const editorSnapshotRef = useRef(editorSnapshot);
+  editorSnapshotRef.current = editorSnapshot;
 
   const clearLocalDraft = useCallback(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -445,6 +476,7 @@ export function ProductManagement({
 
   useEffect(() => {
     if (!editing || !editingKey) return;
+    editorBaselineRef.current = null;
     if (editing === "new") {
       setEditableVariants([]);
       setVariantColors("");
@@ -461,6 +493,7 @@ export function ProductManagement({
       setQueuedMediaFiles([]);
       setActiveEditorSection("information");
       setEditorDirty(false);
+      setInitializedEditorKey(editingKey);
       return;
     }
     setEditableVariants(
@@ -483,7 +516,7 @@ export function ProductManagement({
     setHasVariations(editing.variants.length > 1 || editing.variants.some((variant) => variant.color !== "Padrão" || variant.size !== "Único"));
     setSimpleStock(editing.variants[0]?.available ?? 0);
     setProductActive(editing.status === "active");
-    setSizeGuide(includeSizeGuideRows(editing.sizeGuide ?? [], editing.variants.map((variant) => variant.size)));
+    setSizeGuide(includeSizeGuideRows(withSizeGuideRowIds(editing.sizeGuide ?? []), editing.variants.map((variant) => variant.size)));
     setColorImageSelections({});
     setVariantSkuPrefix(editing.slug);
     setVariantColors("");
@@ -493,10 +526,26 @@ export function ProductManagement({
       Object.fromEntries((editing.images ?? []).map((image) => [image.id, image.alt]))
     );
     setEditorDirty(false);
+    setInitializedEditorKey(editingKey);
   }, [editingKey]);
+
+  useEffect(() => {
+    if (!editingKey || initializedEditorKey !== editingKey) return;
+    editorBaselineRef.current = editorSnapshotRef.current();
+    setEditorDirty(false);
+  }, [editingKey, initializedEditorKey]);
+
+  useEffect(() => {
+    if (!editingKey || initializedEditorKey !== editingKey || editorBaselineRef.current === null) return;
+    setEditorDirty(editorSnapshotRef.current() !== editorBaselineRef.current);
+  }, [editingKey, initializedEditorKey, editorRevision, selectedCategoryIds, primaryCategoryId,
+    editableVariants, sizeGuide, hasVariations, simpleStock, productActive, variantColors,
+    variantSizes, variantSkuPrefix, colorImageSelections, queuedMediaFiles]);
 
   const closeEditor = useCallback(() => {
     setEditing(null);
+    editorBaselineRef.current = null;
+    setInitializedEditorKey("");
     setEditorDirty(false);
     setNewVariantSizes({});
     setQueuedMediaFiles([]);
@@ -523,7 +572,7 @@ export function ProductManagement({
     setHasVariations(draftOffer.hasVariations);
     setSimpleStock(draftOffer.simpleStock);
     setProductActive(draftOffer.productActive === true);
-    setSizeGuide(draftOffer.sizeGuide ?? []);
+    setSizeGuide(withSizeGuideRowIds(draftOffer.sizeGuide ?? []));
     setVariantColors(draftOffer.variantColors ?? "");
     setVariantSizes(draftOffer.variantSizes ?? "");
     setVariantSkuPrefix(draftOffer.variantSkuPrefix ?? "");
@@ -1947,7 +1996,7 @@ export function ProductManagement({
                 </nav>
             <form
               ref={editorFormRef}
-              onChangeCapture={() => { setEditorDirty(true); scheduleLocalDraft(); }}
+              onChangeCapture={() => { setEditorRevision((current) => current + 1); scheduleLocalDraft(); }}
               onSubmit={(event) => void saveProduct(event)}
             >
               <div className="admin-form-grid">
@@ -2740,7 +2789,7 @@ export function ProductManagement({
                       className="secondary-button"
                       type="button"
                       onClick={() => {
-                        setSizeGuide((current) => [...current, { size: "", measurementCm: null }]);
+                        setSizeGuide((current) => [...current, { clientRowId: crypto.randomUUID(), size: "", measurementCm: null }]);
                         setEditorDirty(true);
                       }}
                     >
@@ -2751,7 +2800,7 @@ export function ProductManagement({
                   {sizeGuide.length ? (
                     <div className="product-size-guide-rows">
                       {sizeGuide.map((entry, index) => (
-                        <div key={`${entry.size}-${index}`}>
+                        <div key={entry.clientRowId} className="product-size-guide-row">
                           <label>
                             <span>Tamanho</span>
                             <input
@@ -2781,7 +2830,7 @@ export function ProductManagement({
                             />
                           </label>
                           <button
-                            className="icon-button danger-button"
+                            className="icon-button danger-button product-size-guide-remove"
                             type="button"
                             aria-label={`Remover tamanho ${entry.size || index + 1} da tabela`}
                             onClick={() => { setSizeGuide((current) => current.filter((_, itemIndex) => itemIndex !== index)); setEditorDirty(true); }}

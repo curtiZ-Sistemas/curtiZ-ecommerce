@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
   let orderQuery = supabase
     .from("orders")
     .select(
-      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,tracking_code,label_path,dispatched_at),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
+      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,carrier,tracking_code,label_path,dispatched_at,operation_state,shipping_amount,shipping_cost,estimated_days),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
       { count: "exact" }
     )
     .in("status", [...orderStatuses])
@@ -424,8 +424,13 @@ export async function GET(request: NextRequest) {
         status: text(shipment.status),
         provider: text(shipment.provider),
         service: text(shipment.service),
+        carrier: text(shipment.carrier),
         trackingCode: text(shipment.tracking_code) || null,
-        labelReady: Boolean(text(shipment.label_path))
+        labelReady: Boolean(text(shipment.label_path)),
+        operationState: text(shipment.operation_state),
+        shippingAmount: Number(shipment.shipping_amount ?? 0),
+        shippingCost: Number(shipment.shipping_cost ?? 0),
+        estimatedDays: number(shipment.estimated_days) || null
       })),
       history: rows(order.order_status_history).map((history) => ({
         status: text(history.new_status),

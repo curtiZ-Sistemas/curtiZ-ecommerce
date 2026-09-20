@@ -26,24 +26,56 @@ const isValidHttpsUrl = (value: string | undefined): boolean => {
   }
 };
 
-export const isMelhorEnvioSandboxReady = (environment: IntegrationEnvironment): boolean => {
-  const baseUrl = environment.MELHOR_ENVIO_BASE_URL?.trim();
-  const tokenExpiresAt = Date.parse(environment.MELHOR_ENVIO_ACCESS_TOKEN_EXPIRES_AT?.trim() ?? "");
-  if (!baseUrl || !isValidHttpsUrl(baseUrl)) return false;
-  const parsedBaseUrl = new URL(baseUrl);
+const isAes256Base64Key = (value: string | undefined): boolean => {
+  const encoded = value?.trim() ?? "";
+  if (!/^[A-Za-z0-9+/]{43}=$/u.test(encoded)) return false;
+  try { return atob(encoded).length === 32; }
+  catch { return false; }
+};
+
+export const getMelhorEnvioEnvironment = (environment: IntegrationEnvironment): "sandbox" | "production" | null => {
+  const selected = environment.MELHOR_ENVIO_ENVIRONMENT?.trim().toLowerCase() || "sandbox";
+  return selected === "sandbox" || selected === "production" ? selected : null;
+};
+
+export const isMelhorEnvioConfigured = (environment: IntegrationEnvironment): boolean => {
+  const selected = getMelhorEnvioEnvironment(environment);
+  if (!selected) return false;
+  const expectedOrigin = selected === "sandbox"
+    ? "https://sandbox.melhorenvio.com.br" : "https://melhorenvio.com.br";
+  const legacyBaseUrl = environment.MELHOR_ENVIO_BASE_URL?.trim();
+  if (legacyBaseUrl) {
+    if (!isValidHttpsUrl(legacyBaseUrl)) return false;
+    const parsed = new URL(legacyBaseUrl);
+    if (parsed.origin !== expectedOrigin || parsed.pathname !== "/" || parsed.search || parsed.hash) return false;
+  }
+  const digits = (key: string) => (environment[key] ?? "").replace(/\D/gu, "");
+  const originFields = ["MELHOR_ENVIO_ORIGIN_NAME", "MELHOR_ENVIO_ORIGIN_EMAIL", "MELHOR_ENVIO_ORIGIN_PHONE",
+    "MELHOR_ENVIO_ORIGIN_ADDRESS", "MELHOR_ENVIO_ORIGIN_NUMBER", "MELHOR_ENVIO_ORIGIN_DISTRICT",
+    "MELHOR_ENVIO_ORIGIN_CITY", "MELHOR_ENVIO_ORIGIN_STATE", "MELHOR_ENVIO_ORIGIN_POSTAL_CODE"];
+  const originComplete = originFields.every((key) => Boolean(environment[key]?.trim()))
+    && /^\S+@\S+\.\S+$/u.test(environment.MELHOR_ENVIO_ORIGIN_EMAIL?.trim() ?? "")
+    && /^\d{10,11}$/u.test(digits("MELHOR_ENVIO_ORIGIN_PHONE"))
+    && /^[A-Za-z]{2}$/u.test(environment.MELHOR_ENVIO_ORIGIN_STATE?.trim() ?? "")
+    && /^\d{8}$/u.test(digits("MELHOR_ENVIO_ORIGIN_POSTAL_CODE"))
+    && (selected === "production"
+      ? /^\d{14}$/u.test(digits("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT"))
+        && Boolean(environment.MELHOR_ENVIO_ORIGIN_STATE_REGISTER?.trim())
+      : /^\d{11}$/u.test(digits("MELHOR_ENVIO_ORIGIN_DOCUMENT"))
+        || /^\d{14}$/u.test(digits("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")));
   return parseEnvironmentBoolean(environment.MELHOR_ENVIO_ENABLED)
-    && parseEnvironmentBoolean(environment.MELHOR_ENVIO_OAUTH_VALIDATED)
-    && parsedBaseUrl.origin === "https://sandbox.melhorenvio.com.br"
-    && parsedBaseUrl.pathname === "/"
-    && !parsedBaseUrl.search
-    && !parsedBaseUrl.hash
     && isValidHttpsUrl(environment.MELHOR_ENVIO_REDIRECT_URI)
     && Boolean(environment.MELHOR_ENVIO_CLIENT_ID?.trim())
     && Boolean(environment.MELHOR_ENVIO_CLIENT_SECRET?.trim())
-    && Boolean(environment.MELHOR_ENVIO_ACCESS_TOKEN?.trim())
-    && Number.isFinite(tokenExpiresAt)
-    && tokenExpiresAt > Date.now();
+    && isAes256Base64Key(environment.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY)
+    && Boolean(environment.MELHOR_ENVIO_APP_NAME?.trim())
+    && Boolean(environment.MELHOR_ENVIO_TECHNICAL_CONTACT?.trim())
+    && originComplete;
 };
+
+/** @deprecated Readiness is no longer based on environment token values. */
+export const isMelhorEnvioSandboxReady = (environment: IntegrationEnvironment): boolean =>
+  getMelhorEnvioEnvironment(environment) === "sandbox" && isMelhorEnvioConfigured(environment);
 
 export const getIntegrationConfig = (environment: IntegrationEnvironment = process.env) => {
   const rawPaymentProvider = environment.PAYMENT_PROVIDER?.trim().toLowerCase();
@@ -60,10 +92,10 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
     "disabled") as OptionalWhatsAppProvider;
   const mercadoPagoEnabled =
     parseEnvironmentBoolean(environment.MERCADO_PAGO_ENABLED) || paymentProvider === "mercadopago";
-  const melhorEnvioEnabled = isMelhorEnvioSandboxReady(environment);
-  const shippingProvider = requestedShippingProvider === "melhorenvio"
-    ? melhorEnvioEnabled ? "melhorenvio" : "fixed"
-    : requestedShippingProvider;
+  const melhorEnvioEnabled = isMelhorEnvioConfigured(environment);
+  // Never change the selected provider silently: an incomplete setup disables
+  // checkout instead of substituting a different shipping price.
+  const shippingProvider = requestedShippingProvider;
   const emailEnabled =
     parseEnvironmentBoolean(environment.EMAIL_ENABLED) || emailProvider === "resend";
   const turnstileEnabled = parseEnvironmentBoolean(environment.TURNSTILE_ENABLED);

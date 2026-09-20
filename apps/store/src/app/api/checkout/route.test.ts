@@ -9,7 +9,8 @@ const identityState = vi.hoisted(() => ({ value: null as Record<string, unknown>
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
   checkoutEnabled: integrationState.checkoutEnabled,
-  payment: { enabled: true, provider: "mercadopago" }
+  payment: { enabled: true, provider: "mercadopago" },
+  shipping: { enabled: true, provider: "fixed", melhorEnvioEnabled: false }
 }) }));
 vi.mock("@curtiz/integrations", () => ({
   FIXED_SHIPPING_IN_CENTS: 1_690,
@@ -27,6 +28,7 @@ vi.mock("@/lib/unknown-data", () => ({
   readString: (record: Record<string, unknown>, key: string) => typeof record[key] === "string" ? record[key] : ""
 }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
+vi.mock("../../../lib/melhor-envio-server", () => ({ resolveShippingProducts: vi.fn() }));
 
 const mockedClient = vi.mocked(createServerSupabaseClient);
 const body = {

@@ -13944,6 +13944,41 @@ body:has(.checkout-transition) .help-widget {
   line-height: 1.45;
 }
 
+.checkout-shipping-options {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+}
+
+.checkout-shipping-options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.checkout-shipping-options label:has(input:checked) {
+  border-color: var(--brand-600);
+  background: var(--brand-50);
+}
+
+.checkout-shipping-options span,
+.checkout-shipping-options small {
+  display: block;
+}
+
+.checkout-shipping-options small {
+  margin-top: 2px;
+  color: var(--neutral-600);
+}
+
 .checkout-payment-heading,
 .checkout-payment-brick > header {
   display: flex;

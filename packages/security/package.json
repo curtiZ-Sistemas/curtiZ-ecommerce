@@ -9,7 +9,8 @@
     "./auth-persistence": "./src/auth-persistence.ts",
     "./auth-cookie": "./src/auth-cookie.ts",
     "./postgres-uuid": "./src/postgres-uuid.ts",
-    "./content-security-policy": "./src/content-security-policy.ts"
+    "./content-security-policy": "./src/content-security-policy.ts",
+    "./pii": "./src/pii.ts"
   },
   "scripts": {
     "build": "tsc --outDir dist --declaration --noEmit false --incremental false",

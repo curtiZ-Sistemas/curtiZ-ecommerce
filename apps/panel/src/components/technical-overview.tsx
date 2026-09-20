@@ -6,6 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 type RecordValue = Record<string, unknown>;
 type Service = { name: string; state: string; detail: string; checkedAt?: string | null; latencyMs?: number | null };
 type StorageSummary = { bucket_id: string; object_count: number; total_bytes: number };
+type MelhorEnvioStatus = { environment: string; connected: boolean; health: string; latencyMs: number;
+  accessTokenExpiresAt: string | null; webhookConfigured: boolean; originComplete: boolean; originMissingFields: string[];
+  lastCheckedAt: string; lastError: string | null };
 
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -50,6 +53,16 @@ const stateLabels: Record<string, string> = {
 };
 
 const bytes = new Intl.NumberFormat("pt-BR", { notation: "compact", style: "unit", unit: "byte", unitDisplay: "narrow" });
+const formatDateTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Indisponível" : date.toLocaleString("pt-BR");
+};
+const tokenState = (status: MelhorEnvioStatus) => {
+  if (!status.connected) return "Ausente";
+  const expiresAt = status.accessTokenExpiresAt ? Date.parse(status.accessTokenExpiresAt) : Number.NaN;
+  return status.health === "online" || Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000
+    ? "Válido" : "Renovação necessária";
+};
 
 export function TechnicalOverview({ section }: { section: string }) {
   const [services, setServices] = useState<Service[]>([]);
@@ -61,6 +74,8 @@ export function TechnicalOverview({ section }: { section: string }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
+  const [melhorEnvio, setMelhorEnvio] = useState<MelhorEnvioStatus | null>(null);
+  const [integrationBusy, setIntegrationBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +91,11 @@ export function TechnicalOverview({ section }: { section: string }) {
       setDatabase(isRecord(payload.database) ? payload.database : {});
       setRuntime(isRecord(payload.runtime) ? payload.runtime : {});
       setDeployments(isRecord(payload.deployments) ? payload.deployments : {});
+      try {
+        const integrationResponse = await fetch("/api/integrations/melhor-envio/status", { cache: "no-store" });
+        if (integrationResponse.ok) setMelhorEnvio(await integrationResponse.json() as MelhorEnvioStatus);
+        else setMelhorEnvio(null);
+      } catch { setMelhorEnvio(null); }
       setWarning(
         Array.isArray(payload.unavailable) && payload.unavailable.length > 0
           ? `Dados temporariamente indisponíveis: ${payload.unavailable.filter((item): item is string => typeof item === "string").join(", ")}.`
@@ -101,6 +121,30 @@ export function TechnicalOverview({ section }: { section: string }) {
   const showDatabase = !section || ["banco-dados", "supabase", "integridade-dados"].includes(section);
   const showRuntime = !section || ["backups", "deploys", "versoes", "banco-dados", "configuracoes-tecnicas"].includes(section);
   const showSessionNote = section === "sessoes";
+  const showIntegrations = !section || ["integracoes", "configuracoes-tecnicas", "saude-servicos"].includes(section);
+
+  const connectMelhorEnvio = async () => {
+    setIntegrationBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/integrations/melhor-envio/connect", { method: "POST" });
+      const payload = await response.json() as { authorizationUrl?: string; message?: string };
+      if (!response.ok || !payload.authorizationUrl || !/^https:\/\/(sandbox\.)?melhorenvio\.com\.br\/oauth\/authorize/u.test(payload.authorizationUrl)) {
+        throw new Error(payload.message || "Não foi possível iniciar a conexão.");
+      }
+      window.location.assign(payload.authorizationUrl);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível iniciar a conexão."); setIntegrationBusy(false); }
+  };
+
+  const disconnectMelhorEnvio = async () => {
+    if (!window.confirm("Desconectar o Melhor Envio? Novas cotações ficarão indisponíveis.")) return;
+    setIntegrationBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/integrations/melhor-envio/disconnect", { method: "POST" });
+      if (!response.ok) throw new Error("Não foi possível desconectar a integração.");
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível desconectar a integração."); }
+    finally { setIntegrationBusy(false); }
+  };
 
   return (
     <div className="technical-overview">
@@ -148,6 +192,32 @@ export function TechnicalOverview({ section }: { section: string }) {
           <p className="technical-note">Somente totais agregados são exibidos; caminhos e arquivos privados não são expostos.</p>
         </section>
       ) : null}
+
+      {showIntegrations ? <section className="panel-card technical-section">
+        <h2><Webhook aria-hidden="true" /> Melhor Envio</h2>
+        {!melhorEnvio ? <p className="admin-empty-copy">Status detalhado indisponível.</p> : <>
+          <div className="technical-runtime-grid">
+            <Runtime label="Ambiente" value={melhorEnvio.environment === "production" ? "Produção" : "Sandbox"} />
+            <Runtime label="Conexão" value={melhorEnvio.connected ? "Conectado" : "Não conectado"} />
+            <Runtime label="Token" value={tokenState(melhorEnvio)} />
+            <Runtime label="Webhook" value={melhorEnvio.webhookConfigured ? "Configurado" : "Pendente"} />
+            <Runtime label="Origem" value={melhorEnvio.originComplete ? "Completa" : "Incompleta"} />
+            <Runtime label="Latência" value={`${melhorEnvio.latencyMs} ms`} />
+            <Runtime label="Última comunicação" value={formatDateTime(melhorEnvio.lastCheckedAt)} />
+            <Runtime label="Último erro" value={melhorEnvio.lastError ?? "Nenhum"} />
+          </div>
+          <div className="table-actions">
+            <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void load()}>Testar conexão</button>
+            {!melhorEnvio.connected
+              ? <button className="primary-button" type="button" disabled={integrationBusy} onClick={() => void connectMelhorEnvio()}>Conectar</button>
+              : <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void disconnectMelhorEnvio()}>Desconectar</button>}
+          </div>
+          {!melhorEnvio.originComplete && melhorEnvio.originMissingFields.length > 0
+            ? <p className="technical-note">Configuração de origem pendente: {melhorEnvio.originMissingFields.join(", ")}.</p>
+            : null}
+          <p className="technical-note">Tokens, secrets e assinaturas nunca são exibidos.</p>
+        </>}
+      </section> : null}
 
       {showDatabase ? (
         <section className="panel-card technical-section">

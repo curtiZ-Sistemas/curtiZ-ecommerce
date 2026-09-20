@@ -80,8 +80,13 @@ type OperationOrder = {
     status: string;
     provider: string;
     service: string;
+    carrier: string;
     trackingCode: string | null;
     labelReady: boolean;
+    operationState: string;
+    shippingAmount: number;
+    shippingCost: number;
+    estimatedDays: number | null;
   }>;
   history: Array<{ status: string; reason: string; createdAt: string }>;
   notes: Array<{ id: string; content: string; createdAt: string }>;
@@ -289,13 +294,18 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/operations", {
+      const action = String(body.action);
+      const shippingAction = action.startsWith("shipping_");
+      const response = await fetch(shippingAction ? "/api/operations/shipping" : "/api/operations", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(shippingAction ? { ...body, action: action.slice("shipping_".length) } : body)
       });
-      const result = (await response.json()) as { ok: boolean; message?: string };
+      const result = (await response.json()) as { ok: boolean; message?: string; data?: { url?: string } };
       if (!response.ok || !result.ok) throw new Error(result.message ?? "Ação não concluída.");
+      if (result.data?.url && /^https:\/\/(sandbox\.)?melhorenvio\.com\.br\//u.test(result.data.url)) {
+        window.open(result.data.url, "_blank", "noopener,noreferrer");
+      }
       setNotice(success);
       await load();
       return true;
@@ -645,7 +655,19 @@ function OrderDetail({
       <div className="operational-detail-grid">
         <div><h3>Entrega</h3><p>{order.customerName}</p><p>{order.address ? `${order.address.line} · ${order.address.district} · ${order.address.city}/${order.address.state} · ${order.address.postalCode}` : "Endereço não disponível"}</p></div>
         <div><h3>Itens</h3>{order.items.map((item) => <p key={item.id}><strong>{item.quantity}×</strong> {item.productName} · {item.sku} · {[item.color, item.size].filter(Boolean).join(" · ")}</p>)}</div>
-        <div><h3>Envio</h3>{order.shipments.length ? order.shipments.map((shipment) => <p key={shipment.id}>{shipment.provider} · {shipment.service} · {label(shipment.status)} {shipment.trackingCode ? `· ${shipment.trackingCode}` : ""}</p>) : <p>Remessa ainda não criada.</p>}</div>
+        <div><h3>Envio</h3>{order.shipments.length ? order.shipments.map((shipment) => <div key={shipment.id}>
+          <p>{shipment.carrier || shipment.provider} · {shipment.service} · {label(shipment.status)} {shipment.trackingCode ? `· ${shipment.trackingCode}` : ""}</p>
+          <small>Cobrado {formatCurrency(shipment.shippingAmount)} · custo {formatCurrency(shipment.shippingCost)}{shipment.estimatedDays ? ` · ${shipment.estimatedDays} dias úteis` : ""}</small>
+          {canAddNote && shipment.provider === "melhorenvio" ? <div className="table-actions">
+            {["pending", "awaiting_invoice", "failed"].includes(shipment.operationState) ? <button type="button" onClick={() => void run({ action: "shipping_create", shipmentId: shipment.id }, "Envio criado no Melhor Envio.")}>Criar</button> : null}
+            {shipment.operationState === "created" ? <button type="button" onClick={() => void run({ action: "shipping_purchase", shipmentId: shipment.id }, "Compra da etiqueta solicitada.")}>Comprar</button> : null}
+            {shipment.operationState === "purchased" ? <button type="button" onClick={() => void run({ action: "shipping_generate", shipmentId: shipment.id }, "Etiqueta gerada.")}>Gerar</button> : null}
+            {["purchased", "generated"].includes(shipment.operationState) ? <button type="button" onClick={() => void run({ action: "shipping_preview", shipmentId: shipment.id }, "Pré-visualização autorizada.")}>Visualizar</button> : null}
+            {shipment.operationState === "generated" ? <button type="button" onClick={() => void run({ action: "shipping_print", shipmentId: shipment.id }, "Impressão autorizada.")}>Imprimir</button> : null}
+            {shipment.operationState !== "pending" ? <button type="button" onClick={() => void run({ action: "shipping_sync", shipmentId: shipment.id }, "Remessa sincronizada.")}>Sincronizar</button> : null}
+            {["created", "purchased", "generated"].includes(shipment.operationState) ? <button type="button" onClick={() => void run({ action: "shipping_cancel", shipmentId: shipment.id, reason: "Cancelamento solicitado pela operação" }, "Cancelamento solicitado.")}>Cancelar</button> : null}
+          </div> : null}
+        </div>) : <p>Remessa ainda não criada.</p>}</div>
         <div><h3>Histórico</h3>{order.history.length ? order.history.slice(0, 8).map((entry) => <p key={`${entry.createdAt}-${entry.status}`}>{formatDateTime(entry.createdAt)} · {label(entry.status)} · {entry.reason}</p>) : <p>Sem movimentações.</p>}</div>
       </div>
       {canAddNote ? <form className="operational-note-form" onSubmit={(event) => void note(event)}>
@@ -1195,6 +1217,7 @@ function OperationalLoading() {
 }
 
 const formText = (value: FormDataEntryValue | null) => typeof value === "string" ? value.trim() : "";
+const formatCurrency = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 const formatDateTime = (value: string) =>
   value

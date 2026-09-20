@@ -141,16 +141,21 @@ assinatura/reconciliação. A interface de pagamento, as transações locais e a
 reutilizadas; não basta trocar o token. Nesta etapa, os guards `TEST-` permanecem obrigatórios e não
 há modo live habilitado.
 
-Enquanto `SHIPPING_PROVIDER=fixed`, o banco adiciona R$ 16,90 a todos os pedidos do Checkout
-Bricks. O Melhor Envio permanece opcional e restrito ao Sandbox. Mesmo que
-`SHIPPING_PROVIDER=melhorenvio` seja solicitado, a configuração efetiva volta para `fixed` até que
-`MELHOR_ENVIO_ENABLED` e `MELHOR_ENVIO_OAUTH_VALIDATED` estejam ativos e Client ID, Client Secret,
-URL base, Redirect URI, Access Token e sua validade estejam presentes. A URL base aceita para essa
-etapa é somente `https://sandbox.melhorenvio.com.br`.
+`SHIPPING_PROVIDER=fixed` mantém a entrega fixa somente quando essa escolha é explícita.
+`SHIPPING_PROVIDER=melhorenvio` nunca volta silenciosamente para o valor fixo: configuração,
+OAuth ou cotação indisponíveis bloqueiam o checkout com opção de nova tentativa.
 
-Variáveis ausentes do Melhor Envio não invalidam o build nem bloqueiam o checkout. Mantenha
-`MELHOR_ENVIO_OAUTH_VALIDATED=false` até um fluxo backend confirmar a autorização e a validade do
-token. Falhas futuras de cotação devem continuar retornando ao provider `fixed`.
+Para homologação, use `MELHOR_ENVIO_ENVIRONMENT=sandbox`, o host oficial derivado do ambiente,
+Client ID/Secret, Redirect URI, nome da aplicação, contato técnico e uma chave AES-256 aleatória em
+base64 (`MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY`). Access e refresh tokens são gravados cifrados no banco
+pelo fluxo OAuth do painel técnico; não os mantenha em variáveis de ambiente. Cadastre o webhook em
+`https://<loja>/api/webhooks/melhor-envio` e marque `MELHOR_ENVIO_WEBHOOK_CONFIGURED=true` depois da
+configuração. O `X-ME-Signature` é validado com o Client Secret do aplicativo, conforme o contrato
+oficial.
+
+Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Em produção, a criação
+da remessa permanece em `awaiting_invoice` até existir NF-e autorizada; o sistema não fabrica chave
+fiscal. Sandbox permite executar a homologação de etiquetas de teste com os produtos completos.
 
 ## Comandos equivalentes
 
@@ -189,11 +194,12 @@ Depois da publicação, `pnpm smoke:storefront -- <URL>` valida homepage, catál
 pública, API de versão e disponibilidade/Supabase sem criar pedido ou cobrança. A mesma verificação
 pode ser executada manualmente contra a URL `workers.dev` ou o domínio canônico.
 
-A loja possui um Cron Trigger Cloudflare a cada cinco minutos. O handler chama somente
-`expire_stale_mercadopago_orders` com lote de 50, faz no máximo uma repetição para falha transitória
-e registra resultado sem credenciais. A função usa advisory lock não bloqueante, e a expiração por
-pedido permanece idempotente. Após o primeiro deploy, confira em **Workers & Pages → Triggers** se
-o cron `*/5 * * * *` aparece e acompanhe os eventos `checkout-housekeeping` nos logs.
+A loja possui um Cron Trigger Cloudflare a cada cinco minutos em staging e produção. O handler executa
+`expire_stale_mercadopago_orders` em lote de 50 e consome até cinco jobs do Melhor Envio com claim
+atômico. A expiração faz no máximo uma repetição para falha transitória; escritas logísticas externas
+não são repetidas cegamente e resultados incertos ficam para reconciliação. Após o primeiro deploy,
+confira em **Workers & Pages → Triggers** se o cron `*/5 * * * *` aparece e acompanhe os eventos
+`checkout-housekeeping` e `melhor_envio_shipping_jobs_completed` nos logs.
 
 O código e a configuração do cron estão preparados, mas não significam ativação ou execução remota
 verificada. Chaves modernas `sb_secret_`/`sb_publishable_` são enviadas no header `apikey`, não como
