@@ -142,7 +142,7 @@ jobs:
       AUTH_COOKIE_DOMAINS: example.invalid
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.14.0
       - uses: actions/setup-node@v4
@@ -179,7 +179,7 @@ jobs:
       NEXT_PUBLIC_PANEL_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.14.0
       - uses: actions/setup-node@v4
@@ -238,7 +238,7 @@ jobs:
       REFERRAL_ATTRIBUTION_HMAC_KEY: ${{ github.event_name == 'pull_request' && 'ci-referral-placeholder-with-32-characters' || '' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.14.0
       - uses: actions/setup-node@v4
@@ -365,7 +365,7 @@ jobs:
       REFERRAL_ATTRIBUTION_HMAC_KEY: ci-referral-placeholder-with-32-characters
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.14.0
       - uses: actions/setup-node@v4
