@@ -20,6 +20,7 @@ export type NewProductDraft = {
   primaryCategoryId: string;
   variants: EditableVariant[];
   sizeGuide?: ProductSizeGuideEntry[];
+  specifications?: ProductSpecification[];
   hasVariations: boolean;
   simpleStock: number;
   productActive?: boolean;
@@ -121,7 +122,10 @@ export type ManagedProduct = {
   media?: ManagedProductMedia[];
   variants: ManagedVariant[];
   sizeGuide?: ProductSizeGuideEntry[];
+  specifications?: ProductSpecification[];
 };
+
+export type ProductSpecification = { label: string; value: string };
 
 export type ProductSizeGuideEntry = {
   size: string;

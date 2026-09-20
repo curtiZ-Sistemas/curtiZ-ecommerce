@@ -10854,8 +10854,22 @@ button:not(:disabled):active,
 .product-size-guide-editor h3, .product-size-guide-editor p { margin: 0; }
 .product-size-guide-editor > p { color: var(--muted); font-size: .75rem; }
 .product-size-guide-rows { display: grid; gap: 8px; }
-.product-size-guide-rows > div { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(120px, 1fr) 42px; align-items: end; gap: 8px; }
-.product-size-guide-rows .icon-button { width: 42px; height: 42px; }
+.product-size-guide-rows > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; align-items: end; gap: 10px; }
+.product-size-guide-rows label { min-width: 0; }
+.product-size-guide-rows input { width: 100%; min-width: 0; }
+.product-size-guide-rows .product-size-guide-remove { width: 44px; height: 44px; min-width: 44px; align-self: end; display: inline-flex; align-items: center; justify-content: center; }
+.product-size-guide-rows .product-size-guide-remove:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.product-specifications-editor { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
+.product-specifications-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.product-specifications-heading h3, .product-specifications-heading p { margin: 0; }
+.product-specifications-heading p { color: var(--muted); font-size: .8rem; line-height: 1.5; margin-top: 5px; }
+.product-specifications-rows { display: grid; gap: 10px; }
+.product-specification-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; gap: 10px; align-items: end; }
+.product-specification-row label { min-width: 0; }
+.product-specification-row input { width: 100%; min-width: 0; }
+.product-specification-actions { display: flex; gap: 3px; align-items: center; }
+.product-specification-actions .icon-button { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; }
+.product-specification-actions .icon-button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .product-media-dropzone { outline: 2px dashed transparent; outline-offset: -8px; }
 .product-media-dropzone:has(input[type="file"]:focus-visible) { outline-color: var(--brand-500); }
 .product-media-queued-item video {
@@ -10921,7 +10935,10 @@ button:not(:disabled):active,
   .product-kind-picker { flex-direction: column; }
   .product-kind-picker label { width: 100%; }
   .product-size-guide-editor > div:first-child { align-items: stretch; flex-direction: column; }
-  .product-size-guide-rows > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px; }
+  .product-size-guide-rows > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 6px; }
+  .product-specifications-heading { flex-direction: column; }
+  .product-specification-row { grid-template-columns: minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .product-specification-actions { justify-content: flex-end; }
   .admin-modal { width: 100%; max-height: 100dvh; border-radius: 0; }
 }
 

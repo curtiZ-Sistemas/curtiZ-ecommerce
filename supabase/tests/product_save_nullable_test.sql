@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(21);
 
 insert into auth.users(id,instance_id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) values
  ('c7100000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','product-save-admin@test.local','{}','{}',now(),now()),
@@ -28,7 +28,8 @@ select lives_ok($sql$
     "variants":[
       {"sku":"TEST-SAVE-39","color":"Azul","size":"39","stock":2,"active":true},
       {"sku":"TEST-SAVE-40","color":"Azul","size":"40","stock":0,"active":true}
-    ],"sizeGuide":[{"size":"39","measurementCm":27},{"size":"40","measurementCm":27}]
+    ],"sizeGuide":[{"size":"39","measurementCm":27},{"size":"40","measurementCm":27}],
+    "specifications":[{"label":"Marca","value":"Marca de teste"},{"label":"Material","value":"Borracha"}]
   }'::jsonb)
 $sql$, 'Draft with partial dimensions, variants and size guide saves via authorized RPC');
 
@@ -51,6 +52,15 @@ select lives_ok($sql$
     "variants":[{"sku":"TEST-SAVE-ACTIVE","color":"Azul","size":"40","stock":0,"active":true}]
   }'::jsonb)
 $sql$, 'Published product follows existing publication requirements without requiring dimensions');
+
+select lives_ok($sql$
+  select public.admin_save_product_authorized(jsonb_build_object(
+    'productId',(select id from public.products where slug='teste-save-sem-medidas'),
+    'name','Sandália sem medidas','slug','teste-save-sem-medidas','status','draft',
+    'stockReason','Cadastro inicial de teste','variants','[]'::jsonb,
+    'specifications',jsonb_build_array(jsonb_build_object('label','País de Origem','value','Brasil'))
+  ))
+$sql$, 'Existing product accepts edited specifications without changing optional dimensions');
 
 select set_config('request.jwt.claims','{"sub":"c7100000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal1"}',true);
 select throws_ok($sql$
@@ -82,17 +92,27 @@ select is((select count(*) from public.product_categories c join public.products
 select is((select count(*) from public.product_categories c join public.products p on p.id=c.product_id
   where p.slug='teste-save-parcial' and c.is_primary and c.category_id=p.category_id),1::bigint,
   'Primary category remains marked correctly');
+select is((select string_agg(s.label || ': ' || s.value, ', ' order by s.position)
+  from public.product_specifications s join public.products p on p.id=s.product_id
+  where p.slug='teste-save-parcial'), 'Marca: Marca de teste, Material: Borracha',
+  'Structured details persist in their defined order');
+select is((select count(*) from public.product_specifications s join public.products p on p.id=s.product_id
+  where p.slug='teste-save-sem-medidas' and s.label='País de Origem' and s.value='Brasil'),1::bigint,
+  'Edited details persist when product is reopened');
 select is((select count(*) from public.products where slug='teste-save-publicada' and status='active' and base_price=19.99),
   1::bigint,'Active product has its correct price and status');
 select ok((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in
-  ('public.products'::regclass,'public.product_categories'::regclass,'public.product_size_guide_entries'::regclass)),
-  'Product, category links and size guide retain forced RLS');
+  ('public.products'::regclass,'public.product_categories'::regclass,'public.product_size_guide_entries'::regclass,
+   'public.product_specifications'::regclass)),
+  'Product, category links, size guide and details retain forced RLS');
 select ok(not has_function_privilege('anon','public.admin_save_product_authorized(jsonb)','execute')
   and not has_table_privilege('anon','public.product_size_guide_entries','insert'),
   'Anonymous callers cannot invoke save or insert size guides');
 select ok((select count(*) from public.audit_logs where action='product_created'
   and entity_id in (select id from public.products where slug like 'teste-save-%'))=3,
   'All three creations were audited');
+select ok(not has_table_privilege('anon','public.product_specifications','insert'),
+  'Anonymous callers cannot insert product details');
 
 select * from finish();
 rollback;

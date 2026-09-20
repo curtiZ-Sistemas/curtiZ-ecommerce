@@ -1,5 +1,6 @@
 export type ProductDescriptionBlock =
   | { type: "paragraph"; text: string }
+  | { type: "heading"; text: string }
   | { type: "list"; items: string[] };
 
 const listLine = /^\s*(?:[✔✓•]|[-–—])\s*(.+)$/u;
@@ -16,6 +17,12 @@ export function parseProductDescription(value: string): ProductDescriptionBlock[
     const line = rawLine.trim();
     if (!line) {
       flushList();
+      continue;
+    }
+    const heading = line.match(/^#{2,3}\s+(.+)$/u);
+    if (heading?.[1]) {
+      flushList();
+      blocks.push({ type: "heading", text: heading[1].trim() });
       continue;
     }
     const match = line.match(listLine);

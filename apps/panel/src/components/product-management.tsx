@@ -4,6 +4,7 @@ import {
   Archive,
   Boxes,
   ChevronDown,
+  ChevronUp,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -42,6 +43,7 @@ import {
   type ManagedProduct,
   type ManagedProductMedia,
   type NewProductDraft,
+  type ProductSpecification,
   type ProductSizeGuideEntry
 } from "@/lib/product-management";
 
@@ -65,7 +67,10 @@ type CatalogResponse = {
 };
 
 type ProductSizeGuideRow = ProductSizeGuideEntry & { clientRowId: string };
+type ProductSpecificationRow = ProductSpecification & { clientRowId: string };
 const withSizeGuideRowIds = (entries: ProductSizeGuideEntry[]): ProductSizeGuideRow[] =>
+  entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
+const withSpecificationRowIds = (entries: ProductSpecification[]): ProductSpecificationRow[] =>
   entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
 
 const includeSizeGuideRows = (
@@ -317,6 +322,7 @@ export function ProductManagement({
   const [simpleStock, setSimpleStock] = useState(0);
   const [productActive, setProductActive] = useState(false);
   const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideRow[]>([]);
+  const [specifications, setSpecifications] = useState<ProductSpecificationRow[]>([]);
   const [bulkVariantPrice, setBulkVariantPrice] = useState("");
   const [newVariantSizes, setNewVariantSizes] = useState<Record<string, string>>({});
   const [colorImageSelections, setColorImageSelections] = useState<Record<string, string>>({});
@@ -354,6 +360,7 @@ export function ProductManagement({
         (left.id ?? left.sku).localeCompare(right.id ?? right.sku)),
       sizeGuide: sizeGuide.map(({ size, measurementCm }) => ({ size, measurementCm }))
         .sort((left, right) => left.size.localeCompare(right.size, "pt-BR")),
+      specifications: specifications.map(({ label, value }) => ({ label, value })),
       hasVariations, simpleStock, productActive, variantColors, variantSizes,
       variantSkuPrefix, colorImageSelections,
       queuedMediaFiles: queuedMediaFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`).sort()
@@ -390,10 +397,11 @@ export function ProductManagement({
       variantColors,
       variantSizes,
       variantSkuPrefix,
-      sizeGuide
+      sizeGuide,
+      specifications: specifications.map(({ label, value }) => ({ label, value }))
     };
     try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
-  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
+  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   const scheduleLocalDraft = useCallback(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -487,6 +495,7 @@ export function ProductManagement({
       setSimpleStock(0);
       setProductActive(false);
       setSizeGuide([]);
+      setSpecifications([]);
       setNewVariantSizes({});
       setColorImageSelections({});
       setQueuedMediaFiles([]);
@@ -516,6 +525,7 @@ export function ProductManagement({
     setSimpleStock(editing.variants[0]?.available ?? 0);
     setProductActive(editing.status === "active");
     setSizeGuide(includeSizeGuideRows(withSizeGuideRowIds(editing.sizeGuide ?? []), editing.variants.map((variant) => variant.size)));
+    setSpecifications(withSpecificationRowIds(editing.specifications ?? []));
     setColorImageSelections({});
     setVariantSkuPrefix(editing.slug);
     setVariantColors("");
@@ -538,7 +548,7 @@ export function ProductManagement({
     if (!editingKey || initializedEditorKey !== editingKey || editorBaselineRef.current === null) return;
     setEditorDirty(editorSnapshotRef.current() !== editorBaselineRef.current);
   }, [editingKey, initializedEditorKey, editorRevision, selectedCategoryIds, primaryCategoryId,
-    editableVariants, sizeGuide, hasVariations, simpleStock, productActive, variantColors,
+    editableVariants, sizeGuide, specifications, hasVariations, simpleStock, productActive, variantColors,
     variantSizes, variantSkuPrefix, colorImageSelections, queuedMediaFiles]);
 
   const closeEditor = useCallback(() => {
@@ -572,6 +582,7 @@ export function ProductManagement({
     setSimpleStock(draftOffer.simpleStock);
     setProductActive(draftOffer.productActive === true);
     setSizeGuide(withSizeGuideRowIds(draftOffer.sizeGuide ?? []));
+    setSpecifications(withSpecificationRowIds(draftOffer.specifications ?? []));
     setVariantColors(draftOffer.variantColors ?? "");
     setVariantSizes(draftOffer.variantSizes ?? "");
     setVariantSkuPrefix(draftOffer.variantSkuPrefix ?? "");
@@ -598,7 +609,7 @@ export function ProductManagement({
 
   useEffect(() => {
     if (editing === "new" && editorDirty) scheduleLocalDraft();
-  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleLocalDraft, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleLocalDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -799,9 +810,12 @@ export function ProductManagement({
         stockReason: form.get("stockReason"),
         variants,
         sizeGuide: sizeGuide.filter(
-          (entry): entry is { size: string; measurementCm: number } =>
+          (entry): entry is ProductSizeGuideRow & { measurementCm: number } =>
             Boolean(entry.size.trim()) && entry.measurementCm !== null && entry.measurementCm > 0
-        )
+        ).map(({ size, measurementCm }) => ({ size, measurementCm })),
+        specifications: specifications
+          .map(({ label, value }) => ({ label: label.trim(), value: value.trim() }))
+          .filter((entry) => entry.label && entry.value)
       },
       wasNew ? "new-product" : editing.id
     );
@@ -2046,6 +2060,46 @@ export function ProductManagement({
                     placeholder="Conte o essencial sobre o produto"
                   />
                 </label>
+                <section className="wide product-specifications-editor" aria-labelledby="product-specifications-editor-title">
+                  <div className="product-specifications-heading">
+                    <div>
+                      <h3 id="product-specifications-editor-title">Detalhes do Produto</h3>
+                      <p>Informações como marca, material e origem. Aparecem nesta ordem na loja.</p>
+                    </div>
+                    <button className="secondary-button" type="button" disabled={specifications.length >= 50} onClick={() =>
+                      setSpecifications((current) => [...current, { clientRowId: crypto.randomUUID(), label: "", value: "" }])
+                    }><Plus aria-hidden="true" /> Adicionar detalhe</button>
+                  </div>
+                  <div className="product-specifications-rows">
+                    {specifications.map((entry, index) => (
+                      <div className="product-specification-row" key={entry.clientRowId}>
+                        <label><span>Nome do detalhe</span><input value={entry.label} maxLength={80} placeholder="Ex.: Material" onChange={(event) => {
+                          const label = event.target.value;
+                          setSpecifications((current) => current.map((item) => item.clientRowId === entry.clientRowId ? { ...item, label } : item));
+                        }} /></label>
+                        <label><span>Valor</span><input value={entry.value} maxLength={500} placeholder="Informe o valor" onChange={(event) => {
+                          const value = event.target.value;
+                          setSpecifications((current) => current.map((item) => item.clientRowId === entry.clientRowId ? { ...item, value } : item));
+                        }} /></label>
+                        <div className="product-specification-actions">
+                          <button className="icon-button" type="button" disabled={index === 0} aria-label={`Mover detalhe ${index + 1} para cima`} onClick={() => setSpecifications((current) => {
+                            const next = [...current];
+                            [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                            return next;
+                          })}><ChevronUp aria-hidden="true" /></button>
+                          <button className="icon-button" type="button" disabled={index === specifications.length - 1} aria-label={`Mover detalhe ${index + 1} para baixo`} onClick={() => setSpecifications((current) => {
+                            const next = [...current];
+                            [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+                            return next;
+                          })}><ChevronDown aria-hidden="true" /></button>
+                          <button className="icon-button danger-button" type="button" aria-label={`Remover detalhe ${entry.label || index + 1}`} onClick={() =>
+                            setSpecifications((current) => current.filter((item) => item.clientRowId !== entry.clientRowId))
+                          }><Trash2 aria-hidden="true" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
                 <p className="wide product-form-subsection">Organização no catálogo</p>
                 <fieldset className="wide product-category-picker">
                   <legend>Categorias</legend>

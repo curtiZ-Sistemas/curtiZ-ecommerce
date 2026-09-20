@@ -48,6 +48,10 @@ const sizeGuideEntrySchema = z.object({
   size: z.string().trim().min(1).max(40),
   measurementCm: z.number().positive().max(9_999.99)
 });
+const specificationSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  value: z.string().trim().min(1).max(500)
+});
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -108,7 +112,8 @@ const actionSchema = z.discriminatedUnion("action", [
     merchantIdentifierExists: z.boolean().nullable().optional(),
     stockReason: z.string().trim().max(500).default("Cadastro inicial sem estoque informado"),
     variants: z.array(variantSchema).max(500),
-    sizeGuide: z.array(sizeGuideEntrySchema).max(100).optional()
+    sizeGuide: z.array(sizeGuideEntrySchema).max(100).optional(),
+    specifications: z.array(specificationSchema).max(50).optional()
   })
 ]);
 
@@ -432,6 +437,11 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
         .filter((entry) => entry.size && entry.measurementCm > 0)
         .sort((left, right) => left.position - right.position)
         .map(({ size, measurementCm }) => ({ size, measurementCm })),
+      specifications: rows(product.product_specifications)
+        .map((entry) => ({ label: text(entry.label), value: text(entry.value), position: number(entry.position) }))
+        .filter((entry) => entry.label && entry.value)
+        .sort((left, right) => left.position - right.position)
+        .map(({ label, value }) => ({ label, value })),
       stock: variants.reduce((total, variant) => total + variant.sellable, 0),
       variants
     };
@@ -582,14 +592,16 @@ export async function GET(request: NextRequest) {
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const compatibleProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
-  const productSelect =
+  const productSelectWithoutSpecifications =
     `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name)),product_size_guide_entries(size,measurement_cm,position)`;
+  const productSelect = `${productSelectWithoutSpecifications},product_specifications(label,value,position)`;
 
   const loadWithCompatibility = async <T extends { error: CatalogError }>(
     run: (select: string) => PromiseLike<T>
   ): Promise<T> => {
     const selections = [
       ["productSelect", productSelect],
+      ["productSelectWithoutSpecifications", productSelectWithoutSpecifications],
       ["legacyProductSelect", legacyProductSelect],
       ["compatibleProductSelect", compatibleProductSelect]
     ] as const;

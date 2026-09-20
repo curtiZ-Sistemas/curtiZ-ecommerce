@@ -204,6 +204,25 @@ describe("product save", () => {
     });
   });
 
+  it("passes ordered product details to the authorized save and returns them on load", async () => {
+    const specifications = [
+      { label: "Marca", value: "Coleção de teste" },
+      { label: "Material", value: "Borracha" }
+    ];
+    const save = await PATCH(request("PATCH", { ...savePayload("draft"), specifications }));
+    expect(save.status).toBe(200);
+    expect(state.rpc.mock.calls.find(([name]) => name === "admin_save_product_authorized")?.[1])
+      .toMatchObject({ p_payload: { specifications } });
+
+    const prior = state.query.getMockImplementation()!;
+    state.query.mockImplementation((table, selection, mutation) => table === "products"
+      ? { data: [{ ...product, product_specifications: specifications.map((entry, position) => ({ ...entry, position })) }], error: null }
+      : prior(table, selection, mutation));
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ products: [{ specifications }] });
+  });
+
   it("keeps publication requirements without requiring draft dimensions", async () => {
     const invalid = await PATCH(request("PATCH", { ...savePayload("active"), priceInCents: null }));
     expect(invalid.status).toBe(400);

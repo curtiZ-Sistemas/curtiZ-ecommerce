@@ -719,7 +719,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
-  const [mediaResponse, sizeGuideResponse] = await Promise.all([
+  const [mediaResponse, sizeGuideResponse, specificationsResponse] = await Promise.all([
     supabase
       .from("product_media")
       .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
@@ -732,7 +732,13 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       .eq("product_id", parsed.data.id)
       .order("position")
       .order("size")
-      .limit(100)
+      .limit(100),
+    supabase
+      .from("product_specifications")
+      .select("label,value,position")
+      .eq("product_id", parsed.data.id)
+      .order("position")
+      .limit(50)
   ]);
   const media = mediaResponse.error
     ? []
@@ -803,6 +809,19 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         seenGuideSizes.add(sizeKey);
         return [{ size, measurementCm }];
       });
+  if (specificationsResponse.error) {
+    logServerEvent("error", "storefront_product_specifications_query_failed", {
+      code: specificationsResponse.error.code,
+      message: specificationsResponse.error.message
+    });
+  }
+  const specifications = specificationsResponse.error
+    ? []
+    : readRows(specificationsResponse.data).flatMap((entry) => {
+        const label = readString(entry, "label").trim();
+        const value = readString(entry, "value").trim();
+        return label && value ? [{ label, value }] : [];
+      });
   return {
     product,
     gallery,
@@ -836,7 +855,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
           }
         }
       : {}),
-    specifications: parsed.data.specifications,
+    specifications,
     sizeGuide,
     reviews: parsed.data.recentReviews.map((review) => ({
       id: review.id,

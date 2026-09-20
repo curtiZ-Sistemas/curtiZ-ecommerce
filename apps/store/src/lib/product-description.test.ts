@@ -18,4 +18,11 @@ describe("product presentation", () => {
       variantSize: "36"
     })).toBe("Chinelo Slim");
   });
+
+  it("recognizes safe plain-text subheadings without interpreting HTML", () => {
+    expect(parseProductDescription("## Cuidados\nTexto <script>alert(1)</script>")).toEqual([
+      { type: "heading", text: "Cuidados" },
+      { type: "paragraph", text: "Texto <script>alert(1)</script>" }
+    ]);
+  });
 });

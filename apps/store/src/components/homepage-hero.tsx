@@ -32,12 +32,20 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [autoplayCycle, setAutoplayCycle] = useState(0);
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReducedMotion(preference.matches);
     update();
     preference.addEventListener("change", update);
     return () => preference.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState === "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
   }, []);
   const [mobileViewport, setMobileViewport] = useState(false);
   useEffect(() => {
@@ -58,10 +66,11 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   }, [slides.length]);
 
   useEffect(() => {
+    if (!pageVisible) return;
     return startHeroAutoplay(slides.length, reducedMotion, () => {
       setActive((current) => nextHeroSlide(current, slides.length));
     });
-  }, [slides.length, reducedMotion]);
+  }, [slides.length, reducedMotion, pageVisible, autoplayCycle]);
 
   if (!slides.length) {
     return null;
@@ -81,6 +90,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
 
   const go = (direction: number) => {
     setActive((current) => nextHeroSlide(current, slides.length, direction));
+    setAutoplayCycle((current) => current + 1);
   };
 
   const picture = (
@@ -170,7 +180,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
                 className="hero-dot"
                 aria-pressed={active === index}
                 aria-label={`Exibir banner ${index + 1}: ${slide.title}`}
-                onClick={() => setActive(index)}
+                onClick={() => { setActive(index); setAutoplayCycle((current) => current + 1); }}
                 key={slide.id}
               />
             ))}

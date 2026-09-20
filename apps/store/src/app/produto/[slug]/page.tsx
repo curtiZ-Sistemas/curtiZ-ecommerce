@@ -52,11 +52,21 @@ export default async function ProductPage({
 
       <ProductPurchase detail={detail} initialVariantId={query.variant} />
 
-      <section className="product-information">
+      <section className="product-information" aria-labelledby="product-information-title">
         <p className="eyebrow">Sobre o Produto</p>
-        {detail.sizeGuide.length ? (
-          <div className="product-size-guide" aria-labelledby="product-size-guide-title">
-            <h2 id="product-size-guide-title">Guia de tamanhos</h2>
+        <h2 id="product-information-title" className="sr-only">Sobre o Produto</h2>
+        {detail.specifications.length || detail.sizeGuide.length ? (
+          <div className="product-detail-specifications" aria-labelledby="product-specifications-title">
+            <h2 id="product-specifications-title">Detalhes do Produto</h2>
+            {detail.specifications.length ? (
+              <dl className="product-specification-list">
+                {detail.specifications.map((entry, index) => (
+                  <div key={`${entry.label}-${index}`}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>
+                ))}
+              </dl>
+            ) : null}
+            {detail.sizeGuide.length ? <div className="product-size-guide" aria-labelledby="product-size-guide-title">
+            <h3 id="product-size-guide-title">Guia de tamanhos</h3>
             <div>
               <table>
                 <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
@@ -65,15 +75,17 @@ export default async function ProductPage({
                 ))}</tbody>
               </table>
             </div>
+          </div> : null}
           </div>
         ) : null}
         <div className="product-description-section">
-          <h2>Detalhes de {product.name}</h2>
+          <h2>Descrição</h2>
           <div className="product-description-content">
             {parseProductDescription(product.description).map((block, index) =>
               block.type === "list" ? (
                 <ul key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{item}</li>)}</ul>
-              ) : <p key={`paragraph-${index}`}>{block.text}</p>
+              ) : block.type === "heading" ? <h3 key={`heading-${index}`}>{block.text}</h3>
+                : <p key={`paragraph-${index}`}>{block.text}</p>
             )}
           </div>
         </div>

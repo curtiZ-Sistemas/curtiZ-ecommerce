@@ -200,6 +200,21 @@ export function CatalogPage({
   ]);
 
   useEffect(() => {
+    let lastRefresh = Date.now();
+    const refreshVisibleCatalog = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < 1000) return;
+      lastRefresh = Date.now();
+      setRetry((current) => current + 1);
+    };
+    document.addEventListener("visibilitychange", refreshVisibleCatalog);
+    window.addEventListener("focus", refreshVisibleCatalog);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshVisibleCatalog);
+      window.removeEventListener("focus", refreshVisibleCatalog);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!mobileOpen) return;
 
     const previousOverflow =
