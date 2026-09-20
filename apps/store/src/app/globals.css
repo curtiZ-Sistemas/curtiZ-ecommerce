@@ -12716,6 +12716,23 @@ body:has(> #main-content > .auth-page) .site-footer {
   gap: 4px;
 }
 
+.product-color-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  border: 1px solid rgb(0 0 0 / 22%);
+  border-radius: 50%;
+}
+
+.filter-color-preview {
+  width: 17px;
+  height: 17px;
+}
+
+.product-option-color-preview {
+  width: 28px;
+  height: 28px;
+}
+
 .color-swatch {
   position: relative;
   width: 44px;

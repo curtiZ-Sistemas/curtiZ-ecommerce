@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(22);
 
 insert into auth.users(id,instance_id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) values
  ('c7100000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','product-save-admin@test.local','{}','{}',now(),now()),
@@ -26,7 +26,7 @@ select lives_ok($sql$
     "priceInCents":null,"costInCents":null,"weightGrams":null,"heightCm":null,"widthCm":null,"lengthCm":40,
     "stockReason":"Cadastro inicial de teste",
     "variants":[
-      {"sku":"TEST-SAVE-39","color":"Azul","size":"39","stock":2,"active":true},
+      {"sku":"TEST-SAVE-39","color":"Azul e Branco","colorHex":"#0000FF","colorHexSecondary":"#FFFFFF","size":"39","stock":2,"active":true},
       {"sku":"TEST-SAVE-40","color":"Azul","size":"40","stock":0,"active":true}
     ],"sizeGuide":[{"size":"39","measurementCm":27},{"size":"40","measurementCm":27}],
     "specifications":[{"label":"Marca","value":"Marca de teste"},{"label":"Material","value":"Borracha"}]
@@ -99,6 +99,8 @@ select is((select string_agg(s.label || ': ' || s.value, ', ' order by s.positio
 select is((select count(*) from public.product_specifications s join public.products p on p.id=s.product_id
   where p.slug='teste-save-sem-medidas' and s.label='País de Origem' and s.value='Brasil'),1::bigint,
   'Edited details persist when product is reopened');
+select is((select color_hex_secondary::text from public.product_variants
+  where sku='TEST-SAVE-39'), '#FFFFFF', 'Optional secondary color persists with the variant');
 select is((select count(*) from public.products where slug='teste-save-publicada' and status='active' and base_price=19.99),
   1::bigint,'Active product has its correct price and status');
 select ok((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in

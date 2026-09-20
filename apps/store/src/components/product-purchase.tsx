@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
 import {
   galleryWindowStart,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/product-options";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
+import { ColorSwatch } from "./color-swatch";
 import { ProductImageViewer } from "./product-image-viewer";
 import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-client";
 
@@ -344,10 +345,12 @@ export function ProductPurchase({
                 const colorVariants = variants.filter((candidate) => candidate.color === item);
                 const available = colorVariants.some((variant) => variant.stock > 0);
                 const colorHex = colorVariants.find((variant) => variant.colorHex)?.colorHex;
+                const colorHexSecondary = colorVariants.find(
+                  (variant) => variant.colorHexSecondary
+                )?.colorHexSecondary;
                 return (
                   <button
                     className={item === color ? "color-swatch selected" : "color-swatch"}
-                    style={{ "--swatch-color": resolveProductColor(item, colorHex) } as CSSProperties}
                     type="button"
                     onClick={() => chooseColor(item)}
                     disabled={!available}
@@ -356,7 +359,13 @@ export function ProductPurchase({
                     title={item}
                     key={item}
                   >
-                    <span aria-hidden="true" />
+                    <ColorSwatch
+                      className="product-option-color-preview"
+                      name={item}
+                      primaryColor={resolveProductColor(item, colorHex)}
+                      secondaryColor={colorHexSecondary}
+                      decorative
+                    />
                   </button>
                 );
               })}

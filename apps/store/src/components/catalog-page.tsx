@@ -27,6 +27,7 @@ import {
   type FacetOption
 } from "@/lib/catalog-query";
 import { ProductCard } from "./product-card";
+import { ColorSwatch } from "./color-swatch";
 
 const emptyFacets: CatalogFacets = {
   categories: [],
@@ -505,22 +506,13 @@ export function CatalogPage({
                       }
                     />
 
-                    <i
-                      className="color-swatch"
-                      style={{
-                        backgroundColor:
-                          swatchColor,
-                        border:
-                          isLightSwatch(
-                            swatchColor
-                          )
-                            ? "1px solid #cfcfcf"
-                            : undefined
-                      }}
-                      title={
-                        option.label
-                      }
-                      aria-hidden="true"
+                    <ColorSwatch
+                      className="filter-color-preview"
+                      name={option.label}
+                      primaryColor={swatchColor}
+                      secondaryColor={option.secondaryHex}
+                      style={isLightSwatch(swatchColor) ? { borderColor: "#cfcfcf" } : undefined}
+                      decorative
                     />
 
                     <span>

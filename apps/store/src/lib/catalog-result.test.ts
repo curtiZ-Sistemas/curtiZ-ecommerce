@@ -66,12 +66,19 @@ describe("resultado virtual do catálogo", () => {
       products: [], total: 0,
       facets: {
         categories: [], collections: [],
-        colors: [{ value: "Bege Strass", label: "Bege Strass", count: 1, hex: "#C7A77B" }],
+        colors: [{
+          value: "Bege Strass",
+          label: "Bege Strass",
+          count: 1,
+          hex: "#C7A77B",
+          secondaryHex: "#FFFFFF"
+        }],
         sizes: [], price: { min: 0, max: 0 }, promotionCount: 0,
         inStockCount: 0, newestCount: 0
       }
     }, { page: 1, pageSize: 12 });
 
     expect(result?.facets.colors[0]?.hex).toBe("#C7A77B");
+    expect(result?.facets.colors[0]?.secondaryHex).toBe("#FFFFFF");
   });
 });

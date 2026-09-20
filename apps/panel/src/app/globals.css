@@ -5736,21 +5736,30 @@ button:not(:disabled):active,
   flex: 0 0 auto;
   border: 1px solid rgb(0 0 0 / 14%);
   border-radius: 50%;
-  cursor: pointer;
   overflow: hidden;
 }
-.variant-color-swatch:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-.variant-color-swatch input {
-  position: absolute;
-  inset: -8px;
-  width: calc(100% + 16px);
-  height: calc(100% + 16px);
-  cursor: pointer;
-  opacity: 0;
-}
+.product-color-swatch { display: inline-block; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+.variant-color-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.variant-color-value { display: grid; grid-template-columns: auto auto; align-items: center; gap: 3px 8px; }
+.variant-color-value > span { grid-column: 1 / -1; color: var(--muted); font-size: .7rem; }
+.variant-color-value input[type="color"] { width: 38px; height: 34px; padding: 2px; cursor: pointer; }
+.variant-color-value code { color: var(--muted); font-size: .7rem; }
+.variant-color-value .text-button { grid-column: 1 / -1; justify-self: start; padding: 0; }
+.add-secondary-color { min-height: 38px; }
+.existing-color-picker { position: relative; min-width: 165px; }
+.existing-color-picker > summary { min-height: 38px; display: flex; align-items: center; justify-content: center; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: pointer; font-size: .78rem; font-weight: 700; list-style: none; }
+.existing-color-picker > summary::-webkit-details-marker { display: none; }
+.existing-color-picker > summary::after { content: "⌄"; margin-left: 8px; }
+.existing-color-picker > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.existing-color-popover { position: absolute; z-index: 12; top: calc(100% + 5px); left: 0; width: min(300px, calc(100vw - 40px)); display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: white; box-shadow: 0 10px 28px rgb(0 0 0 / 14%); }
+.existing-color-popover input { width: 100%; }
+.existing-color-popover small { color: var(--muted); font-size: .68rem; line-height: 1.4; }
+.existing-color-options { display: grid; max-height: 230px; overflow-y: auto; }
+.existing-color-options > button { width: 100%; min-height: 40px; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 9px; padding: 6px; border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.existing-color-options > button:hover { background: var(--canvas); }
+.existing-color-options > button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.existing-color-options .product-color-swatch { width: 24px; height: 24px; }
+.existing-color-options p { margin: 5px; color: var(--muted); font-size: .75rem; }
 .variant-color-name {
   width: min(180px, 32%);
 }
@@ -10659,6 +10668,9 @@ button:not(:disabled):active,
   .variant-color-name {
     grid-column: 1 / -1;
   }
+  .variant-color-editor { align-items: stretch; }
+  .variant-color-editor > .existing-color-picker { width: 100%; }
+  .existing-color-popover { position: static; width: 100%; margin-top: 5px; box-shadow: none; }
   .product-variant-editor article > label:not(.admin-checkbox) {
     grid-column: 1 / -1;
   }

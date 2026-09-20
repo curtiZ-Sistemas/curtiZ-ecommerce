@@ -3,6 +3,7 @@ export * from "./merchant";
 export * from "./storefront-item";
 export * from "./permissions";
 export * from "./promotions";
+export * from "./product-colors";
 export * from "./representatives";
 export * from "./status";
 export * from "./store-campaigns";

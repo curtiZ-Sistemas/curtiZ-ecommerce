@@ -35,7 +35,8 @@ export const facetSchema = z.object({
       value: z.string(),
       label: z.string(),
       count: z.coerce.number(),
-      hex: z.string().optional()
+      hex: z.string().optional(),
+      secondaryHex: z.string().optional()
     })
   ),
   sizes: z.array(z.object({ value: z.string(), label: z.string(), count: z.coerce.number() })),

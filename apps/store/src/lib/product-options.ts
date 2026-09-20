@@ -2,6 +2,7 @@ export type ProductOptionVariant = {
   id?: string;
   color: string;
   colorHex?: string;
+  colorHexSecondary?: string;
   size: string;
   stock: number;
 };

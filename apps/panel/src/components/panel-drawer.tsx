@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
-export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false, size = "medium", onClose, children }: {
+export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false, size = "medium", onClose, closeConfirmation, children }: {
   open: boolean;
   title: string;
   eyebrow?: string;
@@ -12,6 +12,12 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
   busy?: boolean;
   size?: "small" | "medium" | "large";
   onClose: () => void;
+  closeConfirmation?: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+    confirmClassName?: string;
+  };
   children: ReactNode | ((controls: { requestClose: () => void }) => ReactNode);
 }) {
   const drawerRef = useRef<HTMLElement>(null);
@@ -66,7 +72,7 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
       <aside className={`panel-drawer panel-drawer-${size}`} ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby="panel-drawer-title" onKeyDown={trapFocus}>
         <header className="panel-drawer-header"><div>{eyebrow ? <span>{eyebrow}</span> : null}<h2 id="panel-drawer-title">{title}</h2></div><button ref={closeRef} type="button" onClick={requestClose} disabled={busy} aria-label="Fechar"><X aria-hidden="true" /></button></header>
         <div className="panel-drawer-content">{typeof children === "function" ? children({ requestClose }) : children}</div>
-        {confirmDiscard ? <div className="panel-drawer-confirm" role="alertdialog" aria-modal="true" aria-labelledby="discard-title"><div><h3 id="discard-title">Descartar alterações?</h3><p>As informações ainda não salvas serão perdidas.</p><footer><button className="secondary-button" type="button" onClick={() => setConfirmDiscard(false)}>Continuar editando</button><button className="danger-button" type="button" onClick={onClose}>Descartar</button></footer></div></div> : null}
+        {confirmDiscard ? <div className="panel-drawer-confirm" role="alertdialog" aria-modal="true" aria-labelledby="discard-title"><div><h3 id="discard-title">{closeConfirmation?.title ?? "Descartar alterações?"}</h3><p>{closeConfirmation?.description ?? "As informações ainda não salvas serão perdidas."}</p><footer><button className="secondary-button" type="button" onClick={() => setConfirmDiscard(false)} disabled={busy}>Continuar editando</button><button className={closeConfirmation?.confirmClassName ?? "danger-button"} type="button" onClick={onClose} disabled={busy}>{closeConfirmation?.confirmLabel ?? "Descartar"}</button></footer></div></div> : null}
       </aside>
     </div>, document.body
   );

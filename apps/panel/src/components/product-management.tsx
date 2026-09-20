@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeProductColorName } from "@curtiz/domain";
 import {
   Archive,
   Boxes,
@@ -27,7 +28,13 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ColorSwatch } from "@/components/color-swatch";
 import { PanelDrawer } from "@/components/panel-drawer";
+import {
+  newestProductDraft,
+  productDraftContentFingerprint,
+  PRODUCT_DRAFT_SCHEMA_VERSION
+} from "@/lib/product-draft";
 import {
   type EditableVariant,
   generateVariantCombinations,
@@ -55,6 +62,7 @@ type CatalogResponse = {
   total?: number;
   pageSize?: number;
   message?: string;
+  requestId?: string;
   productId?: string;
   capabilities?: {
     create?: boolean;
@@ -64,6 +72,20 @@ type CatalogResponse = {
     delete?: boolean;
   };
   capabilityMessage?: string;
+  colorOptions?: ProductColorOption[];
+};
+
+type ProductDraftResponse = {
+  ok?: boolean;
+  draft?: unknown;
+  message?: string;
+  requestId?: string;
+};
+
+type ProductColorOption = {
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
 };
 
 type ProductSizeGuideRow = ProductSizeGuideEntry & { clientRowId: string };
@@ -72,6 +94,59 @@ const withSizeGuideRowIds = (entries: ProductSizeGuideEntry[]): ProductSizeGuide
   entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
 const withSpecificationRowIds = (entries: ProductSpecification[]): ProductSpecificationRow[] =>
   entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
+
+function ExistingColorPicker({
+  options,
+  onSelect
+}: {
+  options: ProductColorOption[];
+  onSelect: (option: ProductColorOption) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const filtered = options
+    .filter((option) => normalizeProductColorName(option.name).includes(normalizeProductColorName(query)))
+    .slice(0, query ? 30 : 8);
+
+  return (
+    <details className="existing-color-picker" ref={detailsRef}>
+      <summary>Usar cor existente</summary>
+      <div className="existing-color-popover">
+        <label>
+          <span className="sr-only">Buscar cor existente</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar cor..."
+          />
+        </label>
+        <div className="existing-color-options" aria-label="Cores usadas recentemente">
+          {filtered.map((option) => (
+            <button
+              type="button"
+              key={normalizeProductColorName(option.name)}
+              onClick={() => {
+                onSelect(option);
+                detailsRef.current?.removeAttribute("open");
+                setQuery("");
+              }}
+            >
+              <ColorSwatch
+                name={option.name}
+                primaryColor={option.primaryColor}
+                secondaryColor={option.secondaryColor}
+              />
+              <span>{option.name}</span>
+            </button>
+          ))}
+          {!filtered.length ? <p>Nenhuma cor encontrada.</p> : null}
+        </div>
+        <small>Ou edite os campos de cor abaixo para criar uma nova.</small>
+      </div>
+    </details>
+  );
+}
 
 const includeSizeGuideRows = (
   current: ProductSizeGuideRow[],
@@ -296,6 +371,8 @@ export function ProductManagement({
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [draftOffer, setDraftOffer] = useState<NewProductDraft | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftClosing, setDraftClosing] = useState(false);
   const [duplicateTarget, setDuplicateTarget] = useState<ManagedProduct | null>(null);
   const [statusTarget, setStatusTarget] = useState<{
     product: ManagedProduct;
@@ -307,6 +384,7 @@ export function ProductManagement({
   const [primaryCategoryId, setPrimaryCategoryId] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
+  const [colorOptions, setColorOptions] = useState<ProductColorOption[]>([]);
   const [capabilities, setCapabilities] = useState({
     create: false,
     update: false,
@@ -343,6 +421,12 @@ export function ProductManagement({
   const [initializedEditorKey, setInitializedEditorKey] = useState("");
   const [editorRevision, setEditorRevision] = useState(0);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queuedServerDraftRef = useRef<NewProductDraft | null>(null);
+  const draftSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const lastPersistedDraftRef = useRef<NewProductDraft | null>(null);
+  const lastPersistedFingerprintRef = useRef("");
+  const lastSyncedFingerprintRef = useRef("");
+  const draftSaveLockedRef = useRef(false);
   const draftKey = productDraftStorageKey(draftOwnerKey);
 
   const editorSnapshot = () => {
@@ -373,19 +457,23 @@ export function ProductManagement({
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = null;
     try { localStorage.removeItem(draftKey); } catch { /* Storage pode estar indisponível. */ }
+    queuedServerDraftRef.current = null;
+    lastPersistedDraftRef.current = null;
+    lastPersistedFingerprintRef.current = "";
+    lastSyncedFingerprintRef.current = "";
     setDraftOffer(null);
   }, [draftKey]);
 
-  const persistLocalDraft = useCallback(() => {
-    if (editing !== "new" || !editorDirty) return;
+  const createCurrentDraft = useCallback((): NewProductDraft | null => {
+    if (editing !== "new" || !editorDirty || draftSaveLockedRef.current) return null;
     const form = editorFormRef.current;
-    if (!form) return;
+    if (!form) return null;
     const fields: Record<string, string> = {};
     new FormData(form).forEach((value, key) => {
-      if (typeof value === "string") fields[key] = value;
+      if (typeof value === "string" && key !== "productKind") fields[key] = value;
     });
-    const draft: NewProductDraft = {
-      version: 1,
+    return {
+      schemaVersion: PRODUCT_DRAFT_SCHEMA_VERSION,
       savedAt: new Date().toISOString(),
       fields,
       categoryIds: selectedCategoryIds,
@@ -400,13 +488,74 @@ export function ProductManagement({
       sizeGuide,
       specifications: specifications.map(({ label, value }) => ({ label, value }))
     };
-    try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
-  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
-  const scheduleLocalDraft = useCallback(() => {
+  const syncServerDraft = useCallback((draft: NewProductDraft): Promise<void> => {
+    const fingerprint = productDraftContentFingerprint(draft);
+    if (fingerprint === lastSyncedFingerprintRef.current && !queuedServerDraftRef.current) {
+      return Promise.resolve();
+    }
+    queuedServerDraftRef.current = draft;
+    if (draftSyncPromiseRef.current) return draftSyncPromiseRef.current;
+
+    const run = async () => {
+      while (queuedServerDraftRef.current) {
+        const current = queuedServerDraftRef.current;
+        queuedServerDraftRef.current = null;
+        const currentFingerprint = productDraftContentFingerprint(current);
+        if (currentFingerprint === lastSyncedFingerprintRef.current) continue;
+        try {
+          const response = await fetch("/api/catalog/product-draft", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(current)
+          });
+          if (!response.ok) throw new Error("draft_sync_failed");
+          lastSyncedFingerprintRef.current = currentFingerprint;
+        } catch (error) {
+          if (!queuedServerDraftRef.current) queuedServerDraftRef.current = current;
+          throw error;
+        }
+      }
+    };
+    const promise = run().finally(() => {
+      if (draftSyncPromiseRef.current === promise) draftSyncPromiseRef.current = null;
+    });
+    draftSyncPromiseRef.current = promise;
+    return promise;
+  }, []);
+
+  const persistDraft = useCallback(() => {
+    const draft = createCurrentDraft();
+    if (!draft) return lastPersistedDraftRef.current;
+    const fingerprint = productDraftContentFingerprint(draft);
+    if (fingerprint !== lastPersistedFingerprintRef.current) {
+      lastPersistedDraftRef.current = draft;
+      lastPersistedFingerprintRef.current = fingerprint;
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
+    }
+    const latest = lastPersistedDraftRef.current;
+    if (latest) void syncServerDraft(latest).catch(() => undefined);
+    return latest;
+  }, [createCurrentDraft, draftKey, syncServerDraft]);
+
+  const scheduleDraft = useCallback(() => {
+    if (draftSaveLockedRef.current) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    draftTimerRef.current = setTimeout(persistLocalDraft, 700);
-  }, [persistLocalDraft]);
+    draftTimerRef.current = setTimeout(persistDraft, 1_000);
+  }, [persistDraft]);
+
+  const flushDraft = useCallback(async () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
+    const draft = persistDraft();
+    if (!draft) return;
+    try {
+      await syncServerDraft(draft);
+    } catch {
+      // O fallback local permanece íntegro e será sincronizado na próxima oportunidade.
+    }
+  }, [persistDraft, syncServerDraft]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -435,6 +584,7 @@ export function ProductManagement({
       setCategories(result.categories ?? []);
       setModels(result.models ?? []);
       setCollections(result.collections ?? []);
+      setColorOptions(result.colorOptions ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
     } catch (error) {
@@ -510,6 +660,7 @@ export function ProductManagement({
         sku: variant.sku,
         color: variant.color,
         colorHex: variant.colorHex ?? "",
+        colorHexSecondary: variant.colorHexSecondary ?? "",
         size: variant.size,
         priceInCents: variant.priceInCents ?? null,
         costInCents: variant.costInCents ?? null,
@@ -541,17 +692,19 @@ export function ProductManagement({
   useEffect(() => {
     if (!editingKey || initializedEditorKey !== editingKey) return;
     editorBaselineRef.current = editorSnapshotRef.current();
-    setEditorDirty(false);
+    setEditorDirty((current) => editingKey === "new" ? current : false);
   }, [editingKey, initializedEditorKey]);
 
   useEffect(() => {
     if (!editingKey || initializedEditorKey !== editingKey || editorBaselineRef.current === null) return;
-    setEditorDirty(editorSnapshotRef.current() !== editorBaselineRef.current);
+    const changed = editorSnapshotRef.current() !== editorBaselineRef.current;
+    setEditorDirty((current) => editingKey === "new" ? current || changed : changed);
   }, [editingKey, initializedEditorKey, editorRevision, selectedCategoryIds, primaryCategoryId,
     editableVariants, sizeGuide, specifications, hasVariations, simpleStock, productActive, variantColors,
     variantSizes, variantSkuPrefix, colorImageSelections, queuedMediaFiles]);
 
   const closeEditor = useCallback(() => {
+    draftSaveLockedRef.current = false;
     setEditing(null);
     editorBaselineRef.current = null;
     setInitializedEditorKey("");
@@ -561,19 +714,67 @@ export function ProductManagement({
     setActiveEditorSection("information");
   }, []);
 
-  const openNewProduct = () => {
+  const closeEditorWithDraft = useCallback(async () => {
+    if (editing === "new" && editorDirty) {
+      setDraftClosing(true);
+      await flushDraft();
+      const onlyLocal = Boolean(queuedServerDraftRef.current);
+      const hadFiles = queuedMediaFiles.length > 0;
+      closeEditor();
+      setMessage(onlyLocal
+        ? "O cadastro foi mantido neste dispositivo e será sincronizado quando a conexão voltar."
+        : hadFiles
+          ? "O cadastro ficou salvo como rascunho. Se continuar depois, selecione os arquivos de mídia novamente."
+          : "O cadastro ficou salvo como rascunho para você continuar depois.");
+      setDraftClosing(false);
+      return;
+    }
+    closeEditor();
+  }, [closeEditor, editing, editorDirty, flushDraft, queuedMediaFiles.length]);
+
+  const openNewProduct = async () => {
+    draftSaveLockedRef.current = false;
     setMessage("");
     setQueuedMediaFiles([]);
     setActiveEditorSection("information");
     setEditing("new");
+    setDraftOffer(null);
+    setDraftLoading(true);
+    let localDraft: NewProductDraft | null = null;
     try {
-      setDraftOffer(parseNewProductDraft(localStorage.getItem(draftKey)));
+      localDraft = parseNewProductDraft(localStorage.getItem(draftKey));
     } catch {
-      setDraftOffer(null);
+      localDraft = null;
+    }
+    let serverDraft: NewProductDraft | null = null;
+    try {
+      const response = await fetch("/api/catalog/product-draft", { cache: "no-store" });
+      const result = (await response.json()) as ProductDraftResponse;
+      if (response.ok) serverDraft = parseNewProductDraft(result.draft);
+      else setMessage(`${result.message ?? "Não foi possível consultar o rascunho no servidor."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
+    } catch {
+      setMessage("Não foi possível consultar o rascunho no servidor. O cadastro continua disponível.");
+    }
+    try {
+      const latest = newestProductDraft(serverDraft, localDraft);
+      if (latest) {
+        const fingerprint = productDraftContentFingerprint(latest);
+        lastPersistedDraftRef.current = latest;
+        lastPersistedFingerprintRef.current = fingerprint;
+        try { localStorage.setItem(draftKey, JSON.stringify(latest)); } catch { /* Fallback indisponível. */ }
+        setDraftOffer(latest);
+        if (serverDraft && serverDraft.savedAt === latest.savedAt) {
+          lastSyncedFingerprintRef.current = fingerprint;
+        } else {
+          void syncServerDraft(latest).catch(() => undefined);
+        }
+      }
+    } finally {
+      setDraftLoading(false);
     }
   };
 
-  const restoreLocalDraft = () => {
+  const restoreDraft = () => {
     if (!draftOffer) return;
     setSelectedCategoryIds(draftOffer.categoryIds);
     setPrimaryCategoryId(draftOffer.primaryCategoryId);
@@ -603,13 +804,38 @@ export function ProductManagement({
     });
   };
 
-  useEffect(() => () => {
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-  }, []);
+  const discardDraft = async () => {
+    try {
+      const response = await fetch("/api/catalog/product-draft", { method: "DELETE" });
+      const result = (await response.json()) as ProductDraftResponse;
+      if (!response.ok) {
+        setMessage(`${result.message ?? "Não foi possível descartar o rascunho."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
+        return;
+      }
+      clearLocalDraft();
+      setEditorDirty(false);
+      editorBaselineRef.current = editorSnapshotRef.current();
+      setMessage("Rascunho descartado definitivamente.");
+    } catch {
+      setMessage("Não foi possível descartar o rascunho no servidor. Tente novamente.");
+    }
+  };
 
   useEffect(() => {
-    if (editing === "new" && editorDirty) scheduleLocalDraft();
-  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleLocalDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
+    const retryPendingDraft = () => {
+      const pendingDraft = queuedServerDraftRef.current;
+      if (pendingDraft) void syncServerDraft(pendingDraft).catch(() => undefined);
+    };
+    window.addEventListener("online", retryPendingDraft);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      window.removeEventListener("online", retryPendingDraft);
+    };
+  }, [syncServerDraft]);
+
+  useEffect(() => {
+    if (editing === "new" && editorDirty) scheduleDraft();
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -712,7 +938,8 @@ export function ProductManagement({
         body: JSON.stringify(body)
       });
       const result = (await response.json()) as CatalogResponse;
-      setMessage(result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou."));
+      const requestReference = result.requestId ? ` Referência: ${result.requestId}.` : "";
+      setMessage(`${result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou.")}${requestReference}`);
       if (response.ok) {
         await load();
         return result;
@@ -721,7 +948,7 @@ export function ProductManagement({
     } catch {
       setMessage(
         key === "new-product"
-          ? "Não foi possível salvar o produto agora. Seus dados continuam salvos localmente. Tente novamente."
+          ? "Não foi possível salvar o produto agora. O cadastro continua salvo como rascunho. Tente novamente."
           : "Não foi possível concluir a alteração agora."
       );
       return null;
@@ -755,6 +982,7 @@ export function ProductManagement({
             sku: editableVariants.length === 1 ? editableVariants[0]!.sku : "",
             color: "Padrão",
             colorHex: "",
+            colorHexSecondary: "",
             size: "Único",
             priceInCents: null,
             costInCents: null,
@@ -781,6 +1009,10 @@ export function ProductManagement({
         setMessage(publicationMessage);
         return;
       }
+    }
+    if (wasNew) {
+      await flushDraft();
+      draftSaveLockedRef.current = true;
     }
     const result = await execute(
       {
@@ -819,10 +1051,17 @@ export function ProductManagement({
       },
       wasNew ? "new-product" : editing.id
     );
-    if (!result) return;
+    if (!result) {
+      draftSaveLockedRef.current = false;
+      scheduleDraft();
+      return;
+    }
 
     const productId = result.productId ?? (wasNew ? "" : editing.id);
-    if (!productId) return;
+    if (!productId) {
+      draftSaveLockedRef.current = false;
+      return;
+    }
     if (wasNew) clearLocalDraft();
     pendingActionRef.current = true;
     setPending(`save-${productId}`);
@@ -980,7 +1219,19 @@ export function ProductManagement({
     const productName = editorFormRef.current?.elements.namedItem("name");
     const prefix = variantSkuPrefix || (productName instanceof HTMLInputElement ? productName.value : "") || "PRODUTO";
     setVariantSkuPrefix(prefix);
-    const generated = generateVariantCombinations(variantColors || "Padrão", variantSizes, prefix);
+    const generated = generateVariantCombinations(variantColors || "Padrão", variantSizes, prefix)
+      .map((variant) => {
+        const reusable = colorOptions.find(
+          (option) => normalizeProductColorName(option.name) === normalizeProductColorName(variant.color)
+        );
+        return reusable
+          ? {
+              ...variant,
+              colorHex: reusable.primaryColor,
+              colorHexSecondary: reusable.secondaryColor
+            }
+          : variant;
+      });
     if (!generated.length) {
       setMessage("Informe pelo menos um tamanho.");
       return;
@@ -1005,7 +1256,12 @@ export function ProductManagement({
     setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.");
   };
 
-  const addSizeToColor = (groupKey: string, color: string, colorHex: string) => {
+  const addSizeToColor = (
+    groupKey: string,
+    color: string,
+    colorHex: string,
+    colorHexSecondary: string
+  ) => {
     const size = newVariantSizes[groupKey]?.trim() ?? "";
     const generated = generateVariantCombinations(color, size, variantSkuPrefix);
     if (!generated.length) {
@@ -1024,7 +1280,10 @@ export function ProductManagement({
     }
     const candidate = generated[0];
     if (!candidate) return;
-    setEditableVariants((current) => [...current, { ...candidate, colorHex }]);
+    setEditableVariants((current) => [
+      ...current,
+      { ...candidate, colorHex, colorHexSecondary }
+    ]);
     setSizeGuide((current) => includeSizeGuideRows(current, [candidate.size]));
     setNewVariantSizes((current) => ({ ...current, [groupKey]: "" }));
     setEditorDirty(true);
@@ -1312,7 +1571,7 @@ export function ProductManagement({
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={openNewProduct}>
+            <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
               <Plus /> Cadastrar produto
             </button>
           ) : null}
@@ -1459,7 +1718,7 @@ export function ProductManagement({
               : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}
           </span>
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={openNewProduct}>
+            <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
               <Plus /> Cadastrar produto
             </button>
           ) : null}
@@ -1988,8 +2247,14 @@ export function ProductManagement({
           eyebrow={editing === "new" ? "Novo cadastro" : "Edição de produto"}
           title={editing === "new" ? "Cadastrar produto" : editing.name}
           dirty={editorDirty && !pendingActionRef.current}
-          busy={Boolean(pending)}
-          onClose={closeEditor}
+          busy={Boolean(pending) || draftClosing}
+          onClose={() => void closeEditorWithDraft()}
+          closeConfirmation={editing === "new" ? {
+            title: "Salvar rascunho e fechar?",
+            description: "Os dados do cadastro ficarão salvos na sua conta para continuar depois. Arquivos de mídia ainda não enviados precisarão ser selecionados novamente.",
+            confirmLabel: "Salvar rascunho e fechar",
+            confirmClassName: "primary-button"
+          } : undefined}
         >
           {({ requestClose }) => <div className="product-editor-drawer">
                 <nav className="product-editor-nav" aria-label="Seções do produto">
@@ -2009,15 +2274,24 @@ export function ProductManagement({
                 </nav>
             <form
               ref={editorFormRef}
-              onChangeCapture={() => { setEditorRevision((current) => current + 1); scheduleLocalDraft(); }}
+              onChangeCapture={() => {
+                if (editing === "new") setEditorDirty(true);
+                setEditorRevision((current) => current + 1);
+                scheduleDraft();
+              }}
               onSubmit={(event) => void saveProduct(event)}
             >
               <div className="admin-form-grid">
-                {editing === "new" && draftOffer ? (
+                {editing === "new" && draftLoading ? (
+                  <aside className="wide product-draft-recovery" role="status">
+                    <LoaderCircle className="spin" aria-hidden="true" />
+                    <span>Procurando o último cadastro não concluído…</span>
+                  </aside>
+                ) : editing === "new" && draftOffer ? (
                   <aside className="wide product-draft-recovery" role="status">
                     <span>Encontramos um cadastro não concluído.</span>
-                    <button className="secondary-button" type="button" onClick={restoreLocalDraft}>Continuar cadastro</button>
-                    <button className="secondary-button" type="button" onClick={clearLocalDraft}>Descartar</button>
+                    <button className="secondary-button" type="button" onClick={restoreDraft}>Continuar cadastro</button>
+                    <button className="secondary-button" type="button" onClick={() => void discardDraft()}>Descartar rascunho</button>
                   </aside>
                 ) : null}
                 <h3 className="wide product-form-section" id="product-step-1">
@@ -2238,7 +2512,7 @@ export function ProductManagement({
                 </h3>
                 <p className="wide product-media-note">
                   {editing === "new"
-                    ? "Escolha as imagens agora. Elas serão enviadas automaticamente quando o produto for criado."
+                    ? "Escolha as imagens agora. Elas serão enviadas quando o produto for criado e não fazem parte do rascunho persistente; se fechar o cadastro, precisarão ser selecionadas novamente."
                     : "Envie as fotos aqui e depois associe a imagem correta a cada cor."}
                 </p>
                 {editing === "new" ? (
@@ -2546,6 +2820,17 @@ export function ProductManagement({
                       placeholder="Preto, Branco, Bege"
                     />
                   </label>
+                  {colorOptions.length ? (
+                    <ExistingColorPicker
+                      options={colorOptions}
+                      onSelect={(option) => {
+                        const existing = variantColors.split(",").map((item) => item.trim()).filter(Boolean);
+                        if (!existing.some((item) => normalizeProductColorName(item) === normalizeProductColorName(option.name))) {
+                          setVariantColors([...existing, option.name].join(", "));
+                        }
+                      }}
+                    />
+                  ) : null}
                   <button className="secondary-button" type="button" onClick={generateVariants}>
                     Gerar combinações
                   </button>
@@ -2597,23 +2882,12 @@ export function ProductManagement({
                       return (
                         <section className="variant-color-group" key={group.key}>
                           <header>
-                            <label
+                            <ColorSwatch
                               className="variant-color-swatch"
-                              style={{ backgroundColor: group.colorHex || "#f3f4f6" }}
-                              title={`Escolher cor visual de ${group.color}`}
-                            >
-                              <span className="sr-only">Cor visual de {group.color}</span>
-                              <input
-                                type="color"
-                                aria-label={`Cor visual de ${group.color}`}
-                                value={group.colorHex || "#f3f4f6"}
-                                onChange={(event) =>
-                                  group.variants.forEach(({ index }) =>
-                                    updateEditableVariant(index, { colorHex: event.target.value })
-                                  )
-                                }
-                              />
-                            </label>
+                              name={group.color}
+                              primaryColor={group.colorHex || "#f3f4f6"}
+                              secondaryColor={group.colorHexSecondary}
+                            />
                             <div>
                               <strong>{group.color}</strong>
                               <span>{group.variants.length} tamanho(s)</span>
@@ -2647,6 +2921,61 @@ export function ProductManagement({
                               <Trash2 />
                             </button>
                           </header>
+                          <div className="variant-color-editor">
+                            {colorOptions.length ? (
+                              <ExistingColorPicker
+                                options={colorOptions}
+                                onSelect={(option) => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, {
+                                    color: option.name,
+                                    colorHex: option.primaryColor,
+                                    colorHexSecondary: option.secondaryColor
+                                  })
+                                )}
+                              />
+                            ) : null}
+                            <label className="variant-color-value">
+                              <span>Cor 1</span>
+                              <input
+                                type="color"
+                                aria-label={`Cor principal de ${group.color}`}
+                                value={group.colorHex || "#f3f4f6"}
+                                onChange={(event) => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, { colorHex: event.target.value })
+                                )}
+                              />
+                              <code>{group.colorHex || "#F3F4F6"}</code>
+                            </label>
+                            {group.colorHexSecondary ? (
+                              <label className="variant-color-value">
+                                <span>Cor 2</span>
+                                <input
+                                  type="color"
+                                  aria-label={`Cor secundária de ${group.color}`}
+                                  value={group.colorHexSecondary}
+                                  onChange={(event) => group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { colorHexSecondary: event.target.value })
+                                  )}
+                                />
+                                <code>{group.colorHexSecondary}</code>
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  onClick={() => group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { colorHexSecondary: "" })
+                                  )}
+                                >Remover</button>
+                              </label>
+                            ) : (
+                              <button
+                                type="button"
+                                className="secondary-button add-secondary-color"
+                                onClick={() => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, { colorHexSecondary: "#FFFFFF" })
+                                )}
+                              ><Plus aria-hidden="true" /> Segunda cor</button>
+                            )}
+                          </div>
                           <div className="variant-size-list">
                             {group.variants.map(({ variant, index }) => (
                               <article
@@ -2766,7 +3095,12 @@ export function ProductManagement({
                             <button
                               className="secondary-button"
                               type="button"
-                              onClick={() => addSizeToColor(group.key, group.color, group.colorHex)}
+                              onClick={() => addSizeToColor(
+                                group.key,
+                                group.color,
+                                group.colorHex,
+                                group.colorHexSecondary
+                              )}
                             >
                               <Plus /> Adicionar tamanho
                             </button>
@@ -2984,8 +3318,8 @@ export function ProductManagement({
               ) : null}
               <footer className="product-editor-footer">
                 {message ? <p className="form-message product-editor-message" role="status">{message}</p> : null}
-                <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending)}>Cancelar</button>
-                <button className="primary-button" type="submit" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
+                <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending) || draftClosing}>Cancelar</button>
+                <button className="primary-button" type="submit" disabled={Boolean(pending) || draftClosing}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
               </footer>
             </form>
           </div>}

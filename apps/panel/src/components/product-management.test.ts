@@ -141,6 +141,20 @@ describe("product management", () => {
     ]);
   });
 
+  it("preserva as duas tonalidades ao agrupar tamanhos da mesma cor", () => {
+    const variants = generateVariantCombinations("Preto e Branco", "35, 36", "Slide")
+      .map((variant) => ({
+        ...variant,
+        colorHex: "#000000",
+        colorHexSecondary: "#FFFFFF"
+      }));
+    expect(groupEditableVariantsByColor(variants)[0]).toMatchObject({
+      color: "Preto e Branco",
+      colorHex: "#000000",
+      colorHexSecondary: "#FFFFFF"
+    });
+  });
+
   it("rejeita produto incompleto antes de abrir o editor", () => {
     expect(isManagedProduct(products[0])).toBe(true);
     expect(isManagedProduct({ ...products[0], id: "produto-invalido" })).toBe(false);

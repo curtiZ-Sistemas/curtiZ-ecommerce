@@ -12,46 +12,13 @@ export function productDeletionMessage(blockers: readonly string[] = []): string
     : "Não foi possível confirmar se o produto pode ser excluído. Atualize a listagem.";
 }
 
-export type NewProductDraft = {
-  version: 1;
-  savedAt: string;
-  fields: Record<string, string>;
-  categoryIds: string[];
-  primaryCategoryId: string;
-  variants: EditableVariant[];
-  sizeGuide?: ProductSizeGuideEntry[];
-  specifications?: ProductSpecification[];
-  hasVariations: boolean;
-  simpleStock: number;
-  productActive?: boolean;
-  variantColors: string;
-  variantSizes: string;
-  variantSkuPrefix: string;
-};
-
-export const productDraftStorageKey = (ownerKey: string) =>
-  `curtiz:product-draft:v1:${ownerKey}`;
-
-export function parseNewProductDraft(value: string | null): NewProductDraft | null {
-  if (!value) return null;
-  try {
-    const draft: unknown = JSON.parse(value);
-    if (!draft || typeof draft !== "object") return null;
-    const candidate = draft as Partial<NewProductDraft>;
-    if (
-      candidate.version !== 1 ||
-      !candidate.fields || typeof candidate.fields !== "object" ||
-      !Array.isArray(candidate.categoryIds) ||
-      !Array.isArray(candidate.variants) ||
-      typeof candidate.primaryCategoryId !== "string" ||
-      typeof candidate.hasVariations !== "boolean" ||
-      typeof candidate.simpleStock !== "number"
-    ) return null;
-    return candidate as NewProductDraft;
-  } catch {
-    return null;
-  }
-}
+export {
+  newestProductDraft,
+  parseNewProductDraft,
+  productDraftContentFingerprint,
+  productDraftStorageKey
+} from "./product-draft";
+export type { NewProductDraft } from "./product-draft";
 
 export type ManagedVariant = {
   id: string;
@@ -63,6 +30,7 @@ export type ManagedVariant = {
   reserved: number;
   sellable: number;
   colorHex?: string;
+  colorHexSecondary?: string;
   priceInCents?: number | null;
   costInCents?: number | null;
   gtin?: string;
@@ -150,6 +118,7 @@ export type EditableVariantColorGroup = {
   key: string;
   color: string;
   colorHex: string;
+  colorHexSecondary: string;
   variants: Array<{ index: number; variant: EditableVariant }>;
 };
 
@@ -158,6 +127,7 @@ export type EditableVariant = {
   sku: string;
   color: string;
   colorHex: string;
+  colorHexSecondary: string;
   size: string;
   priceInCents: number | null;
   costInCents: number | null;
@@ -311,6 +281,7 @@ export function generateVariantCombinations(
       sku: `${prefix}-${skuPart(color)}-${skuPart(size)}`,
       color,
       colorHex: "",
+      colorHexSecondary: "",
       size,
       priceInCents: null,
       costInCents: null,
@@ -333,6 +304,9 @@ export function groupEditableVariantsByColor(
     if (existing) {
       existing.variants.push({ index, variant });
       if (!existing.colorHex && variant.colorHex) existing.colorHex = variant.colorHex;
+      if (!existing.colorHexSecondary && variant.colorHexSecondary) {
+        existing.colorHexSecondary = variant.colorHexSecondary;
+      }
       return;
     }
 
@@ -340,6 +314,7 @@ export function groupEditableVariantsByColor(
       key: normalizedColor,
       color: variant.color.trim() || "Sem cor",
       colorHex: variant.colorHex,
+      colorHexSecondary: variant.colorHexSecondary,
       variants: [{ index, variant }]
     });
   });

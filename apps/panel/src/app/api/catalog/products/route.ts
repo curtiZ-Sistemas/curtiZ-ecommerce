@@ -1,8 +1,12 @@
 import { readJsonResponse, isAllowedBrowserRequest } from "@curtiz/security";
-import { consumePanelMutationBudget, panelRateLimitStatus } from "../../../../lib/api-rate-limit";
+import {
+  consumePanelMutationBudget,
+  panelRateLimitFailure,
+  panelRateLimitStatus
+} from "../../../../lib/api-rate-limit";
 import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
-import { evaluateMerchantEligibility, type MerchantCatalogItem } from "@curtiz/domain";
+import { evaluateMerchantEligibility, normalizeProductColorName, type MerchantCatalogItem } from "@curtiz/domain";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
@@ -36,6 +40,7 @@ const variantSchema = z.object({
   sku: z.string().trim().max(140),
   color: z.string().trim().min(1).max(80),
   colorHex: z.string().regex(/^#[0-9a-f]{6}$/iu).or(z.literal("")),
+  colorHexSecondary: z.string().regex(/^#[0-9a-f]{6}$/iu).or(z.literal("")).default(""),
   size: z.string().trim().min(1).max(40),
   priceInCents: z.number().int().min(0).max(100_000_000).nullable(),
   costInCents: z.number().int().min(0).max(100_000_000).nullable(),
@@ -315,6 +320,7 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
         sku: text(variant.sku),
         color: text(variant.color_name),
         colorHex: text(variant.color_hex),
+        colorHexSecondary: text(variant.color_hex_secondary),
         size: text(variant.size),
         active: variant.active === true,
         priceInCents:
@@ -589,18 +595,60 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.SUPABASE_URL
     });
   const legacyProductSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,color_hex_secondary,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+  const legacyProductSelectWithoutSecondary = legacyProductSelect.replace(
+    ",color_hex_secondary",
+    ""
+  );
   const compatibleProductSelect =
     "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_variants(id,sku,color_name,color_hex,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
   const productSelectWithoutSpecifications =
     `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name)),product_size_guide_entries(size,measurement_cm,position)`;
   const productSelect = `${productSelectWithoutSpecifications},product_specifications(label,value,position)`;
+  const productSelectLegacyColors =
+    `${legacyProductSelectWithoutSecondary},product_categories(category_id,is_primary,categories(id,name)),product_size_guide_entries(size,measurement_cm,position),product_specifications(label,value,position)`;
+
+  const loadColorOptions = async () => {
+    const currentResult = await supabase
+      .from("product_variants")
+      .select("color_name,color_hex,color_hex_secondary,updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(500);
+    let colorData: unknown = currentResult.data;
+    let colorError: CatalogError = currentResult.error;
+    if (currentResult.error?.code === "42703" || currentResult.error?.code === "PGRST204") {
+      const legacyResult = await supabase
+        .from("product_variants")
+        .select("color_name,color_hex,updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(500);
+      colorData = legacyResult.data;
+      colorError = legacyResult.error;
+    }
+    if (colorError) {
+      logCatalogFailure("load_color_options", colorError);
+      return [];
+    }
+    const seen = new Set<string>();
+    return rows(colorData).flatMap((item) => {
+      const name = text(item.color_name).replace(/\s+/gu, " ").trim();
+      const key = normalizeProductColorName(name);
+      if (!key || seen.has(key)) return [];
+      seen.add(key);
+      return [{
+        name,
+        primaryColor: text(item.color_hex),
+        secondaryColor: text(item.color_hex_secondary)
+      }];
+    });
+  };
 
   const loadWithCompatibility = async <T extends { error: CatalogError }>(
     run: (select: string) => PromiseLike<T>
   ): Promise<T> => {
     const selections = [
       ["productSelect", productSelect],
+      ["productSelectLegacyColors", productSelectLegacyColors],
       ["productSelectWithoutSpecifications", productSelectWithoutSpecifications],
       ["legacyProductSelect", legacyProductSelect],
       ["compatibleProductSelect", compatibleProductSelect]
@@ -738,7 +786,8 @@ export async function GET(request: NextRequest) {
     updatePermission,
     stockPermission,
     archivePermission,
-    deletePermission
+    deletePermission,
+    colorOptions
   ] = await Promise.all([
     loadProducts(),
     supabase.from("categories").select("id,name,parent_id").order("name").limit(500),
@@ -748,7 +797,8 @@ export async function GET(request: NextRequest) {
     supabase.rpc("has_permission", { permission_code: "products.update" }),
     supabase.rpc("has_permission", { permission_code: "inventory.adjust" }),
     supabase.rpc("has_permission", { permission_code: "products.archive" }),
-    supabase.rpc("has_permission", { permission_code: "products.delete" })
+    supabase.rpc("has_permission", { permission_code: "products.delete" }),
+    loadColorOptions()
   ]);
   const permissionError =
     createPermission.error ?? updatePermission.error ?? stockPermission.error ?? archivePermission.error ?? deletePermission.error;
@@ -852,13 +902,15 @@ export async function GET(request: NextRequest) {
         ? []
         : rows(collections.data).map((item) => ({ id: text(item.id), name: text(item.name) })),
       capabilities,
-      capabilityMessage
+      capabilityMessage,
+      colorOptions
     },
     { headers: noStore }
   );
 }
 
 export async function PATCH(request: NextRequest) {
+  const requestId = crypto.randomUUID();
   if (!safeOrigin(request)) {
     return NextResponse.json(
       { message: "Origem não permitida." },
@@ -867,8 +919,12 @@ export async function PATCH(request: NextRequest) {
   }
   const supabase = await authorizedClient(request);
   if (!supabase) {
+    const rateLimitFailure = panelRateLimitFailure(request);
+    if (rateLimitFailure?.status === 503) {
+      logCatalogFailure("consume_private_api_rate_limit", rateLimitFailure, requestId);
+    }
     return NextResponse.json(
-      { message: "Acesso não autorizado." },
+      { message: "Acesso não autorizado.", requestId },
       { status: panelRateLimitStatus(request), headers: noStore }
     );
   }
@@ -967,7 +1023,6 @@ export async function PATCH(request: NextRequest) {
 
   if (parsed.data.action === "save") {
     let saveOperation = "prepare_product";
-    const requestId = crypto.randomUUID();
     try {
     const categoryIds = [
       ...new Set([
@@ -1067,17 +1122,24 @@ export async function PATCH(request: NextRequest) {
       description: payload.description,
       categoryName: text(categoryResult?.data?.name)
     });
-    saveOperation = "save_product";
-    const result = await supabase.rpc("admin_save_product_authorized", {
-      p_payload: {
-        ...payload,
-        seoTitle: seo.title,
-        seoDescription: seo.description
+    saveOperation = payload.productId
+      ? "admin_save_product_authorized"
+      : "admin_save_product_authorized_and_clear_draft";
+    const result = await supabase.rpc(
+      payload.productId
+        ? "admin_save_product_authorized"
+        : "admin_save_product_authorized_and_clear_draft",
+      {
+        p_payload: {
+          ...payload,
+          seoTitle: seo.title,
+          seoDescription: seo.description
+        }
       }
-    });
+    );
 
     if (result.error || typeof result.data !== "string") {
-      logCatalogFailure("save_product", result.error, requestId);
+      logCatalogFailure(saveOperation, result.error, requestId);
       const mappedError = saveProductError(result.error);
 
       return NextResponse.json(

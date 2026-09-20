@@ -64,6 +64,7 @@ export type ProductVariantOption = {
   mpn?: string;
   color: string;
   colorHex?: string;
+  colorHexSecondary?: string;
   size: string;
   priceInCents: number;
   stock: number;
@@ -639,6 +640,7 @@ const productDetailSchema = z.object({
       mpn: z.string().nullable().optional(),
       color: z.string(),
       colorHex: z.string().nullable().optional(),
+      colorHexSecondary: z.string().nullable().optional(),
       size: z.string(),
       priceInCents: z.coerce.number().int().nonnegative(),
       stock: z.coerce.number().int().nonnegative(),
@@ -719,7 +721,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   if (!data) return null;
   const parsed = productDetailSchema.safeParse(data);
   if (!parsed.success) return presentationFallback ? demoProductDetail(slug) : null;
-  const [mediaResponse, sizeGuideResponse, specificationsResponse] = await Promise.all([
+  const [mediaResponse, sizeGuideResponse, specificationsResponse, variantColorsResponse] = await Promise.all([
     supabase
       .from("product_media")
       .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
@@ -738,7 +740,12 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       .select("label,value,position")
       .eq("product_id", parsed.data.id)
       .order("position")
-      .limit(50)
+      .limit(50),
+    supabase
+      .from("product_variants")
+      .select("id,color_hex_secondary")
+      .eq("product_id", parsed.data.id)
+      .limit(500)
   ]);
   const media = mediaResponse.error
     ? []
@@ -822,6 +829,18 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         const value = readString(entry, "value").trim();
         return label && value ? [{ label, value }] : [];
       });
+  if (variantColorsResponse.error && !["42703", "PGRST204"].includes(variantColorsResponse.error.code ?? "")) {
+    logServerEvent("error", "storefront_product_variant_colors_query_failed", {
+      code: variantColorsResponse.error.code,
+      message: variantColorsResponse.error.message
+    });
+  }
+  const secondaryColors = new Map(
+    (variantColorsResponse.error ? [] : readRows(variantColorsResponse.data)).map((entry) => [
+      readString(entry, "id"),
+      readString(entry, "color_hex_secondary")
+    ])
+  );
   return {
     product,
     gallery,
@@ -833,6 +852,11 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       ...(variant.mpn ? { mpn: variant.mpn } : {}),
       color: variant.color,
       ...(variant.colorHex ? { colorHex: variant.colorHex } : {}),
+      ...(secondaryColors.get(variant.id)
+        ? { colorHexSecondary: secondaryColors.get(variant.id) }
+        : variant.colorHexSecondary
+          ? { colorHexSecondary: variant.colorHexSecondary }
+          : {}),
       size: variant.size,
       priceInCents: variant.priceInCents,
       stock: variant.stock,

@@ -32,7 +32,13 @@ export type CatalogFilters = {
   pageSize: number;
 };
 
-export type FacetOption = { value: string; label: string; count: number; hex?: string };
+export type FacetOption = {
+  value: string;
+  label: string;
+  count: number;
+  hex?: string;
+  secondaryHex?: string;
+};
 
 const colorSwatches: Record<string, string> = {
   preto: "#171717", branco: "#ffffff", marinho: "#18294a", coral: "#d96b55",
