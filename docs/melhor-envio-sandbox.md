@@ -6,7 +6,8 @@
 2. Cadastre a callback `https://<painel>/api/integrations/melhor-envio/callback` e o webhook
    `https://<loja>/api/webhooks/melhor-envio` no mesmo aplicativo.
 3. Configure `SHIPPING_PROVIDER=melhorenvio`, `MELHOR_ENVIO_ENABLED=true`,
-   `MELHOR_ENVIO_ENVIRONMENT=sandbox`, Client ID/Secret, Redirect URI, nome da aplicação, contato
+   `MELHOR_ENVIO_ENVIRONMENT=sandbox`, `MELHOR_ENVIO_BASE_URL=https://sandbox.melhorenvio.com.br`,
+   Client ID/Secret, Redirect URI, nome da aplicação, contato
    técnico, chave AES-256 em base64 e todos os campos reais `MELHOR_ENVIO_ORIGIN_*`.
 4. Acesse o painel técnico com MFA, inicie a conexão OAuth e confira o status sanitizado. Tokens não
    são copiados para `.env`, navegador ou logs.
@@ -16,6 +17,16 @@ Nos Workers da loja e do painel, mantenha `MELHOR_ENVIO_CLIENT_SECRET`,
 `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY` e um entre `MELHOR_ENVIO_ORIGIN_DOCUMENT`/
 `MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT` como secrets. As demais opções `MELHOR_ENVIO_*` são variáveis
 server-side do ambiente; nenhuma delas usa prefixo `NEXT_PUBLIC_`.
+
+No deploy deste repositório, configure as opções não secretas (`SHIPPING_PROVIDER`,
+`MELHOR_ENVIO_ENABLED`, `MELHOR_ENVIO_ENVIRONMENT`, `MELHOR_ENVIO_BASE_URL`,
+`MELHOR_ENVIO_REDIRECT_URI`, `MELHOR_ENVIO_CLIENT_ID`, `MELHOR_ENVIO_APP_NAME`,
+`MELHOR_ENVIO_TECHNICAL_CONTACT`, `MELHOR_ENVIO_WEBHOOK_CONFIGURED` e campos de origem não
+documentais) como variáveis do GitHub Actions; o workflow as passa ao build e aos dois Workers.
+Configure os três tipos de segredo acima separadamente **em cada Worker** da loja e do painel.
+Se usar build direto no Cloudflare, replique ali apenas as opções não secretas como Build Variables;
+elas não substituem os secrets de runtime e os valores reais destes nunca devem ser Build Variables
+em texto simples. O CI usa placeholders somente para validar o build, não como credenciais de runtime.
 
 ## Roteiro E2E
 

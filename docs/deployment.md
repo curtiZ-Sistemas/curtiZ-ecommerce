@@ -259,8 +259,8 @@ Esses gates não substituem RLS, autorização nem rotação de credenciais quan
 # Hardening adicional de uploads e webhook
 
 - O binding `IMAGES` deve estar operacional em store e panel. Imagens de clientes são decodificadas/reencodadas como WebP sem metadados; sem o decoder, o upload falha fechado. Testes unitários não substituem validação do binding no Worker.
-- Aplique também `202609140004_payment_webhook_leases.sql`: deduplicação inclui reembolsos, com lease de 60 segundos e orçamento compartilhado por pagamento.
-- Antes de liberar os Workers, aplique as migrations incrementais `202609140003` a `202609140008` e execute DB lint/pgTAP em banco efêmero. Elas cobrem autoridade de roles, orçamentos privados/públicos, leases de webhook, devoluções, fila de análise e cooldown de reconciliação. Rotas dependentes falham fechadas enquanto suas RPCs não estiverem disponíveis.
+- Aplique também `202609140009_payment_webhook_leases.sql`: deduplicação inclui reembolsos, com lease de 60 segundos e orçamento compartilhado por pagamento.
+- Antes de liberar os Workers, aplique as migrations incrementais `202609140003` a `202609140009` e execute DB lint/pgTAP em banco efêmero. Elas cobrem autoridade de roles, orçamentos privados/públicos, leases de webhook, devoluções, fila de análise e cooldown de reconciliação. Rotas dependentes falham fechadas enquanto suas RPCs não estiverem disponíveis.
 - A migration `202609160001_auth_rate_limit_result_contract.sql` deve ser aplicada antes do Worker da loja. O preflight exige a versão 2 do contrato; sem ela, autenticação falha com 503 em vez de transformar indisponibilidade do Supabase em um bloqueio 429 falso.
 - Os novos HMACs devem ser independentes, aleatórios e ter pelo menos 32 caracteres. Não reutilize a chave de webhook ou a service role. A configuração versionada do painel agora inclui `IMAGES` em staging/produção; confirme a disponibilidade do serviço e teste upload real em staging.
 - O adaptador Mercado Pago permanece restrito a `MERCADO_PAGO_ENVIRONMENT=test` e credenciais `TEST-`. Não habilite produção simplesmente trocando credenciais: o adaptador live e sua homologação ainda não estão implementados.

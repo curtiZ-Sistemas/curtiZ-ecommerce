@@ -343,10 +343,9 @@ export function ProductManagement({
     const form = editorFormRef.current;
     if (!form) return null;
     const fields = [...new FormData(form).entries()]
-      .filter(([, value]) => typeof value === "string")
-      .map(([key, value]) => [key, value] as const)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
       .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
-        leftKey.localeCompare(rightKey) || String(leftValue).localeCompare(String(rightValue)));
+        leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue));
     return JSON.stringify({
       fields,
       categoryIds: [...selectedCategoryIds].sort(),
