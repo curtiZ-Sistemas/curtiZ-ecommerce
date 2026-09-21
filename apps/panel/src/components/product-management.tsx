@@ -32,9 +32,11 @@ import { ColorSwatch } from "@/components/color-swatch";
 import { PanelDrawer } from "@/components/panel-drawer";
 import {
   buildNewProductDraft,
+  isProductDraftStoredLocally,
   newestProductDraft,
   productDraftContentFingerprint,
-  productDraftSyncFailureAction
+  productDraftSyncFailureAction,
+  storeProductDraftLocally
 } from "@/lib/product-draft";
 import {
   type EditableVariant,
@@ -427,8 +429,6 @@ export function ProductManagement({
   const queuedServerDraftRef = useRef<NewProductDraft | null>(null);
   const draftSyncPromiseRef = useRef<Promise<void> | null>(null);
   const syncServerDraftRef = useRef<(draft: NewProductDraft) => Promise<void>>(async () => undefined);
-  const lastPersistedDraftRef = useRef<NewProductDraft | null>(null);
-  const lastPersistedFingerprintRef = useRef("");
   const lastSyncedFingerprintRef = useRef("");
   const lastRejectedFingerprintRef = useRef("");
   const draftSaveLockedRef = useRef(false);
@@ -463,8 +463,6 @@ export function ProductManagement({
     draftTimerRef.current = null;
     try { localStorage.removeItem(draftKey); } catch { /* Storage pode estar indisponível. */ }
     queuedServerDraftRef.current = null;
-    lastPersistedDraftRef.current = null;
-    lastPersistedFingerprintRef.current = "";
     lastSyncedFingerprintRef.current = "";
     lastRejectedFingerprintRef.current = "";
     draftRetryUntilRef.current = 0;
@@ -578,14 +576,9 @@ export function ProductManagement({
 
   const persistLocalSnapshot = useCallback(() => {
     const draft = createCurrentDraft();
-    if (!draft) return lastPersistedDraftRef.current;
-    const fingerprint = productDraftContentFingerprint(draft);
-    if (fingerprint !== lastPersistedFingerprintRef.current) {
-      lastPersistedDraftRef.current = draft;
-      lastPersistedFingerprintRef.current = fingerprint;
-      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
-    }
-    return lastPersistedDraftRef.current;
+    if (!draft) return null;
+    storeProductDraftLocally(localStorage, draftKey, draft);
+    return draft;
   }, [createCurrentDraft, draftKey]);
 
   const persistDraft = useCallback(() => {
@@ -600,17 +593,20 @@ export function ProductManagement({
     draftTimerRef.current = setTimeout(persistDraft, 1_000);
   }, [persistDraft]);
 
-  const flushDraft = useCallback(async () => {
+  const flushDraft = useCallback(async (): Promise<"server" | "local" | null> => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = null;
-    const draft = persistDraft();
-    if (!draft) return;
+    const draft = persistLocalSnapshot();
+    if (!draft) return null;
     try {
       await syncServerDraft(draft);
     } catch {
       // O fallback local permanece íntegro e será sincronizado na próxima oportunidade.
     }
-  }, [persistDraft, syncServerDraft]);
+    const fingerprint = productDraftContentFingerprint(draft);
+    if (lastSyncedFingerprintRef.current === fingerprint) return "server";
+    return isProductDraftStoredLocally(localStorage, draftKey, draft) ? "local" : null;
+  }, [draftKey, persistLocalSnapshot, syncServerDraft]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -772,8 +768,13 @@ export function ProductManagement({
   const closeEditorWithDraft = useCallback(async () => {
     if (editing === "new" && editorDirty) {
       setDraftClosing(true);
-      await flushDraft();
-      const onlyLocal = Boolean(queuedServerDraftRef.current);
+      const persistence = await flushDraft();
+      if (!persistence) {
+        setMessage("Não foi possível salvar o rascunho. O cadastro continua aberto para você tentar novamente.");
+        setDraftClosing(false);
+        return;
+      }
+      const onlyLocal = persistence === "local";
       const hadFiles = queuedMediaFiles.length > 0;
       closeEditor();
       setMessage(onlyLocal
@@ -814,9 +815,7 @@ export function ProductManagement({
       const latest = newestProductDraft(serverDraft, localDraft);
       if (latest) {
         const fingerprint = productDraftContentFingerprint(latest);
-        lastPersistedDraftRef.current = latest;
-        lastPersistedFingerprintRef.current = fingerprint;
-        try { localStorage.setItem(draftKey, JSON.stringify(latest)); } catch { /* Fallback indisponível. */ }
+        storeProductDraftLocally(localStorage, draftKey, latest);
         setDraftOffer(latest);
         if (serverDraft && serverDraft.savedAt === latest.savedAt) {
           lastSyncedFingerprintRef.current = fingerprint;

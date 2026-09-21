@@ -129,6 +129,34 @@ export function buildNewProductDraft(input: {
   return parsed.success ? parsed.data : null;
 }
 
+type ProductDraftStorage = Pick<Storage, "getItem" | "setItem">;
+
+export function storeProductDraftLocally(
+  storage: ProductDraftStorage,
+  key: string,
+  draft: NewProductDraft
+): boolean {
+  try {
+    const serialized = JSON.stringify(draft);
+    storage.setItem(key, serialized);
+    return storage.getItem(key) === serialized;
+  } catch {
+    return false;
+  }
+}
+
+export function isProductDraftStoredLocally(
+  storage: Pick<Storage, "getItem">,
+  key: string,
+  draft: NewProductDraft
+): boolean {
+  try {
+    return storage.getItem(key) === JSON.stringify(draft);
+  } catch {
+    return false;
+  }
+}
+
 export function productDraftSyncFailureAction(status: number): "drop" | "wait" | "retry" {
   if (status === 429) return "wait";
   if (status >= 500) return "retry";
@@ -152,7 +180,26 @@ export function parseNewProductDraft(value: unknown): NewProductDraft | null {
       candidate = { ...legacy, schemaVersion: version };
     }
     const parsed = newProductDraftSchema.safeParse(candidate);
-    return parsed.success ? parsed.data : null;
+    if (parsed.success) return parsed.data;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+    const legacy = candidate as Record<string, unknown>;
+    return buildNewProductDraft({
+      savedAt: typeof legacy.savedAt === "string" ? legacy.savedAt : undefined,
+      fields: legacy.fields && typeof legacy.fields === "object" && !Array.isArray(legacy.fields)
+        ? legacy.fields as Record<string, unknown>
+        : {},
+      categoryIds: legacy.categoryIds,
+      primaryCategoryId: legacy.primaryCategoryId,
+      variants: legacy.variants,
+      hasVariations: legacy.hasVariations,
+      simpleStock: legacy.simpleStock,
+      productActive: legacy.productActive,
+      variantColors: legacy.variantColors,
+      variantSizes: legacy.variantSizes,
+      variantSkuPrefix: legacy.variantSkuPrefix,
+      sizeGuide: legacy.sizeGuide,
+      specifications: legacy.specifications
+    });
   } catch {
     return null;
   }

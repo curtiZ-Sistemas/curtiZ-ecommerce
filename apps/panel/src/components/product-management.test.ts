@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildNewProductDraft,
+  isProductDraftStoredLocally,
   newProductDraftSchema,
-  productDraftSyncFailureAction
+  productDraftSyncFailureAction,
+  storeProductDraftLocally
 } from "../lib/product-draft";
 import {
   automaticProductSeo,
@@ -185,6 +187,39 @@ describe("product management", () => {
       variantColors: "", variantSizes: "", variantSkuPrefix: ""
     }))).toMatchObject({ fields: { name: "Slide" }, simpleStock: 3 });
     expect(parseNewProductDraft("invalid")).toBeNull();
+  });
+
+  it("confirma a gravação local antes de permitir fechar o cadastro", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); }
+    };
+    const draft = buildNewProductDraft({
+      savedAt: "2026-09-21T12:00:00.000Z",
+      fields: { name: "Produto recuperável" },
+      categoryIds: [], primaryCategoryId: "", variants: [], hasVariations: false,
+      simpleStock: 0, productActive: false, variantColors: "", variantSizes: "",
+      variantSkuPrefix: "", sizeGuide: [], specifications: []
+    });
+    expect(draft).not.toBeNull();
+    expect(storeProductDraftLocally(storage, "draft", draft!)).toBe(true);
+    expect(isProductDraftStoredLocally(storage, "draft", draft!)).toBe(true);
+    expect(storeProductDraftLocally({
+      getItem: () => null,
+      setItem: () => { throw new Error("storage unavailable"); }
+    }, "draft", draft!)).toBe(false);
+  });
+
+  it("recupera rascunho local com campos extras de uma versão anterior", () => {
+    expect(parseNewProductDraft(JSON.stringify({
+      schemaVersion: 1,
+      savedAt: "2026-09-21T12:00:00.000Z",
+      fields: { name: "Produto anterior", futureField: "ignorar" },
+      categoryIds: [], primaryCategoryId: "", variants: [], hasVariations: false,
+      simpleStock: 0, productActive: false, variantColors: "", variantSizes: "",
+      variantSkuPrefix: "", sizeGuide: [], specifications: [], futureTopLevel: true
+    }))).toMatchObject({ fields: { name: "Produto anterior" } });
   });
 
   it("usa imagem principal, depois a primeira imagem e só então nenhum resultado", () => {
