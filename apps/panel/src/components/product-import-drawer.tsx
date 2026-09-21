@@ -17,6 +17,7 @@ type PreviewProduct = {
 };
 
 type ImportPreview = {
+  sessionId: string;
   schemaVersion: string;
   summary: { products: number; variations: number; images: number; colors: number; warnings: number; errors: number };
   products: PreviewProduct[];
@@ -45,6 +46,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<ProductImportQueueResult[]>([]);
   const [message, setMessage] = useState("");
+  const [sessionComplete, setSessionComplete] = useState(false);
 
   const readJson = async (response: Response) => {
     const body = await response.text();
@@ -52,7 +54,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
       const value: unknown = JSON.parse(body);
       return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
     } catch {
-      return { message: response.ok ? "O servidor retornou uma resposta inválida." : `Serviço temporariamente indisponível (HTTP ${response.status}).` };
+      return { message: response.ok ? "O servidor retornou uma resposta inválida." : "Falha temporária do servidor durante a importação. Tente novamente." };
     }
   };
 
@@ -62,6 +64,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     setResults([]);
     setMessage("");
     setProgress(0);
+    setSessionComplete(false);
     if (!selected.name.toLocaleLowerCase("pt-BR").endsWith(".xlsx")) {
       setMessage("Selecione uma planilha no formato XLSX.");
       return;
@@ -73,6 +76,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
       const response = await fetch("/api/catalog/products/import/preview", { method: "POST", body: form });
       const result = await readJson(response);
       if (!response.ok) throw new Error(typeof result.message === "string" ? result.message : "Não foi possível validar a planilha.");
+      if (typeof result.sessionId !== "string") throw new Error("O servidor não criou uma sessão de importação válida.");
       setPreview(result as unknown as ImportPreview);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível validar a planilha.");
@@ -82,26 +86,27 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
   };
 
   const importProducts = async () => {
-    if (!file || !preview || importing) return;
+    if (!preview || importing || sessionComplete) return;
     const candidates = preview.products.filter((product) => product.errors.length === 0);
     if (!candidates.length) { setMessage("Nenhum produto válido para importar."); return; }
     setImporting(true);
     setResults([]);
     setProgress(0);
     try {
-      await runProductImportQueue(candidates.map((product) => product.key), async (productKey) => {
+      const completed = await runProductImportQueue(candidates.map((product) => product.key), async (productKey) => {
         return runProductImportBatches(productKey, async (imageOffset) => {
-          const form = new FormData();
-          form.set("file", file);
-          form.set("productKey", productKey);
-          form.set("imageOffset", String(imageOffset));
-          const response = await fetch("/api/catalog/products/import", { method: "POST", body: form });
+          const response = await fetch("/api/catalog/products/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sessionId: preview.sessionId, productKey, imageOffset })
+          });
           const result = await readJson(response);
           return {
             productKey,
             ok: response.ok,
             alreadyImported: result.alreadyImported === true,
             warnings: Array.isArray(result.warnings) ? result.warnings.filter((item): item is string => typeof item === "string") : [],
+            imageFailures: result.imageFailures === true,
             hasMore: result.hasMore === true,
             nextImageOffset: typeof result.nextImageOffset === "number" ? result.nextImageOffset : undefined,
             retryable: [408, 429, 500, 502, 503, 504].includes(response.status),
@@ -109,6 +114,14 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           };
         });
       }, (completed, percentage) => { setResults(completed); setProgress(percentage); });
+      if (completed.every((result) => result.ok && !result.imageFailures)) {
+        await fetch("/api/catalog/products/import/preview", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: preview.sessionId })
+        }).catch(() => undefined);
+        setSessionComplete(true);
+      }
       await onImported();
     } finally {
       setImporting(false);
@@ -183,9 +196,9 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
         <footer className="product-import-footer">
           <button className="secondary-button" type="button" onClick={close} disabled={loading || importing}>Cancelar</button>
           <button className="primary-button" type="button" onClick={() => void importProducts()}
-            disabled={!preview || importing || loading || preview.products.every((product) => product.errors.length > 0)}>
+            disabled={!preview || importing || loading || sessionComplete || preview.products.every((product) => product.errors.length > 0)}>
             {importing ? <LoaderCircle className="spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
-            {importing ? "Importando..." : "Importar produtos"}
+            {importing ? "Importando..." : sessionComplete ? "Importação concluída" : "Importar produtos"}
           </button>
         </footer>
       </div>

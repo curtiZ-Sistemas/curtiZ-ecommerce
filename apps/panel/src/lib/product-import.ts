@@ -3,13 +3,15 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { Workbook, type Cell, type Worksheet } from "exceljs";
 import BaseXform from "exceljs/lib/xlsx/xform/base-xform";
+import { isAllowedShopeeImageUrl } from "./product-import-session";
+
+export { isAllowedShopeeImageUrl, parseProductImportSessionPayload } from "./product-import-session";
 
 export const PRODUCT_IMPORT_SCHEMA = "curtiz_import_v1";
 export const PRODUCT_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 export const PRODUCT_IMPORT_MAX_PRODUCTS = 100;
 export const PRODUCT_IMPORT_MAX_VARIANTS = 2_000;
 export const PRODUCT_IMPORT_MAX_IMAGES = 1_000;
-export const SHOPEE_IMAGE_HOSTS = new Set(["down-sg.img.susercontent.com"]);
 
 export type ProductImportIssue = {
   level: "warning" | "error";
@@ -78,6 +80,17 @@ export type ProductImportBatch = {
   colorCount: number;
   imageCount: number;
   issues: ProductImportIssue[];
+};
+
+export type ProductImportReference = {
+  categoryId: string | null;
+  modelId: string | null;
+  collectionId: string | null;
+};
+
+export type ProductImportSessionPayload = {
+  batch: ProductImportBatch;
+  references: Record<string, ProductImportReference>;
 };
 
 type SaxEvent = Parameters<BaseXform["parse"]>[0] extends AsyncIterable<infer Events>
@@ -227,15 +240,6 @@ export function generatedImportSku(productKey: string, color: string, size: stri
   const base = slug(source).toUpperCase().slice(0, 92) || "PRODUTO";
   const hash = createHash("sha256").update(source).digest("hex").slice(0, 8).toUpperCase();
   return `${base}-${hash}`;
-}
-
-export function isAllowedShopeeImageUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password && !url.port && SHOPEE_IMAGE_HOSTS.has(url.hostname);
-  } catch {
-    return false;
-  }
 }
 
 function enumValue<T extends string>(value: unknown, accepted: readonly T[]): T | null {

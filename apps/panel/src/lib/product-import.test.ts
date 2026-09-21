@@ -8,6 +8,7 @@ import {
   PRODUCT_IMPORT_SCHEMA,
   generatedImportSku,
   isAllowedShopeeImageUrl,
+  parseProductImportSessionPayload,
   parseProductImportWorkbook,
   productImportPreview
 } from "./product-import";
@@ -88,6 +89,16 @@ describe("product XLSX import", () => {
     expect(isAllowedShopeeImageUrl("https://down-sg.img.susercontent.com.evil.test/image.jpg")).toBe(false);
   });
 
+  it("accepts only bounded normalized payloads in an import session", async () => {
+    const batch = await parseProductImportWorkbook(await minimalWorkbook());
+    const payload = {
+      batch,
+      references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000001", modelId: null, collectionId: null } }
+    };
+    expect(parseProductImportSessionPayload(payload).batch.products[0]?.key).toBe("PROD-1");
+    expect(() => parseProductImportSessionPayload({ ...payload, references: {} })).toThrow(/sessão/iu);
+  });
+
   it("continues the queue after one product fails", async () => {
     const called: string[] = [];
     const results = await runProductImportQueue(["one", "two", "three"], async (key) => {
@@ -106,7 +117,7 @@ describe("product XLSX import", () => {
       if (imageOffset < 4) return {
         productKey: "PROD-1", ok: true, alreadyImported: imageOffset > 0,
         warnings: ["Aviso repetido"], message: "continuando", hasMore: true,
-        nextImageOffset: imageOffset + 2
+        nextImageOffset: imageOffset < 0 ? 0 : imageOffset + 2
       };
       return {
         productKey: "PROD-1", ok: true, alreadyImported: true,
@@ -114,7 +125,7 @@ describe("product XLSX import", () => {
       };
     }, 0);
 
-    expect(offsets).toEqual([0, 2, 4]);
+    expect(offsets).toEqual([-1, 0, 2, 4]);
     expect(result).toMatchObject({ ok: true, alreadyImported: false, warnings: ["Aviso repetido"] });
   });
 
