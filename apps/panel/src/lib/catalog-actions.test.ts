@@ -252,7 +252,20 @@ describe("product save", () => {
     expect(await valid.json()).toMatchObject({ ok: true, productId: id });
   });
 
-  it.each(["23502", "42703", "42P01", "PGRST202", "PGRST204", "PGRST205"])(
+  it("saves through the compatible RPC when atomic draft cleanup is not available yet", async () => {
+    state.rpc.mockImplementation(async (name) => name === createProductRpc
+      ? { data: null, error: { code: "PGRST202", message: "function missing from schema cache" } }
+      : { data: name === "admin_save_product_authorized" ? id : true, error: null });
+
+    const response = await PATCH(request("PATCH", savePayload("draft")));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, productId: id });
+    expect(state.rpc).toHaveBeenCalledWith("admin_save_product_authorized", expect.anything());
+    expect(state.query.mock.calls.some(([table]) => table === "product_editor_drafts")).toBe(true);
+  });
+
+  it.each(["23502", "42703", "42P01", "PGRST204", "PGRST205"])(
     "classifies schema mismatch %s without leaking database details and correlates the server log",
     async (code) => {
       state.rpc.mockImplementation(async (name) => name === createProductRpc

@@ -1125,7 +1125,7 @@ export async function PATCH(request: NextRequest) {
     saveOperation = payload.productId
       ? "admin_save_product_authorized"
       : "admin_save_product_authorized_and_clear_draft";
-    const result = await supabase.rpc(
+    let result = await supabase.rpc(
       payload.productId
         ? "admin_save_product_authorized"
         : "admin_save_product_authorized_and_clear_draft",
@@ -1137,6 +1137,38 @@ export async function PATCH(request: NextRequest) {
         }
       }
     );
+
+    if (!payload.productId && result.error?.code === "PGRST202") {
+      logServerEvent("warn", "panel_catalog_api_draft_cleanup_fallback", {
+        requestId,
+        operation: saveOperation,
+        code: result.error.code
+      });
+      saveOperation = "admin_save_product_authorized";
+      result = await supabase.rpc(saveOperation, {
+        p_payload: {
+          ...payload,
+          seoTitle: seo.title,
+          seoDescription: seo.description
+        }
+      });
+      if (!result.error && typeof result.data === "string") {
+        const currentUser = await supabase.auth.getUser();
+        const userId = currentUser.data.user?.id;
+        if (userId) {
+          const draftCleanup = await supabase
+            .from("product_editor_drafts")
+            .delete()
+            .eq("user_id", userId);
+          if (draftCleanup.error) {
+            logServerEvent("warn", "panel_catalog_api_draft_cleanup_failed", {
+              requestId,
+              code: draftCleanup.error.code ?? "unknown"
+            });
+          }
+        }
+      }
+    }
 
     if (result.error || typeof result.data !== "string") {
       logCatalogFailure(saveOperation, result.error, requestId);
