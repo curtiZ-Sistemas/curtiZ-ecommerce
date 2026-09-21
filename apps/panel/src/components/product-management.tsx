@@ -493,7 +493,7 @@ export function ProductManagement({
       variantSizes,
       variantSkuPrefix,
       sizeGuide,
-      specifications: specifications.map(({ label, value }) => ({ label, value }))
+      specifications
     });
   }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 

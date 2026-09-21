@@ -200,6 +200,7 @@ describe("product save", () => {
         { sku: "SKU-40", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "40", priceInCents: null, costInCents: null, stock: 0, active: true, gtin: "", mpn: "" }
       ]),
       lengthCm: 40,
+      stockReason: "Estoque definido no cadastro do produto",
       sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }]
     };
     const first = await PATCH(request("PATCH", partial));
@@ -209,6 +210,7 @@ describe("product save", () => {
     expect(firstSave?.[1]).toMatchObject({ p_payload: {
       status: "draft", priceInCents: null, costInCents: null, weightGrams: null,
       heightCm: null, widthCm: null, lengthCm: 40,
+      stockReason: "Estoque definido no cadastro do produto",
       sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }],
       variants: [{ size: "39" }, { size: "40" }]
     } });

@@ -12723,7 +12723,7 @@ body:has(> #main-content > .auth-page) .site-footer {
   border-radius: 50%;
 }
 
-.filter-color-preview {
+.color-filter-list label .filter-color-preview {
   width: 17px;
   height: 17px;
   min-width: 17px;
