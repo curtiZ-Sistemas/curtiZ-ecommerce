@@ -278,6 +278,23 @@ describe("product save", () => {
     expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("Seus dados foram mantidos") as unknown });
     expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ operation: "generate_slug", code: "57014" }));
   });
+
+  it("correlates a rate-limit RPC failure before invoking the product save", async () => {
+    state.rpc.mockImplementation(async (name) => name === "consume_private_api_rate_limit"
+      ? { data: null, error: { code: "PGRST202", message: "internal RPC detail" } }
+      : { data: true, error: null });
+    const response = await PATCH(request("PATCH", savePayload("draft")));
+    expect(response.status).toBe(503);
+    const body = await response.json() as { requestId: string; message: string };
+    expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.stringify(body)).not.toContain("internal RPC detail");
+    expect(state.rpc).not.toHaveBeenCalledWith(createProductRpc, expect.anything());
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      requestId: body.requestId,
+      operation: "consume_private_api_rate_limit",
+      code: "PGRST202"
+    }));
+  });
 });
 
 describe("category mutations", () => {

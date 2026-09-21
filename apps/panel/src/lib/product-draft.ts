@@ -22,7 +22,7 @@ const draftFieldsSchema = z.object({
   lengthCm: z.string().max(32).optional(),
   shortDescription: z.string().max(280).optional(),
   featured: z.literal("on").optional()
-}).strict();
+}).strip();
 
 const draftVariantSchema = z.object({
   id: uuid.optional(),
@@ -37,7 +37,7 @@ const draftVariantSchema = z.object({
   active: z.boolean(),
   gtin: z.string().max(50),
   mpn: z.string().max(70)
-}).strict();
+}).strip();
 
 const draftSizeGuideSchema = z.object({
   size: z.string().max(40),
@@ -47,7 +47,7 @@ const draftSizeGuideSchema = z.object({
 const draftSpecificationSchema = z.object({
   label: z.string().max(80),
   value: z.string().max(500)
-}).strict();
+}).strip();
 
 export const PRODUCT_DRAFT_SCHEMA_VERSION = 1 as const;
 export const PRODUCT_DRAFT_MAX_BYTES = 64 * 1024;
@@ -71,12 +71,79 @@ export const newProductDraftSchema = z.object({
 
 export type NewProductDraft = z.infer<typeof newProductDraftSchema>;
 
+const persistedDraftFieldNames = [
+  "name",
+  "slug",
+  "description",
+  "modelId",
+  "collectionId",
+  "statusReason",
+  "price",
+  "compareAtPrice",
+  "cost",
+  "stockReason",
+  "weightGrams",
+  "heightCm",
+  "widthCm",
+  "lengthCm",
+  "shortDescription",
+  "featured"
+] as const;
+
+export function buildNewProductDraft(input: {
+  savedAt?: string;
+  fields: Record<string, unknown>;
+  categoryIds: unknown;
+  primaryCategoryId: unknown;
+  variants: unknown;
+  hasVariations: unknown;
+  simpleStock: unknown;
+  productActive: unknown;
+  variantColors: unknown;
+  variantSizes: unknown;
+  variantSkuPrefix: unknown;
+  sizeGuide: unknown;
+  specifications: unknown;
+}): NewProductDraft | null {
+  const fields: Record<string, string> = {};
+  persistedDraftFieldNames.forEach((name) => {
+    const value = input.fields[name];
+    if (typeof value === "string") fields[name] = value;
+  });
+  const parsed = newProductDraftSchema.safeParse({
+    schemaVersion: PRODUCT_DRAFT_SCHEMA_VERSION,
+    savedAt: input.savedAt ?? new Date().toISOString(),
+    fields,
+    categoryIds: input.categoryIds,
+    primaryCategoryId: input.primaryCategoryId,
+    variants: input.variants,
+    hasVariations: input.hasVariations,
+    simpleStock: input.simpleStock,
+    productActive: input.productActive,
+    variantColors: input.variantColors,
+    variantSizes: input.variantSizes,
+    variantSkuPrefix: input.variantSkuPrefix,
+    sizeGuide: input.sizeGuide,
+    specifications: input.specifications
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+export function productDraftSyncFailureAction(status: number): "drop" | "wait" | "retry" {
+  if (status === 429) return "wait";
+  if (status >= 500) return "retry";
+  return "drop";
+}
+
 export const productDraftStorageKey = (ownerKey: string) =>
   `curtiz:product-draft:v1:${ownerKey}`;
 
 export function parseNewProductDraft(value: unknown): NewProductDraft | null {
   if (value === null || value === undefined || value === "") return null;
   try {
+    if (typeof value === "string" && new TextEncoder().encode(value).byteLength > PRODUCT_DRAFT_MAX_BYTES) {
+      return null;
+    }
     const raw = typeof value === "string" ? JSON.parse(value) as unknown : value;
     let candidate = raw;
     if (raw && typeof raw === "object" && !Array.isArray(raw) &&
@@ -101,5 +168,6 @@ export function newestProductDraft(
 
 export function productDraftContentFingerprint(draft: NewProductDraft): string {
   const { savedAt: _savedAt, ...content } = draft;
+  void _savedAt;
   return JSON.stringify(content);
 }

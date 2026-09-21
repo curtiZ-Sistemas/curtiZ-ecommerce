@@ -31,9 +31,10 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ColorSwatch } from "@/components/color-swatch";
 import { PanelDrawer } from "@/components/panel-drawer";
 import {
+  buildNewProductDraft,
   newestProductDraft,
   productDraftContentFingerprint,
-  PRODUCT_DRAFT_SCHEMA_VERSION
+  productDraftSyncFailureAction
 } from "@/lib/product-draft";
 import {
   type EditableVariant,
@@ -421,11 +422,15 @@ export function ProductManagement({
   const [initializedEditorKey, setInitializedEditorKey] = useState("");
   const [editorRevision, setEditorRevision] = useState(0);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRetryUntilRef = useRef(0);
   const queuedServerDraftRef = useRef<NewProductDraft | null>(null);
   const draftSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const syncServerDraftRef = useRef<(draft: NewProductDraft) => Promise<void>>(async () => undefined);
   const lastPersistedDraftRef = useRef<NewProductDraft | null>(null);
   const lastPersistedFingerprintRef = useRef("");
   const lastSyncedFingerprintRef = useRef("");
+  const lastRejectedFingerprintRef = useRef("");
   const draftSaveLockedRef = useRef(false);
   const draftKey = productDraftStorageKey(draftOwnerKey);
 
@@ -461,6 +466,10 @@ export function ProductManagement({
     lastPersistedDraftRef.current = null;
     lastPersistedFingerprintRef.current = "";
     lastSyncedFingerprintRef.current = "";
+    lastRejectedFingerprintRef.current = "";
+    draftRetryUntilRef.current = 0;
+    if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
+    draftRetryTimerRef.current = null;
     setDraftOffer(null);
   }, [draftKey]);
 
@@ -472,9 +481,7 @@ export function ProductManagement({
     new FormData(form).forEach((value, key) => {
       if (typeof value === "string" && key !== "productKind") fields[key] = value;
     });
-    return {
-      schemaVersion: PRODUCT_DRAFT_SCHEMA_VERSION,
-      savedAt: new Date().toISOString(),
+    return buildNewProductDraft({
       fields,
       categoryIds: selectedCategoryIds,
       primaryCategoryId,
@@ -487,7 +494,7 @@ export function ProductManagement({
       variantSkuPrefix,
       sizeGuide,
       specifications: specifications.map(({ label, value }) => ({ label, value }))
-    };
+    });
   }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   const syncServerDraft = useCallback((draft: NewProductDraft): Promise<void> => {
@@ -495,8 +502,23 @@ export function ProductManagement({
     if (fingerprint === lastSyncedFingerprintRef.current && !queuedServerDraftRef.current) {
       return Promise.resolve();
     }
+    if (fingerprint === lastRejectedFingerprintRef.current && !queuedServerDraftRef.current) {
+      return Promise.resolve();
+    }
     queuedServerDraftRef.current = draft;
     if (draftSyncPromiseRef.current) return draftSyncPromiseRef.current;
+    const retryDelay = draftRetryUntilRef.current - Date.now();
+    if (retryDelay > 0) {
+      if (!draftRetryTimerRef.current) {
+        draftRetryTimerRef.current = setTimeout(() => {
+          draftRetryTimerRef.current = null;
+          draftRetryUntilRef.current = 0;
+          const pendingDraft = queuedServerDraftRef.current;
+          if (pendingDraft) void syncServerDraftRef.current(pendingDraft).catch(() => undefined);
+        }, retryDelay);
+      }
+      return Promise.resolve();
+    }
 
     const run = async () => {
       while (queuedServerDraftRef.current) {
@@ -504,18 +526,46 @@ export function ProductManagement({
         queuedServerDraftRef.current = null;
         const currentFingerprint = productDraftContentFingerprint(current);
         if (currentFingerprint === lastSyncedFingerprintRef.current) continue;
+        let response: Response;
         try {
-          const response = await fetch("/api/catalog/product-draft", {
+          response = await fetch("/api/catalog/product-draft", {
             method: "PUT",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(current)
           });
-          if (!response.ok) throw new Error("draft_sync_failed");
-          lastSyncedFingerprintRef.current = currentFingerprint;
         } catch (error) {
           if (!queuedServerDraftRef.current) queuedServerDraftRef.current = current;
           throw error;
         }
+        if (response.ok) {
+          lastSyncedFingerprintRef.current = currentFingerprint;
+          if (lastRejectedFingerprintRef.current === currentFingerprint) {
+            lastRejectedFingerprintRef.current = "";
+          }
+          continue;
+        }
+        const failureAction = productDraftSyncFailureAction(response.status);
+        if (failureAction === "drop") {
+          lastRejectedFingerprintRef.current = currentFingerprint;
+          continue;
+        }
+        if (!queuedServerDraftRef.current) queuedServerDraftRef.current = current;
+        if (failureAction === "wait") {
+          const retryAfter = Number(response.headers.get("retry-after"));
+          const delay = Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1_000
+            : 60_000;
+          draftRetryUntilRef.current = Date.now() + delay;
+          if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
+          draftRetryTimerRef.current = setTimeout(() => {
+            draftRetryTimerRef.current = null;
+            draftRetryUntilRef.current = 0;
+            const pendingDraft = queuedServerDraftRef.current;
+            if (pendingDraft) void syncServerDraftRef.current(pendingDraft).catch(() => undefined);
+          }, delay);
+          return;
+        }
+        throw new Error("draft_sync_unavailable");
       }
     };
     const promise = run().finally(() => {
@@ -524,8 +574,9 @@ export function ProductManagement({
     draftSyncPromiseRef.current = promise;
     return promise;
   }, []);
+  syncServerDraftRef.current = syncServerDraft;
 
-  const persistDraft = useCallback(() => {
+  const persistLocalSnapshot = useCallback(() => {
     const draft = createCurrentDraft();
     if (!draft) return lastPersistedDraftRef.current;
     const fingerprint = productDraftContentFingerprint(draft);
@@ -534,10 +585,14 @@ export function ProductManagement({
       lastPersistedFingerprintRef.current = fingerprint;
       try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
     }
-    const latest = lastPersistedDraftRef.current;
+    return lastPersistedDraftRef.current;
+  }, [createCurrentDraft, draftKey]);
+
+  const persistDraft = useCallback(() => {
+    const latest = persistLocalSnapshot();
     if (latest) void syncServerDraft(latest).catch(() => undefined);
     return latest;
-  }, [createCurrentDraft, draftKey, syncServerDraft]);
+  }, [persistLocalSnapshot, syncServerDraft]);
 
   const scheduleDraft = useCallback(() => {
     if (draftSaveLockedRef.current) return;
@@ -801,10 +856,17 @@ export function ProductManagement({
           field.value = value;
         }
       }
+      setEditorRevision((current) => current + 1);
     });
   };
 
   const discardDraft = async () => {
+    draftSaveLockedRef.current = true;
+    setDraftClosing(true);
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
+    try { await draftSyncPromiseRef.current; } catch { /* O DELETE ainda deve remover a versão remota. */ }
+    queuedServerDraftRef.current = null;
     try {
       const response = await fetch("/api/catalog/product-draft", { method: "DELETE" });
       const result = (await response.json()) as ProductDraftResponse;
@@ -818,6 +880,9 @@ export function ProductManagement({
       setMessage("Rascunho descartado definitivamente.");
     } catch {
       setMessage("Não foi possível descartar o rascunho no servidor. Tente novamente.");
+    } finally {
+      draftSaveLockedRef.current = false;
+      setDraftClosing(false);
     }
   };
 
@@ -827,15 +892,24 @@ export function ProductManagement({
       if (pendingDraft) void syncServerDraft(pendingDraft).catch(() => undefined);
     };
     window.addEventListener("online", retryPendingDraft);
+    const retryWhenVisible = () => {
+      if (document.visibilityState === "visible") retryPendingDraft();
+    };
+    document.addEventListener("visibilitychange", retryWhenVisible);
     return () => {
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
       window.removeEventListener("online", retryPendingDraft);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
     };
   }, [syncServerDraft]);
 
   useEffect(() => {
-    if (editing === "new" && editorDirty) scheduleDraft();
-  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
+    if (editing === "new" && editorDirty) {
+      persistLocalSnapshot();
+      scheduleDraft();
+    }
+  }, [editableVariants, editing, editorDirty, editorRevision, hasVariations, primaryCategoryId, productActive, persistLocalSnapshot, scheduleDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -2290,8 +2364,8 @@ export function ProductManagement({
                 ) : editing === "new" && draftOffer ? (
                   <aside className="wide product-draft-recovery" role="status">
                     <span>Encontramos um cadastro não concluído.</span>
-                    <button className="secondary-button" type="button" onClick={restoreDraft}>Continuar cadastro</button>
-                    <button className="secondary-button" type="button" onClick={() => void discardDraft()}>Descartar rascunho</button>
+                    <button className="secondary-button" type="button" disabled={draftClosing} onClick={restoreDraft}>Continuar cadastro</button>
+                    <button className="secondary-button" type="button" disabled={draftClosing} onClick={() => void discardDraft()}>Descartar rascunho</button>
                   </aside>
                 ) : null}
                 <h3 className="wide product-form-section" id="product-step-1">

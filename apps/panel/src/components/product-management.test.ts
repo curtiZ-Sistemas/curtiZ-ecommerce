@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildNewProductDraft,
+  newProductDraftSchema,
+  productDraftSyncFailureAction
+} from "../lib/product-draft";
+import {
   automaticProductSeo,
   filterManagedProducts,
   generateVariantCombinations,
@@ -47,6 +52,70 @@ const products = [
 ];
 
 describe("product management", () => {
+  it("monta o snapshot real do editor e ignora controles não persistíveis", () => {
+    const draft = buildNewProductDraft({
+      savedAt: "2026-09-20T12:00:00.000Z",
+      fields: {
+        name: "Slide teste",
+        slug: "slide-teste",
+        description: "Descrição do produto",
+        modelId: "",
+        collectionId: "",
+        statusReason: "",
+        price: "59.90",
+        compareAtPrice: "",
+        cost: "",
+        stockReason: "Estoque definido no cadastro do produto",
+        weightGrams: "",
+        heightCm: "",
+        widthCm: "",
+        lengthCm: "40",
+        shortDescription: "",
+        productKind: "variations",
+        futureEditorControl: "ignorar"
+      },
+      categoryIds: ["20000000-0000-4000-8000-000000000001"],
+      primaryCategoryId: "20000000-0000-4000-8000-000000000001",
+      variants: [
+        { sku: "SLIDE-39", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "39", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" },
+        { sku: "SLIDE-40", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "40", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" }
+      ],
+      hasVariations: true,
+      simpleStock: 0,
+      productActive: false,
+      variantColors: "Azul",
+      variantSizes: "39, 40",
+      variantSkuPrefix: "SLIDE",
+      sizeGuide: [
+        { clientRowId: "row-39", size: "39", measurementCm: 27 },
+        { clientRowId: "row-40", size: "40", measurementCm: 27 }
+      ],
+      specifications: [{ clientRowId: "spec-1", label: "Material", value: "Borracha" }]
+    });
+
+    expect(draft).not.toBeNull();
+    expect(newProductDraftSchema.safeParse(draft).success).toBe(true);
+    expect(draft?.fields).toMatchObject({
+      weightGrams: "", heightCm: "", widthCm: "", lengthCm: "40",
+      stockReason: "Estoque definido no cadastro do produto"
+    });
+    expect(draft?.fields).not.toHaveProperty("productKind");
+    expect(draft?.fields).not.toHaveProperty("futureEditorControl");
+    expect(draft?.sizeGuide).toEqual([
+      { size: "39", measurementCm: 27 },
+      { size: "40", measurementCm: 27 }
+    ]);
+  });
+
+  it("não repete payload rejeitado e reserva retry para rate limit ou indisponibilidade", () => {
+    expect(productDraftSyncFailureAction(400)).toBe("drop");
+    expect(productDraftSyncFailureAction(401)).toBe("drop");
+    expect(productDraftSyncFailureAction(403)).toBe("drop");
+    expect(productDraftSyncFailureAction(409)).toBe("drop");
+    expect(productDraftSyncFailureAction(429)).toBe("wait");
+    expect(productDraftSyncFailureAction(503)).toBe("retry");
+  });
+
   it("mantém produtos sem estoque visíveis no filtro interno", () => {
     expect(filterManagedProducts(products, "out", "")).toEqual([products[1]]);
   });

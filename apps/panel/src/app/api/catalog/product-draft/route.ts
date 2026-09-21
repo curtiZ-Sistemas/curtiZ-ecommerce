@@ -7,6 +7,7 @@ import {
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
+import { panelRateLimitFailure } from "../../../../lib/api-rate-limit";
 import {
   newProductDraftSchema,
   PRODUCT_DRAFT_MAX_BYTES
@@ -26,9 +27,28 @@ function logDraftFailure(operation: string, error: DraftError, requestId: string
   });
 }
 
+function logDraftValidationFailure(
+  requestId: string,
+  issues: Array<{ code: string; path: PropertyKey[] }>
+) {
+  logServerEvent("warn", "panel_product_draft_validation_failed", {
+    requestId,
+    issues: issues.map((issue) => ({
+      code: issue.code,
+      path: issue.path.map(String).join(".")
+    }))
+  });
+}
+
 async function authorizeDraft(request: NextRequest, requestId: string) {
   const auth = await authorizeAdminRequest(request);
-  if (!auth) return null;
+  if (!auth) {
+    const failure = panelRateLimitFailure(request);
+    if (failure?.status === 503) {
+      logDraftFailure("consume_private_api_rate_limit", failure, requestId);
+    }
+    return null;
+  }
   const [createPermission, updatePermission] = await Promise.all([
     auth.supabase.rpc("has_permission", { permission_code: "products.create" }),
     auth.supabase.rpc("has_permission", { permission_code: "products.update" })
@@ -75,8 +95,9 @@ export async function GET(request: NextRequest) {
       { status: 409, headers: privateNoStore }
     );
   }
+  const updatedAt: unknown = result.data.updated_at;
   return NextResponse.json(
-    { ok: true, draft: parsed.data, updatedAt: result.data.updated_at },
+    { ok: true, draft: parsed.data, updatedAt: typeof updatedAt === "string" ? updatedAt : null },
     { headers: privateNoStore }
   );
 }
@@ -84,18 +105,18 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const requestId = crypto.randomUUID();
   if (!safePanelOrigin(request)) return forbiddenOrigin();
-  const auth = await authorizeDraft(request, requestId);
-  if (!auth) return unauthorizedAdminResponse(request);
-
   const body = await readPanelJson(request, PRODUCT_DRAFT_MAX_BYTES);
   if (body instanceof Response) return body;
   const parsed = newProductDraftSchema.safeParse(body);
   if (!parsed.success) {
+    logDraftValidationFailure(requestId, parsed.error.issues);
     return NextResponse.json(
-      { message: "O rascunho possui dados inválidos ou excede os limites permitidos." },
+      { message: "O rascunho possui dados inválidos ou excede os limites permitidos.", requestId },
       { status: 400, headers: privateNoStore }
     );
   }
+  const auth = await authorizeDraft(request, requestId);
+  if (!auth) return unauthorizedAdminResponse(request);
 
   const result = await auth.supabase.rpc("save_product_editor_draft", {
     p_schema_version: parsed.data.schemaVersion,
@@ -109,8 +130,16 @@ export async function PUT(request: NextRequest) {
       { status: 503, headers: privateNoStore }
     );
   }
+  const savedAt: unknown = result.data;
+  if (typeof savedAt !== "string") {
+    logDraftFailure("save_product_editor_draft", { code: "INVALID_DRAFT_SAVE_RESULT" }, requestId);
+    return NextResponse.json(
+      { message: "Não foi possível confirmar a sincronização do rascunho.", requestId },
+      { status: 503, headers: privateNoStore }
+    );
+  }
   return NextResponse.json(
-    { ok: true, savedAt: result.data },
+    { ok: true, savedAt },
     { headers: privateNoStore }
   );
 }

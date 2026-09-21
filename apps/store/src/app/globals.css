@@ -12726,6 +12726,13 @@ body:has(> #main-content > .auth-page) .site-footer {
 .filter-color-preview {
   width: 17px;
   height: 17px;
+  min-width: 17px;
+  min-height: 17px;
+  flex: 0 0 17px;
+  aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  align-self: center;
 }
 
 .product-option-color-preview {

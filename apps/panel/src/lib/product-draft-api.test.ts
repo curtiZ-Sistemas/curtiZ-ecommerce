@@ -12,6 +12,7 @@ type StoredDraft = {
 const state = vi.hoisted(() => ({
   userId: "10000000-0000-4000-8000-000000000001",
   allowed: true,
+  authCalls: 0,
   rows: new Map<string, StoredDraft>()
 }));
 
@@ -51,7 +52,10 @@ const client = {
 };
 
 vi.mock("@/lib/admin-api", () => ({
-  authorizeAdminRequest: async () => state.allowed ? { supabase: client, userId: state.userId } : null,
+  authorizeAdminRequest: async () => {
+    state.authCalls += 1;
+    return state.allowed ? { supabase: client, userId: state.userId } : null;
+  },
   privateNoStore: { "cache-control": "private, no-store" },
   readPanelJson: (request: Request) => request.json(),
   safePanelOrigin: (request: Request) => request.headers.get("origin") === "http://localhost:3001",
@@ -61,26 +65,57 @@ vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
 vi.mock("@/lib/product-draft", () => import("./product-draft"));
 
 import { DELETE, GET, PUT } from "../app/api/catalog/product-draft/route";
+import { buildNewProductDraft, newProductDraftSchema } from "./product-draft";
 
-const makeDraft = (name: string, savedAt: string) => ({
-  schemaVersion: 1,
-  savedAt,
-  fields: { name, description: "Descrição", lengthCm: "40" },
-  categoryIds: ["20000000-0000-4000-8000-000000000001"],
-  primaryCategoryId: "20000000-0000-4000-8000-000000000001",
-  variants: [{
-    sku: "SLIDE-39", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "",
-    size: "39", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: ""
-  }],
-  hasVariations: true,
-  simpleStock: 0,
-  productActive: false,
-  variantColors: "Azul",
-  variantSizes: "39, 40",
-  variantSkuPrefix: "SLIDE",
-  sizeGuide: [{ size: "39", measurementCm: 27 }],
-  specifications: [{ label: "Material", value: "Borracha" }]
-});
+const makeDraft = (name: string, savedAt: string) => {
+  const draft = buildNewProductDraft({
+    savedAt,
+    fields: {
+      name,
+      slug: "slide-teste",
+      description: "Descrição",
+      modelId: "",
+      collectionId: "",
+      statusReason: "",
+      price: "59.90",
+      compareAtPrice: "",
+      cost: "",
+      stockReason: "Estoque definido no cadastro do produto",
+      weightGrams: "",
+      heightCm: "",
+      widthCm: "",
+      lengthCm: "40",
+      shortDescription: "",
+      productKind: "variations",
+      futureEditorControl: "não deve ser persistido"
+    },
+    categoryIds: ["20000000-0000-4000-8000-000000000001"],
+    primaryCategoryId: "20000000-0000-4000-8000-000000000001",
+    variants: [
+      {
+        sku: "SLIDE-39", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "",
+        size: "39", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: ""
+      },
+      {
+        sku: "SLIDE-40", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "",
+        size: "40", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: ""
+      }
+    ],
+    hasVariations: true,
+    simpleStock: 0,
+    productActive: false,
+    variantColors: "Azul",
+    variantSizes: "39, 40",
+    variantSkuPrefix: "SLIDE",
+    sizeGuide: [
+      { clientRowId: "row-39", size: "39", measurementCm: 27 },
+      { clientRowId: "row-40", size: "40", measurementCm: 27 }
+    ],
+    specifications: [{ label: "Material", value: "Borracha" }]
+  });
+  if (!draft) throw new Error("The real editor snapshot must satisfy the shared draft contract");
+  return draft;
+};
 
 const request = (method = "GET", body?: unknown) => new NextRequest(
   "http://localhost:3001/api/catalog/product-draft",
@@ -95,9 +130,29 @@ beforeEach(() => {
   state.rows.clear();
   state.userId = "10000000-0000-4000-8000-000000000001";
   state.allowed = true;
+  state.authCalls = 0;
 });
 
 describe("product draft API", () => {
+  it("accepts the real editor snapshot with empty optional dimensions and two size-guide rows", async () => {
+    const draft = makeDraft("Slide real", "2026-09-20T12:00:00.000Z");
+    expect(newProductDraftSchema.safeParse(draft).success).toBe(true);
+    expect(draft.fields).not.toHaveProperty("productKind");
+    expect(draft.fields).not.toHaveProperty("futureEditorControl");
+    const response = await PUT(request("PUT", draft));
+    expect(response.status).toBe(200);
+    expect(state.rows.get(state.userId)?.payload).toMatchObject({
+      fields: { weightGrams: "", heightCm: "", widthCm: "", lengthCm: "40" },
+      sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }]
+    });
+  });
+
+  it("rejects an invalid payload before authentication or rate-limit work", async () => {
+    const response = await PUT(request("PUT", { schemaVersion: 1, userId: state.userId }));
+    expect(response.status).toBe(400);
+    expect(state.authCalls).toBe(0);
+  });
+
   it("returns an empty private response when the account has no draft", async () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
@@ -118,8 +173,8 @@ describe("product draft API", () => {
     expect(await response.json()).toMatchObject({ draft: {
       fields: { name: "Terceiro" },
       categoryIds: ["20000000-0000-4000-8000-000000000001"],
-      variants: [{ size: "39", stock: 2 }],
-      sizeGuide: [{ measurementCm: 27 }],
+      variants: [{ size: "39", stock: 2 }, { size: "40", stock: 2 }],
+      sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }],
       specifications: [{ label: "Material", value: "Borracha" }]
     } });
   });

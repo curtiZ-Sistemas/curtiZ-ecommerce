@@ -28,10 +28,16 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
         size: "34", active: true, available: 2, reserved: 0, sellable: 2 }], sizeGuide: [], specifications: [] };
     const saves = [];
     let productDraft = null;
+    let holdNextDraftPut = false;
+    let releaseDraftPut = null;
+    let nextDraftPutStatus = 0;
+    let draftPutCount = 0;
+    let failNextProductSave = false;
+    let failedSaves = 0;
     const route = async (requestRoute) => {
       const request = requestRoute.request();
       const path = new URL(request.url()).pathname;
-      const json = (body) => requestRoute.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+      const json = (body, status = 200) => requestRoute.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
       if (path === "/" || path === "/hero") return requestRoute.fulfill({ contentType: "text/html",
         body: '<html><head><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script src="/app.js"></script></body></html>' });
       if (path === "/app.js") return requestRoute.fulfill({ contentType: "text/javascript", body: built.outputFiles[0].text });
@@ -39,12 +45,27 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
       if (path === "/api/catalog/product-draft") {
         if (request.method() === "GET") return json({ ok: true, draft: productDraft });
         if (request.method() === "DELETE") { productDraft = null; return json({ ok: true }); }
+        draftPutCount++;
         const candidate = request.postDataJSON();
+        if (holdNextDraftPut) {
+          holdNextDraftPut = false;
+          await new Promise((resolve) => { releaseDraftPut = resolve; });
+        }
+        if (nextDraftPutStatus) {
+          const status = nextDraftPutStatus;
+          nextDraftPutStatus = 0;
+          return json({ message: "Draft sync test failure" }, status);
+        }
         if (!productDraft || Date.parse(candidate.savedAt) >= Date.parse(productDraft.savedAt)) productDraft = candidate;
         return json({ ok: true, savedAt: productDraft.savedAt });
       }
       if (path === "/api/catalog/products" && request.method() === "PATCH") {
         const payload = request.postDataJSON();
+        if (failNextProductSave) {
+          failNextProductSave = false;
+          failedSaves++;
+          return json({ message: "Não foi possível salvar o produto agora.", requestId: "12345678-1234-4234-8234-123456789012" }, 503);
+        }
         saves.push(payload);
         product = { ...product, name: payload.name, slug: payload.slug || product.slug,
           description: payload.description, sizeGuide: payload.sizeGuide, specifications: payload.specifications };
@@ -184,6 +205,55 @@ const esbuild = createRequire(require.resolve("tsx"))("esbuild");
     await dialog.getByText("Encontramos um cadastro não concluído.").waitFor();
     await dialog.getByRole("button", { name: "Descartar rascunho" }).click();
     assert.equal(productDraft, null, "Discard removes the server draft");
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+
+    await page.getByRole("button", { name: "Cadastrar produto" }).first().click();
+    dialog = page.getByRole("dialog");
+    holdNextDraftPut = true;
+    await dialog.locator('input[name="name"]').fill("Primeiro autosave");
+    for (let attempt = 0; attempt < 20 && !releaseDraftPut; attempt++) await page.waitForTimeout(100);
+    assert(releaseDraftPut, "First autosave starts and is held in flight");
+    await dialog.locator('input[name="name"]').fill("Último autosave");
+    await page.waitForTimeout(1150);
+    releaseDraftPut();
+    for (let attempt = 0; attempt < 20 && productDraft?.fields?.name !== "Último autosave"; attempt++) await page.waitForTimeout(100);
+    assert.equal(productDraft?.fields?.name, "Último autosave", "Rapid autosaves keep only the latest snapshot");
+    const putsBeforeInvalidSnapshot = draftPutCount;
+    nextDraftPutStatus = 400;
+    await dialog.locator('input[name="name"]').fill("Snapshot rejeitado");
+    for (let attempt = 0; attempt < 20 && draftPutCount === putsBeforeInvalidSnapshot; attempt++) await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("online"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.waitForTimeout(300);
+    assert.equal(draftPutCount, putsBeforeInvalidSnapshot + 1, "A rejected snapshot is not retried in a loop");
+    const localRejectedDraft = await page.evaluate(() => JSON.parse(localStorage.getItem("curtiz:product-draft:v1:isolated-admin")));
+    assert.equal(localRejectedDraft.fields.name, "Snapshot rejeitado", "A 400 response preserves the local fallback");
+    nextDraftPutStatus = 503;
+    await dialog.locator('input[name="name"]').fill("Snapshot aguardando rede");
+    const putsBeforeRetry = draftPutCount;
+    for (let attempt = 0; attempt < 20 && draftPutCount === putsBeforeRetry; attempt++) await page.waitForTimeout(100);
+    const localUnavailableDraft = await page.evaluate(() => JSON.parse(localStorage.getItem("curtiz:product-draft:v1:isolated-admin")));
+    assert.equal(localUnavailableDraft.fields.name, "Snapshot aguardando rede", "A 503 response preserves the local fallback");
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    for (let attempt = 0; attempt < 20 && productDraft?.fields?.name !== "Snapshot aguardando rede"; attempt++) await page.waitForTimeout(100);
+    assert.equal(productDraft?.fields?.name, "Snapshot aguardando rede", "A transient failure retries the newest snapshot later");
+    failNextProductSave = true;
+    await dialog.locator('input[name="price"]').fill("50");
+    await dialog.getByRole("button", { name: "Salvar produto" }).click();
+    await dialog.getByText(/Referência: 12345678-1234-4234-8234-123456789012/).waitFor({ timeout: 5000 }).catch(async () => {
+      throw new Error(`Expected save failure reference; failedSaves=${failedSaves}; dialog=${(await dialog.innerText()).slice(-1000)}`);
+    });
+    assert.equal(productDraft?.fields?.name, "Snapshot aguardando rede", "Failed product save keeps the draft");
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await page.getByRole("button", { name: "Salvar rascunho e fechar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Cadastrar produto" }).first().click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByText("Encontramos um cadastro não concluído.").waitFor();
+    await dialog.getByRole("button", { name: "Descartar rascunho" }).click();
     await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
     await dialog.waitFor({ state: "hidden" });
 
