@@ -30,6 +30,7 @@ import Image from "next/image";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ColorSwatch } from "@/components/color-swatch";
 import { PanelDrawer } from "@/components/panel-drawer";
+import { ProductImportDrawer } from "@/components/product-import-drawer";
 import {
   buildNewProductDraft,
   isProductDraftStoredLocally,
@@ -372,6 +373,7 @@ export function ProductManagement({
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<"archive" | "restore" | "delete" | null>(null);
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
   const [draftOffer, setDraftOffer] = useState<NewProductDraft | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -933,6 +935,7 @@ export function ProductManagement({
   const canCreateProduct = view === "produtos" && catalogMode === "current" && capabilities.create;
   const canUpdateProduct = capabilities.update;
   const canAdjustStock = capabilities.adjustStock;
+  const canImportProducts = canCreateProduct && canUpdateProduct && canAdjustStock;
   const groupedEditableVariants = useMemo(
     () => groupEditableVariantsByColor(editableVariants),
     [editableVariants]
@@ -1644,9 +1647,14 @@ export function ProductManagement({
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
-              <Plus /> Cadastrar produto
-            </button>
+            <>
+              {canImportProducts ? <button className="secondary-button" type="button" onClick={() => setImportOpen(true)}>
+                <Upload /> Importar produtos
+              </button> : null}
+              <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
+                <Plus /> Cadastrar produto
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -3398,6 +3406,8 @@ export function ProductManagement({
           </div>}
         </PanelDrawer>
       )}
+
+      <ProductImportDrawer open={importOpen} onClose={() => setImportOpen(false)} onImported={load} />
 
       {mediaDeleteTarget && (
         <div className="admin-modal-backdrop" role="presentation">
