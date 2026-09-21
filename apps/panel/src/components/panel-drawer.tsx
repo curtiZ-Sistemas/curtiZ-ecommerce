@@ -2,14 +2,17 @@
 
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
-export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false, size = "medium", onClose, closeConfirmation, children }: {
+type DrawerStyle = CSSProperties & { "--panel-drawer-width"?: string };
+
+export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false, resizable = false, size = "medium", onClose, closeConfirmation, children }: {
   open: boolean;
   title: string;
   eyebrow?: string;
   dirty?: boolean;
   busy?: boolean;
+  resizable?: boolean;
   size?: "small" | "medium" | "large";
   onClose: () => void;
   closeConfirmation?: {
@@ -23,7 +26,9 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
   const drawerRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [drawerWidth, setDrawerWidth] = useState<number | null>(null);
   const requestClose = useCallback(() => {
     if (busy) return;
     if (dirty) setConfirmDiscard(true);
@@ -53,7 +58,37 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
   }, [confirmDiscard]);
 
   useEffect(() => { if (!open) setConfirmDiscard(false); }, [open]);
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
   if (!open) return null;
+
+  const boundedWidth = (width: number) => Math.min(Math.max(width, 520), Math.max(520, window.innerWidth - 24));
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizable || window.innerWidth <= 820 || !drawerRef.current) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = drawerRef.current.getBoundingClientRect().width;
+    resizeCleanupRef.current?.();
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    const move = (moveEvent: PointerEvent) => setDrawerWidth(boundedWidth(startWidth + startX - moveEvent.clientX));
+    const finish = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", finish);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      resizeCleanupRef.current = null;
+    };
+    resizeCleanupRef.current = finish;
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", finish, { once: true });
+  };
+  const resizeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!resizable || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const current = drawerRef.current?.getBoundingClientRect().width ?? 760;
+    setDrawerWidth(boundedWidth(current + (event.key === "ArrowLeft" ? 48 : -48)));
+  };
+  const drawerStyle: DrawerStyle | undefined = drawerWidth === null ? undefined : { "--panel-drawer-width": `${drawerWidth}px` };
 
   const trapFocus = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab") return;
@@ -69,7 +104,8 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
   return createPortal(
     <div className="panel-drawer-layer">
       <button className="panel-drawer-backdrop" type="button" onClick={requestClose} disabled={busy} tabIndex={-1} aria-label="Fechar painel lateral" />
-      <aside className={`panel-drawer panel-drawer-${size}`} ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby="panel-drawer-title" onKeyDown={trapFocus}>
+      <aside className={`panel-drawer panel-drawer-${size}${resizable ? " panel-drawer-resizable" : ""}`} style={drawerStyle} ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby="panel-drawer-title" onKeyDown={trapFocus}>
+        {resizable ? <div className="panel-drawer-resize-handle" role="separator" aria-label="Redimensionar painel lateral" aria-orientation="vertical" tabIndex={0} onPointerDown={beginResize} onKeyDown={resizeWithKeyboard} /> : null}
         <header className="panel-drawer-header"><div>{eyebrow ? <span>{eyebrow}</span> : null}<h2 id="panel-drawer-title">{title}</h2></div><button ref={closeRef} type="button" onClick={requestClose} disabled={busy} aria-label="Fechar"><X aria-hidden="true" /></button></header>
         <div className="panel-drawer-content">{typeof children === "function" ? children({ requestClose }) : children}</div>
         {confirmDiscard ? <div className="panel-drawer-confirm" role="alertdialog" aria-modal="true" aria-labelledby="discard-title"><div><h3 id="discard-title">{closeConfirmation?.title ?? "Descartar alterações?"}</h3><p>{closeConfirmation?.description ?? "As informações ainda não salvas serão perdidas."}</p><footer><button className="secondary-button" type="button" onClick={() => setConfirmDiscard(false)} disabled={busy}>Continuar editando</button><button className={closeConfirmation?.confirmClassName ?? "danger-button"} type="button" onClick={onClose} disabled={busy}>{closeConfirmation?.confirmLabel ?? "Descartar"}</button></footer></div></div> : null}

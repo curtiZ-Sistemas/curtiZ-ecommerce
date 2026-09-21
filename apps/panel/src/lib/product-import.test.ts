@@ -11,7 +11,7 @@ import {
   parseProductImportWorkbook,
   productImportPreview
 } from "./product-import";
-import { runProductImportQueue } from "./product-import-client";
+import { runProductImportBatches, runProductImportQueue } from "./product-import-client";
 
 const fixture = readFileSync("../../docs/import/curtiz_importacao_produtos_shopee.xlsx");
 
@@ -97,5 +97,36 @@ describe("product XLSX import", () => {
     });
     expect(called).toEqual(["one", "two", "three"]);
     expect(results.map((result) => result.ok)).toEqual([true, false, true]);
+  });
+
+  it("continues image batches and keeps the state from the first product request", async () => {
+    const offsets: number[] = [];
+    const result = await runProductImportBatches("PROD-1", async (imageOffset) => {
+      offsets.push(imageOffset);
+      if (imageOffset < 4) return {
+        productKey: "PROD-1", ok: true, alreadyImported: imageOffset > 0,
+        warnings: ["Aviso repetido"], message: "continuando", hasMore: true,
+        nextImageOffset: imageOffset + 2
+      };
+      return {
+        productKey: "PROD-1", ok: true, alreadyImported: true,
+        warnings: ["Aviso repetido"], message: "concluído", hasMore: false
+      };
+    }, 0);
+
+    expect(offsets).toEqual([0, 2, 4]);
+    expect(result).toMatchObject({ ok: true, alreadyImported: false, warnings: ["Aviso repetido"] });
+  });
+
+  it("retries a transient worker failure without duplicating the product", async () => {
+    let attempts = 0;
+    const result = await runProductImportBatches("PROD-1", async () => {
+      attempts += 1;
+      if (attempts < 3) return { productKey: "PROD-1", ok: false, retryable: true, message: "HTTP 503" };
+      return { productKey: "PROD-1", ok: true, alreadyImported: true, message: "concluído", hasMore: false };
+    }, 0, 0);
+
+    expect(attempts).toBe(3);
+    expect(result).toMatchObject({ ok: true, alreadyImported: true });
   });
 });

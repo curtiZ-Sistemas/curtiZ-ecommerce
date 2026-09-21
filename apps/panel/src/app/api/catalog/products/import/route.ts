@@ -10,6 +10,7 @@ import { PRODUCT_IMPORT_MAX_BYTES, isAllowedShopeeImageUrl, parseProductImportWo
 export const runtime = "nodejs";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_BATCH_SIZE = 1;
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const normalized = (value: unknown) => text(value).normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("pt-BR");
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -73,7 +74,9 @@ export async function POST(request: NextRequest) {
   if (form instanceof Response) return form;
   const file = form?.get("file");
   const productKey = text(form?.get("productKey")).trim();
-  if (!(file instanceof File) || !file.name.toLocaleLowerCase("pt-BR").endsWith(".xlsx") || file.size < 1 || file.size > PRODUCT_IMPORT_MAX_BYTES || !productKey) {
+  const imageOffsetText = text(form?.get("imageOffset")).trim() || "0";
+  const imageOffset = /^\d{1,4}$/u.test(imageOffsetText) ? Number(imageOffsetText) : -1;
+  if (!(file instanceof File) || !file.name.toLocaleLowerCase("pt-BR").endsWith(".xlsx") || file.size < 1 || file.size > PRODUCT_IMPORT_MAX_BYTES || !productKey || imageOffset < 0) {
     return NextResponse.json({ message: "Arquivo ou produto de importação inválido." }, { status: 400, headers: privateNoStore });
   }
   try {
@@ -85,53 +88,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: product.issues.find((issue) => issue.level === "error")?.message ?? "Produto inválido." }, { status: 409, headers: privateNoStore });
     }
 
-    const [categories, models, collections] = await Promise.all([
-      auth.supabase.from("categories").select("id,name"),
-      auth.supabase.from("product_models").select("id,name"),
-      auth.supabase.from("collections").select("id,name")
-    ]);
-    if (categories.error || models.error || collections.error) throw new Error("CATALOG_REFERENCE_LOOKUP_FAILED");
-    const category = objectRows(categories.data).find((item) => normalized(item.name) === normalized(product.categoryName));
-    const model = product.modelName ? objectRows(models.data).find((item) => normalized(item.name) === normalized(product.modelName)) : null;
-    const collection = product.collectionName ? objectRows(collections.data).find((item) => normalized(item.name) === normalized(product.collectionName)) : null;
-    if (!category) return NextResponse.json({ message: `Categoria não encontrada: ${product.categoryName}.` }, { status: 409, headers: privateNoStore });
-    if (product.modelName && !model) return NextResponse.json({ message: `Modelo não encontrado: ${product.modelName}.` }, { status: 409, headers: privateNoStore });
-    if (product.collectionName && !collection) return NextResponse.json({ message: `Coleção não encontrada: ${product.collectionName}.` }, { status: 409, headers: privateNoStore });
-    const categoryId = text(category.id);
-    const seo = automaticProductSeo({ name: product.name, description: product.description, categoryName: product.categoryName });
-    const payload = {
-      name: product.name, slug: product.slug, shortDescription: product.shortDescription,
-      description: product.description, categoryId, categoryIds: [categoryId],
-      modelId: model ? text(model.id) : null, collectionId: collection ? text(collection.id) : null,
-      status: "draft", featured: product.featured, priceInCents: product.priceInCents,
-      compareAtPriceInCents: product.compareAtPriceInCents, costInCents: product.costInCents,
-      weightGrams: product.weightGrams, heightCm: product.heightCm, widthCm: product.widthCm,
-      lengthCm: product.lengthCm, seoTitle: seo.title, seoDescription: seo.description,
-      merchantCondition: product.merchantCondition, merchantGender: product.merchantGender,
-      merchantAgeGroup: product.merchantAgeGroup, googleProductCategory: product.googleProductCategory,
-      merchantIdentifierExists: product.merchantIdentifierExists,
-      stockReason: "Estoque definido pela importação de produtos",
-      variants: product.variants.map((variant) => ({
-        sku: variant.sku, color: variant.color, colorHex: variant.colorHex,
-        colorHexSecondary: variant.colorHexSecondary, size: variant.size,
-        priceInCents: variant.priceInCents, costInCents: variant.costInCents,
-        stock: variant.stock, active: variant.active, gtin: variant.gtin, mpn: variant.mpn
-      })),
-      sizeGuide: product.sizeGuide,
-      specifications: product.specifications
-    };
-    const batchHash = createHash("sha256").update(bytes).digest("hex");
     const externalKey = product.shopeeId || product.key;
-    const saved = await auth.supabase.rpc("admin_import_product_authorized", {
-      p_source: product.source.toLocaleLowerCase("pt-BR"), p_external_key: externalKey,
-      p_batch_hash: batchHash, p_payload: payload
-    });
-    const savedData = record(saved.data);
-    const productId = text(savedData.productId);
-    const alreadyImported = savedData.alreadyImported === true;
-    if (saved.error || !productId) {
-      logServerEvent("error", "panel_product_import_save_failed", { requestId, code: saved.error?.code ?? "INVALID_RESULT", productKey: product.key });
-      return NextResponse.json({ message: "Não foi possível cadastrar este produto.", requestId }, { status: 503, headers: privateNoStore });
+    const source = product.source.toLocaleLowerCase("pt-BR");
+    let productId = "";
+    let alreadyImported = imageOffset > 0;
+    if (imageOffset > 0) {
+      const imported = await auth.supabase.from("product_import_sources").select("product_id")
+        .eq("source", source).eq("external_key", externalKey).maybeSingle();
+      productId = text(imported.data?.product_id);
+      if (imported.error || !productId) {
+        logServerEvent("error", "panel_product_import_resume_failed", { requestId, code: imported.error?.code ?? "SOURCE_NOT_FOUND", productKey: product.key });
+        return NextResponse.json({ message: "Não foi possível retomar as imagens deste produto. Tente importar a planilha novamente.", requestId }, { status: imported.error ? 503 : 409, headers: privateNoStore });
+      }
+    } else {
+      const [categories, models, collections] = await Promise.all([
+        auth.supabase.from("categories").select("id,name"),
+        auth.supabase.from("product_models").select("id,name"),
+        auth.supabase.from("collections").select("id,name")
+      ]);
+      if (categories.error || models.error || collections.error) throw new Error("CATALOG_REFERENCE_LOOKUP_FAILED");
+      const category = objectRows(categories.data).find((item) => normalized(item.name) === normalized(product.categoryName));
+      const model = product.modelName ? objectRows(models.data).find((item) => normalized(item.name) === normalized(product.modelName)) : null;
+      const collection = product.collectionName ? objectRows(collections.data).find((item) => normalized(item.name) === normalized(product.collectionName)) : null;
+      if (!category) return NextResponse.json({ message: `Categoria não encontrada: ${product.categoryName}.` }, { status: 409, headers: privateNoStore });
+      if (product.modelName && !model) return NextResponse.json({ message: `Modelo não encontrado: ${product.modelName}.` }, { status: 409, headers: privateNoStore });
+      if (product.collectionName && !collection) return NextResponse.json({ message: `Coleção não encontrada: ${product.collectionName}.` }, { status: 409, headers: privateNoStore });
+      const categoryId = text(category.id);
+      const seo = automaticProductSeo({ name: product.name, description: product.description, categoryName: product.categoryName });
+      const payload = {
+        name: product.name, slug: product.slug, shortDescription: product.shortDescription,
+        description: product.description, categoryId, categoryIds: [categoryId],
+        modelId: model ? text(model.id) : null, collectionId: collection ? text(collection.id) : null,
+        status: "draft", featured: product.featured, priceInCents: product.priceInCents,
+        compareAtPriceInCents: product.compareAtPriceInCents, costInCents: product.costInCents,
+        weightGrams: product.weightGrams, heightCm: product.heightCm, widthCm: product.widthCm,
+        lengthCm: product.lengthCm, seoTitle: seo.title, seoDescription: seo.description,
+        merchantCondition: product.merchantCondition, merchantGender: product.merchantGender,
+        merchantAgeGroup: product.merchantAgeGroup, googleProductCategory: product.googleProductCategory,
+        merchantIdentifierExists: product.merchantIdentifierExists,
+        stockReason: "Estoque definido pela importação de produtos",
+        variants: product.variants.map((variant) => ({
+          sku: variant.sku, color: variant.color, colorHex: variant.colorHex,
+          colorHexSecondary: variant.colorHexSecondary, size: variant.size,
+          priceInCents: variant.priceInCents, costInCents: variant.costInCents,
+          stock: variant.stock, active: variant.active, gtin: variant.gtin, mpn: variant.mpn
+        })),
+        sizeGuide: product.sizeGuide,
+        specifications: product.specifications
+      };
+      const saved = await auth.supabase.rpc("admin_import_product_authorized", {
+        p_source: source, p_external_key: externalKey,
+        p_batch_hash: createHash("sha256").update(bytes).digest("hex"), p_payload: payload
+      });
+      const savedData = record(saved.data);
+      productId = text(savedData.productId);
+      alreadyImported = savedData.alreadyImported === true;
+      if (saved.error || !productId) {
+        logServerEvent("error", "panel_product_import_save_failed", { requestId, code: saved.error?.code ?? "INVALID_RESULT", productKey: product.key });
+        const code = saved.error?.code ?? "";
+        const conflict = code === "23505";
+        const permissionDenied = code === "42501";
+        const schemaUnavailable = ["42883", "PGRST202"].includes(code);
+        const invalidData = ["22023", "22P02", "23514"].includes(code);
+        const message = conflict
+          ? "Já existe um produto, slug ou SKU igual no catálogo."
+          : permissionDenied
+            ? "Seu acesso não permite concluir esta importação."
+            : schemaUnavailable
+              ? "A migration do importador ainda não está disponível no banco."
+              : invalidData
+                ? "Os dados deste produto não atendem às regras do catálogo."
+                : "Não foi possível cadastrar este produto.";
+        return NextResponse.json({ message, requestId }, { status: permissionDenied ? 403 : conflict || invalidData ? 409 : 503, headers: privateNoStore });
+      }
     }
 
     const variantResult = await auth.supabase.from("product_variants").select("id,color_name").eq("product_id", productId);
@@ -145,14 +174,17 @@ export async function POST(request: NextRequest) {
       const identity = `${image.url}\u0000${image.color}\u0000${image.order}\u0000${index}`;
       return `products/${auth.userId}/${productId}/imports/${createHash("sha256").update(identity).digest("hex")}.webp`;
     });
-    const existingResult = paths.length
-      ? await auth.supabase.from("product_images").select("storage_path").in("storage_path", paths)
+    const imageBatch = product.images.slice(imageOffset, imageOffset + IMAGE_BATCH_SIZE);
+    const batchPaths = paths.slice(imageOffset, imageOffset + IMAGE_BATCH_SIZE);
+    const existingResult = batchPaths.length
+      ? await auth.supabase.from("product_images").select("storage_path").in("storage_path", batchPaths)
       : { data: [], error: null };
     const existingPaths = new Set(objectRows(existingResult.data).map((item) => text(item.storage_path)));
     const warnings = product.issues.filter((issue) => issue.level === "warning").map((issue) => issue.message);
     let importedImages = 0;
     const hasExplicitPrimary = product.images.some((image) => image.primary);
-    for (const [index, image] of product.images.entries()) {
+    for (const [batchIndex, image] of imageBatch.entries()) {
+      const index = imageOffset + batchIndex;
       const path = paths[index]!;
       if (existingPaths.has(path)) { importedImages += 1; continue; }
       try {
@@ -196,10 +228,15 @@ export async function POST(request: NextRequest) {
         logServerEvent("warn", "panel_product_import_image_failed", { requestId, productKey: product.key, imageIndex: index + 1 });
       }
     }
+    const nextImageOffset = Math.min(imageOffset + imageBatch.length, product.images.length);
+    const hasMore = nextImageOffset < product.images.length;
     return NextResponse.json({
       ok: true, productId, productKey: product.key, alreadyImported,
       importedImages, expectedImages: product.images.length, warnings,
-      message: alreadyImported ? "Produto já importado; imagens pendentes foram reconciliadas." : warnings.length ? "Produto importado com avisos." : "Produto importado."
+      nextImageOffset, hasMore,
+      message: hasMore ? "Produto salvo; continuando o envio das imagens."
+        : alreadyImported ? "Produto já importado; imagens pendentes foram reconciliadas."
+          : warnings.length ? "Produto importado com avisos." : "Produto importado."
     }, { headers: privateNoStore });
   } catch (error) {
     logServerEvent("error", "panel_product_import_failed", { requestId, code: error instanceof Error ? error.message.slice(0, 80) : "unknown" });

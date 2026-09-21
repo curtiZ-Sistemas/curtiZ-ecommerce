@@ -79,6 +79,20 @@ type CatalogResponse = {
   colorOptions?: ProductColorOption[];
 };
 
+async function readCatalogResponse(response: Response): Promise<CatalogResponse> {
+  const body = await response.text();
+  try {
+    const value: unknown = JSON.parse(body);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {
+      message: response.ok
+        ? "O catálogo retornou uma resposta inválida."
+        : `O serviço do catálogo está temporariamente indisponível (HTTP ${response.status}).`
+    };
+  }
+}
+
 type ProductDraftResponse = {
   ok?: boolean;
   draft?: unknown;
@@ -619,7 +633,7 @@ export function ProductManagement({
       params.set("status", catalogMode === "archived" ? "archived" : status || "current");
       if (filter === "out") params.set("stock", "out");
       const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       setCapabilities({
         create: result.capabilities?.create === true,
         update: result.capabilities?.update === true,
@@ -967,7 +981,7 @@ export function ProductManagement({
   const readProduct = async (productId: string) => {
     const params = new URLSearchParams({ productId });
     const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
-    const result = (await response.json()) as CatalogResponse;
+    const result = await readCatalogResponse(response);
     const selected = result.products?.[0];
     if (!response.ok || !isManagedProduct(selected)) {
       throw new Error(result.message ?? "Produto não encontrado.");
@@ -1013,7 +1027,7 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       const requestReference = result.requestId ? ` Referência: ${result.requestId}.` : "";
       setMessage(`${result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou.")}${requestReference}`);
       if (response.ok) {
@@ -1180,7 +1194,7 @@ export function ProductManagement({
             imageId: resolvedImageId || null
           })
         });
-        const association = (await response.json()) as CatalogResponse;
+        const association = await readCatalogResponse(response);
         if (!response.ok)
           throw new Error(association.message ?? "Falha ao associar a imagem à cor.");
       }
@@ -1403,7 +1417,7 @@ export function ProductManagement({
       form.set("alt", product.name);
       form.set("primary", String((product.images?.length ?? 0) === 0 && index === 0));
       const response = await fetch("/api/catalog/products/media", { method: "POST", body: form });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       if (!response.ok) throw new Error(result.message ?? "Falha no upload.");
       uploaded += 1;
       onUploaded?.(file);
@@ -1527,7 +1541,7 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ productId: deleteTarget.id })
       });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       if (response.ok) {
         setDeleteTarget(null);
         await load();
@@ -1556,7 +1570,7 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ imageId })
       });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       setMessage(result.message ?? (response.ok ? "Imagem removida." : "Falha ao remover imagem."));
       if (response.ok) {
         await load();
@@ -1580,7 +1594,7 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       setMessage(
         result.message ?? (response.ok ? "Mídia atualizada." : "Falha ao atualizar mídia.")
       );
@@ -1617,7 +1631,7 @@ export function ProductManagement({
               ? { action: "status", productId: product.id, status: "draft", reason: "Restauração em lote no painel de produtos" }
               : { action: "archive", productId: product.id, reason: "Arquivamento em lote no painel de produtos" })
         });
-        const result = (await response.json()) as CatalogResponse;
+        const result = await readCatalogResponse(response);
         if (!response.ok) throw new Error(result.message);
         completed += 1;
       }
