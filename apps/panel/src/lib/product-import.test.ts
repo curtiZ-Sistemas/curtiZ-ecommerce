@@ -13,6 +13,7 @@ import {
   productImportPreview
 } from "./product-import";
 import { runProductImportBatches, runProductImportQueue } from "./product-import-client";
+import { normalizeProductImportImageUrl, prepareProductImportImages } from "./product-import-images";
 
 const fixture = readFileSync("../../docs/import/curtiz_importacao_produtos_shopee.xlsx");
 
@@ -89,6 +90,20 @@ describe("product XLSX import", () => {
     expect(isAllowedShopeeImageUrl("https://down-sg.img.susercontent.com.evil.test/image.jpg")).toBe(false);
   });
 
+  it("deduplicates normalized image URLs and safely merges their metadata", () => {
+    const first = "https://down-sg.img.susercontent.com/file/example?b=2&a=1#ignored";
+    const second = "https://down-sg.img.susercontent.com/file/example?a=1&b=2";
+    const prepared = prepareProductImportImages([
+      { url: first, color: "Lilás", order: 4, primary: false, applyAllSizes: true },
+      { url: second, color: "Rosa", order: 1, primary: true, applyAllSizes: true }
+    ]);
+
+    expect(normalizeProductImportImageUrl(first)).toBe(second);
+    expect(prepared.images).toHaveLength(1);
+    expect(prepared.images[0]).toMatchObject({ color: "", order: 1, primary: true, applyAllSizes: false });
+    expect(prepared.warnings).toHaveLength(1);
+  });
+
   it("accepts only bounded normalized payloads in an import session", async () => {
     const batch = await parseProductImportWorkbook(await minimalWorkbook());
     const payload = {
@@ -139,5 +154,16 @@ describe("product XLSX import", () => {
 
     expect(attempts).toBe(3);
     expect(result).toMatchObject({ ok: true, alreadyImported: true });
+  });
+
+  it("does not retry a deterministic server failure", async () => {
+    let attempts = 0;
+    const result = await runProductImportBatches("PROD-1", async () => {
+      attempts += 1;
+      return { productKey: "PROD-1", ok: false, retryable: false, code: "INVALID_PRODUCT_DATA", message: "Dados inválidos" };
+    }, 0, 0);
+
+    expect(attempts).toBe(1);
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PRODUCT_DATA" });
   });
 });

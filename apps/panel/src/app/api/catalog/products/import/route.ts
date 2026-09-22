@@ -5,6 +5,7 @@ import { z } from "zod";
 import { authorizeAdminRequest, objectRows, privateNoStore, safePanelOrigin, unauthorizedAdminResponse } from "@/lib/admin-api";
 import { inspectCatalogImage } from "@/lib/catalog-image";
 import { prepareUploadImage } from "@/lib/image-upload";
+import { prepareProductImportImages } from "@/lib/product-import-images";
 import { automaticProductSeo } from "@/lib/product-management";
 import { isAllowedShopeeImageUrl, parseProductImportSessionPayload } from "@/lib/product-import-session";
 
@@ -22,6 +23,28 @@ const normalized = (value: unknown) => text(value).normalize("NFKC").trim().repl
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const mediaUnavailable = (error: { code?: string; message?: string } | null) =>
   ["42P01", "PGRST200", "PGRST204", "PGRST205"].includes(error?.code ?? "") || (error?.message ?? "").toLowerCase().includes("schema cache");
+type ImportStage = "session" | "save_product" | "source" | "images";
+
+const databaseFailure = (code: string) => {
+  if (code === "42501") return { code: "PERMISSION_DENIED", message: "Seu acesso não permite concluir esta importação.", status: 403, retryable: false };
+  if (code === "23505") return { code: "DUPLICATE_PRODUCT", message: "Já existe um produto, slug ou SKU igual no catálogo.", status: 409, retryable: false };
+  if (code === "23503") return { code: "MISSING_RELATION", message: "Uma categoria, coleção, modelo ou vínculo informado não existe mais.", status: 409, retryable: false };
+  if (["22023", "22P02", "23514"].includes(code)) return { code: "INVALID_PRODUCT_DATA", message: "Os dados deste produto não atendem às regras do catálogo.", status: 409, retryable: false };
+  if (["42883", "PGRST202"].includes(code)) return { code: "IMPORT_SCHEMA_UNAVAILABLE", message: "A migration do importador ainda não está disponível no banco.", status: 503, retryable: false };
+  const retryable = ["53300", "57014", "57P03", "08000", "08001", "08003", "08004", "08006", "PGRST000", "PGRST001", "PGRST002"].includes(code);
+  return { code: retryable ? "IMPORT_TEMPORARILY_UNAVAILABLE" : "IMPORT_INTERNAL_ERROR", message: retryable
+    ? "O serviço de importação está temporariamente indisponível. Tente novamente."
+    : "Não foi possível concluir esta etapa da importação.", status: retryable ? 503 : 500, retryable };
+};
+
+function errorResponse(requestId: string, stage: ImportStage, failure: {
+  code: string; message: string; status: number; retryable: boolean;
+}) {
+  return NextResponse.json({ message: failure.message, requestId, stage, code: failure.code, retryable: failure.retryable }, {
+    status: failure.status,
+    headers: privateNoStore
+  });
+}
 
 async function readLimitedImageBody(response: Response) {
   const declared = Number(response.headers.get("content-length") ?? "0");
@@ -67,64 +90,58 @@ async function downloadShopeeImage(source: string) {
   throw new Error("A imagem excedeu o limite de redirecionamentos.");
 }
 
-function saveFailure(code: string, requestId: string) {
-  const conflict = code === "23505";
-  const permissionDenied = code === "42501";
-  const schemaUnavailable = ["42883", "PGRST202"].includes(code);
-  const invalidData = ["22023", "22P02", "23514"].includes(code);
-  const message = conflict
-    ? "Já existe um produto, slug ou SKU igual no catálogo."
-    : permissionDenied
-      ? "Seu acesso não permite concluir esta importação."
-      : schemaUnavailable
-        ? "A migration do importador ainda não está disponível no banco."
-        : invalidData
-          ? "Os dados deste produto não atendem às regras do catálogo."
-          : "Não foi possível cadastrar este produto.";
-  return NextResponse.json({ message, requestId }, {
-    status: permissionDenied ? 403 : conflict || invalidData ? 409 : 503,
-    headers: privateNoStore
-  });
-}
-
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID();
-  if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
+  if (!safePanelOrigin(request)) return errorResponse(requestId, "session", {
+    code: "ORIGIN_NOT_ALLOWED", message: "Origem não permitida.", status: 403, retryable: false
+  });
   const auth = await authorizeAdminRequest(request);
   if (!auth) return unauthorizedAdminResponse(request);
   const permissions = await Promise.all(["products.create", "products.update", "inventory.adjust"].map((permissionCode) =>
     auth.supabase.rpc("has_permission", { permission_code: permissionCode })
   ));
   if (permissions.some((permission) => permission.error || permission.data !== true)) {
-    return NextResponse.json({ message: "Seu acesso não permite importar produtos." }, { status: 403, headers: privateNoStore });
+    return errorResponse(requestId, "session", {
+      code: "PERMISSION_DENIED", message: "Seu acesso não permite importar produtos.", status: 403, retryable: false
+    });
   }
   const body = await readJsonResponse(request, 8_192);
   if (body instanceof Response) return body;
   const parsedRequest = requestSchema.safeParse(body);
-  if (!parsedRequest.success) return NextResponse.json({ message: "Sessão ou produto de importação inválido." }, { status: 400, headers: privateNoStore });
+  if (!parsedRequest.success) return errorResponse(requestId, "session", {
+    code: "INVALID_IMPORT_REQUEST", message: "Sessão ou produto de importação inválido.", status: 400, retryable: false
+  });
 
   const { sessionId, productKey, imageOffset } = parsedRequest.data;
-  let stage: "source" | "save_product" | "images" = "source";
+  let stage: ImportStage = "session";
   try {
     const session = await auth.supabase.from("product_import_sessions").select("payload,batch_hash")
       .eq("id", sessionId).eq("user_id", auth.userId).gt("expires_at", new Date().toISOString()).maybeSingle();
     if (session.error) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: session.error.code ?? "SESSION_LOOKUP_FAILED", productKey });
-      return NextResponse.json({ message: "Não foi possível acessar a sessão de importação.", requestId }, { status: 503, headers: privateNoStore });
+      return errorResponse(requestId, stage, databaseFailure(session.error.code ?? "SESSION_LOOKUP_FAILED"));
     }
-    if (!session.data) return NextResponse.json({ message: "A sessão de importação expirou. Selecione a planilha novamente.", requestId }, { status: 410, headers: privateNoStore });
+    if (!session.data) return errorResponse(requestId, stage, {
+      code: "SESSION_EXPIRED", message: "A sessão de importação expirou. Selecione a planilha novamente.", status: 410, retryable: false
+    });
 
     let sessionPayload;
     try {
       sessionPayload = parseProductImportSessionPayload(session.data.payload);
     } catch {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: "INVALID_SESSION_PAYLOAD", productKey });
-      return NextResponse.json({ message: "A sessão de importação é inválida. Selecione a planilha novamente.", requestId }, { status: 409, headers: privateNoStore });
+      return errorResponse(requestId, stage, {
+        code: "INVALID_SESSION", message: "A sessão de importação é inválida. Selecione a planilha novamente.", status: 409, retryable: false
+      });
     }
     const product = sessionPayload.batch.products.find((item) => item.key === productKey);
-    if (!product) return NextResponse.json({ message: "Produto não encontrado na sessão." }, { status: 404, headers: privateNoStore });
+    if (!product) return errorResponse(requestId, stage, {
+      code: "PRODUCT_NOT_IN_SESSION", message: "Produto não encontrado na sessão.", status: 404, retryable: false
+    });
     const productError = product.issues.find((issue) => issue.level === "error");
-    if (productError) return NextResponse.json({ message: productError.message }, { status: 409, headers: privateNoStore });
+    if (productError) return errorResponse(requestId, stage, {
+      code: productError.code || "INVALID_PRODUCT_DATA", message: productError.message, status: 409, retryable: false
+    });
     const reference = sessionPayload.references[product.key];
     const externalKey = product.shopeeId || product.key;
     const source = product.source.toLocaleLowerCase("pt-BR");
@@ -132,7 +149,9 @@ export async function POST(request: NextRequest) {
 
     if (imageOffset === -1) {
       stage = "save_product";
-      if (!reference?.categoryId) return NextResponse.json({ message: "A categoria validada do produto não está disponível." }, { status: 409, headers: privateNoStore });
+      if (!reference?.categoryId) return errorResponse(requestId, stage, {
+        code: "MISSING_CATEGORY", message: "A categoria validada do produto não está disponível.", status: 409, retryable: false
+      });
       const seo = automaticProductSeo({ name: product.name, description: product.description, categoryName: product.categoryName });
       const payload = {
         name: product.name, slug: product.slug, shortDescription: product.shortDescription,
@@ -150,7 +169,7 @@ export async function POST(request: NextRequest) {
           sku: variant.sku, color: variant.color, colorHex: variant.colorHex,
           colorHexSecondary: variant.colorHexSecondary, size: variant.size,
           priceInCents: variant.priceInCents, costInCents: variant.costInCents,
-          stock: 0, active: variant.active, gtin: variant.gtin, mpn: variant.mpn
+          stock: variant.stock, active: variant.active, gtin: variant.gtin, mpn: variant.mpn
         })),
         sizeGuide: product.sizeGuide,
         specifications: product.specifications
@@ -163,52 +182,66 @@ export async function POST(request: NextRequest) {
       const productId = text(savedData.productId);
       if (saved.error || !productId) {
         logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: saved.error?.code ?? "INVALID_RESULT", productKey });
-        return saveFailure(saved.error?.code ?? "INVALID_RESULT", requestId);
+        return errorResponse(requestId, stage, databaseFailure(saved.error?.code ?? "INVALID_RESULT"));
       }
       return NextResponse.json({
         ok: true, productId, productKey, alreadyImported: savedData.alreadyImported === true,
-        importedImages: 0, expectedImages: product.images.length, warnings: productWarnings,
+        importedImages: 0, expectedImages: prepareProductImportImages(product.images).images.length, warnings: productWarnings,
         nextImageOffset: 0, hasMore: product.images.length > 0, imageFailures: false,
+        requestId, stage, code: "PRODUCT_SAVED", retryable: false,
         message: product.images.length ? "Produto salvo como rascunho. Iniciando as imagens." : "Produto importado como rascunho."
       }, { headers: privateNoStore });
     }
 
-    if (imageOffset > product.images.length) return NextResponse.json({ message: "Posição de imagem inválida." }, { status: 400, headers: privateNoStore });
+    const preparedImages = prepareProductImportImages(product.images);
+    if (imageOffset > preparedImages.images.length) return errorResponse(requestId, "images", {
+      code: "INVALID_IMAGE_OFFSET", message: "Posição de imagem inválida.", status: 400, retryable: false
+    });
     stage = "source";
     const imported = await auth.supabase.from("product_import_sources").select("product_id")
       .eq("source", source).eq("external_key", externalKey).maybeSingle();
     const productId = text(imported.data?.product_id);
     if (imported.error || !productId) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: imported.error?.code ?? "SOURCE_NOT_FOUND", productKey });
-      return NextResponse.json({ message: "Salve o produto antes de processar suas imagens.", requestId }, { status: imported.error ? 503 : 409, headers: privateNoStore });
+      return errorResponse(requestId, stage, imported.error
+        ? databaseFailure(imported.error.code ?? "SOURCE_LOOKUP_FAILED")
+        : { code: "IMPORT_SOURCE_NOT_FOUND", message: "Salve o produto antes de processar suas imagens.", status: 409, retryable: false });
     }
 
     stage = "images";
     const variantResult = await auth.supabase.from("product_variants").select("id,color_name").eq("product_id", productId);
-    if (variantResult.error) throw new Error("VARIANTS_NOT_AVAILABLE");
+    if (variantResult.error) {
+      logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: variantResult.error.code ?? "VARIANTS_NOT_AVAILABLE", productKey });
+      return errorResponse(requestId, stage, databaseFailure(variantResult.error.code ?? "VARIANTS_NOT_AVAILABLE"));
+    }
     const variantByColor = new Map<string, string>();
     for (const variant of objectRows(variantResult.data)) {
       const key = normalized(variant.color_name);
       if (!variantByColor.has(key)) variantByColor.set(key, text(variant.id));
     }
-    const paths = product.images.map((image, index) => {
-      const identity = `${image.url}\u0000${image.color}\u0000${image.order}\u0000${index}`;
-      return `products/imports/${productId}/${createHash("sha256").update(identity).digest("hex")}.webp`;
+    const paths = preparedImages.images.map((image) => {
+      return `products/imports/${productId}/${createHash("sha256").update(image.normalizedUrl).digest("hex")}.webp`;
     });
-    const imageBatch = product.images.slice(imageOffset, imageOffset + IMAGE_BATCH_SIZE);
+    const imageBatch = preparedImages.images.slice(imageOffset, imageOffset + IMAGE_BATCH_SIZE);
     const batchPaths = paths.slice(imageOffset, imageOffset + IMAGE_BATCH_SIZE);
     const existingResult = batchPaths.length
       ? await auth.supabase.from("product_images").select("storage_path").in("storage_path", batchPaths)
       : { data: [], error: null };
-    if (existingResult.error) throw new Error("IMAGES_LOOKUP_FAILED");
+    if (existingResult.error) {
+      logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: existingResult.error.code ?? "IMAGES_LOOKUP_FAILED", productKey });
+      return errorResponse(requestId, stage, databaseFailure(existingResult.error.code ?? "IMAGES_LOOKUP_FAILED"));
+    }
     const existingPaths = new Set(objectRows(existingResult.data).map((item) => text(item.storage_path)));
-    const warnings = [...productWarnings];
+    const processedPaths = new Set<string>();
+    const warnings = [...productWarnings, ...preparedImages.warnings];
     let importedImages = 0;
     let imageFailures = false;
     const hasExplicitPrimary = product.images.some((image) => image.primary);
     for (const [batchIndex, image] of imageBatch.entries()) {
       const index = imageOffset + batchIndex;
       const path = paths[index]!;
+      if (processedPaths.has(path)) continue;
+      processedPaths.add(path);
       if (existingPaths.has(path)) { importedImages += 1; continue; }
       try {
         const downloaded = await downloadShopeeImage(image.url);
@@ -225,7 +258,7 @@ export async function POST(request: NextRequest) {
             auth.supabase.from("product_media").update({ is_primary: false }).eq("product_id", productId)
           ]);
         }
-        const variantId = image.color && image.applyAllSizes ? variantByColor.get(normalized(image.color)) ?? null : null;
+        const variantId = image.color ? variantByColor.get(normalized(image.color)) ?? null : null;
         const inserted = await auth.supabase.from("product_images").insert({
           product_id: productId, variant_id: variantId, storage_path: path,
           alt_text: image.color ? `${product.name} - ${image.color}` : product.name,
@@ -249,20 +282,24 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         imageFailures = true;
         warnings.push(`Imagem ${index + 1}: ${error instanceof Error ? error.message : "falhou"}`);
-        logServerEvent("warn", "panel_product_import_image_failed", { requestId, stage, productKey, imageIndex: index + 1 });
+        logServerEvent("warn", "panel_product_import_image_failed", {
+          requestId, stage, productKey, imageIndex: index + 1,
+          code: error instanceof Error ? error.message.slice(0, 80) : "IMAGE_FAILED"
+        });
       }
     }
-    const nextImageOffset = Math.min(imageOffset + imageBatch.length, product.images.length);
-    const hasMore = nextImageOffset < product.images.length;
+    const nextImageOffset = Math.min(imageOffset + imageBatch.length, preparedImages.images.length);
+    const hasMore = nextImageOffset < preparedImages.images.length;
     return NextResponse.json({
       ok: true, productId, productKey, alreadyImported: true,
-      importedImages, expectedImages: product.images.length, warnings,
+      importedImages, expectedImages: preparedImages.images.length, warnings,
       nextImageOffset, hasMore, imageFailures,
+      requestId, stage, code: imageFailures ? "IMAGE_PARTIAL_FAILURE" : "IMAGES_PROCESSED", retryable: imageFailures,
       message: hasMore ? "Continuando o envio das imagens."
         : imageFailures ? "Produto salvo como rascunho, mas algumas imagens falharam." : "Produto e imagens importados."
     }, { headers: privateNoStore });
   } catch (error) {
     logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: error instanceof Error ? error.message.slice(0, 80) : "unknown", productKey });
-    return NextResponse.json({ message: "Não foi possível concluir esta etapa da importação.", requestId }, { status: 500, headers: privateNoStore });
+    return errorResponse(requestId, stage, databaseFailure(error instanceof Error ? error.message : "UNKNOWN"));
   }
 }

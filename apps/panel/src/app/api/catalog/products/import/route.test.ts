@@ -29,6 +29,7 @@ vi.mock("@/lib/product-import-session", () => ({
   isAllowedShopeeImageUrl: vi.fn(() => true),
   parseProductImportSessionPayload: mocks.parseSession
 }));
+vi.mock("@/lib/product-import-images", async () => await import("../../../../../lib/product-import-images"));
 vi.mock("@/lib/catalog-image", () => ({ inspectCatalogImage: vi.fn() }));
 vi.mock("@/lib/image-upload", () => ({ prepareUploadImage: vi.fn() }));
 vi.mock("@/lib/product-management", () => ({ automaticProductSeo: vi.fn(() => ({ title: "Produto", description: "Produto" })) }));
@@ -94,8 +95,26 @@ describe("product import session API", () => {
     const importCalls = mocks.rpc.mock.calls as Array<[string, { p_payload?: { status?: unknown; variants?: Array<{ stock?: unknown }> } }]>;
     const importCall = importCalls.find(([name]) => name === "admin_import_product_authorized");
     expect(importCall?.[1].p_payload?.status).toBe("draft");
-    expect(importCall?.[1].p_payload?.variants?.[0]?.stock).toBe(0);
+    expect(importCall?.[1].p_payload?.variants?.[0]?.stock).toBe(10);
     expect(mocks.from).not.toHaveBeenCalledWith("product_variants");
+  });
+
+  it("returns safe non-retryable database diagnostics", async () => {
+    sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
+    mocks.parseSession.mockReturnValue({
+      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, issues: [] },
+      references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
+    });
+    mocks.rpc.mockImplementation(async (name: string) => name === "has_permission"
+      ? { data: true, error: null }
+      : { data: null, error: { code: "23503", message: "internal foreign key details" } });
+
+    const response = await POST(request());
+    const body = await response.json() as Record<string, unknown>;
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({ stage: "save_product", code: "MISSING_RELATION", retryable: false });
+    expect(JSON.stringify(body)).not.toContain("internal foreign key details");
   });
 
   it("keeps the saved draft when an image fails and allows image resumption", async () => {
@@ -103,8 +122,15 @@ describe("product import session API", () => {
       sessionId: "20000000-0000-0000-0000-000000000003", productKey: "PROD-1", imageOffset: 0
     });
     sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
+    const repeatedImageProduct = {
+      ...normalizedProduct,
+      images: [
+        normalizedProduct.images[0],
+        { ...normalizedProduct.images[0], color: "Rosa", order: 2, primary: false }
+      ]
+    };
     mocks.parseSession.mockReturnValue({
-      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, issues: [] },
+      batch: { schemaVersion: "curtiz_import_v1", products: [repeatedImageProduct], colorCount: 2, imageCount: 2, issues: [] },
       references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
     });
     mocks.from.mockImplementation((table: string) => {
@@ -124,7 +150,9 @@ describe("product import session API", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ imageFailures: true, hasMore: false });
-    expect(body.warnings?.[0]).toContain("Imagem 1");
+    expect(body.warnings?.some((warning) => warning.includes("cores diferentes"))).toBe(true);
+    expect(body.warnings?.some((warning) => warning.includes("Imagem 1"))).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(mocks.from).not.toHaveBeenCalledWith("products");
   });
 });

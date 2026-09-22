@@ -4,6 +4,9 @@ export type ProductImportQueueResult = {
   alreadyImported?: boolean;
   warnings?: string[];
   imageFailures?: boolean;
+  stage?: "session" | "save_product" | "source" | "images";
+  requestId?: string;
+  code?: string;
   message: string;
 };
 
@@ -23,6 +26,10 @@ export async function runProductImportBatches(
   let firstRequest = true;
   let initiallyImported = false;
   let imageFailures = false;
+  let stage: ProductImportQueueResult["stage"];
+  let requestId: string | undefined;
+  let code: string | undefined;
+  let failureDiagnosticCaptured = false;
   const warnings = new Set<string>();
   for (let batch = 0; batch < 501; batch += 1) {
     let result: ProductImportBatchResult | null = null;
@@ -40,7 +47,14 @@ export async function runProductImportBatches(
     if (!result.ok) return { ...result, warnings: [...warnings, ...(result.warnings ?? [])] };
     if (firstRequest) initiallyImported = result.alreadyImported === true;
     firstRequest = false;
-    imageFailures ||= result.imageFailures === true;
+    const currentImageFailure = result.imageFailures === true;
+    imageFailures ||= currentImageFailure;
+    stage = result.stage ?? stage;
+    if (currentImageFailure || !failureDiagnosticCaptured) {
+      requestId = result.requestId ?? requestId;
+      code = result.code ?? code;
+    }
+    failureDiagnosticCaptured ||= currentImageFailure;
     for (const warning of result.warnings ?? []) warnings.add(warning);
     if (!result.hasMore) {
       return {
@@ -49,6 +63,9 @@ export async function runProductImportBatches(
         alreadyImported: initiallyImported,
         warnings: [...warnings],
         imageFailures,
+        stage,
+        requestId,
+        code,
         message: initiallyImported
           ? "Produto já importado; imagens pendentes foram reconciliadas."
           : warnings.size ? "Produto importado com avisos." : "Produto importado."
@@ -56,12 +73,12 @@ export async function runProductImportBatches(
     }
     const next = result.nextImageOffset;
     if (!Number.isInteger(next) || next === undefined || next <= imageOffset) {
-      return { productKey, ok: false, warnings: [...warnings], imageFailures, message: "A importação recebeu um progresso de imagens inválido." };
+      return { productKey, ok: false, warnings: [...warnings], imageFailures, stage, requestId, code: "INVALID_IMAGE_PROGRESS", message: "A importação recebeu um progresso de imagens inválido." };
     }
     imageOffset = next;
     if (pauseBetweenBatchesMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseBetweenBatchesMs));
   }
-  return { productKey, ok: false, warnings: [...warnings], imageFailures, message: "A importação excedeu o limite de lotes de imagens." };
+  return { productKey, ok: false, warnings: [...warnings], imageFailures, stage, requestId, code: "IMAGE_BATCH_LIMIT", message: "A importação excedeu o limite de lotes de imagens." };
 }
 
 export async function runProductImportQueue(
@@ -74,7 +91,7 @@ export async function runProductImportQueue(
     try {
       results.push(await importOne(productKey));
     } catch {
-      results.push({ productKey, ok: false, message: "Falha de conexão durante a importação." });
+      results.push({ productKey, ok: false, code: "NETWORK_FAILURE", message: "Falha de conexão durante a importação." });
     }
     onProgress?.([...results], Math.round(((index + 1) / productKeys.length) * 100));
   }

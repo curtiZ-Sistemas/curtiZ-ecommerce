@@ -54,7 +54,10 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
       const value: unknown = JSON.parse(body);
       return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
     } catch {
-      return { message: response.ok ? "O servidor retornou uma resposta inválida." : "Falha temporária do servidor durante a importação. Tente novamente." };
+      return {
+        message: response.ok ? "O servidor retornou uma resposta inválida." : "Falha temporária do servidor durante a importação. Tente novamente.",
+        retryable: !response.ok && [408, 429, 500, 502, 503, 504].includes(response.status)
+      };
     }
   };
 
@@ -101,15 +104,21 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
             body: JSON.stringify({ sessionId: preview.sessionId, productKey, imageOffset })
           });
           const result = await readJson(response);
+          const stage = ["session", "save_product", "source", "images"].includes(String(result.stage))
+            ? result.stage as ProductImportQueueResult["stage"]
+            : undefined;
           return {
             productKey,
             ok: response.ok,
             alreadyImported: result.alreadyImported === true,
             warnings: Array.isArray(result.warnings) ? result.warnings.filter((item): item is string => typeof item === "string") : [],
             imageFailures: result.imageFailures === true,
+            stage,
+            requestId: typeof result.requestId === "string" ? result.requestId : undefined,
+            code: typeof result.code === "string" ? result.code : undefined,
             hasMore: result.hasMore === true,
             nextImageOffset: typeof result.nextImageOffset === "number" ? result.nextImageOffset : undefined,
-            retryable: [408, 429, 500, 502, 503, 504].includes(response.status),
+            retryable: typeof result.retryable === "boolean" ? result.retryable : false,
             message: typeof result.message === "string" ? result.message : response.ok ? "Produto importado." : "Falha na importação."
           };
         });
@@ -133,8 +142,8 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     onClose();
   };
 
-  const successful = results.filter((result) => result.ok && !result.alreadyImported && !result.warnings?.length).length;
-  const withWarnings = results.filter((result) => result.ok && (result.alreadyImported || Boolean(result.warnings?.length))).length;
+  const successful = results.filter((result) => result.ok && !result.imageFailures && !result.warnings?.length).length;
+  const withWarnings = results.filter((result) => result.ok && (result.imageFailures || Boolean(result.warnings?.length))).length;
   const failed = results.filter((result) => !result.ok).length;
 
   return (
@@ -167,7 +176,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           <div className="product-import-list">
             {preview.products.map((product) => <article key={product.key}>
               <div className="product-import-product-heading"><strong>{product.name}</strong><span>{product.category} · {product.variations} variações · {product.images} imagens</span></div>
-              {product.alreadyImported ? <span className="status gray">Já importado</span> : product.errors.length ? <span className="status red">Com erro</span> : product.warnings.length ? <span className="status yellow">Com avisos</span> : <span className="status green">Pronto</span>}
+              {product.alreadyImported ? <span className="status gray">Já importado</span> : product.errors.length ? <span className="status red">Com erro</span> : product.warnings.length ? <span className="status orange">Com avisos</span> : <span className="status green">Pronto</span>}
               <ImportIssueList level="error" items={product.errors} />
               <ImportIssueList level="warning" items={product.warnings} />
             </article>)}
@@ -177,17 +186,30 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           {importing || results.length ? <section className="product-import-progress" aria-live="polite">
           <div><strong>Progresso da importação</strong><span>{progress}%</span></div>
           <progress max="100" value={progress}>{progress}%</progress>
-          {results.length ? <p>{successful} importado(s) · {withWarnings} com aviso(s) · {failed} falhou(aram)</p> : null}
-          {results.length ? <div className="product-import-results">
-            {results.map((result) => <article key={result.productKey}>
-              <div>
+          {results.length ? <div className="product-import-results-heading">
+            <h3>Resultado da importação</h3>
+            <div className="product-import-result-summary" aria-label="Resumo do resultado">
+              <span><strong>{successful}</strong> Importados</span>
+              <span><strong>{withWarnings}</strong> Com avisos</span>
+              <span><strong>{failed}</strong> Falharam</span>
+            </div>
+          </div> : null}
+          {results.length ? <div className="product-import-results" role="list">
+            {results.map((result) => <article key={result.productKey} role="listitem" className={result.ok ? "" : "is-failed"}>
+              <div className="product-import-result-heading">
                 <strong>{preview?.products.find((product) => product.key === result.productKey)?.name ?? result.productKey}</strong>
-                <span>{result.message}</span>
+                <span className={`status ${result.ok ? result.imageFailures || result.warnings?.length ? "orange" : "green" : "red"}`}>
+                  {result.ok ? result.alreadyImported ? "Já importado" : result.imageFailures || result.warnings?.length ? "Com avisos" : "Importado" : "Falhou"}
+                </span>
               </div>
-              <span className={`status ${result.ok ? result.alreadyImported || result.warnings?.length ? "yellow" : "green" : "red"}`}>
-                {result.ok ? result.alreadyImported ? "Já importado" : result.warnings?.length ? "Com avisos" : "Importado" : "Falhou"}
-              </span>
-              <ImportIssueList level={result.ok ? "warning" : "error"} items={result.warnings?.length ? result.warnings : result.ok ? [] : [result.message]} />
+              <p className="product-import-result-message">{result.message}</p>
+              <ImportIssueList level="error" items={result.ok ? [] : [result.message]} />
+              <ImportIssueList level="warning" items={result.warnings ?? []} />
+              <div className="product-import-result-meta">
+                {result.stage ? <span>Etapa: {result.stage}</span> : null}
+                {result.requestId ? <span>Referência: {result.requestId}</span> : null}
+                {result.code ? <span>Código: {result.code}</span> : null}
+              </div>
             </article>)}
           </div> : null}
           </section> : null}

@@ -5,6 +5,8 @@ const migration = readFileSync("supabase/migrations/202609210002_product_import_
 const previewRoute = readFileSync("apps/panel/src/app/api/catalog/products/import/preview/route.ts", "utf8");
 const importRoute = readFileSync("apps/panel/src/app/api/catalog/products/import/route.ts", "utf8");
 const drawer = readFileSync("apps/panel/src/components/product-import-drawer.tsx", "utf8");
+const panelCss = readFileSync("apps/panel/src/app/globals.css", "utf8");
+const reliabilityMigration = readFileSync("supabase/migrations/202609220001_product_import_reliability.sql", "utf8").toLowerCase();
 
 describe("product import sessions", () => {
   it("keeps short-lived normalized sessions private to their owner", () => {
@@ -13,6 +15,9 @@ describe("product import sessions", () => {
     expect(migration).toContain("interval '1 hour'");
     expect(migration).toContain("octet_length(payload::text) <= 2097152");
     expect(migration).toContain("force row level security");
+    const deletePolicy = reliabilityMigration.split('create policy "product import sessions delete own"')[1]?.split(";")[0] ?? "";
+    expect(deletePolicy).toContain("user_id = auth.uid()");
+    expect(deletePolicy).not.toContain("expires_at > now()");
   });
 
   it("parses the workbook only in preview and imports later through the opaque session", () => {
@@ -27,9 +32,17 @@ describe("product import sessions", () => {
   it("saves the draft before entering the separately resumable image stage", () => {
     expect(importRoute.indexOf('if (imageOffset === -1)')).toBeLessThan(importRoute.indexOf('stage = "images"'));
     expect(importRoute).toContain('status: "draft"');
-    expect(importRoute).toContain("stock: 0");
+    expect(importRoute).toContain("stock: variant.stock");
     expect(importRoute).toContain('eq("user_id", auth.userId).gt("expires_at"');
     expect(importRoute).toContain("imageFailures = true");
     expect(importRoute).not.toContain('from("products").delete()');
+  });
+
+  it("keeps import results readable in a horizontal strip with diagnostics", () => {
+    expect(drawer).toContain("Resultado da importação");
+    expect(drawer).toContain("Etapa:");
+    expect(drawer).toContain("Referência:");
+    expect(panelCss).toContain("overflow-x: auto");
+    expect(panelCss).toContain("flex: 0 0 380px");
   });
 });
