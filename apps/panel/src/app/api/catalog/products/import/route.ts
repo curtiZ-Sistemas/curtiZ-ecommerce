@@ -7,7 +7,7 @@ import { inspectCatalogImage } from "@/lib/catalog-image";
 import { prepareUploadImage } from "@/lib/image-upload";
 import { prepareProductImportImages } from "@/lib/product-import-images";
 import { automaticProductSeo } from "@/lib/product-management";
-import { isAllowedShopeeImageUrl, parseProductImportSessionPayload } from "@/lib/product-import-session";
+import { isAllowedShopeeImageUrl, parseProductImportSessionPayload, productImportTaxonomySlug } from "@/lib/product-import-session";
 
 export const runtime = "nodejs";
 
@@ -25,12 +25,16 @@ const mediaUnavailable = (error: { code?: string; message?: string } | null) =>
   ["42P01", "PGRST200", "PGRST204", "PGRST205"].includes(error?.code ?? "") || (error?.message ?? "").toLowerCase().includes("schema cache");
 type ImportStage = "session" | "save_product" | "source" | "images";
 
-const databaseFailure = (code: string) => {
+const databaseFailure = (code: string, internalMessage = "") => {
   if (code === "42501") return { code: "PERMISSION_DENIED", message: "Seu acesso não permite concluir esta importação.", status: 403, retryable: false };
   if (code === "23505") return { code: "DUPLICATE_PRODUCT", message: "Já existe um produto, slug ou SKU igual no catálogo.", status: 409, retryable: false };
   if (code === "23503") return { code: "MISSING_RELATION", message: "Uma categoria, coleção, modelo ou vínculo informado não existe mais.", status: 409, retryable: false };
+  if (code === "P0002") return { code: "TAXONOMY_NOT_FOUND", message: "A categoria ou o modelo informado não existe e a criação automática está desativada.", status: 409, retryable: false };
   if (["22023", "22P02", "23514"].includes(code)) return { code: "INVALID_PRODUCT_DATA", message: "Os dados deste produto não atendem às regras do catálogo.", status: 409, retryable: false };
-  if (["42883", "PGRST202"].includes(code)) return { code: "IMPORT_SCHEMA_UNAVAILABLE", message: "A migration do importador ainda não está disponível no banco.", status: 503, retryable: false };
+  if (["42703", "42883", "42P01", "PGRST202", "PGRST204", "PGRST205"].includes(code)
+      || (code === "54000" && internalMessage.toLocaleLowerCase("en-US").includes("null character"))) {
+    return { code: "IMPORT_SCHEMA_UNAVAILABLE", message: "A migration do importador ainda não está disponível no banco.", status: 503, retryable: false };
+  }
   const retryable = ["53300", "57014", "57P03", "08000", "08001", "08003", "08004", "08006", "PGRST000", "PGRST001", "PGRST002"].includes(code);
   return { code: retryable ? "IMPORT_TEMPORARILY_UNAVAILABLE" : "IMPORT_INTERNAL_ERROR", message: retryable
     ? "O serviço de importação está temporariamente indisponível. Tente novamente."
@@ -119,7 +123,7 @@ export async function POST(request: NextRequest) {
       .eq("id", sessionId).eq("user_id", auth.userId).gt("expires_at", new Date().toISOString()).maybeSingle();
     if (session.error) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: session.error.code ?? "SESSION_LOOKUP_FAILED", productKey });
-      return errorResponse(requestId, stage, databaseFailure(session.error.code ?? "SESSION_LOOKUP_FAILED"));
+      return errorResponse(requestId, stage, databaseFailure(session.error.code ?? "SESSION_LOOKUP_FAILED", session.error.message));
     }
     if (!session.data) return errorResponse(requestId, stage, {
       code: "SESSION_EXPIRED", message: "A sessão de importação expirou. Selecione a planilha novamente.", status: 410, retryable: false
@@ -149,14 +153,10 @@ export async function POST(request: NextRequest) {
 
     if (imageOffset === -1) {
       stage = "save_product";
-      if (!reference?.categoryId) return errorResponse(requestId, stage, {
-        code: "MISSING_CATEGORY", message: "A categoria validada do produto não está disponível.", status: 409, retryable: false
-      });
       const seo = automaticProductSeo({ name: product.name, description: product.description, categoryName: product.categoryName });
       const payload = {
         name: product.name, slug: product.slug, shortDescription: product.shortDescription,
-        description: product.description, categoryId: reference.categoryId, categoryIds: [reference.categoryId],
-        modelId: reference.modelId, collectionId: reference.collectionId,
+        description: product.description, collectionId: reference?.collectionId ?? null,
         status: "draft", featured: product.featured, priceInCents: product.priceInCents,
         compareAtPriceInCents: product.compareAtPriceInCents, costInCents: product.costInCents,
         weightGrams: product.weightGrams, heightCm: product.heightCm, widthCm: product.widthCm,
@@ -174,15 +174,21 @@ export async function POST(request: NextRequest) {
         sizeGuide: product.sizeGuide,
         specifications: product.specifications
       };
-      const saved = await auth.supabase.rpc("admin_import_product_authorized", {
+      const saved = await auth.supabase.rpc("admin_import_product_with_taxonomy_authorized", {
         p_source: source, p_external_key: externalKey,
-        p_batch_hash: text(session.data.batch_hash), p_payload: payload
+        p_batch_hash: text(session.data.batch_hash), p_payload: payload,
+        p_category_name: product.categoryName,
+        p_category_slug: productImportTaxonomySlug(product.categoryName),
+        p_create_category: sessionPayload.batch.options.createCategoryIfMissing,
+        p_model_name: product.modelName || null,
+        p_model_slug: product.modelName ? productImportTaxonomySlug(product.modelName) : null,
+        p_create_model: sessionPayload.batch.options.createModelIfMissing
       });
       const savedData = record(saved.data);
       const productId = text(savedData.productId);
       if (saved.error || !productId) {
         logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: saved.error?.code ?? "INVALID_RESULT", productKey });
-        return errorResponse(requestId, stage, databaseFailure(saved.error?.code ?? "INVALID_RESULT"));
+        return errorResponse(requestId, stage, databaseFailure(saved.error?.code ?? "INVALID_RESULT", saved.error?.message));
       }
       return NextResponse.json({
         ok: true, productId, productKey, alreadyImported: savedData.alreadyImported === true,
@@ -204,7 +210,7 @@ export async function POST(request: NextRequest) {
     if (imported.error || !productId) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: imported.error?.code ?? "SOURCE_NOT_FOUND", productKey });
       return errorResponse(requestId, stage, imported.error
-        ? databaseFailure(imported.error.code ?? "SOURCE_LOOKUP_FAILED")
+        ? databaseFailure(imported.error.code ?? "SOURCE_LOOKUP_FAILED", imported.error.message)
         : { code: "IMPORT_SOURCE_NOT_FOUND", message: "Salve o produto antes de processar suas imagens.", status: 409, retryable: false });
     }
 
@@ -212,7 +218,7 @@ export async function POST(request: NextRequest) {
     const variantResult = await auth.supabase.from("product_variants").select("id,color_name").eq("product_id", productId);
     if (variantResult.error) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: variantResult.error.code ?? "VARIANTS_NOT_AVAILABLE", productKey });
-      return errorResponse(requestId, stage, databaseFailure(variantResult.error.code ?? "VARIANTS_NOT_AVAILABLE"));
+      return errorResponse(requestId, stage, databaseFailure(variantResult.error.code ?? "VARIANTS_NOT_AVAILABLE", variantResult.error.message));
     }
     const variantByColor = new Map<string, string>();
     for (const variant of objectRows(variantResult.data)) {
@@ -229,7 +235,7 @@ export async function POST(request: NextRequest) {
       : { data: [], error: null };
     if (existingResult.error) {
       logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: existingResult.error.code ?? "IMAGES_LOOKUP_FAILED", productKey });
-      return errorResponse(requestId, stage, databaseFailure(existingResult.error.code ?? "IMAGES_LOOKUP_FAILED"));
+      return errorResponse(requestId, stage, databaseFailure(existingResult.error.code ?? "IMAGES_LOOKUP_FAILED", existingResult.error.message));
     }
     const existingPaths = new Set(objectRows(existingResult.data).map((item) => text(item.storage_path)));
     const processedPaths = new Set<string>();

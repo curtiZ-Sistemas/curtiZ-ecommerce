@@ -10,6 +10,11 @@ const PRODUCT_IMPORT_MAX_IMAGES = 1_000;
 
 export const SHOPEE_IMAGE_HOSTS = new Set(["down-sg.img.susercontent.com"]);
 
+export function productImportTaxonomySlug(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 180);
+}
+
 export function isAllowedShopeeImageUrl(value: string) {
   try {
     const url = new URL(value);
@@ -59,6 +64,10 @@ const sessionPayloadSchema = z.object({
   batch: z.object({
     schemaVersion: z.literal(PRODUCT_IMPORT_SCHEMA), products: z.array(productSchema).min(1).max(PRODUCT_IMPORT_MAX_PRODUCTS),
     colorCount: z.number().int().min(0).max(500), imageCount: z.number().int().min(0).max(PRODUCT_IMPORT_MAX_IMAGES),
+    options: z.object({
+      createCategoryIfMissing: z.boolean(), createModelIfMissing: z.boolean(),
+      associateColorImagesToAllSizes: z.boolean(), deduplicateImageDownloadsByUrl: z.boolean()
+    }).strict(),
     issues: z.array(issueSchema).max(500)
   }).strict(),
   references: z.record(z.string().min(1).max(120), z.object({

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   readJsonResponse: vi.fn(),
   parseSession: vi.fn()
 }));
-const sessionState: { result: { data: unknown; error: { code?: string } | null } } = {
+const sessionState: { result: { data: unknown; error: { code?: string; message?: string } | null } } = {
   result: { data: null, error: null }
 };
 
@@ -27,7 +27,8 @@ vi.mock("@/lib/admin-api", () => ({
 }));
 vi.mock("@/lib/product-import-session", () => ({
   isAllowedShopeeImageUrl: vi.fn(() => true),
-  parseProductImportSessionPayload: mocks.parseSession
+  parseProductImportSessionPayload: mocks.parseSession,
+  productImportTaxonomySlug: vi.fn((value: string) => value.toLocaleLowerCase("pt-BR").replace(/\s+/gu, "-"))
 }));
 vi.mock("@/lib/product-import-images", async () => await import("../../../../../lib/product-import-images"));
 vi.mock("@/lib/catalog-image", () => ({ inspectCatalogImage: vi.fn() }));
@@ -37,16 +38,22 @@ vi.mock("@/lib/product-management", () => ({ automaticProductSeo: vi.fn(() => ({
 import { POST } from "./route";
 
 const request = () => new NextRequest("https://painel.example/api/catalog/products/import", { method: "POST" });
+const importOptions = {
+  createCategoryIfMissing: true,
+  createModelIfMissing: true,
+  associateColorImagesToAllSizes: true,
+  deduplicateImageDownloadsByUrl: true
+};
 const normalizedProduct = {
   key: "PROD-1", shopeeId: "1", source: "shopee", name: "Produto", slug: "produto",
   categoryName: "Chinelos", modelName: "", collectionName: "", shortDescription: "", description: "",
-  featured: false, priceInCents: 1_000, compareAtPriceInCents: null, costInCents: null,
-  weightGrams: null, heightCm: null, widthCm: null, lengthCm: null,
-  merchantCondition: null, merchantGender: null, merchantAgeGroup: null,
-  googleProductCategory: "", merchantIdentifierExists: null,
-  variants: [{ variationKey: "V1", color: "Lilás", colorHex: "#C8A2C8", colorHexSecondary: "", size: "35", sku: "SKU-1", active: true, stock: 10, priceInCents: null, costInCents: null, gtin: "", mpn: "" }],
+  featured: false, priceInCents: 1_000, compareAtPriceInCents: 1_500, costInCents: 835,
+  weightGrams: 300, heightCm: 8, widthCm: 20, lengthCm: 28,
+  merchantCondition: "new", merchantGender: "female", merchantAgeGroup: "adult",
+  googleProductCategory: "Apparel & Accessories > Shoes > Sandals", merchantIdentifierExists: false,
+  variants: [{ variationKey: "V1", color: "Lilás", colorHex: "#C8A2C8", colorHexSecondary: "#FFFFFF", size: "35", sku: "SKU-1", active: true, stock: 10, priceInCents: 1_290, costInCents: 955, gtin: "7890000000001", mpn: "MPN-1" }],
   images: [{ url: "https://down-sg.img.susercontent.com/file/test", color: "Lilás", order: 0, primary: true, applyAllSizes: true }],
-  sizeGuide: [], specifications: [], issues: []
+  sizeGuide: [{ size: "35", measurementCm: 23.5 }], specifications: [{ label: "Material", value: "Borracha" }], issues: []
 };
 
 function sessionQuery() {
@@ -83,7 +90,7 @@ describe("product import session API", () => {
   it("persists the draft and source before starting image requests", async () => {
     sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
     mocks.parseSession.mockReturnValue({
-      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, issues: [] },
+      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, options: importOptions, issues: [] },
       references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
     });
 
@@ -93,16 +100,33 @@ describe("product import session API", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ hasMore: true, nextImageOffset: 0 });
     const importCalls = mocks.rpc.mock.calls as Array<[string, { p_payload?: { status?: unknown; variants?: Array<{ stock?: unknown }> } }]>;
-    const importCall = importCalls.find(([name]) => name === "admin_import_product_authorized");
+    const importCall = importCalls.find(([name]) => name === "admin_import_product_with_taxonomy_authorized");
     expect(importCall?.[1].p_payload?.status).toBe("draft");
     expect(importCall?.[1].p_payload?.variants?.[0]?.stock).toBe(10);
+    expect(importCall?.[1].p_payload).toMatchObject({
+      costInCents: 835,
+      weightGrams: 300,
+      heightCm: 8,
+      widthCm: 20,
+      lengthCm: 28,
+      googleProductCategory: "Apparel & Accessories > Shoes > Sandals",
+      sizeGuide: [{ size: "35", measurementCm: 23.5 }],
+      specifications: [{ label: "Material", value: "Borracha" }],
+      variants: [expect.objectContaining({ costInCents: 955, gtin: "7890000000001", mpn: "MPN-1" })]
+    });
+    expect(importCall?.[1]).toMatchObject({
+      p_category_name: "Chinelos",
+      p_category_slug: "chinelos",
+      p_create_category: true,
+      p_create_model: true
+    });
     expect(mocks.from).not.toHaveBeenCalledWith("product_variants");
   });
 
   it("returns safe non-retryable database diagnostics", async () => {
     sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
     mocks.parseSession.mockReturnValue({
-      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, issues: [] },
+      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, options: importOptions, issues: [] },
       references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
     });
     mocks.rpc.mockImplementation(async (name: string) => name === "has_permission"
@@ -115,6 +139,35 @@ describe("product import session API", () => {
     expect(response.status).toBe(409);
     expect(body).toMatchObject({ stage: "save_product", code: "MISSING_RELATION", retryable: false });
     expect(JSON.stringify(body)).not.toContain("internal foreign key details");
+  });
+
+  it("identifies a missing import schema without retrying", async () => {
+    sessionState.result = { data: null, error: { code: "PGRST205", message: "table details" } };
+
+    const response = await POST(request());
+    const body = await response.json() as Record<string, unknown>;
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ stage: "session", code: "IMPORT_SCHEMA_UNAVAILABLE", retryable: false });
+    expect(JSON.stringify(body)).not.toContain("table details");
+  });
+
+  it("identifies the legacy null-character import function", async () => {
+    sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
+    mocks.parseSession.mockReturnValue({
+      batch: { schemaVersion: "curtiz_import_v1", products: [normalizedProduct], colorCount: 1, imageCount: 1, options: importOptions, issues: [] },
+      references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
+    });
+    mocks.rpc.mockImplementation(async (name: string) => name === "has_permission"
+      ? { data: true, error: null }
+      : { data: null, error: { code: "54000", message: "null character not permitted" } });
+
+    const response = await POST(request());
+    const body = await response.json() as Record<string, unknown>;
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ stage: "save_product", code: "IMPORT_SCHEMA_UNAVAILABLE", retryable: false });
+    expect(JSON.stringify(body)).not.toContain("null character");
   });
 
   it("keeps the saved draft when an image fails and allows image resumption", async () => {
@@ -130,7 +183,7 @@ describe("product import session API", () => {
       ]
     };
     mocks.parseSession.mockReturnValue({
-      batch: { schemaVersion: "curtiz_import_v1", products: [repeatedImageProduct], colorCount: 2, imageCount: 2, issues: [] },
+      batch: { schemaVersion: "curtiz_import_v1", products: [repeatedImageProduct], colorCount: 2, imageCount: 2, options: importOptions, issues: [] },
       references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
     });
     mocks.from.mockImplementation((table: string) => {

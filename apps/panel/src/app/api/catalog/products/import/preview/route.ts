@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeAdminRequest, objectRows, privateNoStore, safePanelOrigin, unauthorizedAdminResponse } from "@/lib/admin-api";
 import { PRODUCT_IMPORT_MAX_BYTES, parseProductImportWorkbook, productImportPreview, type ProductImportReference } from "@/lib/product-import";
+import { productImportTaxonomySlug } from "@/lib/product-import-session";
 
 export const runtime = "nodejs";
 
@@ -45,27 +46,58 @@ export async function POST(request: NextRequest) {
     const batch = await parseProductImportWorkbook(bytes);
     stage = "references";
     const [categories, models, collections, imported] = await Promise.all([
-      auth.supabase.from("categories").select("id,name"),
-      auth.supabase.from("product_models").select("id,name"),
-      auth.supabase.from("collections").select("id,name"),
+      auth.supabase.from("categories").select("id,name,slug"),
+      auth.supabase.from("product_models").select("id,name,slug"),
+      auth.supabase.from("collections").select("id,name,slug"),
       auth.supabase.from("product_import_sources").select("source,external_key,product_id")
         .in("external_key", batch.products.map((product) => product.shopeeId || product.key))
     ]);
     if (categories.error || models.error || collections.error || imported.error) throw new Error("CATALOG_REFERENCE_LOOKUP_FAILED");
 
-    const categoryByName = new Map(objectRows(categories.data).map((item) => [normalized(item.name), text(item.id)]));
-    const modelByName = new Map(objectRows(models.data).map((item) => [normalized(item.name), text(item.id)]));
-    const collectionByName = new Map(objectRows(collections.data).map((item) => [normalized(item.name), text(item.id)]));
+    const taxonomyId = (items: unknown, name: string) => {
+      const wantedName = normalized(name);
+      const wantedSlug = productImportTaxonomySlug(name);
+      const item = objectRows(items).find((candidate) => normalized(candidate.name) === wantedName || text(candidate.slug) === wantedSlug);
+      return item ? text(item.id) : null;
+    };
     const importedKeys = new Set(objectRows(imported.data).map((item) => `${normalized(item.source)}:${text(item.external_key)}`));
+    const needsTaxonomyCreation = batch.products.some((product) =>
+      (!taxonomyId(categories.data, product.categoryName) && batch.options.createCategoryIfMissing)
+      || (Boolean(product.modelName) && !taxonomyId(models.data, product.modelName) && batch.options.createModelIfMissing)
+    );
+    const taxonomyPermission = needsTaxonomyCreation
+      ? await auth.supabase.rpc("has_permission", { permission_code: "catalog.taxonomy.manage" })
+      : { data: false, error: null };
+    if (taxonomyPermission.error) throw new Error("TAXONOMY_PERMISSION_LOOKUP_FAILED");
+    const canCreateTaxonomy = taxonomyPermission.data === true;
+    const addProductIssue = (product: (typeof batch.products)[number], issue: (typeof product.issues)[number]) => {
+      if (!product.issues.some((current) => current.code === issue.code && current.message === issue.message)) product.issues.push(issue);
+    };
     const references: Record<string, ProductImportReference> = {};
     for (const product of batch.products) {
-      const categoryId = categoryByName.get(normalized(product.categoryName)) || null;
-      const modelId = product.modelName ? modelByName.get(normalized(product.modelName)) || null : null;
-      const collectionId = product.collectionName ? collectionByName.get(normalized(product.collectionName)) || null : null;
+      const categoryId = taxonomyId(categories.data, product.categoryName);
+      const modelId = product.modelName ? taxonomyId(models.data, product.modelName) : null;
+      const collectionId = product.collectionName ? taxonomyId(collections.data, product.collectionName) : null;
       references[product.key] = { categoryId, modelId, collectionId };
-      if (!categoryId) product.issues.push({ level: "error", code: "CATEGORY_NOT_FOUND", message: `Categoria não encontrada: ${product.categoryName}.`, productKey: product.key });
-      if (product.modelName && !modelId) product.issues.push({ level: "error", code: "MODEL_NOT_FOUND", message: `Modelo não encontrado: ${product.modelName}.`, productKey: product.key });
-      if (product.collectionName && !collectionId) product.issues.push({ level: "error", code: "COLLECTION_NOT_FOUND", message: `Coleção não encontrada: ${product.collectionName}.`, productKey: product.key });
+      if (!categoryId) {
+        if (!batch.options.createCategoryIfMissing) {
+          addProductIssue(product, { level: "error", code: "CATEGORY_NOT_FOUND", message: `Categoria não encontrada: ${product.categoryName}.`, productKey: product.key });
+        } else if (!canCreateTaxonomy) {
+          addProductIssue(product, { level: "error", code: "TAXONOMY_PERMISSION_REQUIRED", message: `Sem permissão para criar a categoria: ${product.categoryName}.`, productKey: product.key });
+        } else {
+          addProductIssue(product, { level: "warning", code: "CATEGORY_WILL_BE_CREATED", message: `Categoria: ${product.categoryName} — será criada`, productKey: product.key });
+        }
+      }
+      if (product.modelName && !modelId) {
+        if (!batch.options.createModelIfMissing) {
+          addProductIssue(product, { level: "error", code: "MODEL_NOT_FOUND", message: `Modelo não encontrado: ${product.modelName}.`, productKey: product.key });
+        } else if (!canCreateTaxonomy) {
+          addProductIssue(product, { level: "error", code: "TAXONOMY_PERMISSION_REQUIRED", message: `Sem permissão para criar o modelo: ${product.modelName}.`, productKey: product.key });
+        } else {
+          addProductIssue(product, { level: "warning", code: "MODEL_WILL_BE_CREATED", message: `Modelo: ${product.modelName} — será criado`, productKey: product.key });
+        }
+      }
+      if (product.collectionName && !collectionId) addProductIssue(product, { level: "error", code: "COLLECTION_NOT_FOUND", message: `Coleção não encontrada: ${product.collectionName}.`, productKey: product.key });
     }
 
     stage = "session";
@@ -80,7 +112,13 @@ export async function POST(request: NextRequest) {
     const sessionId = text(session.data?.id);
     if (session.error || !sessionId) {
       logServerEvent("error", "panel_product_import_preview_failed", { requestId, stage, code: session.error?.code ?? "INVALID_SESSION_RESULT" });
-      return NextResponse.json({ message: "A migration de sessões do importador ainda não está disponível no banco.", requestId }, { status: 503, headers: privateNoStore });
+      return NextResponse.json({
+        message: "A migration de sessões do importador ainda não está disponível no banco.",
+        requestId,
+        stage: "session",
+        code: "IMPORT_SCHEMA_UNAVAILABLE",
+        retryable: false
+      }, { status: 503, headers: privateNoStore });
     }
 
     const preview = productImportPreview(batch);

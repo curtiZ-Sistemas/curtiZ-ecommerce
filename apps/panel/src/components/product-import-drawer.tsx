@@ -56,6 +56,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     } catch {
       return {
         message: response.ok ? "O servidor retornou uma resposta inválida." : "Falha temporária do servidor durante a importação. Tente novamente.",
+        code: response.ok ? "INVALID_SERVER_RESPONSE" : "UPSTREAM_UNAVAILABLE",
         retryable: !response.ok && [408, 429, 500, 502, 503, 504].includes(response.status)
       };
     }
@@ -123,6 +124,10 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           };
         });
       }, (completed, percentage) => { setResults(completed); setProgress(percentage); });
+      const stopped = completed.find((result) => result.queueStopped);
+      if (stopped) {
+        setMessage(`Importação interrompida para evitar novas falhas no servidor. ${stopped.message}`);
+      }
       if (completed.every((result) => result.ok && !result.imageFailures)) {
         await fetch("/api/catalog/products/import/preview", {
           method: "DELETE",

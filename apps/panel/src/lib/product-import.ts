@@ -3,7 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { Workbook, type Cell, type Worksheet } from "exceljs";
 import BaseXform from "exceljs/lib/xlsx/xform/base-xform";
-import { isAllowedShopeeImageUrl } from "./product-import-session";
+import { isAllowedShopeeImageUrl, productImportTaxonomySlug } from "./product-import-session";
 
 export { isAllowedShopeeImageUrl, parseProductImportSessionPayload } from "./product-import-session";
 
@@ -79,6 +79,12 @@ export type ProductImportBatch = {
   products: ProductImportProduct[];
   colorCount: number;
   imageCount: number;
+  options: {
+    createCategoryIfMissing: boolean;
+    createModelIfMissing: boolean;
+    associateColorImagesToAllSizes: boolean;
+    deduplicateImageDownloadsByUrl: boolean;
+  };
   issues: ProductImportIssue[];
 };
 
@@ -225,19 +231,23 @@ function booleanValue(value: unknown, fallback = false) {
   return fallback;
 }
 
+function configBoolean(config: Map<string, string>, key: string, fallback: boolean) {
+  const value = config.get(key);
+  if (value === undefined || value.trim() === "") return fallback;
+  const normalized = normalizeName(value);
+  if (["1", "sim", "true"].includes(normalized)) return true;
+  if (["0", "nao", "não", "false"].includes(normalized)) return false;
+  throw new Error(`Config ${key} deve usar SIM/NAO, true/false ou 1/0.`);
+}
+
 const cents = (value: unknown, label: string) => {
   const parsed = numberValue(value, label, { nullable: true, minimum: 0 });
   return parsed === null ? null : Math.round(parsed * 100);
 };
 
-function slug(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR")
-    .replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 180);
-}
-
 export function generatedImportSku(productKey: string, color: string, size: string) {
   const source = `${productKey}-${color}-${size}`;
-  const base = slug(source).toUpperCase().slice(0, 92) || "PRODUTO";
+  const base = productImportTaxonomySlug(source).toUpperCase().slice(0, 92) || "PRODUTO";
   const hash = createHash("sha256").update(source).digest("hex").slice(0, 8).toUpperCase();
   return `${base}-${hash}`;
 }
@@ -262,8 +272,15 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
   }
   for (const [name, expected] of Object.entries(requiredHeaders)) assertHeaders(workbook.getWorksheet(name)!, expected);
 
-  const config = new Map(rows(workbook.getWorksheet("Config")!, 100).map((row) => [cleanText(row.chave, 80), cleanText(row.valor, 200)]));
+  const config = new Map(rows(workbook.getWorksheet("Config")!, 100)
+    .map((row) => [normalizeName(cleanText(row.chave, 80)), cleanText(row.valor, 200)]));
   if (config.get("schema_version") !== PRODUCT_IMPORT_SCHEMA) throw new Error(`schema_version deve ser ${PRODUCT_IMPORT_SCHEMA}.`);
+  const options: ProductImportBatch["options"] = {
+    createCategoryIfMissing: configBoolean(config, "criar_categoria_se_ausente", false),
+    createModelIfMissing: configBoolean(config, "criar_modelo_se_ausente", false),
+    associateColorImagesToAllSizes: configBoolean(config, "associar_imagem_cor_a_todos_tamanhos", true),
+    deduplicateImageDownloadsByUrl: configBoolean(config, "deduplicar_download_imagem_por_url", true)
+  };
 
   const colorRows = rows(workbook.getWorksheet("Cores")!, 500);
   const colors = new Map<string, { name: string; primary: string; secondary: string; tertiary: string }>();
@@ -287,9 +304,9 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     const product: ProductImportProduct = {
       key,
       shopeeId: cleanText(row.shopee_id, 120),
-      source: slug(cleanText(row.origem, 40)) || "shopee",
+      source: productImportTaxonomySlug(cleanText(row.origem, 40)) || "shopee",
       name,
-      slug: slug(cleanText(row.slug, 180) || name),
+      slug: productImportTaxonomySlug(cleanText(row.slug, 180) || name),
       categoryName: cleanText(row.categoria, 120),
       modelName: cleanText(row.modelo, 120),
       collectionName: cleanText(row.colecao, 120),
@@ -359,7 +376,8 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     const image: ProductImportImage = {
       url, color: color?.name ?? "",
       order: numberValue(row.ordem, `ordem de imagem de ${key}`, { integer: true, minimum: 0 }) ?? product.images.length,
-      primary: booleanValue(row.principal), applyAllSizes: booleanValue(row.aplicar_todos_tamanhos)
+      primary: booleanValue(row.principal),
+      applyAllSizes: options.associateColorImagesToAllSizes && booleanValue(row.aplicar_todos_tamanhos, options.associateColorImagesToAllSizes)
     };
     product.images.push(image);
   }
@@ -367,12 +385,19 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
   const sizeSheet = workbook.getWorksheet("Tabela_Tamanhos");
   if (sizeSheet) {
     assertHeaders(sizeSheet, ["produto_chave", "tamanho", "medida_cm"]);
+    const knownSizes = new Map<string, Set<string>>();
     for (const row of rows(sizeSheet, 1_000)) {
       const product = products.get(cleanText(row.produto_chave, 120));
       if (!product) continue;
       const size = cleanText(row.tamanho, 40);
       const measurementCm = numberValue(row.medida_cm, `medida_cm de ${product.key}`, { nullable: true, minimum: 0.01 });
-      if (size && measurementCm !== null) product.sizeGuide.push({ size, measurementCm });
+      const normalizedSize = normalizeName(size);
+      const productSizes = knownSizes.get(product.key) ?? new Set<string>();
+      knownSizes.set(product.key, productSizes);
+      if (size && measurementCm !== null && !productSizes.has(normalizedSize)) {
+        productSizes.add(normalizedSize);
+        product.sizeGuide.push({ size, measurementCm });
+      }
     }
   }
   const specificationSheet = workbook.getWorksheet("Especificacoes");
@@ -391,7 +416,7 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     product.images.sort((left, right) => left.order - right.order);
     if (!product.variants.length) productIssue(product, "error", "VARIANTS_REQUIRED", "Nenhuma variação válida encontrada.");
   }
-  return { schemaVersion: PRODUCT_IMPORT_SCHEMA, products: [...products.values()], colorCount: colors.size, imageCount: imageRows.length, issues };
+  return { schemaVersion: PRODUCT_IMPORT_SCHEMA, products: [...products.values()], colorCount: colors.size, imageCount: imageRows.length, options, issues };
 }
 
 export function productImportPreview(batch: ProductImportBatch) {

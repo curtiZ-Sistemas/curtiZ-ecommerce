@@ -7,14 +7,29 @@ export type ProductImportQueueResult = {
   stage?: "session" | "save_product" | "source" | "images";
   requestId?: string;
   code?: string;
+  retryable?: boolean;
+  queueStopped?: boolean;
   message: string;
 };
 
 export type ProductImportBatchResult = ProductImportQueueResult & {
   hasMore?: boolean;
   nextImageOffset?: number;
-  retryable?: boolean;
 };
+
+const GLOBAL_IMPORT_FAILURES = new Set([
+  "IMPORT_SCHEMA_UNAVAILABLE",
+  "IMPORT_TEMPORARILY_UNAVAILABLE",
+  "INVALID_SESSION",
+  "SESSION_EXPIRED",
+  "ORIGIN_NOT_ALLOWED",
+  "PERMISSION_DENIED",
+  "UPSTREAM_UNAVAILABLE"
+]);
+
+function stopsProductImportQueue(result: ProductImportQueueResult) {
+  return !result.ok && (result.retryable === true || GLOBAL_IMPORT_FAILURES.has(result.code ?? ""));
+}
 
 export async function runProductImportBatches(
   productKey: string,
@@ -88,12 +103,22 @@ export async function runProductImportQueue(
 ) {
   const results: ProductImportQueueResult[] = [];
   for (const [index, productKey] of productKeys.entries()) {
+    let result: ProductImportQueueResult;
     try {
-      results.push(await importOne(productKey));
+      result = await importOne(productKey);
     } catch {
-      results.push({ productKey, ok: false, code: "NETWORK_FAILURE", message: "Falha de conexão durante a importação." });
+      result = {
+        productKey,
+        ok: false,
+        code: "NETWORK_FAILURE",
+        message: "Falha de conexão durante a importação."
+      };
     }
-    onProgress?.([...results], Math.round(((index + 1) / productKeys.length) * 100));
+    if (stopsProductImportQueue(result)) result = { ...result, queueStopped: true };
+    results.push(result);
+    const stopped = result.queueStopped === true;
+    onProgress?.([...results], stopped ? 100 : Math.round(((index + 1) / productKeys.length) * 100));
+    if (stopped) break;
   }
   return results;
 }
