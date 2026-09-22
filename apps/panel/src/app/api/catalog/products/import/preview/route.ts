@@ -121,10 +121,28 @@ export async function POST(request: NextRequest) {
       }, { status: 503, headers: privateNoStore });
     }
 
+    const runnableProducts = batch.products.filter((product) => !product.issues.some((issue) => issue.level === "error")).length;
+    const run = await auth.supabase.rpc("admin_create_product_import_run", {
+      p_run_id: sessionId,
+      p_products_total: runnableProducts
+    });
+    if (run.error) {
+      await auth.supabase.from("product_import_sessions").delete().eq("id", sessionId).eq("user_id", auth.userId);
+      logServerEvent("error", "panel_product_import_preview_failed", { requestId, stage, code: run.error.code ?? "RUN_CREATE_FAILED" });
+      return NextResponse.json({
+        message: "A migration da fila de imagens ainda não está disponível no banco.",
+        requestId,
+        stage: "session",
+        code: "IMPORT_SCHEMA_UNAVAILABLE",
+        retryable: false
+      }, { status: 503, headers: privateNoStore });
+    }
+
     const preview = productImportPreview(batch);
     return NextResponse.json({
       ...preview,
       sessionId,
+      runId: sessionId,
       products: preview.products.map((product) => {
         const source = batch.products.find((item) => item.key === product.key)!;
         return { ...product, alreadyImported: importedKeys.has(`${normalized(source.source)}:${source.shopeeId || source.key}`) };

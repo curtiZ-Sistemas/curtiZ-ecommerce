@@ -7,6 +7,8 @@ const importRoute = readFileSync("apps/panel/src/app/api/catalog/products/import
 const drawer = readFileSync("apps/panel/src/components/product-import-drawer.tsx", "utf8");
 const panelCss = readFileSync("apps/panel/src/app/globals.css", "utf8");
 const reliabilityMigration = readFileSync("supabase/migrations/202609220001_product_import_reliability.sql", "utf8").toLowerCase();
+const imageQueueMigration = readFileSync("supabase/migrations/202609220003_product_import_image_queue.sql", "utf8").toLowerCase();
+const imageWorker = readFileSync("apps/product-import-worker/src/index.ts", "utf8");
 
 describe("product import sessions", () => {
   it("keeps short-lived normalized sessions private to their owner", () => {
@@ -29,13 +31,20 @@ describe("product import sessions", () => {
     expect(drawer).not.toContain('form.set("productKey"');
   });
 
-  it("saves the draft before entering the separately resumable image stage", () => {
-    expect(importRoute.indexOf('if (imageOffset === -1)')).toBeLessThan(importRoute.indexOf('stage = "images"'));
+  it("saves the draft and delegates resumable images to persistent Queue jobs", () => {
+    expect(importRoute.indexOf('stage = "save_product"')).toBeLessThan(importRoute.indexOf('stage = "images"'));
     expect(importRoute).toContain('status: "draft"');
     expect(importRoute).toContain("stock: variant.stock");
     expect(importRoute).toContain('eq("user_id", auth.userId).gt("expires_at"');
-    expect(importRoute).toContain("imageFailures = true");
+    expect(importRoute).toContain("admin_enqueue_product_import_images");
+    expect(importRoute).toContain("enqueueProductImportImages");
+    expect(importRoute).not.toContain("await fetch(image.url");
     expect(importRoute).not.toContain('from("products").delete()');
+    expect(imageQueueMigration).toContain("create table public.product_import_image_jobs");
+    expect(imageQueueMigration).toContain("unique (product_id, normalized_url)");
+    expect(imageWorker).toContain("async queue(");
+    expect(imageWorker).toContain("boundedResponse");
+    expect(imageWorker).not.toContain("next/server");
   });
 
   it("keeps import results readable in a horizontal strip with diagnostics", () => {

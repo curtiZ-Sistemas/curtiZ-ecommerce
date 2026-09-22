@@ -12,17 +12,22 @@
   "images": {
     "binding": "IMAGES"
   },
+  "queues": {
+    "producers": [{ "binding": "PRODUCT_IMPORT_IMAGES", "queue": "curtiz-product-images" }]
+  },
   "observability": {
     "enabled": true
   },
   "env": {
     "staging": {
       "name": "curtiz-panel-staging",
-      "images": { "binding": "IMAGES" }
+      "images": { "binding": "IMAGES" },
+      "queues": { "producers": [{ "binding": "PRODUCT_IMPORT_IMAGES", "queue": "curtiz-product-images-staging" }] }
     },
     "production": {
       "name": "curtiz-panel",
-      "images": { "binding": "IMAGES" }
+      "images": { "binding": "IMAGES" },
+      "queues": { "producers": [{ "binding": "PRODUCT_IMPORT_IMAGES", "queue": "curtiz-product-images" }] }
     }
   }
 }

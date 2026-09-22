@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CircleX, FileSpreadsheet, LoaderCircle, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PanelDrawer } from "@/components/panel-drawer";
 import { runProductImportBatches, runProductImportQueue, type ProductImportQueueResult } from "@/lib/product-import-client";
 
@@ -23,6 +23,20 @@ type ImportPreview = {
   products: PreviewProduct[];
   issues: Array<{ level: "warning" | "error"; message: string }>;
 };
+
+type ImportRunStatus = {
+  runId: string;
+  productsTotal: number;
+  productsSaved: number;
+  imagesTotal: number;
+  imagesQueued: number;
+  imagesProcessing: number;
+  imagesCompleted: number;
+  imagesFailed: number;
+  done: boolean;
+};
+
+const ACTIVE_IMPORT_RUN_KEY = "curtiz.activeProductImportRun";
 
 function ImportIssueList({ level, items }: { level: "warning" | "error"; items: string[] }) {
   if (!items.length) return null;
@@ -47,8 +61,10 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
   const [results, setResults] = useState<ProductImportQueueResult[]>([]);
   const [message, setMessage] = useState("");
   const [sessionComplete, setSessionComplete] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<ImportRunStatus | null>(null);
 
-  const readJson = async (response: Response) => {
+  const readJson = useCallback(async (response: Response) => {
     const body = await response.text();
     try {
       const value: unknown = JSON.parse(body);
@@ -60,7 +76,46 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
         retryable: !response.ok && [408, 429, 500, 502, 503, 504].includes(response.status)
       };
     }
-  };
+  }, []);
+
+  const refreshRunStatus = useCallback(async (runId: string) => {
+    const response = await fetch(`/api/catalog/products/import/status?runId=${encodeURIComponent(runId)}`, { cache: "no-store" });
+    const result = await readJson(response);
+    if (!response.ok) {
+      if (response.status === 404) {
+        localStorage.removeItem(ACTIVE_IMPORT_RUN_KEY);
+        setActiveRunId(null);
+      }
+      return;
+    }
+    const status = result as unknown as ImportRunStatus;
+    setRunStatus(status);
+    const completed = status.productsSaved + status.imagesCompleted + status.imagesFailed;
+    const total = status.productsTotal + status.imagesTotal;
+    setProgress(total ? Math.min(100, Math.round((completed / total) * 100)) : status.done ? 100 : 0);
+    if (status.done) {
+      setSessionComplete(true);
+      localStorage.removeItem(ACTIVE_IMPORT_RUN_KEY);
+      setActiveRunId(null);
+      setMessage(status.imagesFailed
+        ? `${status.imagesFailed} imagem(ns) não puderam ser importadas. Os produtos foram preservados.`
+        : "Importação concluída.");
+      await onImported();
+    }
+  }, [onImported, readJson]);
+
+  useEffect(() => {
+    if (!open) return;
+    const storedRunId = localStorage.getItem(ACTIVE_IMPORT_RUN_KEY);
+    if (storedRunId) setActiveRunId(storedRunId);
+  }, [open]);
+
+  useEffect(() => {
+    if (!activeRunId) return;
+    void refreshRunStatus(activeRunId);
+    const timer = window.setInterval(() => { void refreshRunStatus(activeRunId); }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [activeRunId, refreshRunStatus]);
 
   const selectFile = async (selected: File) => {
     setFile(selected);
@@ -97,6 +152,8 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     setResults([]);
     setProgress(0);
     try {
+      localStorage.setItem(ACTIVE_IMPORT_RUN_KEY, preview.sessionId);
+      setActiveRunId(preview.sessionId);
       const completed = await runProductImportQueue(candidates.map((product) => product.key), async (productKey) => {
         return runProductImportBatches(productKey, async (imageOffset) => {
           const response = await fetch("/api/catalog/products/import", {
@@ -128,13 +185,13 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
       if (stopped) {
         setMessage(`Importação interrompida para evitar novas falhas no servidor. ${stopped.message}`);
       }
-      if (completed.every((result) => result.ok && !result.imageFailures)) {
+      if (completed.length === candidates.length && completed.every((result) => result.ok)) {
         await fetch("/api/catalog/products/import/preview", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ sessionId: preview.sessionId })
         }).catch(() => undefined);
-        setSessionComplete(true);
+        await refreshRunStatus(preview.sessionId);
       }
       await onImported();
     } finally {
@@ -188,9 +245,13 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           </div>
           </> : null}
 
-          {importing || results.length ? <section className="product-import-progress" aria-live="polite">
+          {importing || results.length || runStatus ? <section className="product-import-progress" aria-live="polite">
           <div><strong>Progresso da importação</strong><span>{progress}%</span></div>
           <progress max="100" value={progress}>{progress}%</progress>
+          {runStatus && !runStatus.done ? <p className="product-import-result-message">
+            {runStatus.productsSaved}/{runStatus.productsTotal} produtos salvos · {runStatus.imagesCompleted}/{runStatus.imagesTotal} imagens concluídas
+            {runStatus.imagesProcessing ? ` · ${runStatus.imagesProcessing} processando` : ""}
+          </p> : null}
           {results.length ? <div className="product-import-results-heading">
             <h3>Resultado da importação</h3>
             <div className="product-import-result-summary" aria-label="Resumo do resultado">

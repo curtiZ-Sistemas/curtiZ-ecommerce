@@ -118,6 +118,10 @@ describe("product import preview", () => {
     expect(body.sessionId).toBe("20000000-0000-0000-0000-000000000003");
     expect(mocks.parseWorkbook).toHaveBeenCalledTimes(1);
     expect(mocks.from).toHaveBeenCalledWith("product_import_sessions");
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_create_product_import_run", {
+      p_run_id: "20000000-0000-0000-0000-000000000003",
+      p_products_total: 1
+    });
   });
 
   it("returns a safe diagnostic when the import session migration is missing", async () => {

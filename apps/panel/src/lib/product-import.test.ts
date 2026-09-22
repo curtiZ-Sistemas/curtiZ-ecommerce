@@ -156,15 +156,16 @@ describe("product XLSX import", () => {
     expect(() => parseProductImportSessionPayload({ ...payload, references: {} })).toThrow(/sessão/iu);
   });
 
-  it("continues the queue after one product fails", async () => {
+  it("stops the queue after a network failure", async () => {
     const called: string[] = [];
     const results = await runProductImportQueue(["one", "two", "three"], async (key) => {
       called.push(key);
       if (key === "two") throw new Error("failed");
       return { productKey: key, ok: true, message: "ok" };
     });
-    expect(called).toEqual(["one", "two", "three"]);
-    expect(results.map((result) => result.ok)).toEqual([true, false, true]);
+    expect(called).toEqual(["one", "two"]);
+    expect(results.map((result) => result.ok)).toEqual([true, false]);
+    expect(results[1]?.queueStopped).toBe(true);
   });
 
   it("stops the queue after a global server failure", async () => {
@@ -205,16 +206,15 @@ describe("product XLSX import", () => {
     expect(result).toMatchObject({ ok: true, alreadyImported: false, warnings: ["Aviso repetido"] });
   });
 
-  it("retries a transient worker failure without duplicating the product", async () => {
+  it("does not retry a transient server failure in the browser", async () => {
     let attempts = 0;
     const result = await runProductImportBatches("PROD-1", async () => {
       attempts += 1;
-      if (attempts < 3) return { productKey: "PROD-1", ok: false, retryable: true, message: "HTTP 503" };
-      return { productKey: "PROD-1", ok: true, alreadyImported: true, message: "concluído", hasMore: false };
-    }, 0, 0);
+      return { productKey: "PROD-1", ok: false, retryable: true, message: "HTTP 503" };
+    }, 0);
 
-    expect(attempts).toBe(3);
-    expect(result).toMatchObject({ ok: true, alreadyImported: true });
+    expect(attempts).toBe(1);
+    expect(result).toMatchObject({ ok: false, retryable: true });
   });
 
   it("does not retry a deterministic server failure", async () => {
@@ -222,7 +222,7 @@ describe("product XLSX import", () => {
     const result = await runProductImportBatches("PROD-1", async () => {
       attempts += 1;
       return { productKey: "PROD-1", ok: false, retryable: false, code: "INVALID_PRODUCT_DATA", message: "Dados inválidos" };
-    }, 0, 0);
+    }, 0);
 
     expect(attempts).toBe(1);
     expect(result).toMatchObject({ ok: false, code: "INVALID_PRODUCT_DATA" });

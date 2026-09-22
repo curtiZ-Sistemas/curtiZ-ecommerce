@@ -1,0 +1,48 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "curtiz-product-import-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-31",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "images": { "binding": "IMAGES" },
+  "queues": {
+    "consumers": [{
+      "queue": "curtiz-product-images",
+      "max_batch_size": 1,
+      "max_batch_timeout": 1,
+      "max_retries": 4,
+      "dead_letter_queue": "curtiz-product-images-dlq",
+      "max_concurrency": 2,
+      "retry_delay": 30
+    }]
+  },
+  "observability": { "enabled": true },
+  "env": {
+    "staging": {
+      "name": "curtiz-product-import-worker-staging",
+      "images": { "binding": "IMAGES" },
+      "queues": { "consumers": [{
+        "queue": "curtiz-product-images-staging",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 4,
+        "dead_letter_queue": "curtiz-product-images-staging-dlq",
+        "max_concurrency": 2,
+        "retry_delay": 30
+      }] }
+    },
+    "production": {
+      "name": "curtiz-product-import-worker",
+      "images": { "binding": "IMAGES" },
+      "queues": { "consumers": [{
+        "queue": "curtiz-product-images",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 4,
+        "dead_letter_queue": "curtiz-product-images-dlq",
+        "max_concurrency": 2,
+        "retry_delay": 30
+      }] }
+    }
+  }
+}

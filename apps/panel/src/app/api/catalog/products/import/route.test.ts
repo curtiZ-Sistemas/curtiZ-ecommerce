@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   readJsonResponse: vi.fn(),
-  parseSession: vi.fn()
+  parseSession: vi.fn(),
+  enqueueImages: vi.fn()
 }));
 const sessionState: { result: { data: unknown; error: { code?: string; message?: string } | null } } = {
   result: { data: null, error: null }
@@ -31,6 +32,7 @@ vi.mock("@/lib/product-import-session", () => ({
   productImportTaxonomySlug: vi.fn((value: string) => value.toLocaleLowerCase("pt-BR").replace(/\s+/gu, "-"))
 }));
 vi.mock("@/lib/product-import-images", async () => await import("../../../../../lib/product-import-images"));
+vi.mock("@/lib/product-import-queue", () => ({ enqueueProductImportImages: mocks.enqueueImages }));
 vi.mock("@/lib/catalog-image", () => ({ inspectCatalogImage: vi.fn() }));
 vi.mock("@/lib/image-upload", () => ({ prepareUploadImage: vi.fn() }));
 vi.mock("@/lib/product-management", () => ({ automaticProductSeo: vi.fn(() => ({ title: "Produto", description: "Produto" })) }));
@@ -75,9 +77,11 @@ describe("product import session API", () => {
     mocks.readJsonResponse.mockResolvedValue({
       sessionId: "20000000-0000-0000-0000-000000000003", productKey: "PROD-1", imageOffset: -1
     });
-    mocks.rpc.mockImplementation(async (name: string) => name === "has_permission"
-      ? { data: true, error: null }
-      : { data: { productId: "20000000-0000-0000-0000-000000000004", alreadyImported: false }, error: null });
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "has_permission") return { data: true, error: null };
+      if (name === "admin_enqueue_product_import_images") return { data: { jobIds: ["20000000-0000-0000-0000-000000000006"] }, error: null };
+      return { data: { productId: "20000000-0000-0000-0000-000000000004", alreadyImported: false }, error: null };
+    });
     mocks.from.mockImplementation(() => sessionQuery());
   });
 
@@ -95,10 +99,10 @@ describe("product import session API", () => {
     });
 
     const response = await POST(request());
-    const body = await response.json() as { hasMore?: boolean; nextImageOffset?: number };
+    const body = await response.json() as { hasMore?: boolean; queuedImages?: number };
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ hasMore: true, nextImageOffset: 0 });
+    expect(body).toMatchObject({ hasMore: false, queuedImages: 1 });
     const importCalls = mocks.rpc.mock.calls as Array<[string, { p_payload?: { status?: unknown; variants?: Array<{ stock?: unknown }> } }]>;
     const importCall = importCalls.find(([name]) => name === "admin_import_product_with_taxonomy_authorized");
     expect(importCall?.[1].p_payload?.status).toBe("draft");
@@ -121,6 +125,11 @@ describe("product import session API", () => {
       p_create_model: true
     });
     expect(mocks.from).not.toHaveBeenCalledWith("product_variants");
+    expect(mocks.enqueueImages).toHaveBeenCalledWith([{
+      jobId: "20000000-0000-0000-0000-000000000006",
+      runId: "20000000-0000-0000-0000-000000000003",
+      productId: "20000000-0000-0000-0000-000000000004"
+    }]);
   });
 
   it("returns safe non-retryable database diagnostics", async () => {
@@ -170,7 +179,7 @@ describe("product import session API", () => {
     expect(JSON.stringify(body)).not.toContain("null character");
   });
 
-  it("keeps the saved draft when an image fails and allows image resumption", async () => {
+  it("never downloads or transforms images inside the panel Worker", async () => {
     mocks.readJsonResponse.mockResolvedValue({
       sessionId: "20000000-0000-0000-0000-000000000003", productKey: "PROD-1", imageOffset: 0
     });
@@ -199,13 +208,12 @@ describe("product import session API", () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("CDN indisponível"); }));
 
     const response = await POST(request());
-    const body = await response.json() as { imageFailures?: boolean; hasMore?: boolean; warnings?: string[] };
+    const body = await response.json() as { imageFailures?: boolean; hasMore?: boolean; warnings?: string[]; queuedImages?: number };
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ imageFailures: true, hasMore: false });
+    expect(body).toMatchObject({ imageFailures: false, hasMore: false, queuedImages: 1 });
     expect(body.warnings?.some((warning) => warning.includes("cores diferentes"))).toBe(true);
-    expect(body.warnings?.some((warning) => warning.includes("Imagem 1"))).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalledWith("products");
   });
 });

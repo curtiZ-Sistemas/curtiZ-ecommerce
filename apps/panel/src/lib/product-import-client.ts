@@ -24,7 +24,8 @@ const GLOBAL_IMPORT_FAILURES = new Set([
   "SESSION_EXPIRED",
   "ORIGIN_NOT_ALLOWED",
   "PERMISSION_DENIED",
-  "UPSTREAM_UNAVAILABLE"
+  "UPSTREAM_UNAVAILABLE",
+  "NETWORK_FAILURE"
 ]);
 
 function stopsProductImportQueue(result: ProductImportQueueResult) {
@@ -34,8 +35,7 @@ function stopsProductImportQueue(result: ProductImportQueueResult) {
 export async function runProductImportBatches(
   productKey: string,
   importBatch: (imageOffset: number) => Promise<ProductImportBatchResult>,
-  pauseBetweenBatchesMs = 650,
-  retryDelayBaseMs = 700
+  pauseBetweenBatchesMs = 650
 ): Promise<ProductImportQueueResult> {
   let imageOffset = -1;
   let firstRequest = true;
@@ -47,18 +47,7 @@ export async function runProductImportBatches(
   let failureDiagnosticCaptured = false;
   const warnings = new Set<string>();
   for (let batch = 0; batch < 501; batch += 1) {
-    let result: ProductImportBatchResult | null = null;
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        result = await importBatch(imageOffset);
-        if (result.ok || !result.retryable) break;
-      } catch (error) {
-        lastError = error;
-      }
-      if (attempt < 2 && retryDelayBaseMs > 0) await new Promise((resolve) => setTimeout(resolve, retryDelayBaseMs * (attempt + 1)));
-    }
-    if (!result) throw lastError instanceof Error ? lastError : new Error("Falha de conexão durante a importação.");
+    const result = await importBatch(imageOffset);
     if (!result.ok) return { ...result, warnings: [...warnings, ...(result.warnings ?? [])] };
     if (firstRequest) initiallyImported = result.alreadyImported === true;
     firstRequest = false;
