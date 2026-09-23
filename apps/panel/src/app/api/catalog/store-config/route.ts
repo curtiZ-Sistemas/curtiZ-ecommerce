@@ -9,6 +9,15 @@ const text = (value: unknown) => typeof value === "string" ? value : "";
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value)
   ? value as Record<string, unknown> : {};
 
+function navigationSyncFailure(databaseCode?: string) {
+  if (databaseCode === "42501") return { status: 403, code: "STORE_CONFIG_PERMISSION_DENIED", retryable: false };
+  if (databaseCode === "22023") return { status: 400, code: "STORE_CONFIG_INVALID", retryable: false };
+  if (["23503", "23505", "23514", "P0002"].includes(databaseCode ?? "")) {
+    return { status: 409, code: "STORE_CONFIG_CONFLICT", retryable: false };
+  }
+  return { status: 503, code: "STORE_CONFIG_SYNC_FAILED", retryable: true };
+}
+
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID();
   if (!safePanelOrigin(request)) return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
@@ -23,9 +32,11 @@ export async function POST(request: NextRequest) {
     || typeof action !== "string" || !["preview", "apply"].includes(action)) {
     return NextResponse.json({ message: "Selecione um XLSX de até 5 MB e uma ação válida." }, { status: 400, headers: privateNoStore });
   }
+  let stage = "workbook";
   try {
     const plan = await parseStoreConfigWorkbook(new Uint8Array(await file.arrayBuffer()));
     if (!plan) return NextResponse.json({ hasConfig: false }, { headers: privateNoStore });
+    stage = "permissions";
     const required = ["catalog.taxonomy.manage"];
     const permissionResults = await Promise.all(required.map((permissionCode) => auth.supabase.rpc("has_permission", { permission_code: permissionCode })));
     if (permissionResults.some((result) => result.error || result.data !== true)) {
@@ -39,6 +50,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Sem permissão suficiente para aplicar a configuração da home." }, { status: 403, headers: privateNoStore });
     }
 
+    stage = "read_current";
     const [sectionsResult, categoriesResult, productsResult, featuredResult, sellersResult] = await Promise.all([
       auth.supabase.from("homepage_sections")
         .select("id,internal_name,section_type,revision,content_config,status")
@@ -49,7 +61,9 @@ export async function POST(request: NextRequest) {
       auth.supabase.rpc("get_homepage_best_sellers", { p_period: "all", p_metric: "units", p_limit: 1, p_fill: false, p_in_stock: true })
     ]);
     if (sectionsResult.error || categoriesResult.error || productsResult.error || featuredResult.error || sellersResult.error) {
-      return NextResponse.json({ message: "Não foi possível consultar a configuração atual da loja." }, { status: 503, headers: privateNoStore });
+      logServerEvent("error", "store_config_read_failed", { requestId, stage, code: "CONFIG_READ_FAILED" });
+      return NextResponse.json({ message: "Não foi possível consultar a configuração atual da loja.",
+        requestId, stage, code: "STORE_CONFIG_READ_FAILED", retryable: true }, { status: 503, headers: privateNoStore });
     }
     const currentSections = objectRows(sectionsResult.data);
     const hasCurrentProducts = Array.isArray(record(productsResult.data).products) && (record(productsResult.data).products as unknown[]).length > 0;
@@ -79,6 +93,7 @@ export async function POST(request: NextRequest) {
       ] };
     if (action === "preview") return NextResponse.json(preview, { headers: privateNoStore });
 
+    stage = "navigation";
     const synced = await auth.supabase.rpc("admin_sync_store_navigation", {
       p_categories: plan.categories.map(({ name, slug, active, showMenu, showHome, sortOrder, description }) =>
         ({ name, slug, active, showMenu, showHome, sortOrder, description })),
@@ -87,10 +102,14 @@ export async function POST(request: NextRequest) {
     });
     if (synced.error) {
       logServerEvent("error", "store_config_navigation_failed", { requestId, code: synced.error.code });
-      return NextResponse.json({ ...preview, message: "Não foi possível sincronizar categorias e navegação.", requestId }, { status: 409, headers: privateNoStore });
+      const failure = navigationSyncFailure(synced.error.code);
+      return NextResponse.json({ ...preview, message: "Não foi possível sincronizar categorias e navegação.",
+        requestId, stage: "navigation", code: failure.code, retryable: failure.retryable },
+      { status: failure.status, headers: privateNoStore });
     }
     const saved: string[] = [];
     for (const section of desired) {
+      stage = "homepage_sections";
       const existing = currentSections.find((candidate) => candidate.internal_name === section.payload.internalName);
       if (existing && record(existing.content_config).configHash === section.hash) continue;
       const result = await auth.supabase.rpc("save_homepage_section", {
@@ -101,16 +120,20 @@ export async function POST(request: NextRequest) {
       if (result.error || typeof savedSectionId !== "string") {
         logServerEvent("error", "store_config_section_failed", { requestId, code: result.error?.code ?? "NO_ID", key: section.key });
         return NextResponse.json({ ...preview, saved, requestId,
+          stage, code: "STORE_CONFIG_SECTION_SAVE_FAILED", retryable: true,
           message: `Categorias foram sincronizadas, mas a seção ${section.key} não foi salva. Reenvie a planilha para continuar.`
         }, { status: 409, headers: privateNoStore });
       }
       saved.push(section.key);
       if (plan.options.publicar_home_automaticamente) {
+        stage = "homepage_review";
         const submitted = await auth.supabase.rpc("transition_homepage_section", {
           p_section_id: savedSectionId, p_action: "submit_review", p_reason: "Configuração automática da loja por planilha"
         });
         if (submitted.error) {
+          logServerEvent("error", "store_config_section_review_failed", { requestId, code: submitted.error.code, key: section.key });
           return NextResponse.json({ ...preview, saved, requestId,
+            stage, code: "STORE_CONFIG_SECTION_REVIEW_FAILED", retryable: true,
             message: `A seção ${section.key} foi salva, mas não pôde ser enviada para revisão.`
           }, { status: 409, headers: privateNoStore });
         }
@@ -121,8 +144,11 @@ export async function POST(request: NextRequest) {
       message: saved.length ? "Configuração salva no Homepage Builder." : "Configuração já estava atualizada."
     }, { headers: privateNoStore });
   } catch (error) {
-    logServerEvent("error", "store_config_parse_failed", { requestId, code: error instanceof Error ? error.message.slice(0, 100) : "unknown" });
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Não foi possível validar a planilha.", requestId },
-      { status: 400, headers: privateNoStore });
+    const invalidWorkbook = stage === "workbook";
+    logServerEvent("error", "store_config_apply_failed", { requestId, stage,
+      code: invalidWorkbook ? "INVALID_WORKBOOK" : "APPLY_FAILED" });
+    return NextResponse.json({ message: invalidWorkbook ? "Não foi possível validar a planilha." : "Não foi possível aplicar a configuração da loja.",
+      requestId, stage, code: invalidWorkbook ? "INVALID_STORE_CONFIG_WORKBOOK" : "STORE_CONFIG_APPLY_FAILED",
+      retryable: !invalidWorkbook }, { status: invalidWorkbook ? 400 : 503, headers: privateNoStore });
   }
 }

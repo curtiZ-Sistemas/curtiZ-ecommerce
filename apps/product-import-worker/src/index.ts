@@ -182,7 +182,7 @@ export async function processProductImageMessage(message: ProductImportImageMess
       p_job_id: message.jobId, p_lock_token: lockToken, p_error_code: failure.code, p_retryable: failure.retryable
     });
     console.warn(JSON.stringify({ runId: message.runId, jobId: message.jobId, productId: message.productId, stage: failure.stage, attempt: claimed.attempt, code: failure.code }));
-    return { retry: failed.retry === true || failed.exhausted === true, state: text(failed.state) || "failed" };
+    return { retry: failed.retry === true, state: text(failed.state) || "failed" };
   }
 }
 

@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { normalizeProductColorName } from "@curtiz/domain";
 import { parseCatalogFilters, queryDemoCatalog } from "@/lib/catalog-query";
-import { parseCatalogRpcResult } from "@/lib/catalog-result";
+import { parseCatalogRpcPage, parseCatalogRpcResult } from "@/lib/catalog-result";
 import { isPresentationCatalogEnabled } from "@/lib/presentation-catalog";
 import { storefrontFreshnessHeaders } from "@/lib/storefront-cache";
 import { createPublicSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import { readQueryResult } from "@/lib/unknown-data";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +24,7 @@ export async function GET(request: Request) {
 
   const supabase = createPublicSupabaseClient();
   if (supabase) {
-    const rpcResponse: unknown = await supabase.rpc("search_catalog", {
+    const rpcArgs = {
       p_query: filters.query ?? null,
       p_category: filters.category ?? null,
       p_collection: filters.collection ?? null,
@@ -40,7 +39,17 @@ export async function GET(request: Request) {
       p_sort: filters.newest ? "newest" : filters.sort,
       p_page: filters.page,
       p_page_size: suggestions ? Math.min(filters.pageSize, 8) : filters.pageSize
-    });
+    };
+    if (filters.page > 1 && !compact) {
+      const pageResponse: unknown = await supabase.rpc("search_catalog_page", rpcArgs);
+      const pageData = readQueryResult(pageResponse);
+      const pageResult = pageData.error ? null : parseCatalogRpcPage(pageData.data, filters.sort);
+      if (pageResult) {
+        return NextResponse.json({ ...pageResult, facets: emptyFacets, page: filters.page,
+          pageSize: filters.pageSize, source: "supabase" }, { headers: storefrontFreshnessHeaders });
+      }
+    }
+    const rpcResponse: unknown = await supabase.rpc("search_catalog", rpcArgs);
     const { data, error } = readQueryResult(rpcResponse);
     if (!error) {
       const result = parseCatalogRpcResult(data, {
@@ -49,41 +58,7 @@ export async function GET(request: Request) {
         sort: filters.sort
       });
       if (result) {
-        if (compact || !result.facets.colors.length) {
-          return NextResponse.json(compact ? { products: result.products } : result, {
-            headers: storefrontFreshnessHeaders
-          });
-        }
-        const colorResponse = await supabase
-          .from("product_variants")
-          .select("color_name,color_hex_secondary,updated_at")
-          .in("color_name", result.facets.colors.map((option) => option.value))
-          .eq("active", true)
-          .order("updated_at", { ascending: false })
-          .limit(500);
-        const secondaryByName = new Map<string, string>();
-        if (!colorResponse.error) {
-          for (const row of readRows(colorResponse.data)) {
-            const key = normalizeProductColorName(readString(row, "color_name"));
-            const secondary = readString(row, "color_hex_secondary");
-            if (key && secondary && !secondaryByName.has(key)) secondaryByName.set(key, secondary);
-          }
-        }
-        const enrichedResult = secondaryByName.size
-          ? {
-              ...result,
-              facets: {
-                ...result.facets,
-                colors: result.facets.colors.map((option) => ({
-                  ...option,
-                  ...(secondaryByName.get(normalizeProductColorName(option.value))
-                    ? { secondaryHex: secondaryByName.get(normalizeProductColorName(option.value)) }
-                    : {})
-                }))
-              }
-            }
-          : result;
-        return NextResponse.json(enrichedResult, {
+        return NextResponse.json(compact ? { products: result.products } : result, {
           headers: storefrontFreshnessHeaders
         });
       }
@@ -102,3 +77,8 @@ export async function GET(request: Request) {
     { status: 503, headers: { "cache-control": "no-store" } }
   );
 }
+
+const emptyFacets = {
+  categories: [], collections: [], colors: [], sizes: [],
+  price: { min: 0, max: 0 }, promotionCount: 0, inStockCount: 0, newestCount: 0
+};

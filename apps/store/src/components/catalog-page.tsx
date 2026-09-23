@@ -1,6 +1,6 @@
 "use client";
 
-import { formatBRL, storefrontItemKey } from "@curtiz/domain";
+import { formatBRL, storefrontItemKey, type Product } from "@curtiz/domain";
 import {
   ChevronDown,
   RotateCcw,
@@ -25,6 +25,8 @@ import {
   type FacetOption
 } from "@/lib/catalog-query";
 import { appendCatalogPage, catalogFilterKey } from "@/lib/catalog-pagination";
+import { availableCatalogRecommendations } from "@/lib/catalog-recommendations";
+import { intelligenceSessionId, recentlyViewedProductIds } from "@/lib/intelligence-client";
 import { ProductCard } from "./product-card";
 import { ColorSwatch } from "./color-swatch";
 
@@ -87,6 +89,8 @@ export function CatalogPage({
   const [page, setPage] = useState(1);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [supportsObserver, setSupportsObserver] = useState(true);
+  const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
+  const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -230,21 +234,6 @@ export function CatalogPage({
     observer.observe(target);
     return () => observer.disconnect();
   }, [error, loading, page, result]);
-
-  useEffect(() => {
-    let lastRefresh = Date.now();
-    const refreshVisibleCatalog = () => {
-      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < 1000) return;
-      lastRefresh = Date.now();
-      setRetry((current) => current + 1);
-    };
-    document.addEventListener("visibilitychange", refreshVisibleCatalog);
-    window.addEventListener("focus", refreshVisibleCatalog);
-    return () => {
-      document.removeEventListener("visibilitychange", refreshVisibleCatalog);
-      window.removeEventListener("focus", refreshVisibleCatalog);
-    };
-  }, []);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -447,6 +436,64 @@ export function CatalogPage({
         )
       )
     : 1;
+
+  const searchTerm = (filters.query ?? query ?? "").trim();
+  const searchHasNoResults = Boolean(searchTerm) && result?.total === 0 && products.length === 0;
+  const shouldLoadSearchSuggestions = searchHasNoResults && activeFilters === 0 && !loading;
+
+  useEffect(() => {
+    if (!shouldLoadSearchSuggestions) {
+      setSearchSuggestions([]);
+      setSearchSuggestionsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSearchSuggestions([]);
+    setSearchSuggestionsLoading(true);
+    void (async () => {
+      const sources: Array<"personalized" | "most_wanted" | "trending" | "newest" | "discovery"> = [];
+      let sessionId: string | null = null;
+      try { sessionId = intelligenceSessionId(); } catch { /* suggestions remain available without session storage */ }
+      if (sessionId) sources.push("personalized");
+      sources.push("most_wanted", "trending", "newest", "discovery");
+
+      const suggestions: Product[] = [];
+      for (const source of sources) {
+        if (suggestions.length >= 8 || controller.signal.aborted) break;
+        const seen = suggestions.map((product) => product.id);
+        const limit = 8 - suggestions.length;
+        let response: Response;
+        try {
+          response = source === "personalized"
+            ? await fetch("/api/intelligence/recommendations", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ source, sessionId, recent: recentlyViewedProductIds(), seen, seed: searchTerm, limit }),
+              cache: "no-store", signal: controller.signal
+            })
+            : await fetch(`/api/intelligence/recommendations?${new URLSearchParams({ source, limit: String(limit), seed: searchTerm, seen: seen.join(",") })}`, {
+              cache: "no-store", signal: controller.signal
+            });
+        } catch {
+          if (controller.signal.aborted) break;
+          continue;
+        }
+        if (!response.ok) continue;
+        let payload: unknown;
+        try { payload = await response.json(); } catch { continue; }
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+        const body = payload as { products?: unknown; demo?: unknown; source?: unknown };
+        if (body.demo === true || body.source === "demo" || !Array.isArray(body.products)) continue;
+        const batch = availableCatalogRecommendations(body.products as Product[], limit);
+        suggestions.push(...batch.filter((product) => !suggestions.some((item) => item.id === product.id)));
+      }
+      if (!controller.signal.aborted) setSearchSuggestions(availableCatalogRecommendations(suggestions));
+    })().catch(() => {
+      if (!controller.signal.aborted) setSearchSuggestions([]);
+    }).finally(() => {
+      if (!controller.signal.aborted) setSearchSuggestionsLoading(false);
+    });
+    return () => controller.abort();
+  }, [searchTerm, shouldLoadSearchSuggestions]);
 
   const filterContent = (
     mobile = false
@@ -1176,8 +1223,7 @@ export function CatalogPage({
                 <button type="button" className="secondary-button" onClick={() => setRetry((current) => current + 1)}>Tentar novamente</button>
               </div>}
               {loading && page > 1 && <p className="catalog-load-status" role="status">Carregando mais produtos…</p>}
-              {page < totalPages ? <div ref={loadMoreRef} className="catalog-load-trigger" aria-hidden="true" />
-                : <p className="catalog-load-status" role="status">Você viu todos os produtos desta seleção.</p>}
+              {page < totalPages && <div ref={loadMoreRef} className="catalog-load-trigger" aria-hidden="true" />}
               {page < totalPages && !supportsObserver ?
                 <button type="button" className="secondary-button" disabled={loading || Boolean(error)}
                   onClick={() => setPage((current) => current + 1)}>
@@ -1189,17 +1235,32 @@ export function CatalogPage({
               <SlidersHorizontal />
 
               <h2>
-                Nenhum produto
-                encontrado com esses
-                filtros.
+                {searchHasNoResults
+                  ? `Não encontramos resultados para “${searchTerm}”.`
+                  : "Nenhum produto encontrado com esses filtros."}
               </h2>
 
               <p>
-                Remova um filtro ou
-                limpe a seleção para
-                visualizar outras
-                opções.
+                {searchHasNoResults
+                  ? activeFilters
+                    ? "Remova um filtro ou tente outra busca para encontrar produtos."
+                    : "Tente outra busca ou veja algumas sugestões da curti Z."
+                  : "Remova um filtro ou limpe a seleção para visualizar outras opções."}
               </p>
+
+              {searchHasNoResults && activeFilters === 0 && (
+                <section className="search-no-results-recommendations" aria-labelledby="search-suggestions-title">
+                  <h3 id="search-suggestions-title">Talvez você curta</h3>
+                  {searchSuggestionsLoading && <p role="status">Buscando sugestões…</p>}
+                  {searchSuggestions.length > 0 && (
+                    <div className="product-grid">
+                      {searchSuggestions.map((product) => (
+                        <ProductCard key={product.id} product={product} recommendationSource="search_no_results" />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
 
               <div className="empty-state-actions">
                 <button

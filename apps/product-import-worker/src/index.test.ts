@@ -85,4 +85,20 @@ describe("product import image queue consumer", () => {
 
     await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: true, state: "queued" });
   });
+
+  it("acknowledges a permanently failed job even when the retry limit was exhausted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/claim_product_import_image_job")) return responseJson({
+        state: "claimed", productId: message.productId, sourceUrl: "https://down-sg.img.susercontent.com/file/a",
+        storagePath: `products/imports/${message.productId}/${"a".repeat(64)}.webp`, attempt: 5
+      });
+      if (url.includes("/object/authenticated/")) return new Response(null, { status: 404 });
+      if (url.startsWith("https://down-sg.img.susercontent.com/")) return new Response(null, { status: 503 });
+      if (url.endsWith("/fail_product_import_image_job")) return responseJson({ retry: false, exhausted: true, state: "failed" });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: false, state: "failed" });
+  });
 });

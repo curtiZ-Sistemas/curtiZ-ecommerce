@@ -9,7 +9,8 @@ import GlobalError from "../app/global-error";
 import type { PublicBanner } from "@/lib/storefront-data";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() })
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams("q=teste-inicial")
 }));
 vi.mock("./favorites-provider", () => ({
   useFavorites: () => ({ hydrated: true, has: () => false, toggle: vi.fn() })
@@ -70,6 +71,7 @@ describe("public storefront components", () => {
 
     expect(html).toContain('role="search"');
     expect(html).toContain('role="combobox"');
+    expect(html).toContain('value="teste-inicial"');
     expect(html).toContain('aria-autocomplete="list"');
     expect(html).toContain('action="/busca"');
     expect(html).toContain('placeholder="Qual pegada você vai curti?"');

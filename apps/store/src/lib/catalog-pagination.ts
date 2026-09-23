@@ -16,5 +16,5 @@ export function appendCatalogPage(current: CatalogResult | null, next: CatalogRe
     existing.add(key);
     products.push(product);
   }
-  return { ...next, products };
+  return { ...next, facets: current && next.page !== 1 ? current.facets : next.facets, products };
 }

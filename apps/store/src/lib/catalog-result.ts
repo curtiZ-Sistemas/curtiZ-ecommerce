@@ -55,6 +55,7 @@ export const rpcResultSchema = z.object({
 });
 
 export const rpcProductListSchema = z.array(rpcProductSchema);
+const rpcProductPageSchema = z.object({ products: z.array(rpcProductSchema), total: z.coerce.number().int().nonnegative() });
 
 export const productCategory = (value: string): Product["category"] => {
   const category = value.normalize("NFKC").trim().replace(/\s+/gu, " ").slice(0, 120);
@@ -118,6 +119,13 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
 export function parseRpcProductList(data: unknown): Product[] | null {
   const parsed = rpcProductListSchema.safeParse(data);
   return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct).filter((product) => Boolean(product.image))) : null;
+}
+
+export function parseCatalogRpcPage(data: unknown, sort?: string) {
+  const parsed = rpcProductPageSchema.safeParse(data);
+  if (!parsed.success) return null;
+  const products = parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image));
+  return { products: sort === "best_sellers" ? products : diversifyStorefrontItems(products), total: parsed.data.total };
 }
 
 export function parseCatalogRpcResult(

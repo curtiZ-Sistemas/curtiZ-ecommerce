@@ -3,8 +3,9 @@
 import { formatBRL, storefrontItemKey, storefrontProductHref, type Product } from "@curtiz/domain";
 import { Clock3, LoaderCircle, Search, X } from "lucide-react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import React, {
+  Suspense,
   type FormEvent,
   type KeyboardEvent,
   useEffect,
@@ -24,6 +25,14 @@ import { hasConsentCategory } from "../lib/privacy/consent-client";
 
 const recentSearchesKey = "curtiz-recent-searches";
 
+type SearchAutocompleteProps = {
+  idPrefix: string;
+  className?: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onNavigate?: () => void;
+};
+
 type SearchOption =
   | { id: string; type: "product"; label: string; href: string; product: Product }
   | { id: string; type: "category"; label: string; href: string }
@@ -32,23 +41,45 @@ type SearchOption =
 
 type RecommendationResult = { products?: Product[] };
 
-export function SearchAutocomplete({
+export function SearchAutocomplete(props: SearchAutocompleteProps) {
+  return (
+    <Suspense fallback={<SearchAutocompleteFallback {...props} />}>
+      <SearchAutocompleteClient {...props} />
+    </Suspense>
+  );
+}
+
+function SearchAutocompleteFallback({
+  idPrefix,
+  className = "",
+  placeholder = "Qual pegada você vai curti?",
+  autoFocus = false
+}: SearchAutocompleteProps) {
+  return (
+    <div className={`search-autocomplete ${className}`.trim()}>
+      <form className="search-form" action="/busca" role="search">
+        <label className="sr-only" htmlFor={`${idPrefix}-search`}>Buscar produtos</label>
+        <input id={`${idPrefix}-search`} name="q" type="search" placeholder={placeholder}
+          autoComplete="off" autoFocus={autoFocus} />
+        <button type="submit" aria-label="Buscar"><Search aria-hidden="true" /></button>
+      </form>
+    </div>
+  );
+}
+
+function SearchAutocompleteClient({
   idPrefix,
   className = "",
   placeholder = "Qual pegada você vai curti?",
   autoFocus = false,
   onNavigate
-}: {
-  idPrefix: string;
-  className?: string;
-  placeholder?: string;
-  autoFocus?: boolean;
-  onNavigate?: () => void;
-}) {
+}: SearchAutocompleteProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const routeQuery = searchParams?.get("q") ?? "";
   const generatedId = useId();
   const listId = `${idPrefix}-${generatedId.replaceAll(":", "")}-suggestions`;
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(routeQuery);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<FacetOption[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
@@ -61,6 +92,8 @@ export function SearchAutocomplete({
   const [focused, setFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const requestSequence = useRef(0);
+
+  useEffect(() => setQuery(routeQuery), [routeQuery]);
 
   useEffect(() => {
     const syncRecentSearches = () => {
