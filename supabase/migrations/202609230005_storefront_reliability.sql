@@ -244,7 +244,8 @@ declare
           else pg_catalog.jsonb_build_object('secondaryHex', secondary_hex) end$new$;
   old_aggregate text := 'pg_catalog.min(color) color, pg_catalog.max(hex) hex,';
   old_candidate text := $old$then pg_catalog.btrim(variant.color_hex::text) end hex
-        from public.product_variants variant$old$;
+        from scoped item
+        join public.product_variants variant$old$;
 begin
   select pg_catalog.pg_get_functiondef(
     'public.search_catalog(text,text,text,text[],text[],integer,integer,boolean,boolean,boolean,numeric,text,integer,integer)'::pg_catalog.regprocedure
@@ -261,7 +262,8 @@ begin
     $new$then pg_catalog.btrim(variant.color_hex::text) end hex,
           case when pg_catalog.btrim(variant.color_hex_secondary::text) ~ '^#[0-9A-Fa-f]{6}$'
             then pg_catalog.btrim(variant.color_hex_secondary::text) end secondary_hex
-        from public.product_variants variant$new$);
+        from scoped item
+        join public.product_variants variant$new$);
   execute definition;
 end;
 $migration$;
