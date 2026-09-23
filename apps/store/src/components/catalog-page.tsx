@@ -25,10 +25,11 @@ import {
   type FacetOption
 } from "@/lib/catalog-query";
 import { appendCatalogPage, catalogFilterKey } from "@/lib/catalog-pagination";
-import { availableCatalogRecommendations } from "@/lib/catalog-recommendations";
-import { intelligenceSessionId, recentlyViewedProductIds } from "@/lib/intelligence-client";
+import { intelligenceSessionId, recentlyViewedProductIds, trackIntelligence } from "@/lib/intelligence-client";
+import { loadSmartRecommendations } from "@/lib/smart-recommendations";
 import { ProductCard } from "./product-card";
 import { ColorSwatch } from "./color-swatch";
+import { SearchNoResults, shouldHideEmptyCatalogFilters } from "./search-no-results";
 
 const emptyFacets: CatalogFacets = {
   categories: [],
@@ -91,11 +92,13 @@ export function CatalogPage({
   const [supportsObserver, setSupportsObserver] = useState(true);
   const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
   const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
+  const [searchSuggestionsLoaded, setSearchSuggestionsLoaded] = useState(false);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const pageAdvancePending = useRef(false);
+  const trackedEmptySearch = useRef("");
   const filterKey = useMemo(() => {
     return catalogFilterKey(searchParams.toString());
   }, [searchParams]);
@@ -440,57 +443,44 @@ export function CatalogPage({
   const searchTerm = (filters.query ?? query ?? "").trim();
   const searchHasNoResults = Boolean(searchTerm) && result?.total === 0 && products.length === 0;
   const shouldLoadSearchSuggestions = searchHasNoResults && activeFilters === 0 && !loading;
+  const hideEmptyFilters = shouldHideEmptyCatalogFilters(result?.total, activeFilters, loading);
+
+  useEffect(() => {
+    if (!searchHasNoResults || loading) return;
+    const key = `${searchTerm}:${filterKey}`;
+    if (trackedEmptySearch.current === key) return;
+    trackedEmptySearch.current = key;
+    trackIntelligence({ type: "search_no_results", query: searchTerm, resultCount: 0,
+      source: "search_no_results" });
+  }, [filterKey, loading, searchHasNoResults, searchTerm]);
 
   useEffect(() => {
     if (!shouldLoadSearchSuggestions) {
       setSearchSuggestions([]);
       setSearchSuggestionsLoading(false);
+      setSearchSuggestionsLoaded(false);
       return;
     }
     const controller = new AbortController();
     setSearchSuggestions([]);
     setSearchSuggestionsLoading(true);
+    setSearchSuggestionsLoaded(false);
     void (async () => {
-      const sources: Array<"personalized" | "most_wanted" | "trending" | "newest" | "discovery"> = [];
       let sessionId: string | null = null;
       try { sessionId = intelligenceSessionId(); } catch { /* suggestions remain available without session storage */ }
-      if (sessionId) sources.push("personalized");
-      sources.push("most_wanted", "trending", "newest", "discovery");
-
-      const suggestions: Product[] = [];
-      for (const source of sources) {
-        if (suggestions.length >= 8 || controller.signal.aborted) break;
-        const seen = suggestions.map((product) => product.id);
-        const limit = 8 - suggestions.length;
-        let response: Response;
-        try {
-          response = source === "personalized"
-            ? await fetch("/api/intelligence/recommendations", {
-              method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ source, sessionId, recent: recentlyViewedProductIds(), seen, seed: searchTerm, limit }),
-              cache: "no-store", signal: controller.signal
-            })
-            : await fetch(`/api/intelligence/recommendations?${new URLSearchParams({ source, limit: String(limit), seed: searchTerm, seen: seen.join(",") })}`, {
-              cache: "no-store", signal: controller.signal
-            });
-        } catch {
-          if (controller.signal.aborted) break;
-          continue;
-        }
-        if (!response.ok) continue;
-        let payload: unknown;
-        try { payload = await response.json(); } catch { continue; }
-        if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
-        const body = payload as { products?: unknown; demo?: unknown; source?: unknown };
-        if (body.demo === true || body.source === "demo" || !Array.isArray(body.products)) continue;
-        const batch = availableCatalogRecommendations(body.products as Product[], limit);
-        suggestions.push(...batch.filter((product) => !suggestions.some((item) => item.id === product.id)));
-      }
-      if (!controller.signal.aborted) setSearchSuggestions(availableCatalogRecommendations(suggestions));
+      const suggestions = await loadSmartRecommendations({
+        source: "personalized", sessionId,
+        recent: sessionId ? recentlyViewedProductIds() : [],
+        query: searchTerm, limit: 6, signal: controller.signal
+      });
+      if (!controller.signal.aborted) setSearchSuggestions(suggestions.products);
     })().catch(() => {
       if (!controller.signal.aborted) setSearchSuggestions([]);
     }).finally(() => {
-      if (!controller.signal.aborted) setSearchSuggestionsLoading(false);
+      if (!controller.signal.aborted) {
+        setSearchSuggestionsLoading(false);
+        setSearchSuggestionsLoaded(true);
+      }
     });
     return () => controller.abort();
   }, [searchTerm, shouldLoadSearchSuggestions]);
@@ -842,7 +832,7 @@ export function CatalogPage({
         </div>
       </header>
 
-      <div className="catalog-mobile-actions">
+      {!hideEmptyFilters && <div className="catalog-mobile-actions">
         <button
           ref={triggerRef}
           className="secondary-button"
@@ -862,7 +852,6 @@ export function CatalogPage({
             </span>
           )}
         </button>
-
         <SortSelect
           value={filters.sort}
           promotionAvailable={
@@ -884,7 +873,7 @@ export function CatalogPage({
           {result?.total ?? 0}{" "}
           resultados
         </output>
-      </div>
+      </div>}
 
       {mobileOpen && (
         <div className="filter-drawer-layer">
@@ -959,8 +948,8 @@ export function CatalogPage({
         </div>
       )}
 
-      <div className="catalog-layout">
-        <aside
+      <div className={`catalog-layout${hideEmptyFilters ? " catalog-layout-wide" : ""}`}>
+        {!hideEmptyFilters && <aside
           className="filter-panel"
           aria-label="Filtros do catálogo"
         >
@@ -988,14 +977,14 @@ export function CatalogPage({
           </div>
 
           {filterContent()}
-        </aside>
+        </aside>}
 
         <section
           className="catalog-results"
           aria-live="polite"
           aria-busy={loading}
         >
-          <div className="catalog-results-bar">
+          {!hideEmptyFilters && <div className="catalog-results-bar">
             <span>
               <strong>
                 {result?.total ??
@@ -1023,7 +1012,7 @@ export function CatalogPage({
                 )
               }
             />
-          </div>
+          </div>}
 
           {activeFilters > 0 && (
             <div
@@ -1230,57 +1219,19 @@ export function CatalogPage({
                   Carregar mais produtos
                 </button> : null}
             </>
+          ) : searchHasNoResults && activeFilters === 0 ? (
+            <SearchNoResults searchTerm={searchTerm} suggestions={searchSuggestions}
+              loading={searchSuggestionsLoading} loaded={searchSuggestionsLoaded} />
           ) : (
             <div className="empty-state catalog-empty">
-              <SlidersHorizontal />
-
-              <h2>
-                {searchHasNoResults
-                  ? `Não encontramos resultados para “${searchTerm}”.`
-                  : "Nenhum produto encontrado com esses filtros."}
-              </h2>
-
-              <p>
-                {searchHasNoResults
-                  ? activeFilters
-                    ? "Remova um filtro ou tente outra busca para encontrar produtos."
-                    : "Tente outra busca ou veja algumas sugestões da curti Z."
-                  : "Remova um filtro ou limpe a seleção para visualizar outras opções."}
-              </p>
-
-              {searchHasNoResults && activeFilters === 0 && (
-                <section className="search-no-results-recommendations" aria-labelledby="search-suggestions-title">
-                  <h3 id="search-suggestions-title">Talvez você curta</h3>
-                  {searchSuggestionsLoading && <p role="status">Buscando sugestões…</p>}
-                  {searchSuggestions.length > 0 && (
-                    <div className="product-grid">
-                      {searchSuggestions.map((product) => (
-                        <ProductCard key={product.id} product={product} recommendationSource="search_no_results" />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )}
-
-              <div className="empty-state-actions">
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={reset}
-                >
-                  Limpar filtros
-                </button>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() =>
-                    router.back()
-                  }
-                >
-                  Voltar
-                </button>
-              </div>
+              <SlidersHorizontal aria-hidden="true" />
+              <h2>{searchHasNoResults
+                ? `Não encontramos resultados para “${searchTerm}” com estes filtros.`
+                : "Nenhum produto encontrado com esses filtros."}</h2>
+              <p>Remova um filtro ou ajuste sua busca para ver mais opções.</p>
+              {activeFilters > 0 && <button className="secondary-button" type="button" onClick={reset}>
+                Limpar filtros
+              </button>}
             </div>
           )}
         </section>

@@ -155,7 +155,6 @@ export function ProductCard({
           <strong>{formatBRL(product.priceInCents)}</strong>
           {display?.discount !== false && product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
         </div>}
-        {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
         {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
         {display?.purchase && <Link className="secondary-button compact-button" href={href} prefetch={priority ? null : false}>Ver opções</Link>}
       </div>

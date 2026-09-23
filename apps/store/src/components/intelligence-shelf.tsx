@@ -1,22 +1,13 @@
 "use client";
 
-import { storefrontItemKey, type Product } from "@curtiz/domain";
+import { type Product } from "@curtiz/domain";
 import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
-import { appendEligibleRecommendations, loadRecommendationFallback } from "../lib/recommendation-fallback";
+import { loadSmartRecommendations, type IntelligenceSource } from "../lib/smart-recommendations";
 import { ProductCard } from "./product-card";
 
-export type IntelligenceSource =
-  | "personalized"
-  | "trending"
-  | "most_wanted"
-  | "most_viewed"
-  | "discovery"
-  | "newest"
-  | "price_range"
-  | "recently_viewed"
-  | "because_you_viewed";
+export type { IntelligenceSource } from "../lib/smart-recommendations";
 const sourceTitles: Record<IntelligenceSource, string> = {
   personalized: "Escolhas para você",
   trending: "Em alta agora",
@@ -28,7 +19,6 @@ const sourceTitles: Record<IntelligenceSource, string> = {
   recently_viewed: "Vistos recentemente",
   because_you_viewed: "Porque você viu estes estilos"
 };
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const emptyProductIds: string[] = [];
 
 export function IntelligenceShelf({
@@ -38,9 +28,10 @@ export function IntelligenceShelf({
   limit = 8,
   category,
   excludeProductIds = emptyProductIds,
-  fallbackCatalog = false,
   priceInCents,
+  productContext,
   infinite = false,
+  trackingSource,
   className = ""
 }: {
   source?: IntelligenceSource;
@@ -49,9 +40,10 @@ export function IntelligenceShelf({
   limit?: number;
   category?: string;
   excludeProductIds?: string[];
-  fallbackCatalog?: boolean;
   priceInCents?: number;
+  productContext?: Pick<Product, "id" | "name">;
   infinite?: boolean;
+  trackingSource?: string;
   className?: string;
 }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -74,7 +66,10 @@ export function IntelligenceShelf({
   }, []);
   const load = useCallback(
     async (reset = false) => {
-      if (request.current) return;
+      if (request.current) {
+        if (!reset) return;
+        request.current.abort();
+      }
       const controller = new AbortController();
       request.current = controller;
       if (reset) setLoading(true);
@@ -82,72 +77,16 @@ export function IntelligenceShelf({
       setError("");
       try {
         void consentRevision;
-        const sessionId = intelligenceSessionId();
-        const publicSource: IntelligenceSource = [
-          "personalized",
-          "recently_viewed",
-          "because_you_viewed",
-          "price_range"
-        ].includes(source)
-          ? "trending"
-          : source;
-        const seen = [
-          ...excludeProductIds,
-          ...(reset ? [] : productsRef.current.map((item) => item.id))
-        ].filter((id) => uuidPattern.test(id)).slice(-50);
-        const seed = `${new Date().toISOString().slice(0, 10)}:${page.current}`;
-        const publicParams = new URLSearchParams({
-          source: publicSource,
-          seed,
-          limit: String(limit),
-          seen: seen.join(",")
+        let sessionId: string | null = null;
+        try { sessionId = intelligenceSessionId(); } catch { /* Contextual recommendations remain available. */ }
+        const recommendation = await loadSmartRecommendations({
+          source, sessionId, recent: sessionId ? recentlyViewedProductIds() : [],
+          category, priceInCents, productId: productContext?.id, productName: productContext?.name,
+          seen: [...excludeProductIds, ...(reset ? [] : productsRef.current.map((item) => item.id))],
+          limit, signal: controller.signal
         });
-        if (category) publicParams.set("category", category);
-        let response: Response | null = null;
-        let data: unknown = null;
-        try {
-          response = await fetch(
-            sessionId
-              ? "/api/intelligence/recommendations"
-              : `/api/intelligence/recommendations?${publicParams}`,
-            sessionId
-              ? {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    source,
-                    sessionId,
-                    category: category || null,
-                    seen,
-                    recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
-                    seed,
-                    limit
-                  }),
-                  signal: controller.signal,
-                  cache: "no-store"
-                }
-              : { signal: controller.signal }
-          );
-          data = await response.json().catch(() => null);
-        } catch (error) {
-          if (controller.signal.aborted || !fallbackCatalog) throw error;
-        }
-        if (
-          !response?.ok ||
-          !data ||
-          typeof data !== "object" ||
-          !Array.isArray((data as { products?: unknown }).products)
-        ) {
-          if (!fallbackCatalog) throw new Error("Não foi possível carregar esta seleção.");
-        }
-        const excluded = new Set(excludeProductIds);
-        const primary = response?.ok && data && typeof data === "object" && Array.isArray((data as { products?: unknown }).products)
-          ? (data as { products: unknown[] }).products : [];
-        let next = appendEligibleRecommendations([], primary, excluded, limit);
-        if (fallbackCatalog && reset && next.length < limit) next = await loadRecommendationFallback({
-          initial: next, excludedIds: [...excludeProductIds, ...seen], category, priceInCents, limit,
-          signal: controller.signal
-        });
+        const next = recommendation.products;
+        if (controller.signal.aborted) return;
         setProducts((current) => {
           const merged = reset
             ? next
@@ -158,7 +97,7 @@ export function IntelligenceShelf({
           productsRef.current = merged;
           return merged;
         });
-        setHasMore(!fallbackCatalog && next.length === limit && Boolean((data as { nextCursor?: unknown } | null)?.nextCursor));
+        setHasMore(source === "discovery" && next.length === limit && recommendation.hasMore);
         page.current += 1;
       } catch (loadError) {
         if (!controller.signal.aborted)
@@ -168,12 +107,14 @@ export function IntelligenceShelf({
               : "Não foi possível carregar esta seleção."
           );
       } finally {
-        request.current = null;
-        setLoading(false);
-        setLoadingMore(false);
+        if (request.current === controller) {
+          request.current = null;
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [category, consentRevision, excludeProductIds, fallbackCatalog, limit, priceInCents, source]
+    [category, consentRevision, excludeProductIds, limit, priceInCents, productContext, source]
   );
   useEffect(() => {
     const node = shelf.current;
@@ -258,7 +199,7 @@ export function IntelligenceShelf({
       </div>
       <div className="product-grid">
         {products.map((product) => (
-          <ProductCard product={product} recommendationSource={source} key={storefrontItemKey(product)} />
+          <ProductCard product={product} recommendationSource={trackingSource ?? source} key={product.id} />
         ))}
       </div>
       {infinite && (

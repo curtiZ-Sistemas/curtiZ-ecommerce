@@ -128,8 +128,9 @@ export default async function ProductPage({
         limit={8}
         category={product.category}
         priceInCents={product.priceInCents}
-        fallbackCatalog
+        productContext={{ id: product.id, name: product.name }}
         excludeProductIds={[product.id]}
+        trackingSource="product_detail"
         className="product-recommendations"
       />
     </div>

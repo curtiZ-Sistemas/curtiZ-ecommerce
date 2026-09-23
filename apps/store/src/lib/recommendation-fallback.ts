@@ -5,9 +5,13 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 function eligibleProduct(value: unknown): value is Product {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const product = value as Partial<Product>;
+  const product = value as Product;
   return typeof product.id === "string" && typeof product.slug === "string"
-    && typeof product.name === "string" && typeof product.image === "string"
+    && typeof product.name === "string" && typeof product.category === "string"
+    && typeof product.description === "string" && typeof product.priceInCents === "number"
+    && typeof product.rating === "number" && typeof product.reviews === "number"
+    && Array.isArray(product.colors) && Array.isArray(product.sizes)
+    && typeof product.image === "string"
     && product.image.length > 0 && typeof product.stock === "number" && product.stock > 0
     && availableCatalogRecommendations([product]).length > 0;
 }

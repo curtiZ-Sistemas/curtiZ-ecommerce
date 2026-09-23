@@ -9,7 +9,11 @@ vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.Re
   <a href={href}>{children}</a> }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("not_found"); } }));
 vi.mock("@/components/product-purchase", () => ({ ProductPurchase: () => <div>Comprar</div> }));
-vi.mock("@/components/intelligence-shelf", () => ({ IntelligenceShelf: () => null }));
+vi.mock("@/components/intelligence-shelf", () => ({
+  IntelligenceShelf: ({ excludeProductIds, trackingSource }: {
+    excludeProductIds: string[]; trackingSource: string;
+  }) => <div data-excluded={excludeProductIds.join(",")} data-source={trackingSource} />
+}));
 vi.mock("@/components/json-ld", () => ({ JsonLd: () => null }));
 vi.mock("@/lib/seo", () => ({
   productCategoryPath: () => "/produtos",
@@ -49,9 +53,14 @@ describe("product information", () => {
     expect(brand).toBeLessThan(material);
     expect(material).toBeLessThan(guide);
     expect(guide).toBeLessThan(description);
+    expect(html.indexOf('class="product-facts-grid"')).toBeLessThan(html.indexOf('class="product-description-section"'));
+    expect(html).toContain('class="product-description-content"');
     expect(html).toContain("24,5 cm");
     expect(html).not.toContain("cm cm");
     expect(html).toContain("Cuidados");
+    expect(html).toContain("<h3>Cuidados</h3>");
+    expect(html).toContain("<li>Confortável</li>");
+    expect(html).toContain('data-excluded="product-1" data-source="product_detail"');
     expect(html).not.toContain("<script>");
   });
 });

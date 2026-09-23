@@ -105,6 +105,8 @@ describe("public storefront components", () => {
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
     expect(html).toContain("product-card-cart-button");
     expect(html).toContain("Escolher cor e tamanho");
+    expect(html).toContain("R$\u00a059,90");
+    expect(html).not.toContain("Consulte as condições no produto");
   });
 
   it("renderiza um card virtual com imagem, preço e link da variação", () => {

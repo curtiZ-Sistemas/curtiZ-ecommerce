@@ -12,6 +12,7 @@ type LoadOptions = {
   category?: string;
   priceInCents?: number;
   query?: string;
+  productName?: string;
   productId?: string;
   seen?: string[];
   limit: number;
@@ -40,16 +41,16 @@ export function searchContextScore(product: Product, query: string): number {
 }
 
 export async function loadSmartRecommendations({ source, sessionId, recent = [], category,
-  priceInCents, query, productId, seen = [], limit, signal, fetcher = fetch
+  priceInCents, query, productName, productId, seen = [], limit, signal, fetcher = fetch
 }: LoadOptions): Promise<{ products: Product[]; hasMore: boolean }> {
   const target = Math.max(1, Math.min(24, limit));
   const excluded = new Set([...seen, ...(productId ? [productId] : [])]);
   let products: Product[] = [];
   let hasMore = false;
   let requests = 0;
-  const priceMin = priceInCents ? Math.max(0, Math.floor(priceInCents * .65)) : undefined;
-  const priceMax = priceInCents ? Math.ceil(priceInCents * 1.35) : undefined;
-  const seed = (query || productId || `${new Date().toISOString().slice(0, 10)}:${seen.length}`).slice(0, 80);
+  const priceMin = priceInCents ? Math.max(0, Math.floor(priceInCents * 65 / 100)) : undefined;
+  const priceMax = priceInCents ? Math.ceil(priceInCents * 135 / 100) : undefined;
+  const seed = (query || productName || productId || `${new Date().toISOString().slice(0, 10)}:${seen.length}`).slice(0, 80);
   const currentSeen = () => [...excluded, ...products.map((item) => item.id)]
     .filter((id) => uuidPattern.test(id)).slice(-50);
 
@@ -88,7 +89,7 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
   };
 
   const contextCatalog = async (): Promise<void> => {
-    if (signal.aborted || products.length >= target || requests >= 4 || (!query && !category && !priceInCents)) return;
+    if (signal.aborted || products.length >= target || requests >= 4 || (!query && !productName && !category && !priceInCents)) return;
     requests += 1;
     const params = new URLSearchParams({ estoque: "1", limite: "24", compacto: "1" });
     if (category) params.set("categoria", category);
@@ -102,11 +103,13 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
       const payload = data as { products?: unknown; source?: string };
       if (payload.source === "demo" || response.headers.get("x-catalog-source") === "demo"
         || !Array.isArray(payload.products)) return;
-      const matches = query
+      const contextTerm = query || productName;
+      const matches = contextTerm
         ? (payload.products as Product[]).filter((product) => product && typeof product.name === "string"
           && typeof product.category === "string" && typeof product.description === "string")
-            .map((product) => ({ product, score: searchContextScore(product, query) }))
-            .filter((item) => item.score > 0).sort((a, b) => b.score - a.score).map((item) => item.product)
+            .map((product) => ({ product, score: searchContextScore(product, contextTerm) }))
+            .filter((item) => !query || item.score > 0)
+            .sort((a, b) => b.score - a.score).map((item) => item.product)
         : payload.products;
       products = appendEligibleRecommendations(products, matches, excluded, target);
     } catch {
@@ -115,7 +118,7 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
   };
 
   if (source !== "personalized" && (!behavioralSources.has(source) || sessionId)) {
-    await request(source, target, Boolean(sessionId));
+    await request(source, target, behavioralSources.has(source) && Boolean(sessionId));
     return { products, hasMore };
   }
 
