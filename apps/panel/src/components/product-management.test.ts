@@ -175,7 +175,8 @@ describe("product management", () => {
   });
 
   it("explica bloqueios sem confundir falha de consulta com histórico comercial", () => {
-    expect(productDeletionMessage(["cart items", "pedidos"])).toContain("itens em carrinhos, pedidos. Use Arquivar");
+    expect(productDeletionMessage(["order_items"])).toContain("histórico de vendas");
+    expect(productDeletionMessage(["purchase_order_items"])).toContain("registros comerciais ou de auditoria");
     expect(productDeletionMessage()).toContain("Não foi possível confirmar");
   });
 

@@ -75,7 +75,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 {children}
               </PaymentDocumentBoundary>
             </main>
-            <SiteFooter />
+            <SiteFooter navigation={navigation} />
             {/* Chat temporariamente desativado. */}
             <CookiePreferences />
           </FavoritesProvider>

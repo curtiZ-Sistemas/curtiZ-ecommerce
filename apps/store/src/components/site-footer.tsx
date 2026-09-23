@@ -2,18 +2,9 @@ import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { BrandLogo } from "./brand-logo";
 import { CookieSettingsButton } from "./cookie-preferences";
+import type { StoreNavigationItem } from "@/lib/store-navigation-core";
 
-const groups = [
-  {
-    title: "Comprar",
-    links: [
-      ["Todos os produtos", "/produtos"],
-      ["Chinelos e slides masculinos", "/masculino"],
-      ["Chinelos e sandálias femininas", "/feminino"],
-      ["Chinelos e sandálias infantis", "/infantil"],
-      ["Lançamentos", "/lancamentos"]
-    ]
-  },
+const institutionalGroups = [
   {
     title: "Institucional",
     links: [
@@ -47,7 +38,26 @@ const groups = [
   }
 ] as const;
 
-export function SiteFooter() {
+export function footerShoppingLinks(navigation: StoreNavigationItem[]): Array<readonly [string, string]> {
+  const links: Array<readonly [string, string]> = [["Todos os produtos", "/produtos"]];
+  const seen = new Set<string>();
+  for (const item of navigation) {
+    if (item.placement !== "main") continue;
+    const url = new URL(item.href, "https://curtiz.com.br");
+    const category = url.pathname === "/produtos" ? url.searchParams.get("categoria") : null;
+    if (category && !seen.has(category)) {
+      seen.add(category);
+      links.push([item.label, item.href]);
+    } else if (item.href === "/lancamentos" && !seen.has("launches")) {
+      seen.add("launches");
+      links.push([item.label, item.href]);
+    }
+  }
+  return links;
+}
+
+export function SiteFooter({ navigation }: { navigation: StoreNavigationItem[] }) {
+  const groups = [{ title: "Comprar", links: footerShoppingLinks(navigation) }, ...institutionalGroups];
   return (
     <footer className="site-footer">
       <div className="container footer-grid">
@@ -87,7 +97,7 @@ export function SiteFooter() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <span>© 2026 curti Z. Todos os direitos reservados.</span>
+          <span>© {new Date().getFullYear()} curti Z. Todos os direitos reservados.</span>
           <CookieSettingsButton />
         </div>
       </div>

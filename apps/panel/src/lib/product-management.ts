@@ -1,14 +1,9 @@
 export function productDeletionMessage(blockers: readonly string[] = []): string {
-  const labels: Record<string, string> = {
-    "cart items": "itens em carrinhos",
-    "marketing events": "eventos de marketing",
-    "inventory reservations": "reservas de estoque",
-    "coupon scopes": "cupons vinculados",
-    "product questions": "perguntas de clientes",
-    "inventory count items": "contagens de estoque"
-  };
+  if (blockers.some((blocker) => ["order_items", "pedidos", "representative_sale_items", "kit_order_items"].includes(blocker))) {
+    return "Este produto possui histórico de vendas e não pode ser excluído permanentemente. Arquive-o para removê-lo da loja mantendo o histórico.";
+  }
   return blockers.length
-    ? `Não é possível excluir: ${blockers.map((blocker) => labels[blocker] ?? blocker).join(", ")}. Use Arquivar para preservar os vínculos.`
+    ? "Este produto possui registros comerciais ou de auditoria que precisam ser preservados. Arquive-o para removê-lo da loja mantendo o histórico."
     : "Não foi possível confirmar se o produto pode ser excluído. Atualize a listagem.";
 }
 
@@ -63,6 +58,7 @@ export type ManagedProduct = {
   categoryName?: string;
   categoryNames?: string[];
   deleteBlockers?: string[];
+  deleteRemovableDependencies?: string[];
   merchantCondition?: "new" | "refurbished" | "used";
   merchantGender?: "male" | "female" | "unisex";
   merchantAgeGroup?: "newborn" | "infant" | "toddler" | "kids" | "adult";

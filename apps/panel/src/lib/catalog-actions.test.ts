@@ -144,10 +144,10 @@ describe("product DELETE", () => {
   it("keeps a legitimate conflict and returns its readable blockers", async () => {
     state.rpc.mockImplementation(async (name: string) => name === "admin_delete_product"
       ? { data: null, error: { code: "23503", message: "product has related records" } }
-      : { data: name === "consume_private_api_rate_limit" ? true : { [id]: { canDelete: false, blockers: ["pedidos"] } }, error: null });
+      : { data: name === "consume_private_api_rate_limit" ? true : { [id]: { canDelete: false, blockers: ["order_items"] } }, error: null });
     const response = await DELETE(request("DELETE", { productId: id }));
     expect(response.status).toBe(409);
-    expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("pedidos. Use Arquivar") as unknown });
+    expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("histórico de vendas") as unknown });
     expect(state.remove).not.toHaveBeenCalled();
   });
 });

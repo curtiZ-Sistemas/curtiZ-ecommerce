@@ -111,6 +111,10 @@ export async function GET(request: NextRequest) {
     category: request.nextUrl.searchParams.get("category"),
     seed: request.nextUrl.searchParams.get("seed") ?? "curtiz",
     limit: Number(request.nextUrl.searchParams.get("limit") ?? 8),
+    priceMin: request.nextUrl.searchParams.has("priceMin")
+      ? Number(request.nextUrl.searchParams.get("priceMin")) : undefined,
+    priceMax: request.nextUrl.searchParams.has("priceMax")
+      ? Number(request.nextUrl.searchParams.get("priceMax")) : undefined,
     seen: (request.nextUrl.searchParams.get("seen") ?? "").split(",").filter(Boolean).slice(0, 50),
     recent: []
   });

@@ -886,6 +886,11 @@ export async function GET(request: NextRequest) {
           ? (record(deleteEligibility[product.id])?.blockers as unknown[]).filter(
               (item): item is string => typeof item === "string" && item.length > 0
             )
+          : [],
+        deleteRemovableDependencies: Array.isArray(record(deleteEligibility[product.id])?.removableDependencies)
+          ? (record(deleteEligibility[product.id])?.removableDependencies as unknown[]).filter(
+              (item): item is string => typeof item === "string" && item.length > 0
+            )
           : []
       })),
       total: result.total,
@@ -1268,7 +1273,7 @@ export async function DELETE(request: NextRequest) {
         message: forbidden
           ? "Você não possui permissão para excluir produtos."
           : related
-            ? blockers.length ? productDeletionMessage(blockers) : "Este produto possui registros relacionados e não pode ser excluído. Use Arquivar para preservar o histórico."
+            ? blockers.length ? productDeletionMessage(blockers) : "Este produto possui registros que precisam ser preservados. Arquive-o para removê-lo da loja mantendo o histórico."
             : notFound
               ? "Produto não encontrado."
               : "Não foi possível excluir o produto."

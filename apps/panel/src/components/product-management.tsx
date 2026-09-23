@@ -2306,11 +2306,12 @@ export function ProductManagement({
             aria-modal="true"
             aria-labelledby="delete-product-title"
           >
-            <h2 id="delete-product-title">Excluir produto?</h2>
+            <h2 id="delete-product-title">Excluir definitivamente?</h2>
             <p>
               Esta ação não poderá ser desfeita. <strong>{deleteTarget.name}</strong>, suas
-              variações e imagens serão removidos.
+              variantes, estoque, mídias e eventos auxiliares serão removidos.
             </p>
+            <p>Este produto possui dados operacionais que serão removidos junto com ele. Nenhum pedido está vinculado.</p>
             {deleteError ? <p className="form-message error" role="alert">{deleteError}</p> : null}
             <div>
               <button
@@ -2328,7 +2329,7 @@ export function ProductManagement({
                 disabled={Boolean(pending) || !deleteTarget.canDelete}
               >
                 {pending === `delete-${deleteTarget.id}` && <LoaderCircle className="spin" />}
-                Excluir produto
+                Excluir definitivamente
               </button>
             </div>
           </section>
@@ -3463,7 +3464,7 @@ export function ProductManagement({
         <div className="admin-modal-backdrop">
           <section className="admin-confirm" role="alertdialog" aria-modal="true" aria-labelledby="bulk-product-title">
             <h2 id="bulk-product-title">{bulkAction === "delete" ? "Excluir produtos?" : bulkAction === "restore" ? "Restaurar produtos?" : "Arquivar produtos?"}</h2>
-            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
+            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita. Produtos, variantes, estoque, mídias e eventos auxiliares serão removidos." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
             <div><button className="secondary-button" type="button" disabled={Boolean(pending)} onClick={() => setBulkAction(null)}>Cancelar</button><button className={`primary-button ${bulkAction === "restore" ? "" : "danger-button"}`} type="button" disabled={Boolean(pending)} onClick={() => void runBulkAction()}>{pending === `bulk-${bulkAction}` ? <LoaderCircle className="spin" /> : null}{bulkAction === "delete" ? "Excluir produtos" : bulkAction === "restore" ? "Restaurar produtos" : "Arquivar produtos"}</button></div>
           </section>
         </div>

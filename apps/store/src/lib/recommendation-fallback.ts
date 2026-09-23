@@ -1,4 +1,5 @@
 import type { Product } from "@curtiz/domain";
+import { availableCatalogRecommendations } from "./catalog-recommendations";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -7,7 +8,8 @@ function eligibleProduct(value: unknown): value is Product {
   const product = value as Partial<Product>;
   return typeof product.id === "string" && typeof product.slug === "string"
     && typeof product.name === "string" && typeof product.image === "string"
-    && product.image.length > 0 && typeof product.stock === "number" && product.stock > 0;
+    && product.image.length > 0 && typeof product.stock === "number" && product.stock > 0
+    && availableCatalogRecommendations([product]).length > 0;
 }
 
 export function appendEligibleRecommendations(

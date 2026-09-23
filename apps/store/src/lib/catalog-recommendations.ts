@@ -9,7 +9,7 @@ export function availableCatalogRecommendations(products: readonly Product[], li
       || /(?:logo|placeholder|demo)/iu.test(image) || /\.svg$/iu.test(image) || seen.has(product.id)) continue;
     seen.add(product.id);
     result.push(product);
-    if (result.length >= Math.max(1, Math.min(8, limit))) break;
+    if (result.length >= Math.max(1, Math.min(24, limit))) break;
   }
   return result;
 }
