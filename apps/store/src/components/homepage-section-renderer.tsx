@@ -21,13 +21,6 @@ import { TestimonialCarousel, type TestimonialCardData } from "./testimonial-car
 import { IntelligenceShelf, type IntelligenceSource } from "./intelligence-shelf";
 import type { HomepageData, PublicBanner } from "@/lib/storefront-data";
 
-const categoryRoutes = new Map([
-  ["Masculino", "/masculino"],
-  ["Feminino", "/feminino"],
-  ["Infantil", "/infantil"],
-  ["Slides", "/slides"],
-  ["Sandálias", "/sandalias"]
-]);
 const productTypes = new Set([
   "product_carousel",
   "product_grid",
@@ -209,13 +202,7 @@ export function HomepageSectionRenderer({
     );
   }
   if (section.sectionType === "categories_grid" && section.items.length === 0) {
-    const categories = [...categoryRoutes.entries()]
-      .map(([name, href]) => ({
-        name,
-        href,
-        product: data.products.find((product) => product.category === name)
-      }))
-      .filter((category) => category.product);
+    const categories = data.categories;
     if (!categories.length) return null;
     return (
       <HomepageMetric versionId={section.versionId}>
@@ -227,15 +214,30 @@ export function HomepageSectionRenderer({
             Compre por categoria
           </h2>
           <CategoryCarousel
-            categories={categories.map(({ name, href, product }) => ({
+            categories={categories.map(({ name, slug, image }) => ({
               name,
-              href,
-              image: product!.image
+              href: `/produtos?categoria=${encodeURIComponent(slug)}`,
+              image
             }))}
           />
         </section>
       </HomepageMetric>
     );
+  }
+  if (section.sectionType === "faq") {
+    const questions = section.items.filter((item) => item.title?.trim() && item.description?.trim());
+    if (!questions.length) return null;
+    return <HomepageMetric versionId={section.versionId}>
+      <section className={`${sectionClass(section)} container home-faq`} aria-labelledby={`${section.id}-title`}>
+        <SectionHeading id={`${section.id}-title`} eyebrow={section.subtitle ?? "Ajuda"} title={section.title ?? "Dúvidas frequentes"} />
+        <div className="home-faq-list">
+          {questions.map((item) => <details key={item.id} data-home-item={item.id}>
+            <summary>{item.title}</summary>
+            <p>{item.description}</p>
+          </details>)}
+        </div>
+      </section>
+    </HomepageMetric>;
   }
   if (section.sectionType === "recommended_products") {
     const allowed: IntelligenceSource[] = [
@@ -268,7 +270,7 @@ export function HomepageSectionRenderer({
   }
   if (productTypes.has(section.sectionType)) {
     const products =
-      section.sectionType === "best_sellers"
+      ["best_sellers", "launches", "featured_products"].includes(section.sectionType)
         ? (data.productsBySection[section.id] ?? [])
         : productsFor(section, data.products);
     if (!products.length) return null;
@@ -565,7 +567,7 @@ export function HomepageSectionRenderer({
                   : "Conteúdo curti Z")}
             </h2>
             {section.description && <p>{section.description}</p>}
-            <Link
+            {(section.sectionType === "newsletter" || (section.items[0]?.targetRoute && section.items[0]?.title)) && <Link
               className="primary-button"
               href={
                 section.items[0]?.targetRoute ??
@@ -576,7 +578,7 @@ export function HomepageSectionRenderer({
               {section.items[0]?.title ??
                 (section.sectionType === "newsletter" ? "Criar conta" : "Conhecer produtos")}{" "}
               <ArrowRight />
-            </Link>
+            </Link>}
           </div>
           {section.items[0]?.media.length ? (
             <ItemImage item={section.items[0]} priority={priority} />

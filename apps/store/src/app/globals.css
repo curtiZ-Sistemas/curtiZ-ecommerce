@@ -12717,10 +12717,18 @@ body:has(> #main-content > .auth-page) .site-footer {
 }
 
 .product-color-swatch {
-  display: inline-block;
+  display: inline-flex;
   flex: 0 0 auto;
+  overflow: hidden;
   border: 1px solid rgb(0 0 0 / 22%);
   border-radius: 50%;
+}
+
+.product-color-swatch > i {
+  display: block;
+  flex: 1 1 50%;
+  align-self: stretch;
+  min-width: 0;
 }
 
 .color-filter-list label .filter-color-preview {
@@ -12760,6 +12768,11 @@ body:has(> #main-content > .auth-page) .site-footer {
   border: 1px solid rgb(0 0 0 / 22%);
   border-radius: 50%;
   background: var(--swatch-color);
+}
+
+.color-swatch > .product-color-swatch {
+  display: inline-flex;
+  background: transparent;
 }
 
 .color-swatch:hover,
@@ -12940,6 +12953,19 @@ body:has(> #main-content > .auth-page) .site-footer {
   border: 0;
   border-top: 1px solid var(--neutral-200);
   padding: clamp(28px, 4vw, 48px) 0 0;
+}
+
+.product-page .product-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+}
+.product-page .product-facts-grid > section { min-width: 0; }
+.product-page .product-facts-grid .product-size-guide { margin: 0; max-width: none; }
+.product-page .product-facts-grid .product-size-guide h2 { margin: 0 0 20px; }
+@media (max-width: 700px) {
+  .product-page .product-facts-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
 }
 
 .product-page .product-information > .eyebrow {
@@ -14752,3 +14778,10 @@ body:has(.checkout-transition) .help-widget {
   .cookie-consent-actions > button:last-child { grid-column: 1 / -1; }
   .cookie-consent-actions button { padding-inline: 8px; }
 }
+.home-faq-list { max-width: 840px; margin-inline: auto; border-top: 1px solid var(--border, #ddd); }
+.home-faq-list details { border-bottom: 1px solid var(--border, #ddd); padding: 1rem 0; }
+.home-faq-list summary { cursor: pointer; font-weight: 650; padding-right: 2rem; }
+.home-faq-list summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.home-faq-list p { max-width: 72ch; margin: .75rem 0 0; line-height: 1.65; }
+.catalog-load-trigger { min-height: 1px; }
+.catalog-load-status { padding-block: 1.25rem; text-align: center; color: var(--neutral-700); }

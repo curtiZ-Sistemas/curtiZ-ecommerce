@@ -24,6 +24,19 @@ type ImportPreview = {
   issues: Array<{ level: "warning" | "error"; message: string }>;
 };
 
+type StoreConfigPreview = {
+  hasConfig: boolean;
+  hasProducts: boolean;
+  categories: Array<{ name: string; slug: string; showMenu: boolean; showHome: boolean }>;
+  navigation: Array<{ label: string; destination: string; visible: boolean }>;
+  sections: Array<{ key: string; type: string; action: "create" | "update" | "unchanged" }>;
+  stories: number;
+  faq: number;
+  warnings: string[];
+  reviewRequired?: boolean;
+  message?: string;
+};
+
 type ImportRunStatus = {
   runId: string;
   productsTotal: number;
@@ -55,6 +68,9 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [configPreview, setConfigPreview] = useState<StoreConfigPreview | null>(null);
+  const [configApplied, setConfigApplied] = useState(false);
+  const [configMessage, setConfigMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -120,6 +136,9 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
   const selectFile = async (selected: File) => {
     setFile(selected);
     setPreview(null);
+    setConfigPreview(null);
+    setConfigApplied(false);
+    setConfigMessage("");
     setResults([]);
     setMessage("");
     setProgress(0);
@@ -132,6 +151,15 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     try {
       const form = new FormData();
       form.set("file", selected);
+      form.set("action", "preview");
+      const configResponse = await fetch("/api/catalog/store-config", { method: "POST", body: form });
+      const configResult = await readJson(configResponse);
+      if (!configResponse.ok) throw new Error(typeof configResult.message === "string" ? configResult.message : "Não foi possível validar a configuração da loja.");
+      if (configResult.hasConfig === true) {
+        const nextConfig = configResult as unknown as StoreConfigPreview;
+        setConfigPreview(nextConfig);
+        if (!nextConfig.hasProducts) return;
+      }
       const response = await fetch("/api/catalog/products/import/preview", { method: "POST", body: form });
       const result = await readJson(response);
       if (!response.ok) throw new Error(typeof result.message === "string" ? result.message : "Não foi possível validar a planilha.");
@@ -144,8 +172,35 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
     }
   };
 
+  const applyStoreConfig = async (selected: File) => {
+    const form = new FormData();
+    form.set("file", selected);
+    form.set("action", "apply");
+    const response = await fetch("/api/catalog/store-config", { method: "POST", body: form });
+    const result = await readJson(response);
+    if (!response.ok) {
+      setConfigMessage(typeof result.message === "string" ? result.message : "Não foi possível aplicar a configuração da loja.");
+      return false;
+    }
+    setConfigApplied(true);
+    setConfigMessage(typeof result.message === "string" ? result.message : "Configuração aplicada.");
+    if (result.reviewRequired === true) setConfigMessage("Configuração salva e enviada para revisão no Homepage Builder. A publicação ocorrerá após aprovação por outra pessoa autorizada.");
+    return true;
+  };
+
+  const applyStandaloneConfig = async () => {
+    if (!file || !configPreview || importing) return;
+    setImporting(true);
+    try { await applyStoreConfig(file); }
+    finally { setImporting(false); }
+  };
+
   const importProducts = async () => {
     if (!preview || importing || sessionComplete) return;
+    if (preview.issues.some((issue) => issue.level === "error")) {
+      setMessage("Corrija os erros gerais da planilha antes de importar.");
+      return;
+    }
     const candidates = preview.products.filter((product) => product.errors.length === 0);
     if (!candidates.length) { setMessage("Nenhum produto válido para importar."); return; }
     setImporting(true);
@@ -186,6 +241,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
         setMessage(`Importação interrompida para evitar novas falhas no servidor. ${stopped.message}`);
       }
       if (completed.length === candidates.length && completed.every((result) => result.ok)) {
+        if (configPreview && file && candidates.length === preview.products.length) await applyStoreConfig(file);
         await fetch("/api/catalog/products/import/preview", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
@@ -224,6 +280,13 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           </button>
 
           {message ? <p className="form-message error" role="alert">{message}</p> : null}
+          {configPreview ? <section className="product-import-config-preview" aria-label="Configuração da loja">
+            <h3>Configuração da loja</h3>
+            <p>{configPreview.categories.length} categorias · {configPreview.navigation.length} itens de navegação · {configPreview.sections.length} seções da home · {configPreview.faq} perguntas frequentes</p>
+            <ul>{configPreview.sections.map((section) => <li key={section.key}>{section.key}: {section.action === "unchanged" ? "sem alteração" : section.action === "create" ? "criar" : "atualizar"}</li>)}</ul>
+            {configPreview.warnings.map((warning) => <p key={warning} className="product-import-result-message">{warning}</p>)}
+          </section> : null}
+          {configMessage ? <p className={configApplied ? "form-message success" : "form-message error"} role="status">{configMessage}</p> : null}
           {preview ? <>
           <section className="product-import-summary" aria-label="Resumo da planilha">
             <span><strong>{preview.summary.products}</strong> produtos</span>
@@ -283,11 +346,17 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
 
         <footer className="product-import-footer">
           <button className="secondary-button" type="button" onClick={close} disabled={loading || importing}>Cancelar</button>
+          {configPreview && (!configPreview.hasProducts || sessionComplete) ? <button className="primary-button" type="button"
+            disabled={loading || importing || configApplied || Boolean(preview && preview.summary.errors > 0)} onClick={() => void applyStandaloneConfig()}>
+            {importing ? <LoaderCircle className="spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
+            {configApplied ? "Configuração aplicada" : "Aplicar configuração"}
+          </button> : null}
+          {preview ?
           <button className="primary-button" type="button" onClick={() => void importProducts()}
-            disabled={!preview || importing || loading || sessionComplete || preview.products.every((product) => product.errors.length > 0)}>
+            disabled={importing || loading || sessionComplete || preview.issues.some((issue) => issue.level === "error") || preview.products.every((product) => product.errors.length > 0)}>
             {importing ? <LoaderCircle className="spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
             {importing ? "Importando..." : sessionComplete ? "Importação concluída" : "Importar produtos"}
-          </button>
+          </button> : null}
         </footer>
       </div>
     </PanelDrawer>

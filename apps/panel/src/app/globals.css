@@ -5768,7 +5768,8 @@ button:not(:disabled):active,
   border-radius: 50%;
   overflow: hidden;
 }
-.product-color-swatch { display: inline-block; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+.product-color-swatch { display: inline-flex; overflow: hidden; border: 1px solid rgb(0 0 0 / 16%); border-radius: 50%; }
+.product-color-swatch > i { display: block; flex: 1 1 50%; align-self: stretch; min-width: 0; }
 .variant-color-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .variant-color-value { display: grid; grid-template-columns: auto auto; align-items: center; gap: 3px 8px; }
 .variant-color-value > span { grid-column: 1 / -1; color: var(--muted); font-size: .7rem; }
@@ -11116,3 +11117,8 @@ button:not(:disabled):active,
   .banner-device .banner-preview { height: 170px; }
   .banner-table { min-width: 600px; }
 }
+.product-import-config-preview { border: 1px solid #e2dad7; padding: 1rem; margin-block: 1rem; background: #fff; }
+.product-import-config-preview h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.product-import-config-preview p { margin: .35rem 0; line-height: 1.5; }
+.product-import-config-preview ul { margin: .6rem 0; padding-left: 1.25rem; max-height: 11rem; overflow: auto; }
+.product-import-config-preview li { margin-bottom: .25rem; }

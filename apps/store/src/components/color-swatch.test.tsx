@@ -11,7 +11,8 @@ describe("ColorSwatch", () => {
       <ColorSwatch name="Preto" primaryColor="#000000" />
     );
     expect(html).toContain("aria-label=\"Cor Preto\"");
-    expect(html).toContain("background:#000000");
+    expect(html).toContain('class="product-color-swatch-primary" style="background-color:#000000"');
+    expect(html).not.toContain("product-color-swatch-secondary");
   });
 
   it("renders two colors with an exact vertical split", () => {
@@ -22,6 +23,8 @@ describe("ColorSwatch", () => {
         secondaryColor="#FFFFFF"
       />
     );
-    expect(html).toContain("linear-gradient(to right, #000000 0 50%, #FFFFFF 50% 100%)");
+    expect(html).toContain('class="product-color-swatch-primary" style="background-color:#000000"');
+    expect(html).toContain('class="product-color-swatch-secondary" style="background-color:#FFFFFF"');
+    expect(html).not.toContain("linear-gradient");
   });
 });

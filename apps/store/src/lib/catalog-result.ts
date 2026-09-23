@@ -1,6 +1,7 @@
 import { diversifyStorefrontItems, type Product } from "@curtiz/domain";
 import { z } from "zod";
 import { demoProducts } from "./catalog";
+import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import type { CatalogResult } from "./catalog-query";
 
 export const rpcProductSchema = z.object({
@@ -13,6 +14,7 @@ export const rpcProductSchema = z.object({
   slug: z.string(),
   name: z.string(),
   category: z.string(),
+  categorySlug: z.string().optional(),
   description: z.string(),
   priceInCents: z.coerce.number().int().nonnegative(),
   compareAtPriceInCents: z.coerce.number().int().positive().nullable().optional(),
@@ -55,24 +57,20 @@ export const rpcResultSchema = z.object({
 export const rpcProductListSchema = z.array(rpcProductSchema);
 
 export const productCategory = (value: string): Product["category"] => {
-  const allowed: Product["category"][] = [
-    "Masculino",
-    "Feminino",
-    "Infantil",
-    "Slides",
-    "Sandálias"
-  ];
-  return allowed.includes(value as Product["category"]) ? (value as Product["category"]) : "Slides";
+  const category = value.normalize("NFKC").trim().replace(/\s+/gu, " ").slice(0, 120);
+  return category || "Produtos";
 };
 
 export const publicCatalogImage = (path: string | null | undefined, slug?: string) => {
-  if (!path) return demoProducts.find((product) => product.slug === slug)?.image ?? "/icon.svg";
-  if (path.startsWith("/images/")) return path.replace(/\.png$/iu, ".webp");
-  if (path.startsWith("/") || path.startsWith("https://")) return path;
+  if (!path) return isPresentationCatalogEnabled()
+    ? demoProducts.find((product) => product.slug === slug)?.image ?? ""
+    : "";
+  if (path.startsWith("/images/")) return isPresentationCatalogEnabled() ? path.replace(/\.png$/iu, ".webp") : "";
+  if (path.startsWith("/") || path.startsWith("https://")) return "";
   const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "/icon.svg";
+    : "";
 };
 
 export function commercialProductName(product: {
@@ -101,6 +99,7 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
     slug: product.slug,
     name: commercialProductName(product),
     category: productCategory(product.category),
+    ...(product.categorySlug ? { categorySlug: product.categorySlug } : {}),
     description: product.description,
     priceInCents: product.priceInCents,
     ...(product.compareAtPriceInCents
@@ -118,17 +117,19 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
 
 export function parseRpcProductList(data: unknown): Product[] | null {
   const parsed = rpcProductListSchema.safeParse(data);
-  return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct)) : null;
+  return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct).filter((product) => Boolean(product.image))) : null;
 }
 
 export function parseCatalogRpcResult(
   data: unknown,
-  options: { page: number; pageSize: number }
+  options: { page: number; pageSize: number; sort?: string }
 ): CatalogResult | null {
   const parsed = rpcResultSchema.safeParse(data);
   if (!parsed.success) return null;
   return {
-    products: diversifyStorefrontItems(parsed.data.products.map(mapRpcProduct)),
+    products: options.sort === "best_sellers"
+      ? parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image))
+      : diversifyStorefrontItems(parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image))),
     facets: parsed.data.facets,
     total: parsed.data.total,
     page: options.page,

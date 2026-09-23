@@ -1,0 +1,63 @@
+import { createHash } from "node:crypto";
+import type { StoreConfigPlan } from "./store-config-import";
+
+export type ManagedHomeSection = {
+  key: string;
+  hash: string;
+  payload: Record<string, unknown>;
+};
+
+const item = (key: string, title: string, description: string, sortOrder: number,
+  route = "", itemType = "content") => ({
+  itemType, internalName: key, title, description, decorative: false,
+  targetType: route ? "page" : "none", ...(route ? { targetRoute: route } : {}),
+  sortOrder, config: {}, media: []
+});
+
+export function buildStoreConfigSections(plan: StoreConfigPlan, available: {
+  hasSales: boolean; hasProducts: boolean; hasFeatured: boolean; hasCategories: boolean;
+  existingBenefits: boolean;
+}): ManagedHomeSection[] {
+  if (!plan.options.organizar_home_automaticamente) return [];
+  const sections: ManagedHomeSection[] = [];
+  for (const row of [...plan.homeSections].sort((left, right) => left.sortOrder - right.sortOrder)) {
+    if (!row.active) continue;
+    const enabled = row.type === "categories_grid" ? plan.options.mostrar_categorias_home && available.hasCategories
+      : row.type === "best_sellers" ? plan.options.mostrar_mais_vendidos && available.hasSales
+      : row.type === "featured_products" ? plan.options.mostrar_destaques && available.hasFeatured
+      : row.type === "recommended_products" ? plan.options.mostrar_recomendados && available.hasProducts
+      : row.type === "launches" ? plan.options.mostrar_novidades && available.hasProducts
+      : row.type === "institutional" ? plan.options.mostrar_storytelling && plan.stories.some((story) => story.active)
+      : row.type === "faq" ? plan.options.mostrar_faq && plan.faq.some((entry) => entry.active)
+      : row.type === "benefits" ? plan.options.mostrar_beneficios && available.existingBenefits
+      : row.type === "reviews_carousel" || row.type === "newsletter" ? false : false;
+    if (!enabled || row.type === "benefits") continue; // Existing manual benefits remain owned by the builder.
+    const story = row.type === "institutional" ? [...plan.stories].filter((entry) => entry.active)
+      .sort((left, right) => left.sortOrder - right.sortOrder)[0] : undefined;
+    const items = row.type === "faq"
+      ? [...plan.faq].filter((entry) => entry.active).sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((entry) => item(entry.key, entry.question, entry.answer, entry.sortOrder, "", "faq"))
+      : story ? [item(story.key, story.ctaText, "", 0, story.ctaDestination)] : [];
+    const content: Record<string, unknown> = {
+      source: row.type === "recommended_products" ? "personalized" : "automatic",
+      limit: row.limit,
+      ...(row.type === "best_sellers" ? { salesPeriod: "all", rankingMetric: "units", fillEmptySlots: false,
+        excludeOutOfStock: true } : {}),
+      autoPublishAfterApproval: plan.options.publicar_home_automaticamente
+    };
+    const base = {
+      internalName: `xlsx:${row.key}`, sectionType: row.type,
+      title: story?.title ?? row.title,
+      subtitle: story?.subtitle ?? row.subtitle,
+      description: story?.text ?? "",
+      layout: row.type === "categories_grid" || row.type === "best_sellers" || row.type === "recommended_products"
+        || row.type === "launches" || row.type === "featured_products" ? "carousel" : "content_centered",
+      visibility: "all", style: {}, content, sortOrder: row.sortOrder, items
+    };
+    const hash = createHash("sha256").update(JSON.stringify(base)).digest("hex");
+    sections.push({ key: row.key, hash, payload: {
+      ...base, content: { ...content, configHash: hash }, changeSummary: "Sincronização da planilha de configuração da loja"
+    } });
+  }
+  return sections;
+}

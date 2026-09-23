@@ -24,7 +24,7 @@ const sectionTypes = [
   ["reviews_carousel", "Avaliações de clientes"], ["editorial", "Conteúdo editorial"],
   ["video", "Vídeo"], ["image_text", "Texto com imagem"], ["countdown", "Contagem regressiva"],
   ["newsletter", "Newsletter"], ["institutional", "Institucional"],
-  ["quick_links", "Links rápidos"], ["safe_component", "Componente seguro"]
+  ["quick_links", "Links rápidos"], ["safe_component", "Componente seguro"], ["faq", "Perguntas frequentes"]
 ] as const;
 
 const layouts = [

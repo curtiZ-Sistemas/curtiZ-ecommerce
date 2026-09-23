@@ -72,9 +72,9 @@ export async function POST(request: NextRequest) {
     const productWarnings = product.issues.filter((issue) => issue.level === "warning").map((issue) => issue.message);
     stage = "save_product";
     const seo = automaticProductSeo({ name: product.name, description: product.description, categoryName: product.categoryName });
-    const saved = await auth.supabase.rpc("admin_import_product_with_taxonomy_authorized", {
-      p_source: source, p_external_key: product.shopeeId || product.key, p_batch_hash: text(session.data.batch_hash),
-      p_payload: {
+    const categories = (product.categories?.length ? product.categories : [{ name: product.categoryName, primary: true }])
+      .map((category) => ({ ...category, slug: productImportTaxonomySlug(category.name) }));
+    const payload = {
         name: product.name, slug: product.slug, shortDescription: product.shortDescription, description: product.description,
         collectionId: reference?.collectionId ?? null, status: "draft", featured: product.featured,
         priceInCents: product.priceInCents, compareAtPriceInCents: product.compareAtPriceInCents, costInCents: product.costInCents,
@@ -87,8 +87,11 @@ export async function POST(request: NextRequest) {
           colorHexSecondary: variant.colorHexSecondary, size: variant.size, priceInCents: variant.priceInCents,
           costInCents: variant.costInCents, stock: variant.stock, active: variant.active, gtin: variant.gtin, mpn: variant.mpn })),
         sizeGuide: product.sizeGuide, specifications: product.specifications
-      },
-      p_category_name: product.categoryName, p_category_slug: productImportTaxonomySlug(product.categoryName),
+      };
+    const productHash = createHash("sha256").update(JSON.stringify({ payload, categories })).digest("hex");
+    const saved = await auth.supabase.rpc("admin_sync_import_product_authorized", {
+      p_source: source, p_external_key: product.shopeeId || product.key, p_batch_hash: text(session.data.batch_hash),
+      p_product_hash: productHash, p_payload: payload, p_categories: categories,
       p_create_category: sessionPayload.batch.options.createCategoryIfMissing, p_model_name: product.modelName || null,
       p_model_slug: product.modelName ? productImportTaxonomySlug(product.modelName) : null,
       p_create_model: sessionPayload.batch.options.createModelIfMissing
@@ -111,6 +114,8 @@ export async function POST(request: NextRequest) {
     }));
     const enqueued = await auth.supabase.rpc("admin_enqueue_product_import_images", { p_run_id: sessionId, p_product_id: productId, p_images: imageJobs });
     if (enqueued.error) return errorResponse(requestId, stage, databaseFailure(enqueued.error.code ?? "IMAGE_JOBS_FAILED", enqueued.error.message));
+    const reconciled = await auth.supabase.rpc("admin_reconcile_import_image_colors", { p_product_id: productId });
+    if (reconciled.error) return errorResponse(requestId, stage, databaseFailure(reconciled.error.code ?? "IMAGE_COLOR_RECONCILIATION_FAILED", reconciled.error.message));
     const rawJobIds = record(enqueued.data).jobIds;
     const jobIds = Array.isArray(rawJobIds) ? rawJobIds.filter((id): id is string => postgresUuidSchema.safeParse(id).success) : [];
     try { await enqueueProductImportImages(jobIds.map((jobId) => ({ jobId, runId: sessionId, productId }))); }
@@ -120,11 +125,12 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      ok: true, productId, productKey, alreadyImported: savedData.alreadyImported === true,
+      ok: true, productId, productKey, alreadyImported: savedData.alreadyImported === true, unchanged: savedData.unchanged === true,
       importedImages: prepared.images.length - jobIds.length, expectedImages: prepared.images.length, queuedImages: jobIds.length,
       warnings: [...productWarnings, ...prepared.warnings], hasMore: false, imageFailures: false,
       requestId, stage, code: "IMAGES_QUEUED", retryable: false,
-      message: jobIds.length ? "Produto salvo como rascunho. As imagens continuarão em segundo plano." : "Produto e imagens já estavam importados."
+      message: jobIds.length ? "Produto sincronizado. As imagens continuarão em segundo plano." :
+        savedData.unchanged === true ? "Produto já está atualizado." : "Produto sincronizado; imagens já estavam importadas."
     }, { headers: privateNoStore });
   } catch (error) {
     logServerEvent("error", "panel_product_import_failed", { requestId, stage, code: error instanceof Error ? error.message.slice(0, 80) : "unknown", productKey });

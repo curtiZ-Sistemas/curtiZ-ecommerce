@@ -41,6 +41,7 @@ export type HomepageData = {
   sections: HomepageSection[];
   banners: PublicBanner[];
   products: Product[];
+  categories: Array<{ id: string; name: string; slug: string; image: string }>;
   productsBySection: Record<string, Product[]>;
   testimonials: HomepageTestimonial[];
   source: "supabase" | "demo";
@@ -106,6 +107,7 @@ export type ProductMediaItem = {
   alt: string;
   mimeType: string;
   variantId?: string;
+  color?: string;
   poster?: string;
 };
 
@@ -145,7 +147,8 @@ const sectionTypes = new Set<HomepageSectionType>([
   "newsletter",
   "institutional",
   "quick_links",
-  "safe_component"
+  "safe_component",
+  "faq"
 ]);
 
 const defaultSections: HomepageSection[] = [
@@ -265,7 +268,7 @@ const publicImage = (path: string) => {
   const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "/icon.svg";
+    : "";
 };
 
 const homepageMedia = (path: string) => {
@@ -273,7 +276,7 @@ const homepageMedia = (path: string) => {
   const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/homepage-public/${path.replace(/^homepage-public\//u, "")}`
-    : "/icon.svg";
+    : "";
 };
 
 function mapHomepageItem(value: unknown): HomepageSectionItem | null {
@@ -301,21 +304,27 @@ function mapHomepageItem(value: unknown): HomepageSectionItem | null {
     config: isUnknownRecord(value.config) ? value.config : {}, media };
 }
 
-const directProductSelect = "id,slug,name,description,base_price,featured,status,categories(name),product_images(storage_path,is_primary),product_variants(color_name,size,active,inventory(available_quantity,reserved_quantity)),reviews(rating,status)";
+const directProductSelect = "id,slug,name,description,base_price,featured,status,categories(name,slug),product_images(storage_path,is_primary,width,height),product_variants(color_name,size,active,inventory(available_quantity,reserved_quantity)),reviews(rating,status)";
 
 function mapDirectProducts(data: unknown): Product[] {
   return readRows(data).flatMap((row): Product[] => {
     const variants = readRows(row.product_variants).filter((variant) => variant.active === true);
     const stock = variants.reduce((sum, variant) => {
       const inventory = readRows(variant.inventory)[0];
-      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity"), 0);
+      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity")
+        - readNumber(inventory ?? {}, "reserved_quantity"), 0);
     }, 0);
-    const images = readRows(row.product_images).sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true));
+    const images = readRows(row.product_images)
+      .filter((image) => publicCatalogImage(readString(image, "storage_path"), readString(row, "slug"))
+        && readNumber(image, "width") > 0 && readNumber(image, "height") > 0)
+      .sort((left, right) => Number(right.is_primary === true) - Number(left.is_primary === true));
+    if (!images.length) return [];
     const category = readRows(row.categories)[0] ?? (isUnknownRecord(row.categories) ? row.categories : {});
     const reviews = readRows(row.reviews).filter((review) => readString(review, "status") === "approved");
     const rating = reviews.length ? reviews.reduce((sum, review) => sum + readNumber(review, "rating"), 0) / reviews.length : 0;
     return [{ id: readString(row, "id"), slug: readString(row, "slug"), name: readString(row, "name"),
       category: productCategory(readString(category, "name")), description: readString(row, "description"),
+      ...(readString(category, "slug") ? { categorySlug: readString(category, "slug") } : {}),
       priceInCents: Math.round(readNumber(row, "base_price") * 100), rating, reviews: reviews.length,
       colors: [...new Set(variants.map((variant) => readString(variant, "color_name")).filter(Boolean))],
       sizes: [...new Set(variants.map((variant) => readString(variant, "size")).filter(Boolean))],
@@ -342,7 +351,7 @@ export async function queryPublicCatalog(
     promotion: options.promotion ?? false,
     newest: options.newest ?? false
   };
-  if (process.env.DEMO_MODE === "true") return queryDemoCatalog(filters);
+  if (isPresentationCatalogEnabled()) return queryDemoCatalog(filters);
   const presentationFallback = isPresentationCatalogEnabled();
 
   const supabase = createPublicSupabaseClient();
@@ -361,26 +370,27 @@ export async function queryPublicCatalog(
     p_price_max: null,
     p_promotion: filters.promotion,
     p_in_stock: false,
-    p_featured: filters.newest,
+    p_featured: false,
     p_min_rating: null,
-    p_sort: filters.sort,
+    p_sort: filters.newest ? "newest" : filters.sort,
     p_page: 1,
     p_page_size: filters.pageSize
   });
   const { data, error } = readQueryResult(response);
   if (!error) {
-    const catalog = parseCatalogRpcResult(data, { page: 1, pageSize: filters.pageSize });
+    const catalog = parseCatalogRpcResult(data, { page: 1, pageSize: filters.pageSize, sort: filters.sort });
     if (catalog) return catalog;
   }
   return presentationFallback ? queryDemoCatalog(filters) : null;
 }
 
 export const getHomepageData = cache(async (): Promise<HomepageData> => {
-  if (process.env.DEMO_MODE === "true") {
+  if (isPresentationCatalogEnabled()) {
     return {
       sections: defaultSections,
       banners: [fallbackBanner],
       products: demoProducts,
+      categories: [],
       productsBySection: {
         "default-best-sellers": [...demoProducts].sort((left, right) => right.reviews - left.reviews || left.id.localeCompare(right.id)).slice(0, 8)
       },
@@ -397,6 +407,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       sections: defaultSections,
       banners: [fallbackBanner],
       products: developmentFallback ? demoProducts : [],
+      categories: [],
       productsBySection: developmentFallback ? {
         "default-best-sellers": [...demoProducts].sort((left, right) => right.reviews - left.reviews || left.id.localeCompare(right.id)).slice(0, 8)
       } : {},
@@ -406,7 +417,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
   }
 
   const now = new Date().toISOString();
-  const [sectionsResponse, bannersResponse, bestCatalog, promotionCatalog, newestCatalog] = await Promise.all([
+  const [sectionsResponse, bannersResponse, bestCatalog, promotionCatalog, newestCatalog, categoriesResponse] = await Promise.all([
     supabase
       .from("published_homepage_sections")
       .select("section_version_id,section_id,position,snapshot")
@@ -425,7 +436,8 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       .limit(40),
     queryPublicCatalog({ sort: "best_sellers", pageSize: 24 }),
     queryPublicCatalog({ promotion: true, pageSize: 12 }),
-    queryPublicCatalog({ newest: true, pageSize: 12 })
+    queryPublicCatalog({ sort: "newest", pageSize: 12 }),
+    supabase.rpc("get_home_categories")
   ]);
 
   const sections = readRows(readQueryResult(sectionsResponse).data)
@@ -504,16 +516,19 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     ...(promotionCatalog?.products ?? []),
     ...(newestCatalog?.products ?? [])
   ];
-  const productsWithVisualVariants = new Set(
-    mergedProducts.filter((product) => product.variantId).map((product) => product.id)
-  );
   const products = diversifyStorefrontItems(
     mergedProducts
-      .filter((product) => product.variantId || !productsWithVisualVariants.has(product.id))
       .filter((product, index, list) =>
         list.findIndex((candidate) => storefrontItemKey(candidate) === storefrontItemKey(product)) === index
       )
   );
+  const categories = readRows(readQueryResult(categoriesResponse).data).flatMap((row) => {
+    const id = readString(row, "id");
+    const name = readString(row, "name");
+    const slug = readString(row, "slug");
+    const image = publicCatalogImage(readString(row, "imagePath"));
+    return id && name && slug && image ? [{ id, name, slug, image }] : [];
+  });
   const allowDefaults = presentationFallback || process.env.NODE_ENV !== "production";
   const selectedSections = selectHomepageSections(
     sections,
@@ -536,7 +551,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       period: ["30d", "90d", "all"].includes(periodValue) ? periodValue : "90d",
       metric: ["units", "revenue"].includes(metricValue) ? metricValue : "units",
       limit: Math.min(24, Math.max(1, readNumber(section.content, "limit", 8))),
-      fill: section.content.fillEmptySlots !== false,
+      fill: false,
       inStock: section.content.excludeOutOfStock !== false
     };
     bestSellerRequests.set(JSON.stringify(request), request);
@@ -560,7 +575,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       period: ["30d", "90d", "all"].includes(periodValue) ? periodValue : "90d",
       metric: ["units", "revenue"].includes(metricValue) ? metricValue : "units",
       limit: Math.min(24, Math.max(1, readNumber(section.content, "limit", 8))),
-      fill: section.content.fillEmptySlots !== false,
+      fill: false,
       inStock: section.content.excludeOutOfStock !== false
     };
     const fallback = fallbackProductsEnabled
@@ -568,6 +583,10 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
       : [];
     return [section.id, rankedByRequest.get(JSON.stringify(request)) ?? fallback];
   }));
+  for (const section of homepageSections) {
+    if (section.sectionType === "launches") productsBySection[section.id] = newestCatalog?.products ?? [];
+    if (section.sectionType === "featured_products") productsBySection[section.id] = products.filter((product) => product.featured);
+  }
 
   const reviewSections = homepageSections.filter((section) => section.sectionType === "reviews_carousel");
   const selectedReviewIds = [...new Set(reviewSections.flatMap((section) => section.items.map((item) => readString(item.config, "reviewId")).filter(Boolean)))].slice(0, 24);
@@ -603,6 +622,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     sections: homepageSections,
     banners: fallbackBannerEnabled ? [fallbackBanner] : banners,
     products: fallbackProductsEnabled ? demoProducts : products,
+    categories,
     productsBySection,
     testimonials,
     source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
@@ -610,7 +630,7 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
 });
 
 export const getProductsByModel = cache(async (slug: string): Promise<Product[]> => {
-  if (process.env.DEMO_MODE === "true") return [];
+  if (isPresentationCatalogEnabled()) return [];
   const supabase = createPublicSupabaseClient();
   if (!supabase) return [];
   const result = await supabase.rpc("get_model_storefront_items", {
@@ -707,7 +727,7 @@ const demoProductDetail = (slug: string): ProductDetailData | null => {
 };
 
 export const getPublicProduct = cache(async (slug: string): Promise<ProductDetailData | null> => {
-  if (process.env.DEMO_MODE === "true") return demoProductDetail(slug);
+  if (isPresentationCatalogEnabled()) return demoProductDetail(slug);
   const presentationFallback = isPresentationCatalogEnabled();
   const supabase = createPublicSupabaseClient();
   if (!supabase) {
@@ -743,10 +763,15 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       .limit(50),
     supabase
       .from("product_variants")
-      .select("id,color_hex_secondary")
+      .select("id,color_name,color_hex_secondary")
       .eq("product_id", parsed.data.id)
       .limit(500)
   ]);
+  const variantColors = new Map(
+    (variantColorsResponse.error ? [] : readRows(variantColorsResponse.data)).map((entry) => [
+      readString(entry, "id"), readString(entry, "color_name")
+    ])
+  );
   const media = mediaResponse.error
     ? []
     : readRows(mediaResponse.data).flatMap((item): ProductMediaItem[] => {
@@ -761,23 +786,29 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
           src: publicCatalogImage(path, parsed.data.slug),
           alt: readString(item, "alt_text") || parsed.data.name,
           mimeType: readString(item, "mime_type"),
-          ...(readString(item, "variant_id") ? { variantId: readString(item, "variant_id") } : {}),
+          ...(readString(item, "variant_id") ? {
+            variantId: readString(item, "variant_id"),
+            color: variantColors.get(readString(item, "variant_id")) || undefined
+          } : {}),
           ...(posterPath ? { poster: publicCatalogImage(posterPath, parsed.data.slug) } : {})
         }];
       });
-  const imageMedia = media.filter((item) => item.type === "image");
   const legacyGallery = parsed.data.images.map((image) => ({
     id: image.id,
     src: publicCatalogImage(image.path, parsed.data.slug),
     alt: image.alt
-  }));
+  })).filter((image) => Boolean(image.src));
+  const validImageSources = new Set(legacyGallery.map((image) => image.src));
+  const validMedia = media.filter((item) => item.type !== "image" || validImageSources.has(item.src));
+  const imageMedia = validMedia.filter((item) => item.type === "image");
   const gallery = imageMedia.length
     ? imageMedia.map((item) => ({ id: item.id, src: item.src, alt: item.alt }))
     : legacyGallery;
-  const orderedMedia = media.length
-    ? media
+  const orderedMedia = validMedia.length
+    ? validMedia
     : legacyGallery.map((item) => ({ ...item, type: "image" as const, mimeType: "image/webp" }));
   const firstImage = gallery[0]?.src;
+  if (!firstImage || !orderedMedia.some((item) => item.type === "image" && item.src)) return null;
   const colors = [...new Set(parsed.data.variants.map((variant) => variant.color))];
   const sizes = [...new Set(parsed.data.variants.map((variant) => variant.size))];
   const product: Product = {
@@ -907,7 +938,7 @@ const cmsParagraphs = (value: unknown): string[] => {
 };
 
 export const getPublicCmsPage = cache(async (slug: string): Promise<PublicCmsPage | null> => {
-  if (process.env.DEMO_MODE === "true") return null;
+  if (isPresentationCatalogEnabled()) return null;
   const supabase = createPublicSupabaseClient();
   if (!supabase) return null;
   const response = await supabase

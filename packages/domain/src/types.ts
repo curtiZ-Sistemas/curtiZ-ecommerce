@@ -11,7 +11,8 @@ export type Product = {
   variantSize?: string;
   slug: string;
   name: string;
-  category: "Masculino" | "Feminino" | "Infantil" | "Slides" | "Sandálias";
+  category: string;
+  categorySlug?: string;
   description: string;
   priceInCents: number;
   compareAtPriceInCents?: number;
@@ -76,6 +77,7 @@ export type HomepageSectionType =
   | "newsletter"
   | "institutional"
   | "quick_links"
+  | "faq"
   | "safe_component";
 
 export type HomepageSectionItem = {

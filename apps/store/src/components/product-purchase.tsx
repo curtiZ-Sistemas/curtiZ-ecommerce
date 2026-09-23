@@ -17,6 +17,8 @@ import type { ProductDetailData } from "@/lib/storefront-data";
 import {
   galleryWindowStart,
   initialProductSelection,
+  mediaForColor,
+  preferredColorImage,
   resolveProductColor
 } from "@/lib/product-options";
 import { useCart } from "./cart-provider";
@@ -43,8 +45,9 @@ export function ProductPurchase({
   const [color, setColor] = useState(initialSelection.color || product.colors[0] || "");
   const [size, setSize] = useState(initialSelection.size);
   const [selectedImage, setSelectedImage] = useState(
-    detail.media.find((item) => !item.variantId || item.variantId === initialVariant?.id)?.src ??
-      initialVariant?.image ?? gallery[0]?.src ?? variants[0]?.image ?? product.image
+    preferredColorImage(detail.media, initialSelection.color, initialVariant?.id,
+      initialVariant?.image ?? variants.find((item) => item.color === initialSelection.color)?.image,
+      gallery[0]?.src ?? product.image)
   );
   const [thumbnailStart, setThumbnailStart] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -95,20 +98,21 @@ export function ProductPurchase({
     ? Math.round(((comparisonPrice - currentPrice) / comparisonPrice) * 100)
     : 0;
   const images = useMemo(
-    () =>
-      [
-        ...detail.media.filter(
-          (item) => !item.variantId || item.variantId === selectedVariant?.id
-        ),
-        ...(selectedVariant?.image && !detail.media.some((item) => item.src === selectedVariant.image)
-          ? [{ id: `${selectedVariant.id}-variant`, src: selectedVariant.image, alt: product.name, type: "image" as const, mimeType: "image/webp" }]
-          : []),
+    () => {
+      const colorVariant = selectedVariant ?? variants.find((item) => item.color === color && item.image);
+      const colorImage = colorVariant?.image ? {
+        id: `${colorVariant.id}-variant`, src: colorVariant.image, alt: product.name,
+        type: "image" as const, mimeType: "image/webp"
+      } : undefined;
+      return [
+        ...mediaForColor(detail.media, color, selectedVariant?.id, colorImage),
         ...(!detail.media.length ? gallery.map((item) => ({ ...item, type: "image" as const, mimeType: "image/webp" })) : []),
         ...(!detail.media.length ? [{ id: `${product.id}-fallback`, src: product.image, alt: product.name, type: "image" as const, mimeType: "image/webp" }] : [])
       ].filter(
         (image, index, list) => list.findIndex((candidate) => candidate.src === image.src) === index
-      ),
-    [detail.media, gallery, product.id, product.image, product.name, selectedVariant?.id, selectedVariant?.image]
+      );
+    },
+    [detail.media, gallery, product.id, product.image, product.name, color, variants, selectedVariant]
   );
   const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
@@ -161,10 +165,7 @@ export function ProductPurchase({
     setColor(nextColor);
     setSize(nextSize);
     setAdded(false);
-    const nextMedia = detail.media.find(
-      (item) => !item.variantId || item.variantId === imageVariant?.id
-    );
-    setSelectedImage(nextMedia?.src ?? imageVariant?.image ?? product.image);
+    setSelectedImage(preferredColorImage(detail.media, nextColor, imageVariant?.id, imageVariant?.image, product.image));
     preserveVariantInUrl(retainedSize?.id ?? (nextSize ? imageVariant?.id : undefined));
     trackIntelligence({
       type: "variant_select",
@@ -184,10 +185,7 @@ export function ProductPurchase({
       productId: product.id,
       variantId: nextVariant?.id
     });
-    const nextMedia = detail.media.find(
-      (item) => !item.variantId || item.variantId === nextVariant?.id
-    );
-    setSelectedImage(nextMedia?.src ?? nextVariant?.image ?? product.image);
+    setSelectedImage(preferredColorImage(detail.media, color, nextVariant?.id, nextVariant?.image, product.image));
     preserveVariantInUrl(nextVariant?.id);
   };
 

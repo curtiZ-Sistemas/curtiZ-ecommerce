@@ -102,7 +102,7 @@ describe("public storefront components", () => {
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
     expect(html).toContain("product-card-cart-button");
-    expect(html).toContain("ao carrinho");
+    expect(html).toContain("Escolher cor e tamanho");
   });
 
   it("renderiza um card virtual com imagem, preço e link da variação", () => {

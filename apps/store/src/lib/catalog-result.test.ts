@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { parseCatalogRpcResult, parseRpcProductList } from "./catalog-result";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { parseCatalogRpcResult, parseRpcProductList, productCategory, publicCatalogImage } from "./catalog-result";
+
+beforeEach(() => vi.stubEnv("SUPABASE_URL", "https://catalog.example.test"));
+afterEach(() => vi.unstubAllEnvs());
 
 const variant = (overrides: Record<string, unknown> = {}) => ({
   id: "10000000-0000-4000-8000-000000000001",
@@ -25,6 +28,14 @@ const variant = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("resultado virtual do catálogo", () => {
+  it("preserva categorias dinâmicas e não usa logo como foto", () => {
+    expect(productCategory("Chinelos")).toBe("Chinelos");
+    expect(productCategory("Categoria Nova")).not.toBe("Slides");
+    expect(publicCatalogImage(null, "produto-real")).toBe("");
+    expect(publicCatalogImage("/icon.svg", "produto-real")).toBe("");
+    const [product] = parseRpcProductList([variant({ category: "Chinelos", categorySlug: "chinelos" })]) ?? [];
+    expect(product).toMatchObject({ category: "Chinelos", categorySlug: "chinelos" });
+  });
   it("mapeia imagem, preço e estoque específicos da variação", () => {
     const [product] = parseRpcProductList([variant()]) ?? [];
     expect(product).toMatchObject({

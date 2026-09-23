@@ -50,6 +50,7 @@ export type ProductImportProduct = {
   name: string;
   slug: string;
   categoryName: string;
+  categories?: Array<{ name: string; primary: boolean }>;
   modelName: string;
   collectionName: string;
   shortDescription: string;
@@ -140,7 +141,7 @@ type WorkbookXlsxCompat = Workbook["xlsx"] & {
   reconcile(model: { worksheets?: Array<{ tables?: unknown[] }> }, options?: unknown): void;
 };
 
-async function loadWorkbook(bytes: Uint8Array) {
+export async function loadWorkbook(bytes: Uint8Array) {
   enableExcelJsNamespaceCompatibility();
   const workbook = new Workbook();
   const xlsx = workbook.xlsx as WorkbookXlsxCompat;
@@ -177,7 +178,7 @@ function cellValue(cell: Cell): unknown {
   return value;
 }
 
-function rows(sheet: Worksheet, maximumRows: number): Array<Record<string, unknown>> {
+export function rows(sheet: Worksheet, maximumRows: number): Array<Record<string, unknown>> {
   if (sheet.actualRowCount < 1 || sheet.actualRowCount - 1 > maximumRows) {
     throw new Error(`A aba ${sheet.name} excede o limite de ${maximumRows} registros.`);
   }
@@ -289,8 +290,18 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     const primary = cleanText(row.hex_principal, 7);
     const secondary = cleanText(row.hex_secundario, 7);
     const tertiary = cleanText(row.hex_terciario, 7);
-    if (!name || !/^#[0-9a-f]{6}$/iu.test(primary) || (secondary && !/^#[0-9a-f]{6}$/iu.test(secondary))) continue;
-    colors.set(normalizeName(name), { name, primary: primary.toUpperCase(), secondary: secondary.toUpperCase(), tertiary: tertiary.toUpperCase() });
+    const useSecondaryValue = cleanText(row.usar_cor_secundaria, 10);
+    const normalizedSecondaryFlag = normalizeName(useSecondaryValue);
+    if (normalizedSecondaryFlag && !["1", "sim", "true", "0", "nao", "false"].includes(normalizedSecondaryFlag)) {
+      throw new Error(`A cor ${name || "sem nome"} deve usar SIM ou NAO em usar_cor_secundaria.`);
+    }
+    const useSecondary = useSecondaryValue ? booleanValue(useSecondaryValue) : Boolean(secondary);
+    if (!name || !/^#[0-9a-f]{6}$/iu.test(primary) || (useSecondary && !/^#[0-9a-f]{6}$/iu.test(secondary))) {
+      throw new Error(`A cor ${name || "sem nome"} precisa de HEX principal válido${useSecondary ? " e HEX secundário válido" : ""}.`);
+    }
+    const normalizedPrimary = primary.toUpperCase();
+    const normalizedSecondary = useSecondary && secondary.toUpperCase() !== normalizedPrimary ? secondary.toUpperCase() : "";
+    colors.set(normalizeName(name), { name, primary: normalizedPrimary, secondary: normalizedSecondary, tertiary: tertiary.toUpperCase() });
   }
 
   const productRows = rows(workbook.getWorksheet("Produtos")!, PRODUCT_IMPORT_MAX_PRODUCTS);
@@ -308,6 +319,7 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
       name,
       slug: productImportTaxonomySlug(cleanText(row.slug, 180) || name),
       categoryName: cleanText(row.categoria, 120),
+      categories: [],
       modelName: cleanText(row.modelo, 120),
       collectionName: cleanText(row.colecao, 120),
       shortDescription: cleanText(row.descricao_curta, 280),
@@ -412,7 +424,39 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     }
   }
 
+  const productCategoriesSheet = workbook.getWorksheet("Produto_Categorias");
+  if (productCategoriesSheet) {
+    assertHeaders(productCategoriesSheet, ["produto_chave", "categoria", "primaria"]);
+    for (const row of rows(productCategoriesSheet, 1_000)) {
+      const key = cleanText(row.produto_chave, 120);
+      const product = products.get(key);
+      if (!product) {
+        issues.push({ level: "error", code: "UNKNOWN_CATEGORY_PRODUCT", message: `Categoria referencia produto inexistente: ${key}.` });
+        continue;
+      }
+      const name = cleanText(row.categoria, 120);
+      if (!name) {
+        productIssue(product, "error", "CATEGORY_REQUIRED", "Informe a categoria em Produto_Categorias.");
+        continue;
+      }
+      if (product.categories?.some((category) => normalizeName(category.name) === normalizeName(name))) {
+        productIssue(product, "error", "DUPLICATE_CATEGORY", `A categoria ${name} está repetida para este produto.`);
+        continue;
+      }
+      const primaryValue = normalizeName(cleanText(row.primaria, 10));
+      if (!["sim", "nao", "não", "true", "false", "1", "0"].includes(primaryValue)) {
+        productIssue(product, "error", "INVALID_PRIMARY_CATEGORY", `A categoria ${name} deve informar primaria como SIM ou NAO.`);
+        continue;
+      }
+      product.categories?.push({ name, primary: booleanValue(row.primaria) });
+    }
+  }
+
   for (const product of products.values()) {
+    if (!product.categories?.length) product.categories = [{ name: product.categoryName, primary: true }];
+    const primaryCategories = product.categories.filter((category) => category.primary);
+    if (primaryCategories.length !== 1) productIssue(product, "error", "PRIMARY_CATEGORY_REQUIRED", "Informe exatamente uma categoria primária.");
+    else product.categoryName = primaryCategories[0]!.name;
     product.images.sort((left, right) => left.order - right.order);
     if (!product.variants.length) productIssue(product, "error", "VARIANTS_REQUIRED", "Nenhuma variação válida encontrada.");
   }

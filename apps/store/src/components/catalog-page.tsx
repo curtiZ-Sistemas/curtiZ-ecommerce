@@ -2,8 +2,6 @@
 
 import { formatBRL, storefrontItemKey } from "@curtiz/domain";
 import {
-  ArrowLeft,
-  ArrowRight,
   ChevronDown,
   RotateCcw,
   SlidersHorizontal,
@@ -26,6 +24,7 @@ import {
   type CatalogResult,
   type FacetOption
 } from "@/lib/catalog-query";
+import { appendCatalogPage, catalogFilterKey } from "@/lib/catalog-pagination";
 import { ProductCard } from "./product-card";
 import { ColorSwatch } from "./color-swatch";
 
@@ -85,10 +84,23 @@ export function CatalogPage({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const [page, setPage] = useState(1);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [supportsObserver, setSupportsObserver] = useState(true);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const pageAdvancePending = useRef(false);
+  const filterKey = useMemo(() => {
+    return catalogFilterKey(searchParams.toString());
+  }, [searchParams]);
+
+  useEffect(() => {
+    setResult(null);
+    setPage(1);
+    pageAdvancePending.current = false;
+  }, [category, filterKey, preset, query]);
 
   const filters = useMemo(() => {
     const parsed = parseCatalogFilters(searchParams, category);
@@ -132,9 +144,7 @@ export function CatalogPage({
   useEffect(() => {
     const controller = new AbortController();
 
-    const params = new URLSearchParams(
-      searchParams.toString()
-    );
+    const params = new URLSearchParams(filterKey);
 
     if (category) {
       params.set("categoria_fixa", category);
@@ -158,6 +168,7 @@ export function CatalogPage({
     ) {
       params.set("ordem", "best_sellers");
     }
+    params.set("pagina", String(page));
 
     setLoading(true);
     setError("");
@@ -175,7 +186,8 @@ export function CatalogPage({
       })
       .then((nextResult) => {
         if (!controller.signal.aborted) {
-          setResult(nextResult);
+          setResult((current) => appendCatalogPage(current, nextResult));
+          setError("");
         }
       })
       .catch(() => {
@@ -188,6 +200,7 @@ export function CatalogPage({
       .finally(() => {
         if (!controller.signal.aborted) {
           setLoading(false);
+          pageAdvancePending.current = false;
         }
       });
 
@@ -196,9 +209,27 @@ export function CatalogPage({
     category,
     preset,
     query,
-    searchParams,
+    filterKey,
+    page,
     retry
   ]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") {
+      setSupportsObserver(false);
+      return;
+    }
+    const target = loadMoreRef.current;
+    if (!target || !result || loading || error || page >= Math.ceil(result.total / result.pageSize)) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && !pageAdvancePending.current) {
+        pageAdvancePending.current = true;
+        setPage((current) => current + 1);
+      }
+    }, { rootMargin: "600px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [error, loading, page, result]);
 
   useEffect(() => {
     let lastRefresh = Date.now();
@@ -1088,9 +1119,9 @@ export function CatalogPage({
             </div>
           )}
 
-          {loading ? (
+          {loading && !result ? (
             <CatalogSkeleton />
-          ) : error ? (
+          ) : error && !result ? (
             <div
               className="empty-state catalog-empty"
               role="alert"
@@ -1140,73 +1171,18 @@ export function CatalogPage({
                 )}
               </div>
 
-              {totalPages > 1 && (
-                <nav
-                  className="catalog-pagination"
-                  aria-label="Paginação do catálogo"
-                >
-                  <button
-                    type="button"
-                    disabled={
-                      filters.page <=
-                      1
-                    }
-                    onClick={() =>
-                      updateUrl(
-                        (
-                          params
-                        ) =>
-                          params.set(
-                            "pagina",
-                            String(
-                              filters.page -
-                                1
-                            )
-                          ),
-                        true
-                      )
-                    }
-                  >
-                    <ArrowLeft />
-
-                    Anterior
-                  </button>
-
-                  <span>
-                    Página{" "}
-                    {filters.page}{" "}
-                    de{" "}
-                    {totalPages}
-                  </span>
-
-                  <button
-                    type="button"
-                    disabled={
-                      filters.page >=
-                      totalPages
-                    }
-                    onClick={() =>
-                      updateUrl(
-                        (
-                          params
-                        ) =>
-                          params.set(
-                            "pagina",
-                            String(
-                              filters.page +
-                                1
-                            )
-                          ),
-                        true
-                      )
-                    }
-                  >
-                    Próxima
-
-                    <ArrowRight />
-                  </button>
-                </nav>
-              )}
+              {error && <div className="catalog-load-status" role="alert">
+                <p>{error}</p>
+                <button type="button" className="secondary-button" onClick={() => setRetry((current) => current + 1)}>Tentar novamente</button>
+              </div>}
+              {loading && page > 1 && <p className="catalog-load-status" role="status">Carregando mais produtos…</p>}
+              {page < totalPages ? <div ref={loadMoreRef} className="catalog-load-trigger" aria-hidden="true" />
+                : <p className="catalog-load-status" role="status">Você viu todos os produtos desta seleção.</p>}
+              {page < totalPages && !supportsObserver ?
+                <button type="button" className="secondary-button" disabled={loading || Boolean(error)}
+                  onClick={() => setPage((current) => current + 1)}>
+                  Carregar mais produtos
+                </button> : null}
             </>
           ) : (
             <div className="empty-state catalog-empty">

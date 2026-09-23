@@ -44,7 +44,9 @@ const imageSchema = z.object({
 const productSchema = z.object({
   key: z.string().min(1).max(120), shopeeId: z.string().max(120), source: z.string().regex(/^[a-z0-9_-]{2,40}$/u),
   name: z.string().min(3).max(160), slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(180),
-  categoryName: z.string().min(1).max(120), modelName: z.string().max(120), collectionName: z.string().max(120),
+  categoryName: z.string().min(1).max(120),
+  categories: z.array(z.object({ name: z.string().min(1).max(120), primary: z.boolean() }).strict()).min(1).max(20).optional(),
+  modelName: z.string().max(120), collectionName: z.string().max(120),
   shortDescription: z.string().max(280), description: z.string().max(4_000), featured: z.boolean(),
   priceInCents: nullableMoney, compareAtPriceInCents: nullableMoney, costInCents: nullableMoney,
   weightGrams: z.number().int().positive().max(10_000_000).nullable(), heightCm: nullableMeasure,

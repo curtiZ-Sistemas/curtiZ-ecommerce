@@ -17,7 +17,7 @@ import { normalizeProductImportImageUrl, prepareProductImportImages } from "./pr
 
 const fixture = readFileSync("../../docs/import/curtiz_importacao_produtos_shopee_COMPLETA.xlsx");
 
-async function minimalWorkbook(schemaVersion = PRODUCT_IMPORT_SCHEMA, withOptionalData = false, configRows: unknown[][] = []) {
+async function minimalWorkbook(schemaVersion = PRODUCT_IMPORT_SCHEMA, withOptionalData = false, configRows: unknown[][] = [], change?: (workbook: Workbook) => void) {
   const workbook = new Workbook();
   workbook.addWorksheet("Config").addRows([["chave", "valor"], ["schema_version", schemaVersion], ...configRows]);
   workbook.addWorksheet("Produtos").addRows([
@@ -45,6 +45,7 @@ async function minimalWorkbook(schemaVersion = PRODUCT_IMPORT_SCHEMA, withOption
       ["PROD-1", "Origem", "Brasil"]
     ]);
   }
+  change?.(workbook);
   return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 
@@ -99,6 +100,27 @@ describe("product XLSX import", () => {
     ]);
     expect(product).toMatchObject({ costInCents: 835, weightGrams: 300, heightCm: 8, widthCm: 20, lengthCm: 28 });
     expect(product.variants[0]).toMatchObject({ priceInCents: 1_290, costInCents: 955 });
+  });
+
+  it("reads additional categories and explicit one/two-color flags", async () => {
+    const bytes = await minimalWorkbook(PRODUCT_IMPORT_SCHEMA, false, [], (workbook) => {
+      workbook.addWorksheet("Produto_Categorias").addRows([
+        ["produto_chave", "categoria", "primaria"],
+        ["PROD-1", "Chinelos", "SIM"], ["PROD-1", "Feminino", "NAO"]
+      ]);
+      const colors = workbook.getWorksheet("Cores")!;
+      colors.getCell("E1").value = "usar_cor_secundaria";
+      colors.getRow(2).values = ["Araras", "#112233", "#FFFFFF", "", "NAO"];
+      colors.addRow(["Preto + Branco", "#000000", "#FFFFFF", "", "SIM"]);
+      colors.addRow(["Mesmo HEX", "#000000", "#000000", "", "SIM"]);
+      const variations = workbook.getWorksheet("Variacoes")!;
+      variations.getCell("C2").value = "Araras";
+      variations.addRow(["PROD-1", "VAR-2", "Preto + Branco", "36", "SKU-2", true, 1]);
+      variations.addRow(["PROD-1", "VAR-3", "Mesmo HEX", "37", "SKU-3", true, 1]);
+    });
+    const product = (await parseProductImportWorkbook(bytes)).products[0]!;
+    expect(product.categories).toEqual([{ name: "Chinelos", primary: true }, { name: "Feminino", primary: false }]);
+    expect(product.variants.map((variant) => variant.colorHexSecondary)).toEqual(["", "#FFFFFF", ""]);
   });
 
   it("rejects an invalid workbook and an incorrect schema version", async () => {

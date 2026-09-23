@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   diversifyStorefrontItems,
+  canQuickAddProduct,
   storefrontItemKey,
   storefrontProductHref
 } from "./storefront-item";
@@ -40,5 +41,11 @@ describe("itens virtuais de vitrine", () => {
       index
     }));
     expect(diversifyStorefrontItems(input)).toHaveLength(5_000);
+  });
+
+  it("não escolhe um tamanho arbitrário no quick add", () => {
+    expect(canQuickAddProduct({ variantId: "v-1", colors: ["Preto"], sizes: ["34"], stock: 2 })).toBe(true);
+    expect(canQuickAddProduct({ variantId: "v-1", colors: ["Preto"], sizes: ["34", "39"], stock: 2 })).toBe(false);
+    expect(canQuickAddProduct({ variantId: undefined, colors: ["Preto"], sizes: ["34"], stock: 2 })).toBe(false);
   });
 });

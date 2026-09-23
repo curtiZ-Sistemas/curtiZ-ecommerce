@@ -39,7 +39,7 @@ export default async function ProductPage({
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
-  const categoryPath = productCategoryPath(product.category);
+  const categoryPath = productCategoryPath(product.category, product.categorySlug);
 
   return (
     <div className="container page-shell product-page">
@@ -53,20 +53,19 @@ export default async function ProductPage({
       <ProductPurchase detail={detail} initialVariantId={query.variant} />
 
       <section className="product-information" aria-labelledby="product-information-title">
-        <p className="eyebrow">Sobre o Produto</p>
-        <h2 id="product-information-title" className="sr-only">Sobre o Produto</h2>
+        <h2 id="product-information-title" className="sr-only">Informações do produto</h2>
         {detail.specifications.length || detail.sizeGuide.length ? (
-          <div className="product-detail-specifications" aria-labelledby="product-specifications-title">
+          <div className="product-facts-grid">
+          {detail.specifications.length ? <section className="product-detail-specifications" aria-labelledby="product-specifications-title">
             <h2 id="product-specifications-title">Detalhes do Produto</h2>
-            {detail.specifications.length ? (
-              <dl className="product-specification-list">
+            <dl className="product-specification-list">
                 {detail.specifications.map((entry, index) => (
                   <div key={`${entry.label}-${index}`}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>
                 ))}
-              </dl>
-            ) : null}
-            {detail.sizeGuide.length ? <div className="product-size-guide" aria-labelledby="product-size-guide-title">
-            <h3 id="product-size-guide-title">Guia de tamanhos</h3>
+            </dl>
+          </section> : null}
+          {detail.sizeGuide.length ? <section className="product-size-guide" aria-labelledby="product-size-guide-title">
+            <h2 id="product-size-guide-title">Guia de tamanhos</h2>
             <div>
               <table>
                 <thead><tr><th scope="col">Tamanho</th><th scope="col">Medida</th></tr></thead>
@@ -75,7 +74,7 @@ export default async function ProductPage({
                 ))}</tbody>
               </table>
             </div>
-          </div> : null}
+          </section> : null}
           </div>
         ) : null}
         <div className="product-description-section">
@@ -128,6 +127,8 @@ export default async function ProductPage({
         title="Você Também Pode Gostar"
         limit={8}
         category={product.category}
+        priceInCents={product.priceInCents}
+        fallbackCatalog
         excludeProductIds={[product.id]}
         className="product-recommendations"
       />

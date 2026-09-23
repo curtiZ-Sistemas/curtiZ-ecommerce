@@ -2,6 +2,7 @@
 
 import {
   formatBRL,
+  canQuickAddProduct,
   storefrontItemKey,
   storefrontProductHref,
   type Product
@@ -9,6 +10,7 @@ import {
 import { Check, Heart, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
@@ -39,6 +41,7 @@ export function ProductCard({
   };
 }) {
   const { add } = useCart();
+  const router = useRouter();
   const { hydrated, has, toggle } = useFavorites();
   const [added, setAdded] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
@@ -53,6 +56,7 @@ export function ProductCard({
   const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
+  const needsSelection = !canQuickAddProduct(product);
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
@@ -62,6 +66,11 @@ export function ProductCard({
     event.preventDefault();
     event.stopPropagation();
     if (product.stock < 1 || added) return;
+
+    if (needsSelection) {
+      router.push(href);
+      return;
+    }
 
     const color = product.variantColor ?? product.colors[0] ?? "";
     const size = product.variantSize ?? product.sizes[0] ?? "";
@@ -121,7 +130,7 @@ export function ProductCard({
             ? `${product.name} sem estoque`
             : added
               ? `${product.name} adicionado ao carrinho`
-              : `Adicionar ${product.name} ao carrinho`
+              : needsSelection ? `Escolher cor e tamanho de ${product.name}` : `Adicionar ${product.name} ao carrinho`
         }
       >
         {added ? <Check aria-hidden="true" /> : <ShoppingCart aria-hidden="true" />}

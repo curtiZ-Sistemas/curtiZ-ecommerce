@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
     };
     const importedKeys = new Set(objectRows(imported.data).map((item) => `${normalized(item.source)}:${text(item.external_key)}`));
     const needsTaxonomyCreation = batch.products.some((product) =>
-      (!taxonomyId(categories.data, product.categoryName) && batch.options.createCategoryIfMissing)
+      (product.categories ?? [{ name: product.categoryName, primary: true }]).some((category) =>
+        !taxonomyId(categories.data, category.name) && batch.options.createCategoryIfMissing)
       || (Boolean(product.modelName) && !taxonomyId(models.data, product.modelName) && batch.options.createModelIfMissing)
     );
     const taxonomyPermission = needsTaxonomyCreation
@@ -79,13 +80,14 @@ export async function POST(request: NextRequest) {
       const modelId = product.modelName ? taxonomyId(models.data, product.modelName) : null;
       const collectionId = product.collectionName ? taxonomyId(collections.data, product.collectionName) : null;
       references[product.key] = { categoryId, modelId, collectionId };
-      if (!categoryId) {
+      for (const category of product.categories ?? [{ name: product.categoryName, primary: true }]) {
+        if (taxonomyId(categories.data, category.name)) continue;
         if (!batch.options.createCategoryIfMissing) {
-          addProductIssue(product, { level: "error", code: "CATEGORY_NOT_FOUND", message: `Categoria não encontrada: ${product.categoryName}.`, productKey: product.key });
+          addProductIssue(product, { level: "error", code: "CATEGORY_NOT_FOUND", message: `Categoria não encontrada: ${category.name}.`, productKey: product.key });
         } else if (!canCreateTaxonomy) {
-          addProductIssue(product, { level: "error", code: "TAXONOMY_PERMISSION_REQUIRED", message: `Sem permissão para criar a categoria: ${product.categoryName}.`, productKey: product.key });
+          addProductIssue(product, { level: "error", code: "TAXONOMY_PERMISSION_REQUIRED", message: `Sem permissão para criar a categoria: ${category.name}.`, productKey: product.key });
         } else {
-          addProductIssue(product, { level: "warning", code: "CATEGORY_WILL_BE_CREATED", message: `Categoria: ${product.categoryName} — será criada`, productKey: product.key });
+          addProductIssue(product, { level: "warning", code: "CATEGORY_WILL_BE_CREATED", message: `Categoria: ${category.name} — será criada`, productKey: product.key });
         }
       }
       if (product.modelName && !modelId) {

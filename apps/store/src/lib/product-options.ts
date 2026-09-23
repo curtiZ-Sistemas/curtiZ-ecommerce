@@ -60,3 +60,25 @@ export function initialProductSelection(
 export function galleryWindowStart(imageCount: number, requestedStart: number): number {
   return Math.max(0, Math.min(requestedStart, Math.max(0, imageCount - 3)));
 }
+
+export type ColorMedia = { src: string; variantId?: string; color?: string };
+
+export function mediaForColor<T extends ColorMedia>(
+  media: readonly T[], color: string, variantId?: string, colorImage?: T
+): T[] {
+  const matching = media.filter((item) => item.color === color || (variantId !== undefined && item.variantId === variantId));
+  const generic = media.filter((item) => !item.color && !item.variantId);
+  return [...matching, ...(colorImage ? [colorImage] : []), ...generic].filter(
+    (item, index, list) => list.findIndex((candidate) => candidate.src === item.src) === index
+  );
+}
+
+export function preferredColorImage(
+  media: readonly ColorMedia[], color: string, variantId: string | undefined,
+  variantImage: string | undefined, fallback: string
+) {
+  return media.find((item) => item.color === color || (variantId !== undefined && item.variantId === variantId))?.src
+    ?? variantImage
+    ?? media.find((item) => !item.color && !item.variantId)?.src
+    ?? fallback;
+}

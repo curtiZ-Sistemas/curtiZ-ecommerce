@@ -13,6 +13,10 @@ export function storefrontProductHref(
     : base;
 }
 
+export function canQuickAddProduct(product: Pick<Product, "variantId" | "colors" | "sizes" | "stock">) {
+  return Boolean(product.variantId) && product.colors.length === 1 && product.sizes.length === 1 && product.stock > 0;
+}
+
 /**
  * Reordena apenas dentro de uma pequena janela para evitar cards consecutivos do
  * mesmo produto sem destruir o ranking original. O custo é O(n * lookahead),
@@ -20,8 +24,8 @@ export function storefrontProductHref(
  */
 export function diversifyStorefrontItems<T extends Pick<Product, "id">>(
   items: readonly T[],
-  minimumGap = 3,
-  lookahead = 12
+  minimumGap = 5,
+  lookahead = 18
 ): T[] {
   const result = [...items];
   const gap = Math.max(1, Math.min(8, Math.floor(minimumGap)));

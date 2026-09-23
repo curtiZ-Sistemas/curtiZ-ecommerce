@@ -246,12 +246,12 @@ export default function CartPage() {
                       href={!line.unavailableAt && line.slug ? `/produto/${line.slug}` : "/produtos"}
                     >
                       <Image
-                        src={line.image}
+                        src={line.image && line.image !== "/icon.svg" ? line.image : "/images/product-unavailable.svg"}
                         alt={line.name}
                         width={150}
                         height={120}
                         sizes="(max-width: 340px) 86px, (max-width: 700px) 96px, 112px"
-                        onError={(event) => { if (line.unavailableAt && !event.currentTarget.src.endsWith("/icon.svg")) { event.currentTarget.srcset = ""; event.currentTarget.src = "/icon.svg"; } }}
+                        onError={(event) => { if (!event.currentTarget.src.endsWith("/images/product-unavailable.svg")) { event.currentTarget.srcset = ""; event.currentTarget.src = "/images/product-unavailable.svg"; } }}
                       />
                     </Link>
 

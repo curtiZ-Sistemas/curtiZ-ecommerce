@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const compact = url.searchParams.get("compacto") === "1";
   const suggestions = url.searchParams.get("sugestoes") === "1";
   const filters = parseCatalogFilters(url.searchParams, fixedCategory);
-  if (process.env.DEMO_MODE === "true") {
+  if (isPresentationCatalogEnabled()) {
     const result = queryDemoCatalog(filters);
     return NextResponse.json(compact ? { products: result.products } : result, {
       headers: { "cache-control": "private, no-store", "x-catalog-source": "demo" }
@@ -35,9 +35,9 @@ export async function GET(request: Request) {
       p_price_max: filters.priceMax ?? null,
       p_promotion: filters.promotion,
       p_in_stock: filters.inStock,
-      p_featured: filters.newest,
+      p_featured: false,
       p_min_rating: filters.minRating ?? null,
-      p_sort: filters.sort,
+      p_sort: filters.newest ? "newest" : filters.sort,
       p_page: filters.page,
       p_page_size: suggestions ? Math.min(filters.pageSize, 8) : filters.pageSize
     });
@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     if (!error) {
       const result = parseCatalogRpcResult(data, {
         page: filters.page,
-        pageSize: filters.pageSize
+        pageSize: filters.pageSize,
+        sort: filters.sort
       });
       if (result) {
         if (compact || !result.facets.colors.length) {

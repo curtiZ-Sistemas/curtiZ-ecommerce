@@ -13,10 +13,9 @@ export const normalizeProductColorHex = (value?: string | null) => {
   return validHexColor.test(normalized) ? normalized.toUpperCase() : "";
 };
 
-export function productColorSwatchBackground(primaryColor: string, secondaryColor?: string | null) {
+export function productColorSwatchColors(primaryColor: string, secondaryColor?: string | null) {
   const primary = normalizeProductColorHex(primaryColor) || "#9B9B9B";
-  const secondary = normalizeProductColorHex(secondaryColor);
-  return secondary
-    ? `linear-gradient(to right, ${primary} 0 50%, ${secondary} 50% 100%)`
-    : primary;
+  const normalizedSecondary = normalizeProductColorHex(secondaryColor);
+  const secondary = normalizedSecondary && normalizedSecondary !== primary ? normalizedSecondary : undefined;
+  return { primary, secondary };
 }

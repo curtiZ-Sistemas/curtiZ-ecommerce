@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync("supabase/migrations/202609220002_product_import_taxonomy.sql", "utf8").toLowerCase();
+const syncMigration = readFileSync("supabase/migrations/202609230001_product_import_sync.sql", "utf8").toLowerCase();
 const importRoute = readFileSync("apps/panel/src/app/api/catalog/products/import/route.ts", "utf8");
 const previewRoute = readFileSync("apps/panel/src/app/api/catalog/products/import/preview/route.ts", "utf8");
 
@@ -27,7 +28,10 @@ describe("product import taxonomy", () => {
     expect(previewRoute).toContain("catalog.taxonomy.manage");
     expect(previewRoute).toContain("— será criada");
     expect(previewRoute).toContain("— será criado");
-    expect(importRoute).toContain('rpc("admin_import_product_with_taxonomy_authorized"');
+    expect(importRoute).toContain('rpc("admin_sync_import_product_authorized"');
+    expect(syncMigration).toContain("private.resolve_product_import_taxonomy");
+    expect(syncMigration).toContain("public.admin_save_product_authorized(v_payload)");
+    expect(syncMigration).toContain("v_source.product_hash = p_product_hash");
     expect(migration).not.toContain("create or replace function public.admin_save_product_authorized");
   });
 });

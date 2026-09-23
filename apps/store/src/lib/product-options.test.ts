@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   galleryWindowStart,
   initialProductSelection,
+  mediaForColor,
+  preferredColorImage,
   resolveProductColor
 } from "./product-options";
 
@@ -43,5 +45,19 @@ describe("opções comerciais do produto", () => {
         "variante-2"
       )
     ).toEqual({ color: "Branco", size: "38" });
+  });
+
+  it("usa a mídia da cor em todos os tamanhos e mantém a cor ao mudar numeração", () => {
+    const media = [
+      { src: "preto.webp", variantId: "preto-34", color: "Preto" },
+      { src: "branco.webp", variantId: "branco-34", color: "Branco" },
+      { src: "generica.webp" }
+    ];
+    expect(mediaForColor(media, "Branco", "branco-34").map((item) => item.src)).toEqual(["branco.webp", "generica.webp"]);
+    expect(mediaForColor(media, "Branco", "branco-39")[0]?.src).toBe("branco.webp");
+    expect(mediaForColor(media, "Preto", "preto-39")[0]?.src).toBe("preto.webp");
+    expect(preferredColorImage(media, "Branco", "branco-39", "variante-branca.webp", "fallback.webp")).toBe("branco.webp");
+    expect(preferredColorImage([{ src: "generica.webp" }], "Branco", "branco-39", "variante-branca.webp", "fallback.webp")).toBe("variante-branca.webp");
+    expect(mediaForColor([{ src: "generica.webp" }], "Branco", "branco-39", { src: "variante-branca.webp" }).map((item) => item.src)).toEqual(["variante-branca.webp", "generica.webp"]);
   });
 });

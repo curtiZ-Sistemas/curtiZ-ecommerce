@@ -83,7 +83,7 @@ export const searchMetadata: Metadata = {
   robots: { index: false, follow: true }
 };
 
-const categoryRoutes: Record<Product["category"], `/${string}`> = {
+const legacyCategoryRoutes: Record<string, `/${string}`> = {
   Masculino: "/masculino",
   Feminino: "/feminino",
   Infantil: "/infantil",
@@ -91,8 +91,13 @@ const categoryRoutes: Record<Product["category"], `/${string}`> = {
   Sandálias: "/sandalias"
 };
 
-export function productCategoryPath(category: Product["category"]): `/${string}` {
-  return categoryRoutes[category];
+function categorySlug(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+}
+
+export function productCategoryPath(category: Product["category"], slug?: string): `/${string}` {
+  return legacyCategoryRoutes[category] ?? `/produtos?categoria=${encodeURIComponent(slug || categorySlug(category))}`;
 }
 
 export function breadcrumbStructuredData(
@@ -260,7 +265,7 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
 }
 
 export function productBreadcrumbStructuredData(product: Product) {
-  const categoryPath = productCategoryPath(product.category);
+  const categoryPath = productCategoryPath(product.category, product.categorySlug);
   return breadcrumbStructuredData([
     { name: BRAND_NAME, path: "/" },
     { name: product.category, path: categoryPath },

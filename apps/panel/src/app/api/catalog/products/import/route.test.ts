@@ -104,7 +104,7 @@ describe("product import session API", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ hasMore: false, queuedImages: 1 });
     const importCalls = mocks.rpc.mock.calls as Array<[string, { p_payload?: { status?: unknown; variants?: Array<{ stock?: unknown }> } }]>;
-    const importCall = importCalls.find(([name]) => name === "admin_import_product_with_taxonomy_authorized");
+    const importCall = importCalls.find(([name]) => name === "admin_sync_import_product_authorized");
     expect(importCall?.[1].p_payload?.status).toBe("draft");
     expect(importCall?.[1].p_payload?.variants?.[0]?.stock).toBe(10);
     expect(importCall?.[1].p_payload).toMatchObject({
@@ -119,11 +119,13 @@ describe("product import session API", () => {
       variants: [expect.objectContaining({ costInCents: 955, gtin: "7890000000001", mpn: "MPN-1" })]
     });
     expect(importCall?.[1]).toMatchObject({
-      p_category_name: "Chinelos",
-      p_category_slug: "chinelos",
+      p_categories: [{ name: "Chinelos", primary: true, slug: "chinelos" }],
       p_create_category: true,
       p_create_model: true
     });
+    const productHash: unknown = (importCall?.[1] as { p_product_hash?: unknown } | undefined)?.p_product_hash;
+    expect(productHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_reconcile_import_image_colors", { p_product_id: "20000000-0000-0000-0000-000000000004" });
     expect(mocks.from).not.toHaveBeenCalledWith("product_variants");
     expect(mocks.enqueueImages).toHaveBeenCalledWith([{
       jobId: "20000000-0000-0000-0000-000000000006",

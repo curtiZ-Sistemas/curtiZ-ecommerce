@@ -21,7 +21,7 @@ const sectionTypes = [
   "promotions", "flash_offers", "best_sellers", "launches", "featured_products",
   "recommended_products", "manual_products", "campaigns", "benefits", "reviews_carousel",
   "editorial", "video", "image_text", "countdown", "newsletter", "institutional",
-  "quick_links", "safe_component"
+  "quick_links", "safe_component", "faq"
 ] as const;
 
 const layouts = [
@@ -287,6 +287,25 @@ export async function POST(request: NextRequest) {
       : result.error.message.includes("not authorized") ? "O destino externo não está autorizado."
       : "Não foi possível concluir a operação.";
     return NextResponse.json({ message }, { status: result.error.message.includes("revision conflict") ? 409 : 400, headers: privateNoStore });
+  }
+  if (parsed.data.action === "transition" && parsed.data.transition === "approve") {
+    const section = await auth.supabase.from("homepage_sections").select("content_config")
+      .eq("id", parsed.data.sectionId).maybeSingle();
+    if (!section.error && record(section.data?.content_config)?.autoPublishAfterApproval === true) {
+      const permission = await auth.supabase.rpc("has_homepage_permission", { p_permission: "homepage.publish" });
+      if (permission.data === true && !permission.error) {
+        const published = await auth.supabase.rpc("publish_homepage", {
+          p_reason: "Publicação automática após revisão da configuração por planilha", p_scheduled_at: null
+        });
+        if (published.error) return NextResponse.json({ ok: true,
+          message: "Seção aprovada. A publicação automática falhou; publique a home pelo construtor."
+        }, { status: 207, headers: privateNoStore });
+        return NextResponse.json({ ok: true, message: "Seção aprovada e home publicada." }, { headers: privateNoStore });
+      }
+      return NextResponse.json({ ok: true,
+        message: "Seção aprovada. A publicação aguarda alguém com permissão homepage.publish."
+      }, { headers: privateNoStore });
+    }
   }
   return NextResponse.json({ ok: true, message: parsed.data.action === "publish" ? "Publicação registrada com segurança." : "Alteração registrada." }, { headers: privateNoStore });
 }

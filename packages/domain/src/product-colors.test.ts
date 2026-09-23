@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeProductColorHex,
   normalizeProductColorName,
-  productColorSwatchBackground
+  productColorSwatchColors
 } from "./product-colors";
 
 describe("product colors", () => {
@@ -13,8 +13,10 @@ describe("product colors", () => {
   });
 
   it("renders a single color or an exact vertical 50/50 split", () => {
-    expect(productColorSwatchBackground("#000000")).toBe("#000000");
-    expect(productColorSwatchBackground("#000000", "#ffffff"))
-      .toBe("linear-gradient(to right, #000000 0 50%, #FFFFFF 50% 100%)");
+    expect(productColorSwatchColors("#000000")).toEqual({ primary: "#000000", secondary: undefined });
+    expect(productColorSwatchColors("#000000", "#ffffff"))
+      .toEqual({ primary: "#000000", secondary: "#FFFFFF" });
+    expect(productColorSwatchColors("#000000", "#000000"))
+      .toEqual({ primary: "#000000", secondary: undefined });
   });
 });

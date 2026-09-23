@@ -4,6 +4,7 @@ import { storefrontItemKey, type Product } from "@curtiz/domain";
 import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
+import { appendEligibleRecommendations, loadRecommendationFallback } from "../lib/recommendation-fallback";
 import { ProductCard } from "./product-card";
 
 export type IntelligenceSource =
@@ -29,13 +30,6 @@ const sourceTitles: Record<IntelligenceSource, string> = {
 };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const emptyProductIds: string[] = [];
-const isProduct = (value: unknown): value is Product =>
-  Boolean(value) &&
-  typeof value === "object" &&
-  !Array.isArray(value) &&
-  typeof (value as Product).id === "string" &&
-  typeof (value as Product).slug === "string" &&
-  typeof (value as Product).name === "string";
 
 export function IntelligenceShelf({
   source = "personalized",
@@ -44,6 +38,8 @@ export function IntelligenceShelf({
   limit = 8,
   category,
   excludeProductIds = emptyProductIds,
+  fallbackCatalog = false,
+  priceInCents,
   infinite = false,
   className = ""
 }: {
@@ -53,6 +49,8 @@ export function IntelligenceShelf({
   limit?: number;
   category?: string;
   excludeProductIds?: string[];
+  fallbackCatalog?: boolean;
+  priceInCents?: number;
   infinite?: boolean;
   className?: string;
 }) {
@@ -63,6 +61,7 @@ export function IntelligenceShelf({
   const [hasMore, setHasMore] = useState(true);
   const [consentRevision, setConsentRevision] = useState(0);
   const [activated, setActivated] = useState(false);
+  const [supportsObserver, setSupportsObserver] = useState(true);
   const shelf = useRef<HTMLElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const page = useRef(0);
@@ -100,44 +99,55 @@ export function IntelligenceShelf({
         const publicParams = new URLSearchParams({
           source: publicSource,
           seed,
-          limit: String(limit)
+          limit: String(limit),
+          seen: seen.join(",")
         });
         if (category) publicParams.set("category", category);
-        const response = await fetch(
-          sessionId
-            ? "/api/intelligence/recommendations"
-            : `/api/intelligence/recommendations?${publicParams}`,
-          sessionId
-            ? {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  source,
-                  sessionId,
-                  category: category || null,
-                  seen,
-                  recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
-                  seed,
-                  limit
-                }),
-                signal: controller.signal,
-                cache: "no-store"
-              }
-            : { signal: controller.signal }
-        );
-        const data: unknown = await response.json();
+        let response: Response | null = null;
+        let data: unknown = null;
+        try {
+          response = await fetch(
+            sessionId
+              ? "/api/intelligence/recommendations"
+              : `/api/intelligence/recommendations?${publicParams}`,
+            sessionId
+              ? {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    source,
+                    sessionId,
+                    category: category || null,
+                    seen,
+                    recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
+                    seed,
+                    limit
+                  }),
+                  signal: controller.signal,
+                  cache: "no-store"
+                }
+              : { signal: controller.signal }
+          );
+          data = await response.json().catch(() => null);
+        } catch (error) {
+          if (controller.signal.aborted || !fallbackCatalog) throw error;
+        }
         if (
-          !response.ok ||
+          !response?.ok ||
           !data ||
           typeof data !== "object" ||
           !Array.isArray((data as { products?: unknown }).products)
-        )
-          throw new Error("Não foi possível carregar esta seleção.");
+        ) {
+          if (!fallbackCatalog) throw new Error("Não foi possível carregar esta seleção.");
+        }
         const excluded = new Set(excludeProductIds);
-        const next = (data as { products: unknown[] }).products
-          .filter(isProduct)
-          .filter((product) => !excluded.has(product.id) && product.stock > 0)
-          .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index);
+        const primary = response?.ok && data && typeof data === "object" && Array.isArray((data as { products?: unknown }).products)
+          ? (data as { products: unknown[] }).products : [];
+        let next = appendEligibleRecommendations([], primary, excluded, limit);
+        if (fallbackCatalog && reset && next.length < limit) next = await loadRecommendationFallback({
+          initial: next, excludedIds: [...excludeProductIds, ...seen], category, priceInCents, limit,
+          signal: controller.signal
+        });
         setProducts((current) => {
           const merged = reset
             ? next
@@ -148,7 +158,7 @@ export function IntelligenceShelf({
           productsRef.current = merged;
           return merged;
         });
-        setHasMore(next.length === limit && Boolean((data as { nextCursor?: unknown }).nextCursor));
+        setHasMore(!fallbackCatalog && next.length === limit && Boolean((data as { nextCursor?: unknown } | null)?.nextCursor));
         page.current += 1;
       } catch (loadError) {
         if (!controller.signal.aborted)
@@ -163,11 +173,16 @@ export function IntelligenceShelf({
         setLoadingMore(false);
       }
     },
-    [category, consentRevision, excludeProductIds, limit, source]
+    [category, consentRevision, excludeProductIds, fallbackCatalog, limit, priceInCents, source]
   );
   useEffect(() => {
     const node = shelf.current;
     if (!node || activated) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setSupportsObserver(false);
+      setActivated(true);
+      return;
+    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) {
@@ -191,6 +206,7 @@ export function IntelligenceShelf({
   useEffect(() => {
     const node = sentinel.current;
     if (!infinite || !node || !hasMore || loading || loadingMore || error) return;
+    if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) void load(false);
@@ -254,6 +270,8 @@ export function IntelligenceShelf({
             </>
           )}
           {!hasMore && <span>Você chegou ao fim desta seleção.</span>}
+          {hasMore && !supportsObserver && !loadingMore && !error &&
+            <button className="secondary-button" onClick={() => void load(false)}>Carregar mais estilos</button>}
           {error && (
             <button className="secondary-button" onClick={() => void load(false)}>
               <RefreshCw />
