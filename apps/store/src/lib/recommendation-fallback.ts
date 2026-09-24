@@ -23,7 +23,9 @@ export function appendEligibleRecommendations(
   if (!Array.isArray(candidates)) return next;
   for (const candidate of candidates as unknown[]) {
     if (!eligibleProduct(candidate) || excluded.has(candidate.id)
-      || next.some((item) => item.id === candidate.id)) continue;
+      || next.some((item) => item.id === candidate.id
+        || Boolean(candidate.recommendationIdentity
+          && item.recommendationIdentity === candidate.recommendationIdentity))) continue;
     next.push(candidate);
     if (next.length >= limit) break;
   }

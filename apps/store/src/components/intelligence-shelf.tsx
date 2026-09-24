@@ -4,6 +4,7 @@ import { type Product } from "@curtiz/domain";
 import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
+import { diversifyRecommendations, type RecommendationDiversity } from "../lib/recommendation-diversity";
 import { loadSmartRecommendations, type IntelligenceSource } from "../lib/smart-recommendations";
 import { ProductCard } from "./product-card";
 
@@ -30,6 +31,7 @@ export function IntelligenceShelf({
   excludeProductIds = emptyProductIds,
   priceInCents,
   productContext,
+  diversity,
   infinite = false,
   trackingSource,
   className = ""
@@ -41,7 +43,8 @@ export function IntelligenceShelf({
   category?: string;
   excludeProductIds?: string[];
   priceInCents?: number;
-  productContext?: Pick<Product, "id" | "name">;
+  productContext?: Product;
+  diversity?: RecommendationDiversity;
   infinite?: boolean;
   trackingSource?: string;
   className?: string;
@@ -82,18 +85,24 @@ export function IntelligenceShelf({
         const recommendation = await loadSmartRecommendations({
           source, sessionId, recent: sessionId ? recentlyViewedProductIds() : [],
           category, priceInCents, productId: productContext?.id, productName: productContext?.name,
+          currentProduct: productContext, diversity,
           seen: [...excludeProductIds, ...(reset ? [] : productsRef.current.map((item) => item.id))],
           limit, signal: controller.signal
         });
         const next = recommendation.products;
         if (controller.signal.aborted) return;
         setProducts((current) => {
-          const merged = reset
+          const mergedProducts = reset
             ? next
             : [
                 ...current,
                 ...next.filter((item) => !current.some((existing) => existing.id === item.id))
-              ];
+          ];
+          const merged = diversity === "product_detail"
+            ? diversifyRecommendations(mergedProducts, {
+                excludeProductIds, currentProduct: productContext, limit, mode: diversity, relaxFamilies: true
+              })
+            : mergedProducts;
           productsRef.current = merged;
           return merged;
         });
@@ -114,7 +123,7 @@ export function IntelligenceShelf({
         }
       }
     },
-    [category, consentRevision, excludeProductIds, limit, priceInCents, productContext, source]
+    [category, consentRevision, diversity, excludeProductIds, limit, priceInCents, productContext, source]
   );
   useEffect(() => {
     const node = shelf.current;
@@ -185,6 +194,11 @@ export function IntelligenceShelf({
       </section>
     );
   if (!products.length) return null;
+  const visibleProducts = diversity === "product_detail"
+    ? diversifyRecommendations(products, {
+        excludeProductIds, currentProduct: productContext, limit, mode: diversity, relaxFamilies: true
+      })
+    : products;
   return (
     <section
       className={`section container intelligence-shelf ${className}`}
@@ -198,7 +212,7 @@ export function IntelligenceShelf({
         </div>
       </div>
       <div className="product-grid">
-        {products.map((product) => (
+        {visibleProducts.map((product) => (
           <ProductCard product={product} recommendationSource={trackingSource ?? source} key={product.id} />
         ))}
       </div>

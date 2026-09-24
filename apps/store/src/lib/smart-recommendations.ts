@@ -1,5 +1,6 @@
 import type { Product } from "@curtiz/domain";
 import { appendEligibleRecommendations } from "./recommendation-fallback";
+import { diversifyRecommendations, type RecommendationDiversity } from "./recommendation-diversity";
 
 export type IntelligenceSource =
   | "personalized" | "trending" | "most_wanted" | "most_viewed" | "discovery"
@@ -14,6 +15,8 @@ type LoadOptions = {
   query?: string;
   productName?: string;
   productId?: string;
+  currentProduct?: Product;
+  diversity?: RecommendationDiversity;
   seen?: string[];
   limit: number;
   signal: AbortSignal;
@@ -41,18 +44,24 @@ export function searchContextScore(product: Product, query: string): number {
 }
 
 export async function loadSmartRecommendations({ source, sessionId, recent = [], category,
-  priceInCents, query, productName, productId, seen = [], limit, signal, fetcher = fetch
+  priceInCents, query, productName, productId, currentProduct, diversity, seen = [], limit, signal, fetcher = fetch
 }: LoadOptions): Promise<{ products: Product[]; hasMore: boolean }> {
   const target = Math.max(1, Math.min(24, limit));
-  const excluded = new Set([...seen, ...(productId ? [productId] : [])]);
+  const excluded = new Set([...seen, ...(productId ? [productId] : []), ...(currentProduct ? [currentProduct.id] : [])]);
+  const candidatePool: Product[] = [];
   let products: Product[] = [];
   let hasMore = false;
   let requests = 0;
   const priceMin = priceInCents ? Math.max(0, Math.floor(priceInCents * 65 / 100)) : undefined;
   const priceMax = priceInCents ? Math.ceil(priceInCents * 135 / 100) : undefined;
   const seed = (query || productName || productId || `${new Date().toISOString().slice(0, 10)}:${seen.length}`).slice(0, 80);
-  const currentSeen = () => [...excluded, ...products.map((item) => item.id)]
-    .filter((id) => uuidPattern.test(id)).slice(-50);
+  const refreshSelection = () => {
+    products = diversifyRecommendations(candidatePool, {
+      excludeProductIds: [...excluded], currentProduct, limit: target, mode: diversity
+    });
+  };
+  const currentSeen = () => [...new Set([...excluded, ...candidatePool.map((item) => item.id)])]
+    .filter((id) => uuidPattern.test(id)).slice(0, 50);
 
   const request = async (requestedSource: IntelligenceSource, requestedLimit = target,
     withSession = false): Promise<void> => {
@@ -81,7 +90,9 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
       if (!data || typeof data !== "object" || Array.isArray(data)) return;
       const payload = data as { products?: unknown; demo?: boolean; source?: string; nextCursor?: unknown };
       if (payload.demo || payload.source === "demo") return;
-      products = appendEligibleRecommendations(products, payload.products, excluded, target);
+      candidatePool.splice(0, candidatePool.length,
+        ...appendEligibleRecommendations(candidatePool, payload.products, excluded, target * 8));
+      refreshSelection();
       hasMore = Boolean(payload.nextCursor);
     } catch {
       if (signal.aborted) return;
@@ -111,7 +122,9 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
             .filter((item) => !query || item.score > 0)
             .sort((a, b) => b.score - a.score).map((item) => item.product)
         : payload.products;
-      products = appendEligibleRecommendations(products, matches, excluded, target);
+      candidatePool.splice(0, candidatePool.length,
+        ...appendEligibleRecommendations(candidatePool, matches, excluded, target * 8));
+      refreshSelection();
     } catch {
       if (signal.aborted) return;
     }
@@ -135,5 +148,11 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
   if (products.length < target) await request("trending");
   if (products.length < target) await request("discovery");
   if (products.length < target) await request("newest");
+  if (diversity === "product_detail") {
+    products = diversifyRecommendations(candidatePool, {
+      excludeProductIds: [...excluded], currentProduct, limit: target,
+      mode: diversity, relaxFamilies: true
+    });
+  }
   return { products, hasMore: false };
 }

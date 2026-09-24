@@ -128,7 +128,8 @@ export default async function ProductPage({
         limit={8}
         category={product.category}
         priceInCents={product.priceInCents}
-        productContext={{ id: product.id, name: product.name }}
+        productContext={product}
+        diversity="product_detail"
         excludeProductIds={[product.id]}
         trackingSource="product_detail"
         className="product-recommendations"

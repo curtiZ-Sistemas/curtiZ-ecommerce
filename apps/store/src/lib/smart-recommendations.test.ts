@@ -73,14 +73,17 @@ describe("recomendações inteligentes", () => {
       const url = urlOf(input);
       calls.push({ url, init });
       return url === "/api/intelligence/recommendations"
-        ? reply([product("current"), product("similar")])
+        ? reply([product("00000000-0000-4000-8000-00000000000a"), product("similar")])
         : Response.json({ products: [product("similar"), product("other")] });
     };
     const result = await loadSmartRecommendations({ ...options(), sessionId: "session-id",
-      productId: "current", category: "Sandálias", priceInCents: 6000, limit: 2, fetcher });
+      productId: "00000000-0000-4000-8000-00000000000a", category: "Sandálias", priceInCents: 6000, limit: 2, fetcher });
     expect(result.products.map((item) => item.id)).toEqual(["similar", "other"]);
     const primary = JSON.parse(bodyOf(calls[0]?.init?.body)) as Record<string, unknown>;
-    expect(primary).toMatchObject({ category: "Sandálias", priceMin: 3900, priceMax: 8100 });
+    expect(primary).toMatchObject({
+      category: "Sandálias", priceMin: 3900, priceMax: 8100,
+      seen: ["00000000-0000-4000-8000-00000000000a"]
+    });
     expect(calls[1]?.url).toContain("/api/catalog?");
     expect(calls[1]?.url).toContain("preco_min=39");
     expect(calls[1]?.url).toContain("preco_max=81");

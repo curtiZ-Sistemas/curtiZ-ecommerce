@@ -5,6 +5,10 @@ export type Product = {
   id: string;
   /** Identidade virtual do card; `id` continua sendo sempre o produto real. */
   storefrontKey?: string;
+  /** Dados auxiliares para deduplicar produtos em recomendações. */
+  modelSlug?: string;
+  recommendationIdentity?: string;
+  imagePath?: string;
   variantId?: string;
   sku?: string;
   variantColor?: string;

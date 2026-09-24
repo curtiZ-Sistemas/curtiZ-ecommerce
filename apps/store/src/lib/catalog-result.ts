@@ -7,6 +7,9 @@ import type { CatalogResult } from "./catalog-query";
 export const rpcProductSchema = z.object({
   id: z.string(),
   storefrontKey: z.string().optional(),
+  modelSlug: z.string().nullable().optional(),
+  recommendationIdentity: z.string().nullable().optional(),
+  imagePath: z.string().nullable().optional(),
   variantId: z.string().nullable().optional(),
   sku: z.string().nullable().optional(),
   variantColor: z.string().nullable().optional(),
@@ -22,7 +25,6 @@ export const rpcProductSchema = z.object({
   reviews: z.coerce.number().int().nonnegative(),
   colors: z.array(z.string()),
   sizes: z.array(z.string()),
-  imagePath: z.string().nullable().optional(),
   featured: z.boolean(),
   stock: z.coerce.number().int().nonnegative()
 });
@@ -93,6 +95,11 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
   return {
     id: product.id,
     ...(product.storefrontKey ? { storefrontKey: product.storefrontKey } : {}),
+    ...(product.modelSlug ? { modelSlug: product.modelSlug } : {}),
+    ...(product.recommendationIdentity
+      ? { recommendationIdentity: product.recommendationIdentity }
+      : {}),
+    ...(product.imagePath ? { imagePath: product.imagePath } : {}),
     ...(product.variantId ? { variantId: product.variantId } : {}),
     ...(product.sku ? { sku: product.sku } : {}),
     ...(product.variantColor ? { variantColor: product.variantColor } : {}),

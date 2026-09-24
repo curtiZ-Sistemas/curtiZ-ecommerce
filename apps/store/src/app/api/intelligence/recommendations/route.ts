@@ -80,7 +80,9 @@ async function recommendationResponse(input: z.infer<typeof inputSchema>, person
   });
   const products = result.error ? null : parseRpcProductList(result.data)?.filter((product) =>
     product.stock > 0 && Boolean(product.image) && !input.seen.includes(product.id))
-    .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index);
+    .filter((product, index, list) => list.findIndex((item) => item.id === product.id
+      || Boolean(product.recommendationIdentity
+        && item.recommendationIdentity === product.recommendationIdentity)) === index);
   if (!products)
     return NextResponse.json(
       { products: [], message: "Recomendações indisponíveis." },
