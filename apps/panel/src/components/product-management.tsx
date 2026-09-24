@@ -3,7 +3,9 @@
 import { normalizeProductColorName } from "@curtiz/domain";
 import {
   Archive,
+  AlertCircle,
   Boxes,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
@@ -12,6 +14,7 @@ import {
   Eye,
   EyeOff,
   ImageIcon,
+  Info,
   PlayCircle,
   LoaderCircle,
   MoreHorizontal,
@@ -24,6 +27,7 @@ import {
   Star,
   Trash2,
   Upload,
+  TriangleAlert,
   X
 } from "lucide-react";
 import Image from "next/image";
@@ -79,6 +83,22 @@ type CatalogResponse = {
   capabilityMessage?: string;
   colorOptions?: ProductColorOption[];
 };
+
+type ProductFeedbackKind = "success" | "error" | "warning" | "info";
+type ProductFeedback = { kind: ProductFeedbackKind; text: string };
+
+function ProductFeedbackMessage({ feedback, className = "" }: { feedback: ProductFeedback; className?: string }) {
+  const Icon = feedback.kind === "success" ? CheckCircle2
+    : feedback.kind === "error" ? AlertCircle
+      : feedback.kind === "warning" ? TriangleAlert : Info;
+  return (
+    <p className={`product-feedback ${feedback.kind} ${className}`.trim()}
+      role={feedback.kind === "error" ? "alert" : "status"}
+      aria-live={feedback.kind === "error" ? "assertive" : "polite"}>
+      <Icon aria-hidden="true" /> <span>{feedback.text}</span>
+    </p>
+  );
+}
 
 async function readCatalogResponse(response: Response): Promise<CatalogResponse> {
   const body = await response.text();
@@ -377,7 +397,10 @@ export function ProductManagement({
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setFeedback] = useState<ProductFeedback | null>(null);
+  const setMessage = useCallback((text: string, kind: ProductFeedbackKind = "info") => {
+    setFeedback(text ? { text, kind } : null);
+  }, []);
   const [capabilityNotice, setCapabilityNotice] = useState("");
   const [loadError, setLoadError] = useState("");
   const [openingProductId, setOpeningProductId] = useState("");
@@ -789,7 +812,7 @@ export function ProductManagement({
       setDraftClosing(true);
       const persistence = await flushDraft();
       if (!persistence) {
-        setMessage("Não foi possível salvar o rascunho. O cadastro continua aberto para você tentar novamente.");
+        setMessage("Não foi possível salvar o rascunho. O cadastro continua aberto para você tentar novamente.", "error");
         setDraftClosing(false);
         return;
       }
@@ -800,12 +823,12 @@ export function ProductManagement({
         ? "O cadastro foi mantido neste dispositivo e será sincronizado quando a conexão voltar."
         : hadFiles
           ? "O cadastro ficou salvo como rascunho. Se continuar depois, selecione os arquivos de mídia novamente."
-          : "O cadastro ficou salvo como rascunho para você continuar depois.");
+          : "O cadastro ficou salvo como rascunho para você continuar depois.", onlyLocal || hadFiles ? "warning" : "success");
       setDraftClosing(false);
       return;
     }
     closeEditor();
-  }, [closeEditor, editing, editorDirty, flushDraft, queuedMediaFiles.length]);
+  }, [closeEditor, editing, editorDirty, flushDraft, queuedMediaFiles.length, setMessage]);
 
   const openNewProduct = async () => {
     draftSaveLockedRef.current = false;
@@ -826,9 +849,9 @@ export function ProductManagement({
       const response = await fetch("/api/catalog/product-draft", { cache: "no-store" });
       const result = (await response.json()) as ProductDraftResponse;
       if (response.ok) serverDraft = parseNewProductDraft(result.draft);
-      else setMessage(`${result.message ?? "Não foi possível consultar o rascunho no servidor."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
+      else setMessage(`${result.message ?? "Não foi possível consultar o rascunho no servidor."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`, "warning");
     } catch {
-      setMessage("Não foi possível consultar o rascunho no servidor. O cadastro continua disponível.");
+      setMessage("Não foi possível consultar o rascunho no servidor. O cadastro continua disponível.", "warning");
     }
     try {
       const latest = newestProductDraft(serverDraft, localDraft);
@@ -889,15 +912,15 @@ export function ProductManagement({
       const response = await fetch("/api/catalog/product-draft", { method: "DELETE" });
       const result = (await response.json()) as ProductDraftResponse;
       if (!response.ok) {
-        setMessage(`${result.message ?? "Não foi possível descartar o rascunho."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
+        setMessage(`${result.message ?? "Não foi possível descartar o rascunho."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`, "error");
         return;
       }
       clearLocalDraft();
       setEditorDirty(false);
       editorBaselineRef.current = editorSnapshotRef.current();
-      setMessage("Rascunho descartado definitivamente.");
+      setMessage("Rascunho descartado definitivamente.", "success");
     } catch {
-      setMessage("Não foi possível descartar o rascunho no servidor. Tente novamente.");
+      setMessage("Não foi possível descartar o rascunho no servidor. Tente novamente.", "error");
     } finally {
       draftSaveLockedRef.current = false;
       setDraftClosing(false);
@@ -1012,7 +1035,7 @@ export function ProductManagement({
       setMessage(
         error instanceof Error && error.message
           ? error.message
-          : "Não foi possível abrir o produto agora."
+          : "Não foi possível abrir o produto agora.", "error"
       );
     } finally {
       setOpeningProductId("");
@@ -1032,7 +1055,7 @@ export function ProductManagement({
       });
       const result = await readCatalogResponse(response);
       const requestReference = result.requestId ? ` Referência: ${result.requestId}.` : "";
-      setMessage(`${result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou.")}${requestReference}`);
+      setMessage(`${result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou.")}${requestReference}`, response.ok ? "success" : "error");
       if (response.ok) {
         await load();
         return result;
@@ -1042,7 +1065,7 @@ export function ProductManagement({
       setMessage(
         key === "new-product"
           ? "Não foi possível salvar o produto agora. O cadastro continua salvo como rascunho. Tente novamente."
-          : "Não foi possível concluir a alteração agora."
+          : "Não foi possível concluir a alteração agora.", "error"
       );
       return null;
     } finally {
@@ -1104,7 +1127,7 @@ export function ProductManagement({
         variants
       });
       if (publicationMessage) {
-        setMessage(publicationMessage);
+        setMessage(publicationMessage, "error");
         return;
       }
     }
@@ -1221,7 +1244,7 @@ export function ProductManagement({
             : "Produto criado como rascunho."
           : "Produto atualizado com sucesso.";
       closeEditor();
-      setMessage(successMessage);
+      setMessage(successMessage, "success");
     } catch (error) {
       try {
         setEditing(await readProduct(productId));
@@ -1235,7 +1258,7 @@ export function ProductManagement({
           ? hadQueuedMedia
             ? `O produto foi salvo, mas as imagens não foram concluídas: ${error.message}`
             : `O produto foi salvo, mas uma configuração complementar falhou: ${error.message}`
-          : "Produto salvo, mas a galeria não pôde ser atualizada."
+          : "Produto salvo, mas a galeria não pôde ser atualizada.", "warning"
       );
     } finally {
       pendingActionRef.current = false;
@@ -1258,7 +1281,7 @@ export function ProductManagement({
           variants: product.variants
         })
       : null;
-    if (publicationMessage) { setMessage(publicationMessage); return; }
+    if (publicationMessage) { setMessage(publicationMessage, "error"); return; }
 
     const needsReason = nextStatus === "archived";
 
@@ -1331,7 +1354,7 @@ export function ProductManagement({
           : variant;
       });
     if (!generated.length) {
-      setMessage("Informe pelo menos um tamanho.");
+      setMessage("Informe pelo menos um tamanho.", "error");
       return;
     }
     setEditableVariants((current) => {
@@ -1351,7 +1374,7 @@ export function ProductManagement({
     });
     setSizeGuide((current) => includeSizeGuideRows(current, generated.map((variant) => variant.size)));
     setEditorDirty(true);
-    setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.");
+    setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.", "success");
   };
 
   const addSizeToColor = (
@@ -1363,7 +1386,7 @@ export function ProductManagement({
     const size = newVariantSizes[groupKey]?.trim() ?? "";
     const generated = generateVariantCombinations(color, size, variantSkuPrefix);
     if (!generated.length) {
-      setMessage("Informe o tamanho e um prefixo de SKU para adicionar a variação.");
+      setMessage("Informe o tamanho e um prefixo de SKU para adicionar a variação.", "error");
       return;
     }
     const duplicate = editableVariants.some(
@@ -1373,7 +1396,7 @@ export function ProductManagement({
         variant.size.trim().toLocaleLowerCase("pt-BR") === size.toLocaleLowerCase("pt-BR")
     );
     if (duplicate) {
-      setMessage(`O tamanho ${size} já existe para a cor ${color}.`);
+      setMessage(`O tamanho ${size} já existe para a cor ${color}.`, "warning");
       return;
     }
     const candidate = generated[0];
@@ -1409,7 +1432,7 @@ export function ProductManagement({
       }
     ]);
     setEditorDirty(true);
-    setMessage("Variação duplicada. Revise tamanho, SKU, preço e estoque antes de salvar.");
+    setMessage("Variação duplicada. Revise tamanho, SKU, preço e estoque antes de salvar.", "warning");
   };
 
   const sendMediaFiles = async (
@@ -1492,14 +1515,14 @@ export function ProductManagement({
     setMessage(
       rejectedCount
         ? `${rejectedCount} arquivo(s) ignorado(s). Use JPG, PNG ou WebP de até 10 MB.`
-        : `${accepted.length} imagem(ns) pronta(s) para envio.`
+        : `${accepted.length} imagem(ns) pronta(s) para envio.`, rejectedCount ? "warning" : "info"
     );
   };
 
   const uploadMedia = async (product: ManagedProduct, files: readonly File[]) => {
     const { accepted, rejected } = partitionProductMediaFiles(files);
     if (!accepted.length || pending) {
-      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB e vídeos MP4/WebM de até 80 MB.");
+      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB e vídeos MP4/WebM de até 80 MB.", "error");
       return;
     }
     setPending(`media-${product.id}`);
@@ -1517,11 +1540,12 @@ export function ProductManagement({
         uploaded += 1;
         currentProduct = await readProduct(product.id);
       }
-      setMessage(
-        `${uploaded} mídia(s) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`
-      );
       await load();
       await refreshEditingProduct(product.id);
+      setMessage(
+        `${uploaded} mídia(s) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`,
+        rejected.length ? "warning" : "success"
+      );
     } catch (error) {
       if (uploaded) {
         try {
@@ -1531,7 +1555,10 @@ export function ProductManagement({
           // Keep the upload failure as the actionable message.
         }
       }
-      setMessage(error instanceof Error ? error.message : "Não foi possível enviar as mídias.");
+      setMessage(uploaded
+        ? `${uploaded} mídia(s) enviada(s), mas o restante não foi concluído: ${error instanceof Error ? error.message : "falha no envio"}. Confira a galeria antes de tentar novamente.`
+        : error instanceof Error ? error.message : "Não foi possível enviar as mídias.",
+      uploaded ? "warning" : "error");
     } finally {
       setMediaUploadProgress(0);
       setPending("");
@@ -1554,7 +1581,7 @@ export function ProductManagement({
       if (response.ok) {
         setDeleteTarget(null);
         await load();
-        setMessage(result.message ?? "Produto excluído permanentemente.");
+        setMessage(result.message ?? "Produto excluído permanentemente.", "success");
       } else {
         setDeleteError(result.message ?? "A exclusão falhou.");
         if (response.status === 409) {
@@ -1573,6 +1600,7 @@ export function ProductManagement({
   const deleteMedia = async (imageId: string) => {
     if (pending) return;
     setPending(`image-${imageId}`);
+    let removed = false;
     try {
       const response = await fetch("/api/catalog/products/media", {
         method: "DELETE",
@@ -1580,14 +1608,20 @@ export function ProductManagement({
         body: JSON.stringify({ imageId })
       });
       const result = await readCatalogResponse(response);
-      setMessage(result.message ?? (response.ok ? "Imagem removida." : "Falha ao remover imagem."));
       if (response.ok) {
+        removed = true;
         await load();
         if (editing !== "new" && editing?.id) await refreshEditingProduct(editing.id);
         setMediaDeleteTarget(null);
+        setMessage(result.message ?? "Imagem removida.", "success");
+      } else {
+        setMessage(result.message ?? "Falha ao remover imagem.", "error");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível remover a imagem.");
+      setMessage(removed
+        ? "Imagem removida, mas não foi possível atualizar a visualização. Reabra o produto para conferir a galeria."
+        : error instanceof Error ? error.message : "Não foi possível remover a imagem.",
+      removed ? "warning" : "error");
     } finally {
       setPending("");
     }
@@ -1597,6 +1631,7 @@ export function ProductManagement({
     if (pending) return;
     const imageId = typeof body.imageId === "string" ? body.imageId : "";
     setPending(`image-${imageId}`);
+    let updated = false;
     try {
       const response = await fetch("/api/catalog/products/media", {
         method: "PATCH",
@@ -1604,15 +1639,19 @@ export function ProductManagement({
         body: JSON.stringify(body)
       });
       const result = await readCatalogResponse(response);
-      setMessage(
-        result.message ?? (response.ok ? "Mídia atualizada." : "Falha ao atualizar mídia.")
-      );
       if (response.ok) {
+        updated = true;
         await load();
         if (editing !== "new" && editing?.id) await refreshEditingProduct(editing.id);
+        setMessage(result.message ?? "Mídia atualizada.", "success");
+      } else {
+        setMessage(result.message ?? "Falha ao atualizar mídia.", "error");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar a mídia.");
+      setMessage(updated
+        ? "Mídia atualizada, mas não foi possível atualizar a visualização. Reabra o produto para conferir a galeria."
+        : error instanceof Error ? error.message : "Não foi possível atualizar a mídia.",
+      updated ? "warning" : "error");
     } finally {
       setPending("");
     }
@@ -1622,7 +1661,7 @@ export function ProductManagement({
   const runBulkAction = async () => {
     if (!bulkAction || pendingActionRef.current || !selectedProducts.length) return;
     if (bulkAction === "delete" && selectedProducts.some((product) => !product.canDelete)) {
-      setMessage("A seleção possui produto com histórico. Arquive-o para preservar os registros.");
+      setMessage("A seleção possui produto com histórico. Arquive-o para preservar os registros.", "warning");
       return;
     }
     pendingActionRef.current = true;
@@ -1641,7 +1680,7 @@ export function ProductManagement({
               : { action: "archive", productId: product.id, reason: "Arquivamento em lote no painel de produtos" })
         });
         const result = await readCatalogResponse(response);
-        if (!response.ok) throw new Error(result.message);
+        if (!response.ok) throw new Error(`${result.message ?? "A ação falhou."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
         completed += 1;
       }
       setBulkAction(null);
@@ -1650,12 +1689,12 @@ export function ProductManagement({
         ? `${completed} produto(s) excluído(s) permanentemente.`
         : bulkAction === "restore"
           ? `${completed} produto(s) restaurado(s) como não ativo(s).`
-          : `${completed} produto(s) arquivado(s).`);
+          : `${completed} produto(s) arquivado(s).`, "success");
     } catch (error) {
       await load();
       setMessage(error instanceof Error && error.message
-        ? `${completed} concluído(s). ${error.message}`
-        : "Não foi possível concluir a ação em lote.");
+        ? `${completed} concluído(s). ${error.message} Confira os produtos restantes antes de tentar novamente.`
+        : "Não foi possível concluir a ação em lote.", completed ? "warning" : "error");
     } finally {
       pendingActionRef.current = false;
       setPending("");
@@ -1783,11 +1822,7 @@ export function ProductManagement({
         ) : null}
       </div>
 
-      {message && (
-        <p className="form-message" role="status">
-          {message}
-        </p>
-      )}
+      {message && !editing ? <ProductFeedbackMessage feedback={message} /> : null}
       {selectedProducts.length ? (
         <div className="product-bulk-actions" role="toolbar" aria-label="Ações para produtos selecionados">
           <strong>{selectedProducts.length} selecionado(s)</strong>
@@ -2071,13 +2106,13 @@ export function ProductManagement({
                                 onClick={() => {
                                   const quantity = Number(quantities.current[variant.id]?.value);
                                   if (!Number.isInteger(quantity) || quantity < 1) {
-                                    setMessage("Informe uma quantidade inteira maior que zero.");
+                                    setMessage("Informe uma quantidade inteira maior que zero.", "error");
                                     return;
                                   }
                                   const reason = reasons.current[variant.id]?.value.trim() ?? "";
                                   if (reason.length < 10) {
                                     setMessage(
-                                      "Informe um motivo de reposição com pelo menos 10 caracteres."
+                                      "Informe um motivo de reposição com pelo menos 10 caracteres.", "error"
                                     );
                                     reasons.current[variant.id]?.focus();
                                     return;
@@ -3422,7 +3457,7 @@ export function ProductManagement({
                 </aside>
               ) : null}
               <footer className="product-editor-footer">
-                {message ? <p className="form-message product-editor-message" role="status">{message}</p> : null}
+                {message ? <ProductFeedbackMessage feedback={message} className="product-editor-message" /> : null}
                 <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending) || draftClosing}>Cancelar</button>
                 <button className="primary-button" type="submit" disabled={Boolean(pending) || draftClosing}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
               </footer>

@@ -35,4 +35,14 @@ describe("public media proxy", () => {
     expect(failed.status).toBe(503);
     expect(await failed.text()).not.toContain("private-upstream-details");
   });
+  it("falls back only to a validated public banner image when the upstream fetch throws", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("upstream unavailable")));
+    const banner = await GET(request("catalog-public", "banners/photo.png"));
+    expect(banner.status).toBe(307);
+    expect(banner.headers.get("location")).toBe("https://project.supabase.co/storage/v1/object/public/catalog-public/banners/photo.png");
+    expect(banner.headers.get("referrer-policy")).toBe("no-referrer");
+    expect((await GET(request("homepage-public", "banners/photo.png"))).status).toBe(503);
+    expect((await GET(request("catalog-public", "banners/page.html"))).status).toBe(503);
+  });
 });

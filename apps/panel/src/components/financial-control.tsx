@@ -181,7 +181,7 @@ export function FinancialControl() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [canExport, setCanExport] = useState(false);
@@ -242,7 +242,7 @@ export function FinancialControl() {
 
   const mutate = async (action: string, payload: Record<string, unknown>, success: string) => {
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const response = await fetch("/api/manager/finance", {
         method: "POST",
@@ -257,15 +257,15 @@ export function FinancialControl() {
       if (!response.ok)
         throw new Error(scalar(record.message) || "Não foi possível concluir a operação.");
       setModal(null);
-      setMessage(success);
+      setMessage({ kind: "success", text: success });
       await load(true);
       return true;
     } catch (mutationError) {
-      setMessage(
+      setMessage({ kind: "error", text:
         mutationError instanceof Error
           ? mutationError.message
           : "Não foi possível concluir a operação."
-      );
+      });
       return false;
     } finally {
       setPending(false);
@@ -293,7 +293,7 @@ export function FinancialControl() {
     try {
       await exportFinancialWorkbook(data, scope, { from, to });
     } catch {
-      setMessage("Não foi possível montar o arquivo Excel neste dispositivo.");
+      setMessage({ kind: "error", text: "Não foi possível montar o arquivo Excel neste dispositivo." });
     } finally {
       setPending(false);
     }
@@ -406,8 +406,8 @@ export function FinancialControl() {
       </nav>
 
       {message ? (
-        <p className="financial-feedback" role="status">
-          {message}
+        <p className={`financial-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>
+          {message.text}
         </p>
       ) : null}
       {error ? (

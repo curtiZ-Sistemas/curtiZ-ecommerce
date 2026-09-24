@@ -53,7 +53,7 @@ export function BannerManager() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [editable, setEditable] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
@@ -78,17 +78,17 @@ export function BannerManager() {
   const toggle = async (row: Row) => {
     if (pending) return;
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const active = ["published", "scheduled"].includes(string(row, "status"));
       await request(
         endpoint,
         json("PATCH", { action: active ? "archive" : "restore", ids: [row.id] })
       );
-      setMessage(active ? "Banner desativado." : "Banner ativado.");
+      setMessage({ kind: "success", text: active ? "Banner desativado." : "Banner ativado." });
       await load();
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "Não foi possível alterar o banner.");
+      setMessage({ kind: "error", text: reason instanceof Error ? reason.message : "Não foi possível alterar o banner." });
     } finally {
       setPending(false);
     }
@@ -106,7 +106,7 @@ export function BannerManager() {
           </button>
         )}
       </header>
-      {message && <p role="status">{message}</p>}
+      {message && <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p>}
       {error ? (
         <div role="alert">
           <p>{error}</p>
@@ -216,7 +216,7 @@ export function BannerManager() {
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
-            setMessage("Banner salvo com sucesso.");
+            setMessage({ kind: "success", text: "Banner salvo com sucesso." });
             await load();
           }}
         />
@@ -227,7 +227,7 @@ export function BannerManager() {
           onClose={() => setDeleting(null)}
           onDeleted={async () => {
             setDeleting(null);
-            setMessage("Banner excluído.");
+            setMessage({ kind: "success", text: "Banner excluído." });
             if (items.length === 1 && page > 1) setPage(page - 1);
             else await load();
           }}

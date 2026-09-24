@@ -118,7 +118,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [loadError, setLoadError] = useState("");
   const [capabilities, setCapabilities] = useState<ManagerCapabilities>(noCapabilities);
 
@@ -187,7 +187,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
     }
 
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const body = action === "simulate"
         ? { action, periodStart: period?.start, periodEnd: period?.end }
@@ -199,10 +199,10 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isItem(payload)) throw new Error("action_failed");
-      setMessage(typeof payload.message === "string" ? payload.message : "Ação concluída.");
+      setMessage({ kind: "success", text: typeof payload.message === "string" ? payload.message : "Ação concluída." });
       await load();
     } catch {
-      setMessage("A ação não foi concluída. Confira o estado atual e tente novamente.");
+      setMessage({ kind: "error", text: "A ação não foi concluída. Confira o estado atual e tente novamente." });
     } finally {
       setPending(false);
     }
@@ -216,7 +216,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
     }))?.trim();
     if (!reason || typeof item.id !== "string") return;
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const response = await fetch("/api/manager/representatives", {
         method: "POST",
@@ -225,10 +225,10 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isItem(payload)) throw new Error("action_failed");
-      setMessage(typeof payload.message === "string" ? payload.message : "Situação atualizada.");
+      setMessage({ kind: "success", text: typeof payload.message === "string" ? payload.message : "Situação atualizada." });
       await load();
     } catch {
-      setMessage("Não foi possível alterar a situação deste representante.");
+      setMessage({ kind: "error", text: "Não foi possível alterar a situação deste representante." });
     } finally {
       setPending(false);
     }
@@ -242,7 +242,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
     }))?.trim();
     if (!reason || typeof item.id !== "string") return;
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const response = await fetch("/api/manager/campaigns", {
         method: "POST",
@@ -251,10 +251,10 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
       });
       const payload: unknown = await response.json();
       if (!response.ok || !isItem(payload)) throw new Error("action_failed");
-      setMessage(typeof payload.message === "string" ? payload.message : "Campanha atualizada.");
+      setMessage({ kind: "success", text: typeof payload.message === "string" ? payload.message : "Campanha atualizada." });
       await load();
     } catch {
-      setMessage("Não foi possível alterar o estado desta campanha.");
+      setMessage({ kind: "error", text: "Não foi possível alterar o estado desta campanha." });
     } finally {
       setPending(false);
     }
@@ -286,7 +286,7 @@ export function ManagerResourceManager({ resource, initialQuery = "" }: { resour
         <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar registros"><RefreshCw className={loading ? "spin" : ""} /></button>
       </div>
 
-      {message ? <p className="admin-feedback" role="status">{message}</p> : null}
+      {message ? <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p> : null}
       {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando</div> : loadError ? (
         <div className="admin-empty-state" role="alert"><h3>Consulta indisponível</h3><p>{loadError}</p><button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button></div>
       ) : items.length === 0 ? (
