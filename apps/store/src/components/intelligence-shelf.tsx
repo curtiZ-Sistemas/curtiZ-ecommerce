@@ -1,7 +1,8 @@
 "use client";
 
 import { type Product } from "@curtiz/domain";
-import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
 import { diversifyRecommendations, type RecommendationDiversity } from "../lib/recommendation-diversity";
@@ -26,6 +27,8 @@ export function IntelligenceShelf({
   source = "personalized",
   title,
   subtitle,
+  minimalHomepageHeading = false,
+  viewAllHref,
   limit = 8,
   category,
   excludeProductIds = emptyProductIds,
@@ -39,6 +42,8 @@ export function IntelligenceShelf({
   source?: IntelligenceSource;
   title?: string;
   subtitle?: string;
+  minimalHomepageHeading?: boolean;
+  viewAllHref?: string;
   limit?: number;
   category?: string;
   excludeProductIds?: string[];
@@ -166,11 +171,13 @@ export function IntelligenceShelf({
     observer.observe(node);
     return () => observer.disconnect();
   }, [error, hasMore, infinite, load, loading, loadingMore]);
+  const headingTitle = title ?? sourceTitles[source];
   if (!activated || loading)
     return (
       <section ref={shelf} className={`section container intelligence-shelf ${className}`} aria-busy="true">
         <div className="section-heading">
-          <h2>{title ?? sourceTitles[source]}</h2>
+          <h2>{headingTitle}</h2>
+          {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
         </div>
         <div className="intelligence-skeleton" aria-label="Carregando recomendações">
           {Array.from({ length: Math.min(limit, 4) }, (_, index) => (
@@ -184,7 +191,8 @@ export function IntelligenceShelf({
       <section className={`section container intelligence-shelf ${className}`}>
         <div className="intelligence-empty">
           <Sparkles aria-hidden="true" />
-          <h2>{title ?? sourceTitles[source]}</h2>
+          <h2>{headingTitle}</h2>
+          {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
           <p>{error}</p>
           <button className="secondary-button" onClick={() => void load(true)}>
             <RefreshCw />
@@ -206,10 +214,11 @@ export function IntelligenceShelf({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Descoberta curti Z</p>
-          <h2 id={`intelligence-${source}-title`}>{title ?? sourceTitles[source]}</h2>
-          {subtitle && <p>{subtitle}</p>}
+          {!minimalHomepageHeading && <p className="eyebrow">Descoberta curti Z</p>}
+          <h2 id={`intelligence-${source}-title`}>{headingTitle}</h2>
+          {!minimalHomepageHeading && subtitle && <p>{subtitle}</p>}
         </div>
+        {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
       </div>
       <div className="product-grid">
         {visibleProducts.map((product) => (

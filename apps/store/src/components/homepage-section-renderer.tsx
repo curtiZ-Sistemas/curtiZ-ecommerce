@@ -267,8 +267,9 @@ export function HomepageSectionRenderer({
         <div className={sectionClass(section)}>
           <IntelligenceShelf
             source={source}
-            title={section.title}
-            subtitle={section.subtitle}
+            title={source === "personalized" ? "Escolhas para você" : source === "newest" ? "Novidades" : section.title}
+            minimalHomepageHeading
+            viewAllHref={source === "newest" ? settingString(section, "href", "/lancamentos") : undefined}
             limit={Math.min(24, Math.max(1, settingNumber(section, "limit", 8)))}
             category={settingString(section, "category") || undefined}
             infinite={source === "discovery"}
@@ -317,7 +318,6 @@ export function HomepageSectionRenderer({
         >
           <SectionHeading
             id={`${section.id}-title`}
-            eyebrow={section.subtitle ?? "Seleção curti Z"}
             title={section.title ?? "Produtos selecionados"}
             href={settingString(section, "href", "/produtos")}
           />
@@ -680,14 +680,14 @@ function SectionHeading({
   href
 }: {
   id: string;
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   href?: string;
 }) {
   return (
     <div className="section-heading">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h2 id={id}>{title}</h2>
       </div>
       {href && (

@@ -192,8 +192,8 @@ describe("public storefront components", () => {
     }]} />);
 
     expect(html).toContain(`src="${image}"`);
-    expect(html).not.toContain("/media/product/");
-    expect(html).not.toContain("srcSet=");
+    expect(html).toContain("/media/product/products/user/product/imagem.webp?w=360 360w");
+    expect(html).toContain("srcSet=");
   });
 
   it("mantém a imagem original direta na página do produto", () => {

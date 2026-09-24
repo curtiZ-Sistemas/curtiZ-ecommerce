@@ -39,6 +39,9 @@ export function CategoryCarousel({
   categories
 }: CategoryCarouselProps) {
   const viewport = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const loopWidth = useRef(0);
+  const settleTimer = useRef<number | null>(null);
   const [paused, setPaused] = useState(false);
   const resumeTimer = useRef<number | null>(null);
   const hovered = useRef(false);
@@ -53,17 +56,59 @@ export function CategoryCarousel({
   useEffect(() => () => {
     if (resumeTimer.current) window.clearTimeout(resumeTimer.current);
   }, []);
+  const alignToMiddleCopy = useCallback(() => {
+    const node = viewport.current;
+    const slides = track.current?.children;
+    if (!node || !slides || categories.length === 0) return;
+    const first = slides.item(0);
+    const middle = slides.item(categories.length);
+    if (!(first instanceof HTMLElement) || !(middle instanceof HTMLElement)) return;
+
+    const nextLoopWidth = middle.getBoundingClientRect().left - first.getBoundingClientRect().left;
+    if (nextLoopWidth <= 0) return;
+    const previousLoopWidth = loopWidth.current;
+    loopWidth.current = nextLoopWidth;
+    if (previousLoopWidth === 0) {
+      node.scrollLeft = nextLoopWidth;
+    } else if (Math.abs(previousLoopWidth - nextLoopWidth) > 1) {
+      const offset =
+        ((node.scrollLeft - previousLoopWidth) % previousLoopWidth + previousLoopWidth) % previousLoopWidth;
+      node.scrollLeft = nextLoopWidth + offset / previousLoopWidth * nextLoopWidth;
+    }
+  }, [categories.length]);
+  useEffect(() => {
+    alignToMiddleCopy();
+    const node = viewport.current;
+    if (!node) return;
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", alignToMiddleCopy);
+      return () => window.removeEventListener("resize", alignToMiddleCopy);
+    }
+    const observer = new ResizeObserver(alignToMiddleCopy);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [alignToMiddleCopy]);
+  const recenterIfNeeded = useCallback(() => {
+    const node = viewport.current;
+    const width = loopWidth.current;
+    if (!node || width <= 0) return;
+    if (node.scrollLeft < width) node.scrollLeft += width;
+    else if (node.scrollLeft >= width * 2) node.scrollLeft -= width;
+  }, []);
+  const onScroll = useCallback(() => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null;
+      recenterIfNeeded();
+    }, 100);
+  }, [recenterIfNeeded]);
+  useEffect(() => () => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+  }, []);
   const move = useCallback((direction: -1 | 1) => {
     const node = viewport.current;
     if (!node) return;
-    const maximum = node.scrollWidth - node.clientWidth;
-    const atStart = node.scrollLeft <= 2;
-    const atEnd = node.scrollLeft >= maximum - 2;
-    const left = direction < 0 && atStart
-      ? maximum
-      : direction > 0 && atEnd
-        ? 0
-        : node.scrollLeft + direction * node.clientWidth * 0.82;
+    const left = node.scrollLeft + direction * node.clientWidth * 0.82;
     node.scrollTo({ left, behavior: "smooth" });
   }, []);
   const imageSizes = "(max-width: 700px) calc((100vw - 48px) * 0.82 * 0.68), (max-width: 1000px) 27vw, 19vw";
@@ -85,66 +130,72 @@ export function CategoryCarousel({
         ref={viewport}
         aria-label="Carrossel de categorias"
         onPointerDown={pauseBriefly}
+        onScroll={onScroll}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") { hovered.current = true; setPaused(true); } }}
         onPointerLeave={(event) => { if (event.pointerType === "mouse") { hovered.current = false; if (!resumeTimer.current) setPaused(false); } }}
       >
-        <div className="category-carousel-track">
-          {categories.map((category) => (
-            <div
-              className="category-carousel-slide"
-              key={category.href}
-            >
-              <Link
-                className="category-card"
-                href={category.href}
-                prefetch={false}
+        <div className="category-carousel-track" ref={track}>
+          {[...categories, ...categories, ...categories].map((category, index) => {
+            const copy = Math.floor(index / categories.length);
+            return (
+              <div
+                className="category-carousel-slide"
+                key={`${copy}:${category.href}`}
+                aria-hidden={copy !== 1}
               >
-                <div>
-                  <h3>{category.name}</h3>
+                <Link
+                  className="category-card"
+                  href={category.href}
+                  prefetch={false}
+                  tabIndex={copy === 1 ? undefined : -1}
+                >
+                  <div>
+                    <h3>{category.name}</h3>
 
-                  <span>
-                    Ver produtos
-                    <ArrowRight aria-hidden="true" />
-                  </span>
-                </div>
+                    <span>
+                      Ver produtos
+                      <ArrowRight aria-hidden="true" />
+                    </span>
+                  </div>
 
-                {categorySrcSet(category.image) ? (
-                  <picture>
-                    <source
-                      type="image/webp"
-                      srcSet={categorySrcSet(category.image) ?? undefined}
-                      sizes={imageSizes}
-                    />
+                  {categorySrcSet(category.image) ? (
+                    <picture>
+                      <source
+                        type="image/webp"
+                        srcSet={categorySrcSet(category.image) ?? undefined}
+                        sizes={imageSizes}
+                      />
+                      <img
+                        src={category.image}
+                        srcSet={categorySrcSet(category.image) ?? undefined}
+                        sizes={imageSizes}
+                        alt=""
+                        width={540}
+                        height={540}
+                        loading="lazy"
+                        decoding="async"
+                        aria-hidden="true"
+                        data-original-src={category.image}
+                        onError={recoverCategoryImage}
+                      />
+                    </picture>
+                  ) : (
                     <img
                       src={category.image}
-                      srcSet={categorySrcSet(category.image) ?? undefined}
-                      sizes={imageSizes}
                       alt=""
-                      width={540}
-                      height={540}
+                      width={250}
+                      height={140}
                       loading="lazy"
                       decoding="async"
                       aria-hidden="true"
                       data-original-src={category.image}
                       onError={recoverCategoryImage}
                     />
-                  </picture>
-                ) : (
-                  <img
-                    src={category.image}
-                    alt=""
-                    width={250}
-                    height={140}
-                    loading="lazy"
-                    decoding="async"
-                    aria-hidden="true"
-                    data-original-src={category.image}
-                    onError={recoverCategoryImage}
-                  />
-                )}
-              </Link>
-            </div>
-          ))}
+                  )}
+                </Link>
+              </div>
+            );
+          })}
         </div>
       </div>
 
