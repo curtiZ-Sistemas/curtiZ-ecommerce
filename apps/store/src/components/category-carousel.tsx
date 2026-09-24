@@ -1,10 +1,9 @@
 "use client";
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { bundledProductSrcSet, categoryImageSrcSet } from "../lib/responsive-storefront-image";
+import { categoryImageSrcSet } from "../lib/responsive-storefront-image";
 
 type CategoryItem = {
   name: string;
@@ -48,6 +47,7 @@ export function CategoryCarousel({
     node.scrollTo({ left, behavior: "smooth" });
   }, []);
   const imageSizes = "(max-width: 700px) calc((100vw - 48px) * 0.82 * 0.68), (max-width: 1000px) 27vw, 19vw";
+  const categorySrcSet = (image: string) => categoryImageSrcSet(image);
 
   useEffect(() => {
     if (paused || categories.length < 2) return;
@@ -88,16 +88,16 @@ export function CategoryCarousel({
                   </span>
                 </div>
 
-                {(bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image)) ? (
+                {categorySrcSet(category.image) ? (
                   <picture>
                     <source
                       type="image/webp"
-                      srcSet={bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image) ?? undefined}
+                      srcSet={categorySrcSet(category.image) ?? undefined}
                       sizes={imageSizes}
                     />
                     <img
                       src={category.image}
-                      srcSet={bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image) ?? undefined}
+                      srcSet={categorySrcSet(category.image) ?? undefined}
                       sizes={imageSizes}
                       alt=""
                       width={540}
@@ -108,12 +108,13 @@ export function CategoryCarousel({
                     />
                   </picture>
                 ) : (
-                  <Image
+                  <img
                     src={category.image}
                     alt=""
                     width={250}
                     height={140}
-                    sizes={imageSizes}
+                    loading="lazy"
+                    decoding="async"
                     aria-hidden="true"
                   />
                 )}

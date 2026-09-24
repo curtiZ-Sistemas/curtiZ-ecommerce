@@ -10,11 +10,9 @@ import {
   ShoppingBag,
   Star
 } from "lucide-react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import type { ProductDetailData } from "@/lib/storefront-data";
-import { productImageVariantUrl } from "@/lib/responsive-storefront-image";
+import type { ProductDetailData } from "../lib/storefront-data";
 import {
   galleryWindowStart,
   gallerySwipeDirection,
@@ -23,7 +21,7 @@ import {
   preferredColorImage,
   productDisplayTitleForColor,
   resolveProductColor
-} from "@/lib/product-options";
+} from "../lib/product-options";
 import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
 import { ColorSwatch } from "./color-swatch";
@@ -126,13 +124,6 @@ export function ProductPurchase({
   );
   const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
   const selectedImageSource = selectedMedia?.src ?? selectedImage;
-  const selectedImageSrcSet = [360, 540, 720, 1080]
-    .map((width) => {
-      const url = productImageVariantUrl(selectedImageSource, width);
-      return url ? `${url} ${width}w` : null;
-    })
-    .filter((candidate): candidate is string => candidate !== null)
-    .join(", ");
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
   const maximumThumbnailStart = Math.max(0, images.length - 3);
   const preserveVariantInUrl = (variantId?: string, selectedColor = color) => {
@@ -267,24 +258,15 @@ export function ProductPurchase({
             onPointerCancel={() => { swipeStart.current = null; }}
             aria-label={`Abrir visualização de ${selectedDisplayTitle}`}
           >
-            <picture>
-              {selectedImageSrcSet ? (
-                <source
-                  type="image/webp"
-                  srcSet={selectedImageSrcSet}
-                  sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
-                />
-              ) : null}
-              <Image
-                src={selectedImageSource}
-                alt={`${selectedDisplayTitle} da curti Z`}
-                width={760}
-                height={620}
-                sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
-                loading="eager"
-                priority
-              />
-            </picture>
+            <img
+              src={selectedImageSource}
+              alt={`${selectedDisplayTitle} da curti Z`}
+              width={760}
+              height={620}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+            />
           </button>}
         </div>
         {images.length > 1 ? (
@@ -315,10 +297,10 @@ export function ProductPurchase({
                   >
                     {image.type === "video" ? (
                       <span className="product-video-thumbnail">
-                        {image.poster ? <Image src={productImageVariantUrl(image.poster, 360) ?? image.poster} alt="" width={112} height={88} sizes="112px" /> : null}
+                        {image.poster ? <img src={image.poster} alt="" width={112} height={88} loading="lazy" decoding="async" /> : null}
                         <PlayCircle aria-hidden="true" />
                       </span>
-                    ) : <Image src={productImageVariantUrl(image.src, 360) ?? image.src} alt="" width={112} height={88} sizes="112px" />}
+                    ) : <img src={image.src} alt="" width={112} height={88} loading="lazy" decoding="async" />}
                   </button>
                 );
               })}

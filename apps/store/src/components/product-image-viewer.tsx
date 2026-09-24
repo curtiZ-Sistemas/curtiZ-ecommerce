@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, RotateCcw, X } from "lucide-react";
-import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -298,13 +297,14 @@ export function ProductImageViewer({
             transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`
           }}
         >
-          <Image
+          <img
             src={src}
             alt={`${alt}, imagem ${imageIndex + 1} de ${imageCount}`}
-            fill
-            sizes="96vw"
             draggable={false}
-            priority
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
           />
         </div>
       </div>

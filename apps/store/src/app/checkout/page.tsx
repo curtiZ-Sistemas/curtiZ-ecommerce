@@ -2,7 +2,6 @@
 
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
 import { BriefcaseBusiness, ChevronDown, House, LoaderCircle, LockKeyhole, Plus, ShoppingBag } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -119,7 +118,7 @@ function CheckoutProducts({ lines }: { lines: CartLine[] }) {
       {lines.map((line) => (
         <div className="checkout-product" key={line.variantId}>
           <span className="checkout-product-image">
-            <Image src={line.image} alt="" width={72} height={58} />
+            <img src={line.image} alt="" width={72} height={58} loading="lazy" decoding="async" />
           </span>
           <div>
             <strong>{line.name}</strong>

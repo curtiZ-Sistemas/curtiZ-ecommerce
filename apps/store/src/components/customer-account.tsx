@@ -23,7 +23,6 @@ import {
   Truck,
   UserRoundCheck
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -657,7 +656,7 @@ function Orders({
                 {order.items.slice(0, 3).map((item) => (
                   <div key={item.id}>
                     {item.image ? (
-                      <Image src={item.image} alt="" width={64} height={64} />
+                      <img src={item.image} alt="" width={64} height={64} loading="lazy" decoding="async" />
                     ) : (
                       <ShoppingBag aria-hidden="true" />
                     )}
@@ -798,7 +797,7 @@ function OrderDetails({
           {order.items.map((item) => (
             <div className="customer-order-item" key={item.id}>
               <div className="customer-order-item-image">
-                {item.image ? <Image src={item.image} alt="" fill sizes="80px" /> : <ShoppingBag />}
+                {item.image ? <img src={item.image} alt="" loading="lazy" decoding="async" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <ShoppingBag />}
               </div>
               <div>
                 <strong>{item.productName}</strong>
@@ -902,7 +901,7 @@ function Favorites({
         {favorites.map((favorite) => (
           <article className="customer-favorite-card" key={`${favorite.productId}:${favorite.selectionVariantId ?? "product"}`}>
             <Link href={`/produto/${favorite.slug}?variant=${favorite.variantId}`} className="customer-favorite-image">
-              {favorite.image ? <Image src={favorite.image} alt="" fill sizes="(max-width: 600px) 50vw, 220px" /> : <ShoppingBag />}
+              {favorite.image ? <img src={favorite.image} alt="" loading="lazy" decoding="async" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <ShoppingBag />}
               {!favorite.available && <span>Indisponível</span>}
             </Link>
             <div>

@@ -2,7 +2,6 @@
 
 import { formatBRL, storefrontItemKey, storefrontProductHref, type Product } from "@curtiz/domain";
 import { Clock3, LoaderCircle, Search, X } from "lucide-react";
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, {
   Suspense,
@@ -427,7 +426,7 @@ function SearchAutocompleteClient({
                 onClick={() => navigate(option)}
               >
                 {option.type === "product" || option.type === "recommendation" ? (
-                  <Image src={option.product.image} alt="" width={56} height={44} />
+                  <img src={option.product.image} alt="" width={56} height={44} loading="lazy" decoding="async" />
                 ) : (
                   <span className="search-suggestion-icon" aria-hidden="true">
                     {option.type === "recent" ? <Clock3 /> : <Search />}

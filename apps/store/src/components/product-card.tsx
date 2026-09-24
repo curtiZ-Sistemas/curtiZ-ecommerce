@@ -8,7 +8,6 @@ import {
   type Product
 } from "@curtiz/domain";
 import { Check, Heart, ShoppingCart, Star } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -16,7 +15,6 @@ import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
 import { trackIntelligence } from "../lib/intelligence-client";
 import { useQualifiedImpression } from "../lib/use-qualified-impression";
-import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
 
 export function ProductCard({
   product,
@@ -49,7 +47,6 @@ export function ProductCard({
   const itemKey = storefrontItemKey(product);
   const href = storefrontProductHref(product);
   const displayName = product.variantTitle?.trim() || product.name;
-  const responsiveImage = bundledProductSrcSet(product.image);
   const responsiveSizes = imageSizes ??
     "(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1100px) calc((100vw - 78px) / 3), calc((min(1200px, 100vw - 48px) - 45px) / 4)";
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
@@ -85,31 +82,16 @@ export function ProductCard({
     <article className="product-card" ref={cardRef}>
       <Link href={href} prefetch={priority ? null : false} className="product-image" onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>
         {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
-        {responsiveImage ? (
-          <picture>
-            <source type="image/webp" srcSet={responsiveImage} sizes={responsiveSizes} />
-            <img
-              src={product.image}
-              srcSet={responsiveImage}
-              sizes={responsiveSizes}
-              alt={`${displayName} da curti Z`}
-              width={720}
-              height={720}
-              loading={priority ? "eager" : "lazy"}
-              fetchPriority={priority ? "high" : "auto"}
-              decoding="async"
-            />
-          </picture>
-        ) : (
-          <Image
-            src={product.image}
-            alt={`${displayName} da curti Z`}
-            width={720}
-            height={720}
-            sizes={responsiveSizes}
-            priority={priority}
-          />
-        )}
+        <img
+          src={product.image}
+          sizes={responsiveSizes}
+          alt={`${displayName} da curti Z`}
+          width={720}
+          height={720}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+        />
       </Link>
       {display?.favorite !== false && <button
         className={favorite ? "favorite-button active" : "favorite-button"}

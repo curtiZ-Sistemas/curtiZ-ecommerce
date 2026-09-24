@@ -146,70 +146,86 @@ export async function optimizeStorefrontImageRequest(
   const source = readSource(requestUrl);
   if (!source) return null;
   if (!requestUrl.searchParams.has("w")) return null;
-  if (!source.path) return responseForError(404, "Not found", source.kind);
   if (request.method !== "GET" && request.method !== "HEAD") {
     return responseForError(405, "Method not allowed", source.kind);
   }
+  const responseForRequest = (response: Response) => request.method === "HEAD"
+    ? new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers })
+    : response;
+  if (!source.path) return responseForRequest(responseForError(404, "Not found", source.kind));
   if ([...requestUrl.searchParams.keys()].length !== 1 || !requestUrl.searchParams.has("w")) {
-    return responseForError(400, "Invalid image width", source.kind);
+    return responseForRequest(responseForError(400, "Invalid image width", source.kind));
   }
   const width = Number(requestUrl.searchParams.get("w"));
   if (!Number.isInteger(width) || !source.widths.has(width)) {
-    return responseForError(400, "Invalid image width", source.kind);
+    return responseForRequest(responseForError(400, "Invalid image width", source.kind));
   }
 
   const cacheKey = new Request(`${requestUrl.origin}${requestUrl.pathname}?w=${width}`);
   try {
     const hit = await cache.match(cacheKey);
-    if (hit) return hit;
+    if (hit) return responseForRequest(hit);
   } catch (error) {
     console.warn(JSON.stringify({ event: "storefront_image_cache_read_failed", name: error instanceof Error ? error.name : "unknown" }));
   }
 
   const origin = storageOrigin(env);
-  if (!origin) return responseForError(503, "Image unavailable", source.kind);
+  if (!origin) return responseForRequest(responseForError(503, "Image unavailable", source.kind));
 
   let upstream: Response | null = null;
   let precomputedVariant = false;
   if (source.kind === "product" && importedProductPath.test(source.path)) {
     const variantPath = source.path.replace(/\.webp$/iu, `.${width}.webp`);
     const variant = await readUpstream(sourceUrl(origin, source.bucket, variantPath), fetcher);
-    if (variant.error) return responseForError(502, "Image unavailable", source.kind);
-    if (variant.response?.ok) {
+    if (!variant.error && variant.response?.ok) {
       const type = variant.response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
-      if (type !== "image/webp") return responseForError(502, "Invalid image", source.kind);
-      upstream = variant.response;
-      precomputedVariant = true;
-    } else if (variant.response?.status !== 404) {
-      return responseForError(502, "Image unavailable", source.kind);
+      const lengthHeader = variant.response.headers.get("content-length");
+      const length = lengthHeader === null ? NaN : Number(lengthHeader);
+      if (type === "image/webp" && Number.isSafeInteger(length) && length > 0 && length <= MAX_IMAGE_BYTES) {
+        upstream = variant.response;
+        precomputedVariant = true;
+      }
     }
   }
 
   if (!upstream) {
     const result = await readUpstream(sourceUrl(origin, source.bucket, source.path), fetcher);
-    if (result.error) return responseForError(502, "Image unavailable", source.kind);
+    if (result.error) return responseForRequest(responseForError(502, "Image unavailable", source.kind));
     if (!result.response?.ok || result.response.status >= 300) {
-      return responseForError(result.response?.status === 404 ? 404 : 502, "Image unavailable", source.kind);
+      return responseForRequest(responseForError(result.response?.status === 404 ? 404 : 502, "Image unavailable", source.kind));
     }
     upstream = result.response;
   }
 
   const contentType = upstream.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
-  const contentLength = Number(upstream.headers.get("content-length"));
-  if (!allowedImageTypes.has(contentType) || !Number.isSafeInteger(contentLength) || contentLength < 1) {
-    return responseForError(502, "Invalid image", source.kind);
+  const contentLengthHeader = upstream.headers.get("content-length");
+  const contentLength = contentLengthHeader === null ? undefined : Number(contentLengthHeader);
+  if (!allowedImageTypes.has(contentType) || (contentLength !== undefined && (!Number.isSafeInteger(contentLength) || contentLength < 1))) {
+    return responseForRequest(responseForError(502, "Invalid image", source.kind));
   }
-  if (contentLength > MAX_IMAGE_BYTES) return responseForError(413, "Image too large", source.kind);
-  if (!upstream.body) return responseForError(502, "Image unavailable", source.kind);
+  if (contentLength !== undefined && contentLength > MAX_IMAGE_BYTES) return responseForRequest(responseForError(413, "Image too large", source.kind));
+  if (!upstream.body) return responseForRequest(responseForError(502, "Image unavailable", source.kind));
+
+  let bytesRead = 0;
+  const boundedBody = upstream.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      bytesRead += chunk.byteLength;
+      if (bytesRead > MAX_IMAGE_BYTES) {
+        controller.error(new Error("Image too large"));
+        return;
+      }
+      controller.enqueue(chunk);
+    }
+  }));
 
   let imageResponse: Response;
   if (precomputedVariant) {
-    imageResponse = new Response(upstream.body, {
+    imageResponse = new Response(boundedBody, {
       status: 200,
       headers: { "content-type": "image/webp" }
     });
   } else {
-    const [infoStream, imageStream] = upstream.body.tee();
+    const [infoStream, imageStream] = boundedBody.tee();
     let info: ImageInfo;
     try {
       info = await env.IMAGES.info(infoStream);
@@ -221,7 +237,7 @@ export async function optimizeStorefrontImageRequest(
       imageResponse = output.response({ headers: { "cache-control": cacheControl(source) } });
     } catch (error) {
       console.error(JSON.stringify({ event: "storefront_image_transform_failed", kind: source.kind, name: error instanceof Error ? error.name : "unknown" }));
-      return responseForError(502, "Image unavailable", source.kind);
+      return responseForRequest(responseForError(502, "Image unavailable", source.kind));
     }
   }
 
@@ -235,5 +251,5 @@ export async function optimizeStorefrontImageRequest(
   context.waitUntil(cache.put(cacheKey, response.clone()).catch((error) => {
     console.warn(JSON.stringify({ event: "storefront_image_cache_write_failed", name: error instanceof Error ? error.name : "unknown" }));
   }));
-  return request.method === "HEAD" ? new Response(null, { status: 200, headers }) : response;
+  return responseForRequest(response);
 }

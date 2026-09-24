@@ -4,7 +4,7 @@ import { optimizeStorefrontImageRequest } from "./storefront-image-worker";
 function createRuntime() {
   const widths: number[] = [];
   const cache = {
-    match: vi.fn(async () => undefined),
+    match: vi.fn(async (): Promise<Response | undefined> => undefined),
     put: vi.fn(async () => undefined)
   };
   const context = { waitUntil: vi.fn((promise: Promise<unknown>) => void promise) };
@@ -79,6 +79,54 @@ describe("otimização de imagens na borda", () => {
     expect(response?.headers.get("content-type")).toBe("image/webp");
     expect(requestedUrls[0]).toContain(`${"a".repeat(64)}.360.webp`);
     expect(runtime.images.input).not.toHaveBeenCalled();
+  });
+
+  it("usa o original quando a variante importada antiga não existe e falta content-length", async () => {
+    const runtime = createRuntime();
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requestedUrls.push(url);
+      if (url.includes(".360.webp")) return new Response("not found", { status: 400 });
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/webp" }
+      });
+    });
+    const path = `products/imports/20000000-0000-4000-8000-000000000001/${"b".repeat(64)}.webp`;
+
+    const response = await optimizeStorefrontImageRequest(
+      new Request(`https://curtiz.com.br/media/product/${path}?w=360`),
+      runtime.env,
+      runtime.cache,
+      runtime.context,
+      fetcher
+    );
+
+    expect(response?.status).toBe(200);
+    expect(requestedUrls).toHaveLength(2);
+    expect(requestedUrls[0]).toContain(`${"b".repeat(64)}.360.webp`);
+    expect(requestedUrls[1]).toContain(`${"b".repeat(64)}.webp`);
+    expect(runtime.images.input).toHaveBeenCalledOnce();
+  });
+
+  it("responde HEAD sem corpo mesmo quando a imagem está em cache", async () => {
+    const runtime = createRuntime();
+    runtime.cache.match.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), {
+      headers: { "content-type": "image/webp" }
+    }));
+
+    const response = await optimizeStorefrontImageRequest(
+      new Request("https://curtiz.com.br/media/product/products/user/item.webp?w=360", { method: "HEAD" }),
+      runtime.env,
+      runtime.cache,
+      runtime.context,
+      vi.fn()
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.body).toBeNull();
+    expect(response?.headers.get("content-type")).toBe("image/webp");
   });
 
   it("deixa imagens originais e caminhos inválidos fora do transformador", async () => {

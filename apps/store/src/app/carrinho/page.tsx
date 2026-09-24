@@ -2,7 +2,7 @@
 
 import { calculateSubtotal, formatBRL } from "@curtiz/domain";
 import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import Image from "next/image";
+import { applyProductImageFallback } from "@/lib/product-image-fallback";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
@@ -245,13 +245,14 @@ export default function CartPage() {
                       className="cart-item-image"
                       href={!line.unavailableAt && line.slug ? `/produto/${line.slug}` : "/produtos"}
                     >
-                      <Image
+                      <img
                         src={line.image && line.image !== "/icon.svg" ? line.image : "/images/product-unavailable.svg"}
                         alt={line.name}
                         width={150}
                         height={120}
-                        sizes="(max-width: 340px) 86px, (max-width: 700px) 96px, 112px"
-                        onError={(event) => { if (!event.currentTarget.src.endsWith("/images/product-unavailable.svg")) { event.currentTarget.srcset = ""; event.currentTarget.src = "/images/product-unavailable.svg"; } }}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => applyProductImageFallback(event.currentTarget)}
                       />
                     </Link>
 

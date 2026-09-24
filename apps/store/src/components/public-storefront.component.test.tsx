@@ -1,8 +1,10 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { CategoryCarousel } from "./category-carousel";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
+import { ProductPurchase } from "./product-purchase";
 import { SearchAutocomplete } from "./search-autocomplete";
 import ErrorPage from "../app/error";
 import GlobalError from "../app/global-error";
@@ -151,6 +153,83 @@ describe("public storefront components", () => {
       expect(html).toContain(`Chinelo Essential ${color} — Leve e Confortável`);
       expect(html).toContain(`/produto/chinelo-essential?variant=variante-${slug}&amp;color=${color}`);
     }
+  });
+
+  it.each([
+    ["produto importado antigo", `https://catalog.example.test/storage/v1/object/public/catalog-public/products/imports/20000000-0000-4000-8000-000000000001/${"a".repeat(64)}.webp`],
+    ["produto novo", "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp"]
+  ])("renderiza %s com a URL original do Supabase", (_name, image) => {
+    const html = renderToStaticMarkup(<ProductCard product={{
+      id: "produto-imagem",
+      slug: "produto-imagem",
+      name: "Produto com imagem",
+      category: "Chinelos",
+      description: "Produto",
+      priceInCents: 5990,
+      rating: 0,
+      reviews: 0,
+      colors: ["Preto"],
+      sizes: ["37"],
+      image,
+      stock: 2
+    }} />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).not.toContain("/media/product/");
+    expect(html).not.toContain("/_next/image");
+    expect(html).not.toContain("srcSet=");
+    expect(html).toContain('width="720" height="720"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('decoding="async"');
+  });
+
+  it("mantém imagem direta quando uma categoria aponta para um produto", () => {
+    const image = "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp";
+    const html = renderToStaticMarkup(<CategoryCarousel categories={[{
+      name: "Categoria",
+      href: "/categorias/teste",
+      image
+    }]} />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).not.toContain("/media/product/");
+    expect(html).not.toContain("srcSet=");
+  });
+
+  it("mantém a imagem original direta na página do produto", () => {
+    const image = "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp";
+    const product = {
+      id: "produto-detalhe",
+      slug: "produto-detalhe",
+      name: "Produto detalhe",
+      category: "Chinelos",
+      description: "Produto",
+      priceInCents: 5990,
+      rating: 0,
+      reviews: 0,
+      colors: ["Preto"],
+      sizes: ["37"],
+      image,
+      stock: 2
+    };
+    const html = renderToStaticMarkup(<ProductPurchase detail={{
+      product,
+      gallery: [{ id: "imagem", src: image, alt: product.name }],
+      media: [],
+      variants: [{ id: "variante", color: "Preto", size: "37", priceInCents: 5990, stock: 2, image }],
+      specifications: [],
+      sizeGuide: [],
+      reviews: [],
+      source: "supabase"
+    }} initialVariantId="variante" />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).toContain('width="760" height="620"');
+    expect(html).toContain('loading="eager"');
+    expect(html).toContain('fetchPriority="high"');
+    expect(html).toContain('decoding="async"');
+    expect(html).not.toContain("/media/product/");
+    expect(html).not.toContain("/_next/image");
   });
 
   it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {
