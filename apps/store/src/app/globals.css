@@ -14857,7 +14857,6 @@ body:has(.checkout-transition) .help-widget {
 }
 .home-faq {
   padding-block: 56px;
-  background: var(--neutral-50);
 }
 .home-faq-inner {
   width: min(calc(100% - 32px), 960px);
@@ -14939,18 +14938,27 @@ body:has(.checkout-transition) .help-widget {
 }
 .home-faq-list details[open] summary { color: var(--brand-900); }
 .home-faq-toggle {
-  display: grid;
+  display: inline-grid;
   width: 32px;
   height: 32px;
-  flex: 0 0 32px;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--neutral-300);
   border-radius: 50%;
   color: var(--brand-900);
   font-size: 0;
 }
-.home-faq-toggle::before { content: "+"; font-size: 1.15rem; line-height: 1; }
-.home-faq-list details[open] .home-faq-toggle::before { content: "−"; }
+.home-faq-toggle::before,
+.home-faq-toggle::after {
+  content: "";
+  grid-area: 1 / 1;
+  place-self: center;
+  border-radius: 1px;
+  background: currentColor;
+}
+.home-faq-toggle::before { width: 12px; height: 2px; }
+.home-faq-toggle::after { width: 2px; height: 12px; }
+.home-faq-list details[open] .home-faq-toggle::after { display: none; }
 .home-faq-answer {
   margin: 0 20px 20px;
   padding: 2px 0 2px 16px;

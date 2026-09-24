@@ -82,6 +82,7 @@ describe("FAQ da home", () => {
     expect(html).toContain('class="home-faq-inner"');
     expect(html).toContain('class="home-faq-list"');
     expect(html).toContain('class="home-faq-answer"');
+    expect(html).toContain('class="home-faq-toggle" aria-hidden="true">+</span>');
     expect(html).not.toContain("<details open");
   });
 
@@ -96,7 +97,9 @@ describe("FAQ da home", () => {
 
   it("centraliza a lista de cartões em todas as larguras e mantém foco e respostas legíveis", () => {
     const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const sectionRule = css.match(/\.home-faq\s*\{([^}]*)\}/u)?.[1] ?? "";
 
+    expect(sectionRule).not.toMatch(/\bbackground(?:-color)?\s*:/u);
     expect(css).toContain(".home-faq-inner {");
     expect(css).toContain("width: min(calc(100% - 32px), 960px);");
     expect(css).toContain("text-align: center;");
@@ -108,7 +111,15 @@ describe("FAQ da home", () => {
     expect(css).toContain(".home-faq-list summary::-webkit-details-marker { display: none; }");
     expect(css).toContain(".home-faq-list summary::marker { content: \"\"; }");
     expect(css).toContain(".home-faq-list summary:focus-visible");
-    expect(css).toContain(".home-faq-list details[open] .home-faq-toggle::before { content: \"−\"; }");
+    expect(css).toContain(".home-faq-toggle::before,\n.home-faq-toggle::after {");
+    expect(css).toContain("display: inline-grid;");
+    expect(css).toContain("flex: 0 0 auto;");
+    expect(css).toContain("place-items: center;");
+    expect(css).toContain("grid-area: 1 / 1;");
+    expect(css).toContain("place-self: center;");
+    expect(css).toContain(".home-faq-toggle::before { width: 12px; height: 2px; }");
+    expect(css).toContain(".home-faq-toggle::after { width: 2px; height: 12px; }");
+    expect(css).toContain(".home-faq-list details[open] .home-faq-toggle::after { display: none; }");
     expect(css).toContain("line-height: 1.7;");
     expect(css).toContain("overflow-wrap: anywhere;");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
