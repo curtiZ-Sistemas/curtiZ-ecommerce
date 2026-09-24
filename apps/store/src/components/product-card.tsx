@@ -50,7 +50,8 @@ export function ProductCard({
   const href = storefrontProductHref(product);
   const displayName = product.variantTitle?.trim() || product.name;
   const responsiveImage = bundledProductSrcSet(product.image);
-  const responsiveSizes = imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw";
+  const responsiveSizes = imageSizes ??
+    "(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1100px) calc((100vw - 78px) / 3), calc((min(1200px, 100vw - 48px) - 45px) / 4)";
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
   useQualifiedImpression(cardRef, `${recommendationSource ?? "catalog"}:${itemKey}`, impression);
   const favorite = hydrated && has(product);
@@ -103,8 +104,8 @@ export function ProductCard({
           <Image
             src={product.image}
             alt={`${displayName} da curti Z`}
-            width={360}
-            height={280}
+            width={720}
+            height={720}
             sizes={responsiveSizes}
             priority={priority}
           />

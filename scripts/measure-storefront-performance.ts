@@ -26,6 +26,7 @@ type ResourceReport = {
   url: string;
   status: number;
   bytes: number;
+  transferredBytes: number;
   cacheControl: string | null;
   cfCacheStatus: string | null;
 };
@@ -150,6 +151,7 @@ async function main() {
             url: response.url(),
             status: response.status(),
             bytes: Math.max(0, sizes.responseBodySize),
+            transferredBytes: Math.max(0, sizes.responseBodySize + sizes.responseHeadersSize),
             cacheControl: response.headers()["cache-control"] ?? null,
             cfCacheStatus: response.headers()["cf-cache-status"] ?? null
           });
@@ -158,6 +160,17 @@ async function main() {
         const metrics = await page.evaluate(() => {
           const navigation = performance.getEntriesByType("navigation")[0] as
             PerformanceNavigationTiming | undefined;
+          const fcp = performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? null;
+          const longTasks = window.__curtizPerformance.longTasks as Array<{
+            startTime: number;
+            duration: number;
+          }>;
+          const tbtProxyMs = fcp === null
+            ? null
+            : longTasks.reduce((total, task) => {
+                const overlap = Math.max(0, Math.min(task.startTime + task.duration, fcp + 5_000) - Math.max(task.startTime, fcp));
+                return total + Math.max(0, overlap - 50);
+              }, 0);
           const lcp = window.__curtizPerformance.lcp as {
             startTime?: number;
             url?: string | null;
@@ -167,6 +180,9 @@ async function main() {
             : undefined;
           return {
             ...window.__curtizPerformance,
+            ttfb: navigation
+              ? Math.max(0, navigation.responseStart - navigation.requestStart)
+              : null,
             lcpBreakdown:
               lcpResource && lcp?.startTime
                 ? {
@@ -176,13 +192,31 @@ async function main() {
                     renderDelay: Math.max(0, lcp.startTime - lcpResource.responseEnd)
                   }
                 : null,
-            fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? null,
+            fcp,
+            tbtProxyMs,
             domContentLoaded: navigation?.domContentLoadedEventEnd ?? null,
             load: navigation?.loadEventEnd ?? null,
-            domNodes: document.getElementsByTagName("*").length
+            domNodes: document.getElementsByTagName("*").length,
+            imageAudit: (() => {
+              const images = [...document.images];
+              return {
+                total: images.length,
+                eager: images.filter((image) =>
+                  image.loading === "eager" || image.fetchPriority === "high"
+                ).length,
+                withoutResponsiveSrcSet: images.filter((image) =>
+                  !image.getAttribute("srcset") &&
+                  !image.closest("picture")?.querySelector("source[srcset]")
+                ).length
+              };
+            })()
           };
         });
         const totalBytes = resources.reduce((total, resource) => total + resource.bytes, 0);
+        const totalTransferredBytes = resources.reduce(
+          (total, resource) => total + resource.transferredBytes,
+          0
+        );
         const imageBytes = resources
           .filter((resource) => resource.type === "image")
           .reduce((total, resource) => total + resource.bytes, 0);
@@ -192,6 +226,14 @@ async function main() {
         const cssBytes = resources
           .filter((resource) => resource.type === "stylesheet")
           .reduce((total, resource) => total + resource.bytes, 0);
+        const repeatedResources = new Map<string, number>();
+        for (const resource of resources) {
+          const key = `${resource.type} ${resource.url}`;
+          repeatedResources.set(key, (repeatedResources.get(key) ?? 0) + 1);
+        }
+        const duplicateRequests = [...repeatedResources.entries()]
+          .filter(([, count]) => count > 1)
+          .map(([resource, count]) => ({ resource, count }));
 
         reports.push({
           profile: profile.name,
@@ -201,9 +243,12 @@ async function main() {
           elapsedMs: Date.now() - startedAt,
           requests: resources.length,
           totalBytes,
+          totalTransferredBytes,
           imageBytes,
           scriptBytes,
           cssBytes,
+          duplicateRequestCount: duplicateRequests.reduce((count, item) => count + item.count - 1, 0),
+          duplicateRequests: duplicateRequests.slice(0, 10),
           metrics,
           largestResources: resources.sort((left, right) => right.bytes - left.bytes).slice(0, 12)
         });

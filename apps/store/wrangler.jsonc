@@ -12,6 +12,9 @@
   "images": {
     "binding": "IMAGES"
   },
+  "cache": {
+    "enabled": true
+  },
   "observability": {
     "enabled": true
   },
@@ -23,6 +26,9 @@
       },
       "images": {
         "binding": "IMAGES"
+      },
+      "cache": {
+        "enabled": true
       }
     },
     "production": {
@@ -32,6 +38,9 @@
       },
       "images": {
         "binding": "IMAGES"
+      },
+      "cache": {
+        "enabled": true
       }
     }
   }

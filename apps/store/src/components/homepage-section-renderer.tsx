@@ -197,7 +197,7 @@ export function HomepageSectionRenderer({
     if (!banners.length) return null;
     return (
       <HomepageMetric versionId={section.versionId}>
-        <HomepageHero banners={banners} />
+        <HomepageHero banners={banners} priority={priority} />
       </HomepageMetric>
     );
   }
@@ -301,7 +301,10 @@ export function HomepageSectionRenderer({
       <ProductCard
         product={product}
         display={display}
-        priority={priority && index < 2}
+        priority={priority && index === 0}
+        imageSizes={carousel
+          ? "(max-width: 700px) min(78vw, 270px), 26vw"
+          : "(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1100px) calc((100vw - 78px) / 3), calc((min(1200px, 100vw - 48px) - 45px) / 4)"}
         key={storefrontItemKey(product)}
       />
     ));
@@ -347,9 +350,9 @@ export function HomepageSectionRenderer({
             title={section.title ?? "Descubra a curti Z"}
           />
           <div className="home-taxonomy-grid">
-            {validItems.map((item) => (
+            {validItems.map((item, index) => (
               <SafeItemLink item={item} key={item.id}>
-                <ItemImage item={item} priority={priority} />
+                <ItemImage item={item} priority={priority && index === 0} />
                 <strong>{item.title ?? item.internalName}</strong>
                 {item.description && <span>{item.description}</span>}
               </SafeItemLink>
@@ -374,9 +377,9 @@ export function HomepageSectionRenderer({
             title={section.title ?? "Escolhas curti Z"}
           />
           <div className={`home-image-layout home-image-${section.layout}`}>
-            {items.map((item) => (
+            {items.map((item, index) => (
               <SafeItemLink item={item} key={item.id}>
-                <ItemImage item={item} priority={priority} />
+                <ItemImage item={item} priority={priority && index === 0} />
                 <span className="home-image-copy">
                   {item.title && <strong>{item.title}</strong>}
                   {item.subtitle && <small>{item.subtitle}</small>}
@@ -603,17 +606,40 @@ function ItemImage({ item, priority }: { item: HomepageSectionItem; priority: bo
   const desktop = mediaFor(item, "desktop");
   const mobile = mediaFor(item, "mobile") ?? desktop;
   if (!desktop) return null;
+  const desktopSrcSet = desktop.path.startsWith("/media/homepage/")
+    ? [360, 540, 720, 1080].map((width) => `${desktop.path}?w=${width} ${width}w`).join(", ")
+    : null;
+  const mobileSrcSet = mobile?.path.startsWith("/media/homepage/")
+    ? [360, 540, 720].map((width) => `${mobile.path}?w=${width} ${width}w`).join(", ")
+    : null;
+  const imageAlt = desktop.decorative ? "" : (desktop.altText ?? item.altText ?? "");
   return (
     <picture>
-      <source media="(max-width: 700px)" srcSet={mobile?.path} />
-      <Image
-        src={desktop.path}
-        alt={desktop.decorative ? "" : (desktop.altText ?? item.altText ?? "")}
-        width={desktop.width ?? 900}
-        height={desktop.height ?? 600}
-        sizes="(max-width: 700px) 100vw, 50vw"
-        priority={priority}
-      />
+      {mobileSrcSet ? (
+        <source media="(max-width: 700px)" type="image/webp" srcSet={mobileSrcSet} sizes="calc(100vw - 32px)" />
+      ) : mobile ? <source media="(max-width: 700px)" srcSet={mobile.path} /> : null}
+      {desktopSrcSet ? (
+        <img
+          src={`${desktop.path}?w=720`}
+          srcSet={desktopSrcSet}
+          sizes="(max-width: 700px) calc(100vw - 32px), 50vw"
+          alt={imageAlt}
+          width={desktop.width ?? 900}
+          height={desktop.height ?? 600}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+        />
+      ) : (
+        <Image
+          src={desktop.path}
+          alt={imageAlt}
+          width={desktop.width ?? 900}
+          height={desktop.height ?? 600}
+          sizes="(max-width: 700px) 100vw, 50vw"
+          priority={priority}
+        />
+      )}
     </picture>
   );
 }

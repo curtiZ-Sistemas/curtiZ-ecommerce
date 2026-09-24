@@ -6,7 +6,7 @@ describe("fetchPublicAuthSession", () => {
     vi.unstubAllGlobals();
   });
 
-  it("deduplica leituras simultâneas sem reutilizar sessão indefinidamente", async () => {
+  it("reutiliza uma leitura por documento e permite invalidar após mudança de sessão", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ authenticated: true, fullName: "Cliente" }), {
         status: 200,
@@ -14,7 +14,7 @@ describe("fetchPublicAuthSession", () => {
       })
     );
     vi.stubGlobal("fetch", fetchMock);
-    const { fetchPublicAuthSession } = await import("./auth-session-client");
+    const { clearPublicAuthSessionCache, fetchPublicAuthSession } = await import("./auth-session-client");
 
     const [first, second] = await Promise.all([
       fetchPublicAuthSession(),
@@ -24,6 +24,10 @@ describe("fetchPublicAuthSession", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(first).toEqual(second);
 
+    await fetchPublicAuthSession();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    clearPublicAuthSessionCache();
     await fetchPublicAuthSession();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

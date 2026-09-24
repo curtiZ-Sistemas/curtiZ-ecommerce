@@ -16,6 +16,10 @@ function requestUrl(input: string | URL | Request) {
 }
 
 function environment(): Env {
+  const output = async (stream: ReadableStream<Uint8Array>) => {
+    await new Response(stream).arrayBuffer();
+    return { response: () => new Response(new Uint8Array([8, 9, 10]), { status: 200, headers: { "content-type": "image/webp" } }) };
+  };
   return {
     SUPABASE_URL: "https://project.supabase.co/",
     SUPABASE_SECRET_KEY: "service-secret",
@@ -25,10 +29,8 @@ function environment(): Env {
         return { width: 800, height: 800, format: "image/jpeg" };
       }),
       input: vi.fn((stream: ReadableStream<Uint8Array>) => ({
-        output: async () => {
-          await new Response(stream).arrayBuffer();
-          return { response: () => new Response(new Uint8Array([8, 9, 10]), { status: 200, headers: { "content-type": "image/webp" } }) };
-        }
+        transform: vi.fn(() => ({ output: async () => output(stream) })),
+        output: async () => output(stream)
       }))
     }
   };
@@ -67,6 +69,10 @@ describe("product import image queue consumer", () => {
 
     await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: false, state: "completed" });
     expect(calls.filter((call) => call.includes("down-sg.img.susercontent.com"))).toHaveLength(1);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.180.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.360.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.540.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.720.webp`))).toBe(true);
     expect(calls.some((call) => call.endsWith("/complete_product_import_image_job"))).toBe(true);
   });
 

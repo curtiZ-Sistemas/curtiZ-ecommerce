@@ -2,11 +2,14 @@ type ProductImportImageMessage = { jobId: string; runId: string; productId: stri
 type QueueMessage<T> = { body: T; attempts: number; ack(): void; retry(options?: { delaySeconds?: number }): void };
 type MessageBatch<T> = { messages: QueueMessage<T>[] };
 type ImageInfo = { width?: number; height?: number; format?: string };
+type ImageOutput = { response(): Response };
+type ImageTransform = {
+  output(options: { format: "image/webp"; quality: number; anim: false }): Promise<ImageOutput>;
+};
+type ImagePipeline = ImageTransform & { transform(options: { width: number }): ImageTransform };
 type ImagesBinding = {
   info(stream: ReadableStream<Uint8Array>): Promise<ImageInfo>;
-  input(stream: ReadableStream<Uint8Array>): {
-    output(options: { format: "image/webp"; quality: number; anim: false }): Promise<{ response(): Response }>;
-  };
+  input(stream: ReadableStream<Uint8Array>): ImagePipeline;
 };
 export type Env = { SUPABASE_URL: string; SUPABASE_SECRET_KEY: string; IMAGES: ImagesBinding };
 
@@ -77,6 +80,16 @@ async function boundedResponse(response: Response, stage: string) {
   return { stream: limited, bytes: () => total };
 }
 
+function imageStream(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes);
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(copy);
+      controller.close();
+    }
+  });
+}
+
 async function downloadSource(source: string) {
   let current = source;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
@@ -100,9 +113,14 @@ async function downloadSource(source: string) {
 
 async function inspectAndTransform(env: Env, response: Response) {
   const limited = await boundedResponse(response, "validate");
-  const [infoStream, transformStream] = limited.stream.tee();
+  let sourceBytes: Uint8Array;
+  try { sourceBytes = new Uint8Array(await new Response(limited.stream).arrayBuffer()); }
+  catch (error) {
+    if (error instanceof JobError) throw error;
+    throw new JobError("INVALID_IMAGE_CONTENT", false, "validate");
+  }
   let info: ImageInfo;
-  try { info = await env.IMAGES.info(infoStream); }
+  try { info = await env.IMAGES.info(imageStream(sourceBytes)); }
   catch { throw new JobError("INVALID_IMAGE_CONTENT", false, "validate"); }
   const width = Number(info.width); const height = Number(info.height);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 12_000 || height > 12_000 || width * height > 40_000_000) {
@@ -110,26 +128,31 @@ async function inspectAndTransform(env: Env, response: Response) {
   }
   let transformed: Response;
   try {
-    const output = await env.IMAGES.input(transformStream).output({ format: "image/webp", quality: 90, anim: false });
+    const output = await env.IMAGES.input(imageStream(sourceBytes)).output({ format: "image/webp", quality: 90, anim: false });
     transformed = output.response();
   }
   catch { throw new JobError("IMAGE_TRANSFORM_FAILED", true, "transform"); }
   if (!transformed.ok) throw new JobError("IMAGE_TRANSFORM_FAILED", transformed.status >= 500, "transform");
-  return { response: transformed, width, height };
+  const processedBytes = new Uint8Array(await transformed.arrayBuffer());
+  if (!processedBytes.length || processedBytes.length > MAX_BYTES) throw new JobError("IMAGE_TRANSFORM_FAILED", false, "transform");
+  return { response: new Response(processedBytes, { headers: { "content-type": "image/webp" } }), sourceBytes, width, height, size: processedBytes.length };
 }
 
 async function inspectStoredImage(env: Env, response: Response) {
   const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
   if (mime !== "image/webp") throw new JobError("INVALID_STORED_IMAGE", false, "storage");
   const limited = await boundedResponse(response, "storage");
+  let bytes: Uint8Array;
+  try { bytes = new Uint8Array(await new Response(limited.stream).arrayBuffer()); }
+  catch { throw new JobError("INVALID_STORED_IMAGE", false, "storage"); }
   let info: ImageInfo;
-  try { info = await env.IMAGES.info(limited.stream); }
+  try { info = await env.IMAGES.info(imageStream(bytes)); }
   catch { throw new JobError("INVALID_STORED_IMAGE", false, "storage"); }
   const width = Number(info.width); const height = Number(info.height);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 12_000 || height > 12_000 || width * height > 40_000_000) {
     throw new JobError("INVALID_STORED_IMAGE", false, "storage");
   }
-  return { width, height, size: limited.bytes() };
+  return { width, height, size: bytes.length, bytes };
 }
 
 async function existingStorageObject(env: Env, path: string) {
@@ -146,12 +169,38 @@ async function upload(env: Env, path: string, response: Response) {
   let stored: Response;
   try {
     stored = await fetch(storageUrl(env, path).replace("/object/authenticated/", "/object/"), {
-      method: "POST", headers: { ...storageHeaders(env), "content-type": "image/webp", "cache-control": "max-age=31536000", "x-upsert": "true" },
+      method: "POST", headers: { ...storageHeaders(env), "content-type": "image/webp", "cache-control": "public, max-age=31536000, immutable", "x-upsert": "true" },
       body: limited.stream, signal: AbortSignal.timeout(30_000)
     });
   } catch { throw new JobError("STORAGE_UNAVAILABLE", true, "upload"); }
   if (!stored.ok) throw new JobError("STORAGE_UPLOAD_FAILED", stored.status >= 500 || stored.status === 429, "upload");
   return limited.bytes();
+}
+
+const responsiveWidths = [180, 360, 540, 720, 1080] as const;
+
+async function ensureResponsiveVariants(env: Env, path: string, sourceBytes: Uint8Array, sourceWidth: number) {
+  for (const width of responsiveWidths) {
+    if (width >= sourceWidth) continue;
+    const variantPath = path.replace(/\.webp$/iu, `.${width}.webp`);
+    const existing = await existingStorageObject(env, variantPath);
+    if (existing) {
+      const inspected = await inspectStoredImage(env, existing);
+      if (inspected.width === width) continue;
+    }
+
+    let output: ImageOutput;
+    try {
+      output = await env.IMAGES.input(imageStream(sourceBytes))
+        .transform({ width })
+        .output({ format: "image/webp", quality: 80, anim: false });
+    } catch {
+      throw new JobError("IMAGE_VARIANT_TRANSFORM_FAILED", true, "transform");
+    }
+    const response = output.response();
+    if (!response.ok) throw new JobError("IMAGE_VARIANT_TRANSFORM_FAILED", response.status >= 500, "transform");
+    await upload(env, variantPath, response);
+  }
 }
 
 export async function processProductImageMessage(message: ProductImportImageMessage, env: Env) {
@@ -165,12 +214,18 @@ export async function processProductImageMessage(message: ProductImportImageMess
   const sourceUrl = text(claimed.sourceUrl); const path = text(claimed.storagePath);
   try {
     const stored = await existingStorageObject(env, path);
-    const processed = stored
-      ? await inspectStoredImage(env, stored)
-      : await (async () => {
-          const transformed = await inspectAndTransform(env, await downloadSource(sourceUrl));
-          return { width: transformed.width, height: transformed.height, size: await upload(env, path, transformed.response) };
-        })();
+    let processed: { width: number; height: number; size: number };
+    let sourceBytes: Uint8Array;
+    if (stored) {
+      const inspected = await inspectStoredImage(env, stored);
+      processed = { width: inspected.width, height: inspected.height, size: inspected.size };
+      sourceBytes = inspected.bytes;
+    } else {
+      const transformed = await inspectAndTransform(env, await downloadSource(sourceUrl));
+      processed = { width: transformed.width, height: transformed.height, size: await upload(env, path, transformed.response) };
+      sourceBytes = transformed.sourceBytes;
+    }
+    await ensureResponsiveVariants(env, path, sourceBytes, processed.width);
     await supabaseRpc(env, "complete_product_import_image_job", {
       p_job_id: message.jobId, p_lock_token: lockToken,
       p_width: processed.width, p_height: processed.height, p_size_bytes: processed.size

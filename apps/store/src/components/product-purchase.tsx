@@ -14,6 +14,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
+import { productImageVariantUrl } from "@/lib/responsive-storefront-image";
 import {
   galleryWindowStart,
   gallerySwipeDirection,
@@ -124,6 +125,14 @@ export function ProductPurchase({
     [detail.media, gallery, product.id, product.image, product.name, selectedDisplayTitle, color, variants, selectedVariant]
   );
   const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
+  const selectedImageSource = selectedMedia?.src ?? selectedImage;
+  const selectedImageSrcSet = [360, 540, 720, 1080]
+    .map((width) => {
+      const url = productImageVariantUrl(selectedImageSource, width);
+      return url ? `${url} ${width}w` : null;
+    })
+    .filter((candidate): candidate is string => candidate !== null)
+    .join(", ");
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
   const maximumThumbnailStart = Math.max(0, images.length - 3);
   const preserveVariantInUrl = (variantId?: string, selectedColor = color) => {
@@ -258,15 +267,24 @@ export function ProductPurchase({
             onPointerCancel={() => { swipeStart.current = null; }}
             aria-label={`Abrir visualização de ${selectedDisplayTitle}`}
           >
-            <Image
-              src={selectedMedia?.src ?? selectedImage}
-              alt={`${selectedDisplayTitle} da curti Z`}
-              width={760}
-              height={620}
-              sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
-              loading="eager"
-              priority
-            />
+            <picture>
+              {selectedImageSrcSet ? (
+                <source
+                  type="image/webp"
+                  srcSet={selectedImageSrcSet}
+                  sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
+                />
+              ) : null}
+              <Image
+                src={selectedImageSource}
+                alt={`${selectedDisplayTitle} da curti Z`}
+                width={760}
+                height={620}
+                sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
+                loading="eager"
+                priority
+              />
+            </picture>
           </button>}
         </div>
         {images.length > 1 ? (
@@ -297,10 +315,10 @@ export function ProductPurchase({
                   >
                     {image.type === "video" ? (
                       <span className="product-video-thumbnail">
-                        {image.poster ? <Image src={image.poster} alt="" width={112} height={88} sizes="112px" /> : null}
+                        {image.poster ? <Image src={productImageVariantUrl(image.poster, 360) ?? image.poster} alt="" width={112} height={88} sizes="112px" /> : null}
                         <PlayCircle aria-hidden="true" />
                       </span>
-                    ) : <Image src={image.src} alt="" width={112} height={88} sizes="112px" />}
+                    ) : <Image src={productImageVariantUrl(image.src, 360) ?? image.src} alt="" width={112} height={88} sizes="112px" />}
                   </button>
                 );
               })}

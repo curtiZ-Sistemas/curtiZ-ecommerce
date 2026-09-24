@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
+import { bundledProductSrcSet, categoryImageSrcSet } from "../lib/responsive-storefront-image";
 
 type CategoryItem = {
   name: string;
@@ -47,6 +47,7 @@ export function CategoryCarousel({
         : node.scrollLeft + direction * node.clientWidth * 0.82;
     node.scrollTo({ left, behavior: "smooth" });
   }, []);
+  const imageSizes = "(max-width: 700px) calc((100vw - 48px) * 0.82 * 0.68), (max-width: 1000px) 27vw, 19vw";
 
   useEffect(() => {
     if (paused || categories.length < 2) return;
@@ -87,20 +88,20 @@ export function CategoryCarousel({
                   </span>
                 </div>
 
-                {bundledProductSrcSet(category.image) ? (
+                {(bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image)) ? (
                   <picture>
                     <source
                       type="image/webp"
-                      srcSet={bundledProductSrcSet(category.image) ?? undefined}
-                      sizes="(max-width: 700px) 50vw, 250px"
+                      srcSet={bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image) ?? undefined}
+                      sizes={imageSizes}
                     />
                     <img
                       src={category.image}
-                      srcSet={bundledProductSrcSet(category.image) ?? undefined}
-                      sizes="(max-width: 700px) 50vw, 250px"
+                      srcSet={bundledProductSrcSet(category.image) ?? categoryImageSrcSet(category.image) ?? undefined}
+                      sizes={imageSizes}
                       alt=""
-                      width={720}
-                      height={720}
+                      width={540}
+                      height={540}
                       loading="lazy"
                       decoding="async"
                       aria-hidden="true"
@@ -112,7 +113,7 @@ export function CategoryCarousel({
                     alt=""
                     width={250}
                     height={140}
-                    sizes="(max-width: 700px) 50vw, 250px"
+                    sizes={imageSizes}
                     aria-hidden="true"
                   />
                 )}

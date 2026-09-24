@@ -1197,9 +1197,8 @@ export function CatalogPage({
                       product={
                         product
                       }
-                      priority={
-                        index < 2
-                      }
+                      priority={index === 0 && page === 1}
+                      imageSizes="(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1200px) calc((100vw - 63px) / 2), 570px"
                       key={storefrontItemKey(
                         product
                       )}

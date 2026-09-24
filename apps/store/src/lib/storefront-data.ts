@@ -10,6 +10,7 @@ import {
   type Product
 } from "@curtiz/domain";
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { z } from "zod";
 import { demoProducts, findProduct } from "./catalog";
 import {
@@ -24,6 +25,7 @@ import { productImageAlt, publicProductImageUrl } from "./product-image-seo";
 import { bannerProxyUrl } from "./banner-media";
 import { homepageImageProxyUrl } from "./homepage-media";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
+import { cachePublicStorefrontData } from "./public-storefront-cache";
 import { createPublicSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
 
@@ -395,7 +397,7 @@ export async function queryPublicCatalog(
   return presentationFallback ? queryDemoCatalog(filters) : null;
 }
 
-export const getHomepageData = cache(async (): Promise<HomepageData> => {
+const getCachedHomepageData = unstable_cache(async (): Promise<HomepageData> => {
   if (isPresentationCatalogEnabled()) {
     return {
       sections: defaultSections,
@@ -638,7 +640,13 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
     testimonials,
     source: fallbackBannerEnabled || fallbackProductsEnabled ? "demo" : "supabase"
   };
-});
+}, ["store-homepage-public-v1"], { revalidate: 30 });
+
+export const getHomepageData = cache(() => cachePublicStorefrontData({
+  key: "homepage-v1",
+  ttlSeconds: 30,
+  load: getCachedHomepageData
+}));
 
 export const getProductsByModel = cache(async (slug: string): Promise<Product[]> => {
   if (isPresentationCatalogEnabled()) return [];
