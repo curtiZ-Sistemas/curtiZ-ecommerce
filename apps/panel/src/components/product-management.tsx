@@ -42,7 +42,8 @@ import {
 import {
   type EditableVariant,
   generateVariantCombinations,
-  groupEditableVariantsByColor,
+  stableVariantColorGroups,
+  withVariantClientKeys,
   isManagedProduct,
   partitionProductMediaFiles,
   parseNewProductDraft,
@@ -412,6 +413,7 @@ export function ProductManagement({
     delete: false
   });
   const [editableVariants, setEditableVariants] = useState<EditableVariant[]>([]);
+  const variantGroupKeysRef = useRef(new Map<string, string>());
   const [variantColors, setVariantColors] = useState("");
   const [variantSizes, setVariantSizes] = useState("");
   const [variantSkuPrefix, setVariantSkuPrefix] = useState("");
@@ -722,7 +724,7 @@ export function ProductManagement({
       return;
     }
     setEditableVariants(
-      editing.variants.map((variant) => ({
+      withVariantClientKeys(editing.variants.map((variant) => ({
         id: variant.id,
         sku: variant.sku,
         color: variant.color,
@@ -735,7 +737,7 @@ export function ProductManagement({
         active: variant.active,
         gtin: variant.gtin ?? "",
         mpn: variant.mpn ?? ""
-      }))
+      })))
     );
     setSelectedCategoryIds(editing.categoryIds?.length ? editing.categoryIds : editing.categoryId ? [editing.categoryId] : []);
     setPrimaryCategoryId(editing.categoryId ?? editing.categoryIds?.[0] ?? "");
@@ -848,7 +850,7 @@ export function ProductManagement({
     if (!draftOffer) return;
     setSelectedCategoryIds(draftOffer.categoryIds);
     setPrimaryCategoryId(draftOffer.primaryCategoryId);
-    setEditableVariants(draftOffer.variants);
+    setEditableVariants(withVariantClientKeys(draftOffer.variants));
     setHasVariations(draftOffer.hasVariations);
     setSimpleStock(draftOffer.simpleStock);
     setProductActive(draftOffer.productActive === true);
@@ -951,7 +953,7 @@ export function ProductManagement({
   const canAdjustStock = capabilities.adjustStock;
   const canImportProducts = canCreateProduct && canUpdateProduct && canAdjustStock;
   const groupedEditableVariants = useMemo(
-    () => groupEditableVariantsByColor(editableVariants),
+    () => stableVariantColorGroups(editableVariants, variantGroupKeysRef.current),
     [editableVariants]
   );
   const editorImages = editing === "new" || !editing ? [] : (editing.images ?? []);
@@ -1064,7 +1066,7 @@ export function ProductManagement({
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
     };
-    const variants = hasVariations
+    const variantsWithKeys = hasVariations
       ? editableVariants
       : [
           {
@@ -1082,6 +1084,11 @@ export function ProductManagement({
             mpn: editableVariants.length === 1 ? editableVariants[0]!.mpn : ""
           }
         ];
+    const variants = variantsWithKeys.map((item) => {
+      const variant = { ...item };
+      delete variant.clientKey;
+      return variant;
+    });
     const requestedStatus = editing !== "new" && editing.status === "archived"
       ? "archived"
       : productActive ? "active" : "draft";
@@ -1339,7 +1346,7 @@ export function ProductManagement({
             `${variant.color.toLocaleLowerCase("pt-BR")}::${variant.size.toLocaleLowerCase("pt-BR")}`
           )
       );
-      return [...current, ...additions];
+      return [...current, ...withVariantClientKeys(additions)];
     });
     setSizeGuide((current) => includeSizeGuideRows(current, generated.map((variant) => variant.size)));
     setEditorDirty(true);
@@ -1372,7 +1379,7 @@ export function ProductManagement({
     if (!candidate) return;
     setEditableVariants((current) => [
       ...current,
-      { ...candidate, colorHex, colorHexSecondary }
+      { ...candidate, clientKey: crypto.randomUUID(), colorHex, colorHexSecondary }
     ]);
     setSizeGuide((current) => includeSizeGuideRows(current, [candidate.size]));
     setNewVariantSizes((current) => ({ ...current, [groupKey]: "" }));
@@ -1392,6 +1399,7 @@ export function ProductManagement({
       {
         ...variant,
         id: undefined,
+        clientKey: crypto.randomUUID(),
         sku,
         size: `${variant.size} cópia`,
         stock: 0,
@@ -2976,7 +2984,7 @@ export function ProductManagement({
                         (image) => image.id === selectedImageId
                       );
                       return (
-                        <section className="variant-color-group" key={group.key}>
+                        <section className="variant-color-group" key={group.uiKey}>
                           <header>
                             <ColorSwatch
                               className="variant-color-swatch"
@@ -3075,7 +3083,7 @@ export function ProductManagement({
                           <div className="variant-size-list">
                             {group.variants.map(({ variant, index }) => (
                               <article
-                                key={variant.id ?? `${variant.color}-${variant.size}-${index}`}
+                                key={variant.id ?? variant.clientKey}
                               >
                                 <label>
                                   <span>Tamanho *</span>

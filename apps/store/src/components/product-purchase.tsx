@@ -12,10 +12,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { ProductDetailData } from "@/lib/storefront-data";
 import {
   galleryWindowStart,
+  gallerySwipeDirection,
   initialProductSelection,
   mediaForColor,
   preferredColorImage,
@@ -29,19 +30,20 @@ import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-cl
 
 export function ProductPurchase({
   detail,
-  initialVariantId
+  initialVariantId,
+  initialColor
 }: {
   detail: ProductDetailData;
   initialVariantId?: string;
+  initialColor?: string;
 }) {
   const { product, variants, gallery } = detail;
   const initialSelection = useMemo(
-    () => initialProductSelection(variants, initialVariantId),
-    [initialVariantId, variants]
+    () => initialProductSelection(variants, initialVariantId, initialColor),
+    [initialVariantId, initialColor, variants]
   );
-  const initialVariant = variants.find(
-    (variant) => variant.color === initialSelection.color && variant.size === initialSelection.size
-  );
+  const initialVariant = variants.find((variant) => variant.id === initialVariantId)
+    ?? variants.find((variant) => variant.color === initialSelection.color && variant.size === initialSelection.size);
   const [color, setColor] = useState(initialSelection.color || product.colors[0] || "");
   const [size, setSize] = useState(initialSelection.size);
   const [selectedImage, setSelectedImage] = useState(
@@ -54,6 +56,8 @@ export function ProductPurchase({
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(false);
   const galleryTriggerRef = useRef<HTMLButtonElement>(null);
+  const swipeStart = useRef<{ x: number; y: number; id: number } | null>(null);
+  const suppressGalleryClick = useRef(false);
   const { add } = useCart();
   const { hydrated, has, toggle } = useFavorites();
   const router = useRouter();
@@ -99,7 +103,9 @@ export function ProductPurchase({
     : 0;
   const images = useMemo(
     () => {
-      const colorVariant = selectedVariant ?? variants.find((item) => item.color === color && item.image);
+      const colorVariant = selectedVariant
+        ?? variants.find((item) => item.id === initialVariantId && item.color === color)
+        ?? variants.find((item) => item.color === color && item.image);
       const colorImage = colorVariant?.image ? {
         id: `${colorVariant.id}-variant`, src: colorVariant.image, alt: product.name,
         type: "image" as const, mimeType: "image/webp"
@@ -117,10 +123,9 @@ export function ProductPurchase({
   const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
   const maximumThumbnailStart = Math.max(0, images.length - 3);
-  const preserveVariantInUrl = (variantId?: string) => {
-    if (!variantId) return;
+  const preserveVariantInUrl = (variantId?: string, selectedColor = color) => {
     router.replace(
-      `/produto/${encodeURIComponent(product.slug)}?variant=${encodeURIComponent(variantId)}`,
+      `/produto/${encodeURIComponent(product.slug)}?${variantId ? `variant=${encodeURIComponent(variantId)}&` : ""}color=${encodeURIComponent(selectedColor)}`,
       { scroll: false }
     );
   };
@@ -152,6 +157,23 @@ export function ProductPurchase({
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
   const selectPreviousImage = useCallback(() => selectRelativeImage(-1), [selectRelativeImage]);
   const selectNextImage = useCallback(() => selectRelativeImage(1), [selectRelativeImage]);
+  const startGallerySwipe = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse") return;
+    suppressGalleryClick.current = false;
+    swipeStart.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+  };
+  const endGallerySwipe = (event: PointerEvent<HTMLButtonElement>) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start || start.id !== event.pointerId) return;
+    const horizontal = event.clientX - start.x;
+    const vertical = event.clientY - start.y;
+    const direction = gallerySwipeDirection(horizontal, vertical);
+    if (!direction) return;
+    suppressGalleryClick.current = true;
+    if (direction === 1) selectNextImage();
+    else selectPreviousImage();
+  };
 
   const chooseColor = (nextColor: string) => {
     const colorVariants = variants.filter((variant) => variant.color === nextColor);
@@ -166,7 +188,7 @@ export function ProductPurchase({
     setSize(nextSize);
     setAdded(false);
     setSelectedImage(preferredColorImage(detail.media, nextColor, imageVariant?.id, imageVariant?.image, product.image));
-    preserveVariantInUrl(retainedSize?.id ?? (nextSize ? imageVariant?.id : undefined));
+    preserveVariantInUrl(retainedSize?.id ?? (nextSize ? imageVariant?.id : undefined), nextColor);
     trackIntelligence({
       type: "variant_select",
       productId: product.id,
@@ -224,8 +246,13 @@ export function ProductPurchase({
             ref={galleryTriggerRef}
             className="product-gallery-trigger"
             type="button"
-            onClick={() => setLightboxOpen(true)}
-            onPointerUp={() => trackIntelligence({ type: "image_interaction", productId: product.id })}
+            onClick={() => {
+              if (suppressGalleryClick.current) { suppressGalleryClick.current = false; return; }
+              setLightboxOpen(true);
+            }}
+            onPointerDown={startGallerySwipe}
+            onPointerUp={(event) => { endGallerySwipe(event); trackIntelligence({ type: "image_interaction", productId: product.id }); }}
+            onPointerCancel={() => { swipeStart.current = null; }}
             aria-label={`Abrir visualização de ${product.name}`}
           >
             <Image

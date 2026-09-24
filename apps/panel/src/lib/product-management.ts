@@ -120,6 +120,7 @@ export type EditableVariantColorGroup = {
 
 export type EditableVariant = {
   id?: string;
+  clientKey?: string;
   sku: string;
   color: string;
   colorHex: string;
@@ -132,6 +133,13 @@ export type EditableVariant = {
   gtin: string;
   mpn: string;
 };
+
+export function withVariantClientKeys(variants: EditableVariant[]): EditableVariant[] {
+  return variants.map((variant) => ({
+    ...variant,
+    clientKey: variant.id ?? variant.clientKey ?? crypto.randomUUID()
+  }));
+}
 
 export type ProductPublicationInput = {
   name?: string;
@@ -316,6 +324,23 @@ export function groupEditableVariantsByColor(
   });
 
   return [...groups.values()];
+}
+
+export function stableVariantColorGroups(
+  variants: EditableVariant[], previousKeys: Map<string, string>
+): Array<EditableVariantColorGroup & { uiKey: string }> {
+  const used = new Set<string>();
+  return groupEditableVariantsByColor(variants).map((group) => {
+    const uiKey = group.variants
+      .map(({ variant }) => previousKeys.get(variant.id ?? variant.clientKey ?? ""))
+      .find((key) => key && !used.has(key)) ?? crypto.randomUUID();
+    used.add(uiKey);
+    group.variants.forEach(({ variant }) => {
+      const key = variant.id ?? variant.clientKey;
+      if (key) previousKeys.set(key, uiKey);
+    });
+    return { ...group, uiKey };
+  });
 }
 
 export function productPublishRequirements(product: {

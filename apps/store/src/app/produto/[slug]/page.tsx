@@ -33,7 +33,7 @@ export default async function ProductPage({
   searchParams
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ variant?: string }>;
+  searchParams: Promise<{ variant?: string; color?: string }>;
 }) {
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const detail = await getPublicProduct(slug);
@@ -50,7 +50,7 @@ export default async function ProductPage({
         <span>{product.name}</span>
       </nav>
 
-      <ProductPurchase detail={detail} initialVariantId={query.variant} />
+      <ProductPurchase detail={detail} initialVariantId={query.variant} initialColor={query.color} />
 
       <section className="product-information" aria-labelledby="product-information-title">
         <h2 id="product-information-title" className="sr-only">Informações do produto</h2>

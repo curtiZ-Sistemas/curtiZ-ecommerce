@@ -42,11 +42,11 @@ export function footerShoppingLinks(navigation: StoreNavigationItem[]): Array<re
   const links: Array<readonly [string, string]> = [["Todos os produtos", "/produtos"]];
   const seen = new Set<string>();
   for (const item of navigation) {
-    if (item.placement !== "main") continue;
     const url = new URL(item.href, "https://curtiz.com.br");
     const category = url.pathname === "/produtos" ? url.searchParams.get("categoria") : null;
-    if (category && !seen.has(category)) {
-      seen.add(category);
+    const slug = category?.trim().toLocaleLowerCase("pt-BR");
+    if (slug && !seen.has(slug)) {
+      seen.add(slug);
       links.push([item.label, item.href]);
     } else if (item.href === "/lancamentos" && !seen.has("launches")) {
       seen.add("launches");

@@ -13,6 +13,13 @@ describe("itens virtuais de vitrine", () => {
     expect(storefrontProductHref(item)).toBe("/produto/chinelo?variant=azul");
   });
 
+  it("mantém a cor no link da apresentação para fallback quando a variante sair do catálogo", () => {
+    expect(storefrontProductHref({ slug: "chinelo", variantId: "branco-34", variantColor: "Branco" }))
+      .toBe("/produto/chinelo?variant=branco-34&color=Branco");
+    expect(storefrontProductHref({ slug: "chinelo", variantId: "preto-34", variantColor: "Preto" }))
+      .toBe("/produto/chinelo?variant=preto-34&color=Preto");
+  });
+
   it("mantém o link canonical do produto quando não há variante", () => {
     expect(storefrontProductHref({ slug: "chinelo", variantId: undefined })).toBe(
       "/produto/chinelo"

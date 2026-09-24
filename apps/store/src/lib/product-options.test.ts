@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   galleryWindowStart,
+  gallerySwipeDirection,
   initialProductSelection,
   mediaForColor,
   preferredColorImage,
@@ -35,6 +36,31 @@ describe("opções comerciais do produto", () => {
     expect(galleryWindowStart(6, 9)).toBe(3);
   });
 
+  it("distingue swipe horizontal de tap e rolagem vertical", () => {
+    expect(gallerySwipeDirection(-60, 8)).toBe(1);
+    expect(gallerySwipeDirection(60, 8)).toBe(-1);
+    expect(gallerySwipeDirection(10, 2)).toBe(0);
+    expect(gallerySwipeDirection(60, 90)).toBe(0);
+  });
+
+  it("mantém cor e imagem da apresentação quando há vários tamanhos", () => {
+    const variants = [
+      { id: "branco-34", color: "Branco", size: "34", stock: 2 },
+      { id: "branco-39", color: "Branco", size: "39", stock: 2 },
+      { id: "preto-34", color: "Preto", size: "34", stock: 2 }
+    ];
+    expect(initialProductSelection(variants, "branco-39", "Branco")).toEqual({ color: "Branco", size: "" });
+    expect(initialProductSelection(variants, "removed", "Branco")).toEqual({ color: "Branco", size: "" });
+    expect(initialProductSelection(variants, "preto-34", "Branco")).toEqual({ color: "Preto", size: "34" });
+    const media = [
+      { src: "branco-34.webp", color: "Branco", variantId: "branco-34" },
+      { src: "preto.webp", color: "Preto", variantId: "preto-34" },
+      { src: "branco-39.webp", color: "Branco", variantId: "branco-39" }
+    ];
+    expect(preferredColorImage(media, "Branco", "branco-39", "branco-39.webp", "fallback.webp")).toBe("branco-39.webp");
+    expect(mediaForColor(media, "Branco", "branco-39")[0]?.src).toBe("branco-39.webp");
+  });
+
   it("seleciona a variação indicada pelo link do feed", () => {
     expect(
       initialProductSelection(
@@ -56,7 +82,7 @@ describe("opções comerciais do produto", () => {
     expect(mediaForColor(media, "Branco", "branco-34").map((item) => item.src)).toEqual(["branco.webp", "generica.webp"]);
     expect(mediaForColor(media, "Branco", "branco-39")[0]?.src).toBe("branco.webp");
     expect(mediaForColor(media, "Preto", "preto-39")[0]?.src).toBe("preto.webp");
-    expect(preferredColorImage(media, "Branco", "branco-39", "variante-branca.webp", "fallback.webp")).toBe("branco.webp");
+    expect(preferredColorImage(media, "Branco", "branco-39", "variante-branca.webp", "fallback.webp")).toBe("variante-branca.webp");
     expect(preferredColorImage([{ src: "generica.webp" }], "Branco", "branco-39", "variante-branca.webp", "fallback.webp")).toBe("variante-branca.webp");
     expect(mediaForColor([{ src: "generica.webp" }], "Branco", "branco-39", { src: "variante-branca.webp" }).map((item) => item.src)).toEqual(["variante-branca.webp", "generica.webp"]);
   });

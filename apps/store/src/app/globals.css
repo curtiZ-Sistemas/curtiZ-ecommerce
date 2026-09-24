@@ -11374,6 +11374,7 @@ body:has(> #main-content > .auth-page) .site-footer {
 }
 
 .product-gallery-trigger {
+  touch-action: pan-y;
   position: relative;
   width: 100%;
   height: 100%;

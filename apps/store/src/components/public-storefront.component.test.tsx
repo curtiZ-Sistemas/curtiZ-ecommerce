@@ -136,6 +136,21 @@ describe("public storefront components", () => {
     expect(html).not.toContain("0 de 5");
   });
 
+  it("liga cada apresentação visual à variante e à imagem da sua cor", () => {
+    for (const color of ["Branco", "Preto"]) {
+      const slug = color.toLocaleLowerCase("pt-BR");
+      const image = `/images/products/essential-${slug}.webp`;
+      const html = renderToStaticMarkup(<ProductCard product={{
+        id: "produto-1", storefrontKey: `produto-1:${slug}`, variantId: `variante-${slug}`,
+        variantColor: color, variantSize: "37", slug: "chinelo-essential", name: "Chinelo Essential",
+        category: "Chinelos", description: "Produto", priceInCents: 6490,
+        rating: 0, reviews: 0, colors: [color], sizes: ["37"], image, stock: 2
+      }} />);
+      expect(html).toContain(image);
+      expect(html).toContain(`/produto/chinelo-essential?variant=variante-${slug}&amp;color=${color}`);
+    }
+  });
+
   it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {
     const pageError = renderToStaticMarkup(<ErrorPage reset={vi.fn()} />);
     const globalError = renderToStaticMarkup(<GlobalError reset={vi.fn()} />);

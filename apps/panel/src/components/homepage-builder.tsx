@@ -193,7 +193,10 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     try {
       const response = await fetch("/api/homepage-builder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json() as { message?: string };
-      if (!response.ok) throw new Error(result.message);
+      if (!response.ok) {
+        if (body.action === "prepare_publish") await load();
+        throw new Error(result.message);
+      }
       setMessage(result.message ?? success); await load(); return true;
     } catch (actionError) {
       setError(actionError instanceof Error && actionError.message ? actionError.message : "Não foi possível concluir a operação."); return false;
@@ -206,6 +209,9 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     const periodMatches = !periodFilter || periodFilter === "current" && (!starts || starts <= now) && (!ends || ends > now) || periodFilter === "future" && Boolean(starts && starts > now) || periodFilter === "expired" && Boolean(ends && ends <= now);
     return (!query || text.includes(query.toLocaleLowerCase("pt-BR"))) && (!typeFilter || section.section_type === typeFilter) && (!statusFilter || section.status === statusFilter) && periodMatches;
   }), [data, periodFilter, query, typeFilter, statusFilter]);
+  const awaitingXlsx = (data?.sections ?? []).filter((section) =>
+    section.internal_name.startsWith("xlsx:") && ["draft", "rejected", "pending_review"].includes(section.status)
+  );
 
   const reorder = async (sectionId: string, destination: number) => {
     if (!data?.capabilities["homepage.edit"]) return;
@@ -248,6 +254,10 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
   };
 
   const publish = async (scheduled: boolean) => {
+    if (awaitingXlsx.length) {
+      setError(`Existem ${awaitingXlsx.length} seções em rascunho ou revisão que precisam ser aprovadas antes da publicação.`);
+      return;
+    }
     const reason = (await requestPrompt({
       title: scheduled ? "Agendar publicação" : "Publicar página",
       label: "Justificativa da publicação",
@@ -267,6 +277,11 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
       scheduledAt = toIso(value);
     }
     await act({ action: "publish", reason, ...(scheduledAt ? { scheduledAt } : {}) }, scheduled ? "Publicação agendada." : "Página publicada.");
+  };
+  const preparePublish = async () => {
+    const reason = (await requestPrompt({ title: "Preparar para publicação", label: "Justificativa para revisão e publicação", minLength: 3 }))?.trim();
+    if (!reason) return;
+    await act({ action: "prepare_publish", reason }, "Página publicada.");
   };
 
   const restoreVersion = async (version: Version) => {
@@ -322,6 +337,10 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
           {data?.capabilities["homepage.create"] && <button className="primary-button" type="button" onClick={() => setEditor(emptyEditor(data.sections.length + 1))}><Plus /> Nova seção</button>}
         </div>
       </header>
+      {awaitingXlsx.length > 0 && <div className="admin-feedback" role="status">
+        Existem {awaitingXlsx.length} seções em rascunho ou revisão que precisam ser aprovadas antes da publicação.
+        {data?.capabilities["homepage.edit"] && data.capabilities["homepage.review"] && data.capabilities["homepage.publish"] && <button className="secondary-button" type="button" disabled={pending} onClick={() => void preparePublish()}>Preparar para publicação</button>}
+      </div>}
 
       <nav className="homepage-tabs" aria-label="Áreas do construtor">
         <button className={tab === "builder" ? "active" : ""} onClick={() => setTab("builder")}><GripVertical /> Estrutura</button>

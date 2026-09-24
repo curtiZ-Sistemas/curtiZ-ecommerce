@@ -21,6 +21,19 @@ export function CategoryCarousel({
 }: CategoryCarouselProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
+  const resumeTimer = useRef<number | null>(null);
+  const hovered = useRef(false);
+  const pauseBriefly = useCallback(() => {
+    setPaused(true);
+    if (resumeTimer.current) window.clearTimeout(resumeTimer.current);
+    resumeTimer.current = window.setTimeout(() => {
+      resumeTimer.current = null;
+      if (!hovered.current) setPaused(false);
+    }, 3000);
+  }, []);
+  useEffect(() => () => {
+    if (resumeTimer.current) window.clearTimeout(resumeTimer.current);
+  }, []);
   const move = useCallback((direction: -1 | 1) => {
     const node = viewport.current;
     if (!node) return;
@@ -38,10 +51,9 @@ export function CategoryCarousel({
   useEffect(() => {
     if (paused || categories.length < 2) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (reducedMotion.matches) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden) move(1);
-    }, 2000);
+      if (!document.hidden && !reducedMotion.matches) move(1);
+    }, 4000);
     return () => window.clearInterval(timer);
   }, [categories.length, move, paused]);
 
@@ -51,9 +63,9 @@ export function CategoryCarousel({
         className="category-carousel-viewport"
         ref={viewport}
         aria-label="Carrossel de categorias"
-        onPointerDown={() => setPaused(true)}
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
+        onPointerDown={pauseBriefly}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") { hovered.current = true; setPaused(true); } }}
+        onPointerLeave={(event) => { if (event.pointerType === "mouse") { hovered.current = false; if (!resumeTimer.current) setPaused(false); } }}
       >
         <div className="category-carousel-track">
           {categories.map((category) => (
@@ -116,7 +128,7 @@ export function CategoryCarousel({
       >
         <button
           type="button"
-          onClick={() => { setPaused(true); move(-1); }}
+          onClick={() => { pauseBriefly(); move(-1); }}
           aria-label="Categoria anterior"
         >
           <ArrowLeft aria-hidden="true" />
@@ -124,7 +136,7 @@ export function CategoryCarousel({
 
         <button
           type="button"
-          onClick={() => { setPaused(true); move(1); }}
+          onClick={() => { pauseBriefly(); move(1); }}
           aria-label="Próxima categoria"
         >
           <ArrowRight aria-hidden="true" />

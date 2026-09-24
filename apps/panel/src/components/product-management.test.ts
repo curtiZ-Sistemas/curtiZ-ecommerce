@@ -11,6 +11,8 @@ import {
   filterManagedProducts,
   generateVariantCombinations,
   groupEditableVariantsByColor,
+  stableVariantColorGroups,
+  withVariantClientKeys,
   isManagedProduct,
   partitionProductMediaFiles,
   parseNewProductDraft,
@@ -54,6 +56,28 @@ const products = [
 ];
 
 describe("product management", () => {
+  it("mantém a identidade da variação enquanto SKU, tamanho e cor mudam", () => {
+    const base = { sku: "", color: "Branco", colorHex: "", colorHexSecondary: "", size: "", priceInCents: null, costInCents: null, stock: 0, active: true, gtin: "", mpn: "" };
+    const [first, second] = withVariantClientKeys([{ ...base }, { ...base, id: "saved-id", color: "Preto" }]);
+    expect(first?.clientKey).toBeTruthy();
+    expect(second?.clientKey).toBe("saved-id");
+    const edited = [{ ...first!, sku: "PALAVRA", size: "39", color: "Lilás" }, second!];
+    expect(edited[0]?.clientKey).toBe(first?.clientKey);
+    expect(withVariantClientKeys([...edited].reverse()).map((item) => item.clientKey)).toEqual(["saved-id", first?.clientKey]);
+    const [duplicate] = withVariantClientKeys([{ ...edited[0]!, id: undefined, clientKey: undefined }]);
+    expect(duplicate?.clientKey).not.toBe(first?.clientKey);
+    const groupKeys = new Map<string, string>();
+    const originalGroup = stableVariantColorGroups([first!, { ...first!, clientKey: "second-new", size: "40" }], groupKeys)[0]?.uiKey;
+    const editedGroup = stableVariantColorGroups([
+      { ...first!, clientKey: "second-new", size: "40", color: "Lilás" },
+      { ...first!, color: "Lilás", sku: "PALAVRA" }
+    ], groupKeys)[0]?.uiKey;
+    expect(editedGroup).toBe(originalGroup);
+    expect(stableVariantColorGroups([
+      { ...first!, clientKey: "duplicate", color: "Lilás" },
+      { ...first!, color: "Lilás" }
+    ], groupKeys)[0]?.uiKey).toBe(originalGroup);
+  });
   it("monta o snapshot real do editor e ignora controles não persistíveis", () => {
     const draft = buildNewProductDraft({
       savedAt: "2026-09-20T12:00:00.000Z",

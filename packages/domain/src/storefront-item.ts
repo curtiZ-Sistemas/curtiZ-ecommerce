@@ -5,11 +5,11 @@ export function storefrontItemKey(product: Pick<Product, "id" | "storefrontKey" 
 }
 
 export function storefrontProductHref(
-  product: Pick<Product, "slug" | "variantId">
+  product: Pick<Product, "slug" | "variantId"> & Partial<Pick<Product, "variantColor">>
 ): string {
   const base = `/produto/${encodeURIComponent(product.slug)}`;
   return product.variantId
-    ? `${base}?variant=${encodeURIComponent(product.variantId)}`
+    ? `${base}?variant=${encodeURIComponent(product.variantId)}${product.variantColor ? `&color=${encodeURIComponent(product.variantColor)}` : ""}`
     : base;
 }
 

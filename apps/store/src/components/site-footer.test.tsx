@@ -36,4 +36,18 @@ describe("rodapé da loja", () => {
     expect(html).not.toContain("Lançamentos");
     expect(html).toContain(`© ${new Date().getFullYear()} curti Z`);
   });
+
+  it("inclui categorias da mesma navegação do header em ordem, deduplica slug e ignora páginas comuns", () => {
+    expect(footerShoppingLinks([
+      { ...category("branco", "Branco"), placement: "utility" },
+      category("preto", "Preto"),
+      { ...category("BRANCO", "Outra etiqueta"), href: "/produtos?categoria=BRANCO" },
+      { id: "products", label: "Produtos", href: "/produtos", placement: "main" },
+      { id: "help", label: "Ajuda", href: "/ajuda", placement: "main" }
+    ])).toEqual([
+      ["Todos os produtos", "/produtos"],
+      ["Branco", "/produtos?categoria=branco"],
+      ["Preto", "/produtos?categoria=preto"]
+    ]);
+  });
 });
