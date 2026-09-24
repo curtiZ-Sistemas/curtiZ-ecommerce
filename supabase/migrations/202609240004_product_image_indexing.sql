@@ -25,6 +25,7 @@ as $$
     select
       active.product_id,
       active.slug,
+      active.name,
       active.updated_at,
       images.items
     from active_products active
