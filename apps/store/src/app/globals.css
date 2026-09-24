@@ -1838,18 +1838,14 @@ select:disabled {
   max-width: 78ch;
 }
 
-.search-no-results-intro .eyebrow {
-  margin-bottom: 8px;
-}
-
-.search-no-results-intro h2 {
+.search-no-results-intro h1 {
   margin: 0 0 10px;
   color: var(--brand-900);
   font-size: clamp(1.55rem, 3vw, 2.15rem);
   line-height: 1.2;
 }
 
-.search-no-results-intro > p:not(.eyebrow) {
+.search-no-results-intro > p {
   margin: 0 0 12px;
   color: var(--neutral-700);
   line-height: 1.6;
@@ -1862,14 +1858,17 @@ select:disabled {
 }
 
 .search-no-results-recommendations {
-  min-width: 0;
+  border-top: 1px solid var(--neutral-200);
+  padding-top: clamp(24px, 3vw, 36px);
 }
+
+.search-no-results-recommendations { min-width: 0; }
 
 .search-no-results-recommendations .section-heading {
   margin-bottom: 18px;
 }
 
-.search-no-results-recommendations .product-grid,
+.catalog-results .search-no-results-recommendations .product-grid,
 .search-recommendation-skeleton {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1888,7 +1887,7 @@ select:disabled {
 }
 
 @media (max-width: 900px) {
-  .search-no-results-recommendations .product-grid,
+  .catalog-results .search-no-results-recommendations .product-grid,
   .search-recommendation-skeleton {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1896,7 +1895,7 @@ select:disabled {
 
 @media (max-width: 700px) {
   .catalog-discovery { gap: 24px; }
-  .search-no-results-recommendations .product-grid,
+  .catalog-results .search-no-results-recommendations .product-grid,
   .search-recommendation-skeleton { gap: 10px; }
 }
 

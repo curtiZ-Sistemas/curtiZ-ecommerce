@@ -442,6 +442,7 @@ export function CatalogPage({
 
   const searchTerm = (filters.query ?? query ?? "").trim();
   const searchHasNoResults = Boolean(searchTerm) && result?.total === 0 && products.length === 0;
+  const showSearchDiscovery = searchHasNoResults && activeFilters === 0;
   const shouldLoadSearchSuggestions = searchHasNoResults && activeFilters === 0 && !loading;
   const hideEmptyFilters = shouldHideEmptyCatalogFilters(result?.total, activeFilters, loading);
 
@@ -817,10 +818,10 @@ export function CatalogPage({
 
         <span>/</span>
 
-        <span>{title}</span>
+        <span>{showSearchDiscovery ? "Busca" : title}</span>
       </nav>
 
-      <header className="section-heading catalog-heading">
+      {!showSearchDiscovery && <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">
             Catálogo curti Z
@@ -830,9 +831,9 @@ export function CatalogPage({
 
           <p>{description}</p>
         </div>
-      </header>
+      </header>}
 
-      {!hideEmptyFilters && <div className="catalog-mobile-actions">
+      {!hideEmptyFilters && !showSearchDiscovery && <div className="catalog-mobile-actions">
         <button
           ref={triggerRef}
           className="secondary-button"
@@ -984,7 +985,7 @@ export function CatalogPage({
           aria-live="polite"
           aria-busy={loading}
         >
-          {!hideEmptyFilters && <div className="catalog-results-bar">
+          {!hideEmptyFilters && !showSearchDiscovery && <div className="catalog-results-bar">
             <span>
               <strong>
                 {result?.total ??

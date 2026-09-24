@@ -56,7 +56,7 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
 
   const request = async (requestedSource: IntelligenceSource, requestedLimit = target,
     withSession = false): Promise<void> => {
-    if (signal.aborted || products.length >= target || requestedLimit < 1 || requests >= 4) return;
+    if (signal.aborted || products.length >= target || requestedLimit < 1 || requests >= 8) return;
     requests += 1;
     const body = {
       source: requestedSource, sessionId: withSession ? sessionId : null,
@@ -89,7 +89,7 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
   };
 
   const contextCatalog = async (): Promise<void> => {
-    if (signal.aborted || products.length >= target || requests >= 4 || (!query && !productName && !category && !priceInCents)) return;
+    if (signal.aborted || products.length >= target || requests >= 8 || (!query && !productName && !category && !priceInCents)) return;
     requests += 1;
     const params = new URLSearchParams({ estoque: "1", limite: "24", compacto: "1" });
     if (category) params.set("categoria", category);
@@ -124,13 +124,12 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
 
   if (sessionId) {
     await request("personalized", query ? Math.max(1, Math.ceil(target * .67)) : target, true);
-    if (products.length < target && recent.length) await request("because_you_viewed", query ? target - products.length - 1 : target, true);
-    if (products.length < target && priceInCents) await request("price_range", query ? target - products.length - 1 : target, true);
     await contextCatalog();
+    if (products.length < target && recent.length) await request("because_you_viewed", target - products.length, true);
+    if (products.length < target && priceInCents) await request("price_range", target - products.length, true);
     if (products.length < target && recent.length) await request("recently_viewed", target, true);
   } else {
     await contextCatalog();
-    if (products.length < target && priceInCents) await request("price_range");
   }
   if (products.length < target) await request("most_wanted");
   if (products.length < target) await request("trending");

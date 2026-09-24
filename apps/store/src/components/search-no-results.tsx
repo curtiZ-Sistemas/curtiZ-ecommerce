@@ -12,19 +12,20 @@ export function SearchNoResults({ searchTerm, suggestions, loading, loaded }: {
   loading: boolean;
   loaded: boolean;
 }) {
+  const uniqueSuggestions = suggestions.filter((product, index, all) =>
+    all.findIndex((item) => item.id === product.id) === index
+  ).slice(0, 6);
   return (
     <div className="catalog-discovery">
       <div className="search-no-results-intro">
-        <p className="eyebrow">Sua busca na curti Z</p>
-        <h2>Não encontramos “{searchTerm}”</h2>
-        <p>Não encontramos um produto com esse termo. Veja outras opções da loja para continuar descobrindo.</p>
-        <Link href="/produtos">Ver todos os produtos</Link>
+        <h1>Não encontramos resultados para “{searchTerm}”</h1>
+        <p>Tente outro termo ou confira algumas opções escolhidas para você.</p>
+        <Link className="secondary-button" href="/produtos">Ver todos os produtos</Link>
       </div>
       <section className="search-no-results-recommendations" aria-labelledby="search-suggestions-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Descubra algo novo</p>
-            <h3 id="search-suggestions-title">Selecionados para você</h3>
+            <h2 id="search-suggestions-title">Talvez você curta</h2>
           </div>
         </div>
         {(!loaded || loading) && (
@@ -32,14 +33,14 @@ export function SearchNoResults({ searchTerm, suggestions, loading, loaded }: {
             {Array.from({ length: 6 }, (_, index) => <i key={index} aria-hidden="true" />)}
           </div>
         )}
-        {loaded && suggestions.length > 0 && (
+        {loaded && uniqueSuggestions.length > 0 && (
           <div className="product-grid">
-            {suggestions.map((product) => (
+            {uniqueSuggestions.map((product) => (
               <ProductCard key={product.id} product={product} recommendationSource="search_no_results" />
             ))}
           </div>
         )}
-        {loaded && !suggestions.length && (
+        {loaded && !uniqueSuggestions.length && (
           <p className="search-recommendations-unavailable">Explore o catálogo para encontrar seu próximo par.</p>
         )}
       </section>

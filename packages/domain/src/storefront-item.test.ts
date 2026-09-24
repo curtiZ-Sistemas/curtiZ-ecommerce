@@ -18,6 +18,8 @@ describe("itens virtuais de vitrine", () => {
       .toBe("/produto/chinelo?variant=branco-34&color=Branco");
     expect(storefrontProductHref({ slug: "chinelo", variantId: "preto-34", variantColor: "Preto" }))
       .toBe("/produto/chinelo?variant=preto-34&color=Preto");
+    expect(storefrontProductHref({ slug: "chinelo", variantColor: "Lilás" }))
+      .toBe("/produto/chinelo?color=Lil%C3%A1s");
   });
 
   it("mantém o link canonical do produto quando não há variante", () => {

@@ -8,9 +8,10 @@ export function storefrontProductHref(
   product: Pick<Product, "slug" | "variantId"> & Partial<Pick<Product, "variantColor">>
 ): string {
   const base = `/produto/${encodeURIComponent(product.slug)}`;
-  return product.variantId
-    ? `${base}?variant=${encodeURIComponent(product.variantId)}${product.variantColor ? `&color=${encodeURIComponent(product.variantColor)}` : ""}`
-    : base;
+  const params = new URLSearchParams();
+  if (product.variantId) params.set("variant", product.variantId);
+  if (product.variantColor) params.set("color", product.variantColor);
+  return params.size ? `${base}?${params.toString()}` : base;
 }
 
 export function canQuickAddProduct(product: Pick<Product, "variantId" | "colors" | "sizes" | "stock">) {

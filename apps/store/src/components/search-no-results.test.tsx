@@ -24,13 +24,27 @@ describe("busca sem resultados", () => {
   it("mostra introdução compacta e recomendações fora do estado vazio", () => {
     const html = renderToStaticMarkup(<SearchNoResults searchTerm="praia" suggestions={[suggestion]}
       loading={false} loaded />);
-    expect(html).toContain("Não encontramos “praia”");
+    expect(html).toContain("Não encontramos resultados para “praia”");
+    expect((html.match(/<h1>/gu) ?? [])).toHaveLength(1);
+    expect(html).not.toContain("Busca por");
+    expect(html).not.toContain("Sua busca na curti Z");
+    expect(html).not.toContain("Descubra algo novo");
     expect(html).toContain('href="/produtos"');
     expect(html).toContain('class="search-no-results-recommendations"');
     expect(html).toContain('data-product-id="product-1"');
     expect(html).not.toContain("empty-state");
     expect(html).not.toContain("Limpar filtros");
     expect(html).not.toContain(">Voltar<");
+  });
+
+  it("limita a shelf a seis produtos únicos", () => {
+    const suggestions = Array.from({ length: 8 }, (_, index) => ({
+      id: `product-${index}`, name: `Produto ${index}`
+    } as Product));
+    const html = renderToStaticMarkup(<SearchNoResults searchTerm="praia"
+      suggestions={[suggestions[0]!, suggestions[0]!, ...suggestions]} loading={false} loaded />);
+    expect((html.match(/data-product-id=/gu) ?? [])).toHaveLength(6);
+    expect((html.match(/data-product-id="product-0"/gu) ?? [])).toHaveLength(1);
   });
 
   it("reserva seis cards enquanto carrega", () => {

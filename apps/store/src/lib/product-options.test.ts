@@ -61,6 +61,24 @@ describe("opções comerciais do produto", () => {
     expect(mediaForColor(media, "Branco", "branco-39")[0]?.src).toBe("branco-39.webp");
   });
 
+  it("abre a apresentação Lilás com seis tamanhos sem escolher numeração", () => {
+    const variants = ["Lilás", "Bege", "Preto", "Azul"].flatMap((color) =>
+      ["34", "35", "36", "37", "38", "39"].map((size) => ({
+        id: `${color}-${size}`, color, size, stock: size === "34" ? 0 : 3
+      }))
+    );
+    const media = [
+      { src: "lilas.webp", variantId: "Lilás-34", color: "Lilás" },
+      { src: "bege.webp", variantId: "Bege-34", color: "Bege" },
+      { src: "preto.webp", variantId: "Preto-34", color: "Preto" },
+      { src: "azul.webp", variantId: "Azul-34", color: "Azul" }
+    ];
+    expect(initialProductSelection(variants, "Lilás-35", "Lilás")).toEqual({ color: "Lilás", size: "" });
+    expect(initialProductSelection(variants, "removed", "Lilás")).toEqual({ color: "Lilás", size: "" });
+    expect(preferredColorImage(media, "Lilás", "Lilás-35", "lilas.webp", "bege.webp"))
+      .toBe("lilas.webp");
+  });
+
   it("seleciona a variação indicada pelo link do feed", () => {
     expect(
       initialProductSelection(

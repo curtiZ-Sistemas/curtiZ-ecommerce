@@ -279,9 +279,26 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     await act({ action: "publish", reason, ...(scheduledAt ? { scheduledAt } : {}) }, scheduled ? "Publicação agendada." : "Página publicada.");
   };
   const preparePublish = async () => {
-    const reason = (await requestPrompt({ title: "Preparar para publicação", label: "Justificativa para revisão e publicação", minLength: 3 }))?.trim();
+    const selfApprovalConfirmed = Boolean(data?.capabilities["homepage.edit"]
+      && data.capabilities["homepage.review"] && data.capabilities["homepage.publish"]);
+    const reason = (await requestPrompt({
+      title: selfApprovalConfirmed ? "Aprovar e publicar" : "Enviar para revisão",
+      description: selfApprovalConfirmed
+        ? "Você criou estas seções e também possui permissão para revisá-las e publicá-las. Deseja aprovar e publicar suas próprias alterações?"
+        : "As seções serão enviadas para outro revisor aprovar.",
+      label: "Justificativa",
+      minLength: 3,
+      confirmLabel: selfApprovalConfirmed ? "Aprovar e publicar" : "Enviar para revisão"
+    }))?.trim();
     if (!reason) return;
-    await act({ action: "prepare_publish", reason }, "Página publicada.");
+    const expectedVersions = [...awaitingXlsx].sort((a, b) => a.id.localeCompare(b.id))
+      .map((section) => ({ sectionId: section.id, versionId: section.current_version_id }));
+    if (expectedVersions.some((section) => !section.versionId)) {
+      setError("Uma seção está sem versão. Atualize o construtor antes de continuar.");
+      return;
+    }
+    await act({ action: "prepare_publish", reason, expectedVersions, selfApprovalConfirmed },
+      selfApprovalConfirmed ? "Página publicada com sucesso." : "As seções foram enviadas para revisão. Outro revisor precisa aprová-las.");
   };
 
   const restoreVersion = async (version: Version) => {
@@ -339,7 +356,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
       </header>
       {awaitingXlsx.length > 0 && <div className="admin-feedback" role="status">
         Existem {awaitingXlsx.length} seções em rascunho ou revisão que precisam ser aprovadas antes da publicação.
-        {data?.capabilities["homepage.edit"] && data.capabilities["homepage.review"] && data.capabilities["homepage.publish"] && <button className="secondary-button" type="button" disabled={pending} onClick={() => void preparePublish()}>Preparar para publicação</button>}
+        {data?.capabilities["homepage.edit"] && <button className="secondary-button" type="button" disabled={pending} onClick={() => void preparePublish()}>{data.capabilities["homepage.review"] && data.capabilities["homepage.publish"] ? "Preparar para publicação" : "Enviar para revisão"}</button>}
       </div>}
 
       <nav className="homepage-tabs" aria-label="Áreas do construtor">
