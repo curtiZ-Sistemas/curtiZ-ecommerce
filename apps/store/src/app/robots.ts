@@ -31,7 +31,7 @@ export function buildRobots(hostname: string): MetadataRoute.Robots {
         ]
       }
     ],
-    sitemap: officialUrl("/sitemap.xml")
+    sitemap: [officialUrl("/sitemap.xml"), officialUrl("/image-sitemap.xml")]
   };
 }
 

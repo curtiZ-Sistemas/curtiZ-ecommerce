@@ -6,7 +6,10 @@ describe("robots da loja", () => {
     const result = buildRobots("curtiz.com.br");
     const rule = Array.isArray(result.rules) ? result.rules[0] : result.rules;
 
-    expect(result.sitemap).toBe("https://curtiz.com.br/sitemap.xml");
+    expect(result.sitemap).toEqual([
+      "https://curtiz.com.br/sitemap.xml",
+      "https://curtiz.com.br/image-sitemap.xml"
+    ]);
     expect(rule).toMatchObject({ userAgent: "*", allow: "/" });
     expect(rule?.disallow).toEqual(
       expect.arrayContaining(["/api/", "/checkout", "/minha-conta", "/representante/"])

@@ -20,6 +20,9 @@ import {
 } from "./catalog-query";
 import { parseCatalogRpcResult, parseRpcProductList, productCategory, publicCatalogImage } from "./catalog-result";
 import { selectHomepageSections } from "./homepage-layout";
+import { productImageAlt, publicProductImageUrl } from "./product-image-seo";
+import { bannerProxyUrl } from "./banner-media";
+import { homepageImageProxyUrl } from "./homepage-media";
 import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import { createPublicSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readRows, readString } from "./unknown-data";
@@ -109,6 +112,8 @@ export type ProductMediaItem = {
   variantId?: string;
   color?: string;
   poster?: string;
+  isPrimary?: boolean;
+  sortOrder?: number;
 };
 
 export type PublicCmsPage = {
@@ -263,15 +268,18 @@ const safeDestination = (value: string) => {
 const optimizedBundledImage = (path: string) =>
   path.startsWith("/images/") ? path.replace(/\.png$/iu, ".webp") : path;
 
-const publicImage = (path: string) => {
-  if (path.startsWith("/") || path.startsWith("https://")) return optimizedBundledImage(path);
-  const url = process.env.SUPABASE_URL;
-  return url
-    ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "";
+const publicBannerImage = (path: string) => {
+  if (/^\/images\/hero-curtiz-(?:desktop|mobile)\.(?:png|webp|avif)$/iu.test(path)) {
+    return optimizedBundledImage(path);
+  }
+  return bannerProxyUrl(path, process.env.SUPABASE_URL);
 };
 
 const homepageMedia = (path: string) => {
+  return homepageImageProxyUrl(path, process.env.SUPABASE_URL);
+};
+
+const publicHomepageVideo = (path: string) => {
   if (path.startsWith("/") || path.startsWith("https://")) return path;
   const url = process.env.SUPABASE_URL;
   return url
@@ -289,7 +297,9 @@ function mapHomepageItem(value: unknown): HomepageSectionItem | null {
     const path = readString(entry, "path");
     const role = readString(entry, "role") as HomepageSectionItem["media"][number]["role"];
     if (!path || !["desktop", "tablet", "mobile", "video", "background", "thumbnail"].includes(role)) return [];
-    return [{ id: readString(entry, "id"), role, path: homepageMedia(path), mimeType: readString(entry, "mimeType"), ...(readString(entry, "altText") ? { altText: readString(entry, "altText") } : {}), decorative: entry.decorative === true, ...(readNumber(entry, "width") ? { width: readNumber(entry, "width") } : {}), ...(readNumber(entry, "height") ? { height: readNumber(entry, "height") } : {}) }];
+    const publicPath = role === "video" ? publicHomepageVideo(path) : homepageMedia(path);
+    if (!publicPath) return [];
+    return [{ id: readString(entry, "id"), role, path: publicPath, mimeType: readString(entry, "mimeType"), ...(readString(entry, "altText") ? { altText: readString(entry, "altText") } : {}), decorative: entry.decorative === true, ...(readNumber(entry, "width") ? { width: readNumber(entry, "width") } : {}), ...(readNumber(entry, "height") ? { height: readNumber(entry, "height") } : {}) }];
   }) : [];
   const targetRoute = readString(value, "targetRoute");
   const safeRoute = targetRoute.startsWith("/") && !targetRoute.startsWith("//") || targetRoute.startsWith("https://") ? targetRoute : "";
@@ -494,8 +504,8 @@ export const getHomepageData = cache(async (): Promise<HomepageData> => {
         title: readString(row, "title"),
         altText: readString(row, "alt_text") || readString(row, "title"),
         ...(readString(row, "subtitle") ? { subtitle: readString(row, "subtitle") } : {}),
-        desktopImage: publicImage(desktopImage),
-        mobileImage: publicImage(mobileImage),
+        desktopImage: publicBannerImage(desktopImage),
+        mobileImage: publicBannerImage(mobileImage),
         mobileHref: readString(row, "destination_type_mobile") === "none"
           ? null
           : safeDestination(readString(row, "destination_url_mobile") || readString(row, "destination_url")),
@@ -744,8 +754,9 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
   const [mediaResponse, sizeGuideResponse, specificationsResponse, variantColorsResponse] = await Promise.all([
     supabase
       .from("product_media")
-      .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order")
+      .select("id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,is_primary,sort_order")
       .eq("product_id", parsed.data.id)
+      .order("is_primary", { ascending: false })
       .order("sort_order")
       .limit(60),
     supabase
@@ -780,23 +791,28 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
         const type = readString(item, "media_type");
         if (!id || !path || !["image", "video"].includes(type)) return [];
         const posterPath = readString(item, "thumbnail_path");
+        const src = type === "image"
+          ? publicProductImageUrl(path)
+          : publicCatalogImage(path, parsed.data.slug);
+        if (!src) return [];
+        const variantId = readString(item, "variant_id");
+        const color = variantColors.get(variantId) || undefined;
+        const poster = posterPath ? publicProductImageUrl(posterPath) : "";
         return [{
           id,
           type: type as "image" | "video",
-          src: publicCatalogImage(path, parsed.data.slug),
-          alt: readString(item, "alt_text") || parsed.data.name,
+          src,
+          alt: productImageAlt(parsed.data.name, readString(item, "alt_text"), color),
           mimeType: readString(item, "mime_type"),
-          ...(readString(item, "variant_id") ? {
-            variantId: readString(item, "variant_id"),
-            color: variantColors.get(readString(item, "variant_id")) || undefined
-          } : {}),
-          ...(posterPath ? { poster: publicCatalogImage(posterPath, parsed.data.slug) } : {})
+          ...(variantId ? { variantId, ...(color ? { color } : {}) } : {}),
+          ...(poster ? { poster } : {}),
+          ...(item.is_primary === true ? { isPrimary: true } : {})
         }];
       });
   const legacyGallery = parsed.data.images.map((image) => ({
     id: image.id,
-    src: publicCatalogImage(image.path, parsed.data.slug),
-    alt: image.alt
+    src: publicProductImageUrl(image.path),
+    alt: productImageAlt(parsed.data.name, image.alt)
   })).filter((image) => Boolean(image.src));
   const validImageSources = new Set(legacyGallery.map((image) => image.src));
   const validMedia = media.filter((item) => item.type !== "image" || validImageSources.has(item.src));

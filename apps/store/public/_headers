@@ -6,3 +6,27 @@
 
 /*.woff2
   Cache-Control: public, max-age=31536000, immutable
+
+/images/hero-curtiz-desktop.png
+  X-Robots-Tag: noindex, noimageindex
+
+/images/hero-curtiz-desktop.webp
+  X-Robots-Tag: noindex, noimageindex
+
+/images/hero-curtiz-desktop.avif
+  X-Robots-Tag: noindex, noimageindex
+
+/images/hero-curtiz-mobile.png
+  X-Robots-Tag: noindex, noimageindex
+
+/images/hero-curtiz-mobile.webp
+  X-Robots-Tag: noindex, noimageindex
+
+/images/hero-curtiz-mobile.avif
+  X-Robots-Tag: noindex, noimageindex
+
+/images/optimized/hero-mobile.430.avif
+  X-Robots-Tag: noindex, noimageindex
+
+/images/optimized/hero-mobile.640.avif
+  X-Robots-Tag: noindex, noimageindex

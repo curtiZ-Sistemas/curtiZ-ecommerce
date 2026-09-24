@@ -27,6 +27,18 @@ const ageGroup = (value: string): MerchantAgeGroup | undefined =>
     ? value
     : undefined;
 
+function isExcludedImagePath(value: string): boolean {
+  if (!value || value.includes("\\") || /\p{Cc}/u.test(value)) return true;
+  try {
+    const path = value.startsWith("https://") ? new URL(value).pathname : value;
+    const decoded = decodeURIComponent(path).toLocaleLowerCase("en-US");
+    return /(?:^|\/)(?:banners?|banner_hero|campaigns?|cms|homepage-public|logos?|icons?|placeholders?|categories)(?:\/|$)/u.test(decoded)
+      || /hero-curtiz|\/optimized\/hero-|placeholder/u.test(decoded);
+  } catch {
+    return true;
+  }
+}
+
 function merchantItem(value: unknown): MerchantCatalogItem | null {
   if (!isUnknownRecord(value)) return null;
   const variantId = readString(value, "variant_id");
@@ -41,7 +53,9 @@ function merchantItem(value: unknown): MerchantCatalogItem | null {
 
   const path = `/produto/${encodeURIComponent(slug)}`;
   const images = readRows(value.images).flatMap((image) => {
-    const url = publicCatalogImage(readString(image, "path"));
+    const imagePath = readString(image, "path");
+    if (isExcludedImagePath(imagePath)) return [];
+    const url = publicCatalogImage(imagePath);
     const width = Math.round(readNumber(image, "width"));
     const height = Math.round(readNumber(image, "height"));
     return url ? [{ url, width, height }] : [];

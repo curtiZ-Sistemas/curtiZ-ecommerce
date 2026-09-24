@@ -14,6 +14,18 @@ const securityHeaders = [
     : [])
 ];
 
+const noImageIndexHeader = { key: "X-Robots-Tag", value: "noindex, noimageindex" };
+const heroAssetPaths = [
+  "/images/hero-curtiz-desktop.png",
+  "/images/hero-curtiz-desktop.webp",
+  "/images/hero-curtiz-desktop.avif",
+  "/images/hero-curtiz-mobile.png",
+  "/images/hero-curtiz-mobile.webp",
+  "/images/hero-curtiz-mobile.avif",
+  "/images/optimized/hero-mobile.430.avif",
+  "/images/optimized/hero-mobile.640.avif"
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
@@ -30,7 +42,10 @@ const nextConfig: NextConfig = {
     remotePatterns: [{ protocol: "https", hostname: "*.supabase.co" }]
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      ...heroAssetPaths.map((source) => ({ source, headers: [noImageIndexHeader] }))
+    ];
   }
 };
 

@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildGoogleMerchantFeed } from "./google-merchant";
+
+beforeEach(() => vi.stubEnv("SUPABASE_URL", "https://catalog.example.test"));
+afterEach(() => vi.unstubAllEnvs());
 
 const row = {
   variant_id: "34c7651b-c829-4440-a411-419ddf0261a5",
@@ -22,8 +25,8 @@ const row = {
   google_product_category: "Apparel & Accessories > Shoes",
   merchant_identifier_exists: true,
   images: [
-    { path: "https://cdn.example/slide.webp", width: 1000, height: 1000 },
-    { path: "https://cdn.example/slide-lado.webp", width: 1000, height: 1000 }
+    { path: "products/user/product/slide.webp", width: 1000, height: 1000 },
+    { path: "products/user/product/slide-lado.webp", width: 1000, height: 1000 }
   ]
 };
 
@@ -57,10 +60,28 @@ describe("feed do Google Merchant", () => {
   });
 
   it("exclui item sem imagem suficiente e informa motivo agregado", () => {
-    const result = build([{ ...row, images: [{ path: "https://cdn.example/small.webp", width: 320, height: 320 }] }]);
+    const result = build([{ ...row, images: [{ path: "products/user/product/small.webp", width: 320, height: 320 }] }]);
     expect(result.eligible).toBe(0);
     expect(result.rejected).toBe(1);
     expect(result.rejectionCounts["Imagem principal menor que 500 x 500 pixels."]).toBe(1);
+  });
+
+  it("descarta banners inválidos antes de escolher image_link e mantém primeiro a imagem da cor vinculada", () => {
+    const result = build([{
+      ...row,
+      color: "Lilás",
+      images: [
+        { path: "banners/user/desktop-hero.webp", width: 1500, height: 1500 },
+        { path: "https://catalog.example.test/storage/v1/object/public/catalog-public/banners/hero.webp", width: 1500, height: 1500 },
+        { path: "products/user/product/lilas.webp", width: 1000, height: 1000 },
+        { path: "products/user/product/preto.webp", width: 1000, height: 1000 }
+      ]
+    }]);
+
+    expect(result.eligible).toBe(1);
+    expect(result.xml).toContain("<g:image_link>https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/lilas.webp</g:image_link>");
+    expect(result.xml).not.toContain("banners/");
+    expect(result.xml).not.toContain("hero.webp");
   });
 
   it("reflete atualização de preço e aceita catálogo vazio", () => {

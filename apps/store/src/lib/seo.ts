@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { isValidGtin, type Product } from "@curtiz/domain";
+import { isPublicProductImageUrl, productImageAlt } from "./product-image-seo";
 
 export const BRAND_NAME = "curti Z";
 export const BRAND_ALTERNATE_NAMES = ["curtiZ", "Curtiz", "curti z"] as const;
@@ -117,11 +118,12 @@ export function breadcrumbStructuredData(
 
 type ProductSeoDetail = {
   product: Product;
-  gallery: Array<{ src: string }>;
+  gallery: Array<{ id?: string; src: string; alt?: string }>;
   media?: Array<{
     type: "image" | "video";
     src: string;
     alt: string;
+    color?: string;
     poster?: string;
   }>;
   variants: Array<{
@@ -151,7 +153,13 @@ export function productMetadata(detail: ProductSeoDetail): Metadata {
   const path = `/produto/${encodeURIComponent(product.slug)}`;
   const title = `${product.name} | ${BRAND_NAME}`;
   const description = productSeoDescription(product);
-  const image = detail.gallery[0]?.src ?? product.image;
+  const mainImage = detail.gallery.find((entry) => isPublicProductImageUrl(entry.src));
+  const fallbackImage = isPublicProductImageUrl(product.image) ? product.image : undefined;
+  const image = mainImage?.src ?? fallbackImage;
+  const mediaImage = image ? detail.media?.find((entry) => entry.type === "image" && entry.src === image) : undefined;
+  const imageAlt = image
+    ? productImageAlt(product.name, mediaImage?.alt ?? mainImage?.alt, mediaImage?.color)
+    : undefined;
 
   return {
     title: { absolute: title },
@@ -165,7 +173,7 @@ export function productMetadata(detail: ProductSeoDetail): Metadata {
       title,
       description,
       url: officialUrl(path),
-      ...(image ? { images: [{ url: image, alt: `${product.name} da ${BRAND_NAME}` }] } : {})
+      ...(image && imageAlt ? { images: [{ url: image, alt: imageAlt }] } : {})
     },
     twitter: {
       card: image ? "summary_large_image" : "summary",
@@ -186,11 +194,12 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
     detail.variants.find((variant) => variant.stock > 0) ??
     detail.variants[0];
   const priceInCents = selectedVariant?.priceInCents ?? product.priceInCents;
-  const images = [...new Set([detail.gallery[0]?.src, ...detail.gallery.map((image) => image.src), product.image])]
-    .filter((image): image is string => Boolean(image));
-  const absoluteImages = images.map((image) =>
-    image.startsWith("https://") ? image : officialUrl(image)
-  );
+  const imageSources = [...new Set([...detail.gallery.map((image) => image.src), product.image])]
+    .filter((image) => Boolean(image));
+  const absoluteImages = [...new Set(imageSources.flatMap((image) => {
+    const absolute = image.startsWith("https://") ? image : officialUrl(image);
+    return isPublicProductImageUrl(absolute) ? [absolute] : [];
+  }))];
 
   const gtin = selectedVariant?.gtin?.trim();
   const gtinProperty = gtin && isValidGtin(gtin)
