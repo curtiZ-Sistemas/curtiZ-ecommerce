@@ -82,7 +82,7 @@ describe("FAQ da home", () => {
     expect(html).toContain('class="home-faq-inner"');
     expect(html).toContain('class="home-faq-list"');
     expect(html).toContain('class="home-faq-answer"');
-    expect(html).toContain('class="home-faq-toggle" aria-hidden="true">+</span>');
+    expect(html).toContain('class="home-faq-toggle" aria-hidden="true"></span>');
     expect(html).not.toContain("<details open");
   });
 

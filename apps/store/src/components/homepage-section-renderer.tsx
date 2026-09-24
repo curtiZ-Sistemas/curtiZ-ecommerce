@@ -239,7 +239,7 @@ export function HomepageSectionRenderer({
             {questions.map((item) => <details key={item.id} data-home-item={item.id}>
               <summary>
                 <span>{item.title}</span>
-                <span className="home-faq-toggle" aria-hidden="true">+</span>
+                <span className="home-faq-toggle" aria-hidden="true" />
               </summary>
               <div className="home-faq-answer"><p>{item.description}</p></div>
             </details>)}
