@@ -228,20 +228,22 @@ export function HomepageSectionRenderer({
     const questions = section.items.filter((item) => item.title?.trim() && item.description?.trim());
     if (!questions.length) return null;
     return <HomepageMetric versionId={section.versionId}>
-      <section className={`${sectionClass(section)} container home-faq`} aria-labelledby={`${section.id}-title`}>
-        <div className="home-faq-intro">
-          <p className="home-faq-eyebrow">Ajuda rápida</p>
-          <h2 className="home-faq-title" id={`${section.id}-title`}>{section.title ?? "Dúvidas frequentes"}</h2>
-          {section.subtitle?.trim() ? <p className="home-faq-support">{section.subtitle}</p> : null}
-        </div>
-        <div className="home-faq-list">
-          {questions.map((item) => <details key={item.id} data-home-item={item.id}>
-            <summary>
-              <span>{item.title}</span>
-              <span className="home-faq-toggle" aria-hidden="true">+</span>
-            </summary>
-            <div className="home-faq-answer"><p>{item.description}</p></div>
-          </details>)}
+      <section className={`${sectionClass(section)} home-faq`} aria-labelledby={`${section.id}-title`}>
+        <div className="home-faq-inner">
+          <div className="home-faq-intro">
+            <p className="home-faq-eyebrow">Ajuda rápida</p>
+            <h2 className="home-faq-title" id={`${section.id}-title`}>{section.title ?? "Dúvidas frequentes"}</h2>
+            {section.subtitle?.trim() ? <p className="home-faq-support">{section.subtitle}</p> : null}
+          </div>
+          <div className="home-faq-list">
+            {questions.map((item) => <details key={item.id} data-home-item={item.id}>
+              <summary>
+                <span>{item.title}</span>
+                <span className="home-faq-toggle" aria-hidden="true">+</span>
+              </summary>
+              <div className="home-faq-answer"><p>{item.description}</p></div>
+            </details>)}
+          </div>
         </div>
       </section>
     </HomepageMetric>;
