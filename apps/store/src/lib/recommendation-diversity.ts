@@ -8,7 +8,6 @@ type DiversityOptions = {
   currentProduct?: Product;
   limit: number;
   mode?: RecommendationDiversity;
-  relaxFamilies?: boolean;
 };
 
 const normalize = (value: string) => value.toLocaleLowerCase("pt-BR")
@@ -16,46 +15,137 @@ const normalize = (value: string) => value.toLocaleLowerCase("pt-BR")
 
 const colors = new Set([
   "amarelo", "amarela", "azul", "bege", "branco", "branca", "bordo", "caramelo",
-  "cinza", "cobre", "coral", "dourado", "dourada", "estampado", "estampada", "fucsia",
-  "grafite", "laranja", "lilas", "marrom", "nude", "off", "pink", "prata", "prateado",
-  "prateada", "preto", "preta", "rose", "rosa", "roxo", "roxa", "verde", "vermelho",
-  "vermelha"
+  "champagne", "cinza", "cobre", "colorida", "coloridas", "colorido", "coloridos", "coral",
+  "dourado", "dourada", "fucsia", "grafite", "laranja", "lilas", "marrom", "multicolorido",
+  "nude", "off", "pink", "prata", "prateado", "prateada", "preto", "preta", "rose", "rosa",
+  "roxo", "roxa", "verde", "vermelho", "vermelha"
 ]);
 
-function normalizedModel(product: Product): string {
-  return normalize(product.modelSlug ?? "");
+const genericWords = new Set([
+  "a", "as", "ao", "aos", "com", "da", "das", "de", "do", "dos", "e", "em", "feminino",
+  "femininos", "feminina", "femininas", "masculino", "masculinos", "para", "por", "sem",
+  "um", "uma", "uns", "umas", "chinelo", "chinelos", "sandalia", "sandalias", "confortavel",
+  "confortaveis", "conforto", "leve", "leves", "dia", "praia", "moderno", "moderna", "modernos",
+  "modernas", "oferta", "premium", "produto", "produtos", "modelo", "modelos", "unidade", "unidades",
+  "par", "pares", "peca", "pecas", "unitario", "unitaria", "avulso", "avulsa", "completo",
+  "completa", "ideal", "versatil", "versateis"
+]);
+
+const typeTerms: Array<[string, RegExp]> = [
+  ["chinelo", /\bchinelos?\b/iu],
+  ["sandalia", /\bsandalias?\b/iu],
+  ["slide", /\bslides?\b/iu],
+  ["rasteira", /\brasteiras?\b/iu],
+  ["tamanco", /\btamancos?\b/iu],
+  ["mule", /\bmules?\b/iu],
+  ["sapatilha", /\bsapatilhas?\b/iu]
+];
+
+type FamilyFeatures = {
+  model: string;
+  type: string;
+  kit: boolean;
+  kitCount: number | null;
+  finishes: Set<string>;
+  semanticWords: Set<string>;
+};
+
+function productText(product: Product): string {
+  return normalize([product.name, product.variantTitle ?? ""].join(" "));
 }
 
-function baseName(product: Product): string {
-  const variantColors = new Set((product.colors ?? []).map(normalize));
-  if (product.variantColor) variantColors.add(normalize(product.variantColor));
-  const sizes = new Set((product.sizes ?? []).map(normalize));
-  if (product.variantSize) sizes.add(normalize(product.variantSize));
-  return normalize(product.name).split(" ").filter((word) =>
-    !colors.has(word) && !variantColors.has(word) && !sizes.has(word) && !/^\d{1,3}$/u.test(word)
-  ).join(" ").trim();
+function productType(product: Product, text: string): string {
+  const match = typeTerms.find(([, pattern]) => pattern.test(text));
+  if (match) return match[0];
+  const category = normalize(product.categorySlug ?? product.category);
+  if (/\bsandalias?\b/u.test(category)) return "sandalia";
+  if (/\bchinelos?\b/u.test(category)) return "chinelo";
+  return "";
 }
 
-function isKit(product: Product): boolean {
-  return /\b(kit|combo|conjunto|duo|pares)\b/iu.test(`${product.name} ${product.description}`);
+function isKit(product: Product, text = productText(product)): boolean {
+  if (/\b(unitario|unitaria|avulso|avulsa)\b/iu.test(text)) return false;
+  const source = `${text} ${normalize(product.description)}`;
+  return /\b(kit|combo|conjunto|duo|dupla|trio|quarteto)\b/iu.test(source)
+    || /\b\d{1,2}\s*pares?\b/iu.test(source);
 }
 
+function kitQuantity(product: Product, text: string): number | null {
+  const source = `${text} ${normalize(product.description)}`;
+  const kitFirst = source.match(/\b(?:kit|combo|conjunto)\s*(?:com\s*)?(\d{1,2})\b/iu);
+  const countFirst = source.match(/\b(\d{1,2})\s*(?:pares?|unidades?|pecas)\b/iu);
+  const count = Number(kitFirst?.[1] ?? countFirst?.[1]);
+  return Number.isInteger(count) && count > 0 && count <= 24 ? count : null;
+}
+
+function productFinishes(text: string): Set<string> {
+  const finishes = new Set<string>();
+  if (/\b(strass|pedraria|brilho|brilhante|glitter|glitterizado)\b/iu.test(text)) finishes.add("brilho");
+  if (/\b(liso|lisa|lisos|lisas)\b/iu.test(text)) finishes.add("liso");
+  if (/\b(estampa|estampado|estampada|estampados|estampadas|tropical|floral)\b/iu.test(text))
+    finishes.add("estampado");
+  if (/\b(metalizado|metalizada|metalizados|metalizadas)\b/iu.test(text)) finishes.add("metalizado");
+  return finishes;
+}
+
+function familyFeatures(product: Product): FamilyFeatures {
+  const text = productText(product);
+  const productName = normalize([product.name, product.variantTitle ?? ""].join(" "));
+  const type = productType(product, text);
+  const kit = isKit(product, text);
+  const colorsToRemove = new Set((product.colors ?? []).map(normalize));
+  if (product.variantColor) colorsToRemove.add(normalize(product.variantColor));
+  const sizesToRemove = new Set((product.sizes ?? []).map(normalize));
+  if (product.variantSize) sizesToRemove.add(normalize(product.variantSize));
+  const finishes = productFinishes(text);
+  const semanticWords = new Set(productName.split(" ").filter((word) =>
+    word.length > 1
+    && !colors.has(word)
+    && !colorsToRemove.has(word)
+    && !sizesToRemove.has(word)
+    && !genericWords.has(word)
+    && !/^\d{1,3}$/u.test(word)
+    && !typeTerms.some(([, pattern]) => pattern.test(word))
+    && ![...finishes].some((finish) => finish === word || (finish === "brilho" &&
+      ["strass", "pedraria", "brilhante", "glitter", "glitterizado"].includes(word)))
+  ));
+  return {
+    model: normalize(product.modelSlug ?? ""),
+    type,
+    kit,
+    kitCount: kit ? kitQuantity(product, text) : null,
+    finishes,
+    semanticWords
+  };
+}
+
+function overlapRatio(first: ReadonlySet<string>, second: ReadonlySet<string>): number {
+  const overlap = [...first].filter((word) => second.has(word)).length;
+  const union = first.size + second.size - overlap;
+  return union ? overlap / union : 0;
+}
+
+/** Matches the same model and close commercial presentations across color and copy changes. */
 function sameFamily(first: Product, second: Product): boolean {
-  const firstModel = normalizedModel(first);
-  const secondModel = normalizedModel(second);
-  if (firstModel && secondModel) return firstModel === secondModel;
-  const firstCategory = normalize(first.categorySlug ?? first.category);
-  const secondCategory = normalize(second.categorySlug ?? second.category);
-  if (firstCategory && secondCategory && firstCategory !== secondCategory) return false;
-  if (isKit(first) !== isKit(second)) return false;
-  const firstName = baseName(first);
-  const secondName = baseName(second);
-  if (firstName.length >= 6 && firstName === secondName) return true;
-  const firstWords = new Set(firstName.split(" ").filter((word) => word.length > 1));
-  const secondWords = new Set(secondName.split(" ").filter((word) => word.length > 1));
-  if (!firstWords.size || !secondWords.size) return false;
-  const overlap = [...firstWords].filter((word) => secondWords.has(word)).length;
-  return overlap / (firstWords.size + secondWords.size - overlap) >= 0.84;
+  const a = familyFeatures(first);
+  const b = familyFeatures(second);
+  if (a.model && b.model && a.model === b.model) return true;
+  if (a.type && b.type && a.type !== b.type) return false;
+  if (a.kit !== b.kit) return false;
+  if (a.finishes.size && b.finishes.size && ![...a.finishes].some((finish) => b.finishes.has(finish))) return false;
+
+  // Kits with the same footwear type and finish are alternate presentations of one experience,
+  // even when quantity or marketing copy changes (for example, strass versus pedraria).
+  if (a.kit && b.kit && a.type && a.type === b.type
+    && [...a.finishes].some((finish) => b.finishes.has(finish))) return true;
+
+  const semanticSimilarity = overlapRatio(a.semanticWords, b.semanticWords);
+  if (semanticSimilarity >= 0.6) return true;
+  return !a.semanticWords.size && !b.semanticWords.size
+    && a.type === b.type && a.kit === b.kit && a.kitCount === b.kitCount
+    && a.finishes.size === b.finishes.size
+    && !(a.model && b.model && a.model !== b.model)
+    && [...a.finishes].every((finish) => b.finishes.has(finish));
 }
 
 function imageIdentity(product: Product): string {
@@ -69,8 +159,17 @@ function imageIdentity(product: Product): string {
   }
 }
 
-function theme(product: Product): string {
-  return normalize(product.categorySlug ?? product.category);
+function themes(product: Product): Set<string> {
+  const category = normalize(product.categorySlug ?? product.category);
+  const text = `${category} ${productText(product)}`;
+  const result = new Set<string>();
+  if (/\b(praia|piscina|beach|pool)\b/iu.test(text)) result.add("praia_piscina");
+  if (/\b(strass|pedraria|brilho|brilhante|glitter|glitterizado)\b/iu.test(text)) result.add("brilho");
+  if (/\b(estampa|estampado|estampada|estampados|estampadas|tropical|floral|animal print)\b/iu.test(text))
+    result.add("estampados");
+  if (/\b(dia a dia|casual|cotidiano)\b/iu.test(text)) result.add("dia_a_dia");
+  if (/\b(kit|combo|conjunto|duo|dupla|trio|quarteto)\b/iu.test(text)) result.add("kits");
+  return result;
 }
 
 function colorSet(product: Product): Set<string> {
@@ -80,30 +179,31 @@ function colorSet(product: Product): Set<string> {
 }
 
 function similarityPenalty(product: Product, selected: readonly Product[]): number {
+  const features = familyFeatures(product);
+  const productThemes = themes(product);
+  const productColors = colorSet(product);
   let penalty = 0;
   for (const existing of selected) {
-    if (theme(product) && theme(product) === theme(existing)) penalty += 1.5;
-    if (isKit(product) === isKit(existing)) penalty += 0.35;
-    const firstWords = new Set(baseName(product).split(" ").filter(Boolean));
-    const secondWords = new Set(baseName(existing).split(" ").filter(Boolean));
-    const overlap = [...firstWords].filter((word) => secondWords.has(word)).length;
-    const titleSimilarity = firstWords.size + secondWords.size - overlap
-      ? overlap / (firstWords.size + secondWords.size - overlap) : 0;
-    if (titleSimilarity >= 0.4) penalty += titleSimilarity * 2;
-    const firstColors = colorSet(product);
-    const secondColors = colorSet(existing);
-    const colorOverlap = [...firstColors].filter((color) => secondColors.has(color)).length;
-    const colorSimilarity = firstColors.size + secondColors.size - colorOverlap
-      ? colorOverlap / (firstColors.size + secondColors.size - colorOverlap) : 0;
-    if (colorSimilarity > 0) penalty += colorSimilarity * 2;
+    const existingFeatures = familyFeatures(existing);
+    const sharedThemes = [...productThemes].filter((theme) => themes(existing).has(theme)).length;
+    if (sharedThemes) penalty += sharedThemes * 1.25;
+    if (features.kit && existingFeatures.kit) {
+      penalty += features.kitCount === existingFeatures.kitCount ? 1.5 : 0.75;
+    }
+    const finishSimilarity = overlapRatio(features.finishes, existingFeatures.finishes);
+    if (finishSimilarity) penalty += finishSimilarity * 1.75;
+    const titleSimilarity = overlapRatio(features.semanticWords, existingFeatures.semanticWords);
+    if (titleSimilarity >= 0.25) penalty += titleSimilarity * 2;
+    const colorSimilarity = overlapRatio(productColors, colorSet(existing));
+    if (colorSimilarity) penalty += colorSimilarity * 1.5;
   }
   return penalty;
 }
 
-/** Keeps source order as the relevance ranking and progressively relaxes only diversity limits. */
+/** Keeps ranking order as relevance, then selects distinct commercial families and images. */
 export function diversifyRecommendations(
   candidates: readonly Product[],
-  { excludeProductIds = [], currentProduct, limit, mode = "balanced", relaxFamilies = false }: DiversityOptions
+  { excludeProductIds = [], currentProduct, limit, mode = "balanced" }: DiversityOptions
 ): Product[] {
   const target = Math.max(0, Math.min(24, limit));
   if (!target) return [];
@@ -111,53 +211,41 @@ export function diversifyRecommendations(
   if (currentProduct) excludedIds.add(currentProduct.id);
   const excludedIdentities = new Set(currentProduct?.recommendationIdentity
     ? [currentProduct.recommendationIdentity] : []);
+  const currentImage = mode === "product_detail" && currentProduct ? imageIdentity(currentProduct) : "";
   const eligible = appendEligibleRecommendations([], candidates.filter((product) =>
-    !product.recommendationIdentity || !excludedIdentities.has(product.recommendationIdentity)),
+    (!product.recommendationIdentity || !excludedIdentities.has(product.recommendationIdentity))
+    && !(mode === "product_detail" && currentProduct && sameFamily(product, currentProduct))
+    && !(currentImage && imageIdentity(product) === currentImage)),
   excludedIds, candidates.length);
   if (mode !== "product_detail") return eligible.slice(0, target);
 
   const imageCounts = new Map<string, number>();
   for (const product of eligible) {
     const image = imageIdentity(product);
-    imageCounts.set(image, (imageCounts.get(image) ?? 0) + 1);
+    if (image) imageCounts.set(image, (imageCounts.get(image) ?? 0) + 1);
   }
 
-  const select = (maxPerFamily: number, maxPerTheme: number, allowRepeatedImage: boolean) => {
-    const selected: Product[] = [];
-    const remaining = [...eligible];
-    while (selected.length < target && remaining.length) {
-      const familyCounts = (candidate: Product) => selected.filter((item) => sameFamily(candidate, item)).length;
-      const themeCounts = (candidate: Product) => selected.filter((item) => theme(candidate) === theme(item)).length;
-      const available = remaining.filter((candidate) =>
-        familyCounts(candidate) < maxPerFamily
-        && themeCounts(candidate) < maxPerTheme
-        && (allowRepeatedImage || !selected.some((item) => imageIdentity(candidate) === imageIdentity(item)))
-      );
-      if (!available.length) break;
-      const chosen = available.reduce((best, candidate) => {
-        const candidateImageCount = imageCounts.get(imageIdentity(candidate)) ?? 0;
-        const bestImageCount = imageCounts.get(imageIdentity(best)) ?? 0;
-        const candidateImagePenalty = candidateImageCount > 1 ? candidateImageCount * 2 : 0;
-        const bestImagePenalty = bestImageCount > 1 ? bestImageCount * 2 : 0;
-        const candidateScore = eligible.indexOf(candidate) + similarityPenalty(candidate, selected)
-          + candidateImagePenalty;
-        const bestScore = eligible.indexOf(best) + similarityPenalty(best, selected) + bestImagePenalty;
-        return candidateScore < bestScore ? candidate : best;
-      });
-      selected.push(chosen);
-      remaining.splice(remaining.indexOf(chosen), 1);
-    }
-    return selected;
-  };
-
-  const passes = [
-    select(1, 2, false),
-    select(1, Number.POSITIVE_INFINITY, false),
-    select(2, Number.POSITIVE_INFINITY, false)
-  ];
-  if (relaxFamilies) passes.push(
-    select(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, false),
-    select(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, true)
-  );
-  return passes.find((products) => products.length >= target) ?? passes.at(-1) ?? [];
+  const remaining = [...eligible];
+  const selected: Product[] = [];
+  while (selected.length < target && remaining.length) {
+    const available = remaining.filter((candidate) => {
+      const image = imageIdentity(candidate);
+      return !selected.some((item) => sameFamily(candidate, item)
+        || (image && imageIdentity(item) === image));
+    });
+    if (!available.length) break;
+    const chosen = available.reduce((best, candidate) => {
+      const candidateImageCount = imageCounts.get(imageIdentity(candidate)) ?? 0;
+      const bestImageCount = imageCounts.get(imageIdentity(best)) ?? 0;
+      const candidateImagePenalty = candidateImageCount > 1 ? Math.min(8, candidateImageCount - 1) * 2 : 0;
+      const bestImagePenalty = bestImageCount > 1 ? Math.min(8, bestImageCount - 1) * 2 : 0;
+      const candidateScore = eligible.indexOf(candidate) + similarityPenalty(candidate, selected)
+        + candidateImagePenalty;
+      const bestScore = eligible.indexOf(best) + similarityPenalty(best, selected) + bestImagePenalty;
+      return candidateScore < bestScore ? candidate : best;
+    });
+    selected.push(chosen);
+    remaining.splice(remaining.indexOf(chosen), 1);
+  }
+  return selected;
 }

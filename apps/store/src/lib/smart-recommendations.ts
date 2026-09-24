@@ -150,8 +150,7 @@ export async function loadSmartRecommendations({ source, sessionId, recent = [],
   if (products.length < target) await request("newest");
   if (diversity === "product_detail") {
     products = diversifyRecommendations(candidatePool, {
-      excludeProductIds: [...excluded], currentProduct, limit: target,
-      mode: diversity, relaxFamilies: true
+      excludeProductIds: [...excluded], currentProduct, limit: target, mode: diversity
     });
   }
   return { products, hasMore: false };

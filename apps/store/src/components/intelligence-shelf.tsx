@@ -100,7 +100,7 @@ export function IntelligenceShelf({
           ];
           const merged = diversity === "product_detail"
             ? diversifyRecommendations(mergedProducts, {
-                excludeProductIds, currentProduct: productContext, limit, mode: diversity, relaxFamilies: true
+                excludeProductIds, currentProduct: productContext, limit, mode: diversity
               })
             : mergedProducts;
           productsRef.current = merged;
@@ -196,7 +196,7 @@ export function IntelligenceShelf({
   if (!products.length) return null;
   const visibleProducts = diversity === "product_detail"
     ? diversifyRecommendations(products, {
-        excludeProductIds, currentProduct: productContext, limit, mode: diversity, relaxFamilies: true
+        excludeProductIds, currentProduct: productContext, limit, mode: diversity
       })
     : products;
   return (
