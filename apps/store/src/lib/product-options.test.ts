@@ -5,6 +5,7 @@ import {
   initialProductSelection,
   mediaForColor,
   preferredColorImage,
+  productDisplayTitleForColor,
   resolveProductColor
 } from "./product-options";
 
@@ -64,7 +65,8 @@ describe("opções comerciais do produto", () => {
   it("abre a apresentação Lilás com seis tamanhos sem escolher numeração", () => {
     const variants = ["Lilás", "Bege", "Preto", "Azul"].flatMap((color) =>
       ["34", "35", "36", "37", "38", "39"].map((size) => ({
-        id: `${color}-${size}`, color, size, stock: size === "34" ? 0 : 3
+        id: `${color}-${size}`, color, size, stock: size === "34" ? 0 : 3,
+        displayTitle: `Chinelo Feminino Slim Liso ${color} — Leve e Confortável`
       }))
     );
     const media = [
@@ -77,6 +79,12 @@ describe("opções comerciais do produto", () => {
     expect(initialProductSelection(variants, "removed", "Lilás")).toEqual({ color: "Lilás", size: "" });
     expect(preferredColorImage(media, "Lilás", "Lilás-35", "lilas.webp", "bege.webp"))
       .toBe("lilas.webp");
+    expect(productDisplayTitleForColor(variants, "Lilás", "Chinelo Feminino Slim Liso"))
+      .toBe("Chinelo Feminino Slim Liso Lilás — Leve e Confortável");
+    expect(productDisplayTitleForColor(variants, "Preto", "Chinelo Feminino Slim Liso"))
+      .toBe("Chinelo Feminino Slim Liso Preto — Leve e Confortável");
+    expect(productDisplayTitleForColor(variants, "Lilás", "Chinelo Feminino Slim Liso"))
+      .toBe(productDisplayTitleForColor(variants.filter((variant) => variant.size !== "34"), "Lilás", "Chinelo Feminino Slim Liso"));
   });
 
   it("seleciona a variação indicada pelo link do feed", () => {

@@ -736,7 +736,8 @@ export function ProductManagement({
         stock: variant.available,
         active: variant.active,
         gtin: variant.gtin ?? "",
-        mpn: variant.mpn ?? ""
+        mpn: variant.mpn ?? "",
+        displayTitle: variant.displayTitle ?? null
       })))
     );
     setSelectedCategoryIds(editing.categoryIds?.length ? editing.categoryIds : editing.categoryId ? [editing.categoryId] : []);

@@ -1,6 +1,7 @@
 export type ProductOptionVariant = {
   id?: string;
   color: string;
+  displayTitle?: string;
   colorHex?: string;
   colorHexSecondary?: string;
   size: string;
@@ -60,6 +61,15 @@ export function initialProductSelection(
     color: firstAvailable.color,
     size: availableSizes.length === 1 ? availableSizes[0] ?? "" : ""
   };
+}
+
+export function productDisplayTitleForColor(
+  variants: readonly ProductOptionVariant[],
+  color: string,
+  productName: string
+) {
+  return variants.find((variant) => variant.color === color && variant.displayTitle?.trim())?.displayTitle?.trim()
+    || productName;
 }
 
 export function galleryWindowStart(imageCount: number, requestedStart: number): number {

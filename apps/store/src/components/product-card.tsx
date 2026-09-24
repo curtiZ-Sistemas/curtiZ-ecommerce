@@ -48,6 +48,7 @@ export function ProductCard({
   const feedbackTimerRef = useRef<number | null>(null);
   const itemKey = storefrontItemKey(product);
   const href = storefrontProductHref(product);
+  const displayName = product.variantTitle?.trim() || product.name;
   const responsiveImage = bundledProductSrcSet(product.image);
   const responsiveSizes = imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw";
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
@@ -90,7 +91,7 @@ export function ProductCard({
               src={product.image}
               srcSet={responsiveImage}
               sizes={responsiveSizes}
-              alt={`${product.name} da curti Z`}
+              alt={`${displayName} da curti Z`}
               width={720}
               height={720}
               loading={priority ? "eager" : "lazy"}
@@ -101,7 +102,7 @@ export function ProductCard({
         ) : (
           <Image
             src={product.image}
-            alt={`${product.name} da curti Z`}
+            alt={`${displayName} da curti Z`}
             width={360}
             height={280}
             sizes={responsiveSizes}
@@ -114,7 +115,7 @@ export function ProductCard({
         type="button"
         onClick={() => toggle(product)}
         aria-label={
-          favorite ? `Remover ${product.name} dos favoritos` : `Favoritar ${product.name}`
+          favorite ? `Remover ${displayName} dos favoritos` : `Favoritar ${displayName}`
         }
         aria-pressed={favorite}
       >
@@ -127,21 +128,21 @@ export function ProductCard({
         disabled={product.stock < 1 || added}
         aria-label={
           product.stock < 1
-            ? `${product.name} sem estoque`
+            ? `${displayName} sem estoque`
             : added
-              ? `${product.name} adicionado ao carrinho`
-              : needsSelection ? `Escolher cor e tamanho de ${product.name}` : `Adicionar ${product.name} ao carrinho`
+              ? `${displayName} adicionado ao carrinho`
+              : needsSelection ? `Escolher cor e tamanho de ${displayName}` : `Adicionar ${displayName} ao carrinho`
         }
       >
         {added ? <Check aria-hidden="true" /> : <ShoppingCart aria-hidden="true" />}
       </button>
       <span className="sr-only" role="status" aria-live="polite">
-        {added ? `${product.name} adicionado ao carrinho.` : ""}
+        {added ? `${displayName} adicionado ao carrinho.` : ""}
       </span>
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
-          <Link href={href} title={product.name} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
+          <Link href={href} title={displayName} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{displayName}</Link>
         </h3>
         {display?.rating !== false && product.reviews > 0 && <div
           className="rating"

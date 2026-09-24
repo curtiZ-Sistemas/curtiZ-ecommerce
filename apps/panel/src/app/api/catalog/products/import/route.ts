@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         merchantGender: product.merchantGender, merchantAgeGroup: product.merchantAgeGroup,
         googleProductCategory: product.googleProductCategory, merchantIdentifierExists: product.merchantIdentifierExists,
         stockReason: "Estoque definido pela importação de produtos",
-        variants: product.variants.map((variant) => ({ sku: variant.sku, color: variant.color, colorHex: variant.colorHex,
+        variants: product.variants.map((variant) => ({ sku: variant.sku, color: variant.color, displayTitle: variant.displayTitle, colorHex: variant.colorHex,
           colorHexSecondary: variant.colorHexSecondary, size: variant.size, priceInCents: variant.priceInCents,
           costInCents: variant.costInCents, stock: variant.stock, active: variant.active, gtin: variant.gtin, mpn: variant.mpn })),
         sizeGuide: product.sizeGuide, specifications: product.specifications

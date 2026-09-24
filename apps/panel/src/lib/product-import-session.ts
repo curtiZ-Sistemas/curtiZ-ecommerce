@@ -1,7 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
-import type { ProductImportSessionPayload } from "./product-import";
+import type { ProductImportBatch, ProductImportSessionPayload } from "./product-import";
 
 const PRODUCT_IMPORT_SCHEMA = "curtiz_import_v1";
 const PRODUCT_IMPORT_MAX_PRODUCTS = 100;
@@ -13,6 +13,19 @@ export const SHOPEE_IMAGE_HOSTS = new Set(["down-sg.img.susercontent.com"]);
 export function productImportTaxonomySlug(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR")
     .replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 180);
+}
+
+export function normalizeProductImportDisplayTitle(value: unknown, productName: string, color: string) {
+  const supplied = typeof value === "string"
+    ? value.replace(/<[^>]*>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 160).trim()
+    : "";
+  if (supplied.length >= 3) return supplied;
+
+  const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR");
+  const fallback = normalize(productName).includes(normalize(color))
+    ? productName.trim()
+    : `${productName.trim()} ${color.trim()}`;
+  return fallback.slice(0, 160).trim();
 }
 
 export function isAllowedShopeeImageUrl(value: string) {
@@ -31,7 +44,7 @@ const issueSchema = z.object({
   message: z.string().min(1).max(1_000), productKey: z.string().max(120).optional()
 }).strict();
 const variantSchema = z.object({
-  variationKey: z.string().max(160), color: z.string().min(1).max(80),
+  variationKey: z.string().max(160), displayTitle: z.string().trim().max(160).default(""), color: z.string().min(1).max(80),
   colorHex: z.string().regex(/^#[0-9A-F]{6}$/u), colorHexSecondary: z.union([z.literal(""), z.string().regex(/^#[0-9A-F]{6}$/u)]),
   size: z.string().min(1).max(40), sku: z.string().min(2).max(140), active: z.boolean(),
   stock: z.number().int().min(0).max(10_000_000), priceInCents: nullableMoney, costInCents: nullableMoney,
@@ -80,11 +93,21 @@ const sessionPayloadSchema = z.object({
 export function parseProductImportSessionPayload(value: unknown): ProductImportSessionPayload {
   const parsed = sessionPayloadSchema.safeParse(value);
   if (!parsed.success) throw new Error("A sessão de importação contém dados inválidos.");
+  const normalizedBatch: ProductImportBatch = {
+    ...parsed.data.batch,
+    products: parsed.data.batch.products.map((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => ({
+        ...variant,
+        displayTitle: normalizeProductImportDisplayTitle(variant.displayTitle, product.name, variant.color)
+      }))
+    }))
+  };
   const variationCount = parsed.data.batch.products.reduce((total, product) => total + product.variants.length, 0);
   const imageCount = parsed.data.batch.products.reduce((total, product) => total + product.images.length, 0);
   if (variationCount > PRODUCT_IMPORT_MAX_VARIANTS || imageCount > PRODUCT_IMPORT_MAX_IMAGES ||
       parsed.data.batch.products.some((product) => !(product.key in parsed.data.references))) {
     throw new Error("A sessão de importação excede os limites permitidos.");
   }
-  return parsed.data;
+  return { ...parsed.data, batch: normalizedBatch };
 }

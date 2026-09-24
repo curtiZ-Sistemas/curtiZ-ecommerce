@@ -143,10 +143,12 @@ describe("public storefront components", () => {
       const html = renderToStaticMarkup(<ProductCard product={{
         id: "produto-1", storefrontKey: `produto-1:${slug}`, variantId: `variante-${slug}`,
         variantColor: color, variantSize: "37", slug: "chinelo-essential", name: "Chinelo Essential",
+        variantTitle: `Chinelo Essential ${color} — Leve e Confortável`,
         category: "Chinelos", description: "Produto", priceInCents: 6490,
         rating: 0, reviews: 0, colors: [color], sizes: ["37"], image, stock: 2
       }} />);
       expect(html).toContain(image);
+      expect(html).toContain(`Chinelo Essential ${color} — Leve e Confortável`);
       expect(html).toContain(`/produto/chinelo-essential?variant=variante-${slug}&amp;color=${color}`);
     }
   });

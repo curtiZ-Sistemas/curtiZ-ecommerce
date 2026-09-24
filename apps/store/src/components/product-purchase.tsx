@@ -20,6 +20,7 @@ import {
   initialProductSelection,
   mediaForColor,
   preferredColorImage,
+  productDisplayTitleForColor,
   resolveProductColor
 } from "@/lib/product-options";
 import { useCart } from "./cart-provider";
@@ -75,6 +76,7 @@ export function ProductPurchase({
   const selectedVariant = variants.find(
     (variant) => variant.color === color && variant.size === size
   );
+  const selectedDisplayTitle = productDisplayTitleForColor(variants, color, product.name);
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
   const currentStock = selectedVariant?.stock;
   const favoriteProduct: Product = selectedVariant
@@ -85,7 +87,8 @@ export function ProductPurchase({
         ...(selectedVariant.sku ? { sku: selectedVariant.sku } : {}),
         variantColor: selectedVariant.color,
         variantSize: selectedVariant.size,
-        name: `${product.name} — ${selectedVariant.color}`,
+        name: product.name,
+        ...(selectedVariant.displayTitle?.trim() ? { variantTitle: selectedVariant.displayTitle.trim() } : {}),
         image: selectedVariant.image ?? product.image,
         priceInCents: currentPrice,
         colors: [selectedVariant.color],
@@ -107,7 +110,7 @@ export function ProductPurchase({
         ?? variants.find((item) => item.id === initialVariantId && item.color === color)
         ?? variants.find((item) => item.color === color && item.image);
       const colorImage = colorVariant?.image ? {
-        id: `${colorVariant.id}-variant`, src: colorVariant.image, alt: product.name,
+        id: `${colorVariant.id}-variant`, src: colorVariant.image, alt: selectedDisplayTitle,
         type: "image" as const, mimeType: "image/webp"
       } : undefined;
       return [
@@ -118,7 +121,7 @@ export function ProductPurchase({
         (image, index, list) => list.findIndex((candidate) => candidate.src === image.src) === index
       );
     },
-    [detail.media, gallery, product.id, product.image, product.name, color, variants, selectedVariant]
+    [detail.media, gallery, product.id, product.image, product.name, selectedDisplayTitle, color, variants, selectedVariant]
   );
   const selectedMedia = images.find((item) => item.src === selectedImage) ?? images[0];
   const activeImageIndex = Math.max(0, images.findIndex((image) => image.src === selectedImage));
@@ -253,11 +256,11 @@ export function ProductPurchase({
             onPointerDown={startGallerySwipe}
             onPointerUp={(event) => { endGallerySwipe(event); trackIntelligence({ type: "image_interaction", productId: product.id }); }}
             onPointerCancel={() => { swipeStart.current = null; }}
-            aria-label={`Abrir visualização de ${product.name}`}
+            aria-label={`Abrir visualização de ${selectedDisplayTitle}`}
           >
             <Image
               src={selectedMedia?.src ?? selectedImage}
-              alt={`${product.name} da curti Z`}
+              alt={`${selectedDisplayTitle} da curti Z`}
               width={760}
               height={620}
               sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 1024px) 52vw, 560px"
@@ -319,7 +322,7 @@ export function ProductPurchase({
       {lightboxOpen && selectedMedia?.type !== "video" ? (
         <ProductImageViewer
           src={selectedMedia?.src ?? selectedImage}
-          alt={`${product.name} da curti Z`}
+          alt={`${selectedDisplayTitle} da curti Z`}
           imageIndex={activeImageIndex}
           imageCount={images.length}
           onClose={closeLightbox}
@@ -333,7 +336,7 @@ export function ProductPurchase({
         <div className="product-summary-heading">
           <div>
             <p className="eyebrow">{product.category}</p>
-            <h1>{product.name}</h1>
+            <h1>{selectedDisplayTitle}</h1>
           </div>
           <button
             className={favorite ? "product-favorite active" : "product-favorite"}
@@ -427,7 +430,7 @@ export function ProductPurchase({
             </p>
           ) : null}
           <p className="sr-only" role="status" aria-live="polite">
-            {added ? `${product.name} adicionado ao carrinho.` : ""}
+            {added ? `${selectedDisplayTitle} adicionado ao carrinho.` : ""}
           </p>
           <button
             className="primary-button full-button buy-now-button"

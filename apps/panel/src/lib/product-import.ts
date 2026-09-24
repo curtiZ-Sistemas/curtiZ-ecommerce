@@ -3,7 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { Workbook, type Cell, type Worksheet } from "exceljs";
 import BaseXform from "exceljs/lib/xlsx/xform/base-xform";
-import { isAllowedShopeeImageUrl, productImportTaxonomySlug } from "./product-import-session";
+import { isAllowedShopeeImageUrl, normalizeProductImportDisplayTitle, productImportTaxonomySlug } from "./product-import-session";
 
 export { isAllowedShopeeImageUrl, parseProductImportSessionPayload } from "./product-import-session";
 
@@ -22,6 +22,7 @@ export type ProductImportIssue = {
 
 export type ProductImportVariant = {
   variationKey: string;
+  displayTitle: string;
   color: string;
   colorHex: string;
   colorHexSecondary: string;
@@ -365,7 +366,9 @@ export async function parseProductImportWorkbook(input: ArrayBuffer | Uint8Array
     usedSkus.add(sku.toLocaleUpperCase("pt-BR"));
     if (color.tertiary) productIssue(product, "warning", "TERTIARY_COLOR_IGNORED", `A terceira cor de ${color.name} não é suportada e foi ignorada.`);
     product.variants.push({
-      variationKey: cleanText(row.variacao_chave, 160), color: color.name,
+      variationKey: cleanText(row.variacao_chave, 160),
+      displayTitle: normalizeProductImportDisplayTitle(row.titulo_variacao, product.name, color.name),
+      color: color.name,
       colorHex: color.primary, colorHexSecondary: color.secondary, size, sku,
       active: booleanValue(row.ativo, true),
       stock: numberValue(row.estoque, `estoque de ${key}`, { integer: true, minimum: 0 }) ?? 0,

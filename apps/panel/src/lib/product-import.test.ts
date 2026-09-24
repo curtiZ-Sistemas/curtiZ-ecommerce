@@ -80,8 +80,43 @@ describe("product XLSX import", () => {
     const batch = await parseProductImportWorkbook(await minimalWorkbook());
     const product = batch.products[0]!;
     expect(product).toMatchObject({ description: "", shortDescription: "", costInCents: null, weightGrams: null, sizeGuide: [], specifications: [] });
+    expect(product.variants[0]?.displayTitle).toBe(`${product.name} ${product.variants[0]?.color}`);
     expect(product.variants[0]).toMatchObject({ stock: 0, color: "Lilás", colorHex: "#C8A2C8", colorHexSecondary: "" });
     expect(product.variants[0]?.sku).toBe(generatedImportSku("PROD-1", "Lilás", "35"));
+  });
+
+  it("reads optional variation titles, strips HTML, and bounds the title length", async () => {
+    const bytes = await minimalWorkbook(PRODUCT_IMPORT_SCHEMA, false, [], (workbook) => {
+      const variants = workbook.getWorksheet("Variacoes")!;
+      variants.getCell("L1").value = "titulo_variacao";
+      variants.getCell("L2").value = " <strong>Chinelo Feminino Lilás</strong> — Leve e Confortável ";
+    });
+    const product = (await parseProductImportWorkbook(bytes)).products[0]!;
+    expect(product.variants[0]?.displayTitle).toBe("Chinelo Feminino Lilás — Leve e Confortável");
+
+    const duplicateColor = await minimalWorkbook(PRODUCT_IMPORT_SCHEMA, false, [], (workbook) => {
+      workbook.getWorksheet("Produtos")!.getCell("D2").value = "Produto mínimo Lilás";
+    });
+    const productAlreadyNamesColor = (await parseProductImportWorkbook(duplicateColor)).products[0]!;
+    expect(productAlreadyNamesColor.variants[0]?.displayTitle).toBe(productAlreadyNamesColor.name);
+
+    const oversized = await minimalWorkbook(PRODUCT_IMPORT_SCHEMA, false, [], (workbook) => {
+      const variants = workbook.getWorksheet("Variacoes")!;
+      variants.getCell("L1").value = "titulo_variacao";
+      variants.getCell("L2").value = "T".repeat(200);
+    });
+    expect((await parseProductImportWorkbook(oversized)).products[0]?.variants[0]?.displayTitle).toHaveLength(160);
+  });
+
+  it("keeps variation sessions without displayTitle compatible", async () => {
+    const batch = await parseProductImportWorkbook(await minimalWorkbook());
+    const { displayTitle: _displayTitle, ...legacyVariant } = batch.products[0]!.variants[0]!;
+    const legacyPayload = {
+      batch: { ...batch, products: [{ ...batch.products[0]!, variants: [legacyVariant] }] },
+      references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000001", modelId: null, collectionId: null } }
+    };
+    expect(parseProductImportSessionPayload(legacyPayload).batch.products[0]?.variants[0]?.displayTitle)
+      .toBe("Produto mínimo Lilás");
   });
 
   it("preserves color image associations and imports the optional product sheets", async () => {

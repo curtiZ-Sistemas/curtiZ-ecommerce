@@ -30,6 +30,7 @@ export type ManagedVariant = {
   costInCents?: number | null;
   gtin?: string;
   mpn?: string;
+  displayTitle?: string | null;
 };
 
 export type ManagedProduct = {
@@ -132,6 +133,7 @@ export type EditableVariant = {
   active: boolean;
   gtin: string;
   mpn: string;
+  displayTitle?: string | null;
 };
 
 export function withVariantClientKeys(variants: EditableVariant[]): EditableVariant[] {

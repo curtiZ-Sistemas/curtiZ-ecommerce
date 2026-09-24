@@ -69,6 +69,7 @@ export type ProductVariantOption = {
   color: string;
   colorHex?: string;
   colorHexSecondary?: string;
+  displayTitle?: string;
   size: string;
   priceInCents: number;
   stock: number;
@@ -668,6 +669,7 @@ const productDetailSchema = z.object({
       sku: z.string().optional(),
       gtin: z.string().nullable().optional(),
       mpn: z.string().nullable().optional(),
+      displayTitle: z.string().nullable().optional(),
       color: z.string(),
       colorHex: z.string().nullable().optional(),
       colorHexSecondary: z.string().nullable().optional(),
@@ -897,6 +899,7 @@ export const getPublicProduct = cache(async (slug: string): Promise<ProductDetai
       ...(variant.sku ? { sku: variant.sku } : {}),
       ...(variant.gtin ? { gtin: variant.gtin } : {}),
       ...(variant.mpn ? { mpn: variant.mpn } : {}),
+      ...(variant.displayTitle?.trim() ? { displayTitle: variant.displayTitle.trim() } : {}),
       color: variant.color,
       ...(variant.colorHex ? { colorHex: variant.colorHex } : {}),
       ...(secondaryColors.get(variant.id)

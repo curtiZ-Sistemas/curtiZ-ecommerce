@@ -47,7 +47,8 @@ const variantSchema = z.object({
   stock: z.number().int().min(0).max(999_999),
   active: z.boolean(),
   gtin: z.string().trim().max(50),
-  mpn: z.string().trim().max(70)
+  mpn: z.string().trim().max(70),
+  displayTitle: z.string().trim().max(160).nullable().optional()
 });
 const sizeGuideEntrySchema = z.object({
   size: z.string().trim().min(1).max(40),
@@ -335,7 +336,8 @@ const serializeProducts = (data: unknown, mediaUrl: (path: string) => string) =>
         reserved,
         sellable: Math.max(available, 0),
         gtin: text(variant.barcode),
-        mpn: text(variant.merchant_mpn)
+        mpn: text(variant.merchant_mpn),
+        displayTitle: text(variant.display_title)
       };
     });
     const category = rows(product.categories)[0] ?? record(product.categories);
@@ -595,7 +597,7 @@ export async function GET(request: NextRequest) {
       supabaseUrl: process.env.SUPABASE_URL
     });
   const legacyProductSelect =
-    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,color_hex_secondary,size,price_override,cost_override,active,barcode,merchant_mpn,inventory(available_quantity,reserved_quantity))";
+    "id,name,slug,short_description,description,category_id,model_id,collection_id,status,status_reason,featured,base_price,compare_at_price,cost_price,weight_grams,height_cm,width_cm,length_cm,seo_title,seo_description,merchant_condition,merchant_gender,merchant_age_group,google_product_category,merchant_identifier_exists,categories!products_category_id_fkey(name),product_images(id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height),product_media(id,variant_id,media_type,storage_path,thumbnail_path,alt_text,mime_type,sort_order,is_primary),product_variants(id,sku,color_name,color_hex,color_hex_secondary,size,price_override,cost_override,active,barcode,merchant_mpn,display_title,inventory(available_quantity,reserved_quantity))";
   const legacyProductSelectWithoutSecondary = legacyProductSelect.replace(
     ",color_hex_secondary",
     ""
@@ -605,6 +607,7 @@ export async function GET(request: NextRequest) {
   const productSelectWithoutSpecifications =
     `${legacyProductSelect},product_categories(category_id,is_primary,categories(id,name)),product_size_guide_entries(size,measurement_cm,position)`;
   const productSelect = `${productSelectWithoutSpecifications},product_specifications(label,value,position)`;
+  const productSelectWithoutDisplayTitle = productSelect.replace(",display_title", "");
   const productSelectLegacyColors =
     `${legacyProductSelectWithoutSecondary},product_categories(category_id,is_primary,categories(id,name)),product_size_guide_entries(size,measurement_cm,position),product_specifications(label,value,position)`;
 
@@ -648,6 +651,7 @@ export async function GET(request: NextRequest) {
   ): Promise<T> => {
     const selections = [
       ["productSelect", productSelect],
+      ["productSelectWithoutDisplayTitle", productSelectWithoutDisplayTitle],
       ["productSelectLegacyColors", productSelectLegacyColors],
       ["productSelectWithoutSpecifications", productSelectWithoutSpecifications],
       ["legacyProductSelect", legacyProductSelect],

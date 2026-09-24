@@ -58,6 +58,8 @@ const normalizedProduct = {
   sizeGuide: [{ size: "35", measurementCm: 23.5 }], specifications: [{ label: "Material", value: "Borracha" }], issues: []
 };
 
+Object.assign(normalizedProduct.variants[0]!, { displayTitle: "Chinelo Feminino Lilás — Leve e Confortável" });
+
 function sessionQuery() {
   const query = {
     select: vi.fn(), eq: vi.fn(), gt: vi.fn(),
@@ -116,7 +118,7 @@ describe("product import session API", () => {
       googleProductCategory: "Apparel & Accessories > Shoes > Sandals",
       sizeGuide: [{ size: "35", measurementCm: 23.5 }],
       specifications: [{ label: "Material", value: "Borracha" }],
-      variants: [expect.objectContaining({ costInCents: 955, gtin: "7890000000001", mpn: "MPN-1" })]
+      variants: [expect.objectContaining({ costInCents: 955, gtin: "7890000000001", mpn: "MPN-1", displayTitle: "Chinelo Feminino Lilás — Leve e Confortável" })]
     });
     expect(importCall?.[1]).toMatchObject({
       p_categories: [{ name: "Chinelos", primary: true, slug: "chinelos" }],
@@ -132,6 +134,33 @@ describe("product import session API", () => {
       runId: "20000000-0000-0000-0000-000000000003",
       productId: "20000000-0000-0000-0000-000000000004"
     }]);
+  });
+
+  it("includes variation titles in the sync hash", async () => {
+    sessionState.result = { data: { payload: {}, batch_hash: "a".repeat(64) }, error: null };
+    const makeSession = (displayTitle: string) => ({
+      batch: {
+        schemaVersion: "curtiz_import_v1",
+        products: [{ ...normalizedProduct, variants: [{ ...normalizedProduct.variants[0]!, displayTitle }] }],
+        colorCount: 1, imageCount: 1, options: importOptions, issues: []
+      },
+      references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000002", modelId: null, collectionId: null } }
+    });
+    const readProductHash = () => {
+      const call = mocks.rpc.mock.calls.find((args) => args[0] === "admin_sync_import_product_authorized") as
+        [string, { p_product_hash?: string }] | undefined;
+      return call?.[1].p_product_hash;
+    };
+
+    mocks.parseSession.mockReturnValue(makeSession("Chinelo Lilás"));
+    await POST(request());
+    const firstHash = readProductHash();
+    mocks.rpc.mockClear();
+    mocks.parseSession.mockReturnValue(makeSession("Chinelo Lilás Confortável"));
+    await POST(request());
+
+    expect(readProductHash()).toMatch(/^[a-f0-9]{64}$/u);
+    expect(readProductHash()).not.toBe(firstHash);
   });
 
   it("returns safe non-retryable database diagnostics", async () => {

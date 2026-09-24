@@ -15,6 +15,7 @@ export type Product = {
   variantSize?: string;
   slug: string;
   name: string;
+  variantTitle?: string;
   category: string;
   categorySlug?: string;
   description: string;
