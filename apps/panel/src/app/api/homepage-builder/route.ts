@@ -116,9 +116,6 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("transition"), sectionId: z.string().uuid(), transition: z.enum(["submit_review", "approve", "reject", "hide", "archive", "restore", "lock", "unlock"]), reason: z.string().trim().min(3).max(1000) }),
   z.object({ action: z.literal("reorder"), sectionIds: z.array(z.string().uuid()).min(1).max(40), revisions: z.array(z.number().int().positive()).min(1).max(40) }),
   z.object({ action: z.literal("publish"), reason: z.string().trim().min(3).max(1000), scheduledAt: z.string().datetime({ offset: true }).optional() }),
-  z.object({ action: z.literal("prepare_publish"), reason: z.string().trim().min(3).max(1000),
-    expectedVersions: z.array(z.object({ sectionId: z.string().uuid(), versionId: z.string().uuid() })).max(40),
-    selfApprovalConfirmed: z.boolean() }),
   z.object({ action: z.literal("cancel_publication"), pageVersionId: z.string().uuid(), reason: z.string().trim().min(3).max(1000) }),
   z.object({ action: z.literal("duplicate"), sectionId: z.string().uuid() }),
   z.object({ action: z.literal("restore_version"), versionId: z.string().uuid(), reason: z.string().trim().min(3).max(1000) })
@@ -253,41 +250,6 @@ export async function POST(request: NextRequest) {
     : "homepage.edit";
   const auth = await authorizeHomepageRequest(request, permission);
   if (!auth) return unauthorizedAdminResponse(request);
-  if (parsed.data.action === "prepare_publish") {
-    const result = await auth.supabase.rpc("prepare_xlsx_homepage_publication", {
-      p_reason: parsed.data.reason,
-      p_expected_versions: parsed.data.expectedVersions,
-      p_self_approval_confirmed: parsed.data.selfApprovalConfirmed
-    });
-    if (result.error) {
-      const code = result.error.code;
-      const failure = code === "42501" || code === "P4001"
-        ? { stage: "permissions", code: "HOMEPAGE_SELF_APPROVAL_NOT_ALLOWED", message: "Você não tem permissão para aprovar e publicar estas seções.", status: 403 }
-        : code === "P4004"
-          ? { stage: "review", code: "HOMEPAGE_SECTIONS_CHANGED", message: "As seções foram alteradas. Atualize o construtor antes de continuar.", status: 409 }
-          : code === "P4002"
-            ? { stage: "validation", code: "HOMEPAGE_SECTION_VALIDATION_FAILED", message: "Revise os produtos, destinos, mídias e horários das seções antes de continuar.", status: 409 }
-            : code === "P4003"
-              ? { stage: "publish", code: "HOMEPAGE_PUBLICATION_FAILED", message: "A publicação não foi concluída. Nenhuma seção foi aprovada por esta operação.", status: 409 }
-              : { stage: "update", code: "HOMEPAGE_OPERATION_FAILED", message: "Não foi possível preparar as seções. Nenhuma alteração desta operação foi salva.", status: 409 };
-      return NextResponse.json(failure, { status: failure.status, headers: privateNoStore });
-    }
-    return NextResponse.json({ ok: true, message: parsed.data.selfApprovalConfirmed
-      ? "Página publicada com sucesso."
-      : "As seções foram enviadas para revisão. Outro revisor precisa aprová-las." }, { headers: privateNoStore });
-  }
-  if (parsed.data.action === "publish") {
-    const sections = await auth.supabase.from("homepage_sections")
-      .select("id,status,current_version_id")
-      .like("internal_name", "xlsx:%")
-      .in("status", ["draft", "rejected", "pending_review"])
-      .limit(40);
-    if (sections.error) return NextResponse.json({ stage: "review", code: "HOMEPAGE_REVIEW_CHECK_FAILED", message: "Não foi possível verificar as seções antes da publicação." }, { status: 503, headers: privateNoStore });
-    const awaiting = objectRows(sections.data);
-    if (awaiting.length) {
-      return NextResponse.json({ stage: "review", code: "HOMEPAGE_SECTION_REVIEW_REQUIRED", message: `Existem ${awaiting.length} seções em rascunho ou revisão que precisam ser aprovadas antes da publicação.` }, { status: 409, headers: privateNoStore });
-    }
-  }
   let result;
   if (parsed.data.action === "save") {
     result = await auth.supabase.rpc("save_homepage_section", { p_payload: parsed.data.payload, p_expected_revision: parsed.data.expectedRevision ?? null });
@@ -319,43 +281,29 @@ export async function POST(request: NextRequest) {
     result = await auth.supabase.rpc("save_homepage_section", { p_payload: payload, p_expected_revision: parsed.data.action === "duplicate" ? null : null });
   }
   if (result.error) {
+    if (parsed.data.action === "publish") {
+      const missingSections = result.error.message.includes("no publishable homepage sections");
+      const forbidden = result.error.code === "42501";
+      const validationFailed = result.error.code === "P4002";
+      return NextResponse.json({ stage: "publish",
+        code: forbidden ? "HOMEPAGE_PUBLISH_NOT_ALLOWED" : missingSections ? "HOMEPAGE_NO_SECTIONS"
+          : validationFailed ? "HOMEPAGE_SECTION_VALIDATION_FAILED" : "HOMEPAGE_PUBLICATION_FAILED",
+        message: forbidden ? "Você não tem permissão para publicar a página."
+          : missingSections ? "Não há seções disponíveis para publicar."
+            : validationFailed ? "Revise as seções, produtos, destinos, mídias e horários antes de publicar."
+              : "Não foi possível publicar a página. Nenhuma alteração desta publicação foi salva."
+      }, { status: forbidden ? 403 : 409, headers: privateNoStore });
+    }
     const authorCannotApprove = result.error.message.includes("author cannot");
-    const noApprovedSections = result.error.message.includes("no approved homepage sections");
     const message = result.error.message.includes("revision conflict") ? "Outra pessoa alterou esta seção. Recarregue antes de continuar."
       : result.error.message.includes("author cannot") ? "O autor não pode aprovar a própria alteração."
       : result.error.message.includes("unavailable") ? "Um produto, destino ou arquivo não está mais disponível."
       : result.error.message.includes("not authorized") ? "O destino externo não está autorizado."
       : "Não foi possível concluir a operação.";
-    return NextResponse.json({ stage: parsed.data.action === "publish" ? "publish" : parsed.data.action === "transition" ? parsed.data.transition : "update", code: authorCannotApprove ? "HOMEPAGE_AUTHOR_CANNOT_APPROVE" : noApprovedSections ? "HOMEPAGE_NO_APPROVED_SECTIONS" : "HOMEPAGE_OPERATION_FAILED", message: noApprovedSections ? "Não há seções aprovadas para publicar." : message }, { status: authorCannotApprove || noApprovedSections || result.error.message.includes("revision conflict") ? 409 : 400, headers: privateNoStore });
+    return NextResponse.json({ stage: parsed.data.action === "transition" ? parsed.data.transition : "update", code: authorCannotApprove ? "HOMEPAGE_AUTHOR_CANNOT_APPROVE" : "HOMEPAGE_OPERATION_FAILED", message }, { status: authorCannotApprove || result.error.message.includes("revision conflict") ? 409 : 400, headers: privateNoStore });
   }
-  if (parsed.data.action === "transition" && parsed.data.transition === "approve") {
-    const section = await auth.supabase.from("homepage_sections").select("content_config")
-      .eq("id", parsed.data.sectionId).maybeSingle();
-    if (!section.error && record(section.data?.content_config)?.autoPublishAfterApproval === true) {
-      const permission = await auth.supabase.rpc("has_homepage_permission", { p_permission: "homepage.publish" });
-      if (permission.data === true && !permission.error) {
-        const remaining = await auth.supabase.from("homepage_sections").select("id")
-          .like("internal_name", "xlsx:%").in("status", ["draft", "rejected", "pending_review"]).limit(1);
-        if (remaining.error) return NextResponse.json({ ok: true,
-          stage: "review", code: "HOMEPAGE_REVIEW_CHECK_FAILED",
-          message: "Seção aprovada. Não foi possível verificar as outras seções antes da publicação automática."
-        }, { headers: privateNoStore });
-        if ((remaining.data?.length ?? 0) > 0) return NextResponse.json({ ok: true,
-          stage: "review", code: "HOMEPAGE_SECTION_REVIEW_REQUIRED",
-          message: "Seção aprovada. Outras seções da planilha ainda precisam de revisão antes de publicar a home."
-        }, { headers: privateNoStore });
-        const published = await auth.supabase.rpc("publish_homepage", {
-          p_reason: "Publicação automática após revisão da configuração por planilha", p_scheduled_at: null
-        });
-        if (published.error) return NextResponse.json({ ok: true,
-          message: "Seção aprovada. A publicação automática falhou; publique a home pelo construtor."
-        }, { status: 207, headers: privateNoStore });
-        return NextResponse.json({ ok: true, message: "Seção aprovada e home publicada." }, { headers: privateNoStore });
-      }
-      return NextResponse.json({ ok: true,
-        message: "Seção aprovada. A publicação aguarda alguém com permissão homepage.publish."
-      }, { headers: privateNoStore });
-    }
-  }
-  return NextResponse.json({ ok: true, message: parsed.data.action === "publish" ? "Publicação registrada com segurança." : "Alteração registrada." }, { headers: privateNoStore });
+  return NextResponse.json({ ok: true, message: parsed.data.action === "publish"
+    ? parsed.data.scheduledAt && Date.parse(parsed.data.scheduledAt) > Date.now()
+      ? "Publicação agendada." : "Página publicada com sucesso."
+    : "Alteração registrada." }, { headers: privateNoStore });
 }

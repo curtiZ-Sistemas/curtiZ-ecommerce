@@ -4,7 +4,6 @@ import React, { createContext, type FormEvent, type ReactNode, useCallback, useC
 
 type PanelPromptOptions = {
   title: string;
-  description?: string;
   label?: string;
   defaultValue?: string;
   multiline?: boolean;
@@ -89,7 +88,6 @@ export function PanelPromptProvider({ children }: { children: ReactNode }) {
             aria-labelledby="panel-prompt-title"
           >
             <h2 id="panel-prompt-title">{pending.title}</h2>
-            {pending.description && <p>{pending.description}</p>}
             <form className="panel-prompt-form" onSubmit={submit}>
               <label>
                 <span>{pending.label ?? "Informação"}</span>
