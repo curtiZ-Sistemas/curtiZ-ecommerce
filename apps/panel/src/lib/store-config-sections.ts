@@ -7,6 +7,57 @@ export type ManagedHomeSection = {
   payload: Record<string, unknown>;
 };
 
+export type StoreConfigSectionAction = "create" | "update" | "unchanged" | "archive" | "restore";
+
+export type ExistingManagedHomeSection = {
+  id: string;
+  internal_name: string;
+  section_type: string;
+  revision: number;
+  content_config: unknown;
+  status: string;
+};
+
+export type StoreConfigSectionChange = {
+  key: string;
+  type: string;
+  action: StoreConfigSectionAction;
+  desired?: ManagedHomeSection;
+  existing?: ExistingManagedHomeSection;
+};
+
+const configHash = (value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+  ? (value as Record<string, unknown>).configHash : undefined;
+
+export function planStoreConfigSectionChanges(
+  desired: readonly ManagedHomeSection[],
+  existing: readonly ExistingManagedHomeSection[]
+): StoreConfigSectionChange[] {
+  const desiredNames = new Set(desired.map((section) => String(section.payload.internalName ?? "")));
+  const changes = desired.map((section): StoreConfigSectionChange => {
+    const internalName = String(section.payload.internalName ?? "");
+    const matches = existing.filter((candidate) => candidate.internal_name === internalName);
+    const current = matches.find((candidate) => candidate.status !== "archived") ?? matches[0];
+    return {
+      key: section.key,
+      type: String(section.payload.sectionType ?? ""),
+      action: !current ? "create"
+        : current.status === "archived" ? "restore"
+          : configHash(current.content_config) === section.hash ? "unchanged" : "update",
+      desired: section,
+      ...(current ? { existing: current } : {})
+    };
+  });
+
+  for (const section of existing) {
+    if (!section.internal_name.startsWith("xlsx:") || desiredNames.has(section.internal_name)
+      || section.status === "archived") continue;
+    changes.push({ key: section.internal_name.slice("xlsx:".length), type: section.section_type,
+      action: "archive", existing: section });
+  }
+  return changes;
+}
+
 const item = (key: string, title: string, description: string, sortOrder: number,
   route = "", itemType = "content") => ({
   itemType, internalName: key, title, description, decorative: false,

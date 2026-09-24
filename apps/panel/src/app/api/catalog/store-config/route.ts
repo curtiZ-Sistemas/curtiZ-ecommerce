@@ -2,7 +2,11 @@ import { logServerEvent, readFormResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { authorizeAdminRequest, objectRows, privateNoStore, safePanelOrigin, unauthorizedAdminResponse } from "@/lib/admin-api";
 import { parseStoreConfigWorkbook, STORE_CONFIG_MAX_BYTES } from "@/lib/store-config-import";
-import { buildStoreConfigSections } from "@/lib/store-config-sections";
+import {
+  buildStoreConfigSections,
+  planStoreConfigSectionChanges,
+  type ExistingManagedHomeSection
+} from "@/lib/store-config-sections";
 
 export const runtime = "nodejs";
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -51,10 +55,25 @@ export async function POST(request: NextRequest) {
     }
 
     stage = "read_current";
+    const readManagedSections = async () => {
+      const sections: Record<string, unknown>[] = [];
+      const pageSize = 200;
+      for (let offset = 0; ; offset += pageSize) {
+        const result = await auth.supabase.from("homepage_sections")
+          .select("id,internal_name,section_type,revision,content_config,status,updated_at")
+          .like("internal_name", "xlsx:%")
+          .order("internal_name", { ascending: true })
+          .order("updated_at", { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        if (result.error) return { data: null, error: result.error };
+        const page = objectRows(result.data);
+        sections.push(...page);
+        if (page.length < pageSize) break;
+      }
+      return { data: sections, error: null };
+    };
     const [sectionsResult, categoriesResult, productsResult, featuredResult, sellersResult] = await Promise.all([
-      auth.supabase.from("homepage_sections")
-        .select("id,internal_name,section_type,revision,content_config,status")
-        .like("internal_name", "xlsx:%").limit(40),
+      readManagedSections(),
       auth.supabase.rpc("get_home_categories"),
       auth.supabase.rpc("search_catalog", { p_page_size: 1 }),
       auth.supabase.rpc("search_catalog", { p_featured: true, p_page_size: 1 }),
@@ -65,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Não foi possível consultar a configuração atual da loja.",
         requestId, stage, code: "STORE_CONFIG_READ_FAILED", retryable: true }, { status: 503, headers: privateNoStore });
     }
-    const currentSections = objectRows(sectionsResult.data);
+    const currentSections = objectRows(sectionsResult.data) as ExistingManagedHomeSection[];
     const hasCurrentProducts = Array.isArray(record(productsResult.data).products) && (record(productsResult.data).products as unknown[]).length > 0;
     const hasFeatured = Array.isArray(record(featuredResult.data).products) && (record(featuredResult.data).products as unknown[]).length > 0;
     const available = {
@@ -76,22 +95,29 @@ export async function POST(request: NextRequest) {
       existingBenefits: currentSections.some((section) => section.section_type === "benefits")
     };
     const desired = buildStoreConfigSections(plan, available);
-    const changes = desired.map((section) => {
-      const existing = currentSections.find((candidate) => candidate.internal_name === section.payload.internalName);
-      return { key: section.key, type: section.payload.sectionType,
-        action: !existing ? "create" : record(existing.content_config).configHash === section.hash ? "unchanged" : "update" };
-    });
+    const changes = planStoreConfigSectionChanges(desired, currentSections);
     const preview = { hasConfig: true, hasProducts: plan.hasProducts, schemaVersion: "curtiz_store_config_v1",
       categories: plan.categories.map(({ name, slug, showMenu, showHome }) => ({ name, slug, showMenu, showHome })),
       navigation: plan.navigation.map(({ label, destination, visible }) => ({ label, destination, visible })),
-      sections: changes, stories: plan.stories.filter((story) => story.active).length,
+      sections: changes.map(({ key, type, action: sectionAction }) => ({ key, type, action: sectionAction })),
+      stories: plan.stories.filter((story) => story.active).length,
       faq: plan.faq.filter((entry) => entry.active).length,
       autoPublish: plan.options.publicar_home_automaticamente,
       warnings: [
         ...(!available.hasSales && plan.options.mostrar_mais_vendidos ? ["Mais vendidos será omitido até haver vendas pagas reais."] : []),
+        ...(changes.some((change) => change.action === "archive")
+          ? ["Seções gerenciadas ausentes serão arquivadas e sairão da próxima publicação da home."] : []),
         ...(plan.options.publicar_home_automaticamente ? ["Seções alteradas exigem revisão por outra pessoa antes da publicação automática."] : [])
       ] };
     if (action === "preview") return NextResponse.json(preview, { headers: privateNoStore });
+
+    if (changes.some((change) => change.action === "archive" || change.action === "restore")) {
+      const lifecyclePermission = await auth.supabase.rpc("has_homepage_permission", { p_permission: "homepage.publish" });
+      if (lifecyclePermission.error || lifecyclePermission.data !== true) {
+        return NextResponse.json({ ...preview, message: "Sem permissão para arquivar ou restaurar seções gerenciadas da home." },
+          { status: 403, headers: privateNoStore });
+      }
+    }
 
     stage = "navigation";
     const synced = await auth.supabase.rpc("admin_sync_store_navigation", {
@@ -108,10 +134,62 @@ export async function POST(request: NextRequest) {
       { status: failure.status, headers: privateNoStore });
     }
     const saved: string[] = [];
-    for (const section of desired) {
+    const archived: string[] = [];
+    for (const change of changes) {
       stage = "homepage_sections";
-      const existing = currentSections.find((candidate) => candidate.internal_name === section.payload.internalName);
-      if (existing && record(existing.content_config).configHash === section.hash) continue;
+      const existing = change.existing;
+      if (change.action === "unchanged") continue;
+      if (change.action === "archive") {
+        if (!existing) {
+          return NextResponse.json({ ...preview, saved, archived, requestId,
+            stage, code: "STORE_CONFIG_SECTION_STATE_INVALID", retryable: false,
+            message: `A seção ${change.key} não está mais disponível para arquivamento. Atualize a prévia.`
+          }, { status: 409, headers: privateNoStore });
+        }
+        const result = await auth.supabase.rpc("transition_homepage_section", {
+          p_section_id: existing.id,
+          p_action: "archive",
+          p_reason: "Seção removida da configuração gerenciada da loja"
+        });
+        if (result.error) {
+          logServerEvent("error", "store_config_section_archive_failed", { requestId, code: result.error.code, key: change.key });
+          return NextResponse.json({ ...preview, saved, archived, requestId,
+            stage, code: "STORE_CONFIG_SECTION_ARCHIVE_FAILED", retryable: true,
+            message: `A seção ${change.key} não pôde ser arquivada. Reenvie a planilha para continuar.`
+          }, { status: 409, headers: privateNoStore });
+        }
+        archived.push(change.key);
+        continue;
+      }
+
+      if (change.action === "restore") {
+        if (!existing) {
+          return NextResponse.json({ ...preview, saved, archived, requestId,
+            stage, code: "STORE_CONFIG_SECTION_STATE_INVALID", retryable: false,
+            message: `A seção ${change.key} não está mais disponível para restauração. Atualize a prévia.`
+          }, { status: 409, headers: privateNoStore });
+        }
+        const restored = await auth.supabase.rpc("transition_homepage_section", {
+          p_section_id: existing.id,
+          p_action: "restore",
+          p_reason: "Seção retornou à configuração gerenciada da loja"
+        });
+        if (restored.error) {
+          logServerEvent("error", "store_config_section_restore_failed", { requestId, code: restored.error.code, key: change.key });
+          return NextResponse.json({ ...preview, saved, archived, requestId,
+            stage, code: "STORE_CONFIG_SECTION_RESTORE_FAILED", retryable: true,
+            message: `A seção ${change.key} não pôde ser restaurada. Reenvie a planilha para continuar.`
+          }, { status: 409, headers: privateNoStore });
+        }
+      }
+
+      const section = change.desired;
+      if (!section || (change.action !== "create" && !existing)) {
+        return NextResponse.json({ ...preview, saved, archived, requestId,
+          stage, code: "STORE_CONFIG_SECTION_STATE_INVALID", retryable: false,
+          message: `A seção ${change.key} mudou desde a prévia. Atualize a prévia e tente novamente.`
+        }, { status: 409, headers: privateNoStore });
+      }
       const result = await auth.supabase.rpc("save_homepage_section", {
         p_payload: { ...section.payload, ...(existing ? { id: text(existing.id) } : {}) },
         p_expected_revision: existing ? Number(existing.revision) : null
@@ -119,7 +197,7 @@ export async function POST(request: NextRequest) {
       const savedSectionId: unknown = result.data;
       if (result.error || typeof savedSectionId !== "string") {
         logServerEvent("error", "store_config_section_failed", { requestId, code: result.error?.code ?? "NO_ID", key: section.key });
-        return NextResponse.json({ ...preview, saved, requestId,
+        return NextResponse.json({ ...preview, saved, archived, requestId,
           stage, code: "STORE_CONFIG_SECTION_SAVE_FAILED", retryable: true,
           message: `Categorias foram sincronizadas, mas a seção ${section.key} não foi salva. Reenvie a planilha para continuar.`
         }, { status: 409, headers: privateNoStore });
@@ -132,16 +210,16 @@ export async function POST(request: NextRequest) {
         });
         if (submitted.error) {
           logServerEvent("error", "store_config_section_review_failed", { requestId, code: submitted.error.code, key: section.key });
-          return NextResponse.json({ ...preview, saved, requestId,
+          return NextResponse.json({ ...preview, saved, archived, requestId,
             stage, code: "STORE_CONFIG_SECTION_REVIEW_FAILED", retryable: true,
             message: `A seção ${section.key} foi salva, mas não pôde ser enviada para revisão.`
           }, { status: 409, headers: privateNoStore });
         }
       }
     }
-    return NextResponse.json({ ...preview, ok: true, saved,
+    return NextResponse.json({ ...preview, ok: true, saved, archived,
       reviewRequired: plan.options.publicar_home_automaticamente && saved.length > 0,
-      message: saved.length ? "Configuração salva no Homepage Builder." : "Configuração já estava atualizada."
+      message: saved.length || archived.length ? "Configuração salva no Homepage Builder." : "Configuração já estava atualizada."
     }, { headers: privateNoStore });
   } catch (error) {
     const invalidWorkbook = stage === "workbook";

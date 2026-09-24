@@ -29,7 +29,7 @@ type StoreConfigPreview = {
   hasProducts: boolean;
   categories: Array<{ name: string; slug: string; showMenu: boolean; showHome: boolean }>;
   navigation: Array<{ label: string; destination: string; visible: boolean }>;
-  sections: Array<{ key: string; type: string; action: "create" | "update" | "unchanged" }>;
+  sections: Array<{ key: string; type: string; action: "create" | "update" | "unchanged" | "archive" | "restore" }>;
   stories: number;
   faq: number;
   warnings: string[];
@@ -50,6 +50,12 @@ type ImportRunStatus = {
 };
 
 const ACTIVE_IMPORT_RUN_KEY = "curtiz.activeProductImportRun";
+
+const storeConfigActionLabel = (action: StoreConfigPreview["sections"][number]["action"]) =>
+  action === "unchanged" ? "sem alteração"
+    : action === "create" ? "criar"
+      : action === "update" ? "atualizar"
+        : action === "restore" ? "restaurar" : "remover da home (arquivar)";
 
 function ImportIssueList({ level, items }: { level: "warning" | "error"; items: string[] }) {
   if (!items.length) return null;
@@ -283,7 +289,7 @@ export function ProductImportDrawer({ open, onClose, onImported }: {
           {configPreview ? <section className="product-import-config-preview" aria-label="Configuração da loja">
             <h3>Configuração da loja</h3>
             <p>{configPreview.categories.length} categorias · {configPreview.navigation.length} itens de navegação · {configPreview.sections.length} seções da home · {configPreview.faq} perguntas frequentes</p>
-            <ul>{configPreview.sections.map((section) => <li key={section.key}>{section.key}: {section.action === "unchanged" ? "sem alteração" : section.action === "create" ? "criar" : "atualizar"}</li>)}</ul>
+            <ul>{configPreview.sections.map((section) => <li key={section.key}>{section.key}: {storeConfigActionLabel(section.action)}</li>)}</ul>
             {configPreview.warnings.map((warning) => <p key={warning} className="product-import-result-message">{warning}</p>)}
           </section> : null}
           {configMessage ? <p className={configApplied ? "form-message success" : "form-message error"} role="status">{configMessage}</p> : null}
