@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { categoryImageSrcSet } from "../lib/responsive-storefront-image";
 
 type CategoryItem = {
@@ -14,6 +14,26 @@ type CategoryItem = {
 type CategoryCarouselProps = {
   categories: CategoryItem[];
 };
+
+function recoverCategoryImage(event: SyntheticEvent<HTMLImageElement>) {
+  const image = event.currentTarget;
+  const originalSrc = image.dataset.originalSrc ?? image.src;
+  const picture = image.closest("picture");
+
+  if (!image.dataset.sourceRetried && image.currentSrc !== image.src) {
+    image.dataset.sourceRetried = "true";
+    picture?.querySelectorAll("source").forEach((source) => source.removeAttribute("srcset"));
+    image.removeAttribute("srcset");
+    image.src = originalSrc;
+    return;
+  }
+
+  if (image.dataset.placeholderApplied) return;
+  image.dataset.placeholderApplied = "true";
+  picture?.querySelectorAll("source").forEach((source) => source.removeAttribute("srcset"));
+  image.removeAttribute("srcset");
+  image.src = "/images/product-unavailable.svg";
+}
 
 export function CategoryCarousel({
   categories
@@ -105,6 +125,8 @@ export function CategoryCarousel({
                       loading="lazy"
                       decoding="async"
                       aria-hidden="true"
+                      data-original-src={category.image}
+                      onError={recoverCategoryImage}
                     />
                   </picture>
                 ) : (
@@ -116,6 +138,8 @@ export function CategoryCarousel({
                     loading="lazy"
                     decoding="async"
                     aria-hidden="true"
+                    data-original-src={category.image}
+                    onError={recoverCategoryImage}
                   />
                 )}
               </Link>
