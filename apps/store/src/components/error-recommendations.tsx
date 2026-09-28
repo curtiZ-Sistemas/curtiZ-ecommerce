@@ -10,7 +10,15 @@ type RecommendationState =
   | { status: "ready"; products: Product[] }
   | { status: "unavailable"; products: Product[] };
 
-export function ErrorRecommendations({ excludeProductId }: { excludeProductId?: string }) {
+type ErrorRecommendationsProps = {
+  excludeProductId?: string;
+  title?: string;
+};
+
+export function ErrorRecommendations({
+  excludeProductId,
+  title = "Talvez você goste"
+}: ErrorRecommendationsProps) {
   const [state, setState] = useState<RecommendationState>({
     status: "loading",
     products: []
@@ -47,7 +55,7 @@ export function ErrorRecommendations({ excludeProductId }: { excludeProductId?: 
   return (
     <section className="error-recommendations" aria-labelledby="error-recommendations-title">
       <div className="error-recommendations-heading">
-        <h2 id="error-recommendations-title">Talvez você goste</h2>
+        <h2 id="error-recommendations-title">{title}</h2>
       </div>
 
       {state.status === "loading" ? (

@@ -8,7 +8,7 @@ vi.mock("next/link", () => ({
   )
 }));
 vi.mock("@/components/error-recommendations", () => ({
-  ErrorRecommendations: () => <section><h2>Talvez você goste</h2></section>
+  ErrorRecommendations: ({ title = "Talvez você goste" }: { title?: string }) => <section><h2>{title}</h2></section>
 }));
 
 import ProductNotFound from "./not-found";
@@ -16,14 +16,15 @@ import ProductNotFound from "./not-found";
 vi.stubGlobal("React", React);
 
 describe("página de produto removido", () => {
-  it("é compacta, não repete a mensagem e não gera Product JSON-LD", () => {
+  it("é compacta, oferece recuperação útil e não gera Product JSON-LD", () => {
     const html = renderToStaticMarkup(<ProductNotFound />);
 
     expect(html.match(/<h1/gu)).toHaveLength(1);
-    expect(html).toContain("Este produto não está mais disponível");
+    expect(html).toContain("Este modelo não está mais disponível");
     expect(html).toContain("Ver produtos");
-    expect(html).toContain("Voltar para a loja");
-    expect(html).toContain("Talvez você goste");
+    expect(html).toContain("Buscar na loja");
+    expect(html).toContain("Voltar ao início");
+    expect(html).toContain("Outros modelos para você");
     expect(html).not.toContain("ITEM NÃO ENCONTRADO");
     expect(html).not.toContain("application/ld+json");
   });
