@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { getMelhorEnvioReadiness } from "@curtiz/config";
 import { authorizeTechnicalRequest, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
 import { melhorEnvioEnvironment, melhorEnvioOriginMissingFields, panelMelhorEnvioProvider } from "@/lib/melhor-envio-server";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
   const row = credential.data && typeof credential.data === "object" && !Array.isArray(credential.data)
     ? credential.data as Record<string, unknown> : null;
   const connected = row?.status === "connected";
+  const panelConfiguration = getMelhorEnvioReadiness(process.env);
   const originMissingFields = melhorEnvioOriginMissingFields();
   const started = Date.now();
   let health = "not_configured";
@@ -29,6 +31,7 @@ export async function GET(request: NextRequest) {
       webhookConfigured: process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true",
       originComplete: originMissingFields.length === 0 } }, { onConflict: "provider" });
   return NextResponse.json({ environment: melhorEnvioEnvironment(), connected, health, latencyMs,
+    panelConfiguration,
     accessTokenExpiresAt: connected && typeof row?.access_token_expires_at === "string" ? row.access_token_expires_at : null,
     webhookConfigured: process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true",
     originComplete: originMissingFields.length === 0, originMissingFields, lastCheckedAt: checkedAt, lastError }, { headers: technicalNoStore });

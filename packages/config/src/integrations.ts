@@ -38,40 +38,81 @@ export const getMelhorEnvioEnvironment = (environment: IntegrationEnvironment): 
   return selected === "sandbox" || selected === "production" ? selected : null;
 };
 
-export const isMelhorEnvioConfigured = (environment: IntegrationEnvironment): boolean => {
+export type MelhorEnvioReadiness = Readonly<{
+  configured: boolean;
+  missing: readonly string[];
+  invalid: readonly string[];
+}>;
+
+export const getMelhorEnvioReadiness = (environment: IntegrationEnvironment): MelhorEnvioReadiness => {
+  const missing = new Set<string>();
+  const invalid = new Set<string>();
+  const required = (name: string) => {
+    if (!environment[name]?.trim()) missing.add(name);
+  };
+  const validWhenPresent = (name: string, predicate: (value: string) => boolean) => {
+    const value = environment[name]?.trim() ?? "";
+    if (value && !predicate(value)) invalid.add(`${name}_INVALID`);
+  };
   const selected = getMelhorEnvioEnvironment(environment);
-  if (!selected) return false;
-  const expectedOrigin = selected === "sandbox"
-    ? "https://sandbox.melhorenvio.com.br" : "https://melhorenvio.com.br";
-  const legacyBaseUrl = environment.MELHOR_ENVIO_BASE_URL?.trim();
-  if (legacyBaseUrl) {
-    if (!isValidHttpsUrl(legacyBaseUrl)) return false;
-    const parsed = new URL(legacyBaseUrl);
-    if (parsed.origin !== expectedOrigin || parsed.pathname !== "/" || parsed.search || parsed.hash) return false;
+  if (!selected) invalid.add("MELHOR_ENVIO_ENVIRONMENT_INVALID");
+
+  const legacyBaseUrl = environment.MELHOR_ENVIO_BASE_URL?.trim() ?? "";
+  if (legacyBaseUrl && selected) {
+    const expectedOrigin = selected === "sandbox"
+      ? "https://sandbox.melhorenvio.com.br" : "https://melhorenvio.com.br";
+    if (isValidHttpsUrl(legacyBaseUrl)) {
+      const parsed = new URL(legacyBaseUrl);
+      if (parsed.origin !== expectedOrigin || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+        invalid.add("MELHOR_ENVIO_BASE_URL_INVALID");
+      }
+    } else {
+      invalid.add("MELHOR_ENVIO_BASE_URL_INVALID");
+    }
   }
+
+  if (!parseEnvironmentBoolean(environment.MELHOR_ENVIO_ENABLED)) invalid.add("MELHOR_ENVIO_ENABLED_DISABLED");
+  required("MELHOR_ENVIO_REDIRECT_URI");
+  validWhenPresent("MELHOR_ENVIO_REDIRECT_URI", isValidHttpsUrl);
+  required("MELHOR_ENVIO_CLIENT_ID");
+  required("MELHOR_ENVIO_CLIENT_SECRET");
+  required("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
+  validWhenPresent("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY", isAes256Base64Key);
+  required("MELHOR_ENVIO_APP_NAME");
+  required("MELHOR_ENVIO_TECHNICAL_CONTACT");
+  validWhenPresent("MELHOR_ENVIO_TECHNICAL_CONTACT", (value) => /^\S+@\S+\.\S+$/u.test(value));
+
   const digits = (key: string) => (environment[key] ?? "").replace(/\D/gu, "");
   const originFields = ["MELHOR_ENVIO_ORIGIN_NAME", "MELHOR_ENVIO_ORIGIN_EMAIL", "MELHOR_ENVIO_ORIGIN_PHONE",
     "MELHOR_ENVIO_ORIGIN_ADDRESS", "MELHOR_ENVIO_ORIGIN_NUMBER", "MELHOR_ENVIO_ORIGIN_DISTRICT",
     "MELHOR_ENVIO_ORIGIN_CITY", "MELHOR_ENVIO_ORIGIN_STATE", "MELHOR_ENVIO_ORIGIN_POSTAL_CODE"];
-  const originComplete = originFields.every((key) => Boolean(environment[key]?.trim()))
-    && /^\S+@\S+\.\S+$/u.test(environment.MELHOR_ENVIO_ORIGIN_EMAIL?.trim() ?? "")
-    && /^\d{10,11}$/u.test(digits("MELHOR_ENVIO_ORIGIN_PHONE"))
-    && /^[A-Za-z]{2}$/u.test(environment.MELHOR_ENVIO_ORIGIN_STATE?.trim() ?? "")
-    && /^\d{8}$/u.test(digits("MELHOR_ENVIO_ORIGIN_POSTAL_CODE"))
-    && (selected === "production"
-      ? /^\d{14}$/u.test(digits("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT"))
-        && Boolean(environment.MELHOR_ENVIO_ORIGIN_STATE_REGISTER?.trim())
-      : /^\d{11}$/u.test(digits("MELHOR_ENVIO_ORIGIN_DOCUMENT"))
-        || /^\d{14}$/u.test(digits("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")));
-  return parseEnvironmentBoolean(environment.MELHOR_ENVIO_ENABLED)
-    && isValidHttpsUrl(environment.MELHOR_ENVIO_REDIRECT_URI)
-    && Boolean(environment.MELHOR_ENVIO_CLIENT_ID?.trim())
-    && Boolean(environment.MELHOR_ENVIO_CLIENT_SECRET?.trim())
-    && isAes256Base64Key(environment.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY)
-    && Boolean(environment.MELHOR_ENVIO_APP_NAME?.trim())
-    && Boolean(environment.MELHOR_ENVIO_TECHNICAL_CONTACT?.trim())
-    && originComplete;
+  for (const name of originFields) required(name);
+  validWhenPresent("MELHOR_ENVIO_ORIGIN_EMAIL", (value) => /^\S+@\S+\.\S+$/u.test(value));
+  validWhenPresent("MELHOR_ENVIO_ORIGIN_PHONE", (value) => /^\d{10,11}$/u.test(value.replace(/\D/gu, "")));
+  validWhenPresent("MELHOR_ENVIO_ORIGIN_STATE", (value) => /^[A-Za-z]{2}$/u.test(value));
+  validWhenPresent("MELHOR_ENVIO_ORIGIN_POSTAL_CODE", (value) => /^\d{8}$/u.test(value.replace(/\D/gu, "")));
+
+  if (selected === "production") {
+    required("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT");
+    validWhenPresent("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT", (value) => /^\d{14}$/u.test(value.replace(/\D/gu, "")));
+    required("MELHOR_ENVIO_ORIGIN_STATE_REGISTER");
+  } else if (selected === "sandbox") {
+    const personalDocument = digits("MELHOR_ENVIO_ORIGIN_DOCUMENT");
+    const companyDocument = digits("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT");
+    if (!personalDocument && !companyDocument) {
+      missing.add("MELHOR_ENVIO_ORIGIN_DOCUMENT");
+      missing.add("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT");
+    } else if (!/^\d{11}$/u.test(personalDocument) && !/^\d{14}$/u.test(companyDocument)) {
+      if (personalDocument) invalid.add("MELHOR_ENVIO_ORIGIN_DOCUMENT_INVALID");
+      if (companyDocument) invalid.add("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT_INVALID");
+    }
+  }
+
+  return { configured: missing.size === 0 && invalid.size === 0, missing: [...missing], invalid: [...invalid] };
 };
+
+export const isMelhorEnvioConfigured = (environment: IntegrationEnvironment): boolean =>
+  getMelhorEnvioReadiness(environment).configured;
 
 /** @deprecated Readiness is no longer based on environment token values. */
 export const isMelhorEnvioSandboxReady = (environment: IntegrationEnvironment): boolean =>

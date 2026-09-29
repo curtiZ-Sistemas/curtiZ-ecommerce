@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missingCloudflareSecrets, requiredCloudflareSecrets } from "./cloudflare-secret-validation";
+import { buildValidationSecrets, missingCloudflareSecrets, requiredCloudflareSecrets } from "./cloudflare-secret-validation";
 
 describe("Cloudflare secret validation", () => {
   it("requires only baseline server secrets while integrations are disabled", () => {
@@ -8,6 +8,21 @@ describe("Cloudflare secret validation", () => {
       EMAIL_PROVIDER: "disabled", EMAIL_ENABLED: "false", TURNSTILE_ENABLED: "false"
     })).toEqual(["ACCOUNT_DELETION_HMAC_KEY", "AUDIT_HASH_KEY", "PII_ENCRYPTION_KEY",
       "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY", "SUPABASE_SECRET_KEY"]);
+  });
+
+  it("separates runtime secrets from the integration-disabled build environment", () => {
+    const runtimeEnvironment = {
+      DEPLOY_TARGET: "store",
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true",
+      TURNSTILE_ENABLED: "true"
+    };
+    expect(buildValidationSecrets(runtimeEnvironment)).toEqual([
+      "ACCOUNT_DELETION_HMAC_KEY", "AUDIT_HASH_KEY", "PII_ENCRYPTION_KEY",
+      "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY", "SUPABASE_SECRET_KEY"
+    ]);
   });
 
   it("não exige secrets exclusivos da loja no Worker do painel", () => {

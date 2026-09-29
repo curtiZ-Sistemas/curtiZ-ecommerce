@@ -17,10 +17,17 @@ correspondente. O controle de concorrência cancela uma execução antiga quando
 novo, evitando deploy fora de ordem.
 
 No Cloudflare, abra **Workers & Pages**, selecione cada Worker, acesse **Settings → Builds** e use
-**Disconnect**. Repita em `curtiz-ecommerce` e `curtiz-panel`. Manter a integração Git nativa e o
-GitHub Actions ativos ao mesmo tempo cria dois deploys concorrentes para o mesmo commit. As variáveis
-e secrets de runtime permanecem no Cloudflare; o workflow usa `--keep-vars` e nunca os copia para o
-repositório.
+**Disconnect**. Repita em `curtiz-ecommerce` e `curtiz-panel`. Não inicie builds ou publicações
+manuais pelo Cloudflare: o workflow do GitHub Actions é o único caminho de produção. Para reconstruir
+um Worker, use `workflow_dispatch` e selecione `store`, `panel` ou `both`. Isso evita versões e
+configurações concorrentes nos dois Workers.
+
+Os jobs compilam com checkout e integrações externas desativados (`CHECKOUT_ENABLED=false`,
+`PAYMENT_PROVIDER=disabled`, `SHIPPING_PROVIDER=disabled` e `MELHOR_ENVIO_ENABLED=false`). O build
+não recebe Client Secret, chave de criptografia, documentos nem endereço do remetente. A etapa de
+publicação entrega as variáveis operacionais do GitHub ao Wrangler como bindings de runtime; secrets
+permanecem cadastrados nos Workers e `--keep-vars` os preserva. O Worker da loja lê esses bindings
+em cada requisição por `getCloudflareContext().env`, sem congelar as flags desativadas do build.
 
 Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 
@@ -29,7 +36,10 @@ Configure no GitHub, em **Settings → Secrets and variables → Actions**:
   `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
   `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`,
   `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_ENABLED`, `SHIPPING_PROVIDER`,
-  `MELHOR_ENVIO_ENABLED`, `EMAIL_PROVIDER`, `EMAIL_ENABLED`, `TURNSTILE_ENABLED`,
+  `MELHOR_ENVIO_ENABLED`, `MELHOR_ENVIO_ENVIRONMENT`, `MELHOR_ENVIO_BASE_URL`,
+  `MELHOR_ENVIO_REDIRECT_URI`, `MELHOR_ENVIO_CLIENT_ID`, `MELHOR_ENVIO_APP_NAME`,
+  `MELHOR_ENVIO_TECHNICAL_CONTACT`, `MELHOR_ENVIO_WEBHOOK_CONFIGURED`, os campos não documentais
+  `MELHOR_ENVIO_ORIGIN_*`, `EMAIL_PROVIDER`, `EMAIL_ENABLED`, `EMAIL_FROM`, `TURNSTILE_ENABLED`,
   `REQUIRE_INTERNAL_MFA`, `AUTH_RATE_LIMIT_ENABLED`, `ALLOWED_ORIGINS` e
   `AUTH_COOKIE_DOMAINS`;
 - variables condicionais: `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` quando o Mercado Pago estiver
@@ -157,30 +167,10 @@ Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Em 
 da remessa permanece em `awaiting_invoice` até existir NF-e autorizada; o sistema não fabrica chave
 fiscal. Sandbox permite executar a homologação de etiquetas de teste com os produtos completos.
 
-## Comandos equivalentes
-
-Os comandos abaixo são úteis para diagnóstico ou operação manual autorizada. Execute-os na raiz do
-monorepo após gerar o artefato OpenNext da aplicação correta:
-
-```powershell
-pnpm validate:production
-pnpm exec tsx scripts/validate-supabase-readiness.ts
-pnpm build:worker
-pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars
-
-pnpm build:worker:panel
-pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars
-```
-
-O `wrangler.jsonc` da raiz continua apontando exclusivamente para a loja por compatibilidade. Para o
-painel, sempre informe `apps/panel/wrangler.jsonc`; apontar o painel para `apps/store` publica a loja
-no Worker errado.
-
-Esses comandos não ativam deploy automaticamente. Para uma publicação manual autorizada, confira
-também a presença dos secrets do Worker usando `wrangler secret list --config <config da aplicação>
---env production --format json` e `scripts/cloudflare-secret-validation.ts <arquivo JSON>`.
-Não imprima valores nem coloque secrets em argumentos `--var`. Fora do CI, o build usa a
-configuração server-side do ambiente seguro do operador; o script de presença não recupera secrets.
+Não use `wrangler deploy` local nem **Workers Builds** para produção. A checagem dos secrets e a
+publicação dos dois Workers pertencem ao workflow; o acionamento manual permitido é somente o
+`workflow_dispatch` do próprio workflow. O script de validação consulta nomes de secrets, nunca seus
+valores.
 
 ## Preflight, smoke e housekeeping
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type EnvironmentValues, validateEnvironment } from "./environment-validation";
+import { requiredDeploymentSecrets, type EnvironmentValues, validateEnvironment } from "./environment-validation";
 
 const stagingEnvironment: EnvironmentValues = {
   APP_ENV: "staging",
@@ -165,11 +165,23 @@ describe("environment validation", () => {
   });
 
   it("aprova produção inicial com integrações e MFA explicitamente desativados", () => {
-    expect(validateEnvironment("production", disabledProduction)).toMatchObject({
+    const buildEnvironment = {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: "false",
+      PAYMENT_PROVIDER: "disabled",
+      MERCADO_PAGO_ENABLED: "false",
+      SHIPPING_PROVIDER: "disabled",
+      MELHOR_ENVIO_ENABLED: "false"
+    };
+    expect(validateEnvironment("production", buildEnvironment)).toMatchObject({
       environment: "production",
       valid: true,
       errors: []
     });
+    expect(requiredDeploymentSecrets(buildEnvironment)).not.toEqual(expect.arrayContaining([
+      "MELHOR_ENVIO_CLIENT_SECRET",
+      "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY"
+    ]));
     expect(
       validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).errors
     ).toContain("DEMO_MODE não está configurada");

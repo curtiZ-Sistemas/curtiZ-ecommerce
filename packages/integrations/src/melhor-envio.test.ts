@@ -137,6 +137,9 @@ describe("MelhorEnvioProvider", () => {
     const encrypted = await encryptMelhorEnvioToken("sensitive-token", key);
     expect(encrypted).not.toContain("sensitive-token");
     await expect(decryptMelhorEnvioToken(encrypted, key)).resolves.toBe("sensitive-token");
-    await expect(decryptMelhorEnvioToken(encrypted, otherKey)).rejects.toMatchObject({ code: "authentication" });
+    await expect(decryptMelhorEnvioToken(encrypted, otherKey)).rejects.toMatchObject({
+      code: "authentication",
+      httpStatus: 503
+    });
   });
 });

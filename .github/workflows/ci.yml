@@ -33,25 +33,6 @@ env:
   MERCADO_PAGO_ENVIRONMENT: test
   SHIPPING_PROVIDER: disabled
   MELHOR_ENVIO_ENABLED: "false"
-  MELHOR_ENVIO_ENVIRONMENT: ${{ vars.MELHOR_ENVIO_ENVIRONMENT || 'sandbox' }}
-  MELHOR_ENVIO_BASE_URL: ${{ vars.MELHOR_ENVIO_BASE_URL }}
-  MELHOR_ENVIO_REDIRECT_URI: ${{ vars.MELHOR_ENVIO_REDIRECT_URI }}
-  MELHOR_ENVIO_CLIENT_ID: ${{ vars.MELHOR_ENVIO_CLIENT_ID }}
-  MELHOR_ENVIO_APP_NAME: ${{ vars.MELHOR_ENVIO_APP_NAME }}
-  MELHOR_ENVIO_TECHNICAL_CONTACT: ${{ vars.MELHOR_ENVIO_TECHNICAL_CONTACT }}
-  MELHOR_ENVIO_WEBHOOK_CONFIGURED: ${{ vars.MELHOR_ENVIO_WEBHOOK_CONFIGURED || 'false' }}
-  MELHOR_ENVIO_ORIGIN_NAME: ${{ vars.MELHOR_ENVIO_ORIGIN_NAME }}
-  MELHOR_ENVIO_ORIGIN_EMAIL: ${{ vars.MELHOR_ENVIO_ORIGIN_EMAIL }}
-  MELHOR_ENVIO_ORIGIN_PHONE: ${{ vars.MELHOR_ENVIO_ORIGIN_PHONE }}
-  MELHOR_ENVIO_ORIGIN_STATE_REGISTER: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE_REGISTER }}
-  MELHOR_ENVIO_ORIGIN_CNAE: ${{ vars.MELHOR_ENVIO_ORIGIN_CNAE }}
-  MELHOR_ENVIO_ORIGIN_ADDRESS: ${{ vars.MELHOR_ENVIO_ORIGIN_ADDRESS }}
-  MELHOR_ENVIO_ORIGIN_NUMBER: ${{ vars.MELHOR_ENVIO_ORIGIN_NUMBER }}
-  MELHOR_ENVIO_ORIGIN_COMPLEMENT: ${{ vars.MELHOR_ENVIO_ORIGIN_COMPLEMENT }}
-  MELHOR_ENVIO_ORIGIN_DISTRICT: ${{ vars.MELHOR_ENVIO_ORIGIN_DISTRICT }}
-  MELHOR_ENVIO_ORIGIN_CITY: ${{ vars.MELHOR_ENVIO_ORIGIN_CITY }}
-  MELHOR_ENVIO_ORIGIN_STATE: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE }}
-  MELHOR_ENVIO_ORIGIN_POSTAL_CODE: ${{ vars.MELHOR_ENVIO_ORIGIN_POSTAL_CODE }}
   EMAIL_PROVIDER: disabled
   EMAIL_ENABLED: "false"
   TURNSTILE_ENABLED: "false"
@@ -208,18 +189,6 @@ jobs:
     env:
       DEPLOY_TARGET: store
       PANEL_DEPLOYMENT_MODE: separate
-      DEMO_MODE: ${{ github.event_name == 'pull_request' && 'false' || vars.DEMO_MODE }}
-      CHECKOUT_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.CHECKOUT_ENABLED }}
-      PAYMENT_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.PAYMENT_PROVIDER }}
-      MERCADO_PAGO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MERCADO_PAGO_ENABLED }}
-      SHIPPING_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.SHIPPING_PROVIDER }}
-      MELHOR_ENVIO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MELHOR_ENVIO_ENABLED }}
-      EMAIL_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.EMAIL_PROVIDER }}
-      EMAIL_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.EMAIL_ENABLED }}
-      EMAIL_FROM: ${{ github.event_name != 'pull_request' && vars.EMAIL_FROM || '' }}
-      TURNSTILE_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.TURNSTILE_ENABLED }}
-      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
-      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
       ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
       AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
@@ -251,6 +220,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
+          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
+          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
+          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
+          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -269,6 +245,37 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
+          CHECKOUT_ENABLED: ${{ vars.CHECKOUT_ENABLED || 'false' }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
+          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
+          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
+          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
+          MELHOR_ENVIO_ENVIRONMENT: ${{ vars.MELHOR_ENVIO_ENVIRONMENT || 'sandbox' }}
+          MELHOR_ENVIO_BASE_URL: ${{ vars.MELHOR_ENVIO_BASE_URL }}
+          MELHOR_ENVIO_REDIRECT_URI: ${{ vars.MELHOR_ENVIO_REDIRECT_URI }}
+          MELHOR_ENVIO_CLIENT_ID: ${{ vars.MELHOR_ENVIO_CLIENT_ID }}
+          MELHOR_ENVIO_APP_NAME: ${{ vars.MELHOR_ENVIO_APP_NAME }}
+          MELHOR_ENVIO_TECHNICAL_CONTACT: ${{ vars.MELHOR_ENVIO_TECHNICAL_CONTACT }}
+          MELHOR_ENVIO_WEBHOOK_CONFIGURED: ${{ vars.MELHOR_ENVIO_WEBHOOK_CONFIGURED || 'false' }}
+          MELHOR_ENVIO_ORIGIN_NAME: ${{ vars.MELHOR_ENVIO_ORIGIN_NAME }}
+          MELHOR_ENVIO_ORIGIN_EMAIL: ${{ vars.MELHOR_ENVIO_ORIGIN_EMAIL }}
+          MELHOR_ENVIO_ORIGIN_PHONE: ${{ vars.MELHOR_ENVIO_ORIGIN_PHONE }}
+          MELHOR_ENVIO_ORIGIN_STATE_REGISTER: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE_REGISTER }}
+          MELHOR_ENVIO_ORIGIN_CNAE: ${{ vars.MELHOR_ENVIO_ORIGIN_CNAE }}
+          MELHOR_ENVIO_ORIGIN_ADDRESS: ${{ vars.MELHOR_ENVIO_ORIGIN_ADDRESS }}
+          MELHOR_ENVIO_ORIGIN_NUMBER: ${{ vars.MELHOR_ENVIO_ORIGIN_NUMBER }}
+          MELHOR_ENVIO_ORIGIN_COMPLEMENT: ${{ vars.MELHOR_ENVIO_ORIGIN_COMPLEMENT }}
+          MELHOR_ENVIO_ORIGIN_DISTRICT: ${{ vars.MELHOR_ENVIO_ORIGIN_DISTRICT }}
+          MELHOR_ENVIO_ORIGIN_CITY: ${{ vars.MELHOR_ENVIO_ORIGIN_CITY }}
+          MELHOR_ENVIO_ORIGIN_STATE: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE }}
+          MELHOR_ENVIO_ORIGIN_POSTAL_CODE: ${{ vars.MELHOR_ENVIO_ORIGIN_POSTAL_CODE }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
+          REQUIRE_INTERNAL_MFA: ${{ vars.REQUIRE_INTERNAL_MFA || 'false' }}
+          AUTH_RATE_LIMIT_ENABLED: ${{ vars.AUTH_RATE_LIMIT_ENABLED || 'true' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -336,17 +343,6 @@ jobs:
     env:
       DEPLOY_TARGET: panel
       PANEL_DEPLOYMENT_MODE: separate
-      DEMO_MODE: "false"
-      CHECKOUT_ENABLED: "false"
-      PAYMENT_PROVIDER: disabled
-      MERCADO_PAGO_ENABLED: "false"
-      SHIPPING_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.SHIPPING_PROVIDER }}
-      MELHOR_ENVIO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MELHOR_ENVIO_ENABLED }}
-      EMAIL_PROVIDER: disabled
-      EMAIL_ENABLED: "false"
-      TURNSTILE_ENABLED: "false"
-      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
-      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
       ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
       AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
       NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
@@ -378,6 +374,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
+          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
+          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
+          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
+          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -393,6 +396,37 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
+          CHECKOUT_ENABLED: ${{ vars.CHECKOUT_ENABLED || 'false' }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
+          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
+          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
+          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
+          MELHOR_ENVIO_ENVIRONMENT: ${{ vars.MELHOR_ENVIO_ENVIRONMENT || 'sandbox' }}
+          MELHOR_ENVIO_BASE_URL: ${{ vars.MELHOR_ENVIO_BASE_URL }}
+          MELHOR_ENVIO_REDIRECT_URI: ${{ vars.MELHOR_ENVIO_REDIRECT_URI }}
+          MELHOR_ENVIO_CLIENT_ID: ${{ vars.MELHOR_ENVIO_CLIENT_ID }}
+          MELHOR_ENVIO_APP_NAME: ${{ vars.MELHOR_ENVIO_APP_NAME }}
+          MELHOR_ENVIO_TECHNICAL_CONTACT: ${{ vars.MELHOR_ENVIO_TECHNICAL_CONTACT }}
+          MELHOR_ENVIO_WEBHOOK_CONFIGURED: ${{ vars.MELHOR_ENVIO_WEBHOOK_CONFIGURED || 'false' }}
+          MELHOR_ENVIO_ORIGIN_NAME: ${{ vars.MELHOR_ENVIO_ORIGIN_NAME }}
+          MELHOR_ENVIO_ORIGIN_EMAIL: ${{ vars.MELHOR_ENVIO_ORIGIN_EMAIL }}
+          MELHOR_ENVIO_ORIGIN_PHONE: ${{ vars.MELHOR_ENVIO_ORIGIN_PHONE }}
+          MELHOR_ENVIO_ORIGIN_STATE_REGISTER: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE_REGISTER }}
+          MELHOR_ENVIO_ORIGIN_CNAE: ${{ vars.MELHOR_ENVIO_ORIGIN_CNAE }}
+          MELHOR_ENVIO_ORIGIN_ADDRESS: ${{ vars.MELHOR_ENVIO_ORIGIN_ADDRESS }}
+          MELHOR_ENVIO_ORIGIN_NUMBER: ${{ vars.MELHOR_ENVIO_ORIGIN_NUMBER }}
+          MELHOR_ENVIO_ORIGIN_COMPLEMENT: ${{ vars.MELHOR_ENVIO_ORIGIN_COMPLEMENT }}
+          MELHOR_ENVIO_ORIGIN_DISTRICT: ${{ vars.MELHOR_ENVIO_ORIGIN_DISTRICT }}
+          MELHOR_ENVIO_ORIGIN_CITY: ${{ vars.MELHOR_ENVIO_ORIGIN_CITY }}
+          MELHOR_ENVIO_ORIGIN_STATE: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE }}
+          MELHOR_ENVIO_ORIGIN_POSTAL_CODE: ${{ vars.MELHOR_ENVIO_ORIGIN_POSTAL_CODE }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
+          REQUIRE_INTERNAL_MFA: ${{ vars.REQUIRE_INTERNAL_MFA || 'false' }}
+          AUTH_RATE_LIMIT_ENABLED: ${{ vars.AUTH_RATE_LIMIT_ENABLED || 'true' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then

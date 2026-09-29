@@ -69,17 +69,15 @@ export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment,
   }, tokenStore);
 }
 
-export function configuredMelhorEnvioProvider() {
-  const db = createServiceSupabaseClient();
-  if (!db) throw new MelhorEnvioError("configuration", 503, false);
-  return createMelhorEnvioProvider(process.env, db);
+export function configuredMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
+  return createMelhorEnvioProvider(values, db);
 }
 
-export async function resolveShippingProducts(lines: CheckoutLine[]): Promise<{
+export async function resolveShippingProducts(lines: CheckoutLine[], database?: ServiceDatabase): Promise<{
   products: MelhorEnvioQuoteProduct[];
   fingerprint: string;
 }> {
-  const db = createServiceSupabaseClient();
+  const db = database ?? createServiceSupabaseClient();
   if (!db) throw new MelhorEnvioError("configuration", 503, false);
   const ids = [...new Set(lines.map((line) => line.variantId))];
   if (ids.length !== lines.length) throw new MelhorEnvioError("validation", 400, false);

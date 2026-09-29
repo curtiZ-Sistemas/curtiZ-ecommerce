@@ -5,6 +5,22 @@ type SecretEntry = { name?: unknown };
 
 export const requiredCloudflareSecrets = requiredDeploymentSecrets;
 
+export function buildValidationSecrets(environment: EnvironmentValues): string[] {
+  return requiredCloudflareSecrets({
+    ...environment,
+    DEMO_MODE: "false",
+    CHECKOUT_ENABLED: "false",
+    PAYMENT_PROVIDER: "disabled",
+    MERCADO_PAGO_ENABLED: "false",
+    EMAIL_PROVIDER: "disabled",
+    EMAIL_ENABLED: "false",
+    SHIPPING_PROVIDER: "disabled",
+    MELHOR_ENVIO_ENABLED: "false",
+    TURNSTILE_ENABLED: "false",
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: ""
+  });
+}
+
 const usesMelhorEnvio = (environment: EnvironmentValues) =>
   ["melhorenvio", "melhor_envio"].includes(environment.SHIPPING_PROVIDER?.trim().toLowerCase() ?? "")
   || ["true", "1", "yes"].includes(environment.MELHOR_ENVIO_ENABLED?.trim().toLowerCase() ?? "");
@@ -34,10 +50,6 @@ export function missingCloudflareSecrets(
 }
 
 const placeholderFor = (name: string) => {
-  if (name === "MERCADO_PAGO_ACCESS_TOKEN") return "TEST-cloudflare-secret-present";
-  if (name === "MELHOR_ENVIO_ORIGIN_DOCUMENT") return "12345678909";
-  if (name === "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT") return "12345678000195";
-  if (name === "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY") return "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
   if (name === "PII_ENCRYPTION_KEY") return "cloudflare-secret-present-at-runtime";
   if (name.endsWith("_HMAC_KEY")) return "cloudflare-hmac-secret-present-at-runtime";
   return "cloudflare-secret-present";
@@ -75,11 +87,9 @@ function run() {
 
   const githubEnvironment = process.env.GITHUB_ENV?.trim();
   if (githubEnvironment) {
-    const configured = new Set(entries.flatMap((entry) => typeof entry.name === "string" ? [entry.name] : []));
-    const documentSecret = usesMelhorEnvio(process.env) ? originDocumentSecret(configured, process.env) : null;
     appendFileSync(
       githubEnvironment,
-      [...requiredCloudflareSecrets(process.env), ...(documentSecret ? [documentSecret] : [])]
+      buildValidationSecrets(process.env)
         .map((name) => `${name}=${placeholderFor(name)}`)
         .join("\n") + "\n",
       "utf8"

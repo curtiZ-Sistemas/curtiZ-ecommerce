@@ -15,18 +15,27 @@
 
 Nos Workers da loja e do painel, mantenha `MELHOR_ENVIO_CLIENT_SECRET`,
 `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY` e um entre `MELHOR_ENVIO_ORIGIN_DOCUMENT`/
-`MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT` como secrets. As demais opções `MELHOR_ENVIO_*` são variáveis
-server-side do ambiente; nenhuma delas usa prefixo `NEXT_PUBLIC_`.
+`MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT` como secrets de runtime. Configure a mesma chave de
+criptografia nos dois Workers para que ambos leiam os tokens OAuth cifrados no Supabase. Nenhum token
+OAuth é copiado para variáveis ou navegador.
 
-No deploy deste repositório, configure as opções não secretas (`SHIPPING_PROVIDER`,
-`MELHOR_ENVIO_ENABLED`, `MELHOR_ENVIO_ENVIRONMENT`, `MELHOR_ENVIO_BASE_URL`,
-`MELHOR_ENVIO_REDIRECT_URI`, `MELHOR_ENVIO_CLIENT_ID`, `MELHOR_ENVIO_APP_NAME`,
-`MELHOR_ENVIO_TECHNICAL_CONTACT`, `MELHOR_ENVIO_WEBHOOK_CONFIGURED` e campos de origem não
-documentais) como variáveis do GitHub Actions; o workflow as passa ao build e aos dois Workers.
-Configure os três tipos de segredo acima separadamente **em cada Worker** da loja e do painel.
-Se usar build direto no Cloudflare, replique ali apenas as opções não secretas como Build Variables;
-elas não substituem os secrets de runtime e os valores reais destes nunca devem ser Build Variables
-em texto simples. O CI usa placeholders somente para validar o build, não como credenciais de runtime.
+O workflow do GitHub Actions é o único caminho de produção; desconecte **Workers Builds** nativos nos
+dois Workers e não publique builds manuais pelo Cloudflare. Configure as demais opções
+`MELHOR_ENVIO_*` sem prefixo `NEXT_PUBLIC_` nas variables do GitHub Actions. O build usa
+`SHIPPING_PROVIDER=disabled` e `MELHOR_ENVIO_ENABLED=false`, sem Client Secret, chave de criptografia,
+CPF/CNPJ ou endereço de origem. Só a etapa final passa as variáveis operacionais como bindings de
+runtime ao Wrangler; os secrets continuam cadastrados separadamente em cada Worker e são preservados
+com `--keep-vars`.
+
+`getCloudflareContext().env` é a fonte explícita da loja durante `/api/shipping/quote`. Assim o valor
+de runtime do Worker controla o provider mesmo que o build tenha sido feito com frete desativado.
+Mantenha variáveis não secretas no GitHub Actions e secrets nos dois Workers; depois de alterá-los,
+dispare o workflow por `workflow_dispatch`. Não use **Build Variables** como substitutas de
+configurações de runtime.
+
+Referências de runtime: [bindings do OpenNext](https://opennext.js.org/cloudflare/bindings),
+[separação build/runtime do OpenNext](https://opennext.js.org/cloudflare/howtos/env-vars) e
+[compatibilidade de `process.env` no Workers](https://developers.cloudflare.com/changelog/post/2025-03-11-process-env-support/).
 
 ## Roteiro E2E
 
