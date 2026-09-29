@@ -14741,6 +14741,7 @@ body:has(.checkout-transition) .help-widget {
 }
 .checkout-saved-addresses { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 12px; }
 .checkout-address-card { min-width: 0; border: 1px solid var(--neutral-200); border-radius: var(--radius-sm); background: var(--white); transition: border-color 200ms ease; }
+.checkout-address-card.selected { border-color: var(--brand-600); }
 .checkout-address-card-heading { display: flex; align-items: center; gap: 8px; padding: 14px 12px; }
 .checkout-address-card-heading label { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
 .checkout-address-card-heading input { flex: 0 0 auto; accent-color: #62130f; }
@@ -14775,6 +14776,36 @@ body:has(.checkout-transition) .help-widget {
 @media (prefers-reduced-motion: reduce) { .checkout-address-card, .checkout-address-toggle svg, .checkout-address-expansion { transition: none; } }
 .checkout-address-labels { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .checkout-address-labels > span { width: 100%; font-weight: 600; }
+.checkout-address-empty { display: grid; justify-items: start; gap: 10px; }
+.checkout-address-empty p { margin: 0; color: var(--neutral-600); font-size: .82rem; }
+.checkout-address-editor { display: grid; gap: 14px; padding-top: 16px; border-top: 1px solid var(--neutral-200); }
+.checkout-address-editor h3 { margin: 0; color: var(--ink); font-size: .92rem; }
+.checkout-address-editor .address-recipient-field { grid-column: 1 / -1; }
+.checkout-address-default-toggle { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; justify-self: start; color: var(--neutral-900); font-size: .8rem; cursor: pointer; }
+.checkout-address-default-toggle input { width: 18px; height: 18px; accent-color: var(--brand-700); }
+.checkout-address-feedback { margin: 0; color: var(--neutral-700); font-size: .78rem; line-height: 1.45; }
+.checkout-address-feedback[role="alert"] { color: var(--danger); }
+.checkout-address-editor-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.checkout-address-editor-actions button { min-height: 48px; min-width: 140px; padding: 10px 18px; cursor: pointer; }
+.checkout-address-editor-actions button:focus-visible,
+.checkout-address-add:focus-visible,
+.checkout-address-actions button:focus-visible { outline: 2px solid var(--brand-700); outline-offset: 2px; }
+.checkout-address-editor-actions button:disabled { cursor: wait; opacity: .6; }
+.checkout-shipping-calculate { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: min(100%, 320px); min-height: 48px; padding: 12px 18px; border: 0; border-radius: var(--radius-xs); background: var(--brand-700); color: var(--white); font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; transition: background-color 160ms ease, transform 100ms ease; }
+.checkout-shipping-calculate:hover:not(:disabled) { background: var(--brand-800); }
+.checkout-shipping-calculate:active:not(:disabled) { transform: translateY(1px); }
+.checkout-shipping-calculate:focus-visible { outline: 3px solid var(--brand-300); outline-offset: 3px; }
+.checkout-shipping-calculate:disabled { cursor: not-allowed; opacity: .58; }
+.checkout-shipping-message { margin-top: 12px; }
+.checkout-shipping-message.is-error { color: var(--danger); }
+.checkout-shipping-options label { grid-template-columns: 20px minmax(0, 1fr) auto; min-width: 0; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease; }
+.checkout-shipping-options label:hover { border-color: var(--brand-500); }
+.checkout-shipping-options label:focus-within { outline: 2px solid var(--brand-700); outline-offset: 2px; }
+.checkout-shipping-options input { width: 18px; height: 18px; margin: 0; accent-color: var(--brand-700); }
+.checkout-shipping-options label > span { min-width: 0; overflow-wrap: anywhere; }
+.checkout-shipping-options label > strong { white-space: nowrap; }
+@media (max-width: 600px) { .checkout-address-editor-actions { display: grid; grid-template-columns: minmax(0, 1fr); } .checkout-address-editor-actions button { width: 100%; } .checkout-shipping-calculate { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .checkout-shipping-calculate, .checkout-shipping-options label { transition: none; } }
 .checkout-coupon-field { margin: 14px 0; }
 .checkout-coupon-field > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .checkout-coupon-field .secondary-button { min-height: 44px; padding-inline: 16px; }
