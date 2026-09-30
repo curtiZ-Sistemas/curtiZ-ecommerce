@@ -16,45 +16,71 @@ todas as validações, o OpenNext compila as aplicações alteradas e o Wrangler
 correspondente. O controle de concorrência cancela uma execução antiga quando chega um commit mais
 novo, evitando deploy fora de ordem.
 
-No Cloudflare, abra **Workers & Pages**, selecione cada Worker, acesse **Settings → Builds** e use
-**Disconnect**. Repita em `curtiz-ecommerce` e `curtiz-panel`. Não inicie builds ou publicações
-manuais pelo Cloudflare: o workflow do GitHub Actions é o único caminho de produção. Para reconstruir
-um Worker, use `workflow_dispatch` e selecione `store`, `panel` ou `both`. Isso evita versões e
-configurações concorrentes nos dois Workers.
+### Deploy automático único (ação manual no Cloudflare)
 
-Os jobs compilam com checkout e integrações externas desativados (`CHECKOUT_ENABLED=false`,
-`PAYMENT_PROVIDER=disabled`, `SHIPPING_PROVIDER=disabled` e `MELHOR_ENVIO_ENABLED=false`). O build
-não recebe Client Secret, chave de criptografia, documentos nem endereço do remetente. A etapa de
-publicação entrega as variáveis operacionais do GitHub ao Wrangler como bindings de runtime; secrets
-permanecem cadastrados nos Workers e `--keep-vars` os preserva. O Worker da loja lê esses bindings
-em cada requisição por `getCloudflareContext().env`, sem congelar as flags desativadas do build.
+O GitHub Actions deve ser o **único** caminho automático. Confira manualmente, no Cloudflare, se os
+**Workers Builds** estão desconectados; o repositório não altera essa configuração remota:
+
+1. Abra **Workers & Pages** → `curtiz-ecommerce` → **Settings → Builds**.
+2. Se houver um repositório conectado, use **Disconnect**.
+3. Repita em `curtiz-panel`.
+
+Um Workers Build conectado publicaria uma segunda versão a cada push, fora da ordem e sem as
+validações do workflow. Não inicie builds nem publicações manuais pelo Cloudflare. Para
+reconstruir um Worker, use `workflow_dispatch` e selecione `store`, `panel` ou `both`.
+
+### Onde cada configuração fica
+
+| Local | Responsabilidade |
+| --- | --- |
+| GitHub Actions | build, deploy, metadados (`GIT_COMMIT_SHA`, `BUILD_ID`, `BUILD_TIMESTAMP`), URLs públicas e configuração de plataforma embutida no build |
+| Runtime do Cloudflare (Variables and Secrets de cada Worker) | flags e credenciais de integrações (checkout, Mercado Pago, Melhor Envio, e-mail, Turnstile), dados do remetente, `REQUIRE_INTERNAL_MFA` e `AUTH_RATE_LIMIT_ENABLED` |
+| Supabase | tokens OAuth do Melhor Envio, gravados cifrados |
+
+Os jobs compilam com checkout e integrações externas desativados de propósito
+(`CHECKOUT_ENABLED=false`, `PAYMENT_PROVIDER=disabled`, `MERCADO_PAGO_ENABLED=false`,
+`SHIPPING_PROVIDER=disabled` e `MELHOR_ENVIO_ENABLED=false`). O build não recebe Client Secret,
+chave de criptografia, documentos nem endereço do remetente. Esses valores servem somente para
+compilar e validar e **não** são enviados ao Worker.
+
+A publicação usa `wrangler deploy --keep-vars` e envia por `--var` apenas os metadados e a
+configuração de plataforma (`APP_ENV`, `PANEL_DEPLOYMENT_MODE`, `DEMO_MODE`, `ALLOWED_ORIGINS`,
+`AUTH_COOKIE_DOMAINS`, URLs `NEXT_PUBLIC_*`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e, na loja,
+as chaves públicas `NEXT_PUBLIC_TURNSTILE_SITE_KEY` e `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY`).
+Valores vazios nunca são enviados, então nenhum binding existente é substituído por string vazia.
+Qualquer outra variable ou secret cadastrado no Runtime é preservado. O Worker da loja lê os
+bindings em cada requisição por `getCloudflareContext().env` (`getStoreRuntimeEnvironment()`), e
+eles prevalecem sobre as flags desativadas do build. O teste `scripts/ci-workflow.test.ts` impede
+que o workflow volte a sobrescrever essas configurações.
 
 Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
 - variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
   `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
-  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`,
-  `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_ENABLED`, `SHIPPING_PROVIDER`,
-  `MELHOR_ENVIO_ENABLED`, `MELHOR_ENVIO_ENVIRONMENT`, `MELHOR_ENVIO_BASE_URL`,
-  `MELHOR_ENVIO_REDIRECT_URI`, `MELHOR_ENVIO_CLIENT_ID`, `MELHOR_ENVIO_APP_NAME`,
-  `MELHOR_ENVIO_TECHNICAL_CONTACT`, `MELHOR_ENVIO_WEBHOOK_CONFIGURED`, os campos não documentais
-  `MELHOR_ENVIO_ORIGIN_*`, `EMAIL_PROVIDER`, `EMAIL_ENABLED`, `EMAIL_FROM`, `TURNSTILE_ENABLED`,
-  `REQUIRE_INTERNAL_MFA`, `AUTH_RATE_LIMIT_ENABLED`, `ALLOWED_ORIGINS` e
+  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`, `ALLOWED_ORIGINS` e
   `AUTH_COOKIE_DOMAINS`;
 - variables condicionais: `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` quando o Mercado Pago estiver
-  habilitado, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` quando o Turnstile estiver habilitado e `EMAIL_FROM`
-  quando o envio de e-mail estiver habilitado.
+  habilitado e `NEXT_PUBLIC_TURNSTILE_SITE_KEY` quando o Turnstile estiver habilitado. Por serem
+  embutidas no bundle do navegador durante o build, essas chaves públicas continuam no GitHub.
+
+Não duplique no GitHub `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_*`,
+`SHIPPING_PROVIDER`, `MELHOR_ENVIO_*`, `EMAIL_*`, `TURNSTILE_ENABLED`, `REQUIRE_INTERNAL_MFA` nem
+`AUTH_RATE_LIMIT_ENABLED`. O workflow ignora essas variables, que podem ser apagadas do GitHub
+depois de conferidas no Runtime do Worker. Client Secret, chave de criptografia, CNPJ e outros
+dados sensíveis nunca devem ir para GitHub Variables.
 
 O token Cloudflare deve ter somente as permissões necessárias para publicar os dois Workers na
 conta correta. Não armazene tokens em variables públicas.
 
 Antes do build, o workflow consulta somente os **nomes** dos secrets já presentes em cada Worker.
 Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY`, `AUDIT_HASH_KEY`,
-`ACCOUNT_DELETION_HMAC_KEY`, `RATE_LIMIT_HMAC_KEY` e `REFERRAL_ATTRIBUTION_HMAC_KEY`; quando a
-integração correspondente está habilitada, exige também `MERCADO_PAGO_ACCESS_TOKEN`,
-`MERCADO_PAGO_WEBHOOK_SECRET`, `TURNSTILE_SECRET_KEY` e/ou `RESEND_API_KEY`. Valores secretos não
-são copiados para o GitHub nem impressos. Placeholders efêmeros servem exclusivamente para permitir
+`ACCOUNT_DELETION_HMAC_KEY`, `RATE_LIMIT_HMAC_KEY` e `REFERRAL_ATTRIBUTION_HMAC_KEY` (o painel exige
+somente os que utiliza). As flags das integrações ficam no Runtime, então o CI não as conhece e não
+valida credenciais de integrações. Essa checagem acontece no runtime: `getMelhorEnvioReadiness()`, o
+`integration_health` (`melhorenvio_store`) e a resposta 503 explícita da cotação de frete apontam
+configuração incompleta sem cair em valor fixo. Valores secretos não são copiados para o GitHub nem
+impressos. Placeholders efêmeros servem exclusivamente para permitir
 que o validador de presença rode durante o build; o runtime mantém os secrets reais com
 `--keep-vars`.
 
@@ -101,8 +127,9 @@ O ambiente local mantém as URLs adicionais definidas em `supabase/config.toml`.
 Para republicar sem criar commit, abra **Actions → CI → Run workflow** e escolha `store`, `panel` ou
 `both`. A execução manual passa pelas mesmas validações antes do deploy.
 
-Cada deploy injeta metadados (`GIT_COMMIT_SHA`, `BUILD_ID` e `BUILD_TIMESTAMP`) e espelha as
-variáveis **não secretas** validadas do GitHub. O commit ativo pode ser consultado em `/api/version`
+Cada deploy injeta metadados (`GIT_COMMIT_SHA`, `BUILD_ID` e `BUILD_TIMESTAMP`) e espelha somente
+as variáveis de plataforma **não secretas** do GitHub; configurações de integrações não são
+tocadas. O commit ativo pode ser consultado em `/api/version`
 na URL de cada aplicação. Secrets de runtime permanecem somente no Cloudflare.
 
 ## Validação dos ambientes
@@ -163,7 +190,14 @@ pelo fluxo OAuth do painel técnico; não os mantenha em variáveis de ambiente.
 configuração. O `X-ME-Signature` é validado com o Client Secret do aplicativo, conforme o contrato
 oficial.
 
-Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Em produção, a criação
+Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Todas as
+`MELHOR_ENVIO_*` e as flags `SHIPPING_PROVIDER`/`MELHOR_ENVIO_ENABLED` são cadastradas somente no
+Runtime dos Workers (**Settings → Variables and Secrets**), nunca no GitHub. Use **Secret** para
+`MELHOR_ENVIO_CLIENT_SECRET`, `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY` e
+`MELHOR_ENVIO_ORIGIN_DOCUMENT`/`MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT`; os demais campos podem ser
+variables. Exemplo de runtime da loja em homologação: `CHECKOUT_ENABLED=true`,
+`SHIPPING_PROVIDER=melhorenvio`, `MELHOR_ENVIO_ENABLED=true` e `MELHOR_ENVIO_ENVIRONMENT=sandbox`.
+Em produção, a criação
 da remessa permanece em `awaiting_invoice` até existir NF-e autorizada; o sistema não fabrica chave
 fiscal. Sandbox permite executar a homologação de etiquetas de teste com os produtos completos.
 

@@ -220,13 +220,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
-          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
-          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
-          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
-          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
-          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
-          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -246,36 +239,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
-          CHECKOUT_ENABLED: ${{ vars.CHECKOUT_ENABLED || 'false' }}
-          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
-          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
-          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
-          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
-          MELHOR_ENVIO_ENVIRONMENT: ${{ vars.MELHOR_ENVIO_ENVIRONMENT || 'sandbox' }}
-          MELHOR_ENVIO_BASE_URL: ${{ vars.MELHOR_ENVIO_BASE_URL }}
-          MELHOR_ENVIO_REDIRECT_URI: ${{ vars.MELHOR_ENVIO_REDIRECT_URI }}
-          MELHOR_ENVIO_CLIENT_ID: ${{ vars.MELHOR_ENVIO_CLIENT_ID }}
-          MELHOR_ENVIO_APP_NAME: ${{ vars.MELHOR_ENVIO_APP_NAME }}
-          MELHOR_ENVIO_TECHNICAL_CONTACT: ${{ vars.MELHOR_ENVIO_TECHNICAL_CONTACT }}
-          MELHOR_ENVIO_WEBHOOK_CONFIGURED: ${{ vars.MELHOR_ENVIO_WEBHOOK_CONFIGURED || 'false' }}
-          MELHOR_ENVIO_ORIGIN_NAME: ${{ vars.MELHOR_ENVIO_ORIGIN_NAME }}
-          MELHOR_ENVIO_ORIGIN_EMAIL: ${{ vars.MELHOR_ENVIO_ORIGIN_EMAIL }}
-          MELHOR_ENVIO_ORIGIN_PHONE: ${{ vars.MELHOR_ENVIO_ORIGIN_PHONE }}
-          MELHOR_ENVIO_ORIGIN_STATE_REGISTER: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE_REGISTER }}
-          MELHOR_ENVIO_ORIGIN_CNAE: ${{ vars.MELHOR_ENVIO_ORIGIN_CNAE }}
-          MELHOR_ENVIO_ORIGIN_ADDRESS: ${{ vars.MELHOR_ENVIO_ORIGIN_ADDRESS }}
-          MELHOR_ENVIO_ORIGIN_NUMBER: ${{ vars.MELHOR_ENVIO_ORIGIN_NUMBER }}
-          MELHOR_ENVIO_ORIGIN_COMPLEMENT: ${{ vars.MELHOR_ENVIO_ORIGIN_COMPLEMENT }}
-          MELHOR_ENVIO_ORIGIN_DISTRICT: ${{ vars.MELHOR_ENVIO_ORIGIN_DISTRICT }}
-          MELHOR_ENVIO_ORIGIN_CITY: ${{ vars.MELHOR_ENVIO_ORIGIN_CITY }}
-          MELHOR_ENVIO_ORIGIN_STATE: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE }}
-          MELHOR_ENVIO_ORIGIN_POSTAL_CODE: ${{ vars.MELHOR_ENVIO_ORIGIN_POSTAL_CODE }}
-          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
-          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
-          REQUIRE_INTERNAL_MFA: ${{ vars.REQUIRE_INTERNAL_MFA || 'false' }}
-          AUTH_RATE_LIMIT_ENABLED: ${{ vars.AUTH_RATE_LIMIT_ENABLED || 'true' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -283,54 +246,24 @@ jobs:
             exit 1
           fi
           build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars \
-            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
-            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}" \
-            --var "APP_ENV:${APP_ENV}" \
-            --var "MERCADO_PAGO_ENVIRONMENT:${MERCADO_PAGO_ENVIRONMENT}" \
-            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
-            --var "DEMO_MODE:${DEMO_MODE}" \
-            --var "CHECKOUT_ENABLED:${CHECKOUT_ENABLED}" \
-            --var "PAYMENT_PROVIDER:${PAYMENT_PROVIDER}" \
-            --var "MERCADO_PAGO_ENABLED:${MERCADO_PAGO_ENABLED}" \
-            --var "SHIPPING_PROVIDER:${SHIPPING_PROVIDER}" \
-            --var "MELHOR_ENVIO_ENABLED:${MELHOR_ENVIO_ENABLED}" \
-            --var "MELHOR_ENVIO_ENVIRONMENT:${MELHOR_ENVIO_ENVIRONMENT}" \
-            --var "MELHOR_ENVIO_BASE_URL:${MELHOR_ENVIO_BASE_URL}" \
-            --var "MELHOR_ENVIO_REDIRECT_URI:${MELHOR_ENVIO_REDIRECT_URI}" \
-            --var "MELHOR_ENVIO_CLIENT_ID:${MELHOR_ENVIO_CLIENT_ID}" \
-            --var "MELHOR_ENVIO_APP_NAME:${MELHOR_ENVIO_APP_NAME}" \
-            --var "MELHOR_ENVIO_TECHNICAL_CONTACT:${MELHOR_ENVIO_TECHNICAL_CONTACT}" \
-            --var "MELHOR_ENVIO_WEBHOOK_CONFIGURED:${MELHOR_ENVIO_WEBHOOK_CONFIGURED}" \
-            --var "MELHOR_ENVIO_ORIGIN_NAME:${MELHOR_ENVIO_ORIGIN_NAME}" \
-            --var "MELHOR_ENVIO_ORIGIN_EMAIL:${MELHOR_ENVIO_ORIGIN_EMAIL}" \
-            --var "MELHOR_ENVIO_ORIGIN_PHONE:${MELHOR_ENVIO_ORIGIN_PHONE}" \
-            --var "MELHOR_ENVIO_ORIGIN_STATE_REGISTER:${MELHOR_ENVIO_ORIGIN_STATE_REGISTER}" \
-            --var "MELHOR_ENVIO_ORIGIN_CNAE:${MELHOR_ENVIO_ORIGIN_CNAE}" \
-            --var "MELHOR_ENVIO_ORIGIN_ADDRESS:${MELHOR_ENVIO_ORIGIN_ADDRESS}" \
-            --var "MELHOR_ENVIO_ORIGIN_NUMBER:${MELHOR_ENVIO_ORIGIN_NUMBER}" \
-            --var "MELHOR_ENVIO_ORIGIN_COMPLEMENT:${MELHOR_ENVIO_ORIGIN_COMPLEMENT}" \
-            --var "MELHOR_ENVIO_ORIGIN_DISTRICT:${MELHOR_ENVIO_ORIGIN_DISTRICT}" \
-            --var "MELHOR_ENVIO_ORIGIN_CITY:${MELHOR_ENVIO_ORIGIN_CITY}" \
-            --var "MELHOR_ENVIO_ORIGIN_STATE:${MELHOR_ENVIO_ORIGIN_STATE}" \
-            --var "MELHOR_ENVIO_ORIGIN_POSTAL_CODE:${MELHOR_ENVIO_ORIGIN_POSTAL_CODE}" \
-            --var "EMAIL_PROVIDER:${EMAIL_PROVIDER}" \
-            --var "EMAIL_ENABLED:${EMAIL_ENABLED}" \
-            --var "EMAIL_FROM:${EMAIL_FROM}" \
-            --var "TURNSTILE_ENABLED:${TURNSTILE_ENABLED}" \
-            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
-            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
-            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
-            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
-            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
-            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
-            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
-            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "SUPABASE_URL:${SUPABASE_URL}" \
-            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}" \
-            --var "NEXT_PUBLIC_TURNSTILE_SITE_KEY:${NEXT_PUBLIC_TURNSTILE_SITE_KEY}" \
-            --var "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY:${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}"
+          GIT_COMMIT_SHA="${GITHUB_SHA}"
+          BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          BUILD_TIMESTAMP="${build_timestamp}"
+          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
+          deploy_vars=()
+          add_var() {
+            local value="${!1:-}"
+            [[ -n "$value" ]] && deploy_vars+=(--var "$1:${value}")
+            return 0
+          }
+          for name in GIT_COMMIT_SHA BUILD_ID BUILD_TIMESTAMP APP_ENV PANEL_DEPLOYMENT_MODE DEMO_MODE \
+            ALLOWED_ORIGINS AUTH_COOKIE_DOMAINS NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL \
+            NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY \
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY; do
+            add_var "$name"
+          done
+          pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"
       - name: Smoke test pós-deploy sem cobrança
         if: github.event_name != 'pull_request'
         run: pnpm smoke:storefront -- "$NEXT_PUBLIC_STORE_TEST_URL"
@@ -374,13 +307,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
-          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
-          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
-          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
-          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
-          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
-          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -397,36 +323,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
-          CHECKOUT_ENABLED: ${{ vars.CHECKOUT_ENABLED || 'false' }}
-          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'disabled' }}
-          MERCADO_PAGO_ENABLED: ${{ vars.MERCADO_PAGO_ENABLED || 'false' }}
-          SHIPPING_PROVIDER: ${{ vars.SHIPPING_PROVIDER || 'disabled' }}
-          MELHOR_ENVIO_ENABLED: ${{ vars.MELHOR_ENVIO_ENABLED || 'false' }}
-          MELHOR_ENVIO_ENVIRONMENT: ${{ vars.MELHOR_ENVIO_ENVIRONMENT || 'sandbox' }}
-          MELHOR_ENVIO_BASE_URL: ${{ vars.MELHOR_ENVIO_BASE_URL }}
-          MELHOR_ENVIO_REDIRECT_URI: ${{ vars.MELHOR_ENVIO_REDIRECT_URI }}
-          MELHOR_ENVIO_CLIENT_ID: ${{ vars.MELHOR_ENVIO_CLIENT_ID }}
-          MELHOR_ENVIO_APP_NAME: ${{ vars.MELHOR_ENVIO_APP_NAME }}
-          MELHOR_ENVIO_TECHNICAL_CONTACT: ${{ vars.MELHOR_ENVIO_TECHNICAL_CONTACT }}
-          MELHOR_ENVIO_WEBHOOK_CONFIGURED: ${{ vars.MELHOR_ENVIO_WEBHOOK_CONFIGURED || 'false' }}
-          MELHOR_ENVIO_ORIGIN_NAME: ${{ vars.MELHOR_ENVIO_ORIGIN_NAME }}
-          MELHOR_ENVIO_ORIGIN_EMAIL: ${{ vars.MELHOR_ENVIO_ORIGIN_EMAIL }}
-          MELHOR_ENVIO_ORIGIN_PHONE: ${{ vars.MELHOR_ENVIO_ORIGIN_PHONE }}
-          MELHOR_ENVIO_ORIGIN_STATE_REGISTER: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE_REGISTER }}
-          MELHOR_ENVIO_ORIGIN_CNAE: ${{ vars.MELHOR_ENVIO_ORIGIN_CNAE }}
-          MELHOR_ENVIO_ORIGIN_ADDRESS: ${{ vars.MELHOR_ENVIO_ORIGIN_ADDRESS }}
-          MELHOR_ENVIO_ORIGIN_NUMBER: ${{ vars.MELHOR_ENVIO_ORIGIN_NUMBER }}
-          MELHOR_ENVIO_ORIGIN_COMPLEMENT: ${{ vars.MELHOR_ENVIO_ORIGIN_COMPLEMENT }}
-          MELHOR_ENVIO_ORIGIN_DISTRICT: ${{ vars.MELHOR_ENVIO_ORIGIN_DISTRICT }}
-          MELHOR_ENVIO_ORIGIN_CITY: ${{ vars.MELHOR_ENVIO_ORIGIN_CITY }}
-          MELHOR_ENVIO_ORIGIN_STATE: ${{ vars.MELHOR_ENVIO_ORIGIN_STATE }}
-          MELHOR_ENVIO_ORIGIN_POSTAL_CODE: ${{ vars.MELHOR_ENVIO_ORIGIN_POSTAL_CODE }}
-          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'disabled' }}
-          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED || 'false' }}
-          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          TURNSTILE_ENABLED: ${{ vars.TURNSTILE_ENABLED || 'false' }}
-          REQUIRE_INTERNAL_MFA: ${{ vars.REQUIRE_INTERNAL_MFA || 'false' }}
-          AUTH_RATE_LIMIT_ENABLED: ${{ vars.AUTH_RATE_LIMIT_ENABLED || 'true' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -434,41 +330,20 @@ jobs:
             exit 1
           fi
           build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars \
-            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
-            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}" \
-            --var "APP_ENV:${APP_ENV}" \
-            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
-            --var "DEMO_MODE:${DEMO_MODE}" \
-            --var "SHIPPING_PROVIDER:${SHIPPING_PROVIDER}" \
-            --var "MELHOR_ENVIO_ENABLED:${MELHOR_ENVIO_ENABLED}" \
-            --var "MELHOR_ENVIO_ENVIRONMENT:${MELHOR_ENVIO_ENVIRONMENT}" \
-            --var "MELHOR_ENVIO_BASE_URL:${MELHOR_ENVIO_BASE_URL}" \
-            --var "MELHOR_ENVIO_REDIRECT_URI:${MELHOR_ENVIO_REDIRECT_URI}" \
-            --var "MELHOR_ENVIO_CLIENT_ID:${MELHOR_ENVIO_CLIENT_ID}" \
-            --var "MELHOR_ENVIO_APP_NAME:${MELHOR_ENVIO_APP_NAME}" \
-            --var "MELHOR_ENVIO_TECHNICAL_CONTACT:${MELHOR_ENVIO_TECHNICAL_CONTACT}" \
-            --var "MELHOR_ENVIO_WEBHOOK_CONFIGURED:${MELHOR_ENVIO_WEBHOOK_CONFIGURED}" \
-            --var "MELHOR_ENVIO_ORIGIN_NAME:${MELHOR_ENVIO_ORIGIN_NAME}" \
-            --var "MELHOR_ENVIO_ORIGIN_EMAIL:${MELHOR_ENVIO_ORIGIN_EMAIL}" \
-            --var "MELHOR_ENVIO_ORIGIN_PHONE:${MELHOR_ENVIO_ORIGIN_PHONE}" \
-            --var "MELHOR_ENVIO_ORIGIN_STATE_REGISTER:${MELHOR_ENVIO_ORIGIN_STATE_REGISTER}" \
-            --var "MELHOR_ENVIO_ORIGIN_CNAE:${MELHOR_ENVIO_ORIGIN_CNAE}" \
-            --var "MELHOR_ENVIO_ORIGIN_ADDRESS:${MELHOR_ENVIO_ORIGIN_ADDRESS}" \
-            --var "MELHOR_ENVIO_ORIGIN_NUMBER:${MELHOR_ENVIO_ORIGIN_NUMBER}" \
-            --var "MELHOR_ENVIO_ORIGIN_COMPLEMENT:${MELHOR_ENVIO_ORIGIN_COMPLEMENT}" \
-            --var "MELHOR_ENVIO_ORIGIN_DISTRICT:${MELHOR_ENVIO_ORIGIN_DISTRICT}" \
-            --var "MELHOR_ENVIO_ORIGIN_CITY:${MELHOR_ENVIO_ORIGIN_CITY}" \
-            --var "MELHOR_ENVIO_ORIGIN_STATE:${MELHOR_ENVIO_ORIGIN_STATE}" \
-            --var "MELHOR_ENVIO_ORIGIN_POSTAL_CODE:${MELHOR_ENVIO_ORIGIN_POSTAL_CODE}" \
-            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
-            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
-            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
-            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
-            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
-            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
-            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
-            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "SUPABASE_URL:${SUPABASE_URL}" \
-            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}"
+          GIT_COMMIT_SHA="${GITHUB_SHA}"
+          BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          BUILD_TIMESTAMP="${build_timestamp}"
+          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
+          deploy_vars=()
+          add_var() {
+            local value="${!1:-}"
+            [[ -n "$value" ]] && deploy_vars+=(--var "$1:${value}")
+            return 0
+          }
+          for name in GIT_COMMIT_SHA BUILD_ID BUILD_TIMESTAMP APP_ENV PANEL_DEPLOYMENT_MODE DEMO_MODE \
+            ALLOWED_ORIGINS AUTH_COOKIE_DOMAINS NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL \
+            NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
+            add_var "$name"
+          done
+          pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"

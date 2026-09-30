@@ -1,0 +1,85 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const workflow = readFileSync(resolve(process.cwd(), ".github/workflows/ci.yml"), "utf8").replaceAll("\r\n", "\n");
+
+const stepBlock = (name: string): string => {
+  const start = workflow.indexOf(`      - name: ${name}\n`);
+  if (start < 0) throw new Error(`Passo não encontrado: ${name}`);
+  const next = workflow.slice(start + 1).search(/\n {6}- |\n {2}[a-z-]+:\n/);
+  return next < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
+};
+
+const deployVarNames = (block: string): string[] => {
+  const match = /for name in ([\s\S]*?); do/.exec(block);
+  if (!match?.[1]) throw new Error("Lista de variáveis de deploy não encontrada");
+  return match[1].replaceAll("\\", " ").split(/\s+/).filter(Boolean);
+};
+
+const topLevelEnv = (): Record<string, string> => {
+  const section = /\nenv:\n((?: {2}[A-Z_]+: .+\n)+)/.exec(workflow)?.[1] ?? "";
+  return Object.fromEntries(
+    section.trim().split("\n").map((line) => {
+      const [name, ...value] = line.trim().split(": ");
+      return [name ?? "", value.join(": ").replaceAll("\"", "")];
+    })
+  );
+};
+
+const platformVars = [
+  "GIT_COMMIT_SHA", "BUILD_ID", "BUILD_TIMESTAMP", "APP_ENV", "PANEL_DEPLOYMENT_MODE", "DEMO_MODE",
+  "ALLOWED_ORIGINS", "AUTH_COOKIE_DOMAINS", "NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL",
+  "NEXT_PUBLIC_STORE_TEST_URL", "NEXT_PUBLIC_PANEL_TEST_URL", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"
+];
+
+const deploySteps = {
+  store: { step: "Publicar curtiz-ecommerce", allowed: [...platformVars, "NEXT_PUBLIC_TURNSTILE_SITE_KEY", "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY"] },
+  panel: { step: "Publicar curtiz-panel", allowed: platformVars }
+};
+
+// Configurações administradas somente no Runtime do Cloudflare.
+const runtimeOwned = /^(CHECKOUT_ENABLED|PAYMENT_PROVIDER|MERCADO_PAGO_(?!.*PUBLIC_KEY).*|SHIPPING_PROVIDER|MELHOR_ENVIO_.*|EMAIL_.*|TURNSTILE_ENABLED|REQUIRE_INTERNAL_MFA|AUTH_RATE_LIMIT_ENABLED)$/;
+
+describe("workflow de deploy (.github/workflows/ci.yml)", () => {
+  it.each(Object.entries(deploySteps))("%s publica com --keep-vars", (_, { step }) => {
+    expect(stepBlock(step)).toMatch(/wrangler deploy --config apps\/(store|panel)\/wrangler\.jsonc --env production --keep-vars "\$\{deploy_vars\[@\]\}"/);
+  });
+
+  it.each(Object.entries(deploySteps))("%s envia somente metadados e configuração de plataforma", (_, { step, allowed }) => {
+    const names = deployVarNames(stepBlock(step));
+    expect(names).toEqual(allowed);
+    expect(names.filter((name) => runtimeOwned.test(name))).toEqual([]);
+  });
+
+  it.each(Object.entries(deploySteps))("%s nunca envia --var cru nem valor vazio", (_, { step }) => {
+    const block = stepBlock(step);
+    expect(block).not.toMatch(/--var "[A-Z_]+:/);
+    expect(block).toContain('[[ -n "$value" ]] && deploy_vars+=(--var "$1:${value}")');
+  });
+
+  it("não lê configurações de integração, MFA ou rate limit de GitHub vars", () => {
+    const githubVars = [...workflow.matchAll(/vars\.([A-Z0-9_]+)/g)].map((match) => match[1] ?? "");
+    expect(githubVars.filter((name) => runtimeOwned.test(name))).toEqual([]);
+    expect(workflow).not.toMatch(/MELHOR_ENVIO_ORIGIN|CNPJ|CNAE|STATE_REGISTER/);
+  });
+
+  it("não move credenciais sensíveis para GitHub vars ou secrets", () => {
+    const referenced = [...workflow.matchAll(/\b(?:vars|secrets)\.([A-Z0-9_]+)/g)].map((match) => match[1] ?? "");
+    expect(referenced.filter((name) =>
+      /CLIENT_SECRET|ENCRYPTION_KEY|ORIGIN_DOCUMENT|COMPANY_DOCUMENT|ACCESS_TOKEN|WEBHOOK_SECRET|RESEND_API_KEY|TURNSTILE_SECRET_KEY/.test(name)
+    )).toEqual([]);
+    expect(new Set([...workflow.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1])))
+      .toEqual(new Set(["GITLEAKS_LICENSE", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]));
+  });
+
+  it("compila com checkout e integrações desativados", () => {
+    expect(topLevelEnv()).toMatchObject({
+      CHECKOUT_ENABLED: "false",
+      PAYMENT_PROVIDER: "disabled",
+      MERCADO_PAGO_ENABLED: "false",
+      SHIPPING_PROVIDER: "disabled",
+      MELHOR_ENVIO_ENABLED: "false"
+    });
+  });
+});
