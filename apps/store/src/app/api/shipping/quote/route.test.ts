@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MelhorEnvioError } from "@curtiz/integrations";
+import type * as PrivateRequestModule from "@/lib/private-request";
 import { configuredMelhorEnvioProvider, resolveShippingProducts } from "@/lib/melhor-envio-server";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
@@ -12,14 +13,14 @@ const runtime = vi.hoisted(() => {
 const providerQuote = vi.hoisted(() => vi.fn());
 const healthUpsert = vi.hoisted(() => vi.fn());
 const serviceFrom = vi.hoisted(() => vi.fn());
+const rateLimitRpc = vi.hoisted(() => vi.fn());
 
 vi.mock("server-only", () => ({}));
 vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => ({ env: runtime.bindings }) }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
-vi.mock("@/lib/private-request", () => ({
-  PrivateRequestError: class extends Error { constructor(readonly status: number) { super("private_request"); } },
+vi.mock("@/lib/private-request", async () => ({
+  ...await vi.importActual<typeof PrivateRequestModule>("../../../../lib/private-request"),
   readPrivateJson: (request: Request) => request.json(),
-  requirePrivateRateLimit: vi.fn(async () => undefined)
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn(),
@@ -93,8 +94,10 @@ describe("POST /api/shipping/quote", () => {
     healthUpsert.mockReset().mockResolvedValue({ error: null });
     serviceFrom.mockReset().mockReturnValue({ upsert: healthUpsert });
     providerQuote.mockReset().mockResolvedValue([]);
+    rateLimitRpc.mockReset().mockResolvedValue({ data: true, error: null });
     vi.mocked(createServerSupabaseClient).mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "customer-id" } }, error: null }) }
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "customer-id" } }, error: null }) },
+      rpc: rateLimitRpc
     } as never);
     vi.mocked(createServiceSupabaseClient).mockReturnValue(database as never);
     vi.mocked(resolveShippingProducts).mockResolvedValue({
@@ -148,6 +151,7 @@ describe("POST /api/shipping/quote", () => {
     runtime.bindings = sandboxRuntimeEnvironment;
     const result = await POST(request());
     expect(result.status).toBe(200);
+    expect(rateLimitRpc).toHaveBeenCalledWith("consume_private_api_rate_limit", { p_scope: "shipping_quote" });
     expect(configuredMelhorEnvioProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         SHIPPING_PROVIDER: "melhorenvio",
@@ -167,6 +171,17 @@ describe("POST /api/shipping/quote", () => {
         scope: "store_runtime", environment: "sandbox", provider: "melhorenvio", missing: [], invalid: []
       }
     }), { onConflict: "provider" });
+  });
+
+  it("retorna 503 antes de consultar o Melhor Envio quando a RPC rejeita o escopo", async () => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    rateLimitRpc.mockResolvedValue({ data: null, error: { code: "22023" } });
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    expect(rateLimitRpc).toHaveBeenCalledWith("consume_private_api_rate_limit", { p_scope: "shipping_quote" });
+    expect(providerQuote).not.toHaveBeenCalled();
+    expect(healthUpsert).not.toHaveBeenCalled();
+    expect(JSON.stringify(await result.json())).not.toContain("22023");
   });
 
   it.each([

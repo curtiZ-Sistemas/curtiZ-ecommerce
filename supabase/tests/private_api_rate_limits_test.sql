@@ -1,5 +1,5 @@
 begin;
-select plan(9);
+select plan(15);
 
 insert into auth.users(id,email,encrypted_password,email_confirmed_at,raw_user_meta_data)
 values
@@ -11,19 +11,30 @@ update public.profiles set status='active' where id in
 select ok(not has_function_privilege('anon','public.consume_private_api_rate_limit(text)','execute'), 'Anonymous cannot consume authenticated budgets');
 select ok(has_function_privilege('authenticated','public.consume_private_api_rate_limit(text)','execute'), 'Authenticated can call the fixed-budget RPC');
 select ok(not has_table_privilege('authenticated','private.auth_rate_limits','select,insert,update,delete'), 'Clients cannot read or reset budgets');
+select ok((select pg_catalog.pg_get_constraintdef(oid) like '%shipping_quote%'
+  from pg_catalog.pg_constraint
+  where conrelid = 'private.auth_rate_limits'::regclass and conname = 'auth_rate_limits_scope_check'),
+  'Shipping quotes are included in the database scope constraint');
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"da000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}',true);
 select ok((select bool_and(public.consume_private_api_rate_limit('mfa_verify')) from generate_series(1,10)), 'Own first ten verification attempts are allowed');
 select is(public.consume_private_api_rate_limit('mfa_verify'),false,'Eleventh attempt is denied');
 select is(public.consume_private_api_rate_limit('mfa_read'),true,'Reading state has an independent budget');
+select ok((select bool_and(public.consume_private_api_rate_limit('shipping_quote')) from generate_series(1,30)),
+  'Active customer can consume all 30 shipping quotes in a minute');
+select is(public.consume_private_api_rate_limit('shipping_quote'),false,'Thirty-first shipping quote is denied');
+select is(public.consume_private_api_rate_limit('checkout_quote'),true,'Checkout retains an independent budget');
 select throws_ok($$select public.consume_private_api_rate_limit('arbitrary')$$,'22023','Invalid operation','Callers cannot choose arbitrary rate scopes');
 select set_config('request.jwt.claims','{"sub":"da000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal1"}',true);
 select is(public.consume_private_api_rate_limit('mfa_verify'),true,'Another user retains their own budget');
+select is(public.consume_private_api_rate_limit('shipping_quote'),true,'Another user retains their shipping budget');
 reset role;
 update public.profiles set status='suspended' where id='da000000-0000-4000-8000-000000000002';
 set local role authenticated;
 select throws_ok($$select public.consume_private_api_rate_limit('mfa_read')$$,'42501','Access denied','Suspended users are denied');
+select throws_ok($$select public.consume_private_api_rate_limit('shipping_quote')$$,'42501','Access denied',
+  'Suspended users cannot consume shipping quotes');
 reset role;
 select * from finish();
 rollback;

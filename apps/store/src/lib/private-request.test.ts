@@ -26,4 +26,9 @@ describe("private request boundary", () => {
     await expect(requirePrivateRateLimit({ rpc: async () => ({ data: false, error: null }) }, "mfa_verify"))
       .rejects.toMatchObject({ status: 429 });
   });
+  it("allows an active shipping quote when the database accepts its scope", async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    await expect(requirePrivateRateLimit({ rpc }, "shipping_quote")).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith("consume_private_api_rate_limit", { p_scope: "shipping_quote" });
+  });
 });
