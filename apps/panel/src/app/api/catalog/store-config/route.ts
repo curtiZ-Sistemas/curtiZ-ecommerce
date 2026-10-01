@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       reviewRequired: plan.options.publicar_home_automaticamente && saved.length > 0,
       message: saved.length || archived.length ? "Configuração salva no Homepage Builder." : "Configuração já estava atualizada."
     }, { headers: privateNoStore });
-  } catch (error) {
+  } catch {
     const invalidWorkbook = stage === "workbook";
     logServerEvent("error", "store_config_apply_failed", { requestId, stage,
       code: invalidWorkbook ? "INVALID_WORKBOOK" : "APPLY_FAILED" });

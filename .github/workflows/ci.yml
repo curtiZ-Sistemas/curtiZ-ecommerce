@@ -144,7 +144,18 @@ jobs:
       - uses: supabase/setup-cli@v2
         with:
           version: 2.110.0
-      - run: supabase start
+      - name: Iniciar Supabase local (migrations + seed)
+        run: supabase start --debug
+      - name: Diagnóstico do Supabase local
+        if: failure()
+        shell: bash
+        run: |
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^supabase_(db|storage|auth|rest)_'); do
+            echo "::group::${container}"
+            docker logs --tail 300 "$container" 2>&1 || true
+            echo "::endgroup::"
+          done
       - run: supabase db lint --local --fail-on error
       - run: supabase test db
 

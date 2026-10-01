@@ -26,6 +26,9 @@ export type StoreConfigSectionChange = {
   existing?: ExistingManagedHomeSection;
 };
 
+const payloadText = (value: unknown) =>
+  typeof value === "string" || typeof value === "number" ? String(value) : "";
+
 const configHash = (value: unknown) => value && typeof value === "object" && !Array.isArray(value)
   ? (value as Record<string, unknown>).configHash : undefined;
 
@@ -33,14 +36,14 @@ export function planStoreConfigSectionChanges(
   desired: readonly ManagedHomeSection[],
   existing: readonly ExistingManagedHomeSection[]
 ): StoreConfigSectionChange[] {
-  const desiredNames = new Set(desired.map((section) => String(section.payload.internalName ?? "")));
+  const desiredNames = new Set(desired.map((section) => payloadText(section.payload.internalName)));
   const changes = desired.map((section): StoreConfigSectionChange => {
-    const internalName = String(section.payload.internalName ?? "");
+    const internalName = payloadText(section.payload.internalName);
     const matches = existing.filter((candidate) => candidate.internal_name === internalName);
     const current = matches.find((candidate) => candidate.status !== "archived") ?? matches[0];
     return {
       key: section.key,
-      type: String(section.payload.sectionType ?? ""),
+      type: payloadText(section.payload.sectionType),
       action: !current ? "create"
         : current.status === "archived" ? "restore"
           : configHash(current.content_config) === section.hash ? "unchanged" : "update",

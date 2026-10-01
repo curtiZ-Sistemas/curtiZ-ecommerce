@@ -52,7 +52,7 @@ describe("publicação direta da homepage", () => {
   });
 
   it("preserva agendamento", async () => {
-    const scheduledAt = "2026-10-01T12:00:00Z";
+    const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const response = await post({ action: "publish", reason: "Agendar página", scheduledAt });
     expect(response.status).toBe(200);
     expect((await response.json() as { message: string }).message).toBe("Publicação agendada.");

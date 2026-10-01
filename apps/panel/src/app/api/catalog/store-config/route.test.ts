@@ -40,7 +40,7 @@ vi.mock("@/lib/admin-api", () => ({
   privateNoStore: { "cache-control": "private, no-store" },
   safePanelOrigin: () => true,
   unauthorizedAdminResponse: () => new Response(null, { status: 403 }),
-  objectRows: (value: unknown) => Array.isArray(value) ? value : [],
+  objectRows: (value: unknown): unknown[] => Array.isArray(value) ? value.map((row: unknown) => row) : [],
   authorizeAdminRequest: async () => ({
     supabase: {
       from: () => {

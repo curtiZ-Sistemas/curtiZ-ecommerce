@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -81,5 +81,40 @@ describe("workflow de deploy (.github/workflows/ci.yml)", () => {
       SHIPPING_PROVIDER: "disabled",
       MELHOR_ENVIO_ENABLED: "false"
     });
+  });
+});
+
+describe("caminho único de produção", () => {
+  const workflowsDirectory = resolve(process.cwd(), ".github/workflows");
+  const workflows = readdirSync(workflowsDirectory).filter((name) => /\.ya?ml$/u.test(name));
+
+  it("somente ci.yml publica Workers, e apenas fora de pull requests", () => {
+    const deploying = workflows.filter((name) =>
+      /wrangler (deploy|versions deploy)|cloudflare\/wrangler-action/u.test(readFileSync(resolve(workflowsDirectory, name), "utf8")));
+    expect(deploying).toEqual(["ci.yml"]);
+    for (const step of ["Publicar curtiz-ecommerce", "Publicar curtiz-panel"]) {
+      expect(stepBlock(step)).toContain("if: github.event_name != 'pull_request'");
+    }
+  });
+
+  it("deploy do Actions depende de todos os gates", () => {
+    expect(workflow.match(/needs: \[changes, quality, database, e2e, security\]/gu)).toHaveLength(2);
+  });
+
+  it("documenta que o Workers Builds é configuração remota e precisa ser desconectado manualmente", () => {
+    const docs = readFileSync(resolve(process.cwd(), "docs/deployment.md"), "utf8");
+    expect(docs).toContain("Workers & Pages** → `curtiz-ecommerce` → **Settings → Builds**");
+    expect(docs).toContain("**Disconnect**");
+    expect(docs).toContain("Repita em `curtiz-panel`");
+    expect(docs).toContain("A conexão Git do Cloudflare é uma configuração **remota**");
+  });
+
+  it("os wrangler.jsonc não declaram build remoto nem vars que sobrescrevam o runtime", () => {
+    for (const app of ["store", "panel"]) {
+      const config = readFileSync(resolve(process.cwd(), `apps/${app}/wrangler.jsonc`), "utf8");
+      expect(config).toContain('"keep_vars": true');
+      expect(config).not.toMatch(/"vars"\s*:/u);
+      expect(config).not.toMatch(/"build"\s*:/u);
+    }
   });
 });

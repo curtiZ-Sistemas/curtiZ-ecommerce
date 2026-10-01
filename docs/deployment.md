@@ -25,9 +25,18 @@ O GitHub Actions deve ser o **único** caminho automático. Confira manualmente,
 2. Se houver um repositório conectado, use **Disconnect**.
 3. Repita em `curtiz-panel`.
 
-Um Workers Build conectado publicaria uma segunda versão a cada push, fora da ordem e sem as
-validações do workflow. Não inicie builds nem publicações manuais pelo Cloudflare. Para
-reconstruir um Worker, use `workflow_dispatch` e selecione `store`, `panel` ou `both`.
+Um Workers Build conectado publica uma segunda versão a cada push, fora da ordem e **sem** os gates
+do workflow (qualidade, banco, E2E, segurança). Em 30/09/2026 isso estava acontecendo: os checks
+`Workers Builds: curtiz-ecommerce` e `Workers Builds: curtiz-painel` publicavam com sucesso enquanto o
+CI falhava, e o job de deploy do Actions ficava `skipped`. Não inicie builds nem publicações manuais
+pelo Cloudflare. Para reconstruir um Worker, use `workflow_dispatch` e selecione `store`, `panel` ou
+`both`.
+
+A conexão Git do Cloudflare é uma configuração **remota**: nenhum arquivo deste repositório consegue
+ligá-la ou desligá-la, e `scripts/ci-workflow.test.ts` só garante que o próprio repositório tenha um
+único workflow de deploy e mantenha este checklist. Sinais de que o Workers Builds voltou a publicar:
+um check `Workers Builds: …` no commit, ou `/api/version` mostrando um `commit` diferente do SHA
+publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA`/`BUILD_ID`).
 
 ### Onde cada configuração fica
 
@@ -189,6 +198,27 @@ pelo fluxo OAuth do painel técnico; não os mantenha em variáveis de ambiente.
 `https://<loja>/api/webhooks/melhor-envio` e marque `MELHOR_ENVIO_WEBHOOK_CONFIGURED=true` depois da
 configuração. O `X-ME-Signature` é validado com o Client Secret do aplicativo, conforme o contrato
 oficial.
+
+**Diagnóstico de `/api/shipping/quote`.** Toda falha devolve ao cliente apenas uma mensagem simples e
+um código `FRT-XXXXXXXX` (também no cabeçalho `x-support-code`). No painel técnico, **Frete da loja**
+mostra o último resultado gravado pelo Worker da loja em `integration_health`
+(`melhorenvio_store`). Em **Logs técnicos**, buscar pelo código encontra o evento
+`store.shipping_quote` com `request_id`. Só a linha **Frete da loja** indica se a cotação está pronta:
+**OAuth do painel · Melhor Envio** e **Frete no painel** refletem o Worker do painel, que tem variáveis
+próprias.
+
+| Código | Significado |
+| --- | --- |
+| `shipping_provider_disabled` / `shipping_provider_unsupported` | `SHIPPING_PROVIDER` do runtime da loja não é `melhorenvio`/`fixed` |
+| `melhor_envio_not_configured` | campos ausentes (lista só os nomes) |
+| `melhor_envio_configuration_invalid` | campos presentes com valor inválido (ex.: `MELHOR_ENVIO_BASE_URL_INVALID`, `MELHOR_ENVIO_ENABLED_DISABLED`) |
+| `store_runtime_context_unavailable` | contexto do Cloudflare indisponível na requisição |
+| `store_supabase_auth_unavailable` / `shipping_rate_limit_unavailable` | Supabase Auth ou RPC `consume_private_api_rate_limit` indisponível |
+| `store_service_database_unavailable` | chave de serviço do Supabase ausente no Worker da loja |
+| `melhor_envio_authentication` | OAuth/token do Melhor Envio inválido ou ausente |
+| `melhor_envio_timeout` / `melhor_envio_rate_limited` / `melhor_envio_provider_unavailable` / `melhor_envio_validation` | resposta do provider |
+| `shipping_product_invalid` / `shipping_product_lookup_unavailable` | itens do carrinho inválidos / consulta de produtos falhou |
+| `shipping_quote_persistence_unavailable` | cotação obtida, mas a gravação em `shipping_quotes` falhou |
 
 Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Todas as
 `MELHOR_ENVIO_*` e as flags `SHIPPING_PROVIDER`/`MELHOR_ENVIO_ENABLED` são cadastradas somente no

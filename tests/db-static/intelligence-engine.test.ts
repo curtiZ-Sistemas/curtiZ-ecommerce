@@ -5,6 +5,8 @@ const migration = readFileSync("supabase/migrations/202608210001_intelligence_en
 const client = readFileSync("apps/store/src/lib/intelligence-client.ts", "utf8");
 const renderer = readFileSync("apps/store/src/components/homepage-section-renderer.tsx", "utf8");
 const shelf = readFileSync("apps/store/src/components/intelligence-shelf.tsx", "utf8");
+// A vitrine delega a busca ao carregador compartilhado de recomendações.
+const recommendationLoader = readFileSync("apps/store/src/lib/smart-recommendations.ts", "utf8");
 const recommendations = readFileSync(
   "apps/store/src/app/api/intelligence/recommendations/route.ts",
   "utf8"
@@ -52,10 +54,11 @@ describe("curti Z intelligence engine", () => {
     expect(homepageBuilder).toMatch(/<option\s+value=["']discovery["']>/u);
     expect(recommendations).toMatch(/const sourceSchema = z\.enum\(\[[\s\S]*["']discovery["']/u);
     expect(recommendations).toContain("p_source: input.source");
-    expect(shelf).toContain('"/api/intelligence/recommendations"');
-    expect(shelf).toContain("publicParams");
+    expect(shelf).toContain("loadSmartRecommendations");
+    expect(recommendationLoader).toContain('"/api/intelligence/recommendations"');
+    expect(recommendationLoader).toContain("`/api/intelligence/recommendations?${params}`");
     expect(recommendations).toContain('hasServerConsent(request, "analytics")');
     expect(shelf).toContain("new IntersectionObserver");
-    expect(shelf).toContain("nextCursor");
+    expect(recommendationLoader).toContain("payload.nextCursor");
   });
 });

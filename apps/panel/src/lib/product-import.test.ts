@@ -110,7 +110,8 @@ describe("product XLSX import", () => {
 
   it("keeps variation sessions without displayTitle compatible", async () => {
     const batch = await parseProductImportWorkbook(await minimalWorkbook());
-    const { displayTitle: _displayTitle, ...legacyVariant } = batch.products[0]!.variants[0]!;
+    const legacyVariant: Record<string, unknown> = { ...batch.products[0]!.variants[0]! };
+    delete legacyVariant.displayTitle;
     const legacyPayload = {
       batch: { ...batch, products: [{ ...batch.products[0]!, variants: [legacyVariant] }] },
       references: { "PROD-1": { categoryId: "20000000-0000-0000-0000-000000000001", modelId: null, collectionId: null } }
