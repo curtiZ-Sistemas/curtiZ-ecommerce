@@ -1,5 +1,5 @@
 begin;
-select plan(15);
+select plan(18);
 
 insert into auth.users(id,email,encrypted_password,email_confirmed_at,raw_user_meta_data)
 values
@@ -15,6 +15,11 @@ select ok((select pg_catalog.pg_get_constraintdef(oid) like '%shipping_quote%'
   from pg_catalog.pg_constraint
   where conrelid = 'private.auth_rate_limits'::regclass and conname = 'auth_rate_limits_scope_check'),
   'Shipping quotes are included in the database scope constraint');
+select ok(has_function_privilege('anon','public.shipping_quote_rate_limit_ready()','execute'), 'Deploy preflight can read the shipping budget readiness');
+set local role anon;
+select is(public.shipping_quote_rate_limit_ready(), true, 'Readiness confirms constraint, function and grants for shipping quotes');
+reset role;
+select is(public.shipping_quote_rate_limit_ready(), true, 'Readiness is stable for privileged callers');
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"da000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}',true);

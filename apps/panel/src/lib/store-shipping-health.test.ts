@@ -6,7 +6,7 @@ describe("diagnóstico persistido do frete da loja", () => {
     expect(getStoreShippingService(null)).toMatchObject({
       name: "Frete da loja",
       state: "not_configured",
-      detail: "A loja ainda não registrou uma verificação de cotação no runtime."
+      detail: expect.stringContaining("A loja ainda não registrou uma verificação de cotação no runtime.") as unknown
     });
   });
 
@@ -39,7 +39,29 @@ describe("diagnóstico persistido do frete da loja", () => {
       metadata_sanitized: { environment: "sandbox", missing: [], invalid: [] }
     })).toMatchObject({
       state: "offline",
-      detail: "Autenticação do Melhor Envio falhou na loja · Sandbox"
+      detail: "Autenticação do Melhor Envio falhou na loja (OAuth/token) · Sandbox"
     });
+  });
+
+  it.each([
+    ["store_runtime_context_unavailable", "Runtime do Cloudflare indisponível na loja"],
+    ["shipping_rate_limit_unavailable", "Limitador de requisições (RPC) indisponível na loja"],
+    ["melhor_envio_configuration_invalid", "Configuração do Melhor Envio com valor inválido na loja"],
+    ["shipping_quote_persistence_unavailable", "Cotação obtida, mas não foi gravada em shipping_quotes"],
+    ["shipping_product_lookup_unavailable", "Consulta dos produtos do carrinho falhou na loja"]
+  ])("distingue %s", (code, label) => {
+    expect(getStoreShippingService({ state: "degraded", error_summary: code, metadata_sanitized: {} }).detail)
+      .toContain(label);
+  });
+
+  it("mostra o código de suporte da última cotação somente no formato esperado", () => {
+    expect(getStoreShippingService({
+      state: "not_configured", error_summary: "shipping_provider_disabled",
+      metadata_sanitized: { environment: "sandbox", supportCode: "FRT-1A2B3C4D" }
+    }).detail).toBe("Frete desabilitado na configuração efetiva da loja · Sandbox · código FRT-1A2B3C4D");
+    expect(getStoreShippingService({
+      state: "degraded", error_summary: "melhor_envio_timeout",
+      metadata_sanitized: { supportCode: "segredo qualquer" }
+    }).detail).not.toContain("segredo");
   });
 });
