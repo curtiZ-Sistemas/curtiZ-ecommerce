@@ -244,6 +244,8 @@ jobs:
         run: pnpm exec tsx scripts/validate-supabase-readiness.ts
       - name: Validar produção e compilar Worker da loja
         run: pnpm build:worker
+      - name: Validar empacotamento de produção da loja
+        run: pnpm deploy:dry-run
       - name: Publicar curtiz-ecommerce
         if: github.event_name != 'pull_request'
         env:
@@ -328,6 +330,8 @@ jobs:
           pnpm exec tsx scripts/cloudflare-secret-validation.ts "$RUNNER_TEMP/panel-worker-secrets.json"
       - name: Validar produção e compilar Worker do painel
         run: pnpm build:worker:panel
+      - name: Validar empacotamento de produção do painel
+        run: pnpm deploy:dry-run:panel
       - name: Publicar curtiz-panel
         if: github.event_name != 'pull_request'
         env:

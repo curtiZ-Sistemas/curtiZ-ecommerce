@@ -238,6 +238,48 @@ valores.
 
 ## Preflight, smoke e housekeeping
 
+### Empacotamento final dos Workers
+
+O build OpenNext e o empacotamento Wrangler são etapas distintas. O CI executa
+`pnpm deploy:dry-run` (loja) e `pnpm deploy:dry-run:panel` (painel) depois dos builds,
+inclusive em pull requests. Esses scripts verificam os assets públicos e executam
+`wrangler deploy --dry-run --config wrangler.jsonc --env production --keep-vars` dentro
+da aplicação correspondente. O dry-run não faz upload nem ativa uma versão.
+
+Os filtros pnpm executam cada script em `apps/store` ou `apps/panel`, preservando os links
+`workspace:*` dos nove projetos. A publicação pelo Actions parte da raiz e usa os caminhos
+explícitos `apps/store/wrangler.jsonc` e `apps/panel/wrangler.jsonc`. Não publique com uma
+configuração gerada ou um entrypoint diferente: a loja usa `custom-worker.ts`, que reutiliza
+o HTTP do OpenNext, otimiza imagens e executa os jobs via `scheduled`; o painel usa diretamente
+`.open-next/worker.js`, com seus próprios assets, imagens e produtor de fila.
+
+Somente o Wrangler da loja possui um alias `server-only` para `worker-server-only.ts`.
+Esse marcador não contém lógica de negócio: o Next.js o resolve internamente e rejeita imports
+em Client Components. No segundo empacotamento, o Wrangler alcança novamente os módulos privados
+pelos jobs do Worker personalizado, fora do compilador Next.js. O alias corresponde à entrada
+vazia `react-server` do marcador e permite empacotar esses módulos no Worker. Nenhum import
+funcional é substituído ou externalizado. Os imports `server-only`, as configurações Next.js
+e as verificações de exposição de código e assets continuam ativos. Não se aplica alias ao
+painel, cujo entrypoint é o Worker gerado pelo OpenNext.
+
+Referências: [Module Aliasing do Wrangler](https://developers.cloudflare.com/workers/wrangler/configuration/#module-aliasing)
+e [fronteira server/client do Next.js](https://nextjs.org/docs/app/getting-started/server-and-client-components#preventing-environment-poisoning).
+
+`wrangler deploy` envia e ativa uma versão imediatamente, como já faz o workflow oficial.
+`wrangler versions upload` apenas envia uma versão; `wrangler versions deploy` escolhe e ativa
+versões previamente enviadas. Não substitua o caminho oficial por uploads do Workers Builds,
+especialmente de branches Dependabot. A publicação corrigida deve partir de `main` após os
+gates do CI, com Workers Builds desconectados manualmente nos dois Workers. Preserve a versão
+anterior para o rollback existente e valide `/api/version`, o smoke sem cobrança e os Cron
+Triggers após a publicação.
+
+No Windows, um erro `EPERM ... symlink` durante a cópia dos arquivos pelo OpenNext impede a
+geração completa do Worker, mesmo quando `next build` passou. Nesse caso, os dois builds e
+dry-runs completos precisam ser confirmados no runner Linux; assets parciais não comprovam
+sucesso. Se o painel falhar no Cloudflare, forneça o log desde o comando de build após a
+instalação do Node até a primeira mensagem de erro, stack e código de saída, incluindo o
+diretório de execução, SHA e versões Node/pnpm/Next/OpenNext/Wrangler. Não inclua valores de secrets.
+
 O deploy da loja executa `pnpm build:worker`, que reutiliza `validate:production`. Antes de publicar,
 o CI confirma os secrets do Worker e chama a RPC pública
 `cart_variant_stock_availability` no Supabase remoto. Portanto, aplique a migration incremental

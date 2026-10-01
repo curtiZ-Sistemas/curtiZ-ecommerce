@@ -42,6 +42,16 @@ const deploySteps = {
 const runtimeOwned = /^(CHECKOUT_ENABLED|PAYMENT_PROVIDER|MERCADO_PAGO_(?!.*PUBLIC_KEY).*|SHIPPING_PROVIDER|MELHOR_ENVIO_.*|EMAIL_.*|TURNSTILE_ENABLED|REQUIRE_INTERNAL_MFA|AUTH_RATE_LIMIT_ENABLED)$/;
 
 describe("workflow de deploy (.github/workflows/ci.yml)", () => {
+  it.each([
+    ["Validar empacotamento de produção da loja", "pnpm deploy:dry-run", "Publicar curtiz-ecommerce"],
+    ["Validar empacotamento de produção do painel", "pnpm deploy:dry-run:panel", "Publicar curtiz-panel"]
+  ])("%s verifica o bundle final inclusive em pull requests", (step, command, deploy) => {
+    const block = stepBlock(step);
+    expect(block.trimEnd().endsWith(`run: ${command}`)).toBe(true);
+    expect(block).not.toContain("if:");
+    expect(workflow.indexOf(block)).toBeLessThan(workflow.indexOf(stepBlock(deploy)));
+  });
+
   it.each(Object.entries(deploySteps))("%s publica com --keep-vars", (_, { step }) => {
     expect(stepBlock(step)).toMatch(/wrangler deploy --config apps\/(store|panel)\/wrangler\.jsonc --env production --keep-vars "\$\{deploy_vars\[@\]\}"/);
   });
