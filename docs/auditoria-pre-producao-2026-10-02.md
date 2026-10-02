@@ -1,6 +1,6 @@
 # Auditoria de pré-produção — 02/10/2026
 
-**Conclusão: não apto para produção com as evidências disponíveis.** As correções locais abaixo foram verificadas, mas faltam testes essenciais de banco, autorização com contas reais isoladas, integrações externas e configuração de implantação. A consulta ao registro npm também confirmou alertas pendentes em dependências. Isso não demonstra exploração da aplicação nem permite declarar segurança ou conformidade integral.
+**Conclusão: não apto para produção com as evidências disponíveis.** As correções locais abaixo foram verificadas, mas faltam testes essenciais de banco, autorização com contas reais isoladas, integrações externas e configuração de implantação. Os dez alertas de dependências da consulta inicial foram resolvidos na atualização posteriormente autorizada; a nova consulta npm retornou zero vulnerabilidades. Isso não permite declarar segurança ou conformidade integral.
 
 ## Base, autorização e método
 
@@ -38,7 +38,7 @@ Fronteiras: navegador → loja/painel → Supabase Auth/RPC/RLS/Storage; provedo
 | Tampering | Alterar preço, proprietário, cotação, pagamento ou payload de fila | Totais/cotação no servidor, vínculo ao cliente, assinatura, lease e estados persistidos; corrigido ack após perda de lock. Falta concorrência real |
 | Repudiation | Ação privilegiada sem rastreabilidade | Eventos/auditoria e códigos sanitizados existentes; faltam conferir persistência, retenção, acesso aos logs e recuperação |
 | Information disclosure | BOLA, exportação de PII, segredo no bundle ou redirecionamento de transporte privilegiado | Guards, RLS declarada, limites de origem e verificadores de exposição; transporte Supabase do worker agora rejeita redirects. Falta teste entre contas e configuração implantada |
-| Denial of service | Corpo/arquivo excessivo, fila em loop, indisponibilidade externa ou dependência com algoritmo caro | Limites de corpo/arquivo/pixels, timeouts, rate budgets, tentativas limitadas e DLQ declarada. Faltam carga, execução de rate limit/RPC e tratar os alertas npm |
+| Denial of service | Corpo/arquivo excessivo, fila em loop, indisponibilidade externa ou dependência com algoritmo caro | Limites de corpo/arquivo/pixels, timeouts, rate budgets, tentativas limitadas e DLQ declarada. Alertas npm resolvidos na atualização autorizada; faltam carga e execução de rate limit/RPC |
 | Elevation of privilege | Demo em produção, papel removido ou RPC privilegiada acessível | Correção central demo; checagem de perfil/papel/permissão e grants restritos nos trechos lidos. Não há prova dinâmica de toda a superfície RLS |
 
 Papéis esperados: cliente/representante restritos aos próprios objetos e vínculos autorizados; administrativo ao catálogo/gestão comercial; operacional a pedidos/expedição/estoque; gerencial a financeiro/aprovações; técnico a integrações/sistema. A presença de botões ou a ocultação na UI não comprova essa matriz. Testar os mesmos objetos pelas APIs e diretamente no banco, incluindo papéis expirados/removidos, perfil inativo e AAL insuficiente.
@@ -76,11 +76,11 @@ Correção: devolver estado de indisponibilidade distinto de consulta vazia, pro
 - Navegação da home: o seletor de uma seção fixa não corresponde à composição demo atual. O teste passou a usar o link de produto renderizado no conteúdo principal, preservando verificações de navegação, seleção de tamanho, adição e ausência de sincronização indevida.
 - Menu mobile: a contagem arbitrária de oito links não corresponde à navegação configurável atual. O teste agora verifica Produtos/Atendimento/Favoritos e seus destinos, limites da viewport, fechamento por Escape e retorno de foco ao botão.
 
-## Dependências: achado confirmado, tratamento bloqueado
+## Dependências: atualização autorizada e alertas resolvidos
 
-Consulta `pnpm audit --json` em 02/10/2026: **9 alertas moderados e 1 baixo; nenhum alto/crítico**. Contagem por entradas do registro: Vitest/mocker compartilham um advisory; brace-expansion aparece em três versões. Um alerta não comprova que sua pré-condição está exposta pela aplicação.
+Consulta inicial `pnpm audit --json` em 02/10/2026, antes da atualização: **9 alertas moderados e 1 baixo; nenhum alto/crítico**. Contagem por entradas do registro: Vitest/mocker compartilham um advisory; brace-expansion aparece em três versões. Um alerta não comprova que sua pré-condição está exposta pela aplicação.
 
-| Pacote instalado | Caminho relevante | Alerta / versão corrigida indicada |
+| Versão na auditoria inicial | Caminho relevante | Alerta / versão corrigida indicada |
 | --- | --- | --- |
 | `uuid 8.3.2` | ExcelJS do painel | [GHSA-w5hq-g745-h8pq](https://github.com/uuidjs/uuid/security/advisories/GHSA-w5hq-g745-h8pq); `11.1.1` ou superior |
 | `esbuild 0.27.3` | Wrangler | [GHSA-g7r4-m6w7-qqqr](https://github.com/evanw/esbuild/security/advisories/GHSA-g7r4-m6w7-qqqr); `0.28.1` ou superior; dev server Windows |
@@ -89,11 +89,32 @@ Consulta `pnpm audit --json` em 02/10/2026: **9 alertas moderados e 1 baixo; nen
 | `vitest` e `@vitest/mocker 3.2.7` | Ferramentas de testes | [GHSA-82fw-gwwq-j7x9](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9); `4.1.11`; sem backport para 3.x |
 | `brace-expansion 1.1.20 / 2.1.6 / 5.0.11` | ESLint/glob/OpenNext | [GHSA-q2hr-2g5m-vwhr](https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-q2hr-2g5m-vwhr); `1.1.21 / 2.1.7 / 5.0.12` |
 
-Plano concreto preparado: Vitest `4.1.11` nos nove manifestos; overrides dos patch/minor acima; `exceljs>uuid=11.1.1` e `wrangler>esbuild=0.28.1`, com lockfile gerado pelo pnpm. A análise preliminar consultou o guia oficial de migração Vitest 4 e os exports CommonJS/browser do UUID 11.1.1; ainda seria necessário validar compatibilidade com toda a suíte, XLSX real e empacotamento/builds. Nenhuma instalação dessas versões foi executada.
+Atualização autorizada pelo usuário e instalada a partir de `e27a304`: Vitest `4.1.11` fixado nos nove manifestos; overrides PostCSS `8.5.23`, qs `6.16.0`, brace-expansion `1.1.21 / 2.1.7 / 5.0.12`, `exceljs>uuid=11.1.1` e `wrangler>esbuild=0.28.1`. O pnpm gerou o lockfile; a revisão dos pacotes alterados restringiu as mudanças aos alvos e à árvore do novo Vitest. Node `24.19.0`, pnpm `10.14.0`, Next e adaptador OpenNext foram preservados. A instalação usou `--ignore-scripts --child-concurrency=1 --network-concurrency=2`, sem executar scripts de instalação.
 
-A revisão automática rejeitou `pnpm install --ignore-scripts --child-concurrency=1 --network-concurrency=2`, citando a proibição do usuário de instalar/atualizar dependências. As edições de versão preparadas foram desfeitas; manifestos, dependências e lockfile mantêm as versões originais. É necessária aprovação explícita para essa atualização antes de repetir a instalação. Não foram suprimidos advisories nem alterados limiares de CI.
+O bloqueio anterior da revisão automática foi resolvido pela autorização explícita do usuário para instalar/atualizar as versões propostas. A nova consulta `pnpm audit --json` retornou **zero alertas em todas as severidades** (964 dependências reportadas). Não foram suprimidos advisories nem alterados limiares de CI. A consulta é uma fotografia do registro nessa data, não prova ausência de vulnerabilidades ainda desconhecidas.
 
-## Validações executadas
+O pnpm apresentou avisos de pacotes depreciados e peers incompatíveis no fallback WASM opcional de `unrs-resolver` (`@emnapi/core`/`runtime`). Os pacotes desse aviso não foram alterados no diff do lockfile. Não se introduziu override para versões alpha nem se desativou a checagem; as verificações de compatibilidade estão registradas abaixo.
+
+### Validação da atualização autorizada
+
+Executada em 02/10/2026 com as versões instaladas e um worker. Não foi necessário alterar código da aplicação, contratos de teste ou limites de timeout para compatibilidade com o Vitest 4.
+
+| Verificação | Resultado |
+| --- | --- |
+| `pnpm audit --json` | Zero vulnerabilidades em todas as severidades; 964 dependências reportadas |
+| Testes XLSX de importação e exportação do painel | 19 testes em três arquivos aprovados; exercitam ExcelJS com UUID atualizado |
+| `pnpm exec vitest run scripts tests/db-static --maxWorkers=1` | 316 testes em 81 arquivos aprovados |
+| `pnpm --workspace-concurrency=1 -r --if-present run test --maxWorkers=1` | 1.148 testes aprovados: worker 12, config 54, domain 36, security 46, supabase 4, integrations 61, panel 239 e store 696. Com a raiz: **1.464 testes**, sem contar novamente os 19 testes XLSX |
+| `pnpm typecheck:scripts` e typecheck recursivo sequencial | Aprovados em scripts e nos oito workspaces |
+| ESLint em `scripts tests/db-static` e lint recursivo sequencial | Aprovados; o aviso do fallback WASM não impediu o lint local, mas esse fallback não foi exercitado separadamente |
+| `pnpm --filter @curtiz/store build` e `pnpm --filter @curtiz/panel build` | Aprovados, incluindo scanner de exposição dos assets públicos; aviso existente de `middleware` permanece |
+| `pnpm --filter @curtiz/product-import-worker deploy:dry-run` | Empacotamento Wrangler aprovado com esbuild atualizado, sem upload/deploy. Aviso de múltiplos ambientes sem alvo explícito; somente configuração de topo simulada |
+
+A primeira execução direcionada de dez testes da raiz teve nove aprovações e um timeout de bundling enquanto concorria com os testes XLSX. A execução completa posterior foi sequencial e passou integralmente, sem aumentar o timeout. Builds e demais verificações pesadas também foram sequenciais.
+
+O dry-run acima cobre apenas o consumidor de imagens. O empacotamento OpenNext das aplicações não foi repetido: permanece a limitação EPERM de symlinks no Windows observada anteriormente. Banco/pgTAP, integrações externas e E2E com dados reais não foram executados nesta atualização.
+
+## Validações da auditoria inicial
 
 | Verificação | Resultado |
 | --- | --- |
@@ -120,11 +141,10 @@ Painéis: tentativa manual com sessões demo locais e um servidor por vez interr
 1. Executar migrations/pgTAP, RLS, `SECURITY DEFINER`/grants e ataques entre usuários/papéis em banco isolado; testar revogação, MFA, sessão expirada e conta desativada por API e banco.
 2. Homologar checkout/estoque com concorrência, cotação expirada, repetição, pagamento divergente/duplicado, cancelamento e reembolso. As rotas Mercado Pago examinadas aceitam credenciais `TEST-*`; não comprovam prontidão para cobrança comercial real.
 3. Validar OAuth/webhooks/jobs Bling/Melhor Envio/Resend, lease vencido, timeout após envio, reconciliação e DLQ com os serviços reais em homologação. Testar autenticação `sb_secret_*` e imagens em Queue/Images/Storage reais.
-4. Aprovar e validar a atualização de dependências; repetir audit e os checks de compatibilidade correspondentes.
-5. Executar build OpenNext/dry-run em ambiente compatível e conferir os nomes/bindings/flags das duas aplicações e do consumidor, CSP/cookies/TLS/domínios, cron, WAF, observabilidade e alertas implantados. Não realizar deploy automaticamente.
-6. Comprovar backup/restauração, processamento de anexos pelo scanner real, retenção/recuperação de logs e resposta a incidentes.
-7. Conferir com os responsáveis empresa/documentos publicados, atendimento aos titulares, consentimento/retirada e retenção, termos de compra/arrependimento, dados fiscais e emissão NF-e. Ausência de documentação local ou ambiente isolado não autoriza inventar dados comerciais.
-8. Completar E2E com dados isolados dos seis perfis, validação assistiva WCAG e métricas de desempenho representativas. A inspeção e os testes selecionados não equivalem a cobertura integral.
+4. Executar build OpenNext/dry-run em ambiente compatível e conferir os nomes/bindings/flags das duas aplicações e do consumidor, CSP/cookies/TLS/domínios, cron, WAF, observabilidade e alertas implantados. Não realizar deploy automaticamente.
+5. Comprovar backup/restauração, processamento de anexos pelo scanner real, retenção/recuperação de logs e resposta a incidentes.
+6. Conferir com os responsáveis empresa/documentos publicados, atendimento aos titulares, consentimento/retirada e retenção, termos de compra/arrependimento, dados fiscais e emissão NF-e. Ausência de documentação local ou ambiente isolado não autoriza inventar dados comerciais.
+7. Completar E2E com dados isolados dos seis perfis, validação assistiva WCAG e métricas de desempenho representativas. A inspeção e os testes selecionados não equivalem a cobertura integral.
 
 Nenhuma suspeita de exploração foi convertida em vulnerabilidade crítica/alta sem reprodução. As pendências de infraestrutura e operação são verificações não executadas, não provas de que o serviço real está mal configurado.
 
