@@ -1,3 +1,5 @@
+import { getResendReadiness } from "./email";
+
 export type OptionalPaymentProvider = "disabled" | "mock" | "mercadopago";
 export type OptionalEmailProvider = "disabled" | "mock" | "resend";
 export type OptionalShippingProvider = "disabled" | "fixed" | "mock" | "melhorenvio" | "correios" | "custom";
@@ -138,7 +140,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
   // checkout instead of substituting a different shipping price.
   const shippingProvider = requestedShippingProvider;
   const emailEnabled =
-    parseEnvironmentBoolean(environment.EMAIL_ENABLED) || emailProvider === "resend";
+    getResendReadiness(environment).configured;
   const turnstileEnabled = parseEnvironmentBoolean(environment.TURNSTILE_ENABLED);
   const googleMerchantEnabled = parseEnvironmentBoolean(environment.GOOGLE_MERCHANT_ENABLED);
   const paymentEnabled =

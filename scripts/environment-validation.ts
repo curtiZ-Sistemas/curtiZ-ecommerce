@@ -1,4 +1,5 @@
 import { publicEnvironmentErrors } from "./public-environment";
+import { getResendReadiness } from "../packages/config/src/email";
 
 export type DeploymentEnvironment = "development" | "staging" | "production";
 
@@ -327,7 +328,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("MERCADO_PAGO_ACCESS_TOKEN");
     required.add("MERCADO_PAGO_WEBHOOK_SECRET");
   }
-  if (normalize(environment.EMAIL_PROVIDER) === "resend" || enabledBoolean(environment.EMAIL_ENABLED)) {
+  if (enabledBoolean(environment.EMAIL_ENABLED)) {
     required.add("RESEND_API_KEY");
   }
   if (normalize(environment.SHIPPING_PROVIDER) === "correios") required.add("CORREIOS_API_TOKEN");
@@ -344,7 +345,6 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
 
 const validateProviderCredentials = (environment: EnvironmentValues, errors: string[]): void => {
   const paymentProvider = normalize(environment.PAYMENT_PROVIDER);
-  const emailProvider = normalize(environment.EMAIL_PROVIDER);
   const shippingProvider = normalize(environment.SHIPPING_PROVIDER);
 
   const mercadoPagoEnabled =
@@ -427,10 +427,12 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
     }
   }
 
-  const emailEnabled = emailProvider === "resend" || enabledBoolean(environment.EMAIL_ENABLED);
+  const emailEnabled = enabledBoolean(environment.EMAIL_ENABLED);
 
   if (emailEnabled) {
-    addRequiredErrors(environment, ["EMAIL_FROM"], errors);
+    const readiness = getResendReadiness(environment);
+    for (const key of readiness.missing) errors.push(`${key} não está configurada`);
+    for (const key of readiness.invalid) errors.push(`${key} na configuração de e-mail`);
   }
 };
 

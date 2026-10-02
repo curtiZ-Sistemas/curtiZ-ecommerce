@@ -3,6 +3,10 @@ import { z } from "zod";
 const booleanString = z
   .enum(["true", "false", "1", "0", "yes", "no"])
   .transform((value) => ["true", "1", "yes"].includes(value));
+const optionalEmailValue = (schema: z.ZodType<string>) => z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  schema.optional()
+);
 
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_STORE_URL: z.string().url(),
@@ -63,6 +67,10 @@ export const serverEnvSchema = z.object({
   MELHOR_ENVIO_ORIGIN_STATE: z.string().length(2).optional(),
   MELHOR_ENVIO_WEBHOOK_CONFIGURED: booleanString.default(false),
   EMAIL_ENABLED: booleanString.default(false),
+  RESEND_API_KEY: optionalEmailValue(z.string().min(1)),
+  EMAIL_FROM: optionalEmailValue(z.string().min(1)),
+  RESEND_FROM_EMAIL: optionalEmailValue(z.string().email()),
+  EMAIL_REPLY_TO: optionalEmailValue(z.string().email()),
   TURNSTILE_ENABLED: booleanString.default(false),
   GOOGLE_MERCHANT_ENABLED: booleanString.default(false),
   INVENTORY_RESERVATION_MINUTES: z.coerce.number().int().min(5).max(120).default(30)
@@ -70,3 +78,4 @@ export const serverEnvSchema = z.object({
 
 export * from "./integrations";
 export * from "./public-urls";
+export * from "./email";

@@ -231,6 +231,16 @@ describe("environment validation", () => {
     ).toEqual(expect.arrayContaining(["TURNSTILE_SECRET_KEY não está configurada"]));
   });
 
+  it("permite selecionar Resend desligado sem segredos no build e valida o remetente ao ativar", () => {
+    const disabled = { ...disabledProduction, EMAIL_PROVIDER: "resend", EMAIL_ENABLED: "false" };
+    expect(validateEnvironment("production", disabled).valid).toBe(true);
+    expect(requiredDeploymentSecrets(disabled)).not.toContain("RESEND_API_KEY");
+    expect(validateEnvironment("production", { ...disabled, EMAIL_ENABLED: "true", RESEND_API_KEY: "test-only-key",
+      EMAIL_FROM: "curti Z <pedidos@example.com>" }).valid).toBe(true);
+    expect(validateEnvironment("production", { ...disabled, EMAIL_ENABLED: "true", RESEND_API_KEY: "test-only-key",
+      EMAIL_FROM: "invalid" }).errors).toContain("EMAIL_FROM_INVALID na configuração de e-mail");
+  });
+
   it("rejeita false como provider e aceita somente em flags", () => {
     const result = validateEnvironment("production", {
       ...disabledProduction,

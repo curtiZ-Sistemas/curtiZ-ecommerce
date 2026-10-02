@@ -4,11 +4,13 @@ import handler from "./.open-next/worker.js";
 import { runExpirationHousekeeping } from "./src/lib/housekeeping";
 import { runMelhorEnvioShippingJobs } from "./src/lib/melhor-envio-jobs";
 import { runBlingJobs } from "./src/lib/bling-jobs";
+import { runTransactionalEmailJobs } from "./src/lib/transactional-email-jobs";
 import { logServerEvent } from "@curtiz/security";
 import { optimizeStorefrontImageRequest, type StorefrontImageEnvironment } from "./src/lib/storefront-image-worker";
 
 type WorkerEnvironment = Parameters<typeof runExpirationHousekeeping>[0] &
-  Parameters<typeof runMelhorEnvioShippingJobs>[0] & Parameters<typeof runBlingJobs>[0] & StorefrontImageEnvironment;
+  Parameters<typeof runMelhorEnvioShippingJobs>[0] & Parameters<typeof runBlingJobs>[0] &
+  Parameters<typeof runTransactionalEmailJobs>[0] & StorefrontImageEnvironment;
 type WorkerContext = { waitUntil(promise: Promise<unknown>): void };
 const openNextHandler = handler as {
   fetch(request: Request, environment: WorkerEnvironment, context: WorkerContext): Response | Promise<Response>;
@@ -34,6 +36,7 @@ export default {
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId));
       await runQueue("bling", () => runBlingJobs(environment, executionId));
       await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId));
+      await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId));
     })());
   }
 };

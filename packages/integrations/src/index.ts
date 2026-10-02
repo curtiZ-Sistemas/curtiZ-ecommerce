@@ -6,6 +6,7 @@ export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./m
 export * from "./melhor-envio";
 export * from "./bling";
 export { sendInvoiceEmail } from "./invoice-email";
+export * from "./transactional-email";
 
 export type CheckoutRequest = {
   orderId: string;
