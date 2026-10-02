@@ -30,10 +30,16 @@ describe("contexto do OpenNext no Worker da loja", () => {
     expect(init).toContain("return cloudflareContextALS.run({ env, ctx, cf: request.cf }, handler);");
   });
 
-  it("custom-worker.ts repassa os bindings recebidos para o handler do OpenNext", () => {
-    const worker = readFileSync(resolve(process.cwd(), "custom-worker.ts"), "utf8");
-    expect(worker).toContain('import handler from "./.open-next/worker.js"');
-    expect(worker).toContain("handler.fetch(request, environment, context)");
+  it("mantém os bindings isolados entre requisições concorrentes", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const environments = [{ SHIPPING_PROVIDER: "disabled" }, { SHIPPING_PROVIDER: "melhorenvio" }];
+    const results = await Promise.all(environments.map((env) =>
+      contextStorage.run({ env, ctx: {}, cf: undefined }, async () => {
+        await Promise.resolve();
+        return getStoreRuntimeEnvironment().SHIPPING_PROVIDER;
+      })
+    ));
+    expect(results).toEqual(environments.map((env) => env.SHIPPING_PROVIDER));
   });
 
   it("lê bindings de runtime dentro da requisição mesmo com process.env desativado pelo build", async () => {

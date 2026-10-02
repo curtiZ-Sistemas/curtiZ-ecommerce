@@ -9,10 +9,10 @@ export async function generateMetadata({
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const document = await getPublicLegalDocument((await params).slug);
+  const { document, unavailable } = await getPublicLegalDocument((await params).slug);
   if (!document) {
     return {
-      title: "Documento não publicado",
+      title: unavailable ? "Documento temporariamente indisponível" : "Documento não publicado",
       robots: { index: false, follow: false, noarchive: true }
     };
   }
@@ -34,7 +34,19 @@ export async function generateMetadata({
 }
 
 export default async function LegalDocumentPage({ params }: { params: Promise<{ slug: string }> }) {
-  const document = await getPublicLegalDocument((await params).slug);
+  const { slug } = await params;
+  const { document, unavailable } = await getPublicLegalDocument(slug);
+  if (unavailable)
+    return (
+      <div className="container legal-public-page">
+        <section className="legal-public-empty" role="status">
+          <AlertCircle />
+          <h1>Documento temporariamente indisponível</h1>
+          <p>Não foi possível consultar o documento publicado. Tente novamente em instantes.</p>
+          <a className="primary-button" href={`/politicas/${encodeURIComponent(slug)}`}>Tentar novamente</a>
+        </section>
+      </div>
+    );
   if (!document)
     return (
       <div className="container legal-public-page">

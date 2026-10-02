@@ -80,4 +80,20 @@ describe("autenticação demo local", () => {
       isLocalDemoRequest(new Request("https://curtiz.example.com/api/auth/login"))
     ).toBe(false);
   });
+
+  it.each([
+    { APP_ENV: "staging", DEMO_MODE: "false" },
+    { APP_ENV: "production", DEMO_MODE: "true" }
+  ])("revoga sessões demo quando o runtime não permite demonstração: %j", (runtime) => {
+    process.env.APP_ENV = "staging";
+    const account = authenticateDemoAccount("admin.demo@curtiz.local", "1234567890");
+    const session = account ? createDemoSession(account, false, 1_000) : null;
+    expect(session).not.toBeNull();
+    expect(verifyDemoSession(session?.value, 2_000)?.role).toBe("admin");
+    Object.assign(process.env, runtime);
+    expect(verifyDemoSession(session?.value, 2_000)).toBeNull();
+    expect(authenticateDemoAccount("admin.demo@curtiz.local", "1234567890")).toBeNull();
+    expect(account && createDemoSession(account, false, 2_000)).toBeNull();
+    expect(isLocalDemoRequest(new Request("http://localhost:3000/login"))).toBe(false);
+  });
 });

@@ -97,7 +97,7 @@ test("cabeçalho permanece bordô e estável durante a rolagem", async ({ page }
   }
 });
 
-test("menu de categorias mobile permanece dentro da viewport", async ({ page }) => {
+test("menu principal mobile permanece dentro da viewport", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto("/");
   const menuButton = page.getByRole("button", { name: "Abrir menu" });
@@ -107,7 +107,11 @@ test("menu de categorias mobile permanece dentro da viewport", async ({ page }) 
   }).toPass({ timeout: 15_000 });
   const menu = page.getByRole("dialog", { name: "Menu principal" });
   await expect(menu).toBeVisible();
-  expect(await menu.getByRole("link").count()).toBeGreaterThanOrEqual(8);
+  for (const [name, href] of [["Produtos", "/produtos"], ["Atendimento", "/ajuda"], ["Favoritos", "/favoritos"]]) {
+    const link = menu.getByRole("link", { name, exact: true });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", href);
+  }
   const behavior = await menu.evaluate((element) => {
     return {
       menuWidth: element.getBoundingClientRect().width,
@@ -117,6 +121,9 @@ test("menu de categorias mobile permanece dentro da viewport", async ({ page }) 
   });
   expect(behavior.menuWidth).toBeLessThanOrEqual(behavior.viewport);
   expect(behavior.pageWidth).toBeLessThanOrEqual(behavior.viewport);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(menuButton).toBeFocused();
 });
 
 test("busca mobile mostra sugestões sem ultrapassar a viewport", async ({ page }) => {

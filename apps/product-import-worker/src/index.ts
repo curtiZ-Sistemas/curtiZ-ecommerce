@@ -31,17 +31,19 @@ function messageIsValid(value: unknown): value is ProductImportImageMessage {
 function config(env: Env) {
   let url: URL;
   try { url = new URL(env.SUPABASE_URL); } catch { throw new JobError("INVALID_WORKER_CONFIG", false, "config"); }
-  if (url.protocol !== "https:" || url.pathname !== "/" || !env.SUPABASE_SECRET_KEY || !env.IMAGES) throw new JobError("INVALID_WORKER_CONFIG", false, "config");
-  return { root: url.toString().replace(/\/$/u, ""), secret: env.SUPABASE_SECRET_KEY };
+  const secret = env.SUPABASE_SECRET_KEY?.trim();
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password
+    || !secret || !env.IMAGES) throw new JobError("INVALID_WORKER_CONFIG", false, "config");
+  return { root: url.origin, secret };
 }
 
 async function supabaseRpc(env: Env, name: string, body: Record<string, unknown>) {
-  const { root, secret } = config(env);
+  const { root } = config(env);
   let response: Response;
   try {
     response = await fetch(`${root}/rest/v1/rpc/${name}`, {
-      method: "POST", headers: { apikey: secret, authorization: `Bearer ${secret}`, "content-type": "application/json" },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(15_000)
+      method: "POST", headers: { ...storageHeaders(env), "content-type": "application/json" },
+      body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(15_000)
     });
   } catch { throw new JobError("DATABASE_UNAVAILABLE", true, "database"); }
   if (!response.ok) throw new JobError(response.status >= 500 || response.status === 429 ? "DATABASE_UNAVAILABLE" : "DATABASE_REJECTED", response.status >= 500 || response.status === 429, "database");
@@ -55,7 +57,7 @@ function storageUrl(env: Env, path: string) {
 
 function storageHeaders(env: Env) {
   const { secret } = config(env);
-  return { apikey: secret, authorization: `Bearer ${secret}` };
+  return { apikey: secret, ...(!secret.startsWith("sb_secret_") ? { authorization: `Bearer ${secret}` } : {}) };
 }
 
 function allowedSource(value: string) {
@@ -157,7 +159,7 @@ async function inspectStoredImage(env: Env, response: Response) {
 
 async function existingStorageObject(env: Env, path: string) {
   let response: Response;
-  try { response = await fetch(storageUrl(env, path), { headers: storageHeaders(env), signal: AbortSignal.timeout(15_000) }); }
+  try { response = await fetch(storageUrl(env, path), { headers: storageHeaders(env), redirect: "error", signal: AbortSignal.timeout(15_000) }); }
   catch { throw new JobError("STORAGE_UNAVAILABLE", true, "storage"); }
   if (response.status === 404) return null;
   if (!response.ok) throw new JobError("STORAGE_UNAVAILABLE", response.status >= 500 || response.status === 429, "storage");
@@ -170,7 +172,7 @@ async function upload(env: Env, path: string, response: Response) {
   try {
     stored = await fetch(storageUrl(env, path).replace("/object/authenticated/", "/object/"), {
       method: "POST", headers: { ...storageHeaders(env), "content-type": "image/webp", "cache-control": "public, max-age=31536000, immutable", "x-upsert": "true" },
-      body: limited.stream, signal: AbortSignal.timeout(30_000)
+      body: limited.stream, redirect: "error", signal: AbortSignal.timeout(30_000)
     });
   } catch { throw new JobError("STORAGE_UNAVAILABLE", true, "upload"); }
   if (!stored.ok) throw new JobError("STORAGE_UPLOAD_FAILED", stored.status >= 500 || stored.status === 429, "upload");
@@ -226,18 +228,22 @@ export async function processProductImageMessage(message: ProductImportImageMess
       sourceBytes = transformed.sourceBytes;
     }
     await ensureResponsiveVariants(env, path, sourceBytes, processed.width);
-    await supabaseRpc(env, "complete_product_import_image_job", {
+    const completion = await supabaseRpc(env, "complete_product_import_image_job", {
       p_job_id: message.jobId, p_lock_token: lockToken,
       p_width: processed.width, p_height: processed.height, p_size_bytes: processed.size
     });
-    return { retry: false, state: "completed" };
+    const completionState = text(completion.state);
+    if (["completed", "missing"].includes(completionState)) return { retry: false, state: completionState };
+    if (completionState === "stale") return { retry: true, state: completionState };
+    throw new JobError("INVALID_JOB_COMPLETION", true, "complete");
   } catch (error) {
     const failure = error instanceof JobError ? error : new JobError("UNEXPECTED_IMAGE_FAILURE", true, "unknown");
     const failed = await supabaseRpc(env, "fail_product_import_image_job", {
       p_job_id: message.jobId, p_lock_token: lockToken, p_error_code: failure.code, p_retryable: failure.retryable
     });
     console.warn(JSON.stringify({ runId: message.runId, jobId: message.jobId, productId: message.productId, stage: failure.stage, attempt: claimed.attempt, code: failure.code }));
-    return { retry: failed.retry === true, state: text(failed.state) || "failed" };
+    const failureState = text(failed.state) || "failed";
+    return { retry: failed.retry === true || failureState === "stale", state: failureState };
   }
 }
 

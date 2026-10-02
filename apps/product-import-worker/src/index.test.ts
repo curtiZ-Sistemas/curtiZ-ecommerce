@@ -47,10 +47,19 @@ describe("product import image queue consumer", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("processes exactly one missing image and completes its metadata", async () => {
+  it.each([
+    ["service-secret", "completed"], ["sb_secret_test_only", "completed"],
+    ["sb_secret_test_only", "stale"], ["sb_secret_test_only", "missing"]
+  ])("processes one image with safe Supabase authentication: %s, completion: %s", async (secret, completionState) => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(input); calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.startsWith("https://project.supabase.co/")) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("apikey")).toBe(secret);
+        expect(headers.get("authorization")).toBe(secret.startsWith("sb_secret_") ? null : `Bearer ${secret}`);
+        expect(init?.redirect).toBe("error");
+      }
       if (url.endsWith("/claim_product_import_image_job")) return responseJson({
         state: "claimed", productId: message.productId, sourceUrl: "https://down-sg.img.susercontent.com/file/a",
         storagePath: `products/imports/${message.productId}/${"a".repeat(64)}.webp`, attempt: 1
@@ -63,11 +72,12 @@ describe("product import image queue consumer", () => {
         await new Response(init?.body as BodyInit).arrayBuffer();
         return responseJson({ Key: "stored" });
       }
-      if (url.endsWith("/complete_product_import_image_job")) return responseJson({ state: "completed" });
+      if (url.endsWith("/complete_product_import_image_job")) return responseJson({ state: completionState });
       throw new Error(`unexpected request ${url}`);
     }));
 
-    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: false, state: "completed" });
+    await expect(processProductImageMessage(message, { ...environment(), SUPABASE_SECRET_KEY: secret }))
+      .resolves.toEqual({ retry: completionState === "stale", state: completionState });
     expect(calls.filter((call) => call.includes("down-sg.img.susercontent.com"))).toHaveLength(1);
     expect(calls.some((call) => call.includes(`${"a".repeat(64)}.180.webp`))).toBe(true);
     expect(calls.some((call) => call.includes(`${"a".repeat(64)}.360.webp`))).toBe(true);
@@ -76,7 +86,18 @@ describe("product import image queue consumer", () => {
     expect(calls.some((call) => call.endsWith("/complete_product_import_image_job"))).toBe(true);
   });
 
-  it("persists a transient CDN failure before asking Queue for a retry", async () => {
+  it.each([
+    "https://project.supabase.co/?query=value", "https://project.supabase.co/#fragment",
+    "https://user:pass@project.supabase.co/", "https://project.supabase.co/rest/v1"
+  ])("rejects a non-origin database URL before sending credentials: %s", async (url) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(processProductImageMessage(message, { ...environment(), SUPABASE_URL: url }))
+      .rejects.toMatchObject({ code: "INVALID_WORKER_CONFIG" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "stale"])("retries a transient CDN failure when the failure RPC reports %s", async (failureState) => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestUrl(input);
       if (url.endsWith("/claim_product_import_image_job")) return responseJson({
@@ -85,11 +106,11 @@ describe("product import image queue consumer", () => {
       });
       if (url.includes("/object/authenticated/")) return new Response(null, { status: 404 });
       if (url.startsWith("https://down-sg.img.susercontent.com/")) return new Response(null, { status: 503 });
-      if (url.endsWith("/fail_product_import_image_job")) return responseJson({ retry: true, state: "queued" });
+      if (url.endsWith("/fail_product_import_image_job")) return responseJson({ retry: failureState === "queued", state: failureState });
       throw new Error(`unexpected request ${url}`);
     }));
 
-    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: true, state: "queued" });
+    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: true, state: failureState });
   });
 
   it("acknowledges a permanently failed job even when the retry limit was exhausted", async () => {

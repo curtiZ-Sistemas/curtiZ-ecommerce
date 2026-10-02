@@ -11,7 +11,7 @@ export const metadata: Metadata = catalogMetadata({
 });
 
 export default async function PoliciesPage() {
-  const documents = await getPublicLegalDocuments();
+  const { documents, unavailable } = await getPublicLegalDocuments();
   return (
     <div className="container legal-public-page">
       <header className="legal-public-header">
@@ -22,7 +22,14 @@ export default async function PoliciesPage() {
           aqui.
         </p>
       </header>
-      {documents.length ? (
+      {unavailable ? (
+        <section className="legal-public-empty" role="status">
+          <BookOpenCheck />
+          <h2>Documentos temporariamente indisponíveis</h2>
+          <p>Não foi possível consultar os documentos publicados. Tente novamente em instantes.</p>
+          <a className="secondary-button" href="/politicas">Tentar novamente</a>
+        </section>
+      ) : documents.length ? (
         <div className="legal-public-grid">
           {documents.map((document) => (
             <Link href={`/politicas/${document.slug}`} key={document.id}>

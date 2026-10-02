@@ -8,7 +8,10 @@ const dependencies = {
   fetch: vi.fn(),
   optimize: vi.fn(),
   housekeeping: vi.fn(),
-  shipping: vi.fn()
+  shipping: vi.fn(),
+  bling: vi.fn(),
+  email: vi.fn(),
+  log: vi.fn()
 };
 
 type Environment = Record<string, string | undefined>;
@@ -34,8 +37,9 @@ runInNewContext(compiled, {
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
     if (specifier === "./src/lib/melhor-envio-jobs") return { runMelhorEnvioShippingJobs: dependencies.shipping };
     if (specifier === "./src/lib/storefront-image-worker") return { optimizeStorefrontImageRequest: dependencies.optimize };
-    // Keep additional scheduled integration work isolated from provider calls.
-    if (specifier === "./src/lib/bling-jobs") return { runBlingJobs: () => Promise.resolve({ ok: true }) };
+    if (specifier === "./src/lib/bling-jobs") return { runBlingJobs: dependencies.bling };
+    if (specifier === "./src/lib/transactional-email-jobs") return { runTransactionalEmailJobs: dependencies.email };
+    if (specifier === "@curtiz/security") return { logServerEvent: dependencies.log };
     throw new Error(`Unexpected Worker dependency: ${specifier}`);
   }
 });
@@ -65,24 +69,34 @@ describe("custom Worker handlers", () => {
     expect(dependencies.fetch).not.toHaveBeenCalled();
   });
 
-  it("keeps housekeeping and shipping jobs alive through waitUntil", async () => {
+  it("keeps all scheduled queues alive through waitUntil with runtime bindings", async () => {
     const environment = {};
     const context = { waitUntil: vi.fn() };
     dependencies.housekeeping.mockResolvedValue({ ok: true });
     dependencies.shipping.mockResolvedValue({ ok: true });
+    dependencies.bling.mockResolvedValue({ ok: true });
+    dependencies.email.mockResolvedValue({ ok: true });
     worker.scheduled({}, environment, context);
-    expect(dependencies.housekeeping).toHaveBeenCalledWith(environment, expect.any(String));
-    expect(dependencies.shipping).toHaveBeenCalledWith(environment, dependencies.housekeeping.mock.calls[0]?.[1]);
     expect(context.waitUntil).toHaveBeenCalledTimes(1);
-    await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeDefined();
+    await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
+    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email]) {
+      expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id");
+    }
   });
 
-  it("propagates a rejected job to the scheduled execution", async () => {
-    const error = new Error("shipping unavailable");
-    dependencies.housekeeping.mockResolvedValue({ ok: true });
-    dependencies.shipping.mockRejectedValue(error);
+  it.each([
+    ["expiration", "housekeeping"], ["bling", "bling"], ["shipping", "shipping"], ["transactional_email", "email"]
+  ] as const)("isolates a failure in %s while running the remaining queues", async (queue, dependency) => {
+    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email])
+      job.mockResolvedValue({ ok: true });
+    dependencies[dependency].mockRejectedValue(new Error("test-only provider failure"));
     const context = { waitUntil: vi.fn() };
     worker.scheduled({}, {}, context);
-    await expect(context.waitUntil.mock.calls[0]?.[0]).rejects.toBe(error);
+    await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
+    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email])
+      expect(job).toHaveBeenCalledOnce();
+    expect(dependencies.log).toHaveBeenCalledWith("error", "scheduled_queue_failed", {
+      executionId: "scheduled-execution-id", queue
+    });
   });
 });

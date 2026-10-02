@@ -38,19 +38,18 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(hero).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Para todos os momentos", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Encontre seu estilo", { exact: true })).toHaveCount(0);
-  const featuredSection = page.locator(
-    '[data-home-section-type="featured_products"]'
-  );
-  const featuredProduct = featuredSection.getByRole("link", {
+  // The homepage sections are configurable; exercise the product link actually rendered.
+  const homepageProduct = page.getByRole("main").getByRole("link", {
     name: "curti Z Flip-Flop Wave Preto",
     exact: true
-  });
+  }).first();
+  await expect(homepageProduct).toBeVisible();
   await Promise.all([
     page.waitForURL("**/produto/flip-flop-wave-preto", {
       timeout: 30_000,
       waitUntil: "commit"
     }),
-    featuredProduct.click()
+    homepageProduct.click()
   ]);
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "39/40", exact: true }).click();

@@ -109,9 +109,39 @@ ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curti
 
 As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build do GitHub Actions e devem ser
 espelhadas com os mesmos valores no runtime dos dois Workers. As duas últimas são aliases, não
-origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` são variáveis somente de runtime dos
-dois Workers no Cloudflare. A aplicação seleciona o par correspondente ao host da requisição; isso
+origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` também são obrigatórias no ambiente de
+build para `validate:production`: no caminho oficial, vêm das GitHub Actions Variables e são
+espelhadas no runtime dos dois Workers pelo workflow. A aplicação seleciona o par correspondente ao host da requisição; isso
 mantém login, logout, MFA e navegação loja/painel isolados entre produção e teste.
+
+### Falha de configuração no Workers Builds do painel
+
+Se `scripts/validate-production.ts` informar ausência de `AUTH_COOKIE_DOMAINS`,
+`NEXT_PUBLIC_STORE_TEST_URL` ou `NEXT_PUBLIC_PANEL_TEST_URL`, o processo de build não recebeu essas
+variáveis. A falha acontece antes do OpenNext; não exige reinstalar dependências nem reduzir as
+validações. Os valores corretos são os do bloco acima.
+
+No Cloudflare, **Workers & Pages → curtiz-panel → Settings → Builds → Build variables and secrets**
+configura o ambiente de compilação do Workers Builds. Para corrigir a configuração desse build,
+cadastre as três variáveis como texto com os valores acima. **Settings → Variables and Secrets**
+configura o runtime do Worker `curtiz-panel` (produção): confira os mesmos valores ali, preservando
+os demais bindings. Variáveis de runtime não alimentam automaticamente o build, e variáveis de
+build não criam bindings de runtime. As URLs de teste são aliases do Worker de produção, não o
+ambiente Wrangler `staging`. Confira também que `ALLOWED_ORIGINS` inclui as quatro origens acima.
+
+Referência: [configuração de Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
+
+Para conferir o comando do painel sem publicar, parta da raiz do repositório (`/`) e use
+`pnpm build:worker:panel`; ele valida produção e executa `build:worker` em `apps/panel` via filtro.
+`pnpm build:worker` na raiz compila a **loja**. Executar somente `pnpm build:worker` em `apps/panel`
+chama o OpenNext diretamente e omite o preflight de produção da raiz. O dry-run correspondente,
+após um build completo, é `pnpm deploy:dry-run:panel`.
+
+Esse diagnóstico não habilita Workers Builds como estratégia de produção. Mantenha o GitHub Actions
+como caminho único: confira as mesmas três variáveis em **Settings → Secrets and variables →
+Actions → Variables** do repositório, desconecte manualmente Workers Builds conforme o checklist
+acima e use **Actions → CI → Run workflow**, branch `main`, target `panel`, quando for publicar.
+Não use **Retry build** no Cloudflare: um build bem-sucedido pode acionar o deploy concorrente.
 
 No Cloudflare, associe `curtiz.com.br` ao Worker `curtiz-ecommerce` e
 `painel.curtiz.com.br` ao Worker `curtiz-panel` como **Custom Domains**. Não adicione essas rotas ao

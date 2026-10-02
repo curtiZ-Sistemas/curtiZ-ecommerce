@@ -88,18 +88,28 @@ function mapDocument(row: RecordValue): PublicLegalDocument | null {
   };
 }
 
-export async function getPublicLegalDocuments() {
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) return [];
-  const result = await supabase.from("published_legal_documents").select("*").order("public_title");
-  if (result.error) return [];
-  return records(result.data).flatMap((row) => {
-    const document = mapDocument(row);
-    return document ? [document] : [];
-  });
+export async function getPublicLegalDocuments(): Promise<{
+  documents: PublicLegalDocument[];
+  unavailable: boolean;
+}> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) return { documents: [], unavailable: true };
+    const result = await supabase.from("published_legal_documents").select("*").order("public_title");
+    if (result.error || !Array.isArray(result.data)) return { documents: [], unavailable: true };
+    return {
+      documents: records(result.data).flatMap((row) => {
+        const document = mapDocument(row);
+        return document ? [document] : [];
+      }),
+      unavailable: false
+    };
+  } catch {
+    return { documents: [], unavailable: true };
+  }
 }
 
 export async function getPublicLegalDocument(slug: string) {
-  const documents = await getPublicLegalDocuments();
-  return documents.find((document) => document.slug === slug) ?? null;
+  const { documents, unavailable } = await getPublicLegalDocuments();
+  return { document: documents.find((document) => document.slug === slug) ?? null, unavailable };
 }
