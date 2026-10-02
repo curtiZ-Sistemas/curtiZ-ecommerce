@@ -32,6 +32,8 @@ export type CustomerOrder = {
   publicCode: string;
   status: string;
   paymentStatus: string;
+  invoice?: { available: boolean; number: string | null } | null;
+  invoiceUnavailable?: boolean;
   subtotalInCents: number;
   discountInCents: number;
   shippingInCents: number;

@@ -147,7 +147,7 @@ export class MelhorEnvioError extends Error {
   constructor(
     readonly code: "configuration" | "authentication" | "not_found" | "conflict" | "validation" |
       "rate_limited" | "provider_unavailable" | "network" | "timeout" | "invalid_response" |
-      "uncertain_write",
+      "uncertain_write" | "fiscal_shipping_blocked",
     readonly httpStatus: number,
     readonly retryable: boolean
   ) {

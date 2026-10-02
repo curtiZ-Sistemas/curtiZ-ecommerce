@@ -12,6 +12,7 @@ import {
   Users
 } from "lucide-react";
 import Link from "next/link";
+import { BlingManagementSummary } from "./bling-management-summary";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RevenueChart, type RevenuePoint } from "@/components/revenue-chart";
 import {
@@ -206,6 +207,7 @@ export function ManagerDashboard() {
         title="Dashboard executivo"
         description="Situação atual da curti Z, pendências prioritárias e desempenho do período."
       />
+      <BlingManagementSummary />
       <form
         className="panel-card manager-filters"
         onSubmit={(event: FormEvent) => {

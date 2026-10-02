@@ -828,6 +828,13 @@ function OrderDetails({
           <h3>Pagamento</h3>
           <p>{order.payment?.method || order.payment?.provider || "Não informado"}</p>
           <span className="customer-status">{customerStatusLabel(order.paymentStatus)}</span>
+          {order.invoice?.available ? <p>
+            Nota disponível{order.invoice.number ? ` · ${order.invoice.number}` : ""}<br />
+            <a className="secondary-button" href={`/api/orders/${encodeURIComponent(order.id)}/invoice`}>
+              Baixar nota fiscal
+            </a>
+          </p> : null}
+          {order.invoiceUnavailable ? <p role="status">Consulta da nota indisponível. Atualize a página para tentar novamente.</p> : null}
         </article>
         <article className="customer-panel customer-order-totals">
           <h3>Resumo</h3>

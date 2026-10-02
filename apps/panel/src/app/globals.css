@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+.bling-console, .bling-integration, .bling-catalog-status { min-width: 0; overflow-wrap: anywhere; }
+.bling-order-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.bling-order-row > p, .bling-order-row > details { grid-column: 1 / -1; margin: 0; }
+.bling-order-row .secondary-button { white-space: normal; min-height: 44px; }
+.bling-console select { max-width: 100%; min-height: 44px; }
+.bling-integration .table-actions { flex-wrap: wrap; }
+.bling-integration .table-actions button { white-space: normal; min-height: 44px; }
+.bling-catalog-status { grid-column: 1 / -1; width: 100%; }
+.bling-catalog-status ul { padding-left: 20px; }
+.bling-catalog-status li { padding-block: 8px; }
+@media (max-width: 430px) {
+  .bling-order-row { grid-template-columns: minmax(0, 1fr); }
+  .bling-integration .technical-runtime-grid { grid-template-columns: minmax(0, 1fr); }
+  .bling-integration .admin-compact-list > div { flex-wrap: wrap; }
+}
+
 :root {
   --brand-950: #4a0c09;
   --brand-900: #62130f;

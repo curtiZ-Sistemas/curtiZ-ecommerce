@@ -10,6 +10,8 @@ type ShippingJobEnvironment = MelhorEnvioRuntimeEnvironment & {
   SUPABASE_SECRET_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   PII_ENCRYPTION_KEY?: string;
+  BLING_REQUIRE_INVOICE_FOR_SHIPPING?: string;
+  BLING_CLIENT_ID?: string;
 };
 
 type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
@@ -66,8 +68,20 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
   if (!isUnknownRecord(result.data)) throw new MelhorEnvioError("not_found", 404, false);
   const shipment = result.data;
   if (readString(shipment, "external_id")) return;
+  let fiscalKey: string | null = null;
+  if (environment.BLING_REQUIRE_INVOICE_FOR_SHIPPING === "true" || environment.BLING_CLIENT_ID) {
+    const clearance = readQueryResult(await db.rpc("read_bling_shipping_clearance", { p_order_id: readString(shipment, "order_id") }));
+    if (clearance.error || !isUnknownRecord(clearance.data)) throw new MelhorEnvioError("fiscal_shipping_blocked", 409, true);
+    const required = environment.BLING_REQUIRE_INVOICE_FOR_SHIPPING === "true" || clearance.data.required === true;
+    fiscalKey = required ? readString(clearance.data, "accessKey") || null : null;
+    if (required && (clearance.data.allowed !== true || !fiscalKey)) {
+      await db.from("shipments").update({ operation_state: "awaiting_invoice", last_error_code: "fiscal_shipping_blocked" })
+        .eq("id", shipmentId).in("operation_state", ["pending", "failed"]);
+      throw new MelhorEnvioError("fiscal_shipping_blocked", 409, true);
+    }
+  }
   const claimed = readQueryResult(await db.from("shipments").update({ operation_state: "creating", updated_at: new Date().toISOString() })
-    .eq("id", shipmentId).in("operation_state", ["pending", "failed"]).select("id").maybeSingle());
+    .eq("id", shipmentId).in("operation_state", ["pending", "failed", "awaiting_invoice"]).select("id").maybeSingle());
   if (claimed.error || !claimed.data) throw new MelhorEnvioError("conflict", 409, false);
   try {
     const orderId = readString(shipment, "order_id");
@@ -117,7 +131,8 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
     const input: MelhorEnvioShipmentInput = { serviceId: readString(quote, "service_id"), from: originParty(environment), to, products, volumes,
       options: { platform: environment.MELHOR_ENVIO_APP_NAME?.trim() ?? "curti Z",
         insurance_value: products.reduce((total, item) => total + item.quantity * item.unitary_value, 0), receipt: false,
-        own_hand: false, reverse: false, tags: [{ tag: readString(order, "public_code"), url: null }] } };
+        own_hand: false, reverse: false, ...(fiscalKey ? { invoice: { key: fiscalKey } } : {}),
+        tags: [{ tag: readString(order, "public_code"), url: null }] } };
     const created = await createMelhorEnvioProvider(environment, db).createShipment(input);
     const saved = readQueryResult(await db.from("shipments").update({ external_id: created.externalId, operation_state: "created",
       last_error_code: null, updated_at: new Date().toISOString() }).eq("id", shipmentId).eq("operation_state", "creating")

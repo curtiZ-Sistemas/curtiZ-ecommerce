@@ -4,6 +4,8 @@ export { FIXED_SHIPPING_IN_CENTS } from "./client";
 import type { IntegrationState, RequestContext } from "@curtiz/domain";
 export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./mercadopago-cards";
 export * from "./melhor-envio";
+export * from "./bling";
+export { sendInvoiceEmail } from "./invoice-email";
 
 export type CheckoutRequest = {
   orderId: string;

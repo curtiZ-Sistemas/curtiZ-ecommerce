@@ -2,6 +2,7 @@
 
 import { Activity, Boxes, Database, LoaderCircle, RefreshCw, ShieldAlert, Webhook } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { BlingIntegration } from "./bling-integration";
 
 type RecordValue = Record<string, unknown>;
 type Service = { name: string; state: string; detail: string; checkedAt?: string | null; latencyMs?: number | null };
@@ -193,6 +194,7 @@ export function TechnicalOverview({ section }: { section: string }) {
         </section>
       ) : null}
 
+      {showIntegrations ? <BlingIntegration /> : null}
       {showIntegrations ? <section className="panel-card technical-section">
         <h2><Webhook aria-hidden="true" /> Melhor Envio</h2>
         {!melhorEnvio ? <p className="admin-empty-copy">Status detalhado indisponível.</p> : <>

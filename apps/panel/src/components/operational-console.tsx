@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
+import { BlingOperational } from "./bling-operational";
 import React from "react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -458,7 +459,7 @@ function Section({
 }) {
   if (["pedidos"].includes(section)) {
     return (
-      <Orders
+      <><BlingOperational /><Orders
         orders={data.orders}
         query={query}
         status={status}
@@ -470,7 +471,7 @@ function Section({
         pagination={data.pagination}
         changePage={changePage}
         capabilities={capabilities}
-      />
+      /></>
     );
   }
   if (["separacao", "expedicao", "envio"].includes(section)) {
@@ -527,6 +528,7 @@ function Section({
   if (section === "pendencias") {
     return (
       <>
+        <BlingOperational />
         <SectionHeading title="Pendências operacionais" description="Tarefas bloqueadas, atrasadas e ocorrências abertas." />
         {data.orders.map(order => <article className="operational-row" key={order.id}>
           <strong>{order.publicCode}</strong><span className="status red">{label(order.status)}</span>

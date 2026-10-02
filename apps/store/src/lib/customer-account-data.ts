@@ -205,7 +205,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const orderRows = readRows(readQueryResult(ordersResponse).data);
   const orderIds = orderRows.map((item) => readString(item, "id")).filter(Boolean);
 
-  const [itemsResponse, paymentResponse, paymentAttemptResponse, shipmentResponse, historyResponse] =
+  const [itemsResponse, paymentResponse, paymentAttemptResponse, shipmentResponse, historyResponse, invoiceResponse] =
     orderIds.length > 0
       ? await Promise.all([
           supabase
@@ -231,15 +231,17 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
             .from("order_status_history")
             .select("id,order_id,new_status,reason,created_at")
             .in("order_id", orderIds)
-            .order("created_at", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase.rpc("list_my_bling_invoice_states", { p_order_ids: orderIds })
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const itemRows = readRows(readQueryResult(itemsResponse).data);
   const paymentRows = readRows(readQueryResult(paymentResponse).data);
   const paymentAttemptRows = readRows(readQueryResult(paymentAttemptResponse).data);
   const shipmentRows = readRows(readQueryResult(shipmentResponse).data);
   const historyRows = readRows(readQueryResult(historyResponse).data);
+  const invoiceRows = readRows(readQueryResult(invoiceResponse).data);
 
   const orders: CustomerOrder[] = orderRows.flatMap((row) => {
     const id = readString(row, "id");
@@ -267,11 +269,14 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       && (readString(entry, "dispatched_at") || ["dispatched", "in_transit", "delivered", "returned"].includes(readString(entry, "status"))))
       ?? shipmentRows.find((entry) => readString(entry, "order_id") === id);
     const trackingRows = shipment ? readRows(shipment.tracking_events) : [];
+    const invoice = invoiceRows.find((entry) => readString(entry, "orderId") === id);
     return [{
       id,
       publicCode: readString(row, "public_code"),
       status: readString(row, "status"),
       paymentStatus: readString(row, "payment_status"),
+      invoice: invoice?.available === true ? { available: true, number: readString(invoice, "number") || null } : null,
+      invoiceUnavailable: Boolean(readQueryResult(invoiceResponse).error),
       subtotalInCents: cents(row.subtotal),
       discountInCents: cents(row.discount_total),
       shippingInCents: cents(row.shipping_total),

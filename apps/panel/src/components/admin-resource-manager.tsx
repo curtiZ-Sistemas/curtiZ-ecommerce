@@ -17,6 +17,7 @@ import {
   X
 } from "lucide-react";
 import { BannerManager } from "./banner-manager";
+import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -544,6 +545,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
   return (
     <section className="panel-card admin-resource">
+      {resource === "pedidos" ? <BlingOperational /> : null}
       <header className="admin-resource-header">
         <div>
           <h1>{definition.label}</h1>
