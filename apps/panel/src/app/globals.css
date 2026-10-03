@@ -7687,6 +7687,40 @@ button:not(:disabled):active,
   gap: 16px;
 }
 
+.legal-policy-manager { min-width: 0; }
+.legal-dropzone { display: grid; justify-items: start; gap: 12px; border: 2px dashed var(--line); }
+.legal-dropzone h2, .legal-dropzone p { margin: 0; }
+.legal-dropzone.dragging { border-color: var(--brand-600); background: var(--surface-soft); }
+.legal-policy-manager small { color: var(--muted); }
+.legal-policy-manager summary { cursor: pointer; font-weight: 650; padding-block: 8px; }
+.legal-policy-manager :is(button, select, input, textarea, summary):focus-visible { outline: 3px solid var(--brand-600); outline-offset: 3px; }
+.legal-policy-manager :is(button, a.secondary-button, select, input) { min-height: 44px; }
+.legal-policy-manager :is(p, strong, small, span, dd, a) { overflow-wrap: anywhere; }
+.legal-policy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 20px 0; border-top: 1px solid var(--line); }
+.legal-policy-row > div:first-child { display: grid; gap: 6px; align-content: start; }
+.legal-row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 540px; }
+.legal-policy-manager .legal-feedback { white-space: pre-line; }
+.legal-pending-markers { margin: 0; color: var(--muted); font-size: .875rem; }
+.legal-import-item { display: grid; gap: 10px; padding: 20px 0; border-top: 1px solid var(--line); }
+.legal-import-item label, .legal-simple-editor label { display: grid; gap: 6px; }
+.legal-import-item select, .legal-simple-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; background: var(--surface); color: inherit; }
+.legal-simple-editor { display: grid; gap: 12px; }
+.legal-simple-editor textarea { resize: vertical; line-height: 1.6; }
+.legal-policy-manager .legal-preview { padding: 0; line-height: 1.75; max-width: 80ch; overflow-wrap: anywhere; }
+.legal-policy-manager .legal-preview p { white-space: pre-line; }
+.legal-company-confirm { display: flex; align-items: center; gap: 10px; margin-block: 16px; }
+.legal-company-confirm input { flex: 0 0 auto; }
+@media (max-width: 1024px) {
+  .legal-policy-row { grid-template-columns: minmax(0, 1fr); }
+  .legal-row-actions { max-width: none; }
+}
+@media (max-width: 600px) {
+  .legal-policy-manager .legal-list-heading { align-items: stretch; flex-direction: column; }
+  .legal-row-actions > :is(button, a) { flex: 1 1 130px; justify-content: center; }
+  .legal-dropzone h2 { font-size: 1.25rem; }
+  .legal-policy-manager .panel-card { min-width: 0; padding: 16px; }
+}
+
 .legal-summary,
 .legal-list-heading,
 .legal-editor-heading,

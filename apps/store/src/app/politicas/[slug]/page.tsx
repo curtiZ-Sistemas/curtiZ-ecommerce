@@ -3,6 +3,9 @@ import Link from "next/link";
 import { AlertCircle, ExternalLink } from "lucide-react";
 import { BRAND_NAME, officialUrl } from "@/lib/seo";
 import { getPublicLegalDocument } from "@/lib/legal-data";
+import { LegalContent } from "@/components/legal-content";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params
@@ -43,7 +46,9 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
           <AlertCircle />
           <h1>Documento temporariamente indisponível</h1>
           <p>Não foi possível consultar o documento publicado. Tente novamente em instantes.</p>
-          <a className="primary-button" href={`/politicas/${encodeURIComponent(slug)}`}>Tentar novamente</a>
+          <a className="primary-button" href={`/politicas/${encodeURIComponent(slug)}`}>
+            Tentar novamente
+          </a>
         </section>
       </div>
     );
@@ -87,10 +92,6 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
             <dt>Vigência</dt>
             <dd>{format(document.effectiveFrom)}</dd>
           </div>
-          <div>
-            <dt>Última revisão</dt>
-            <dd>{format(document.publishedAt)}</dd>
-          </div>
         </dl>
       </header>
       <div className="legal-document-layout">
@@ -98,7 +99,8 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
           <strong>Índice</strong>
           {document.sections.map((section) => (
             <a href={`#secao-${section.number}`} key={section.number}>
-              {section.number} {section.title}
+              {section.number === "0" ? "" : `${section.number} `}
+              {section.title}
             </a>
           ))}
         </nav>
@@ -106,14 +108,10 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
           {document.sections.map((section) => (
             <section id={`secao-${section.number}`} key={section.number}>
               <h2>
-                {section.number} {section.title}
+                {section.number === "0" ? "" : `${section.number} `}
+                {section.title}
               </h2>
-              {section.content
-                .split(/\n+/u)
-                .filter(Boolean)
-                .map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
+              <LegalContent content={section.content} format={section.format} />
             </section>
           ))}
           {document.company.privacy_channel && (

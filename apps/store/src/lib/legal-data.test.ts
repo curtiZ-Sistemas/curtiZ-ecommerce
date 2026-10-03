@@ -27,7 +27,10 @@ describe("published legal documents availability", () => {
 
   it("preserves the unavailable state when opening a document", async () => {
     mocks.order.mockResolvedValue({ error: { code: "test_database_unavailable" }, data: null });
-    await expect(getPublicLegalDocument("privacidade")).resolves.toEqual({ document: null, unavailable: true });
+    await expect(getPublicLegalDocument("privacidade")).resolves.toEqual({
+      document: null,
+      unavailable: true
+    });
   });
 
   it("handles a transport failure without exposing error details", async () => {
@@ -36,17 +39,61 @@ describe("published legal documents availability", () => {
   });
 
   it("keeps published documents visible and resolves their slug", async () => {
-    mocks.order.mockResolvedValue({ error: null, data: [{
-      document_id: "published-test-document", slug: "privacidade", public_title: "Privacidade",
-      snapshot: { sections: [], references: [], company: {} }
-    }] });
+    mocks.order.mockResolvedValue({
+      error: null,
+      data: [
+        {
+          document_id: "published-test-document",
+          slug: "privacidade",
+          public_title: "Privacidade",
+          snapshot: { sections: [], references: [], company: {} }
+        }
+      ]
+    });
     const result = await getPublicLegalDocument("privacidade");
     expect(result.unavailable).toBe(false);
-    expect(result.document).toMatchObject({ id: "published-test-document", slug: "privacidade", title: "Privacidade" });
+    expect(result.document).toMatchObject({
+      id: "published-test-document",
+      slug: "privacidade",
+      title: "Privacidade"
+    });
   });
 
   it("distinguishes an unpublished slug from an unavailable query", async () => {
     mocks.order.mockResolvedValue({ error: null, data: [] });
-    await expect(getPublicLegalDocument("privacidade")).resolves.toEqual({ document: null, unavailable: false });
+    await expect(getPublicLegalDocument("privacidade")).resolves.toEqual({
+      document: null,
+      unavailable: false
+    });
+  });
+  it("mantém documentos antigos em texto e o formato dos novos", async () => {
+    mocks.order.mockResolvedValue({
+      error: null,
+      data: [
+        {
+          document_id: "test-doc",
+          slug: "aviso-de-privacidade",
+          public_title: "Privacidade",
+          snapshot: {
+            sections: [
+              { section_number: "0", title: "Apresentação", content: "Introdução" },
+              {
+                section_number: "1",
+                title: "Direitos",
+                content: "**Direitos**",
+                content_format: "markdown"
+              }
+            ],
+            company: {},
+            references: []
+          }
+        }
+      ]
+    });
+    const result = await getPublicLegalDocument("aviso-de-privacidade");
+    expect(result.document?.sections.map((section) => section.format)).toEqual([
+      "plain",
+      "markdown"
+    ]);
   });
 });

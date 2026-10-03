@@ -1,7 +1,12 @@
 import { createServerSupabaseClient } from "./supabase/server";
 
 type RecordValue = Record<string, unknown>;
-export type PublicLegalSection = { number: string; title: string; content: string };
+export type PublicLegalSection = {
+  number: string;
+  title: string;
+  content: string;
+  format: "plain" | "markdown";
+};
 export type PublicLegalReference = {
   name: string;
   relatedArticle?: string;
@@ -67,7 +72,8 @@ function mapDocument(row: RecordValue): PublicLegalDocument | null {
     sections: records(snapshot.sections).map((section) => ({
       number: text(section, "section_number"),
       title: text(section, "title"),
-      content: text(section, "content")
+      content: text(section, "content"),
+      format: section.content_format === "markdown" ? "markdown" : "plain"
     })),
     references: records(snapshot.references).flatMap((reference) => {
       const officialUrl = text(reference, "official_url");
@@ -95,7 +101,10 @@ export async function getPublicLegalDocuments(): Promise<{
   try {
     const supabase = await createServerSupabaseClient();
     if (!supabase) return { documents: [], unavailable: true };
-    const result = await supabase.from("published_legal_documents").select("*").order("public_title");
+    const result = await supabase
+      .from("published_legal_documents")
+      .select("*")
+      .order("public_title");
     if (result.error || !Array.isArray(result.data)) return { documents: [], unavailable: true };
     return {
       documents: records(result.data).flatMap((row) => {

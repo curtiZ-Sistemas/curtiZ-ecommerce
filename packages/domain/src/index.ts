@@ -1,4 +1,6 @@
 export * from "./money";
+export * from "./legal-policies";
+export * from "./legal-markdown";
 export * from "./merchant";
 export * from "./storefront-item";
 export * from "./permissions";

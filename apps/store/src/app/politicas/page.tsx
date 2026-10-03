@@ -3,6 +3,9 @@ import Link from "next/link";
 import { BookOpenCheck, FileCheck2 } from "lucide-react";
 import { getPublicLegalDocuments } from "@/lib/legal-data";
 import { catalogMetadata } from "@/lib/catalog-metadata";
+import { legalPolicies } from "@curtiz/domain";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = catalogMetadata({
   title: "Políticas e documentos legais",
@@ -12,6 +15,13 @@ export const metadata: Metadata = catalogMetadata({
 
 export default async function PoliciesPage() {
   const { documents, unavailable } = await getPublicLegalDocuments();
+  documents.sort((left, right) => {
+    const rank = (slug: string) => {
+      const index = legalPolicies.findIndex((policy) => policy.slug === slug);
+      return index < 0 ? legalPolicies.length : index;
+    };
+    return rank(left.slug) - rank(right.slug);
+  });
   return (
     <div className="container legal-public-page">
       <header className="legal-public-header">
@@ -27,7 +37,9 @@ export default async function PoliciesPage() {
           <BookOpenCheck />
           <h2>Documentos temporariamente indisponíveis</h2>
           <p>Não foi possível consultar os documentos publicados. Tente novamente em instantes.</p>
-          <a className="secondary-button" href="/politicas">Tentar novamente</a>
+          <a className="secondary-button" href="/politicas">
+            Tentar novamente
+          </a>
         </section>
       ) : documents.length ? (
         <div className="legal-public-grid">

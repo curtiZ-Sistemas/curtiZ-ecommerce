@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["legal-policy.spec.ts", "../../playwright.legal.config.ts"]
+}
