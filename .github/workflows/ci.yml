@@ -26,6 +26,13 @@ concurrency:
 env:
   APP_ENV: production
   PANEL_DEPLOYMENT_MODE: separate
+  # URLs públicas e origens versionadas em conjunto; não dependem de listas remotas divergentes.
+  NEXT_PUBLIC_STORE_URL: https://curtiz.com.br
+  NEXT_PUBLIC_PANEL_URL: https://painel.curtiz.com.br
+  NEXT_PUBLIC_STORE_TEST_URL: https://curtiz-ecommerce.sistemas-curtiz.workers.dev
+  NEXT_PUBLIC_PANEL_TEST_URL: https://curtiz-painel.sistemas-curtiz.workers.dev
+  ALLOWED_ORIGINS: https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-painel.sistemas-curtiz.workers.dev
+  AUTH_COOKIE_DOMAINS: curtiz.com.br,sistemas-curtiz.workers.dev
   DEMO_MODE: "false"
   CHECKOUT_ENABLED: "false"
   PAYMENT_PROVIDER: disabled
@@ -169,6 +176,10 @@ jobs:
       DEMO_SESSION_SECRET: "ci-demo-session-secret-with-at-least-32-characters"
       NEXT_PUBLIC_STORE_URL: http://localhost:3000
       NEXT_PUBLIC_PANEL_URL: http://localhost:3001
+      NEXT_PUBLIC_STORE_TEST_URL: ""
+      NEXT_PUBLIC_PANEL_TEST_URL: ""
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
+      AUTH_COOKIE_DOMAINS: ""
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -200,12 +211,6 @@ jobs:
     env:
       DEPLOY_TARGET: store
       PANEL_DEPLOYMENT_MODE: separate
-      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
-      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
-      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
-      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
-      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
-      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
@@ -289,12 +294,6 @@ jobs:
     env:
       DEPLOY_TARGET: panel
       PANEL_DEPLOYMENT_MODE: separate
-      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
-      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
-      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
-      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
-      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
-      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
@@ -332,7 +331,7 @@ jobs:
         run: pnpm build:worker:panel
       - name: Validar empacotamento de produção do painel
         run: pnpm deploy:dry-run:panel
-      - name: Publicar curtiz-panel
+      - name: Publicar curtiz-painel
         if: github.event_name != 'pull_request'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

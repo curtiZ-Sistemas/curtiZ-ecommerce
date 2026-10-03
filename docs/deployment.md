@@ -3,7 +3,7 @@
 A produção usa dois aplicativos Next.js e dois Workers Cloudflare independentes:
 
 - loja: `apps/store` → Worker `curtiz-ecommerce`;
-- painel: `apps/panel` → Worker `curtiz-panel`.
+- painel: `apps/panel` → Worker `curtiz-painel`.
 
 O Supabase gerenciado continua sendo a fonte de verdade dos dados. Loja e painel precisam de URLs,
 variáveis e rotas próprias.
@@ -23,7 +23,7 @@ O GitHub Actions deve ser o **único** caminho automático. Confira manualmente,
 
 1. Abra **Workers & Pages** → `curtiz-ecommerce` → **Settings → Builds**.
 2. Se houver um repositório conectado, use **Disconnect**.
-3. Repita em `curtiz-panel`.
+3. Repita em `curtiz-painel`.
 
 Um Workers Build conectado publica uma segunda versão a cada push, fora da ordem e **sem** os gates
 do workflow (qualidade, banco, E2E, segurança). Em 30/09/2026 isso estava acontecendo: os checks
@@ -65,10 +65,7 @@ que o workflow volte a sobrescrever essas configurações.
 Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
-- variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
-  `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
-  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`, `ALLOWED_ORIGINS` e
-  `AUTH_COOKIE_DOMAINS`;
+- variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `DEMO_MODE`;
 - variables condicionais: `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` quando o Mercado Pago estiver
   habilitado e `NEXT_PUBLIC_TURNSTILE_SITE_KEY` quando o Turnstile estiver habilitado. Por serem
   embutidas no bundle do navegador durante o build, essas chaves públicas continuam no GitHub.
@@ -81,6 +78,12 @@ dados sensíveis nunca devem ir para GitHub Variables.
 
 O token Cloudflare deve ter somente as permissões necessárias para publicar os dois Workers na
 conta correta. Não armazene tokens em variables públicas.
+
+As quatro URLs públicas, `ALLOWED_ORIGINS` e `AUTH_COOKIE_DOMAINS` ficam juntas no `env` versionado
+de `.github/workflows/ci.yml`. Os dois jobs herdam os mesmos valores e os publicam na lista de
+bindings já existente. GitHub Variables antigas com esses seis nomes não são mais lidas; uma
+lista remota desatualizada não pode divergir do alias compilado. Pull requests compilam com essas
+URLs públicas reais e com as credenciais efêmeras já previstas, sem publicar.
 
 Antes do build, o workflow consulta somente os **nomes** dos secrets já presentes em cada Worker.
 Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY`, `AUDIT_HASH_KEY`,
@@ -102,30 +105,41 @@ par de teste devem ser configurados assim:
 NEXT_PUBLIC_STORE_URL=https://curtiz.com.br
 NEXT_PUBLIC_PANEL_URL=https://painel.curtiz.com.br
 NEXT_PUBLIC_STORE_TEST_URL=https://curtiz-ecommerce.sistemas-curtiz.workers.dev
-NEXT_PUBLIC_PANEL_TEST_URL=https://curtiz-panel.sistemas-curtiz.workers.dev
+NEXT_PUBLIC_PANEL_TEST_URL=https://curtiz-painel.sistemas-curtiz.workers.dev
 AUTH_COOKIE_DOMAINS=curtiz.com.br,sistemas-curtiz.workers.dev
-ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-panel.sistemas-curtiz.workers.dev
+ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-painel.sistemas-curtiz.workers.dev
 ```
 
-As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build do GitHub Actions e devem ser
+As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build versionadas no GitHub Actions e devem ser
 espelhadas com os mesmos valores no runtime dos dois Workers. As duas últimas são aliases, não
 origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` também são obrigatórias no ambiente de
-build para `validate:production`: no caminho oficial, vêm das GitHub Actions Variables e são
+build para `validate:production`: no caminho oficial, vêm do `env` versionado no workflow e são
 espelhadas no runtime dos dois Workers pelo workflow. A aplicação seleciona o par correspondente ao host da requisição; isso
 mantém login, logout, MFA e navegação loja/painel isolados entre produção e teste.
 
-### Falha de configuração no Workers Builds do painel
+### Correção de origens nos builds da loja e do painel
 
-Se `scripts/validate-production.ts` informar ausência de `AUTH_COOKIE_DOMAINS`,
+Se `scripts/validate-production.ts` informar `ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL`,
+o valor de `ALLOWED_ORIGINS` recebido pelo **Build** não contém a origem exata da URL de teste do
+painel. `curtiz-panel` e `curtiz-painel` são Workers e origens distintos: adicionar um não autoriza
+o outro. O Worker oficial confirmado é `curtiz-painel`, também usado pelo domínio de produção;
+o Wrangler de produção e o workflow estão alinhados com esse nome. O Worker legado
+`curtiz-panel` não é incluído na allowlist nem é removido automaticamente. O ambiente separado
+de homologação conserva o nome existente `curtiz-panel-staging`.
+
+Se o script informar ausência de `AUTH_COOKIE_DOMAINS`,
 `NEXT_PUBLIC_STORE_TEST_URL` ou `NEXT_PUBLIC_PANEL_TEST_URL`, o processo de build não recebeu essas
 variáveis. A falha acontece antes do OpenNext; não exige reinstalar dependências nem reduzir as
 validações. Os valores corretos são os do bloco acima.
 
-No Cloudflare, **Workers & Pages → curtiz-panel → Settings → Builds → Build variables and secrets**
-configura o ambiente de compilação do Workers Builds. Para corrigir a configuração desse build,
-cadastre as três variáveis como texto com os valores acima. **Settings → Variables and Secrets**
-configura o runtime do Worker `curtiz-panel` (produção): confira os mesmos valores ali, preservando
-os demais bindings. Variáveis de runtime não alimentam automaticamente o build, e variáveis de
+No Cloudflare, em **cada** Worker (`curtiz-ecommerce` e `curtiz-painel`), **Settings → Builds →
+Build variables and secrets** configura o ambiente de compilação do Workers Builds. Corrija os
+seis valores do bloco acima como texto ali, caso o build ainda esteja conectado. **Settings →
+Variables and Secrets** configura o runtime: atualize as seis entradas existentes com os mesmos
+valores, preservando os demais bindings. A alteração indispensável para a mensagem relatada é
+`ALLOWED_ORIGINS`; `NEXT_PUBLIC_PANEL_TEST_URL` deve apontar para `curtiz-painel`, e os outros
+quatro valores devem coincidir com o bloco. Não adicione variáveis separadas para cada origem.
+Variáveis de runtime não alimentam automaticamente o build, e variáveis de
 build não criam bindings de runtime. As URLs de teste são aliases do Worker de produção, não o
 ambiente Wrangler `staging`. Confira também que `ALLOWED_ORIGINS` inclui as quatro origens acima.
 
@@ -138,13 +152,24 @@ chama o OpenNext diretamente e omite o preflight de produção da raiz. O dry-ru
 após um build completo, é `pnpm deploy:dry-run:panel`.
 
 Esse diagnóstico não habilita Workers Builds como estratégia de produção. Mantenha o GitHub Actions
-como caminho único: confira as mesmas três variáveis em **Settings → Secrets and variables →
-Actions → Variables** do repositório, desconecte manualmente Workers Builds conforme o checklist
-acima e use **Actions → CI → Run workflow**, branch `main`, target `panel`, quando for publicar.
+como caminho único: as seis configurações públicas já estão no workflow versionado;
+desconecte manualmente Workers Builds conforme o checklist
+acima e use **Actions → CI → Run workflow**, branch `main`, target `both`, quando for publicar.
 Não use **Retry build** no Cloudflare: um build bem-sucedido pode acionar o deploy concorrente.
 
+O plano Free permite **64 variáveis por Worker, somando texto e secrets**. Os valores de Build
+não precisam ser copiados integralmente para Runtime: flags usadas apenas para compilar,
+`DEPLOY_TARGET`, credenciais efêmeras do CI e credenciais de deploy não são bindings adicionais.
+Esta correção altera nomes/valores já usados; a lista de bindings enviados pelo Actions permanece
+com 16 nomes na loja e 14 no painel, incluindo metadados. Os demais bindings de Runtime e secrets
+são preservados por `--keep-vars` e também contam no limite total. Não é possível confirmar o total
+cadastrado sem acesso à configuração da conta; confira-o no painel antes de publicar, sem apagar
+credenciais nem configurações funcionais para abrir espaço.
+
+Referência: [limites de variáveis dos Workers](https://developers.cloudflare.com/workers/platform/limits/#environment-variables).
+
 No Cloudflare, associe `curtiz.com.br` ao Worker `curtiz-ecommerce` e
-`painel.curtiz.com.br` ao Worker `curtiz-panel` como **Custom Domains**. Não adicione essas rotas ao
+`painel.curtiz.com.br` ao Worker `curtiz-painel` como **Custom Domains**. Não adicione essas rotas ao
 Wrangler: assim os domínios podem ser retirados e recolocados no painel sem alteração de código e
 os endereços `workers.dev` permanecem habilitados. Para o `www`, crie um registro DNS `A` proxied
 `www` apontando para `192.0.2.0` e um Single Redirect com padrão de entrada `https://www.*`, destino
@@ -167,7 +192,7 @@ Para republicar sem criar commit, abra **Actions → CI → Run workflow** e esc
 `both`. A execução manual passa pelas mesmas validações antes do deploy.
 
 Cada deploy injeta metadados (`GIT_COMMIT_SHA`, `BUILD_ID` e `BUILD_TIMESTAMP`) e espelha somente
-as variáveis de plataforma **não secretas** do GitHub; configurações de integrações não são
+as variáveis de plataforma **não secretas** do workflow e das GitHub Variables; configurações de integrações não são
 tocadas. O commit ativo pode ser consultado em `/api/version`
 na URL de cada aplicação. Secrets de runtime permanecem somente no Cloudflare.
 

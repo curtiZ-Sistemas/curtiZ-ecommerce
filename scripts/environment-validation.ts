@@ -209,6 +209,10 @@ const validateAllowedOrigins = (
       const configuredOrigin = new URL(configuredUrl).origin;
       if (!originSet.has(configuredOrigin)) {
         errors.push(`ALLOWED_ORIGINS deve incluir ${key}`);
+        errors.push(
+          `Origem ausente em ALLOWED_ORIGINS: ${configuredOrigin}. ` +
+          "Confira as variáveis de Build; as variáveis de Runtime não alimentam este validador."
+        );
       }
     } catch {
       // validateUrl já informa o erro de URL.

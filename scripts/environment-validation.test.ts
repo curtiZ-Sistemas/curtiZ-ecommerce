@@ -47,6 +47,50 @@ const disabledProduction: EnvironmentValues = {
 };
 
 describe("environment validation", () => {
+  const realPublicUrls = {
+    NEXT_PUBLIC_STORE_URL: "https://curtiz.com.br",
+    NEXT_PUBLIC_PANEL_URL: "https://painel.curtiz.com.br",
+    NEXT_PUBLIC_STORE_TEST_URL: "https://curtiz-ecommerce.sistemas-curtiz.workers.dev",
+    NEXT_PUBLIC_PANEL_TEST_URL: "https://curtiz-painel.sistemas-curtiz.workers.dev",
+    AUTH_COOKIE_DOMAINS: "curtiz.com.br,sistemas-curtiz.workers.dev"
+  };
+  const realOrigins = [
+    realPublicUrls.NEXT_PUBLIC_STORE_URL, realPublicUrls.NEXT_PUBLIC_PANEL_URL,
+    realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL, realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL
+  ];
+
+  it.each(["store", "panel"])("reproduz a origem de teste ausente no build de %s", (target) => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: target,
+      ALLOWED_ORIGINS: realOrigins.slice(0, 3).join(",")
+    });
+    expect(result.errors).toEqual([
+      "ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL",
+      "Origem ausente em ALLOWED_ORIGINS: https://curtiz-painel.sistemas-curtiz.workers.dev. " +
+        "Confira as variáveis de Build; as variáveis de Runtime não alimentam este validador."
+    ]);
+  });
+
+  it.each(["store", "panel"])("aceita os quatro domínios reais no build de %s", (target) => {
+    expect(validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: target,
+      ALLOWED_ORIGINS: realOrigins.join(",")
+    })).toMatchObject({ valid: true, errors: [] });
+  });
+
+  it("não confunde os aliases panel e painel nem permite wildcard ou caminhos", () => {
+    for (const alias of [
+      "https://curtiz-panel.sistemas-curtiz.workers.dev",
+      "https://*.sistemas-curtiz.workers.dev",
+      `${realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL}/login`
+    ]) {
+      expect(validateEnvironment("production", {
+        ...disabledProduction, ...realPublicUrls,
+        ALLOWED_ORIGINS: [...realOrigins.slice(0, 3), alias].join(",")
+      }).errors).toContain("ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL");
+    }
+  });
+
   it("permite mocks, demo, MFA desativado e integrações ausentes em staging", () => {
     expect(validateEnvironment("staging", stagingEnvironment)).toMatchObject({
       environment: "staging",

@@ -31,13 +31,13 @@ describe("URLs públicas das aplicações", () => {
     process.env.NEXT_PUBLIC_PANEL_URL = "https://painel.curtiz.com.br";
     process.env.NEXT_PUBLIC_STORE_TEST_URL =
       "https://curtiz-ecommerce.sistemas-curtiz.workers.dev";
-    process.env.NEXT_PUBLIC_PANEL_TEST_URL = "https://curtiz-panel.sistemas-curtiz.workers.dev";
+    process.env.NEXT_PUBLIC_PANEL_TEST_URL = "https://curtiz-painel.sistemas-curtiz.workers.dev";
 
     expect(
       resolvePublicAppUrls("https://curtiz-ecommerce.sistemas-curtiz.workers.dev/login")
     ).toEqual({
       storeUrl: "https://curtiz-ecommerce.sistemas-curtiz.workers.dev",
-      panelUrl: "https://curtiz-panel.sistemas-curtiz.workers.dev"
+      panelUrl: "https://curtiz-painel.sistemas-curtiz.workers.dev"
     });
     expect(configuredPublicOrigins()).toHaveLength(4);
   });

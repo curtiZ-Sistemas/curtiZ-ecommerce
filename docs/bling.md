@@ -29,7 +29,7 @@ O Bling usa a mesma API real para as operações aqui implementadas. O identific
    | Ambiente | Callback no Worker panel | Webhook no Worker store |
    | --- | --- | --- |
    | Produção, quando houver autorização para ativar | `https://painel.curtiz.com.br/api/integrations/bling/callback` | `https://curtiz.com.br/api/webhooks/bling` |
-   | Instalação isolada de teste nos aliases existentes | `https://curtiz-panel.sistemas-curtiz.workers.dev/api/integrations/bling/callback` | `https://curtiz-ecommerce.sistemas-curtiz.workers.dev/api/webhooks/bling` |
+   | Instalação isolada de teste nos aliases existentes | `https://curtiz-painel.sistemas-curtiz.workers.dev/api/integrations/bling/callback` | `https://curtiz-ecommerce.sistemas-curtiz.workers.dev/api/webhooks/bling` |
 
    No teste, a origem canônica do painel deve ser o alias utilizado, tanto no build quanto no runtime. O callback precisa coincidir com `BLING_REDIRECT_URI` e `NEXT_PUBLIC_PANEL_URL`; não use um callback de teste com a origem canônica de produção.
 5. Configure secrets Cloudflare **server-only**, no ambiente nomeado de cada Worker. Client ID/secret e chave devem ser os mesmos no panel e store que compartilham o banco. Não use `NEXT_PUBLIC_*` para credenciais.
