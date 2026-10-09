@@ -1,0 +1,3 @@
+# Falsos positivos revisados: placeholders públicos de teste do CI, nunca credenciais reais.
+# scripts/ci-workflow.test.ts:84 → "ci-referral-placeholder-with-32-characters" (mesmo valor do job Qualidade em ci.yml).
+431deba80b940943dd3041f2e050285a723a23f4:scripts/ci-workflow.test.ts:generic-api-key:84

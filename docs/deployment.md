@@ -432,3 +432,9 @@ Esses gates não substituem RLS, autorização nem rotação de credenciais quan
 - A auditoria foi corrigida para Next.js/eslint-config-next `16.3.3` e versões transitivas vulneráveis via overrides restritos. OpenNext `1.20.2` e Wrangler `4.86.0` foram preservados. A instalação aponta peers WASM opcionais do resolver ESLint; lint no host não equivale à validação dessa plataforma opcional.
 - No Windows, o build Next passou, mas o empacotamento OpenNext encontrou `EPERM` ao criar symlinks. Confirme os builds completos dos dois Workers no CI Linux antes de publicar; o suporte de versão declarado pelo pacote não comprova execução do Worker.
 - Os jobs de segurança fazem parte dos requisitos do deploy. CodeQL/dependency review dependem das funcionalidades disponíveis no plano GitHub; a Action oficial do Gitleaks exige licença para repositórios de organizações. Configure essas permissões/licença externamente quando aplicável, sem silenciar falhas.
+- Exceções revisadas (reavaliar a cada atualização de dependências):
+  - `pnpm.auditConfig.ignoreGhsas`: `GHSA-vfj7-8cjw-p6xm` (`braces` ≤ 3.0.3). Sem versão corrigida publicada;
+    chega apenas por `eslint-config-next` → `fast-glob`, ferramenta de lint que não entra no bundle nem nos
+    Workers. Remova a exceção assim que houver versão corrigida.
+  - `.gitleaksignore`: somente a impressão digital do placeholder público de teste
+    `ci-referral-placeholder-with-32-characters` em `scripts/ci-workflow.test.ts`. Nunca adicione credenciais reais.

@@ -19,6 +19,8 @@ const previousEnvironment = {
 };
 
 beforeEach(() => {
+  // Isola do APP_ENV=production definido globalmente no CI; os casos de produção definem o próprio valor.
+  process.env.APP_ENV = "development";
   process.env.DEMO_MODE = "true";
   process.env.DEMO_USERS_PASSWORD = "1234567890";
   process.env.DEMO_SESSION_SECRET = "test-only-demo-session-secret-with-adequate-length";
