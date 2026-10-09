@@ -50,7 +50,7 @@ export function createEncryptedMelhorEnvioTokenStore(input: {
       const lockId = crypto.randomUUID();
       const deadline = Date.now() + 10_000;
       while (!(await input.claimRefreshLock(lockId))) {
-        if (Date.now() >= deadline) throw new MelhorEnvioError("provider_unavailable", 503, true);
+        if (Date.now() >= deadline) throw new MelhorEnvioError("provider_unavailable", 503, true, { reason: "refresh_lock_timeout" });
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       try { return await operation(); }
@@ -143,13 +143,25 @@ const finiteNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
+export type MelhorEnvioFailureReason =
+  | "credentials_missing" | "credentials_read_failed" | "credentials_write_failed"
+  | "token_decryption_failed" | "refresh_token_expired" | "oauth_rejected"
+  | "permission_denied" | "refresh_lock_failed" | "refresh_lock_timeout";
+
+export type MelhorEnvioFailureDetails = {
+  reason?: MelhorEnvioFailureReason;
+  upstreamStatus?: number;
+  databaseCode?: string;
+};
+
 export class MelhorEnvioError extends Error {
   constructor(
     readonly code: "configuration" | "authentication" | "not_found" | "conflict" | "validation" |
       "rate_limited" | "provider_unavailable" | "network" | "timeout" | "invalid_response" |
       "uncertain_write" | "fiscal_shipping_blocked",
     readonly httpStatus: number,
-    readonly retryable: boolean
+    readonly retryable: boolean,
+    readonly diagnostic: MelhorEnvioFailureDetails = {}
   ) {
     super(code);
     this.name = "MelhorEnvioError";
@@ -258,25 +270,35 @@ export class MelhorEnvioProvider {
       throw new MelhorEnvioError("network", 503, true);
     }
     const result: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw providerError(response.status, true);
+    // OAuth 400/422 describes the application/token, never the customer's CEP/cart.
+    if (!response.ok) {
+      if ([400, 401, 403, 422].includes(response.status)) {
+        throw new MelhorEnvioError("authentication", response.status, false, {
+          reason: "oauth_rejected", upstreamStatus: response.status
+        });
+      }
+      throw providerError(response.status, true);
+    }
     return result;
   }
 
   private get userAgent() { return `${this.config.applicationName} (${this.config.technicalContact})`; }
 
-  private async accessToken(forceRefresh = false): Promise<string> {
+  private async accessToken(rejectedToken?: string): Promise<string> {
     const current = await this.tokens.read();
-    if (!current) throw new MelhorEnvioError("authentication", 503, false);
-    if (!forceRefresh && Date.parse(current.accessTokenExpiresAt) > Date.now() + 60_000) return current.accessToken;
+    if (!current) throw new MelhorEnvioError("authentication", 503, false, { reason: "credentials_missing" });
+    const forceRefresh = rejectedToken !== undefined;
+    const alreadyRefreshed = forceRefresh && current.accessToken !== rejectedToken;
+    if ((!forceRefresh || alreadyRefreshed) && Date.parse(current.accessTokenExpiresAt) > Date.now() + 60_000) return current.accessToken;
     return this.tokens.withRefreshLock(async () => {
       const latest = await this.tokens.read();
-      if (!latest) throw new MelhorEnvioError("authentication", 503, false);
-      const anotherRequestRefreshed = forceRefresh && latest.accessToken !== current.accessToken;
+      if (!latest) throw new MelhorEnvioError("authentication", 503, false, { reason: "credentials_missing" });
+      const anotherRequestRefreshed = forceRefresh && latest.accessToken !== rejectedToken;
       if ((!forceRefresh || anotherRequestRefreshed) && Date.parse(latest.accessTokenExpiresAt) > Date.now() + 60_000) {
         return latest.accessToken;
       }
       if (latest.refreshTokenExpiresAt && Date.parse(latest.refreshTokenExpiresAt) <= Date.now()) {
-        throw new MelhorEnvioError("authentication", 401, false);
+        throw new MelhorEnvioError("authentication", 401, false, { reason: "refresh_token_expired" });
       }
       const refreshed = tokenResponse(await this.oauthRequest({
         grant_type: "refresh_token", client_id: this.config.clientId,
@@ -308,10 +330,16 @@ export class MelhorEnvioProvider {
     }
     const result: unknown = await response.json().catch(() => null);
     if (response.status === 401 && !refreshed) {
-      await this.accessToken(true);
+      await this.accessToken(token);
       return this.request(path, init, safeToRetry, true);
     }
-    if (!response.ok) throw providerError(response.status, safeToRetry);
+    if (!response.ok) {
+      const error = providerError(response.status, safeToRetry);
+      throw new MelhorEnvioError(error.code, error.httpStatus, error.retryable, {
+        upstreamStatus: response.status,
+        ...(response.status === 403 ? { reason: "permission_denied" } : response.status === 401 ? { reason: "oauth_rejected" } : {})
+      });
+    }
     return result;
   }
 
@@ -338,8 +366,11 @@ export class MelhorEnvioProvider {
     }, true);
     if (!Array.isArray(result)) throw new MelhorEnvioError("invalid_response", 502, false);
     const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
-    return result.flatMap((entry): MelhorEnvioQuote[] => {
+    let malformed = false;
+    const quotes = result.flatMap((entry): MelhorEnvioQuote[] => {
       const row = asObject(entry);
+      // A service explicitly unavailable is different from a malformed API response.
+      if (row?.error) return [];
       const company = asObject(row?.company);
       const serviceId = typeof row?.id === "number" && Number.isFinite(row.id)
         ? String(row.id) : stringValue(row?.id);
@@ -350,12 +381,16 @@ export class MelhorEnvioProvider {
       const days = finiteNumber(row?.custom_delivery_time ?? row?.delivery_time);
       const packages = Array.isArray(row?.packages) ? row.packages : [];
       if (!serviceId || !service || !carrier || !Number.isFinite(charged) || charged < 0
-        || !Number.isFinite(cost) || cost < 0 || !Number.isInteger(days) || days <= 0 || packages.length === 0
-        || row?.error) return [];
+        || !Number.isFinite(cost) || cost < 0 || !Number.isInteger(days) || days <= 0 || packages.length === 0) {
+        malformed = true;
+        return [];
+      }
       return [{ provider: "melhorenvio", serviceId, service, carrier,
         amountInCents: Math.round(charged * 100), costInCents: Math.round(cost * 100),
         estimatedDays: days, packages, expiresAt }];
     });
+    if (quotes.length === 0 && malformed) throw new MelhorEnvioError("invalid_response", 502, false, { upstreamStatus: 200 });
+    return quotes;
   }
 
   async createShipment(input: MelhorEnvioShipmentInput): Promise<{ externalId: string }> {
@@ -459,10 +494,10 @@ export async function encryptMelhorEnvioToken(value: string, encodedKey: string)
 
 export async function decryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
   const [version, iv, ciphertext] = value.split(".");
-  if (version !== "v1" || !iv || !ciphertext) throw new MelhorEnvioError("configuration", 503, false);
+  if (version !== "v1" || !iv || !ciphertext) throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" });
   try {
     const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: asArrayBuffer(base64ToBytes(iv)) },
       await encryptionKey(encodedKey), asArrayBuffer(base64ToBytes(ciphertext)));
     return new TextDecoder().decode(decrypted);
-  } catch { throw new MelhorEnvioError("authentication", 503, false); }
+  } catch { throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" }); }
 }

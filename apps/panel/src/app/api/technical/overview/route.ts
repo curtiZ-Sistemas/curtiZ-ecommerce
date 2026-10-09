@@ -1,6 +1,6 @@
 import { getIntegrationConfig } from "@curtiz/config";
 import { backupStatus, httpServiceState } from "@/lib/service-health";
-import { melhorEnvioOriginMissingFields } from "@/lib/melhor-envio-server";
+import { melhorEnvioConfigurationIssues, melhorEnvioOriginMissingFields } from "@/lib/melhor-envio-server";
 import { getStoreShippingService } from "@/lib/store-shipping-health";
 import { getStoreEmailService } from "@/lib/store-email-health";
 import { type NextRequest, NextResponse } from "next/server";
@@ -173,9 +173,9 @@ export async function GET(request: NextRequest) {
     getStoreEmailService(integrationRows.find((item) => item.provider === "resend_store")),
     { name: "Frete no painel", state: shippingProvider === "mock" ? "mock" : configured(shippingConfig.enabled),
       detail: shippingProvider === "melhorenvio"
-        ? `Configuração do Worker do painel · Melhor Envio · ${process.env.MELHOR_ENVIO_ENVIRONMENT === "production" ? "Produção" : "Sandbox"} · origem ${melhorEnvioOriginMissingFields().length === 0 ? "configurada" : "incompleta"} · webhook ${process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true" ? "configurado" : "pendente"}`
+        ? `Configuração do Worker do painel · Melhor Envio · ${process.env.MELHOR_ENVIO_ENVIRONMENT === "production" ? "Produção" : "Sandbox"} · origem ${melhorEnvioOriginMissingFields().length === 0 ? "configurada" : "incompleta"} · webhook ${process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true" ? "configurado" : "pendente"}${shippingConfig.enabled || !melhorEnvioConfigurationIssues() ? "" : ` · ${melhorEnvioConfigurationIssues()}`}`
         : shippingProvider === "fixed" ? "Entrega padrão fixa escolhida explicitamente" : shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },
-    getStoreShippingService(integrationRows.find((item) => item.provider === "melhorenvio_store")),
+    getStoreShippingService(integrationRows.find((item) => item.provider === "melhorenvio_store"), Boolean(integrations.error)),
     { name: "WhatsApp", state: whatsappProvider === "mock" ? "mock" : configured(whatsappProvider === "meta" && Boolean(process.env.WHATSAPP_ACCESS_TOKEN)), detail: whatsappProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${whatsappProvider}` },
     { name: "Turnstile", state: configured(enabled(process.env.TURNSTILE_ENABLED) && Boolean(process.env.TURNSTILE_SECRET_KEY)), detail: enabled(process.env.TURNSTILE_ENABLED) ? "Proteção habilitada; segredo não é exibido" : "Proteção desabilitada" },
     { name: "Marketing", state: marketingProvider === "mock" ? "mock" : configured(marketingProvider !== "disabled"), detail: `Provider: ${marketingProvider}` }

@@ -275,6 +275,20 @@ próprias.
 | `shipping_product_invalid` / `shipping_product_lookup_unavailable` | itens do carrinho inválidos / consulta de produtos falhou |
 | `shipping_quote_persistence_unavailable` | cotação obtida, mas a gravação em `shipping_quotes` falhou |
 
+O contexto sanitizado diferencia `credentials_missing`, `credentials_read_failed`,
+`token_decryption_failed`, `refresh_token_expired`, `oauth_rejected`, `permission_denied`,
+`credentials_write_failed`, `refresh_lock_failed` e `refresh_lock_timeout`. `upstreamStatus` é o HTTP
+recebido do Melhor Envio; o HTTP 503 devolvido pela loja não o substitui. `databaseCode` contém
+somente SQLSTATE/PGRST válido, sem mensagem/SQL do banco. Falhas são registradas também nos logs da
+Cloudflare quando a telemetria no Supabase funciona. Ausência de diagnóstico e falha na consulta
+são mostradas como indisponibilidade, não como integração desconfigurada.
+
+Uma falha `token_decryption_failed` exige conferir a mesma `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY`
+nos dois Workers antes de reconectar. Não rotacione a chave aleatoriamente: isso tornaria os tokens
+atuais ilegíveis. `oauth_rejected` exige conferir Client ID/Secret do mesmo ambiente e a autorização;
+`permission_denied` exige conferir `shipping-calculate`. O evento antigo `melhor_envio_authentication`
+sem esses detalhes confirma somente a categoria da falha, não qual desses requisitos falhou.
+
 Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Todas as
 `MELHOR_ENVIO_*` e as flags `SHIPPING_PROVIDER`/`MELHOR_ENVIO_ENABLED` são cadastradas somente no
 Runtime dos Workers (**Settings → Variables and Secrets**), nunca no GitHub. Use **Secret** para

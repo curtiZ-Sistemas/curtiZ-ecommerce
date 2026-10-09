@@ -1,5 +1,6 @@
 import { publicEnvironmentErrors } from "./public-environment";
 import { getResendReadiness } from "../packages/config/src/email";
+import { getMelhorEnvioReadiness } from "../packages/config/src/integrations";
 
 export type DeploymentEnvironment = "development" | "staging" | "production";
 
@@ -429,6 +430,10 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
     if (normalize(environment.MELHOR_ENVIO_ENVIRONMENT) === "production") {
       addRequiredErrors(environment, ["MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT", "MELHOR_ENVIO_ORIGIN_STATE_REGISTER"], errors);
     }
+    // Use the same host/contact/key validation as the actual quote runtime.
+    const readiness = getMelhorEnvioReadiness(environment);
+    addRequiredErrors(environment, readiness.missing, errors);
+    for (const code of readiness.invalid) errors.push(`${code} na configuração de frete`);
   }
 
   const emailEnabled = enabledBoolean(environment.EMAIL_ENABLED);

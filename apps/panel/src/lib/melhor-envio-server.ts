@@ -19,7 +19,14 @@ const result = (value: unknown) => {
 };
 const text = (value: unknown) => typeof value === "string" ? value : "";
 export const melhorEnvioEnvironment = (): MelhorEnvioEnvironment =>
-  process.env.MELHOR_ENVIO_ENVIRONMENT === "production" ? "production" : "sandbox";
+  process.env.MELHOR_ENVIO_ENVIRONMENT?.trim().toLowerCase() === "production" ? "production" : "sandbox";
+
+/** Somente nomes de campos ausentes/inválidos do Worker do painel; nunca valores. */
+export function melhorEnvioConfigurationIssues(environment: IntegrationEnvironment = process.env): string {
+  const readiness = getMelhorEnvioReadiness(environment);
+  return [...readiness.missing.map((name) => `ausente: ${name}`), ...readiness.invalid.map((name) => `inválido: ${name}`)]
+    .join(", ");
+}
 
 export function melhorEnvioOriginMissingFields(environment: IntegrationEnvironment = process.env): string[] {
   const readiness = getMelhorEnvioReadiness(environment);
@@ -38,7 +45,10 @@ export function panelMelhorEnvioProvider() {
         p_provider: "melhorenvio", p_environment: melhorEnvioEnvironment()
       }));
       const row = record(query.data);
-      if (query.error || !row || text(row.status) === "disconnected") return null;
+      if (query.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_read_failed", databaseCode: text(record(query.error)?.code)
+      });
+      if (!row || text(row.status) === "disconnected") return null;
       return { accessTokenCiphertext: text(row.access_token_ciphertext),
         refreshTokenCiphertext: text(row.refresh_token_ciphertext), accessTokenExpiresAt: text(row.access_token_expires_at),
         refreshTokenExpiresAt: text(row.refresh_token_expires_at) || null } satisfies EncryptedMelhorEnvioTokenRecord;
@@ -51,13 +61,16 @@ export function panelMelhorEnvioProvider() {
         p_access_token_expires_at: tokens.accessTokenExpiresAt,
         p_refresh_token_expires_at: tokens.refreshTokenExpiresAt
       }));
-      if (saved.error) throw new MelhorEnvioError("provider_unavailable", 503, true);
+      if (saved.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_write_failed", databaseCode: text(record(saved.error)?.code)
+      });
     },
     async claimRefreshLock(lockId) {
       const claimed = result(await db.rpc("claim_integration_refresh", {
         p_provider: "melhorenvio", p_environment: melhorEnvioEnvironment(), p_lock_id: lockId
       }));
-      return !claimed.error && claimed.data === true;
+      if (claimed.error || typeof claimed.data !== "boolean") throw new MelhorEnvioError("provider_unavailable", 503, true, { reason: "refresh_lock_failed" });
+      return claimed.data;
     },
     async releaseRefreshLock(lockId) {
       await db.rpc("release_integration_refresh", {

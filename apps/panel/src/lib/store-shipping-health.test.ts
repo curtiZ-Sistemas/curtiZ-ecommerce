@@ -5,9 +5,25 @@ describe("diagnóstico persistido do frete da loja", () => {
   it("distingue ausência de uma verificação do estado OAuth do painel", () => {
     expect(getStoreShippingService(null)).toMatchObject({
       name: "Frete da loja",
-      state: "not_configured",
+      state: "unavailable",
       detail: expect.stringContaining("A loja ainda não registrou uma verificação de cotação no runtime.") as unknown
     });
+  });
+
+  it("distingue falha de consulta de ausência de diagnóstico", () => {
+    expect(getStoreShippingService(null, true)).toMatchObject({ state: "unavailable",
+      detail: "Não foi possível consultar o diagnóstico da loja no Supabase." });
+  });
+
+  it("mostra a falha de criptografia e o HTTP real sem expor texto arbitrário", () => {
+    const service = getStoreShippingService({ state: "offline", error_summary: "melhor_envio_authentication",
+      metadata_sanitized: { reason: "token_decryption_failed", upstreamStatus: 403, databaseCode: "PGRST202" } });
+    expect(service.detail).toContain("chave compartilhada entre loja e painel");
+    expect(service.detail).toContain("HTTP Melhor Envio 403");
+    expect(service.detail).toContain("código do banco PGRST202");
+    expect(getStoreShippingService({ state: "offline", metadata_sanitized: {
+      reason: "sensitive detail", databaseCode: "select secret", upstreamStatus: 999
+    } }).detail).not.toMatch(/sensitive|select secret|999/u);
   });
 
   it("mostra somente categoria e nomes de requisitos sanitizados", () => {

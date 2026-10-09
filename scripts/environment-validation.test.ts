@@ -59,6 +59,21 @@ describe("environment validation", () => {
     realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL, realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL
   ];
 
+  it("reproduz os três erros do build do painel sem aceitar o alias legado", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: "panel",
+      NEXT_PUBLIC_STORE_TEST_URL: undefined,
+      NEXT_PUBLIC_PANEL_URL: realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL,
+      NEXT_PUBLIC_PANEL_TEST_URL: "https://curtiz-panel.sistemas-curtiz.workers.dev",
+      ALLOWED_ORIGINS: [...realOrigins.slice(0, 3), "https://curtiz-panel.sistemas-curtiz.workers.dev"].join(",")
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      "NEXT_PUBLIC_STORE_TEST_URL não está configurada",
+      "ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_URL",
+      "NEXT_PUBLIC_STORE_TEST_URL e NEXT_PUBLIC_PANEL_TEST_URL devem ser configuradas em conjunto"
+    ]));
+  });
+
   it.each(["store", "panel"])("reproduz a origem de teste ausente no build de %s", (target) => {
     const result = validateEnvironment("production", {
       ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: target,

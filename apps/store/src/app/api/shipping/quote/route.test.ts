@@ -324,6 +324,41 @@ describe("POST /api/shipping/quote", () => {
     expect(lastEvent()).toMatchObject({ event_type: "shipping_quote_persistence_unavailable" });
   });
 
+  it("OAuth rejeitado mantém 503 e registra HTTP do provedor sem culpar os itens", async () => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    providerQuote.mockRejectedValue(new MelhorEnvioError("authentication", 400, false, {
+      reason: "oauth_rejected", upstreamStatus: 400
+    }));
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    expect(await publicBody(result)).toMatchObject({ code: "SHIPPING_UNAVAILABLE" });
+    expect(lastEvent()?.context_sanitized).toMatchObject({ stage: "provider", reason: "oauth_rejected", upstreamStatus: 400 });
+    expect(quoteInsert).not.toHaveBeenCalled();
+    expect(serverLog).toHaveBeenCalledWith("error", "shipping_quote_diagnostic", expect.objectContaining({
+      reason: "oauth_rejected", upstreamStatus: 400, persisted: { health: true, event: true }
+    }));
+  });
+
+  it.each([{ data: [] }, { data: [null] }, { data: [{ service_id: "1" }] }])("não anuncia sucesso para retorno incompleto de shipping_quotes (%#)", async ({ data }) => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    quoteInsert.mockResolvedValue({ data, error: null });
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await publicBody(result);
+    expect(lastEvent()?.event_type).toBe("shipping_quote_persistence_unavailable");
+  });
+
+  it.each(["23514", "PGRST202"])("registra somente o código seguro %s do banco na falha de persistência", async (databaseCode) => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    quoteInsert.mockResolvedValue({ data: null, error: { code: databaseCode, message: "private customer detail", details: "SQL and secrets" } });
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    await publicBody(result);
+    expect(lastEvent()?.context_sanitized).toMatchObject({ stage: "persistence", databaseCode });
+    expect(JSON.stringify(lastEvent())).not.toContain("private customer detail");
+    expect(JSON.stringify(serverLog.mock.calls)).not.toContain("SQL and secrets");
+  });
+
   it("devolve o mesmo código de suporte no corpo, no cabeçalho e no evento técnico", async () => {
     const result = await POST(request());
     const body = await publicBody(result);

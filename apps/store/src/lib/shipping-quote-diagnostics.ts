@@ -27,7 +27,7 @@ export type ShippingQuoteStage = "products" | "provider" | "persistence";
 
 /** Falha ao gravar as cotações; separada das falhas do provider. */
 export class ShippingQuotePersistenceError extends Error {
-  constructor() {
+  constructor(readonly databaseCode?: string) {
     super("shipping_quote_persistence_unavailable");
     this.name = "ShippingQuotePersistenceError";
   }
@@ -94,11 +94,29 @@ export type ShippingDiagnostic = {
   userId?: string | null;
   latencyMs?: number | null;
   httpStatus: number;
+  failure?: unknown;
+  stage?: ShippingQuoteStage;
 };
 
 const route = "/api/shipping/quote";
 const configurationName = /^[A-Z][A-Z0-9_]{0,80}$/u;
 const safeNames = (names: readonly string[] | undefined) => (names ?? []).filter((name) => configurationName.test(name));
+
+const failureReasons = new Set([
+  "credentials_missing", "credentials_read_failed", "credentials_write_failed", "token_decryption_failed",
+  "refresh_token_expired", "oauth_rejected", "permission_denied", "refresh_lock_failed", "refresh_lock_timeout"
+]);
+
+function failureDetails(error: unknown): Record<string, string | number> {
+  const details = error instanceof MelhorEnvioError ? error.diagnostic : {};
+  const databaseCode = error instanceof ShippingQuotePersistenceError ? error.databaseCode : details.databaseCode;
+  return {
+    ...(details.reason && failureReasons.has(details.reason) ? { reason: details.reason } : {}),
+    ...(Number.isInteger(details.upstreamStatus) && (details.upstreamStatus ?? 0) >= 100 && (details.upstreamStatus ?? 0) <= 599
+      ? { upstreamStatus: details.upstreamStatus as number } : {}),
+    ...(databaseCode && /^(?:[A-Z0-9]{5}|PGRST\d{3})$/u.test(databaseCode) ? { databaseCode } : {})
+  };
+}
 
 /**
  * Registra a última situação do frete da loja (integration_health) e um evento técnico pesquisável
@@ -114,7 +132,9 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
     missing: safeNames(diagnostic.missing),
     invalid: safeNames(diagnostic.invalid),
     requestId: support.requestId,
-    supportCode: support.supportCode
+    supportCode: support.supportCode,
+    ...failureDetails(diagnostic.failure),
+    ...(diagnostic.stage ? { stage: diagnostic.stage } : {})
   };
   const healthState: ShippingHealthState | undefined = code === null ? "online" : healthStateByCode[code];
   const persisted = { health: healthState === undefined, event: code === null };
@@ -155,7 +175,7 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
     }
   }
 
-  if (!persisted.health || !persisted.event) {
+  if (code !== null || !persisted.health || !persisted.event) {
     logServerEvent(code === null ? "warn" : "error", "shipping_quote_diagnostic", {
       requestId: support.requestId,
       supportCode: support.supportCode,
@@ -164,6 +184,8 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
       environment: diagnostic.environment,
       missing: metadata.missing,
       invalid: metadata.invalid,
+      ...failureDetails(diagnostic.failure),
+      stage: diagnostic.stage,
       persisted
     });
   }

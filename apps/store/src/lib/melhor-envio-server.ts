@@ -9,6 +9,7 @@ import {
   type MelhorEnvioQuoteProduct
 } from "@curtiz/integrations";
 import { createHash } from "node:crypto";
+import { getMelhorEnvioEnvironment } from "@curtiz/config";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 
@@ -16,8 +17,11 @@ type CheckoutLine = { productId: string; variantId: string; quantity: number };
 export type MelhorEnvioRuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 type ServiceDatabase = NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
 
-const environment = (values: MelhorEnvioRuntimeEnvironment = process.env): MelhorEnvioEnvironment =>
-  values.MELHOR_ENVIO_ENVIRONMENT === "production" ? "production" : "sandbox";
+const environment = (values: MelhorEnvioRuntimeEnvironment = process.env): MelhorEnvioEnvironment => {
+  const selected = getMelhorEnvioEnvironment(values);
+  if (!selected) throw new MelhorEnvioError("configuration", 503, false);
+  return selected;
+};
 
 export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
   const encryptionKey = values.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "";
@@ -28,7 +32,11 @@ export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment,
       const result = readQueryResult(await db.rpc("read_integration_credential", {
         p_provider: "melhorenvio", p_environment: environment(values)
       }));
-      if (result.error || !isUnknownRecord(result.data) || readString(result.data, "status") === "disconnected") return null;
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_read_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+      if (!isUnknownRecord(result.data) || readString(result.data, "status") === "disconnected") return null;
       return {
         accessTokenCiphertext: readString(result.data, "access_token_ciphertext"),
         refreshTokenCiphertext: readString(result.data, "refresh_token_ciphertext"),
@@ -44,13 +52,17 @@ export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment,
         p_access_token_expires_at: record.accessTokenExpiresAt,
         p_refresh_token_expires_at: record.refreshTokenExpiresAt
       }));
-      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true);
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_write_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
     },
     async claimRefreshLock(lockId) {
       const result = readQueryResult(await db.rpc("claim_integration_refresh", {
         p_provider: "melhorenvio", p_environment: environment(values), p_lock_id: lockId
       }));
-      return result.error === null && result.data === true;
+      if (result.error || typeof result.data !== "boolean") throw new MelhorEnvioError("provider_unavailable", 503, true, { reason: "refresh_lock_failed" });
+      return result.data;
     },
     async releaseRefreshLock(lockId) {
       await db.rpc("release_integration_refresh", {

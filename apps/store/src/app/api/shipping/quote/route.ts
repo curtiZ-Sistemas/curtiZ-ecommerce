@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
   const diagnose = async (
     code: ShippingDiagnosticCode,
     httpStatus: number,
-    details: { provider?: string; missing?: readonly string[]; invalid?: readonly string[]; latencyMs?: number | null } = {},
+    details: { provider?: string; missing?: readonly string[]; invalid?: readonly string[]; latencyMs?: number | null;
+      failure?: unknown; stage?: ShippingQuoteStage } = {},
     db?: ReturnType<typeof createServiceSupabaseClient>
   ) => {
     let database = db;
@@ -62,7 +63,8 @@ export async function POST(request: NextRequest) {
       code, support, httpStatus, userId,
       environment: storeEnvironmentName(environment),
       provider: details.provider ?? "unknown",
-      missing: details.missing, invalid: details.invalid, latencyMs: details.latencyMs ?? null
+      missing: details.missing, invalid: details.invalid, latencyMs: details.latencyMs ?? null,
+      failure: details.failure, stage: details.stage
     });
   };
 
@@ -146,7 +148,10 @@ export async function POST(request: NextRequest) {
     }));
     const insertion = readQueryResult(await db.from("shipping_quotes").insert(rows)
       .select("id,service_id,service,carrier,amount,cost,estimated_days,expires_at"));
-    if (insertion.error || !Array.isArray(insertion.data)) throw new ShippingQuotePersistenceError();
+    if (insertion.error || !Array.isArray(insertion.data) || insertion.data.length !== quotes.length
+      || insertion.data.some((row) => !isUnknownRecord(row) || !readString(row, "id"))) {
+      throw new ShippingQuotePersistenceError(isUnknownRecord(insertion.error) ? readString(insertion.error, "code") : undefined);
+    }
     await recordShippingDiagnostic(db, { code: null, support, httpStatus: 200, userId,
       environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started });
     return reply({ ok: true, quotes: insertion.data.filter(isUnknownRecord).map((row) => ({
@@ -159,7 +164,7 @@ export async function POST(request: NextRequest) {
     const inputProblem = code === "shipping_product_invalid"
       || code === "melhor_envio_validation" && error instanceof MelhorEnvioError && error.httpStatus < 500;
     const status = inputProblem && error instanceof MelhorEnvioError ? error.httpStatus : 503;
-    await diagnose(code, status, { provider: "melhorenvio", latencyMs: Date.now() - started }, db);
+    await diagnose(code, status, { provider: "melhorenvio", latencyMs: Date.now() - started, failure: error, stage }, db);
     if (code === "shipping_product_invalid") return fail(status, "SHIPPING_ITEMS_INVALID", "Revise os itens do carrinho.");
     if (inputProblem) return fail(status, "SHIPPING_INPUT_INVALID", "Revise o CEP e os itens do carrinho.");
     return fail(503, "SHIPPING_UNAVAILABLE", quoteFailedMessage);

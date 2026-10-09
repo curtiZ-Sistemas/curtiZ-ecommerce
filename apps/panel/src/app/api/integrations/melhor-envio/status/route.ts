@@ -3,6 +3,7 @@ import { getMelhorEnvioReadiness } from "@curtiz/config";
 import { authorizeTechnicalRequest, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
 import { melhorEnvioEnvironment, melhorEnvioOriginMissingFields, panelMelhorEnvioProvider } from "@/lib/melhor-envio-server";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { getStoreShippingService } from "@/lib/store-shipping-health";
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeTechnicalRequest(request, { mutation: false });
@@ -27,10 +28,14 @@ export async function GET(request: NextRequest) {
   const lastError = health === "online" || health === "not_configured" ? null : "connection_check_failed";
   await db.from("integration_health").upsert({ provider: "melhorenvio", state: health, checked_at: checkedAt,
     latency_ms: latencyMs, error_summary: lastError,
-    metadata_sanitized: { environment: melhorEnvioEnvironment(), connected,
+    metadata_sanitized: { scope: "panel_oauth", environment: melhorEnvioEnvironment(), connected,
       webhookConfigured: process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true",
       originComplete: originMissingFields.length === 0 } }, { onConflict: "provider" });
+  const storeHealth = await db.from("integration_health")
+    .select("provider,state,checked_at,latency_ms,error_summary,metadata_sanitized")
+    .eq("provider", "melhorenvio_store").maybeSingle();
   return NextResponse.json({ environment: melhorEnvioEnvironment(), connected, health, latencyMs,
+    storeShipping: getStoreShippingService(storeHealth.data, Boolean(storeHealth.error)),
     panelConfiguration,
     accessTokenExpiresAt: connected && typeof row?.access_token_expires_at === "string" ? row.access_token_expires_at : null,
     webhookConfigured: process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true",

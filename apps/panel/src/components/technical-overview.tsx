@@ -9,7 +9,7 @@ type Service = { name: string; state: string; detail: string; checkedAt?: string
 type StorageSummary = { bucket_id: string; object_count: number; total_bytes: number };
 type MelhorEnvioStatus = { environment: string; connected: boolean; health: string; latencyMs: number;
   accessTokenExpiresAt: string | null; webhookConfigured: boolean; originComplete: boolean; originMissingFields: string[];
-  lastCheckedAt: string; lastError: string | null };
+  lastCheckedAt: string; lastError: string | null; storeShipping?: Service };
 
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -61,8 +61,9 @@ const formatDateTime = (value: string) => {
 const tokenState = (status: MelhorEnvioStatus) => {
   if (!status.connected) return "Ausente";
   const expiresAt = status.accessTokenExpiresAt ? Date.parse(status.accessTokenExpiresAt) : Number.NaN;
-  return status.health === "online" || Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000
-    ? "Válido" : "Renovação necessária";
+  if (status.health === "online") return "Verificado no painel";
+  return Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000
+    ? "Dentro do prazo; comunicação não verificada" : "Renovação necessária";
 };
 
 export function TechnicalOverview({ section }: { section: string }) {
@@ -200,7 +201,7 @@ export function TechnicalOverview({ section }: { section: string }) {
         {!melhorEnvio ? <p className="admin-empty-copy">Status detalhado indisponível.</p> : <>
           <div className="technical-runtime-grid">
             <Runtime label="Ambiente" value={melhorEnvio.environment === "production" ? "Produção" : "Sandbox"} />
-            <Runtime label="Conexão" value={melhorEnvio.connected ? "Conectado" : "Não conectado"} />
+            <Runtime label="OAuth do painel" value={melhorEnvio.connected ? "Conectado" : "Não conectado"} />
             <Runtime label="Token" value={tokenState(melhorEnvio)} />
             <Runtime label="Webhook" value={melhorEnvio.webhookConfigured ? "Configurado" : "Pendente"} />
             <Runtime label="Origem" value={melhorEnvio.originComplete ? "Completa" : "Incompleta"} />
@@ -209,11 +210,15 @@ export function TechnicalOverview({ section }: { section: string }) {
             <Runtime label="Último erro" value={melhorEnvio.lastError ?? "Nenhum"} />
           </div>
           <div className="table-actions">
-            <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void load()}>Testar conexão</button>
+            <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void load()}>Testar OAuth do painel</button>
             {!melhorEnvio.connected
               ? <button className="primary-button" type="button" disabled={integrationBusy} onClick={() => void connectMelhorEnvio()}>Conectar</button>
               : <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void disconnectMelhorEnvio()}>Desconectar</button>}
           </div>
+          {melhorEnvio.storeShipping ? <>
+            <Runtime label="Último resultado do frete da loja" value={stateLabels[melhorEnvio.storeShipping.state] ?? "Indisponível"} />
+            <p className="technical-note">{melhorEnvio.storeShipping.detail}</p>
+          </> : <p className="technical-note">Diagnóstico do frete da loja indisponível.</p>}
           {!melhorEnvio.originComplete && melhorEnvio.originMissingFields.length > 0
             ? <p className="technical-note">Configuração de origem pendente: {melhorEnvio.originMissingFields.join(", ")}.</p>
             : null}

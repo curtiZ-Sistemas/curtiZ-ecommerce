@@ -32,6 +32,65 @@ const store = (initial = initialTokens()) => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("MelhorEnvioProvider", () => {
+  const quoteInput = { originPostalCode: "01001000", destinationPostalCode: "20040002",
+    products: [{ id: "variant-1", quantity: 1, weightKg: 0.35, widthCm: 12, heightCm: 8, lengthCm: 25, insuranceValue: 59.9 }] };
+
+  it.each([400, 401, 403, 422])("OAuth HTTP %s não é tratado como erro do CEP/carrinho", async (status) => {
+    const tokens = store({ ...initialTokens(), accessTokenExpiresAt: "2000-01-01T00:00:00Z" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant", message: "private detail" }), { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new MelhorEnvioProvider(config, tokens).quote(quoteInput)).rejects.toMatchObject({
+      code: "authentication", diagnostic: { reason: "oauth_rejected", upstreamStatus: status }
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(tokens.current()?.accessToken).toBe("access");
+  });
+
+  it("403 na cotação identifica permissão negada e não renova o token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new MelhorEnvioProvider(config, store()).quote(quoteInput)).rejects.toMatchObject({
+      code: "authentication", diagnostic: { reason: "permission_denied", upstreamStatus: 403 }
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("distingue serviços indisponíveis de resposta malformada", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, error: "not available" }])))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 1, name: "PAC", price: "bad" }])));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new MelhorEnvioProvider(config, store());
+    await expect(provider.quote(quoteInput)).resolves.toEqual([]);
+    await expect(provider.quote(quoteInput)).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
+  it("não renova novamente quando um 401 antigo chega após outro request renovar", async () => {
+    let releaseOldRequest: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => { releaseOldRequest = resolve; });
+    let announceOldRequest: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => { announceOldRequest = resolve; });
+    let oldRequests = 0;
+    let refreshes = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: URL, init?: RequestInit) => {
+      if (input.pathname === "/oauth/token") {
+        refreshes += 1;
+        return new Response(JSON.stringify({ access_token: `access-${refreshes}`, refresh_token: `refresh-${refreshes}`, expires_in: 2592000 }));
+      }
+      if (new Headers(init?.headers).get("authorization") === "Bearer access") {
+        oldRequests += 1;
+        if (oldRequests === 1) { announceOldRequest(); await pending; }
+        return new Response("{}", { status: 401 });
+      }
+      return new Response("[]");
+    }));
+    const provider = new MelhorEnvioProvider(config, store());
+    const delayed = provider.health();
+    await started;
+    await expect(provider.health()).resolves.toBe("online");
+    releaseOldRequest();
+    await expect(delayed).resolves.toBe("online");
+    expect(refreshes).toBe(1);
+  });
   it("deriva o host do ambiente e rejeita URL legada arbitrária", () => {
     expect(() => new MelhorEnvioProvider({ ...config, legacyBaseUrl: "https://attacker.example" }, store()))
       .toThrowError(MelhorEnvioError);
