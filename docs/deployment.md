@@ -40,6 +40,17 @@ publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA
 
 ### Onde cada configuração fica
 
+O login em `curtiz.com.br` e o painel em `painel.curtiz.com.br` usam sempre o par oficial,
+mesmo se um build incorporar aliases incorretos em `NEXT_PUBLIC_STORE_URL` ou
+`NEXT_PUBLIC_PANEL_URL`. O validador de produção também rejeita `workers.dev` nessas duas
+variáveis; os aliases continuam disponíveis somente no par `NEXT_PUBLIC_*_TEST_URL`.
+Alterar bindings de Runtime ou republicar uma versão após trocar secrets **não recompila**
+valores `NEXT_PUBLIC_*` incorporados pelo Next.js: reconstrua ambos os Workers a partir do
+mesmo commit. Os cookies da produção devem usar `.curtiz.com.br`, e os dos aliases de teste,
+`.sistemas-curtiz.workers.dev`; uma sessão não atravessa esses dois domínios. Se o painel
+não conseguir validar a sessão, o login informa o motivo genérico com `reason=session_expired`
+ou `reason=session_unavailable`, sem incluir tokens ou detalhes do provedor.
+
 | Local | Responsabilidade |
 | --- | --- |
 | GitHub Actions | build, deploy, metadados (`GIT_COMMIT_SHA`, `BUILD_ID`, `BUILD_TIMESTAMP`), URLs públicas e configuração de plataforma embutida no build |
