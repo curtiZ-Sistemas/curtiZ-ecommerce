@@ -7,12 +7,17 @@ export const metadata = { title: "Acesse sua conta", robots: { index: false, fol
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string; account?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string }>;
 }) {
   const query = await searchParams;
   const requestedReturn = query.returnTo ?? query.next;
   const returnTo = requestedReturn ? safeInternalPath(requestedReturn, "/minha-conta") : undefined;
   const signupHref = returnTo ? `/cadastro?returnTo=${encodeURIComponent(returnTo)}` : "/cadastro";
+  const sessionMessage = query.reason === "session_expired"
+    ? "Sua sessão não está disponível ou expirou. Entre novamente para acessar o painel."
+    : query.reason === "session_unavailable"
+      ? "Não foi possível confirmar sua sessão agora. Tente entrar novamente em alguns instantes."
+      : null;
   return (
     <div className="auth-page">
       <div className="auth-shell">
@@ -21,6 +26,7 @@ export default async function LoginPage({
             <h1>Acesse sua conta</h1>
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
+          {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
           <AuthForm
             mode="login"
             returnTo={returnTo}

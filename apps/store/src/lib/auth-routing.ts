@@ -9,7 +9,7 @@ export const loginDestinations = {
 
 export type LoginRole = keyof typeof loginDestinations;
 
-const selectablePanelRoles = ["admin", "operational", "manager"] as const;
+const selectablePanelRoles = ["admin", "operational", "manager", "technical"] as const;
 
 const internalRolePriority: LoginRole[] = ["admin", "manager", "technical", "operational"];
 
