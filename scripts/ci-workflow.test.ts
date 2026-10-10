@@ -162,7 +162,8 @@ describe("caminho único de produção", () => {
     expect(workflow.match(/needs: \[changes, quality, database, e2e, security\]/gu)).toHaveLength(2);
     for (const application of ["store", "panel"]) {
       const condition = workflow.split(`  ${application}-worker:\n`)[1]?.split("    runs-on:")[0] ?? "";
-      expect(condition).toContain("always()");
+      expect(condition).toContain("!cancelled()");
+      expect(condition).not.toContain("always()");
       expect(condition).toContain("needs.quality.result == 'success'");
       expect(condition).toContain("needs.security.result == 'success'");
       expect(condition).toContain("(github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success'))");

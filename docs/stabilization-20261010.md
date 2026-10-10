@@ -27,6 +27,7 @@ O PR incorpora a base do Work, commit `429458f144db8e92fa2cb2a7f13619416b7b3803`
 | Foco saía da galeria aberta | Cleanup do Strict Mode deixava timer de restauração pendente | Nova montagem cancela timer antigo; fechamento real restaura foco ao acionador |
 | Atendimento escondia erro da primeira consulta | Renderização dependia de autenticação já resolvida, que permanecia null na falha | Falha inicial visível, retry e distinção de lista vazia; autorização de escrita continua no servidor |
 | Builds do PR eram escondidos por falhas de banco/E2E | Condição dos jobs exigia sucesso de todas as dependências também em PR | PR verifica bundle/dry-run após qualidade e segurança; publicação de produção ainda exige banco, E2E e todos os gates |
+| Execução nova ficava na fila durante builds antigos | `always()` na condição de build mantinha execução mesmo após cancelamento | `!cancelled()` permite verificar PR após falhas, respeita cancelamento e mantém todos os gates de produção; conforme [documentação do GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#always) |
 
 Outras fixtures SQL corrigidas: assinatura atual de finalização de pagamento, UUID do anexo de suporte, datas relativas à janela de devolução e CTE de banner em posição SQL válida. Migrations aplicadas não foram editadas.
 
@@ -43,6 +44,10 @@ O Claude Opus 5.5 desenvolveu o mecanismo de criptografia e revisou autenticaç�
 Foram executados testes unitários de autenticação/cookies/papéis, criptografia, refresh/CAS, configurações, diagnósticos de frete e workflow, typechecks dos workspaces afetados e lint dos arquivos alterados. A suíte estática SQL passou com 74 arquivos/253 testes antes da última migration; é inspeção estática, não prova de execução de RLS ou concorrência PostgreSQL.
 
 No CI do snapshot integrado, qualidade, CodeQL, histórico de secrets e auditoria de dependências passaram. O seed passou; o lint revelou a referência de email acima, corrigida no snapshot seguinte. Resultados definitivos do último commit devem ser consultados no PR, sem tratar execuções de commits anteriores como aprovação atual.
+
+Após a proteção de hidratação, os três E2E locais de retorno ao atendimento, sessão/persistência/logout e favoritos entre páginas passaram (Chromium, desktop, um worker, ambiente demo). Também passaram separadamente galeria/foco, retry do catálogo, histórico consentido, recuperação 404 genérica, carrossel mobile, abandono de pagamento e checkout desativado. Algumas tentativas anteriores falharam ou foram interrompidas; não são contabilizadas como aprovação da suíte completa. O lote estático/rotas/formulário mais recente passou com 76 arquivos/263 testes, seguido de 11 testes de formulário e importação; os conjuntos se sobrepõem e não devem ser somados como testes únicos.
+
+Os builds/dry-run Linux da loja e do painel no snapshot intermediário `354673a6...` passaram. Isso não aprova o bundle do commit final nem a produção.
 
 Audit local `--audit-level high` terminou com sucesso sob a configuração já existente. Há um aviso moderado de `fflate` e uma exceção preexistente para `GHSA-vfj7-8cjw-p6xm`; não foram acrescentadas exceções nem alteradas dependências. Sucesso dessa auditoria não significa ausência de vulnerabilidades.
 

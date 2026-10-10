@@ -212,7 +212,7 @@ jobs:
     name: OpenNext / Loja
     needs: [changes, quality, database, e2e, security]
     if: >-
-      ${{ always() && needs.changes.outputs.store == 'true'
+      ${{ !cancelled() && needs.changes.outputs.store == 'true'
           && needs.changes.result == 'success' && needs.quality.result == 'success' && needs.security.result == 'success'
           && (github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success')) }}
     runs-on: ubuntu-latest
@@ -298,7 +298,7 @@ jobs:
     name: OpenNext / Painel
     needs: [changes, quality, database, e2e, security]
     if: >-
-      ${{ always() && needs.changes.outputs.panel == 'true'
+      ${{ !cancelled() && needs.changes.outputs.panel == 'true'
           && needs.changes.result == 'success' && needs.quality.result == 'success' && needs.security.result == 'success'
           && (github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success')) }}
     runs-on: ubuntu-latest
