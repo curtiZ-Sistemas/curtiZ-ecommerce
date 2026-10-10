@@ -40,6 +40,10 @@ update public.payments set status='approved' where external_reference='email-pay
 select is((select count(*) from private.transactional_emails),0::bigint,'Provider approval alone cannot send before persisted order confirmation');
 update public.orders set status='processing',payment_status='approved' where id='ee100000-0000-4000-8000-000000000001';
 select is((select count(*) from private.transactional_emails where kind='purchase_confirmed'),1::bigint,'Later reconciled approval enqueues once');
+select ok(exists(select 1 from private.transactional_emails e join public.background_jobs j on j.id=e.job_id
+  where e.kind='purchase_confirmed' and j.queue='transactional_email'
+    and j.idempotency_key='resend:purchase_confirmed:ee100000-0000-4000-8000-000000000001'),
+  'Confirmation references its idempotent background job');
 update public.payments set status='approved' where external_reference='email-payment-test';
 update public.orders set status='picking' where id='ee100000-0000-4000-8000-000000000001';
 select is((select count(*) from private.transactional_emails where kind='purchase_confirmed'),1::bigint,'Repeated payment and subsequent states cannot duplicate confirmation');
