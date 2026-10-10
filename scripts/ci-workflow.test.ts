@@ -179,3 +179,17 @@ describe("caminho único de produção", () => {
     }
   });
 });
+
+describe("auditoria de dependências sem Dependency Review disponível", () => {
+  const security = readFileSync(resolve(process.cwd(), ".github/workflows/security.yml"), "utf8");
+  it("mantém audit completo e obrigatório com bloqueio high/critical", () => {
+    expect(security).toContain("pnpm install --frozen-lockfile --ignore-scripts");
+    expect(security).toContain("run: pnpm audit --audit-level high");
+    expect(security).not.toMatch(/continue-on-error|--prod|audit.*\|\|\s*true/u);
+  });
+  it("registra a alternativa e exige habilitação explícita do recurso nativo", () => {
+    expect(security).toContain("github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED == 'true'");
+    expect(security).toContain("github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED != 'true'");
+    expect(security).toContain('>> "$GITHUB_STEP_SUMMARY"');
+  });
+});

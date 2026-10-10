@@ -40,6 +40,18 @@ publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA
 
 ### Onde cada configuração fica
 
+O gate de dependências executa `pnpm audit --audit-level high` sobre o lockfile completo,
+incluindo desenvolvimento. O Dependency Review nativo fica habilitado somente quando
+`DEPENDENCY_REVIEW_ENABLED=true` nas Repository Variables e o repositório disponibiliza
+Dependency graph/Dependency Review. Sem esse recurso, o workflow registra explicitamente
+a alternativa no resumo; erros da auditoria continuam bloqueando o CI. Essa alternativa
+cobre vulnerabilidades (a configuração anterior não validava licenças) e não cria custo
+de GitHub Advanced Security. As exceções de advisories existentes devem ser revisadas
+separadamente; a troca do gate não concede novas exceções.
+
+Referências: [disponibilidade do Dependency Review](https://github.com/actions/dependency-review-action)
+e [ativação do Dependency graph](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/enable-dependency-graph).
+
 O login em `curtiz.com.br` e o painel em `painel.curtiz.com.br` usam sempre o par oficial,
 mesmo se um build incorporar aliases incorretos em `NEXT_PUBLIC_STORE_URL` ou
 `NEXT_PUBLIC_PANEL_URL`. O validador de produção também rejeita `workers.dev` nessas duas
