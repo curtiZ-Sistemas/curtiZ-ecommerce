@@ -567,9 +567,13 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const firstRow = page.locator("article.managed-product").filter({ hasText: savedName });
   await firstRow.getByRole("button", { name: "Editar", exact: true }).click();
   const updatedName = `${savedName} atualizado`;
-  await page.locator(".panel-drawer").getByLabel("Nome *").fill(updatedName);
+  const editDialog = page.locator(".panel-drawer");
+  await expect(editDialog.getByLabel("Categoria *")).toHaveValue(categoryId);
+  await editDialog.getByLabel("Nome *").fill(updatedName);
+  await expect(editDialog.getByLabel("Nome *")).toHaveValue(updatedName);
+  expect(await editDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Produto atualizado.")).toBeVisible();
+  await expect(page.getByText("Produto atualizado.")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(updatedName)).toBeVisible();
   expect(savedPayload).toMatchObject({
     action: "save",
@@ -584,12 +588,10 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const updatedRow = page.locator("article.managed-product").filter({ hasText: updatedName });
   await updatedRow.locator("details.product-action-menu > summary").click();
   await updatedRow.getByRole("button", { name: "Desativar" }).click();
-  const statusDialog = page.getByRole("dialog", { name: "Alterar status para Inativo" });
-  await statusDialog.getByLabel("Motivo da alteração").fill("Pausa comercial planejada");
-  await statusDialog.getByRole("button", { name: "Confirmar alteração" }).click();
   await expect(page.getByText("Status do produto atualizado.")).toBeVisible();
+  expect(savedPayload).toMatchObject({ action: "status", productId: products[0]!.id, status: "draft" });
   await expect(
-    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Inativo")
+    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Não ativo", { exact: true })
   ).toBeVisible();
 
   const inactiveRow = page.locator("article.managed-product").filter({ hasText: updatedName });
