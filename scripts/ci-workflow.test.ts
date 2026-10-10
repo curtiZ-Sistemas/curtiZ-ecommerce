@@ -160,6 +160,16 @@ describe("caminho único de produção", () => {
 
   it("deploy do Actions depende de todos os gates", () => {
     expect(workflow.match(/needs: \[changes, quality, database, e2e, security\]/gu)).toHaveLength(2);
+    for (const application of ["store", "panel"]) {
+      const condition = workflow.split(`  ${application}-worker:\n`)[1]?.split("    runs-on:")[0] ?? "";
+      expect(condition).toContain("always()");
+      expect(condition).toContain("needs.quality.result == 'success'");
+      expect(condition).toContain("needs.security.result == 'success'");
+      expect(condition).toContain("(github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success'))");
+    }
+    for (const { step } of Object.values(deploySteps)) {
+      expect(stepBlock(step)).toContain("if: github.event_name != 'pull_request'");
+    }
   });
 
   it("documenta que o Workers Builds é configuração remota e precisa ser desconectado manualmente", () => {

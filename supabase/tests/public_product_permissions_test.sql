@@ -5,8 +5,12 @@ select plan(10);
 insert into public.categories(id, name, slug) values
  ('f1400000-0000-4000-8000-000000000001', 'Public permissions test', 'public-permissions-test');
 insert into public.products(id, name, slug, category_id, status, base_price, description, weight_grams, height_cm, width_cm, length_cm) values
- ('f1400000-0000-4000-8000-000000000002', 'Public test', 'public-permissions-active', 'f1400000-0000-4000-8000-000000000001', 'active', 50, 'Test', 100, 5, 10, 20),
+ ('f1400000-0000-4000-8000-000000000002', 'Public test', 'public-permissions-active', 'f1400000-0000-4000-8000-000000000001', 'draft', 50, 'Test', 100, 5, 10, 20),
  ('f1400000-0000-4000-8000-000000000003', 'Private test', 'public-permissions-draft', 'f1400000-0000-4000-8000-000000000001', 'draft', 50, 'Test', 100, 5, 10, 20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('f1400000-0000-4000-8000-000000000002');
+update public.products set status='active' where id in ('f1400000-0000-4000-8000-000000000002');
 insert into public.product_size_guide_entries(product_id, size, measurement_cm) values
  ('f1400000-0000-4000-8000-000000000002', '37', 24),
  ('f1400000-0000-4000-8000-000000000003', '37', 24);

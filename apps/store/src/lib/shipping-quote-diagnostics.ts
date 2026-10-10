@@ -96,6 +96,8 @@ export type ShippingDiagnostic = {
   httpStatus: number;
   failure?: unknown;
   stage?: ShippingQuoteStage;
+  /** Identificador público (hash truncado) da chave ativa de tokens; nunca a chave. */
+  tokenKeyId?: string;
 };
 
 const route = "/api/shipping/quote";
@@ -103,7 +105,7 @@ const configurationName = /^[A-Z][A-Z0-9_]{0,80}$/u;
 const safeNames = (names: readonly string[] | undefined) => (names ?? []).filter((name) => configurationName.test(name));
 
 const failureReasons = new Set([
-  "credentials_missing", "credentials_read_failed", "credentials_write_failed", "token_decryption_failed",
+  "credentials_missing", "credentials_read_failed", "credentials_write_failed", "token_decryption_failed", "token_key_unavailable",
   "refresh_token_expired", "oauth_rejected", "permission_denied", "refresh_lock_failed", "refresh_lock_timeout"
 ]);
 
@@ -134,7 +136,8 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
     requestId: support.requestId,
     supportCode: support.supportCode,
     ...failureDetails(diagnostic.failure),
-    ...(diagnostic.stage ? { stage: diagnostic.stage } : {})
+    ...(diagnostic.stage ? { stage: diagnostic.stage } : {}),
+    ...(diagnostic.tokenKeyId && /^[0-9a-f]{12}$/u.test(diagnostic.tokenKeyId) ? { tokenKeyId: diagnostic.tokenKeyId } : {})
   };
   const healthState: ShippingHealthState | undefined = code === null ? "online" : healthStateByCode[code];
   const persisted = { health: healthState === undefined, event: code === null };

@@ -20,28 +20,62 @@ export type EncryptedMelhorEnvioTokenRecord = {
   refreshTokenExpiresAt: string | null;
 };
 
+export type MelhorEnvioCiphertextPair = Pick<EncryptedMelhorEnvioTokenRecord, "accessTokenCiphertext" | "refreshTokenCiphertext">;
+
 export function createEncryptedMelhorEnvioTokenStore(input: {
-  encryptionKey: string;
+  /** Chave ativa (string) ou chave ativa + anteriores aceitas apenas para leitura. */
+  encryptionKey: string | MelhorEnvioTokenKeyring;
   load: () => Promise<EncryptedMelhorEnvioTokenRecord | null>;
   save: (record: EncryptedMelhorEnvioTokenRecord) => Promise<void>;
   claimRefreshLock: (lockId: string) => Promise<boolean>;
   releaseRefreshLock: (lockId: string) => Promise<void>;
+  /**
+   * Recifra os dois tokens juntos com a chave ativa somente se o registro ainda contiver `expected`
+   * (compare-and-swap). Retorna false quando outra instância já alterou o registro.
+   */
+  replaceCiphertexts?: (expected: MelhorEnvioCiphertextPair, next: MelhorEnvioCiphertextPair) => Promise<boolean>;
+  /** Falha não fatal da recifragem: o registro antigo continua íntegro e a próxima leitura tenta de novo. */
+  onReencryptionFailure?: (error: unknown) => void;
 }): MelhorEnvioTokenStore {
+  let keyring: Promise<LoadedKeyring> | null = null;
+  const keys = () => {
+    keyring ??= loadKeyring(input.encryptionKey);
+    keyring.catch(() => { keyring = null; });
+    return keyring;
+  };
   return {
     async read() {
       const record = await input.load();
       if (!record) return null;
+      const loaded = await keys();
+      // Os dois tokens precisam decifrar; qualquer falha interrompe antes de qualquer gravação.
+      const access = await openToken(record.accessTokenCiphertext, loaded, "access_token");
+      const refresh = await openToken(record.refreshTokenCiphertext, loaded, "refresh_token");
+      if ((!access.current || !refresh.current) && input.replaceCiphertexts) {
+        try {
+          await input.replaceCiphertexts({
+            accessTokenCiphertext: record.accessTokenCiphertext,
+            refreshTokenCiphertext: record.refreshTokenCiphertext
+          }, {
+            accessTokenCiphertext: await sealToken(access.value, loaded.active, "access_token"),
+            refreshTokenCiphertext: await sealToken(refresh.value, loaded.active, "refresh_token")
+          });
+        } catch (error) {
+          input.onReencryptionFailure?.(error);
+        }
+      }
       return {
-        accessToken: await decryptMelhorEnvioToken(record.accessTokenCiphertext, input.encryptionKey),
-        refreshToken: await decryptMelhorEnvioToken(record.refreshTokenCiphertext, input.encryptionKey),
+        accessToken: access.value,
+        refreshToken: refresh.value,
         accessTokenExpiresAt: record.accessTokenExpiresAt,
         refreshTokenExpiresAt: record.refreshTokenExpiresAt
       };
     },
     async write(tokens) {
+      const loaded = await keys();
       await input.save({
-        accessTokenCiphertext: await encryptMelhorEnvioToken(tokens.accessToken, input.encryptionKey),
-        refreshTokenCiphertext: await encryptMelhorEnvioToken(tokens.refreshToken, input.encryptionKey),
+        accessTokenCiphertext: await sealToken(tokens.accessToken, loaded.active, "access_token"),
+        refreshTokenCiphertext: await sealToken(tokens.refreshToken, loaded.active, "refresh_token"),
         accessTokenExpiresAt: tokens.accessTokenExpiresAt,
         refreshTokenExpiresAt: tokens.refreshTokenExpiresAt
       });
@@ -145,7 +179,7 @@ const finiteNumber = (value: unknown) => {
 
 export type MelhorEnvioFailureReason =
   | "credentials_missing" | "credentials_read_failed" | "credentials_write_failed"
-  | "token_decryption_failed" | "refresh_token_expired" | "oauth_rejected"
+  | "token_decryption_failed" | "token_key_unavailable" | "refresh_token_expired" | "oauth_rejected"
   | "permission_denied" | "refresh_lock_failed" | "refresh_lock_timeout";
 
 export type MelhorEnvioFailureDetails = {
@@ -344,8 +378,18 @@ export class MelhorEnvioProvider {
   }
 
   async health(): Promise<"online" | "degraded" | "offline" | "not_configured"> {
-    try { await this.request("/api/v2/me/shipment/services", {}, true); return "online"; }
-    catch (error) { return error instanceof MelhorEnvioError && error.code === "authentication" ? "not_configured" : "offline"; }
+    return (await this.healthCheck()).state;
+  }
+
+  /** Igual a health(), mas preserva o motivo seguro (sem tokens) para o diagnóstico técnico. */
+  async healthCheck(): Promise<{ state: "online" | "offline" | "not_configured"; failure?: MelhorEnvioFailureDetails }> {
+    try { await this.request("/api/v2/me/shipment/services", {}, true); return { state: "online" }; }
+    catch (error) {
+      if (!(error instanceof MelhorEnvioError)) return { state: "offline" };
+      const { reason, upstreamStatus } = error.diagnostic;
+      return { state: error.code === "authentication" ? "not_configured" : "offline",
+        failure: { ...(reason ? { reason } : {}), ...(upstreamStatus ? { upstreamStatus } : {}) } };
+    }
   }
 
   async quote(input: { originPostalCode: string; destinationPostalCode: string; products: MelhorEnvioQuoteProduct[] }): Promise<MelhorEnvioQuote[]> {
@@ -477,27 +521,147 @@ const base64ToBytes = (value: string) => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 const asArrayBuffer = (bytes: Uint8Array): ArrayBuffer => Uint8Array.from(bytes).buffer;
-const encryptionKey = async (encoded: string) => {
+const keyBytes = (encoded: string) => {
   let bytes: Uint8Array;
   try { bytes = base64ToBytes(encoded.trim()); }
   catch { throw new MelhorEnvioError("configuration", 503, false); }
   if (bytes.byteLength !== 32) throw new MelhorEnvioError("configuration", 503, false);
-  return crypto.subtle.importKey("raw", asArrayBuffer(bytes), "AES-GCM", false, ["encrypt", "decrypt"]);
+  return bytes;
 };
 
-export async function encryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
-  if (!value) throw new MelhorEnvioError("configuration", 503, false);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await encryptionKey(encodedKey), new TextEncoder().encode(value));
-  return `v1.${bytesToBase64(iv)}.${bytesToBase64(new Uint8Array(encrypted))}`;
+/**
+ * Chaves mestras do cofre de tokens. `activeKey` cifra toda gravação nova; `previousKeys` só
+ * decifram registros antigos durante uma migração controlada. Todas vêm de secrets do Worker.
+ */
+export type MelhorEnvioTokenKeyring = { activeKey: string; previousKeys?: readonly string[] };
+/** Campo autenticado (AAD) no formato v2: impede trocar o ciphertext do access pelo do refresh. */
+export type MelhorEnvioTokenField = "access_token" | "refresh_token";
+
+type ImportedTokenKey = { id: string; key: CryptoKey };
+type LoadedKeyring = { active: ImportedTokenKey; previous: ImportedTokenKey[] };
+
+const tokenFailure = (reason: "token_decryption_failed" | "token_key_unavailable") =>
+  new MelhorEnvioError("authentication", 503, false, { reason });
+
+/**
+ * Identificador público e não reversível da chave (12 hex de SHA-256 com separação de domínio).
+ * Permite saber qual chave cifrou um registro sem guardar nem exibir a chave.
+ */
+export async function melhorEnvioTokenKeyId(encodedKey: string): Promise<string> {
+  const prefix = new TextEncoder().encode("curtiz:melhorenvio:token-key:v2:");
+  const bytes = keyBytes(encodedKey);
+  const input = new Uint8Array(prefix.byteLength + bytes.byteLength);
+  input.set(prefix);
+  input.set(bytes, prefix.byteLength);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", asArrayBuffer(input)));
+  return [...digest.slice(0, 6)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function decryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
-  const [version, iv, ciphertext] = value.split(".");
-  if (version !== "v1" || !iv || !ciphertext) throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" });
-  try {
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: asArrayBuffer(base64ToBytes(iv)) },
-      await encryptionKey(encodedKey), asArrayBuffer(base64ToBytes(ciphertext)));
-    return new TextDecoder().decode(decrypted);
-  } catch { throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" }); }
+const importTokenKey = async (encoded: string): Promise<ImportedTokenKey> => ({
+  id: await melhorEnvioTokenKeyId(encoded),
+  key: await crypto.subtle.importKey("raw", asArrayBuffer(keyBytes(encoded)), "AES-GCM", false, ["encrypt", "decrypt"])
+});
+
+const normalizeKeyring = (keyring: string | MelhorEnvioTokenKeyring): MelhorEnvioTokenKeyring =>
+  typeof keyring === "string" ? { activeKey: keyring } : keyring;
+
+async function loadKeyring(input: string | MelhorEnvioTokenKeyring): Promise<LoadedKeyring> {
+  const keyring = normalizeKeyring(input);
+  if (!keyring.activeKey?.trim()) throw new MelhorEnvioError("configuration", 503, false);
+  const active = await importTokenKey(keyring.activeKey);
+  const previous: ImportedTokenKey[] = [];
+  for (const encoded of keyring.previousKeys ?? []) {
+    if (!encoded.trim()) continue;
+    const imported = await importTokenKey(encoded);
+    if (imported.id !== active.id && !previous.some((key) => key.id === imported.id)) previous.push(imported);
+  }
+  return { active, previous };
+}
+
+/** Lê a lista de chaves anteriores de um secret (separadas por vírgula, espaço ou quebra de linha). */
+export function parseMelhorEnvioPreviousKeys(value: string | undefined): string[] {
+  return (value ?? "").split(/[\s,]+/u).map((key) => key.trim()).filter(Boolean);
+}
+
+const additionalData = (keyId: string, field: MelhorEnvioTokenField) =>
+  asArrayBuffer(new TextEncoder().encode(`curtiz:melhorenvio:v2:${keyId}:${field}`));
+
+async function sealToken(value: string, key: ImportedTokenKey, field: MelhorEnvioTokenField): Promise<string> {
+  if (!value) throw new MelhorEnvioError("configuration", 503, false);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: additionalData(key.id, field) },
+    key.key, new TextEncoder().encode(value));
+  return `v2.${key.id}.${bytesToBase64(iv)}.${bytesToBase64(new Uint8Array(encrypted))}`;
+}
+
+type OpenedToken = { value: string; keyId: string; format: "v1" | "v2"; current: boolean };
+
+async function openToken(value: string, keyring: LoadedKeyring, field: MelhorEnvioTokenField): Promise<OpenedToken> {
+  const parts = value.split(".");
+  const decrypt = async (key: ImportedTokenKey, iv: string, ciphertext: string, aad?: ArrayBuffer) => {
+    try {
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: asArrayBuffer(base64ToBytes(iv)),
+        ...(aad ? { additionalData: aad } : {}) }, key.key, asArrayBuffer(base64ToBytes(ciphertext)));
+      return new TextDecoder().decode(decrypted);
+    } catch { return null; }
+  };
+  if (parts[0] === "v2" && parts.length === 4 && parts[1] && parts[2] && parts[3]) {
+    const [, keyId, iv, ciphertext] = parts;
+    const key = [keyring.active, ...keyring.previous].find((candidate) => candidate.id === keyId);
+    // Registro cifrado por uma chave que não está configurada: não há como recuperar sem ela.
+    if (!key) throw tokenFailure("token_key_unavailable");
+    const opened = await decrypt(key, iv, ciphertext, additionalData(keyId, field));
+    if (opened === null) throw tokenFailure("token_decryption_failed");
+    return { value: opened, keyId, format: "v2", current: keyId === keyring.active.id };
+  }
+  if (parts[0] === "v1" && parts.length === 3 && parts[1] && parts[2]) {
+    // v1 não identifica a chave: tenta a ativa e depois as anteriores, sem distinguir chave errada de dado corrompido.
+    for (const key of [keyring.active, ...keyring.previous]) {
+      const opened = await decrypt(key, parts[1], parts[2]);
+      if (opened !== null) return { value: opened, keyId: key.id, format: "v1", current: false };
+    }
+  }
+  throw tokenFailure("token_decryption_failed");
+}
+
+export async function encryptMelhorEnvioToken(value: string, keyring: string | MelhorEnvioTokenKeyring,
+  field: MelhorEnvioTokenField = "access_token"): Promise<string> {
+  return sealToken(value, (await loadKeyring(keyring)).active, field);
+}
+
+export async function decryptMelhorEnvioToken(value: string, keyring: string | MelhorEnvioTokenKeyring,
+  field: MelhorEnvioTokenField = "access_token"): Promise<string> {
+  return (await openToken(value, await loadKeyring(keyring), field)).value;
+}
+
+export type MelhorEnvioTokenKeyState = "active" | "previous" | "unavailable" | "invalid";
+export type MelhorEnvioCredentialKeyReport = {
+  activeKeyId: string;
+  previousKeyCount: number;
+  accessToken: MelhorEnvioTokenKeyState;
+  refreshToken: MelhorEnvioTokenKeyState;
+  /** Ambos os tokens decifram com a configuração atual. */
+  readable: boolean;
+  /** Algum token ainda depende de chave anterior ou do formato v1 e será recifrado na próxima leitura. */
+  reencryptionPending: boolean;
+};
+
+/** Diagnóstico sem segredos: diz se o registro decifra e com qual classe de chave, nunca os valores. */
+export async function inspectMelhorEnvioCredentialKeys(record: Pick<EncryptedMelhorEnvioTokenRecord,
+  "accessTokenCiphertext" | "refreshTokenCiphertext">, keyring: MelhorEnvioTokenKeyring): Promise<MelhorEnvioCredentialKeyReport> {
+  const loaded = await loadKeyring(keyring);
+  const state = async (value: string, field: MelhorEnvioTokenField): Promise<[MelhorEnvioTokenKeyState, boolean]> => {
+    try {
+      const opened = await openToken(value, loaded, field);
+      return [opened.keyId === loaded.active.id ? "active" : "previous", !opened.current];
+    } catch (error) {
+      const reason = error instanceof MelhorEnvioError ? error.diagnostic.reason : undefined;
+      return [reason === "token_key_unavailable" ? "unavailable" : "invalid", false];
+    }
+  };
+  const [accessToken, accessPending] = await state(record.accessTokenCiphertext, "access_token");
+  const [refreshToken, refreshPending] = await state(record.refreshTokenCiphertext, "refresh_token");
+  const readable = !["unavailable", "invalid"].includes(accessToken) && !["unavailable", "invalid"].includes(refreshToken);
+  return { activeKeyId: loaded.active.id, previousKeyCount: loaded.previous.length, accessToken, refreshToken,
+    readable, reencryptionPending: readable && (accessPending || refreshPending) };
 }

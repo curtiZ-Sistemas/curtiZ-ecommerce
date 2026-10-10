@@ -5,6 +5,8 @@ export type StoreShippingService = {
   detail: string;
   checkedAt?: string | null;
   latencyMs?: number | null;
+  /** Identificador público da chave ativa de tokens usada pela loja na última cotação. */
+  tokenKeyId?: string | null;
 };
 
 // Códigos gravados por /api/shipping/quote no Worker da loja (apps/store/src/lib/shipping-quote-diagnostics.ts).
@@ -31,13 +33,17 @@ const failureLabels: Readonly<Record<string, string>> = {
   credentials_missing: "Não há conexão OAuth ativa para o ambiente da loja",
   credentials_read_failed: "A RPC de leitura das credenciais falhou no Supabase",
   credentials_write_failed: "A RPC de persistência dos tokens renovados falhou no Supabase",
-  token_decryption_failed: "Não foi possível decifrar os tokens; confira a chave compartilhada entre loja e painel",
+  token_decryption_failed: "Não foi possível decifrar os tokens com as chaves configuradas; confira a chave ativa e, durante a troca, MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS",
+  token_key_unavailable: "Os tokens foram cifrados por uma chave que não está configurada neste Worker; configure-a como chave anterior ou reconecte o OAuth",
   refresh_token_expired: "O refresh token expirou; reconecte o aplicativo no ambiente selecionado",
   oauth_rejected: "O endpoint OAuth rejeitou as credenciais/token; confira Client ID, Client Secret e a autorização do ambiente",
   permission_denied: "A API negou a permissão; confira shipping-calculate e a conta/aplicativo do ambiente",
   refresh_lock_failed: "A RPC de bloqueio para renovar o token falhou no Supabase",
   refresh_lock_timeout: "A renovação do token está ocupada; tente novamente"
 };
+
+export const melhorEnvioFailureLabel = (reason: unknown): string | null =>
+  typeof reason === "string" && Object.hasOwn(failureLabels, reason) ? failureLabels[reason] ?? null : null;
 
 const safeConfigurationCodes = (value: unknown): string[] => Array.isArray(value)
   ? [...new Set(value.filter((item): item is string =>
@@ -85,6 +91,7 @@ export function getStoreShippingService(value: unknown, queryFailed = false): St
     state,
     detail: `${summary} · ${environment}${requirementDetail}${failureDetail}${upstreamDetail}${databaseDetail}${supportDetail}${checkedAtDetail}`,
     checkedAt,
-    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : null
+    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : null,
+    tokenKeyId: typeof metadata.tokenKeyId === "string" && /^[0-9a-f]{12}$/u.test(metadata.tokenKeyId) ? metadata.tokenKeyId : null
   };
 }

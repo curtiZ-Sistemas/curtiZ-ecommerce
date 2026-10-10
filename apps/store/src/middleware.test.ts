@@ -4,13 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
 
 type CookieHooks = { setAll(cookies: Array<{ name: string; value: string; options: CookieOptions }>): void };
-const { getUser, rpc, hooks } = vi.hoisted(() => ({
-  getUser: vi.fn(), rpc: vi.fn(), hooks: { current: null as CookieHooks | null }
+const { getUser, getSession, rpc, hooks } = vi.hoisted(() => ({
+  getUser: vi.fn(), getSession: vi.fn(), rpc: vi.fn(), hooks: { current: null as CookieHooks | null }
 }));
 vi.mock("@supabase/ssr", () => ({
   createServerClient: (_url: string, _key: string, options: { cookies: CookieHooks }) => {
     hooks.current = options.cookies;
-    return { auth: { getUser }, rpc };
+    return { auth: { getUser, getSession }, rpc };
   }
 }));
 
@@ -78,6 +78,7 @@ describe("store security headers", () => {
     await middleware(new NextRequest("https://loja.example/produtos"));
 
     expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it.each(["session", "persistent"])("renova sessão %s na conta e a encaminha ao render atual", async persistence => {
@@ -86,14 +87,15 @@ describe("store security headers", () => {
     vi.stubEnv("AUTH_COOKIE_DOMAINS", "curtiz.com.br");
     vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
     vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
-    getUser.mockImplementationOnce(async () => {
+    getSession.mockImplementationOnce(async () => {
       hooks.current?.setAll([{ name: "sb-project-auth-token", value: "renewed", options: { maxAge: 3600 } }]);
-      return { data: { user: { id: "test-user" } }, error: null };
+      return { data: { session: null }, error: null };
     });
     const response = await middleware(new NextRequest("https://curtiz.com.br/minha-conta", {
       headers: { cookie: `sb-project-auth-token=expired; curtiz-auth-persistence=${persistence}` }
     }));
-    expect(getUser).toHaveBeenCalledOnce();
+    expect(getSession).toHaveBeenCalledOnce();
+    expect(getUser).not.toHaveBeenCalled();
     expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-project-auth-token=renewed");
     const cookie = response.cookies.get("sb-project-auth-token");
     expect(cookie).toMatchObject({ value: "renewed", domain: ".curtiz.com.br", secure: true });
@@ -110,11 +112,29 @@ describe("store security headers", () => {
       hooks.current?.setAll([{ name: "sb-project-auth-token", value: "", options: { maxAge: 0 } }]);
       return { data: { user: null }, error: null };
     });
-    const response = await middleware(new NextRequest("https://curtiz.com.br/checkout"));
+    const response = await middleware(new NextRequest("https://curtiz.com.br/checkout", {
+      headers: { cookie: "sb-project-auth-token=expired" }
+    }));
+    expect(getUser).toHaveBeenCalledOnce();
+    expect(getSession).not.toHaveBeenCalled();
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://curtiz.com.br/login?next=%2Fcheckout");
     expect(response.cookies.get("sb-project-auth-token")).toMatchObject({ value: "", maxAge: 0 });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("mantém página pública disponível se a renovação de sessão falhar", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getSession.mockRejectedValueOnce(new Error("auth unavailable"));
+    const response = await middleware(new NextRequest("https://curtiz.com.br/produtos", {
+      headers: { cookie: "sb-project-auth-token=expired" }
+    }));
+    expect(response.status).toBe(200);
+    expect(getSession).toHaveBeenCalledOnce();
+    expect(getUser).not.toHaveBeenCalled();
   });
 
   it("não torna pública uma resposta 404 que renovou cookies durante a consulta", async () => {

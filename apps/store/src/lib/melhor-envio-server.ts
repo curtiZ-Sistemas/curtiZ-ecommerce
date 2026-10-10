@@ -4,12 +4,15 @@ import {
   createEncryptedMelhorEnvioTokenStore,
   MelhorEnvioError,
   MelhorEnvioProvider,
+  parseMelhorEnvioPreviousKeys,
   type EncryptedMelhorEnvioTokenRecord,
   type MelhorEnvioEnvironment,
-  type MelhorEnvioQuoteProduct
+  type MelhorEnvioQuoteProduct,
+  type MelhorEnvioTokenKeyring
 } from "@curtiz/integrations";
 import { createHash } from "node:crypto";
 import { getMelhorEnvioEnvironment } from "@curtiz/config";
+import { logServerEvent } from "@curtiz/security";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 
@@ -23,11 +26,16 @@ const environment = (values: MelhorEnvioRuntimeEnvironment = process.env): Melho
   return selected;
 };
 
+/** Chave ativa + anteriores (somente leitura, durante migração controlada), ambas de secrets do Worker. */
+export function melhorEnvioTokenKeyring(values: MelhorEnvioRuntimeEnvironment): MelhorEnvioTokenKeyring {
+  const activeKey = values.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "";
+  if (!activeKey) throw new MelhorEnvioError("configuration", 503, false);
+  return { activeKey, previousKeys: parseMelhorEnvioPreviousKeys(values.MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS) };
+}
+
 export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
-  const encryptionKey = values.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "";
-  if (!encryptionKey) throw new MelhorEnvioError("configuration", 503, false);
   const tokenStore = createEncryptedMelhorEnvioTokenStore({
-    encryptionKey,
+    encryptionKey: melhorEnvioTokenKeyring(values),
     async load() {
       const result = readQueryResult(await db.rpc("read_integration_credential", {
         p_provider: "melhorenvio", p_environment: environment(values)
@@ -55,6 +63,26 @@ export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment,
       if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
         reason: "credentials_write_failed",
         databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+    },
+    async replaceCiphertexts(expected, next) {
+      const result = readQueryResult(await db.rpc("replace_integration_credential_ciphertext", {
+        p_provider: "melhorenvio", p_environment: environment(values),
+        p_expected_access_token_ciphertext: expected.accessTokenCiphertext,
+        p_expected_refresh_token_ciphertext: expected.refreshTokenCiphertext,
+        p_access_token_ciphertext: next.accessTokenCiphertext,
+        p_refresh_token_ciphertext: next.refreshTokenCiphertext
+      }));
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_write_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+      return result.data === true;
+    },
+    onReencryptionFailure(error) {
+      const details = error instanceof MelhorEnvioError ? error.diagnostic : {};
+      logServerEvent("warn", "melhor_envio_token_reencryption_failed", {
+        environment: environment(values), reason: details.reason, databaseCode: details.databaseCode
       });
     },
     async claimRefreshLock(lockId) {

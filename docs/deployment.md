@@ -16,6 +16,11 @@ todas as validações, o OpenNext compila as aplicações alteradas e o Wrangler
 correspondente. O controle de concorrência cancela uma execução antiga quando chega um commit mais
 novo, evitando deploy fora de ordem.
 
+Em pull requests, os builds e dry-runs também executam após qualidade e segurança aprovadas quando
+banco ou E2E falham, para revelar erros de compilação e empacotamento. Esses gates continuam falhando
+no CI; pull requests nunca publicam. Fora de pull requests, ambos os gates também precisam aprovar
+antes de iniciar os jobs de Worker.
+
 ### Deploy automático único (ação manual no Cloudflare)
 
 O GitHub Actions deve ser o **único** caminho automático. Confira manualmente, no Cloudflare, se os

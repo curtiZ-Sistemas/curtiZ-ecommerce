@@ -26,8 +26,10 @@ select is((select count(*) from public.banners where id='bb000000-0000-4000-8000
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"ba000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal1"}',true);
 select throws_ok($$insert into public.banners(image_path_desktop,image_path_mobile) values ('test.webp','test.webp')$$,'42501',null,'Customer cannot create');
-select is((with changed as (update public.banners set destination_url='/ofertas' where id='bb000000-0000-4000-8000-000000000001' returning id) select count(*) from changed),0::bigint,'Customer cannot edit');
-select is((with changed as (delete from public.banners where id='bb000000-0000-4000-8000-000000000001' returning id) select count(*) from changed),0::bigint,'Customer cannot delete');
+with changed as (update public.banners set destination_url='/ofertas' where id='bb000000-0000-4000-8000-000000000001' returning id)
+select is((select count(*) from changed),0::bigint,'Customer cannot edit');
+with changed as (delete from public.banners where id='bb000000-0000-4000-8000-000000000001' returning id)
+select is((select count(*) from changed),0::bigint,'Customer cannot delete');
 
 select set_config('request.jwt.claims','{"sub":"ba000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 update public.banners set status='inactive' where id='bb000000-0000-4000-8000-000000000001';
@@ -36,6 +38,7 @@ select set_config('request.jwt.claims','{"role":"anon"}',true);
 select is((select count(*) from public.banners where id='bb000000-0000-4000-8000-000000000001'),0::bigint,'Visitor cannot read inactive banner');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"ba000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
-select is((with changed as (delete from public.banners where id='bb000000-0000-4000-8000-000000000001' returning id) select count(*) from changed),1::bigint,'Admin can delete');
+with changed as (delete from public.banners where id='bb000000-0000-4000-8000-000000000001' returning id)
+select is((select count(*) from changed),1::bigint,'Admin can delete');
 select * from finish();
 rollback;

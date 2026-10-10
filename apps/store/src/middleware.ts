@@ -776,7 +776,8 @@ export async function middleware(request: NextRequest) {
   if (!checkoutRequest) {
     if (hasSessionCookie) {
       try {
-        await supabase.auth.getUser();
+        // Somente renova cookies; a página/API verifica o usuário com getUser.
+        await supabase.auth.getSession();
       } catch {
         // A página valida seu acesso; uma falha transitória não derruba conteúdo público.
       }

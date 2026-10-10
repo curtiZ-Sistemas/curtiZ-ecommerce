@@ -9,7 +9,12 @@ type Service = { name: string; state: string; detail: string; checkedAt?: string
 type StorageSummary = { bucket_id: string; object_count: number; total_bytes: number };
 type MelhorEnvioStatus = { environment: string; connected: boolean; health: string; latencyMs: number;
   accessTokenExpiresAt: string | null; webhookConfigured: boolean; originComplete: boolean; originMissingFields: string[];
-  lastCheckedAt: string; lastError: string | null; storeShipping?: Service };
+  lastCheckedAt: string; lastError: string | null; lastErrorDetail?: string | null; storeShipping?: Service;
+  keyRotation?: KeyRotation | null };
+type KeyState = "active" | "previous" | "unavailable" | "invalid";
+type KeyRotation = { activeKeyId: string; previousKeyCount: number; accessToken: KeyState; refreshToken: KeyState;
+  readable: boolean; reencryptionPending: boolean; storeActiveKeyId: string | null; sameActiveKey: boolean;
+  previousKeysRemovable: boolean };
 
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -64,6 +69,24 @@ const tokenState = (status: MelhorEnvioStatus) => {
   if (status.health === "online") return "Verificado no painel";
   return Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000
     ? "Dentro do prazo; comunicação não verificada" : "Renovação necessária";
+};
+
+const keyRotationState = (rotation: KeyRotation | null | undefined) => {
+  if (!rotation) return "Não verificada";
+  if (!rotation.readable) return [rotation.accessToken, rotation.refreshToken].includes("unavailable")
+    ? "Chave que cifrou os tokens ausente" : "Tokens não decifram com as chaves configuradas";
+  if (rotation.reencryptionPending) return "Legível com chave anterior; recifragem pendente";
+  return `Chave ativa ${rotation.activeKeyId}`;
+};
+const keyRotationNote = (rotation: KeyRotation) => {
+  if (!rotation.readable) return "Configure a chave anterior em MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS na loja e no painel ou, se ela foi perdida, reconecte o OAuth. Os tokens atuais não são apagados até a nova conexão ser confirmada.";
+  if (rotation.previousKeysRemovable) return rotation.previousKeyCount > 0
+    ? "Loja e painel usam a mesma chave ativa e os tokens já foram recifrados: a chave anterior pode ser removida dos dois Workers."
+    : "Loja e painel usam a mesma chave ativa.";
+  if (!rotation.sameActiveKey) return rotation.storeActiveKeyId
+    ? `A loja registrou a chave ativa ${rotation.storeActiveKeyId}; mantenha a chave anterior até as duas coincidirem.`
+    : "A loja ainda não registrou uma cotação bem-sucedida com a chave ativa; mantenha a chave anterior até lá.";
+  return "Mantenha a chave anterior até a recifragem e uma cotação bem-sucedida da loja.";
 };
 
 export function TechnicalOverview({ section }: { section: string }) {
@@ -207,13 +230,21 @@ export function TechnicalOverview({ section }: { section: string }) {
             <Runtime label="Origem" value={melhorEnvio.originComplete ? "Completa" : "Incompleta"} />
             <Runtime label="Latência" value={`${melhorEnvio.latencyMs} ms`} />
             <Runtime label="Última comunicação" value={formatDateTime(melhorEnvio.lastCheckedAt)} />
-            <Runtime label="Último erro" value={melhorEnvio.lastError ?? "Nenhum"} />
+            <Runtime label="Último erro" value={melhorEnvio.lastErrorDetail ?? melhorEnvio.lastError ?? "Nenhum"} />
+            <Runtime label="Chave dos tokens" value={keyRotationState(melhorEnvio.keyRotation)} />
           </div>
+          {melhorEnvio.keyRotation ? <p className="technical-note">{keyRotationNote(melhorEnvio.keyRotation)}</p> : null}
           <div className="table-actions">
             <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void load()}>Testar OAuth do painel</button>
             {!melhorEnvio.connected
               ? <button className="primary-button" type="button" disabled={integrationBusy} onClick={() => void connectMelhorEnvio()}>Conectar</button>
-              : <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void disconnectMelhorEnvio()}>Desconectar</button>}
+              : <>
+                {/* Reconectar mantém os tokens atuais até o callback confirmar a nova autorização. */}
+                {melhorEnvio.health !== "online"
+                  ? <button className="primary-button" type="button" disabled={integrationBusy} onClick={() => void connectMelhorEnvio()}>Reconectar</button>
+                  : null}
+                <button className="secondary-button" type="button" disabled={integrationBusy} onClick={() => void disconnectMelhorEnvio()}>Desconectar</button>
+              </>}
           </div>
           {melhorEnvio.storeShipping ? <>
             <Runtime label="Último resultado do frete da loja" value={stateLabels[melhorEnvio.storeShipping.state] ?? "Indisponível"} />

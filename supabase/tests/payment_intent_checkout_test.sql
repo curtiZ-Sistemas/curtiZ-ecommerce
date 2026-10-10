@@ -11,7 +11,11 @@ insert into public.user_roles(user_id,role) values
 insert into public.categories(id,name,slug) values('cb100000-0000-4000-8000-000000000001','Checkout intent','checkout-intent');
 insert into public.products(id,name,slug,short_description,description,category_id,status,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm)
 values('cb200000-0000-4000-8000-000000000001','Produto checkout','produto-checkout-intent','Teste','Teste',
-'cb100000-0000-4000-8000-000000000001','active',50,20,200,5,10,20);
+'cb100000-0000-4000-8000-000000000001','draft',50,20,200,5,10,20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('cb200000-0000-4000-8000-000000000001');
+update public.products set status='active' where id in ('cb200000-0000-4000-8000-000000000001');
 insert into public.product_variants(id,product_id,sku,color_name,size)
 values('cb300000-0000-4000-8000-000000000001','cb200000-0000-4000-8000-000000000001','CHECKOUT-INTENT-37','Preto','37');
 insert into public.inventory(variant_id,available_quantity) values('cb300000-0000-4000-8000-000000000001',10);
@@ -86,6 +90,8 @@ select is((select count(*)::integer from public.addresses),0,'Outro cliente nao 
 reset role;
 set local role service_role;
 update public.profiles set status='disabled' where id='cb000000-0000-4000-8000-000000000001';
+-- O schema private não é exposto nem ao service_role: a verificação do estado roda como dono do teste.
+reset role;
 select is(
   (select count(*)::integer from private.customer_checkout_identity where user_id='cb000000-0000-4000-8000-000000000001'),
   0,
