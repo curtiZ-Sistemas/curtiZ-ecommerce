@@ -8,7 +8,7 @@ insert into public.products(id, name, slug, short_description, description, cate
   status, base_price, weight_grams, height_cm, width_cm, length_cm)
 values ('c2000000-0000-4000-8000-000000000001', 'Sandália Visual', 'sandalia-visual-test',
   'Teste', 'Teste de cores e tamanhos', 'c1000000-0000-4000-8000-000000000001',
-  'active', 50, 100, 5, 10, 20);
+  'draft', 50, 100, 5, 10, 20);
 insert into public.product_categories(product_id, category_id, is_primary)
 values ('c2000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', true);
 
@@ -36,6 +36,8 @@ select 'c2000000-0000-4000-8000-000000000001', variant.id,
   variant.color_name, 720, 720
 from public.product_variants variant
 where variant.product_id = 'c2000000-0000-4000-8000-000000000001' and variant.size = '34';
+-- Publicação somente depois da imagem real (guarda products_require_real_image_*).
+update public.products set status='active' where id='c2000000-0000-4000-8000-000000000001';
 
 select is((select count(*)::integer from private.storefront_catalog_items()
   where product_id = 'c2000000-0000-4000-8000-000000000001'), 4,

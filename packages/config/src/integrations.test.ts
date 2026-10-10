@@ -132,6 +132,7 @@ describe("configuração opcional de integrações", () => {
     ["MELHOR_ENVIO_BASE_URL", "https://melhorenvio.com.br", "MELHOR_ENVIO_BASE_URL_INVALID"],
     ["MELHOR_ENVIO_REDIRECT_URI", "http://store.example.com/callback", "MELHOR_ENVIO_REDIRECT_URI_INVALID"],
     ["MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY", "invalid-key", "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY_INVALID"],
+    ["MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS", "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=,invalid-key", "MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS_INVALID"],
     ["MELHOR_ENVIO_TECHNICAL_CONTACT", "contato-invalido", "MELHOR_ENVIO_TECHNICAL_CONTACT_INVALID"],
     ["MELHOR_ENVIO_ORIGIN_EMAIL", "email-invalido", "MELHOR_ENVIO_ORIGIN_EMAIL_INVALID"],
     ["MELHOR_ENVIO_ORIGIN_PHONE", "1199", "MELHOR_ENVIO_ORIGIN_PHONE_INVALID"],
@@ -146,6 +147,12 @@ describe("configuração opcional de integrações", () => {
     expect(getIntegrationConfig(environment).shipping.enabled).toBe(false);
     expect(JSON.stringify(readiness)).not.toContain("invalid-key");
     expect(JSON.stringify(readiness)).not.toContain("email-invalido");
+  });
+
+  it("aceita uma ou mais chaves anteriores válidas sem exigi-las", () => {
+    const previous = ["AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="].join(",\n");
+    expect(getMelhorEnvioReadiness({ ...completeSandboxEnvironment, MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS: previous }).configured).toBe(true);
+    expect(getMelhorEnvioReadiness(completeSandboxEnvironment).missing).not.toContain("MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS");
   });
 
   it("aceita CNPJ Sandbox válido e não retorna dados do remetente", () => {

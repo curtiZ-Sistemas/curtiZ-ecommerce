@@ -410,7 +410,9 @@ function rewriteToNativeNotFound(
 
   response.headers.set(
     "Cache-Control",
-    "public, max-age=0, must-revalidate"
+    currentResponse.cookies.getAll().length > 0
+      ? "private, no-store"
+      : "public, max-age=0, must-revalidate"
   );
   response.headers.set("X-Robots-Tag", "noindex, follow");
 
@@ -651,10 +653,13 @@ export async function middleware(request: NextRequest) {
    * Rotas públicas conhecidas precisam apenas
    * dos cabeçalhos de segurança.
    */
+  const hasSessionCookie = request.cookies.getAll()
+    .some(({ name }) => /^sb-.+-auth-token(?:\.\d+)?$/u.test(name));
   if (
     !checkoutRequest &&
     productSlug === null &&
-    !unknownRootSlug
+    !unknownRootSlug &&
+    !hasSessionCookie
   ) {
     return response;
   }
@@ -695,7 +700,9 @@ export async function middleware(request: NextRequest) {
            * requisição e reaplica todos os cabeçalhos
            * de segurança.
            */
+          requestHeaders.set("cookie", request.headers.get("cookie") ?? "");
           response = createNextResponse();
+          response.headers.set("Cache-Control", "private, no-store");
 
           for (const {
             name,
@@ -767,6 +774,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!checkoutRequest) {
+    if (hasSessionCookie) {
+      try {
+        // Somente renova cookies; a página/API verifica o usuário com getUser.
+        await supabase.auth.getSession();
+      } catch {
+        // A página valida seu acesso; uma falha transitória não derruba conteúdo público.
+      }
+    }
     return response;
   }
 

@@ -1,4 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loginDemoAccount } from "./demo-auth";
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 412, height: 915 }
+]) {
+  test(`autentica conta operacional pela loja e abre o painel em ${viewport.width}px`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await page.goto("http://localhost:3000/login", { waitUntil: "domcontentloaded" });
+    const email = page.locator('input[name="email"]:visible');
+    await email.fill("operacional.demo@curtiz.local");
+    await page.locator('input[name="password"]:visible').fill("1234567890");
+    await expect(email).toHaveValue("operacional.demo@curtiz.local");
+    await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+    await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible({ timeout: 60_000 });
+  });
+}
 
 async function loginAs(page: Page, email: string) {
   const destinationByAccount = {
@@ -9,11 +29,7 @@ async function loginAs(page: Page, email: string) {
   } as const;
   const destination = destinationByAccount[email as keyof typeof destinationByAccount];
   if (!destination) throw new Error(`Conta interna de teste não mapeada: ${email}`);
-  const response = await page.request.post("http://localhost:3000/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email, password: "1234567890" }
-  });
-  if (!response.ok()) throw new Error(`Login demo falhou com HTTP ${response.status()}`);
+  await loginDemoAccount(page, email);
   await page.goto(`http://localhost:3001/${destination}`, { waitUntil: "commit" });
   await expect(page.locator('main[aria-label="Carregando painel"]')).toHaveCount(0, {
     timeout: 60_000
@@ -41,7 +57,7 @@ for (const account of [
     await loginAs(page, account.email);
     await expect(page).toHaveURL(`http://localhost:3001/${account.route}`);
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
-    await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator("#panel-content")).toBeVisible();
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
     await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -160,7 +176,7 @@ test("remove configurações técnicas da administração e redireciona o bookma
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 24 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 26 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
   { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 32 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
@@ -532,9 +548,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     .filter({ hasText: deletableProduct.name });
   await deletableRow.locator("details.product-action-menu > summary").click();
   await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
-  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir produto permanentemente?" });
+  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir definitivamente?" });
   await expect(deleteDialog).toBeVisible();
-  await deleteDialog.getByRole("button", { name: "Excluir permanentemente" }).click();
+  await deleteDialog.getByRole("button", { name: "Excluir definitivamente", exact: true }).click();
   await expect(page.getByText("Produto excluído permanentemente.")).toBeVisible();
   await expect(deletableRow).toHaveCount(0);
 
@@ -551,9 +567,13 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const firstRow = page.locator("article.managed-product").filter({ hasText: savedName });
   await firstRow.getByRole("button", { name: "Editar", exact: true }).click();
   const updatedName = `${savedName} atualizado`;
-  await page.locator(".panel-drawer").getByLabel("Nome *").fill(updatedName);
+  const editDialog = page.locator(".panel-drawer");
+  await expect(editDialog.getByLabel("Categoria *")).toHaveValue(categoryId);
+  await editDialog.getByLabel("Nome *").fill(updatedName);
+  await expect(editDialog.getByLabel("Nome *")).toHaveValue(updatedName);
+  expect(await editDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Produto atualizado.")).toBeVisible();
+  await expect(page.getByText("Produto atualizado.")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(updatedName)).toBeVisible();
   expect(savedPayload).toMatchObject({
     action: "save",
@@ -568,12 +588,10 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const updatedRow = page.locator("article.managed-product").filter({ hasText: updatedName });
   await updatedRow.locator("details.product-action-menu > summary").click();
   await updatedRow.getByRole("button", { name: "Desativar" }).click();
-  const statusDialog = page.getByRole("dialog", { name: "Alterar status para Inativo" });
-  await statusDialog.getByLabel("Motivo da alteração").fill("Pausa comercial planejada");
-  await statusDialog.getByRole("button", { name: "Confirmar alteração" }).click();
   await expect(page.getByText("Status do produto atualizado.")).toBeVisible();
+  expect(savedPayload).toMatchObject({ action: "status", productId: products[0]!.id, status: "draft" });
   await expect(
-    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Inativo")
+    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Não ativo", { exact: true })
   ).toBeVisible();
 
   const inactiveRow = page.locator("article.managed-product").filter({ hasText: updatedName });

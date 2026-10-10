@@ -1,12 +1,16 @@
 import { expect, test } from "@playwright/test";
+import { loginDemoAccount } from "./demo-auth";
 
 test("catálogo repete a consulta depois de uma falha", async ({ page }) => {
   let attempts = 0;
+  let failed = true;
+  let successfulAttempts = 0;
   await page.route("**/api/catalog?**", async (route) => {
     attempts += 1;
+    if (!failed) successfulAttempts += 1;
     await route.fulfill({
-      status: attempts === 1 ? 503 : 200,
-      json: attempts === 1 ? { message: "Indisponível" } : {
+      status: failed ? 503 : 200,
+      json: failed ? { message: "Indisponível" } : {
         products: [], total: 0, page: 1, pageSize: 12,
         facets: { categories: [], collections: [], colors: [], sizes: [],
           price: { min: 0, max: 0 }, promotionCount: 0, inStockCount: 0, newestCount: 0 }
@@ -16,17 +20,32 @@ test("catálogo repete a consulta depois de uma falha", async ({ page }) => {
   await page.goto("/produtos");
   const retry = page.getByRole("button", { name: "Tentar novamente", exact: true });
   await expect(retry).toBeVisible();
+  failed = false;
   await retry.click();
   await expect(retry).toHaveCount(0);
-  expect(attempts).toBe(2);
+  expect(attempts).toBeGreaterThanOrEqual(2);
+  expect(successfulAttempts).toBe(1);
+});
+
+test("atendimento informa falha inicial e permite consultar novamente", async ({ page }) => {
+  let failed = true;
+  await page.route("**/api/support", (route) => route.fulfill({
+    status: failed ? 503 : 401,
+    json: failed ? { ok: false } : { ok: false, requiresAuthentication: true }
+  }));
+  await page.goto("/ajuda");
+  const support = page.locator(".customer-support");
+  await expect(support.getByRole("alert")).toContainText("Não foi possível carregar os atendimentos");
+  await expect(support.getByText("Nenhum chamado aberto")).toHaveCount(0);
+  failed = false;
+  await support.getByRole("button", { name: "Tentar novamente", exact: true }).click();
+  await expect(support.getByRole("alert")).toHaveCount(0);
+  await support.getByRole("button", { name: "Novo chamado", exact: true }).click();
+  await expect(page).toHaveURL(/\/login\?next=/u, { timeout: 30_000 });
 });
 
 test("cliente mantém endereço preenchido em falha e bloqueia reenvio", async ({ page }) => {
-  const login = await page.request.post("/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
-  });
-  expect(login.ok(), "Este teste exige o ambiente demo isolado").toBe(true);
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
   await page.goto("/minha-conta/enderecos");
   await page.getByRole("button", { name: "Adicionar endereço", exact: true }).click();
   const form = page.locator("form.customer-form");

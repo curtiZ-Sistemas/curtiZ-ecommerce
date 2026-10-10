@@ -38,11 +38,17 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm audit --audit-level high
+      - name: Auditar todas as dependências (produção e desenvolvimento)
+        run: pnpm audit --audit-level high
       - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED == 'true'
         with:
           fail-on-severity: high
+      - name: Registrar alternativa ao Dependency Review
+        if: github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED != 'true'
+        run: |
+          echo 'Dependency Review indisponível neste repositório. O gate obrigatório pnpm audit verifica todo o lockfile, incluindo dependências de desenvolvimento, e bloqueia vulnerabilidades high/critical.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Habilite DEPENDENCY_REVIEW_ENABLED=true somente após disponibilizar Dependency graph e Dependency Review no GitHub.' >> "$GITHUB_STEP_SUMMARY"
 
   secrets:
     name: Histórico de secrets

@@ -42,6 +42,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
   const [selectedId, setSelectedId] = useState("");
   const [formOpen, setFormOpen] = useState(startNew);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [rated, setRated] = useState<Record<string, boolean>>({});
@@ -61,16 +62,20 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
       const result = (await response.json()) as SupportResponse;
       etagRef.current = response.ok ? response.headers.get("etag") : null;
       if (response.status === 401 || response.status === 403 || result.requiresAuthentication) {
+        setLoadFailed(false);
+        setMessage("");
         setAuthenticated(false);
         setConversations([]);
         return;
       }
       if (!response.ok || !result.ok) throw new Error("support_load_failed");
+      setLoadFailed(false);
       setAuthenticated(true);
       setConversations(result.conversations ?? []);
       setSelectedId((current) => current || result.conversations?.[0]?.id || "");
       setMessage("");
     } catch {
+      setLoadFailed(true);
       setMessage(
         "Não foi possível carregar os atendimentos. Verifique a conexão e tente novamente."
       );
@@ -238,7 +243,7 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
 
   return (
     <>
-      {authenticated !== null && (
+      {(authenticated !== null || loadFailed) && (
         <section className="customer-support" aria-labelledby="customer-support-title">
           <header className="customer-support-heading">
             <div>
@@ -252,15 +257,17 @@ export function SupportCenter({ startNew = false }: { startNew?: boolean }) {
           </header>
 
           {message && (
-            <p className="form-message" role="status">
+            <p className="form-message" role={loadFailed ? "alert" : "status"}>
               {message}
+              {loadFailed && <button className="secondary-button" type="button" disabled={loading}
+                onClick={() => void loadConversations()}>Tentar novamente</button>}
             </p>
           )}
           {loading ? (
             <div className="support-loading" aria-label="Carregando atendimentos">
               <LoaderCircle className="spin" /> Carregando atendimentos…
             </div>
-          ) : formOpen ? (
+          ) : loadFailed && conversations.length === 0 ? null : formOpen ? (
             <SupportForm
               submitting={submitting}
               onSubmit={(event) => void createConversation(event)}

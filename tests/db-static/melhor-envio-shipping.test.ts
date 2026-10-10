@@ -2,8 +2,20 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync("supabase/migrations/202609160003_melhor_envio_shipping.sql", "utf8");
+const keyRotation = readFileSync("supabase/migrations/202610100001_integration_credential_key_rotation.sql", "utf8");
 
 describe("migration Melhor Envio", () => {
+  it("recifra os dois tokens com compare-and-swap restrito ao service_role", () => {
+    expect(keyRotation).toContain("security definer set search_path = ''");
+    expect(keyRotation).toContain("and access_token_ciphertext = p_expected_access_token_ciphertext");
+    expect(keyRotation).toContain("and refresh_token_ciphertext = p_expected_refresh_token_ciphertext");
+    expect(keyRotation).toContain("and status = 'connected'");
+    expect(keyRotation).toMatch(/from public, anon, authenticated;/u);
+    expect(keyRotation).toMatch(/to service_role;/u);
+    expect(keyRotation).not.toMatch(/\bto (anon|authenticated)\b/u);
+    expect(keyRotation).not.toMatch(/refresh_token_expires_at\s*=|access_token_expires_at\s*=|status\s*=\s*'(disconnected|error)/u);
+  });
+
   it("persiste OAuth server-only com lock de refresh e state de uso único", () => {
     expect(migration).toContain("create table if not exists private.integration_credentials");
     expect(migration).toContain("refresh_locked_until");

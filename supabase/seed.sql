@@ -99,6 +99,8 @@ values
   ('10000000-0000-0000-0000-000000000005', 'Sandálias', 'sandalias', 'Sandálias Curtiz', 5)
 on conflict(id) do nothing;
 
+-- Produtos demo nascem como rascunho: a guarda products_require_real_image_* só permite publicar
+-- com imagem real cadastrada, e a imagem depende do produto (FK). Publicação acontece abaixo.
 insert into public.products(
   id, name, slug, short_description, description, category_id, status, featured,
   base_price, cost_price, weight_grams, height_cm, width_cm, length_cm
@@ -108,14 +110,14 @@ values
     '20000000-0000-0000-0000-000000000001',
     'curti Z Flip-Flop Wave Preto', 'flip-flop-wave-preto',
     'Leve, resistente e macio.', 'Produto fictício para demonstração local.',
-    '10000000-0000-0000-0000-000000000001', 'active', true,
+    '10000000-0000-0000-0000-000000000001', 'draft', true,
     59.90, 22.00, 350, 8, 20, 30
   ),
   (
     '20000000-0000-0000-0000-000000000002',
     'curti Z Flip-Flop Slim Coral', 'flip-flop-slim-coral',
     'Design minimalista em tom coral.', 'Produto fictício para demonstração local.',
-    '10000000-0000-0000-0000-000000000002', 'active', true,
+    '10000000-0000-0000-0000-000000000002', 'draft', true,
     54.90, 20.00, 320, 8, 20, 30
   )
 on conflict(id) do nothing;
@@ -135,6 +137,19 @@ values
     'CZT-FS-COR-38', 'Coral', '#CF6853', '38', true
   )
 on conflict(id) do nothing;
+
+insert into public.product_images(product_id, storage_path, alt_text, sort_order, is_primary, width, height)
+values
+  ('20000000-0000-0000-0000-000000000001', 'demo/flip-flop-wave-preto.jpg',
+    'curti Z Flip-Flop Wave Preto (imagem de demonstração local)', 0, true, 1200, 1200),
+  ('20000000-0000-0000-0000-000000000002', 'demo/flip-flop-slim-coral.jpg',
+    'curti Z Flip-Flop Slim Coral (imagem de demonstração local)', 0, true, 1200, 1200)
+on conflict(storage_path) do nothing;
+
+-- Publica pelo mesmo caminho validado do painel (rascunho -> ativo); repetir o seed não altera nada.
+update public.products set status = 'active'
+where id in ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002')
+  and status = 'draft';
 
 insert into public.inventory(variant_id, available_quantity, minimum_quantity, ideal_quantity)
 values

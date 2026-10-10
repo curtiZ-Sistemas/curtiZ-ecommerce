@@ -13,7 +13,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   assessPassword,
   formatBrazilianPhone,
@@ -63,6 +63,8 @@ export function SignupForm({
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
   const [isResending, setIsResending] = useState(false);
   const submitLock = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -232,6 +234,7 @@ export function SignupForm({
 
   return (
     <form
+      method="post"
       ref={formRef}
       className="form-stack auth-form signup-form"
       onSubmit={(event) => void submit(event)}
@@ -403,7 +406,7 @@ export function SignupForm({
       <button
         className="primary-button full-button auth-submit"
         type="submit"
-        disabled={isSubmitting || (turnstileEnabled && !turnstileToken)}
+        disabled={!hydrated || isSubmitting || (turnstileEnabled && !turnstileToken)}
         aria-busy={isSubmitting}
       >
         {isSubmitting ? (

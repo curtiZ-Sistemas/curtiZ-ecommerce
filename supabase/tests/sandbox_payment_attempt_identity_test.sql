@@ -10,7 +10,11 @@ insert into public.user_roles(user_id,role) values('cd000000-0000-4000-8000-0000
 insert into public.categories(id,name,slug) values('cd100000-0000-4000-8000-000000000001','Sandbox retry','sandbox-retry');
 insert into public.products(id,name,slug,short_description,description,category_id,status,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm)
 values('cd200000-0000-4000-8000-000000000001','Sandbox product','sandbox-retry-product','Test','Test',
-  'cd100000-0000-4000-8000-000000000001','active',50,20,200,5,10,20);
+  'cd100000-0000-4000-8000-000000000001','draft',50,20,200,5,10,20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('cd200000-0000-4000-8000-000000000001');
+update public.products set status='active' where id in ('cd200000-0000-4000-8000-000000000001');
 insert into public.product_variants(id,product_id,sku,color_name,size)
 values('cd300000-0000-4000-8000-000000000001','cd200000-0000-4000-8000-000000000001','SANDBOX-RETRY-37','Preto','37');
 insert into public.inventory(variant_id,available_quantity) values('cd300000-0000-4000-8000-000000000001',10);
@@ -42,7 +46,10 @@ select lives_ok($$select pg_temp.confirm_checkout('visa')$$,'Logical checkout cr
 select lives_ok($$select pg_temp.confirm_checkout('pix')$$,'Changing provider method reuses the same logical checkout');
 select is((select count(*)::integer from public.orders where customer_id='cd000000-0000-4000-8000-000000000001'),1,'Method retry does not duplicate order');
 select is((select cpf_last_four from public.orders where customer_id='cd000000-0000-4000-8000-000000000001'),'4725','Order retains the real CPF');
+-- O schema private não é exposto nem ao service_role: a verificação do estado roda como dono do teste.
+reset role;
 select is((select cpf_ciphertext from private.customer_checkout_identity where user_id='cd000000-0000-4000-8000-000000000001'),'cipher-real-customer','Private identity retains the real CPF');
+set local role service_role;
 select is((select payment_method_summary from public.payments where order_id=(select id from public.orders where customer_id='cd000000-0000-4000-8000-000000000001')),'selected:visa','Logical replay does not overwrite payment metadata');
 select throws_ok($$select pg_temp.confirm_checkout('visa','Changed Customer')$$,'22023','idempotency_conflict','Logical checkout identity cannot change under the same key');
 

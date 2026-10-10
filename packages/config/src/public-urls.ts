@@ -9,6 +9,10 @@ type PublicAppUrlConfiguration = PublicAppUrls & {
 };
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const PRODUCTION_URLS: PublicAppUrls = {
+  storeUrl: "https://curtiz.com.br",
+  panelUrl: "https://painel.curtiz.com.br"
+};
 
 const origin = (value: string | undefined, fallback?: string): string | undefined => {
   const candidate = value?.trim() || fallback;
@@ -42,6 +46,12 @@ export const resolvePublicAppUrls = (currentUrl?: string | URL): PublicAppUrls =
   const currentOrigin = origin(currentUrl?.toString());
 
   if (currentOrigin) {
+    // NEXT_PUBLIC_* is inlined by Next.js. Runtime bindings cannot repair a
+    // stale build, so official requests must never select a workers.dev pair.
+    if (currentOrigin === PRODUCTION_URLS.storeUrl || currentOrigin === PRODUCTION_URLS.panelUrl) {
+      return { ...PRODUCTION_URLS };
+    }
+
     if (
       configured.storeTestUrl &&
       configured.panelTestUrl &&

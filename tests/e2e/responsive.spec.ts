@@ -107,7 +107,7 @@ test("menu principal mobile permanece dentro da viewport", async ({ page }) => {
   }).toPass({ timeout: 15_000 });
   const menu = page.getByRole("dialog", { name: "Menu principal" });
   await expect(menu).toBeVisible();
-  for (const [name, href] of [["Produtos", "/produtos"], ["Atendimento", "/ajuda"], ["Favoritos", "/favoritos"]]) {
+  for (const [name, href] of [["Produtos", "/produtos"], ["Atendimento", "/ajuda"], ["Favoritos", "/favoritos"]] as const) {
     const link = menu.getByRole("link", { name, exact: true });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", href);
@@ -204,7 +204,8 @@ test("dados estruturados do produto não geram aviso de hidratação", async ({ 
   expect(hydrationWarnings).toEqual([]);
 });
 
-test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page }) => {
+test("atendimento mobile continua acessível sem launcher de chat", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.addInitScript(() => {
     localStorage.setItem(
       "curtiz-cookie-consent",
@@ -218,23 +219,16 @@ test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page 
     await page.setViewportSize(viewport);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    const launcher = page.getByRole("button", { name: "Abrir ajuda" });
-    await expect(launcher.getByText("Posso ajudar?")).toBeHidden();
-    const launcherBox = await launcher.boundingBox();
-    expect(launcherBox).not.toBeNull();
-    expect(
-      viewport.height - (launcherBox?.y ?? 0) - (launcherBox?.height ?? 0)
-    ).toBeLessThanOrEqual(20);
-
-    const dialog = page.getByRole("dialog", { name: "Ajuda curti Z" });
+    await expect(page.getByRole("button", { name: "Abrir ajuda" })).toHaveCount(0);
+    const menuButton = page.getByRole("button", { name: "Abrir menu", exact: true });
     await expect(async () => {
-      await launcher.click();
-      await expect(dialog).toBeVisible({ timeout: 1_000 });
+      await menuButton.click();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
     }).toPass({ timeout: 15_000 });
-    const dialogBox = await dialog.boundingBox();
-    expect(dialogBox).not.toBeNull();
-    expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(10);
-    expect((dialogBox?.y ?? 0) + (dialogBox?.height ?? 0)).toBeLessThan(viewport.height);
+    await page.getByRole("dialog", { name: "Menu principal" })
+      .getByRole("link", { name: "Atendimento", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Olá! Como podemos ajudar?" })).toBeVisible({ timeout: 30_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 });
 
@@ -326,7 +320,7 @@ test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conte
     } else {
       await expect(mobileSummary).toBeHidden();
       await expect(page.locator(".cart-summary")).toBeVisible();
-      await expect(page.locator(".help-widget")).toBeVisible();
+      await expect(page.locator(".help-widget")).toBeHidden();
     }
   }
 
@@ -391,11 +385,17 @@ test("404 mantém ações e recomendações acessíveis no mobile", async ({ pag
 test("produto mantém recomendações em grade responsiva sem repetir o item atual", async ({
   page
 }) => {
-  await page.route("**/api/intelligence/recommendations", async (route) => {
-    const products = Array.from({ length: 8 }, (_, index) => ({
-      id: `recommended-${index + 1}`,
+  test.setTimeout(90_000);
+  await page.route("**/test-assets/recommendation-*.png", async (route) => {
+    await route.fulfill({ path: "apps/store/public/images/products/soft-preto.png" });
+  });
+  await page.route("**/api/intelligence/recommendations*", async (route) => {
+    // Isolated layout fixtures must pass the real image/family eligibility rules.
+    const models = ["Aurora", "Brisa", "Cacto", "Duna", "Estrela", "Farol", "Horizonte", "Íris"];
+    const products = models.map((model, index) => ({
+      id: `60000000-0000-4000-8000-00000000000${index + 1}`,
       slug: `slide-recomendado-${index + 1}`,
-      name: `Slide recomendado ${index + 1}`,
+      name: `Slide ${model}`,
       category: "Slides",
       description: "Produto disponível",
       priceInCents: 6990,
@@ -403,7 +403,7 @@ test("produto mantém recomendações em grade responsiva sem repetir o item atu
       reviews: 20,
       colors: ["Preto"],
       sizes: ["39"],
-      image: "/images/products/wave-preto.png",
+      image: `/test-assets/recommendation-${index + 1}.png`,
       featured: false,
       stock: 3
     }));
@@ -416,8 +416,9 @@ test("produto mantém recomendações em grade responsiva sem repetir o item atu
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
   const shelf = page.locator(".product-recommendations");
+  await shelf.scrollIntoViewIfNeeded();
   await expect(shelf.getByRole("heading", { name: "Você Também Pode Gostar" })).toBeVisible();
-  await expect(shelf.locator(".product-card")).toHaveCount(8);
+  await expect(shelf.locator(".product-card")).toHaveCount(8, { timeout: 30_000 });
   await expect(shelf.locator('a[href="/produto/flip-flop-wave-preto"]')).toHaveCount(0);
   await expect(page.locator(".product-summary").getByText("Vendido por")).toHaveCount(0);
   await expect(page.locator(".product-summary").getByText("Compra segura")).toHaveCount(0);

@@ -40,7 +40,11 @@ select is((select invoice_status from private.bling_order_links where order_id='
 
 insert into public.categories(id,name,slug) values('ba200000-0000-4000-8000-000000000001','Bling SQL test','bling-sql-test');
 insert into public.products(id,name,slug,category_id,status,base_price,description,weight_grams,height_cm,width_cm,length_cm)
-values('ba200000-0000-4000-8000-000000000002','Bling SQL test','bling-sql-test','ba200000-0000-4000-8000-000000000001','active',50,'Test',100,5,10,20);
+values('ba200000-0000-4000-8000-000000000002','Bling SQL test','bling-sql-test','ba200000-0000-4000-8000-000000000001','draft',50,'Test',100,5,10,20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('ba200000-0000-4000-8000-000000000002');
+update public.products set status='active' where id in ('ba200000-0000-4000-8000-000000000002');
 insert into public.product_variants(id,product_id,sku,color_name,size)
 values('ba200000-0000-4000-8000-000000000003','ba200000-0000-4000-8000-000000000002','BLING-SQL-TEST-37','Black','37');
 insert into public.inventory(variant_id,available_quantity,reserved_quantity) values('ba200000-0000-4000-8000-000000000003',8,0);

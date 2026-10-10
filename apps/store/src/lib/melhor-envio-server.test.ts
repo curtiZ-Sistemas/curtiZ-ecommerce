@@ -57,14 +57,14 @@ describe("catálogo → OAuth cifrado → cotação Melhor Envio", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     await expect(createMelhorEnvioProvider(environment, db).quote(quoteInput)).rejects.toMatchObject({
-      code: "authentication", diagnostic: { reason: "token_decryption_failed" }
+      code: "authentication", diagnostic: { reason: "token_key_unavailable" }
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("renova e persiste tokens cifrados antes de cotar, com o mesmo ambiente normalizado", async () => {
     const tokenRow = { status: "connected", access_token_ciphertext: await encryptMelhorEnvioToken("old-access", key),
-      refresh_token_ciphertext: await encryptMelhorEnvioToken("old-refresh", key), access_token_expires_at: "2000-01-01T00:00:00Z" };
+      refresh_token_ciphertext: await encryptMelhorEnvioToken("old-refresh", key, "refresh_token"), access_token_expires_at: "2000-01-01T00:00:00Z" };
     const rpc = vi.fn<(name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>>()
       .mockImplementation(async (name) => ({ data: name === "read_integration_credential" ? tokenRow : true, error: null }));
     const db = { rpc } as never;
@@ -79,7 +79,7 @@ describe("catálogo → OAuth cifrado → cotação Melhor Envio", () => {
     expect(quotes[0]).toMatchObject({ amountInCents: 2025, costInCents: 1850 });
     expect(rpc).toHaveBeenCalledWith("read_integration_credential", { p_provider: "melhorenvio", p_environment: "production" });
     const saved = rpc.mock.calls.find(([name]) => name === "save_integration_credential");
-    expect(saved?.[1]).toMatchObject({ p_environment: "production", p_access_token_ciphertext: expect.stringMatching(/^v1\./u) as unknown });
+    expect(saved?.[1]).toMatchObject({ p_environment: "production", p_access_token_ciphertext: expect.stringMatching(/^v2\.[0-9a-f]{12}\./u) as unknown });
     expect(JSON.stringify(saved)).not.toMatch(/new-access|new-refresh/u);
     expect(fetchMock.mock.calls[0]?.[0].origin).toBe("https://melhorenvio.com.br");
     const init = fetchMock.mock.calls[1]?.[1] as RequestInit;
@@ -90,9 +90,36 @@ describe("catálogo → OAuth cifrado → cotação Melhor Envio", () => {
     })) });
   });
 
+  it("lê tokens v1 com a chave anterior e recifra os dois via RPC compare-and-swap", async () => {
+    const previous = Buffer.alloc(32, 8).toString("base64");
+    const legacy = async (value: string) => {
+      const imported = await crypto.subtle.importKey("raw", Buffer.from(previous, "base64"), "AES-GCM", false, ["encrypt"]);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, imported, new TextEncoder().encode(value));
+      return `v1.${Buffer.from(iv).toString("base64")}.${Buffer.from(encrypted).toString("base64")}`;
+    };
+    const tokenRow = { status: "connected", access_token_ciphertext: await legacy("old-access"),
+      refresh_token_ciphertext: await legacy("old-refresh"), access_token_expires_at: "2099-01-01T00:00:00Z" };
+    const rpc = vi.fn<(name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>>()
+      .mockImplementation(async (name) => ({ data: name === "read_integration_credential" ? tokenRow : true, error: null }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createMelhorEnvioProvider({ ...environment, MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS: previous }, { rpc } as never)
+      .health()).resolves.toBe("online");
+    const replaced = rpc.mock.calls.find(([name]) => name === "replace_integration_credential_ciphertext");
+    expect(replaced?.[1]).toMatchObject({ p_provider: "melhorenvio", p_environment: "sandbox",
+      p_expected_access_token_ciphertext: tokenRow.access_token_ciphertext,
+      p_expected_refresh_token_ciphertext: tokenRow.refresh_token_ciphertext,
+      p_access_token_ciphertext: expect.stringMatching(/^v2\.[0-9a-f]{12}\./u) as unknown,
+      p_refresh_token_ciphertext: expect.stringMatching(/^v2\.[0-9a-f]{12}\./u) as unknown });
+    expect(JSON.stringify(replaced)).not.toMatch(/old-access|old-refresh/u);
+    expect(rpc.mock.calls.some(([name]) => name === "save_integration_credential")).toBe(false);
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get("authorization")).toBe("Bearer old-access");
+  });
+
   it.each(["claim_integration_refresh", "save_integration_credential"])("falha fechada se %s falhar", async (failedRpc) => {
     const tokenRow = { status: "connected", access_token_ciphertext: await encryptMelhorEnvioToken("old-access", key),
-      refresh_token_ciphertext: await encryptMelhorEnvioToken("old-refresh", key), access_token_expires_at: "2000-01-01T00:00:00Z" };
+      refresh_token_ciphertext: await encryptMelhorEnvioToken("old-refresh", key, "refresh_token"), access_token_expires_at: "2000-01-01T00:00:00Z" };
     const rpc = vi.fn(async (name: string) => ({ data: name === "read_integration_credential" ? tokenRow : true,
       error: name === failedRpc ? { code: "42501" } : null }));
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: "new-access", refresh_token: "new-refresh", expires_in: 2592000 })));
