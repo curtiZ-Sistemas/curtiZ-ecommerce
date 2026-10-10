@@ -84,7 +84,7 @@ select is((public.financial_control_snapshot(current_date,current_date)->'online
 
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select throws_ok($$select public.financial_control_snapshot(current_date,current_date)$$,'42501','permission denied','42. Cliente nao acessa o financeiro por RLS e permissao');
-select throws_ok($select * from pg_temp.test_financial_transfers$,'42501','permission denied','43. Cliente nao le transferencias pelo snapshot autorizado');
+select throws_ok('select * from pg_temp.test_financial_transfers','42501','permission denied','43. Cliente nao le transferencias pelo snapshot autorizado');
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 select ok(exists(select 1 from public.audit_logs where action='financial.mercadopago.refund'),'44. Reembolsos ficam na auditoria');
 

@@ -57,11 +57,15 @@ insert into public.product_images(product_id,storage_path,alt_text,width,height,
 select id,'test/nullable-product.webp',name,720,720,true from public.products where slug='teste-save-publicada';
 set local role authenticated;
 select public.admin_save_product_authorized(jsonb_build_object('productId',
-  (select id from public.products where slug='teste-save-publicada')) || '{
+  (select id from public.products where slug='teste-save-publicada'),
+  'variants', jsonb_build_array(jsonb_build_object(
+    'id', (select id from public.product_variants where sku='TEST-SAVE-ACTIVE'),
+    'sku', 'TEST-SAVE-ACTIVE', 'color', 'Azul', 'size', '40', 'stock', 0, 'active', true
+  ))) || '{
     "name":"Sandália publicada","slug":"teste-save-publicada","status":"active",
     "categoryId":"c7200000-0000-4000-8000-000000000001",
     "categoryIds":["c7200000-0000-4000-8000-000000000001"],"priceInCents":1999,
-    "stockReason":"Publicação após imagem","variants":[{"sku":"TEST-SAVE-ACTIVE","color":"Azul","size":"40","stock":0,"active":true}]
+    "stockReason":"Publicação após imagem"
   }'::jsonb);
 
 select lives_ok($sql$

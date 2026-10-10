@@ -1,6 +1,25 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginDemoAccount } from "./demo-auth";
 
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 412, height: 915 }
+]) {
+  test(`autentica conta operacional pela loja e abre o painel em ${viewport.width}px`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await page.goto("http://localhost:3000/login", { waitUntil: "domcontentloaded" });
+    const email = page.locator('input[name="email"]:visible');
+    await email.fill("operacional.demo@curtiz.local");
+    await page.locator('input[name="password"]:visible').fill("1234567890");
+    await expect(email).toHaveValue("operacional.demo@curtiz.local");
+    await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+    await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible({ timeout: 60_000 });
+  });
+}
+
 async function loginAs(page: Page, email: string) {
   const destinationByAccount = {
     "admin.demo@curtiz.local": "administracao",
@@ -38,7 +57,7 @@ for (const account of [
     await loginAs(page, account.email);
     await expect(page).toHaveURL(`http://localhost:3001/${account.route}`);
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
-    await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator("#panel-content")).toBeVisible();
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
     await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -531,7 +550,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
   const deleteDialog = page.getByRole("alertdialog", { name: "Excluir definitivamente?" });
   await expect(deleteDialog).toBeVisible();
-  await deleteDialog.getByRole("button", { name: "Excluir permanentemente" }).click();
+  await deleteDialog.getByRole("button", { name: "Excluir definitivamente", exact: true }).click();
   await expect(page.getByText("Produto excluído permanentemente.")).toBeVisible();
   await expect(deletableRow).toHaveCount(0);
 

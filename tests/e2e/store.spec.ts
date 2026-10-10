@@ -462,7 +462,11 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
   await page.addInitScript(() => {
     localStorage.setItem(
       "curtiz-cookie-consent",
-      JSON.stringify({ categories: { essential: true } })
+      JSON.stringify({
+        id: "cb000000-0000-4000-8000-000000000001",
+        policyVersion: "inventory-2",
+        categories: { essential: true, preferences: false, analytics: false }
+      })
     );
     localStorage.setItem(
       "curtiz-cart",
@@ -707,20 +711,6 @@ test("login encontra o footer sem faixa estrutural vazia", async ({ page }) => {
   }
 });
 
-test("autentica conta operacional no modo demo local sem Supabase", async ({ page }) => {
-  await page.goto("/login");
-  const email = page.locator('input[name="email"]:visible');
-  await email.fill("operacional.demo@curtiz.local");
-  await page.locator('input[name="password"]:visible').fill("1234567890");
-  await expect(email).toHaveValue("operacional.demo@curtiz.local");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
-
-  await expect(page).toHaveURL("http://localhost:3001/operacional", {
-    timeout: 20_000
-  });
-  await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible();
-});
-
 test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
@@ -945,14 +935,25 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("atendimento permanece acessível com o chat temporariamente desativado", async ({ page }) => {
+test("atendimento permanece acessível com o chat temporariamente desativado", async ({ page, isMobile }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   const rejectCookies = page.getByRole("button", { name: "Recusar opcionais" });
   await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
   await rejectCookies.click();
   await expect(page.getByRole("button", { name: "Abrir ajuda" })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toHaveCount(0);
-  await page.locator('a[href="/ajuda"]:visible').first().click();
+  if (isMobile) {
+    const menuButton = page.getByRole("button", { name: "Abrir menu", exact: true });
+    await expect(async () => {
+      await menuButton.click();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await page.getByRole("dialog", { name: "Menu principal" })
+      .getByRole("link", { name: "Atendimento", exact: true }).click();
+  } else {
+    await page.locator('a[href="/ajuda"]:visible').first().click();
+  }
   await expect(page).toHaveURL(/\/ajuda$/u, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Olá! Como podemos ajudar?" })).toBeVisible({ timeout: 30_000 });
 });

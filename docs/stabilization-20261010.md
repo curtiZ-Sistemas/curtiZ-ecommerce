@@ -33,7 +33,9 @@ Outras fixtures SQL corrigidas: assinatura atual de finalização de pagamento, 
 
 A execução PostgreSQL posterior passou pelo seed, lint e testes de rotação/email. Revelou fixtures que assumiam permissões de papéis antigas, acesso financeiro direto e dois cards para uma mesma cor. Casos negativos agora usam negações explícitas; leituras financeiras usam o snapshot autorizado em views temporárias da transação de teste; publicação de produto usa draft/imagem/publicação pela RPC. A tentativa de alteração de versão jurídica verifica zero linhas afetadas pela RLS e a preservação do snapshot.
 
-Essa execução também confirmou que DELETE direto não removia sessões de importação expiradas e invisíveis por SELECT RLS. Migration `202610100006` adiciona limpeza autorizada apenas das sessões do próprio usuário; preview/cancelamento usam a RPC. SELECT permanece restrito. Casos SQL verificam privilégio, dono, cliente, expiração e preservação de sessão ativa, aguardando execução do CI do commit que os contém.
+Essa execução também confirmou que DELETE direto não removia sessões de importação expiradas e invisíveis por SELECT RLS. Migration `202610100006` adiciona limpeza autorizada apenas das sessões do próprio usuário; preview/cancelamento usam a RPC. SELECT permanece restrito. Os oito casos SQL de privilégio, dono, cliente, expiração e preservação de sessão ativa passaram no CI `38083321899`, assim como rotação, email, homepage, conteúdo jurídico e importação. Duas fixtures corrigidas nessa execução ainda abortaram por delimitador SQL inválido e variante sem ID; ambos foram corrigidos para nova execução, preservando a verificação negativa e a atualização real pela RPC.
+
+A mesma execução identificou contratos E2E desatualizados: login da loja para o painel estava no job que inicia apenas a loja (movido à suíte das duas aplicações, em desktop/mobile); recomendação usava imagens demo rejeitadas e não interceptava GET com query (fixtures isoladas de famílias/imagens distintas, interceptação e ativação por scroll); consentimento incompleto cobria o checkout mobile (fixture válida); atendimento mobile procurava link desktop (abre o menu real); confirmação de exclusão procurava o texto antigo do botão; seletor genérico de `main` conflitou com o loading do painel (verifica `#panel-content`). Nenhum teste foi removido ou desativado para ocultar essas falhas.
 
 ## Revisão do Claude
 
@@ -47,7 +49,9 @@ No CI do snapshot integrado, qualidade, CodeQL, histórico de secrets e auditori
 
 Após a proteção de hidratação, os três E2E locais de retorno ao atendimento, sessão/persistência/logout e favoritos entre páginas passaram (Chromium, desktop, um worker, ambiente demo). Também passaram separadamente galeria/foco, retry do catálogo, histórico consentido, recuperação 404 genérica, carrossel mobile, abandono de pagamento e checkout desativado. Algumas tentativas anteriores falharam ou foram interrompidas; não são contabilizadas como aprovação da suíte completa. O lote estático/rotas/formulário mais recente passou com 76 arquivos/263 testes, seguido de 11 testes de formulário e importação; os conjuntos se sobrepõem e não devem ser somados como testes únicos.
 
-Os builds/dry-run Linux da loja e do painel no snapshot intermediário `354673a6...` passaram. Isso não aprova o bundle do commit final nem a produção.
+Após esses ajustes, também passaram localmente recomendações em 320–1440 px, atendimento mobile e abandono de pagamento mobile com carrinho preservado. O teste de abandono usa resposta isolada de checkout e chave pública fictícia; o SDK sinalizou falha de inicialização dessa chave. O resultado verifica navegação/preservação do carrinho, sem validar criação de pagamento. Lint E2E, typecheck E2E e cinco verificações estáticas de migrations passaram; PostgreSQL e a suíte completa dependem da nova execução CI.
+
+Os builds/dry-run Linux da loja e do painel nos snapshots intermediários `354673a6...` e `6b3a8ee0...` passaram. Isso não aprova o bundle do commit final nem a produção.
 
 Audit local `--audit-level high` terminou com sucesso sob a configuração já existente. Há um aviso moderado de `fflate` e uma exceção preexistente para `GHSA-vfj7-8cjw-p6xm`; não foram acrescentadas exceções nem alteradas dependências. Sucesso dessa auditoria não significa ausência de vulnerabilidades.
 
