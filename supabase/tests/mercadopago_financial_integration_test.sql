@@ -3,6 +3,17 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(44);
 
+-- Read fixtures through the authorized snapshot RPC; no production table grants are changed.
+create temporary view test_financial_accounts as
+  select * from jsonb_populate_recordset(null::public.financial_accounts,public.financial_control_snapshot(current_date,current_date)->'accounts');
+grant select on test_financial_accounts to authenticated;
+create temporary view test_financial_transactions as
+  select * from jsonb_populate_recordset(null::public.financial_transactions,public.financial_control_snapshot(current_date,current_date)->'transactions');
+grant select on test_financial_transactions to authenticated;
+create temporary view test_financial_transfers as
+  select * from jsonb_populate_recordset(null::public.financial_transfers,public.financial_control_snapshot(current_date,current_date)->'transfers');
+grant select on test_financial_transfers to authenticated;
+
 insert into auth.users(id,instance_id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) values
 ('f2000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','mp-finance-manager@test.local','{}','{"full_name":"MP Finance Manager"}',now(),now()),
 ('f2000000-0000-4000-8000-000000000002','00000000-0000-0000-0000-000000000000','authenticated','authenticated','mp-finance-customer@test.local','{}','{"full_name":"MP Finance Customer"}',now(),now());
@@ -65,15 +76,15 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 select lives_ok($$select public.financial_control_mutate('account.save','{"name":"Banco teste MP","initial_balance_cents":0,"active":true}'::jsonb)$$,'36. Cadastra banco de destino');
-select lives_ok($$select public.financial_control_mutate('transfer.save',jsonb_build_object('source_account_id',(select id from public.financial_accounts where name='Mercado Pago'),'destination_account_id',(select id from public.financial_accounts where name='Banco teste MP'),'amount_cents',5000,'occurred_on',current_date,'description','Saque Mercado Pago','external_reference','saque-mp-1'))$$,'37. Registra transferencia Mercado Pago para banco');
-select is((select count(*) from public.financial_transactions where transfer_id=(select id from public.financial_transfers where external_reference='saque-mp-1')),2::bigint,'38. Transferencia gera duas pontas');
-select is((select count(*) from public.financial_transactions where transfer_id=(select id from public.financial_transfers where external_reference='saque-mp-1') and not affects_result),2::bigint,'39. As duas pontas nao afetam resultado');
-select is((select sum(case when type='income' then amount else -amount end) from public.financial_transactions where transfer_id=(select id from public.financial_transfers where external_reference='saque-mp-1')),0.00::numeric,'40. Transferencia tem impacto liquido zero');
+select lives_ok($$select public.financial_control_mutate('transfer.save',jsonb_build_object('source_account_id',(select id from pg_temp.test_financial_accounts where name='Mercado Pago'),'destination_account_id',(select id from pg_temp.test_financial_accounts where name='Banco teste MP'),'amount_cents',5000,'occurred_on',current_date,'description','Saque Mercado Pago','external_reference','saque-mp-1'))$$,'37. Registra transferencia Mercado Pago para banco');
+select is((select count(*) from pg_temp.test_financial_transactions where transfer_id=(select id from pg_temp.test_financial_transfers where external_reference='saque-mp-1')),2::bigint,'38. Transferencia gera duas pontas');
+select is((select count(*) from pg_temp.test_financial_transactions where transfer_id=(select id from pg_temp.test_financial_transfers where external_reference='saque-mp-1') and not affects_result),2::bigint,'39. As duas pontas nao afetam resultado');
+select is((select sum(case when type='income' then amount else -amount end) from pg_temp.test_financial_transactions where transfer_id=(select id from pg_temp.test_financial_transfers where external_reference='saque-mp-1')),0.00::numeric,'40. Transferencia tem impacto liquido zero');
 select is((public.financial_control_snapshot(current_date,current_date)->'online_sales_summary'->>'gross')::numeric,300.00::numeric,'41. Dashboard totaliza somente vendas recebidas');
 
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select throws_ok($$select public.financial_control_snapshot(current_date,current_date)$$,'42501','permission denied','42. Cliente nao acessa o financeiro por RLS e permissao');
-select is((select count(*) from public.financial_transfers),0::bigint,'43. Cliente nao le transferencias por RLS');
+select throws_ok($select * from pg_temp.test_financial_transfers$,'42501','permission denied','43. Cliente nao le transferencias pelo snapshot autorizado');
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 select ok(exists(select 1 from public.audit_logs where action='financial.mercadopago.refund'),'44. Reembolsos ficam na auditoria');
 

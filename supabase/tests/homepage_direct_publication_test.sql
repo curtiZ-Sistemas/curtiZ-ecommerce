@@ -14,6 +14,13 @@ insert into public.user_permission_overrides(user_id, permission_id, allowed, re
 select 'd1000000-0000-4000-8000-000000000001', permission.id, true,
   'Teste de publicação sem revisão', 'd1000000-0000-4000-8000-000000000001'
 from public.permissions permission where permission.code = 'homepage.publish';
+-- Baseline roles may acquire these permissions; the negative cases require explicit denials.
+insert into public.user_permission_overrides(user_id, permission_id, allowed, reason, created_by)
+select 'd1000000-0000-4000-8000-000000000002', id, false, 'Fixture sem publicação',
+  'd1000000-0000-4000-8000-000000000001' from public.permissions where code='homepage.publish';
+insert into public.user_permission_overrides(user_id, permission_id, allowed, reason, created_by)
+select 'd1000000-0000-4000-8000-000000000001', id, false, 'Fixture sem revisão',
+  'd1000000-0000-4000-8000-000000000001' from public.permissions where code='homepage.review';
 
 insert into public.categories(id, name, slug)
 values ('d2000000-0000-4000-8000-000000000001', 'Categoria da home', 'categoria-home-direta');

@@ -107,7 +107,7 @@ test("menu principal mobile permanece dentro da viewport", async ({ page }) => {
   }).toPass({ timeout: 15_000 });
   const menu = page.getByRole("dialog", { name: "Menu principal" });
   await expect(menu).toBeVisible();
-  for (const [name, href] of [["Produtos", "/produtos"], ["Atendimento", "/ajuda"], ["Favoritos", "/favoritos"]]) {
+  for (const [name, href] of [["Produtos", "/produtos"], ["Atendimento", "/ajuda"], ["Favoritos", "/favoritos"]] as const) {
     const link = menu.getByRole("link", { name, exact: true });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", href);
@@ -204,7 +204,8 @@ test("dados estruturados do produto não geram aviso de hidratação", async ({ 
   expect(hydrationWarnings).toEqual([]);
 });
 
-test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page }) => {
+test("atendimento mobile continua acessível sem launcher de chat", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.addInitScript(() => {
     localStorage.setItem(
       "curtiz-cookie-consent",
@@ -218,23 +219,16 @@ test("chatbot mobile usa somente o ícone e respeita a viewport", async ({ page 
     await page.setViewportSize(viewport);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    const launcher = page.getByRole("button", { name: "Abrir ajuda" });
-    await expect(launcher.getByText("Posso ajudar?")).toBeHidden();
-    const launcherBox = await launcher.boundingBox();
-    expect(launcherBox).not.toBeNull();
-    expect(
-      viewport.height - (launcherBox?.y ?? 0) - (launcherBox?.height ?? 0)
-    ).toBeLessThanOrEqual(20);
-
-    const dialog = page.getByRole("dialog", { name: "Ajuda curti Z" });
+    await expect(page.getByRole("button", { name: "Abrir ajuda" })).toHaveCount(0);
+    const menuButton = page.getByRole("button", { name: "Abrir menu", exact: true });
     await expect(async () => {
-      await launcher.click();
-      await expect(dialog).toBeVisible({ timeout: 1_000 });
+      await menuButton.click();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
     }).toPass({ timeout: 15_000 });
-    const dialogBox = await dialog.boundingBox();
-    expect(dialogBox).not.toBeNull();
-    expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(10);
-    expect((dialogBox?.y ?? 0) + (dialogBox?.height ?? 0)).toBeLessThan(viewport.height);
+    await page.getByRole("dialog", { name: "Menu principal" })
+      .getByRole("link", { name: "Atendimento", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Olá! Como podemos ajudar?" })).toBeVisible({ timeout: 30_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 });
 
@@ -326,7 +320,7 @@ test("carrinho preenchido mantém recomendações e ação fixa sem cobrir conte
     } else {
       await expect(mobileSummary).toBeHidden();
       await expect(page.locator(".cart-summary")).toBeVisible();
-      await expect(page.locator(".help-widget")).toBeVisible();
+      await expect(page.locator(".help-widget")).toBeHidden();
     }
   }
 

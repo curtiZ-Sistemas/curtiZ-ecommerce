@@ -167,8 +167,12 @@ jobs:
       - run: supabase test db
 
   e2e:
-    name: E2E
+    name: E2E / ${{ matrix.project }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [store-desktop, store-mobile, store-responsive, panel-desktop]
     env:
       APP_ENV: development
       DEMO_MODE: "true"
@@ -180,6 +184,7 @@ jobs:
       NEXT_PUBLIC_PANEL_TEST_URL: ""
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
       AUTH_COOKIE_DOMAINS: ""
+      STOREFRONT_E2E_ONLY: ${{ matrix.project != 'panel-desktop' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -192,15 +197,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Executar suíte E2E sem aceitar flaky
-        run: pnpm exec playwright test --fail-on-flaky-tests
+        run: pnpm exec playwright test --project=${{ matrix.project }} --workers=1 --fail-on-flaky-tests
       - name: Repetir fluxos críticos da loja
+        if: matrix.project == 'store-desktop' || matrix.project == 'store-mobile'
         run: >-
           pnpm exec playwright test
-          --project=store-desktop
-          --project=store-mobile
+          --project=${{ matrix.project }}
           --grep "normaliza o cadastro|navega da home|gerencia a remoção"
           --repeat-each=2
-          --workers=2
+          --workers=1
           --fail-on-flaky-tests
 
   store-worker:

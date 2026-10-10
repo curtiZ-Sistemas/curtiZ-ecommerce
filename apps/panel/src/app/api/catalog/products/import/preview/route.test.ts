@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   readFormResponse: vi.fn(),
+  readJsonResponse: vi.fn(),
   parseWorkbook: vi.fn(),
   productPreview: vi.fn(),
   objectRows: vi.fn((value: unknown): unknown[] => Array.isArray(value)
@@ -17,7 +18,7 @@ vi.mock("@curtiz/security", async (importOriginal) => ({
   ...await importOriginal<typeof SecurityModule>(),
   logServerEvent: vi.fn(),
   readFormResponse: mocks.readFormResponse,
-  readJsonResponse: vi.fn()
+  readJsonResponse: mocks.readJsonResponse
 }));
 vi.mock("@/lib/product-import", () => ({
   PRODUCT_IMPORT_MAX_BYTES: 5 * 1024 * 1024,
@@ -32,10 +33,10 @@ vi.mock("@/lib/admin-api", () => ({
   objectRows: mocks.objectRows,
   privateNoStore: { "Cache-Control": "private, no-store" },
   safePanelOrigin: vi.fn(() => true),
-  unauthorizedAdminResponse: vi.fn()
+  unauthorizedAdminResponse: vi.fn(() => new Response(null, { status: 403 }))
 }));
 
-import { POST } from "./route";
+import { DELETE, POST } from "./route";
 
 const importOptions = {
   createCategoryIfMissing: true,
@@ -85,6 +86,26 @@ describe("product import preview", () => {
       ["has_permission", { permission_code: "products.update" }],
       ["has_permission", { permission_code: "inventory.adjust" }]
     ]);
+  });
+
+  it("denies cancellation before parsing when permissions are missing", async () => {
+    const response = await DELETE(new NextRequest("https://painel.example/api/catalog/products/import/preview", { method: "DELETE" }));
+    expect(response.status).toBe(403);
+    expect(mocks.readJsonResponse).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalledWith("delete_product_import_sessions", expect.anything());
+  });
+
+  it("cancels through the authorized session RPC and reports database failure", async () => {
+    const sessionId = "20000000-0000-4000-8000-000000000002";
+    mocks.readJsonResponse.mockResolvedValue({ sessionId });
+    mocks.rpc.mockImplementation(async (name: string) => name === "has_permission"
+      ? { data: true, error: null } : { data: null, error: { code: "42883" } });
+    const request = new NextRequest("https://painel.example/api/catalog/products/import/preview", { method: "DELETE" });
+    const response = await DELETE(request);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ message: "Não foi possível encerrar a sessão." });
+    expect(mocks.rpc).toHaveBeenCalledWith("delete_product_import_sessions", { p_session_id: sessionId });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("parses the XLSX once and creates an opaque normalized session", async () => {

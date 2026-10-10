@@ -44,14 +44,25 @@ $sql$, 'Draft with all dimensions absent saves via authorized RPC');
 
 select lives_ok($sql$
   select public.admin_save_product_authorized('{
-    "name":"Sandália publicada","slug":"teste-save-publicada","status":"active",
+    "name":"Sandália publicada","slug":"teste-save-publicada","status":"draft",
     "categoryId":"c7200000-0000-4000-8000-000000000001",
     "categoryIds":["c7200000-0000-4000-8000-000000000001"],
     "priceInCents":1999,"costInCents":null,"weightGrams":null,"heightCm":null,"widthCm":null,"lengthCm":null,
     "stockReason":"Cadastro inicial de teste",
     "variants":[{"sku":"TEST-SAVE-ACTIVE","color":"Azul","size":"40","stock":0,"active":true}]
   }'::jsonb)
-$sql$, 'Published product follows existing publication requirements without requiring dimensions');
+$sql$, 'Draft with a publishable price saves without requiring dimensions');
+reset role;
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/nullable-product.webp',name,720,720,true from public.products where slug='teste-save-publicada';
+set local role authenticated;
+select public.admin_save_product_authorized(jsonb_build_object('productId',
+  (select id from public.products where slug='teste-save-publicada')) || '{
+    "name":"Sandália publicada","slug":"teste-save-publicada","status":"active",
+    "categoryId":"c7200000-0000-4000-8000-000000000001",
+    "categoryIds":["c7200000-0000-4000-8000-000000000001"],"priceInCents":1999,
+    "stockReason":"Publicação após imagem","variants":[{"sku":"TEST-SAVE-ACTIVE","color":"Azul","size":"40","stock":0,"active":true}]
+  }'::jsonb);
 
 select lives_ok($sql$
   select public.admin_save_product_authorized(jsonb_build_object(

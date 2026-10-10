@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loginDemoAccount } from "./demo-auth";
 
 async function loginAs(page: Page, email: string) {
   const destinationByAccount = {
@@ -9,11 +10,7 @@ async function loginAs(page: Page, email: string) {
   } as const;
   const destination = destinationByAccount[email as keyof typeof destinationByAccount];
   if (!destination) throw new Error(`Conta interna de teste não mapeada: ${email}`);
-  const response = await page.request.post("http://localhost:3000/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email, password: "1234567890" }
-  });
-  if (!response.ok()) throw new Error(`Login demo falhou com HTTP ${response.status()}`);
+  await loginDemoAccount(page, email);
   await page.goto(`http://localhost:3001/${destination}`, { waitUntil: "commit" });
   await expect(page.locator('main[aria-label="Carregando painel"]')).toHaveCount(0, {
     timeout: 60_000
@@ -160,7 +157,7 @@ test("remove configurações técnicas da administração e redireciona o bookma
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 24 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 26 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
   { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 32 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
@@ -532,7 +529,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     .filter({ hasText: deletableProduct.name });
   await deletableRow.locator("details.product-action-menu > summary").click();
   await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
-  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir produto permanentemente?" });
+  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir definitivamente?" });
   await expect(deleteDialog).toBeVisible();
   await deleteDialog.getByRole("button", { name: "Excluir permanentemente" }).click();
   await expect(page.getByText("Produto excluído permanentemente.")).toBeVisible();

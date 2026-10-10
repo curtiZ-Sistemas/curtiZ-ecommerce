@@ -121,7 +121,7 @@ insert into public.product_import_sessions(id,user_id,schema_version,batch_hash,
   '{"batch":{"products":[{}]}}'::jsonb,now()-interval '2 hours',now()-interval '1 hour'
 );
 select is((select count(*) from public.product_import_sessions where id='c7400000-0000-4000-8000-000000000003'),0::bigint,'Expired session remains unreadable through SELECT RLS');
-select lives_ok($sql$ delete from public.product_import_sessions where id='c7400000-0000-4000-8000-000000000003' $sql$,'Owner can delete an expired session');
+select is(public.delete_product_import_sessions('c7400000-0000-4000-8000-000000000003'),1,'Owner can delete an expired session through the authorized RPC');
 reset role;
 select is((select count(*) from public.product_import_sessions where id='c7400000-0000-4000-8000-000000000003'),0::bigint,'Expired session was actually deleted');
 
@@ -133,8 +133,8 @@ where product.slug='produto-import-workflow' and variant.size='34';
 update public.products set status='active' where slug='produto-import-workflow';
 
 select is((select count(*) from private.storefront_catalog_items()
-  where slug='produto-import-workflow' and image_path='products/imports/test/shared-color.webp'),2::bigint,
-  'Storefront resolves one color image for every size of that color');
+  where slug='produto-import-workflow' and image_path='products/imports/test/shared-color.webp'),1::bigint,
+  'Storefront has one representative card for the color, while product variants retain both sizes');
 select is((select count(*) from jsonb_array_elements(public.get_catalog_product('produto-import-workflow')->'variants') item
   where item->>'imagePath'='products/imports/test/shared-color.webp'),2::bigint,
   'Product page resolves one color image for every size of that color');
