@@ -40,6 +40,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("acesso ao painel após o login", () => {
+  it.each([
+    ["admin", "administracao"], ["manager", "gerencia"],
+    ["operational", "operacional"], ["technical", "tecnico"]
+  ] as const)("autoriza %s somente no painel atribuído", async (role, panel) => {
+    state.roles = [role];
+    expect(await requirePanelAccess(panel, `/${panel}`)).toMatchObject({ roles: [role], demo: false });
+    const otherPanel = panel === "administracao" ? "tecnico" : "administracao";
+    await expect(requirePanelAccess(otherPanel, `/${otherPanel}`)).rejects.toThrow(`redirect:/${panel}`);
+  });
+  it.each(["blocked", "inactive", "deleted"])("recusa perfil %s mesmo com papel administrativo", async status => {
+    state.status = status;
+    await expect(requirePanelAccess("administracao", "/administracao")).rejects.toThrow("redirect:https://curtiz.com.br/403");
+  });
   it("aceita o administrador com sessão validada sem redirecionar ao login", async () => {
     expect(await requirePanelAccess("administracao", "/administracao")).toMatchObject({
       userId: "test-user", roles: ["admin"], demo: false

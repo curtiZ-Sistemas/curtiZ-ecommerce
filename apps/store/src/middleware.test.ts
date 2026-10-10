@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server";
+import type { CookieOptions } from "@supabase/ssr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
 
-const { getUser, rpc } = vi.hoisted(() => ({ getUser: vi.fn(), rpc: vi.fn() }));
+type CookieHooks = { setAll(cookies: Array<{ name: string; value: string; options: CookieOptions }>): void };
+const { getUser, rpc, hooks } = vi.hoisted(() => ({
+  getUser: vi.fn(), rpc: vi.fn(), hooks: { current: null as CookieHooks | null }
+}));
 vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({ auth: { getUser }, rpc })
+  createServerClient: (_url: string, _key: string, options: { cookies: CookieHooks }) => {
+    hooks.current = options.cookies;
+    return { auth: { getUser }, rpc };
+  }
 }));
 
 function readCspDirective(csp: string, name: string): string {
@@ -14,7 +21,7 @@ function readCspDirective(csp: string, name: string): string {
 describe("store security headers", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("retorna 404 HTTP real para produto removido e não o entrega como página indexável", async () => {
@@ -71,6 +78,58 @@ describe("store security headers", () => {
     await middleware(new NextRequest("https://loja.example/produtos"));
 
     expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it.each(["session", "persistent"])("renova sessão %s na conta e a encaminha ao render atual", async persistence => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("AUTH_COOKIE_DOMAINS", "curtiz.com.br");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getUser.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "renewed", options: { maxAge: 3600 } }]);
+      return { data: { user: { id: "test-user" } }, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/minha-conta", {
+      headers: { cookie: `sb-project-auth-token=expired; curtiz-auth-persistence=${persistence}` }
+    }));
+    expect(getUser).toHaveBeenCalledOnce();
+    expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-project-auth-token=renewed");
+    const cookie = response.cookies.get("sb-project-auth-token");
+    expect(cookie).toMatchObject({ value: "renewed", domain: ".curtiz.com.br", secure: true });
+    expect(cookie?.maxAge).toBe(persistence === "persistent" ? 3600 : undefined);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("mantém os cookies renovados no redirect de checkout sem sessão válida", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getUser.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "", options: { maxAge: 0 } }]);
+      return { data: { user: null }, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/checkout"));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://curtiz.com.br/login?next=%2Fcheckout");
+    expect(response.cookies.get("sb-project-auth-token")).toMatchObject({ value: "", maxAge: 0 });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("não torna pública uma resposta 404 que renovou cookies durante a consulta", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    rpc.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "renewed", options: {} }]);
+      return { data: false, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/produto/removido"));
+    expect(response.status).toBe(404);
+    expect(response.cookies.get("sb-project-auth-token")?.value).toBe("renewed");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("mantém mídia pública mas não permite Data API ou Realtime no navegador", async () => {
