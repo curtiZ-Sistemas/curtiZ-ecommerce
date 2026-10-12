@@ -20,31 +20,102 @@ export type EncryptedMelhorEnvioTokenRecord = {
   refreshTokenExpiresAt: string | null;
 };
 
+export type MelhorEnvioCiphertextPair = Pick<EncryptedMelhorEnvioTokenRecord, "accessTokenCiphertext" | "refreshTokenCiphertext">;
+
+/** Somente identificadores públicos (impressões digitais) de chave; nunca chaves, tokens ou ciphertexts. */
+export type MelhorEnvioKeyRotationEvent = {
+  event: "melhor_envio_token_reencrypted" | "melhor_envio_token_reencryption_skipped" | "melhor_envio_token_reencryption_failed";
+  fromKeyIds: string[];
+  toKeyId: string;
+};
+
+export type MelhorEnvioCredentialKeyStatus =
+  | { state: "missing"; activeKeyId: string }
+  | {
+    state: "readable" | "key_unavailable" | "decryption_failed";
+    activeKeyId: string;
+    recordFormats: Array<"v1" | "v2" | "invalid">;
+    recordKeyIds: string[];
+    reencryptionPending: boolean;
+  };
+
 export function createEncryptedMelhorEnvioTokenStore(input: {
   encryptionKey: string;
+  /** Chaves antigas aceitas somente para leitura; nunca cifram registros novos. */
+  previousEncryptionKeys?: readonly string[];
   load: () => Promise<EncryptedMelhorEnvioTokenRecord | null>;
   save: (record: EncryptedMelhorEnvioTokenRecord) => Promise<void>;
   claimRefreshLock: (lockId: string) => Promise<boolean>;
   releaseRefreshLock: (lockId: string) => Promise<void>;
-}): MelhorEnvioTokenStore {
+  /** Troca os ciphertexts somente se ainda forem os lidos (CAS); `false` quando outro fluxo gravou antes. */
+  replaceCiphertexts?: (expected: MelhorEnvioCiphertextPair, next: MelhorEnvioCiphertextPair) => Promise<boolean>;
+  onKeyRotation?: (event: MelhorEnvioKeyRotationEvent) => void;
+}): MelhorEnvioTokenStore & { inspect(): Promise<MelhorEnvioCredentialKeyStatus> } {
+  let keyring: Promise<TokenKeyring> | null = null;
+  const keys = () => keyring ??= createTokenKeyring(input.encryptionKey, input.previousEncryptionKeys ?? []);
+  const report = (event: MelhorEnvioKeyRotationEvent) => {
+    try { input.onKeyRotation?.(event); } catch { /* telemetria nunca altera a leitura dos tokens */ }
+  };
+  // Recifra com a chave ativa sem bloquear a leitura: falhas e corridas mantêm o registro original intacto.
+  const reencrypt = async (record: EncryptedMelhorEnvioTokenRecord, tokens: MelhorEnvioTokens, ring: TokenKeyring, fromKeyIds: string[]) => {
+    if (!input.replaceCiphertexts) return;
+    const event = { fromKeyIds, toKeyId: ring.active.id };
+    try {
+      const replaced = await input.replaceCiphertexts({
+        accessTokenCiphertext: record.accessTokenCiphertext, refreshTokenCiphertext: record.refreshTokenCiphertext
+      }, {
+        accessTokenCiphertext: await sealToken(tokens.accessToken, ring.active),
+        refreshTokenCiphertext: await sealToken(tokens.refreshToken, ring.active)
+      });
+      report({ ...event, event: replaced ? "melhor_envio_token_reencrypted" : "melhor_envio_token_reencryption_skipped" });
+    } catch {
+      report({ ...event, event: "melhor_envio_token_reencryption_failed" });
+    }
+  };
   return {
     async read() {
       const record = await input.load();
       if (!record) return null;
-      return {
-        accessToken: await decryptMelhorEnvioToken(record.accessTokenCiphertext, input.encryptionKey),
-        refreshToken: await decryptMelhorEnvioToken(record.refreshTokenCiphertext, input.encryptionKey),
+      const ring = await keys();
+      const access = await openToken(record.accessTokenCiphertext, ring);
+      const refresh = await openToken(record.refreshTokenCiphertext, ring);
+      const tokens = {
+        accessToken: access.value,
+        refreshToken: refresh.value,
         accessTokenExpiresAt: record.accessTokenExpiresAt,
         refreshTokenExpiresAt: record.refreshTokenExpiresAt
       };
+      if (!isCurrentCiphertext(access, ring) || !isCurrentCiphertext(refresh, ring)) {
+        await reencrypt(record, tokens, ring, [...new Set([access.keyId, refresh.keyId])]);
+      }
+      return tokens;
     },
     async write(tokens) {
+      const ring = await keys();
       await input.save({
-        accessTokenCiphertext: await encryptMelhorEnvioToken(tokens.accessToken, input.encryptionKey),
-        refreshTokenCiphertext: await encryptMelhorEnvioToken(tokens.refreshToken, input.encryptionKey),
+        accessTokenCiphertext: await sealToken(tokens.accessToken, ring.active),
+        refreshTokenCiphertext: await sealToken(tokens.refreshToken, ring.active),
         accessTokenExpiresAt: tokens.accessTokenExpiresAt,
         refreshTokenExpiresAt: tokens.refreshTokenExpiresAt
       });
+    },
+    async inspect() {
+      const ring = await keys();
+      const record = await input.load();
+      if (!record) return { state: "missing", activeKeyId: ring.active.id };
+      const ciphertexts = [record.accessTokenCiphertext, record.refreshTokenCiphertext];
+      const declared = ciphertexts.map(describeCiphertext);
+      try {
+        const opened = await Promise.all(ciphertexts.map((value) => openToken(value, ring)));
+        return { state: "readable", activeKeyId: ring.active.id, recordFormats: declared.map((item) => item.format),
+          recordKeyIds: [...new Set(opened.map((item) => item.keyId))],
+          reencryptionPending: opened.some((item) => !isCurrentCiphertext(item, ring)) };
+      } catch (error) {
+        const reason = error instanceof MelhorEnvioError ? error.diagnostic.reason : undefined;
+        return { state: reason === "token_key_unavailable" ? "key_unavailable" : "decryption_failed",
+          activeKeyId: ring.active.id, recordFormats: declared.map((item) => item.format),
+          recordKeyIds: [...new Set(declared.flatMap((item) => item.keyId ? [item.keyId] : []))], reencryptionPending: true };
+      }
     },
     async withRefreshLock(operation) {
       const lockId = crypto.randomUUID();
@@ -145,7 +216,7 @@ const finiteNumber = (value: unknown) => {
 
 export type MelhorEnvioFailureReason =
   | "credentials_missing" | "credentials_read_failed" | "credentials_write_failed"
-  | "token_decryption_failed" | "refresh_token_expired" | "oauth_rejected"
+  | "token_decryption_failed" | "token_key_unavailable" | "refresh_token_expired" | "oauth_rejected"
   | "permission_denied" | "refresh_lock_failed" | "refresh_lock_timeout";
 
 export type MelhorEnvioFailureDetails = {
@@ -477,27 +548,103 @@ const base64ToBytes = (value: string) => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 const asArrayBuffer = (bytes: Uint8Array): ArrayBuffer => Uint8Array.from(bytes).buffer;
-const encryptionKey = async (encoded: string) => {
+
+// Formato v2: `v2.<keyId>.<iv>.<ciphertext>`. O keyId é uma impressão digital pública da chave
+// (SHA-256 com separação de domínio, 64 bits) e entra como dado autenticado do AES-GCM.
+// O formato legado v1 (`v1.<iv>.<ciphertext>`) não identifica a chave e é somente lido.
+const MAX_PREVIOUS_KEYS = 8;
+const keyIdPattern = /^[0-9a-f]{16}$/u;
+const textBytes = (value: string) => new TextEncoder().encode(value);
+const v2AdditionalData = (keyId: string) => asArrayBuffer(textBytes(`curtiz/melhor-envio/token/v2/${keyId}`));
+const configurationError = () => new MelhorEnvioError("configuration", 503, false);
+const decryptionFailed = () => new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" });
+
+type TokenKey = { id: string; key: CryptoKey };
+type TokenKeyring = { active: TokenKey; accepted: TokenKey[] };
+type OpenedToken = { value: string; keyId: string; format: "v1" | "v2" };
+
+const importTokenKey = async (encoded: string): Promise<TokenKey> => {
   let bytes: Uint8Array;
   try { bytes = base64ToBytes(encoded.trim()); }
-  catch { throw new MelhorEnvioError("configuration", 503, false); }
-  if (bytes.byteLength !== 32) throw new MelhorEnvioError("configuration", 503, false);
-  return crypto.subtle.importKey("raw", asArrayBuffer(bytes), "AES-GCM", false, ["encrypt", "decrypt"]);
+  catch { throw configurationError(); }
+  if (bytes.byteLength !== 32) throw configurationError();
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256",
+    asArrayBuffer(Uint8Array.from([...textBytes("curtiz/melhor-envio/token-key-id/v1"), 0, ...bytes]))));
+  return {
+    id: Array.from(digest.slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    key: await crypto.subtle.importKey("raw", asArrayBuffer(bytes), "AES-GCM", false, ["encrypt", "decrypt"])
+  };
 };
 
-export async function encryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
-  if (!value) throw new MelhorEnvioError("configuration", 503, false);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await encryptionKey(encodedKey), new TextEncoder().encode(value));
-  return `v1.${bytesToBase64(iv)}.${bytesToBase64(new Uint8Array(encrypted))}`;
+async function createTokenKeyring(activeKey: string, previousKeys: readonly string[]): Promise<TokenKeyring> {
+  if (!activeKey.trim() || previousKeys.length > MAX_PREVIOUS_KEYS) throw configurationError();
+  const active = await importTokenKey(activeKey);
+  const accepted = [active];
+  for (const encoded of previousKeys) {
+    const key = await importTokenKey(encoded);
+    if (!accepted.some((item) => item.id === key.id)) accepted.push(key);
+  }
+  return { active, accepted };
 }
 
-export async function decryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
-  const [version, iv, ciphertext] = value.split(".");
-  if (version !== "v1" || !iv || !ciphertext) throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" });
-  try {
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: asArrayBuffer(base64ToBytes(iv)) },
-      await encryptionKey(encodedKey), asArrayBuffer(base64ToBytes(ciphertext)));
-    return new TextDecoder().decode(decrypted);
-  } catch { throw new MelhorEnvioError("authentication", 503, false, { reason: "token_decryption_failed" }); }
+/** Chaves antigas separadas por vírgula ou espaço (MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS). */
+export function parseMelhorEnvioPreviousKeys(value: string | undefined): string[] {
+  return (value ?? "").split(/[\s,]+/u).filter(Boolean);
+}
+
+/** Impressão digital pública da chave, a mesma gravada nos ciphertexts v2. */
+export async function melhorEnvioTokenKeyId(encodedKey: string): Promise<string> {
+  return (await importTokenKey(encodedKey)).id;
+}
+
+const describeCiphertext = (value: string): { format: "v1" | "v2" | "invalid"; keyId?: string } => {
+  const parts = value.split(".");
+  if (parts[0] === "v2" && parts.length === 4 && keyIdPattern.test(parts[1] ?? "") && parts[2] && parts[3]) {
+    return { format: "v2", keyId: parts[1] };
+  }
+  if (parts[0] === "v1" && parts.length === 3 && parts[1] && parts[2]) return { format: "v1" };
+  return { format: "invalid" };
+};
+
+const aesOpen = async (key: CryptoKey, iv: string, ciphertext: string, additionalData?: ArrayBuffer) =>
+  new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: asArrayBuffer(base64ToBytes(iv)),
+    ...(additionalData ? { additionalData } : {}) }, key, asArrayBuffer(base64ToBytes(ciphertext))));
+
+async function openToken(value: string, ring: TokenKeyring): Promise<OpenedToken> {
+  const parts = value.split(".");
+  const described = describeCiphertext(value);
+  if (described.format === "v2") {
+    const key = ring.accepted.find((item) => item.id === described.keyId);
+    // Chave ausente neste Worker: exige a chave antiga ou reconexão OAuth; o registro não é alterado.
+    if (!key) throw new MelhorEnvioError("authentication", 503, false, { reason: "token_key_unavailable" });
+    try {
+      return { value: await aesOpen(key.key, parts[2] ?? "", parts[3] ?? "", v2AdditionalData(key.id)), keyId: key.id, format: "v2" };
+    } catch { throw decryptionFailed(); }
+  }
+  if (described.format === "v1") {
+    // Sem identificador: tenta somente as chaves configuradas explicitamente; a tag GCM rejeita chave errada.
+    for (const key of ring.accepted) {
+      try { return { value: await aesOpen(key.key, parts[1] ?? "", parts[2] ?? ""), keyId: key.id, format: "v1" }; }
+      catch { /* próxima chave configurada */ }
+    }
+  }
+  throw decryptionFailed();
+}
+
+const isCurrentCiphertext = (token: OpenedToken, ring: TokenKeyring) => token.format === "v2" && token.keyId === ring.active.id;
+
+async function sealToken(value: string, key: TokenKey): Promise<string> {
+  if (!value) throw configurationError();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: v2AdditionalData(key.id) },
+    key.key, textBytes(value));
+  return `v2.${key.id}.${bytesToBase64(iv)}.${bytesToBase64(new Uint8Array(encrypted))}`;
+}
+
+export async function encryptMelhorEnvioToken(value: string, encodedKey: string): Promise<string> {
+  return sealToken(value, (await createTokenKeyring(encodedKey, [])).active);
+}
+
+export async function decryptMelhorEnvioToken(value: string, encodedKey: string, previousKeys: readonly string[] = []): Promise<string> {
+  return (await openToken(value, await createTokenKeyring(encodedKey, previousKeys))).value;
 }

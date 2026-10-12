@@ -4,6 +4,7 @@ import {
   createEncryptedMelhorEnvioTokenStore,
   MelhorEnvioError,
   MelhorEnvioProvider,
+  parseMelhorEnvioPreviousKeys,
   type EncryptedMelhorEnvioTokenRecord,
   type MelhorEnvioEnvironment
 } from "@curtiz/integrations";
@@ -34,12 +35,27 @@ export function melhorEnvioOriginMissingFields(environment: IntegrationEnvironme
     .filter((name) => name.startsWith("MELHOR_ENVIO_ORIGIN_"));
 }
 
-export function panelMelhorEnvioProvider() {
+function panelMelhorEnvioTokenStore() {
   const db = createServiceSupabaseClient();
   const encryptionKey = process.env.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "";
   if (!db || !encryptionKey) throw new MelhorEnvioError("configuration", 503, false);
-  const tokenStore = createEncryptedMelhorEnvioTokenStore({
+  return createEncryptedMelhorEnvioTokenStore({
     encryptionKey,
+    previousEncryptionKeys: parseMelhorEnvioPreviousKeys(process.env.MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS),
+    async replaceCiphertexts(expected, next) {
+      const replaced = result(await db.rpc("reencrypt_integration_credential", {
+        p_provider: "melhorenvio", p_environment: melhorEnvioEnvironment(),
+        p_expected_access_token_ciphertext: expected.accessTokenCiphertext,
+        p_expected_refresh_token_ciphertext: expected.refreshTokenCiphertext,
+        p_access_token_ciphertext: next.accessTokenCiphertext,
+        p_refresh_token_ciphertext: next.refreshTokenCiphertext
+      }));
+      if (replaced.error || typeof replaced.data !== "boolean") throw new MelhorEnvioError("provider_unavailable", 503, true);
+      return replaced.data;
+    },
+    onKeyRotation(event) {
+      console.warn(JSON.stringify({ ...event, worker: "panel" }));
+    },
     async load() {
       const query = result(await db.rpc("read_integration_credential", {
         p_provider: "melhorenvio", p_environment: melhorEnvioEnvironment()
@@ -78,6 +94,18 @@ export function panelMelhorEnvioProvider() {
       });
     }
   });
+}
+
+/**
+ * Diagnóstico sem decifrar para fora do processo: informa somente estado e impressões digitais
+ * públicas das chaves (ativa e do registro). Não altera nem remove o ciphertext.
+ */
+export function inspectPanelMelhorEnvioCredential() {
+  return panelMelhorEnvioTokenStore().inspect();
+}
+
+export function panelMelhorEnvioProvider() {
+  const tokenStore = panelMelhorEnvioTokenStore();
   return new MelhorEnvioProvider({
     environment: melhorEnvioEnvironment(), clientId: process.env.MELHOR_ENVIO_CLIENT_ID?.trim() ?? "",
     clientSecret: process.env.MELHOR_ENVIO_CLIENT_SECRET?.trim() ?? "",
