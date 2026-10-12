@@ -11,6 +11,7 @@ const dependencies = {
   shipping: vi.fn(),
   bling: vi.fn(),
   email: vi.fn(),
+  context: vi.fn<(request: Request, environment: Environment, context: Context, task: () => Promise<void>) => Promise<void>>(),
   log: vi.fn()
 };
 
@@ -32,8 +33,10 @@ runInNewContext(compiled, {
   exports: module.exports,
   crypto: { randomUUID: () => "scheduled-execution-id" },
   caches: { default: {} },
+  Request,
   require: (specifier: string) => {
     if (specifier === "./.open-next/worker.js") return { default: { fetch: dependencies.fetch } };
+    if (specifier === "./.open-next/cloudflare/init.js") return { runWithCloudflareRequestContext: dependencies.context };
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
     if (specifier === "./src/lib/melhor-envio-jobs") return { runMelhorEnvioShippingJobs: dependencies.shipping };
     if (specifier === "./src/lib/storefront-image-worker") return { optimizeStorefrontImageRequest: dependencies.optimize };
@@ -48,6 +51,7 @@ const worker = module.exports.default;
 describe("custom Worker handlers", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    dependencies.context.mockImplementation((_request, _environment, _context, task) => task());
   });
 
   it("delegates HTTP requests and runtime bindings to OpenNext", async () => {
@@ -78,10 +82,26 @@ describe("custom Worker handlers", () => {
     dependencies.email.mockResolvedValue({ ok: true });
     worker.scheduled({}, environment, context);
     expect(context.waitUntil).toHaveBeenCalledTimes(1);
+    expect(dependencies.context).toHaveBeenCalledWith(expect.any(Request), environment, context, expect.any(Function));
     await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
     for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email]) {
       expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id");
     }
+  });
+
+  it("runs queues only inside the OpenNext request context", async () => {
+    let task: (() => Promise<void>) | undefined;
+    dependencies.context.mockImplementation((_request, _environment, _context, callback) => {
+      task = callback;
+      return Promise.resolve();
+    });
+    worker.scheduled({}, {}, { waitUntil: vi.fn() });
+    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email])
+      expect(job).not.toHaveBeenCalled();
+    expect(task).toBeTypeOf("function");
+    await task?.();
+    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email])
+      expect(job).toHaveBeenCalledOnce();
   });
 
   it.each([

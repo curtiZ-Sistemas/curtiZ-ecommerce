@@ -1,6 +1,8 @@
 // The OpenNext worker is generated during build and reused for HTTP traffic.
 // @ts-expect-error generated build artifact
 import handler from "./.open-next/worker.js";
+// @ts-expect-error generated build artifact
+import { runWithCloudflareRequestContext } from "./.open-next/cloudflare/init.js";
 import { runExpirationHousekeeping } from "./src/lib/housekeeping";
 import { runMelhorEnvioShippingJobs } from "./src/lib/melhor-envio-jobs";
 import { runBlingJobs } from "./src/lib/bling-jobs";
@@ -15,6 +17,9 @@ type WorkerContext = { waitUntil(promise: Promise<unknown>): void };
 const openNextHandler = handler as {
   fetch(request: Request, environment: WorkerEnvironment, context: WorkerContext): Response | Promise<Response>;
 };
+const runWithWorkerContext = runWithCloudflareRequestContext as (
+  request: Request, environment: WorkerEnvironment, context: WorkerContext, task: () => Promise<void>
+) => Promise<void>;
 
 export default {
   async fetch(request: Request, environment: WorkerEnvironment, context: WorkerContext) {
@@ -28,7 +33,9 @@ export default {
   },
   scheduled(_controller: unknown, environment: WorkerEnvironment, context: WorkerContext) {
     const executionId = crypto.randomUUID();
-    context.waitUntil((async () => {
+    // Next's patched fetch needs the adapter context even without an HTTP request.
+    const request = new Request(environment.NEXT_PUBLIC_STORE_URL ?? "https://curtiz.com.br");
+    context.waitUntil(runWithWorkerContext(request, environment, context, async () => {
       const runQueue = async (queue: string, task: () => Promise<unknown>) => {
         try { await task(); }
         catch { logServerEvent("error", "scheduled_queue_failed", { executionId, queue }); }
@@ -37,6 +44,6 @@ export default {
       await runQueue("bling", () => runBlingJobs(environment, executionId));
       await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId));
       await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId));
-    })());
+    }));
   }
 };
