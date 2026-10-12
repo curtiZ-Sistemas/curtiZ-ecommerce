@@ -246,6 +246,7 @@ export function SignupForm({
           <UserRound aria-hidden="true" />
           <input
             id="signup-name"
+            disabled={!hydrated}
             name="name"
             autoComplete="name"
             value={fields.name}
@@ -265,6 +266,7 @@ export function SignupForm({
           <Mail aria-hidden="true" />
           <input
             id="signup-email"
+            disabled={!hydrated}
             name="email"
             type="email"
             inputMode="email"
@@ -287,6 +289,7 @@ export function SignupForm({
           <Phone aria-hidden="true" />
           <input
             id="signup-phone"
+            disabled={!hydrated}
             name="phone"
             type="tel"
             inputMode="tel"
@@ -313,6 +316,7 @@ export function SignupForm({
           <LockKeyhole aria-hidden="true" />
           <input
             id="signup-password"
+            disabled={!hydrated}
             name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="new-password"
@@ -358,6 +362,7 @@ export function SignupForm({
           <Check aria-hidden="true" />
           <input
             id="signup-confirm"
+            disabled={!hydrated}
             name="confirmPassword"
             type={showPassword ? "text" : "password"}
             autoComplete="new-password"
