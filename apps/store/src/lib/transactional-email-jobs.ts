@@ -7,6 +7,48 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readString } from "./unknown-data";
 
 type Environment = Readonly<Record<string, string | undefined>>;
+
+// Runtime-only opt-in for a short, isolated test. Never claims customer jobs.
+export async function runEmailHomologation(environment: Environment, executionId: string,
+  transport: typeof fetch = fetch, now = Date.now()) {
+  const recipient = environment.EMAIL_HOMOLOGATION_RECIPIENT?.trim() ?? "";
+  const startedAt = environment.EMAIL_HOMOLOGATION_STARTED_AT?.trim() ?? "";
+  const started = Date.parse(startedAt);
+  const readiness = getResendReadiness(environment);
+  if (environment.EMAIL_ENABLED?.trim().toLowerCase() !== "false"
+    || environment.EMAIL_PROVIDER?.trim().toLowerCase() !== "resend"
+    || readiness.missing.length || readiness.invalid.length
+    || !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/u.test(recipient)
+    || !Number.isFinite(started) || started > now || now - started >= 15 * 60_000
+    || new Date(started).toISOString() !== startedAt) return;
+
+  const banner = "HOMOLOGAÇÃO: dados de exemplo. Não existe pedido, pagamento, entrega ou avaliação real.";
+  const order: EmailOrder = { code: "TESTE-SEM-COMPRA", name: "Destinatário de homologação", email: recipient,
+    subtotal: 0, discount: 0, shipping: 0, fees: 0, total: 0, address: "Sem entrega — exemplo de template",
+    items: [{ name: "EXEMPLO — nenhum produto foi comprado", color: "Exemplo", size: "Exemplo", quantity: 1, unitPrice: 0, total: 0 }] };
+  for (const kind of ["purchase_confirmed", "review_requested"] as const) {
+    try {
+      const messageId = `homologation_${kind}_${startedAt.replace(/\D/gu, "")}`;
+      const payload = renderTransactionalEmail({ kind, order, from: readiness.from, replyTo: readiness.replyTo,
+        storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
+      payload.subject = `[HOMOLOGAÇÃO — SEM PEDIDO REAL] ${payload.subject}`;
+      payload.text = `${banner}\n\n${payload.text}`;
+      payload.html = payload.html.replace('<table role="presentation" width="100%"',
+        `<p style="padding:16px;background:#fff4cc;color:#242424;font-family:Arial,sans-serif">${banner}</p><table role="presentation" width="100%"`);
+      const providerId = await sendTransactionalEmail(environment.RESEND_API_KEY ?? "", payload,
+        `curtiz:homologation:${startedAt}:${kind}`, transport);
+      // Resend's account rate limit is shared by sending and receipt queries.
+      await new Promise(resolve => setTimeout(resolve, 1_000));
+      const lastEvent = await getTransactionalEmailStatus(environment.RESEND_API_KEY ?? "", providerId, transport);
+      logServerEvent("info", "transactional_email_homologation_checked", { executionId, kind, providerId, lastEvent });
+      await new Promise(resolve => setTimeout(resolve, 1_000));
+    } catch (error) {
+      logServerEvent("error", "transactional_email_homologation_failed", { executionId, kind,
+        code: error instanceof EmailError ? error.code : "email_homologation_failed" });
+    }
+  }
+}
+
 async function call(db: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await db.rpc(name, args);
   if (result.error) throw new EmailError("email_storage_unavailable", true);
@@ -51,7 +93,10 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
   if (!db) return { ok: false, processed: 0, failed: 0 };
   const readiness = getResendReadiness(environment);
   await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
-  if (!readiness.configured) return { ok: true, processed: 0, failed: 0 };
+  if (!readiness.configured) {
+    await runEmailHomologation(environment, executionId, transport);
+    return { ok: true, processed: 0, failed: 0 };
+  }
   let processed = 0;
   let failed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 8); index += 1) {
