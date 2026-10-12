@@ -2,23 +2,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabase/server";
 import { publicBudgetResponse } from "@/lib/public-request";
+import { createConsentToken } from "../../../../lib/privacy/consent-token";
+import { cookiePolicyVersion } from "../../../../lib/privacy/cookie-inventory";
 import { POST } from "./route";
 
 vi.mock("../../../../lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
 vi.mock("@/lib/public-request", () => ({ publicBudgetResponse: vi.fn(async () => null as Response | null) }));
 const client = vi.mocked(createServerSupabaseClient);
 const id = "11111111-1111-4111-8111-111111111111";
-const request = (events: unknown[], consent = true) =>
+const consentId = "22222222-2222-4222-8222-222222222222";
+const signingKey = "k".repeat(40);
+const signedConsent = (analytics = true) => createConsentToken({
+  id: consentId,
+  policyVersion: cookiePolicyVersion(null),
+  categories: { essential: true, preferences: false, analytics, marketing: false }
+}, signingKey) ?? "";
+const request = (events: unknown[], consent: string | false = signedConsent()) =>
   new NextRequest("http://localhost:3000/api/intelligence/events", {
     method: "POST",
     headers: {
       origin: "http://localhost:3000",
       "content-type": "application/json",
-      ...(consent
-        ? {
-            cookie: `curtiz-cookie-preferences=${encodeURIComponent(JSON.stringify({ essential: true, analytics: true }))}`
-          }
-        : {})
+      ...(consent ? { cookie: `curtiz-cookie-preferences=${consent}` } : {})
     },
     body: JSON.stringify({ sessionId: id, consent: true, events })
   });
@@ -35,12 +40,23 @@ describe("intelligence event batches", () => {
     client.mockReset();
     vi.mocked(publicBudgetResponse).mockReset().mockResolvedValue(null);
     delete process.env.DEMO_MODE;
+    process.env.COOKIE_CONSENT_HMAC_KEY = signingKey;
   });
   it("requires persisted analytics consent", async () => {
     const response = await POST(request([event("page_view")], false));
     expect(response.status).toBe(403);
     expect(client).not.toHaveBeenCalled();
     expect(publicBudgetResponse).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["JSON legado sem assinatura", encodeURIComponent(JSON.stringify({ essential: true, analytics: true }))],
+    ["assinatura de outra chave", createConsentToken({ id: consentId, policyVersion: cookiePolicyVersion(null),
+      categories: { essential: true, preferences: false, analytics: true, marketing: false } }, "x".repeat(40)) ?? ""],
+    ["medição recusada", signedConsent(false)]
+  ])("rejeita consentimento manipulado ou sem medição (%s)", async (_label, cookie) => {
+    const response = await POST(request([event("page_view")], cookie));
+    expect(response.status).toBe(403);
+    expect(client).not.toHaveBeenCalled();
   });
   it.each([429, 503])("blocks event ingestion before reading the body for budget status %s", async (status) => {
     vi.mocked(publicBudgetResponse).mockResolvedValue(Response.json({ message: "Unavailable" }, { status }));
@@ -73,7 +89,7 @@ describe("intelligence event batches", () => {
     expect(rpc).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledWith(
       "ingest_intelligence_events",
-      expect.objectContaining({ p_session_id: id, p_consent: true })
+      expect.objectContaining({ p_session_id: id, p_consent: true, p_consent_id: consentId })
     );
   });
   it("maps database throttling to 429", async () => {

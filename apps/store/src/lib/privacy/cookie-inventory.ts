@@ -1,4 +1,19 @@
-export const cookieInventoryVersion = "inventory-2";
+// Mude esta versão quando o inventário ganhar informação material: as escolhas anteriores são revalidadas.
+export const cookieInventoryVersion = "inventory-3";
+
+/** Prazo máximo de uma escolha antes de ser solicitada novamente (12 meses). */
+export const consentMaxAgeMs = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Versão única da política aplicada às escolhas: versão publicada da Política de Cookies (ou
+ * "draft" enquanto não houver publicação) + versão do inventário técnico.
+ */
+export function cookiePolicyVersion(publishedLegalVersion: number | null) {
+  return `${publishedLegalVersion ? `cookies-v${publishedLegalVersion}` : "cookies-draft"}-${cookieInventoryVersion}`;
+}
+
+export const isCurrentInventoryVersion = (policyVersion: string) =>
+  policyVersion.endsWith(`-${cookieInventoryVersion}`);
 
 export type CookieCategory = {
   id: string;
@@ -23,6 +38,8 @@ export type CookieInventory = {
   categories: CookieCategory[];
   cookies: CookieInventoryItem[];
   policyVersion: string;
+  /** false quando a versão publicada não pôde ser consultada: não força nova escolha por isso. */
+  policyVersionKnown: boolean;
 };
 
 export const auditedCookieCategories: CookieCategory[] = [
@@ -60,7 +77,7 @@ export const auditedCookieInventory: CookieInventoryItem[] = [
     name_pattern: "curtiz-auth-persistence",
     category_id: "essential",
     provider: "curti Z",
-    purpose: "Aplica a duração de sessão escolhida no login.",
+    purpose: "Aplica a duração de sessão escolhida no login (cookie e marcador no armazenamento local).",
     duration_description: "Sessão ou até 12 meses.",
     first_party: true,
     storage_type: "cookie"
@@ -78,7 +95,7 @@ export const auditedCookieInventory: CookieInventoryItem[] = [
     name_pattern: "curtiz-cookie-preferences",
     category_id: "essential",
     provider: "curti Z",
-    purpose: "Aplica no servidor as categorias autorizadas pelo visitante.",
+    purpose: "Comprova ao servidor, com assinatura, as categorias autorizadas e a versão da política.",
     duration_description: "Até 12 meses ou até uma nova escolha.",
     first_party: true,
     storage_type: "cookie"
@@ -91,6 +108,51 @@ export const auditedCookieInventory: CookieInventoryItem[] = [
     duration_description: "Até 12 meses ou até uma nova escolha.",
     first_party: true,
     storage_type: "local_storage"
+  },
+  {
+    name_pattern: "curtiz-auth-session",
+    category_id: "essential",
+    provider: "curti Z",
+    purpose: "Indica que o acesso escolhido no login vale apenas para esta sessão do navegador.",
+    duration_description: "Durante a sessão atual.",
+    first_party: true,
+    storage_type: "session_storage"
+  },
+  {
+    name_pattern: "curtiz-account-closed",
+    category_id: "essential",
+    provider: "curti Z",
+    purpose: "Avisa as abas abertas que a conta foi excluída, para limpar carrinho e sessão locais.",
+    duration_description: "Até a limpeza do navegador.",
+    first_party: true,
+    storage_type: "local_storage"
+  },
+  {
+    name_pattern: "curtiz-checkout-idempotency / curtiz-pending-order-cleanup / curtiz-payment-attempt:*",
+    category_id: "essential",
+    provider: "curti Z",
+    purpose: "Evita pedidos e cobranças duplicados e retoma com segurança um pagamento em andamento.",
+    duration_description: "Durante a sessão atual.",
+    first_party: true,
+    storage_type: "session_storage"
+  },
+  {
+    name_pattern: "SDK de pagamento Mercado Pago",
+    category_id: "essential",
+    provider: "Mercado Pago",
+    purpose: "Processa o pagamento solicitado e pode definir cookies e identificadores do dispositivo para prevenção a fraudes. Carregado somente na etapa de pagamento.",
+    duration_description: "Definida pelo Mercado Pago.",
+    first_party: false,
+    storage_type: "cookie"
+  },
+  {
+    name_pattern: "Cloudflare Turnstile",
+    category_id: "essential",
+    provider: "Cloudflare",
+    purpose: "Protege login, cadastro e recuperação de senha contra automação abusiva. Carregado somente nesses formulários, quando ativado.",
+    duration_description: "Definida pela Cloudflare.",
+    first_party: false,
+    storage_type: "cookie"
   },
   {
     name_pattern: "curtiz-cart* / curtiz-session-cart*",
@@ -161,10 +223,14 @@ export function normalizeCookieCategoryId(id: string) {
   return id === "functional" ? "preferences" : id;
 }
 
-export function defaultCookieInventory(policyVersion = cookieInventoryVersion): CookieInventory {
+export function defaultCookieInventory(
+  policyVersion = cookiePolicyVersion(null),
+  policyVersionKnown = false
+): CookieInventory {
   return {
     categories: auditedCookieCategories,
     cookies: auditedCookieInventory,
-    policyVersion
+    policyVersion,
+    policyVersionKnown
   };
 }

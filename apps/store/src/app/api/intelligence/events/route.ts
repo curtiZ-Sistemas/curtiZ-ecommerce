@@ -3,7 +3,7 @@ import { publicBudgetResponse } from "@/lib/public-request";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
-import { hasServerConsent } from "../../../../lib/privacy/consent-server";
+import { readServerConsent } from "../../../../lib/privacy/consent-server";
 import { createServerSupabaseClient } from "../../../../lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,8 @@ const batchSchema = z.object({
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ accepted: 0 }, { status: 403 });
-  if (!hasServerConsent(request, "analytics"))
+  const consent = readServerConsent(request);
+  if (consent?.categories.analytics !== true)
     return NextResponse.json(
       { accepted: 0, enabled: false },
       { status: 403, headers: { "cache-control": "private, no-store" } }
@@ -69,10 +70,13 @@ export async function POST(request: NextRequest) {
     );
   const supabase = await createServerSupabaseClient();
   if (!supabase) return NextResponse.json({ accepted: 0 }, { status: 503 });
+  // O banco confere se este consentimento continua registrado, vigente e com medição autorizada:
+  // eventos enviados depois de uma retirada (ou com cookie de outra versão) são descartados.
   const result = await supabase.rpc("ingest_intelligence_events", {
     p_session_id: parsed.data.sessionId,
     p_events: parsed.data.events,
-    p_consent: true
+    p_consent: true,
+    p_consent_id: consent.id
   });
   if (result.error)
     return NextResponse.json(

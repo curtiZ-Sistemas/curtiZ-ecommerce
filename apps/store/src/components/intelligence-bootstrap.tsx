@@ -4,23 +4,24 @@ import { useEffect } from "react";
 import {
   applyIntelligenceConsent,
   flushIntelligence,
-  trackIntelligence
+  startIntelligence
 } from "../lib/intelligence-client";
+import { consentChangedEvent } from "../lib/privacy/consent-client";
 
 export function IntelligenceBootstrap() {
   useEffect(() => {
-    trackIntelligence({ type: "page_view" });
+    startIntelligence();
     const flush = () => {
       if (document.visibilityState === "hidden") void flushIntelligence(true);
     };
     const consent = () => applyIntelligenceConsent();
     document.addEventListener("visibilitychange", flush);
     window.addEventListener("pagehide", flush);
-    window.addEventListener("curtiz-consent-changed", consent);
+    window.addEventListener(consentChangedEvent, consent);
     return () => {
       document.removeEventListener("visibilitychange", flush);
       window.removeEventListener("pagehide", flush);
-      window.removeEventListener("curtiz-consent-changed", consent);
+      window.removeEventListener(consentChangedEvent, consent);
       void flushIntelligence(true);
     };
   }, []);

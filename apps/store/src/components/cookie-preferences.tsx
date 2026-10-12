@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cookie, LoaderCircle, Settings2, X } from "lucide-react";
 import {
   defaultCookieInventory,
@@ -9,7 +9,17 @@ import {
   type CookieInventoryItem,
   type StorageType
 } from "../lib/privacy/cookie-inventory";
-import { consentStorageKey, readStoredConsent } from "../lib/privacy/consent-client";
+import {
+  clearUnauthorizedOptionalData,
+  consentState,
+  consentStorageKey,
+  notifyConsentChanged,
+  readStoredConsent,
+  readValidConsent,
+  setCurrentCookiePolicyVersion,
+  writeStoredConsent
+} from "../lib/privacy/consent-client";
+import { suspendIntelligence } from "../lib/intelligence-client";
 
 const storageTypeLabels: Record<StorageType, string> = {
   cookie: "Cookie",
@@ -70,25 +80,31 @@ function validInventory(value: unknown): CookieInventory | null {
   const cookies = Array.isArray(data.cookies)
     ? data.cookies.map(validCookie).filter((item): item is CookieInventoryItem => Boolean(item))
     : [];
-  if (!categories.length || !cookies.length) return null;
+  if (!categories.length || !cookies.length || typeof data.policyVersion !== "string") return null;
   return {
     categories,
     cookies,
-    policyVersion:
-      typeof data.policyVersion === "string"
-        ? data.policyVersion
-        : defaultCookieInventory().policyVersion
+    policyVersion: data.policyVersion,
+    policyVersionKnown: data.policyVersionKnown === true
   };
 }
 
-function choicesFor(inventory: CookieInventory, stored: ReturnType<typeof readStoredConsent>) {
+// Só uma escolha vigente pré-preenche os controles; expirada ou de política anterior começa desmarcada.
+function choicesFor(inventory: CookieInventory) {
+  const valid = readValidConsent();
   return Object.fromEntries(
     inventory.categories.map((category) => [
       category.id,
-      category.required || stored?.categories[category.id] === true
+      category.required || valid?.categories[category.id] === true
     ])
   );
 }
+
+const responseMessage = (result: unknown) =>
+  result && typeof result === "object" && !Array.isArray(result)
+    && typeof (result as Record<string, unknown>).message === "string"
+    ? (result as Record<string, string>).message
+    : "Não foi possível salvar.";
 
 export function CookiePreferences() {
   const [inventory, setInventory] = useState<CookieInventory>(() => defaultCookieInventory());
@@ -98,12 +114,18 @@ export function CookiePreferences() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [choices, setChoices] = useState<Record<string, boolean>>({ essential: true });
+  const cardRef = useRef<HTMLElement>(null);
+  const focusOnOpen = useRef(false);
 
   const useInventory = useCallback((nextInventory: CookieInventory) => {
-    const stored = readStoredConsent();
+    const wasValid = consentState() === "valid";
+    setCurrentCookiePolicyVersion(nextInventory.policyVersionKnown ? nextInventory.policyVersion : null);
+    const valid = consentState() === "valid";
     setInventory(nextInventory);
-    setChoices(choicesFor(nextInventory, stored));
-    setOpen(!stored || stored.policyVersion !== nextInventory.policyVersion);
+    setChoices(choicesFor(nextInventory));
+    if (!valid) setOpen(true);
+    // Política alterada: a autorização anterior para de valer até uma nova escolha.
+    if (wasValid && !valid) notifyConsentChanged();
   }, []);
 
   const load = useCallback(async () => {
@@ -120,19 +142,44 @@ export function CookiePreferences() {
 
   useEffect(() => {
     const fallback = defaultCookieInventory();
-    const stored = readStoredConsent();
     setInventory(fallback);
-    setChoices(choicesFor(fallback, stored));
-    setOpen(!stored);
+    setChoices(choicesFor(fallback));
+    setOpen(consentState() !== "valid");
     setReady(true);
     void load();
     const reopen = () => {
+      focusOnOpen.current = true;
+      setError("");
+      const valid = readValidConsent();
+      setChoices((current) => Object.fromEntries(Object.keys(current).map((key) =>
+        [key, key === "essential" || valid?.categories[key] === true])));
       setOpen(true);
       setCustomizing(true);
     };
+    // Escolha feita em outra aba: aplica aqui também (coleta, dados locais e aviso).
+    const syncFromOtherTab = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== consentStorageKey) return;
+      const valid = readValidConsent();
+      clearUnauthorizedOptionalData(valid?.categories ?? {});
+      setChoices((current) => Object.fromEntries(Object.keys(current).map((key) =>
+        [key, key === "essential" || valid?.categories[key] === true])));
+      setOpen(!valid);
+      setCustomizing(false);
+      notifyConsentChanged();
+    };
     window.addEventListener("open-cookie-preferences", reopen);
-    return () => window.removeEventListener("open-cookie-preferences", reopen);
+    window.addEventListener("storage", syncFromOtherTab);
+    return () => {
+      window.removeEventListener("open-cookie-preferences", reopen);
+      window.removeEventListener("storage", syncFromOtherTab);
+    };
   }, [load]);
+
+  useEffect(() => {
+    if (!open || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    cardRef.current?.focus();
+  }, [open, customizing]);
 
   const optional = useMemo(
     () =>
@@ -149,61 +196,57 @@ export function CookiePreferences() {
   );
   const hasOptional = optional.length > 0;
 
-  const save = async (
-    next: Record<string, boolean>,
-    origin: "banner" | "preferences",
-    revoked = false
-  ) => {
+  const close = () => {
+    setCustomizing(false);
+    setError("");
+    // Com escolha vigente, fechar o painel do rodapé não exige nova decisão.
+    if (consentState() === "valid") setOpen(false);
+  };
+
+  const save = async (next: Record<string, boolean>, origin: "banner" | "preferences") => {
     setPending(true);
     setError("");
     const stored = readStoredConsent();
-    const id = stored?.id ?? crypto.randomUUID();
+    const previous = readValidConsent();
+    let id = stored?.id ?? crypto.randomUUID();
     const normalized = Object.fromEntries(
       visibleCategories.map((category) => [
         category.id,
         category.required || next[category.id] === true
       ])
     );
+    // Retirada: alguma categoria opcional antes autorizada deixou de estar.
+    const revoked = Object.entries(previous?.categories ?? {})
+      .some(([key, enabled]) => key !== "essential" && enabled && normalized[key] !== true);
+    const rejectsOptional = optional.every((category) => normalized[category.id] !== true);
+    // Ao retirar a medição, nada mais é enviado enquanto a escolha é registrada.
+    if (normalized.analytics !== true) suspendIntelligence();
     try {
-      const response = await fetch("/api/privacy/cookies", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id,
-          policyVersion: inventory.policyVersion,
-          categories: normalized,
-          origin,
-          revoked
-        })
-      });
-      const result: unknown = await response.json();
-      const persisted =
-        result &&
-        typeof result === "object" &&
-        !Array.isArray(result) &&
-        (result as Record<string, unknown>).persisted === true;
-      const rejectsOptional = optional.every((category) => normalized[category.id] !== true);
-      if (!response.ok || (!persisted && !rejectsOptional)) {
-        const message =
-          result &&
-          typeof result === "object" &&
-          !Array.isArray(result) &&
-          typeof (result as Record<string, unknown>).message === "string"
-            ? (result as Record<string, string>).message
-            : "Não foi possível salvar.";
-        throw new Error(message);
+      let response: Response;
+      try {
+        response = await fetch("/api/privacy/cookies", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, policyVersion: inventory.policyVersion, categories: normalized, origin, revoked })
+        });
+      } catch {
+        // Sem conexão a recusa ainda vale neste dispositivo; o aceite exige registro remoto.
+        if (!rejectsOptional) throw new Error("Sem conexão. Os cookies opcionais continuam desativados.");
+        response = Response.json({ persisted: false });
       }
-      localStorage.setItem(
-        consentStorageKey,
-        JSON.stringify({
-          id,
-          policyVersion: inventory.policyVersion,
-          categories: normalized,
-          recordedAt: new Date().toISOString()
-        })
-      );
-      if (normalized.preferences !== true) localStorage.removeItem("curtiz-recent-searches");
-      window.dispatchEvent(new Event("curtiz-consent-changed"));
+      const result: unknown = await response.json().catch(() => null);
+      const record = result && typeof result === "object" && !Array.isArray(result)
+        ? result as Record<string, unknown> : {};
+      if (!response.ok || (record.persisted !== true && !rejectsOptional)) throw new Error(responseMessage(result));
+      if (typeof record.id === "string" && /^[0-9a-f-]{36}$/iu.test(record.id)) id = record.id;
+      writeStoredConsent({
+        id,
+        policyVersion: inventory.policyVersion,
+        categories: normalized,
+        recordedAt: new Date().toISOString()
+      });
+      clearUnauthorizedOptionalData(normalized);
+      notifyConsentChanged();
       setChoices(normalized);
       setOpen(false);
       setCustomizing(false);
@@ -233,7 +276,17 @@ export function CookiePreferences() {
 
   return (
     <div className="cookie-consent-layer" data-open="true" role="region" aria-label="Preferências de cookies">
-      <section className={customizing ? "cookie-consent-card customizing" : "cookie-consent-card"}>
+      <section
+        ref={cardRef}
+        tabIndex={-1}
+        className={customizing ? "cookie-consent-card customizing" : "cookie-consent-card"}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && customizing) {
+            event.stopPropagation();
+            close();
+          }
+        }}
+      >
         <div className="cookie-consent-heading">
           <Cookie aria-hidden="true" />
           <div>
@@ -249,7 +302,7 @@ export function CookiePreferences() {
               type="button"
               className="icon-button"
               aria-label="Fechar preferências"
-              onClick={() => setCustomizing(false)}
+              onClick={close}
             >
               <X aria-hidden="true" />
             </button>
@@ -309,7 +362,7 @@ export function CookiePreferences() {
                 type="button"
                 className="secondary-button"
                 disabled={pending}
-                onClick={() => void save(rejectedChoices, "banner", true)}
+                onClick={() => void save(rejectedChoices, customizing ? "preferences" : "banner")}
               >
                 Recusar opcionais
               </button>

@@ -1,21 +1,29 @@
-import { readJsonResponse } from "@curtiz/security";
+import { readJsonResponse, REFERRAL_ATTRIBUTION_COOKIE } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
-import { REFERRAL_ATTRIBUTION_COOKIE } from "@curtiz/security";
 import { z } from "zod";
 import {
-  cookieInventoryVersion,
+  cookiePolicyVersion,
   defaultCookieInventory,
   normalizeCookieCategoryId,
   type CookieCategory,
   type CookieInventoryItem,
   type StorageType
 } from "../../../../lib/privacy/cookie-inventory";
+import {
+  CONSENT_COOKIE,
+  CONSENT_COOKIE_MAX_AGE_SECONDS,
+  consentSigningKey,
+  createConsentToken,
+  policyVersionPattern,
+  type ConsentCategories
+} from "../../../../lib/privacy/consent-token";
+import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const supportedCategoryIds = new Set(["essential", "preferences", "functional", "analytics", "marketing"]);
 const consentSchema = z.object({
   id: z.string().uuid(),
-  policyVersion: z.string().trim().min(1).max(40),
+  policyVersion: z.string().trim().regex(policyVersionPattern),
   categories: z
     .record(z.string().max(60), z.boolean())
     .refine(
@@ -26,19 +34,14 @@ const consentSchema = z.object({
   origin: z.enum(["banner", "preferences", "account"]),
   revoked: z.boolean().default(false)
 });
-function allowedOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  return new Set([
-    new URL(request.url).origin,
-    process.env.NEXT_PUBLIC_STORE_URL,
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
-  ]).has(origin);
-}
+const noStore = { "cache-control": "no-store" };
+
+const hasOptionalConsent = (categories: ConsentCategories) =>
+  categories.preferences || categories.analytics || categories.marketing;
 
 function consentResponse(
   request: NextRequest,
-  categories: Record<string, boolean>,
+  consent: { id: string; policyVersion: string; categories: ConsentCategories },
   persisted: boolean
 ) {
   const response = NextResponse.json(
@@ -46,22 +49,27 @@ function consentResponse(
       message: persisted
         ? "Preferências registradas."
         : "Cookies opcionais permanecem desativados neste dispositivo.",
-      persisted
+      persisted,
+      id: consent.id
     },
-    { headers: { "cache-control": "no-store" } }
+    { headers: noStore }
   );
-  response.cookies.set("curtiz-cookie-preferences", JSON.stringify(categories), {
+  const secure = request.nextUrl.protocol === "https:";
+  // Sem chave de assinatura o servidor não consegue comprovar a escolha: apaga o cookie e os
+  // recursos opcionais do servidor permanecem desativados (falha fechada).
+  const token = createConsentToken(consent, consentSigningKey());
+  response.cookies.set(CONSENT_COOKIE, token ?? "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: request.nextUrl.protocol === "https:",
+    secure,
     path: "/",
-    maxAge: 365 * 24 * 60 * 60
+    maxAge: token ? CONSENT_COOKIE_MAX_AGE_SECONDS : 0
   });
-  if (categories.preferences !== true) {
+  if (!consent.categories.preferences) {
     response.cookies.set(REFERRAL_ATTRIBUTION_COOKIE, "", {
       httpOnly: true,
       sameSite: "lax",
-      secure: request.nextUrl.protocol === "https:",
+      secure,
       path: "/",
       maxAge: 0
     });
@@ -69,18 +77,19 @@ function consentResponse(
   return response;
 }
 
-const hasOptionalConsent = (categories: Record<string, boolean>) =>
-  Object.entries(categories).some(([key, enabled]) => key !== "essential" && enabled);
-
-function persistenceFailure(request: NextRequest, categories: Record<string, boolean>) {
-  if (!hasOptionalConsent(categories)) return consentResponse(request, categories, false);
+function persistenceFailure(
+  request: NextRequest,
+  consent: { id: string; policyVersion: string; categories: ConsentCategories }
+) {
+  // A recusa não precisa de prova remota para valer; o aceite precisa ficar registrado.
+  if (!hasOptionalConsent(consent.categories)) return consentResponse(request, consent, false);
   return NextResponse.json(
-    { message: "Não foi possível registrar as preferências.", persisted: false },
-    { status: 503, headers: { "cache-control": "no-store" } }
+    { message: "Não foi possível registrar as preferências. Os cookies opcionais continuam desativados.", persisted: false },
+    { status: 503, headers: noStore }
   );
 }
 
-function normalizeConsentCategories(categories: Record<string, boolean>) {
+function normalizeConsentCategories(categories: Record<string, boolean>): ConsentCategories {
   return {
     essential: true,
     preferences: categories.preferences === true || categories.functional === true,
@@ -174,41 +183,64 @@ export async function GET() {
     if (!cookie || cookie.name_pattern === "curtiz-referral-attribution") continue;
     cookieMap.set(inventoryItemKey(cookie), cookie);
   }
-  const legalVersion =
-    typeof policy.data?.version === "number" ? `cookies-v${policy.data.version}` : "cookies";
+  const publishedVersion = typeof policy.data?.version === "number" ? policy.data.version : null;
   return NextResponse.json(
     {
       categories: [...categoryMap.values()],
       cookies: [...cookieMap.values()],
-      policyVersion: `${legalVersion}-${cookieInventoryVersion}`
+      policyVersion: cookiePolicyVersion(publishedVersion),
+      // Falha na consulta da política não pode invalidar escolhas: o navegador não pede de novo por isso.
+      policyVersionKnown: !policy.error
     },
     { headers: { "cache-control": "public, max-age=300" } }
   );
 }
 
+type RecordResult = "recorded" | "owned_by_another_account" | "failed";
+
+async function recordConsent(
+  supabase: NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>,
+  input: { id: string; policyVersion: string; categories: ConsentCategories; origin: string; revoked: boolean }
+): Promise<RecordResult> {
+  try {
+    const result = await supabase.rpc("record_cookie_consent", {
+      p_id: input.id,
+      p_policy_version: input.policyVersion,
+      p_categories: input.categories,
+      p_origin: input.origin,
+      p_revoked: input.revoked
+    });
+    if (!result.error) return "recorded";
+    return result.error.code === "42501" ? "owned_by_another_account" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
 export async function POST(request: NextRequest) {
-  if (!allowedOrigin(request))
-    return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
+  if (!isAllowedRequestOrigin(request))
+    return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: noStore });
   const boundedBody = await readJsonResponse(request, 32768);
   if (boundedBody instanceof Response) return boundedBody;
   const parsed = consentSchema.safeParse(boundedBody);
   if (!parsed.success || parsed.data.categories.essential !== true)
-    return NextResponse.json({ message: "Preferências inválidas." }, { status: 400 });
-  const normalizedCategories = normalizeConsentCategories(parsed.data.categories);
+    return NextResponse.json({ message: "Preferências inválidas." }, { status: 400, headers: noStore });
+  const consent = {
+    id: parsed.data.id,
+    policyVersion: parsed.data.policyVersion,
+    categories: normalizeConsentCategories(parsed.data.categories)
+  };
   const supabase = await createServerSupabaseClient();
-  if (!supabase) return persistenceFailure(request, normalizedCategories);
+  if (!supabase) return persistenceFailure(request, consent);
 
-  try {
-    const result = await supabase.rpc("record_cookie_consent", {
-      p_id: parsed.data.id,
-      p_policy_version: parsed.data.policyVersion,
-      p_categories: normalizedCategories,
-      p_origin: parsed.data.origin,
-      p_revoked: parsed.data.revoked
-    });
-    if (result.error) return persistenceFailure(request, normalizedCategories);
-  } catch {
-    return persistenceFailure(request, normalizedCategories);
+  const input = { ...consent, origin: parsed.data.origin, revoked: parsed.data.revoked };
+  let recorded = await recordConsent(supabase, input);
+  // O identificador deste navegador já pertence a outra conta (ex.: computador compartilhado após
+  // logout): registra uma nova escolha em vez de alterar a da outra pessoa.
+  if (recorded === "owned_by_another_account") {
+    consent.id = crypto.randomUUID();
+    recorded = await recordConsent(supabase, { ...input, id: consent.id });
   }
-  return consentResponse(request, normalizedCategories, true);
+  if (recorded !== "recorded") return persistenceFailure(request, consent);
+  return consentResponse(request, consent, true);
 }

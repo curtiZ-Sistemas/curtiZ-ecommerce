@@ -36,6 +36,9 @@ const maxBatch = 20;
 let queue: Array<IntelligenceEvent & { id: string; occurredAt: string; device: string }> = [];
 let timer: number | undefined;
 let flushing = false;
+// Envio em andamento: cancelado quando a autorização é retirada durante a sessão.
+let inFlight: AbortController | null = null;
+let collecting = false;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function hasAnalyticsConsent() {
@@ -91,30 +94,66 @@ export async function flushIntelligence(beacon = false) {
   )
     return;
   flushing = true;
+  const controller = new AbortController();
+  inFlight = controller;
+  // Só reenvia se a autorização continuar válida; após a retirada os eventos são descartados.
+  const retry = () => {
+    if (hasAnalyticsConsent()) queue = [...events, ...queue].slice(0, 50);
+  };
   try {
     const response = await fetch("/api/intelligence/events", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body,
       keepalive: true,
-      cache: "no-store"
+      cache: "no-store",
+      signal: controller.signal
     });
-    if (!response.ok && response.status >= 500) queue = [...events, ...queue].slice(0, 50);
+    if (!response.ok && response.status >= 500) retry();
   } catch {
-    queue = [...events, ...queue].slice(0, 50);
+    if (!controller.signal.aborted) retry();
   } finally {
+    if (inFlight === controller) inFlight = null;
     flushing = false;
-    if (queue.length > 0 && timer === undefined)
+    if (queue.length > 0 && timer === undefined && hasAnalyticsConsent())
       timer = window.setTimeout(() => void flushIntelligence(), 8_000);
   }
 }
 
+/** Interrompe a coleta imediatamente: fila, temporizador e envio em andamento. */
+export function suspendIntelligence() {
+  queue = [];
+  if (timer !== undefined) window.clearTimeout(timer);
+  timer = undefined;
+  inFlight?.abort();
+  inFlight = null;
+}
+
+/** Início da página: registra a visualização somente com autorização válida. */
+export function startIntelligence() {
+  collecting = hasAnalyticsConsent();
+  if (collecting) trackIntelligence({ type: "page_view" });
+}
+
 export function applyIntelligenceConsent() {
   if (hasAnalyticsConsent()) {
-    trackIntelligence({ type: "page_view" });
+    // Salvar de novo a mesma escolha não gera uma segunda visualização.
+    if (!collecting) trackIntelligence({ type: "page_view" });
+    collecting = true;
     return;
   }
-  const sessionId = sessionStorage.getItem(sessionKey);
+  collecting = false;
+  suspendIntelligence();
+  let sessionId: string | null = null;
+  try {
+    sessionId = sessionStorage.getItem(sessionKey);
+    sessionStorage.removeItem(sessionKey);
+    localStorage.removeItem(recentKey);
+  } catch {
+    // Armazenamento indisponível: não há identificadores locais a apagar.
+  }
+  // O servidor também apaga os eventos vinculados ao consentimento retirado; esta chamada cobre a
+  // sessão desta aba mesmo quando a retirada não pôde ser registrada remotamente.
   if (sessionId)
     void fetch("/api/intelligence/events", {
       method: "DELETE",
@@ -122,11 +161,6 @@ export function applyIntelligenceConsent() {
       body: JSON.stringify({ sessionId }),
       keepalive: true
     }).catch(() => undefined);
-  queue = [];
-  if (timer !== undefined) window.clearTimeout(timer);
-  timer = undefined;
-  sessionStorage.removeItem(sessionKey);
-  localStorage.removeItem(recentKey);
 }
 
 export function rememberViewedProduct(productId: string) {

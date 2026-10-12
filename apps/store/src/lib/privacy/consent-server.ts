@@ -1,19 +1,14 @@
 import type { NextRequest } from "next/server";
+import { CONSENT_COOKIE, consentSigningKey, verifyConsentToken, type ConsentToken } from "./consent-token";
+
+/** Escolha válida (assinada, vigente e da versão atual) enviada pelo navegador, ou null. */
+export function readServerConsent(request: NextRequest): ConsentToken | null {
+  return verifyConsentToken(request.cookies.get(CONSENT_COOKIE)?.value, consentSigningKey());
+}
 
 export function hasServerConsent(
   request: NextRequest,
   category: "preferences" | "analytics" | "marketing"
 ) {
-  const raw = request.cookies.get("curtiz-cookie-preferences")?.value;
-  if (!raw) return false;
-  try {
-    const parsed: unknown = JSON.parse(decodeURIComponent(raw));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-    const categories = parsed as Record<string, unknown>;
-    if (category === "preferences")
-      return categories.preferences === true || categories.functional === true;
-    return categories[category] === true;
-  } catch {
-    return false;
-  }
+  return readServerConsent(request)?.categories[category] === true;
 }
