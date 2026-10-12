@@ -607,7 +607,8 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   await expect(editDialog.getByLabel("Nome *")).toHaveValue(updatedName);
   expect(await editDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Produto atualizado.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Produto atualizado com sucesso.")).toBeVisible({ timeout: 15_000 });
+  await expect(editDialog).toHaveCount(0);
   await expect(page.locator("article.managed-product")
     .getByRole("heading", { name: updatedName, exact: true })).toBeVisible();
   expect(savedPayload).toMatchObject({
