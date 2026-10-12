@@ -416,7 +416,9 @@ test("produto mantém recomendações em grade responsiva sem repetir o item atu
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
   const shelf = page.locator(".product-recommendations");
-  await shelf.scrollIntoViewIfNeeded();
+  await expect(shelf).toBeVisible();
+  // The loading section can be replaced while Playwright waits for scroll stability.
+  await shelf.evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
   await expect(shelf.getByRole("heading", { name: "Você Também Pode Gostar" })).toBeVisible();
   await expect(shelf.locator(".product-card")).toHaveCount(8, { timeout: 30_000 });
   await expect(shelf.locator('a[href="/produto/flip-flop-wave-preto"]')).toHaveCount(0);
