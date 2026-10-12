@@ -34,7 +34,8 @@ describe("isolated runtime email homologation", () => {
     expect(posts).toHaveLength(2);
     expect(transport.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(2);
     for (const [, init] of posts) {
-      const payload: unknown = JSON.parse(String(init?.body));
+      if (typeof init?.body !== "string") throw new Error("Expected a serialized email payload");
+      const payload: unknown = JSON.parse(init.body);
       expect(payload).toMatchObject({ to: ["authorized@example.com"], reply_to: "reply@example.com" });
       expect(JSON.stringify(payload)).toContain("HOMOLOGAÇÃO — SEM PEDIDO REAL");
       expect(JSON.stringify(payload)).toContain("Não existe pedido, pagamento");
