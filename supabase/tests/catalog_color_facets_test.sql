@@ -5,8 +5,12 @@ select plan(7);
 insert into public.categories(id,name,slug) values
  ('c8100000-0000-4000-8000-000000000001','Teste cores','teste-facets-cores');
 insert into public.products(id,name,slug,category_id,status,base_price) values
- ('c8200000-0000-4000-8000-000000000001','Produto cor A','teste-facets-cor-a','c8100000-0000-4000-8000-000000000001','active',50),
- ('c8200000-0000-4000-8000-000000000002','Produto cor B','teste-facets-cor-b','c8100000-0000-4000-8000-000000000001','active',50);
+ ('c8200000-0000-4000-8000-000000000001','Produto cor A','teste-facets-cor-a','c8100000-0000-4000-8000-000000000001','draft',50),
+ ('c8200000-0000-4000-8000-000000000002','Produto cor B','teste-facets-cor-b','c8100000-0000-4000-8000-000000000001','draft',50);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('c8200000-0000-4000-8000-000000000001','c8200000-0000-4000-8000-000000000002');
+update public.products set status='active' where id in ('c8200000-0000-4000-8000-000000000001','c8200000-0000-4000-8000-000000000002');
 insert into public.product_variants(id,product_id,sku,color_name,size,active) values
  ('c8300000-0000-4000-8000-000000000001','c8200000-0000-4000-8000-000000000001','TEST-COLOR-A39','Preta Strass','39',true),
  ('c8300000-0000-4000-8000-000000000002','c8200000-0000-4000-8000-000000000001','TEST-COLOR-A40',' preta   strass ','40',true),

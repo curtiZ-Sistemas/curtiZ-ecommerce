@@ -91,7 +91,7 @@ select throws_ok(
   'Cliente não marca o próprio anexo como limpo'
 );
 insert into storage.objects(bucket_id,name)
-values('customer-private','a0000000-0000-0000-000000000001/support/pending.png');
+values('customer-private','a0000000-0000-0000-0000-000000000001/support/pending.png');
 select is(
   (select count(*) from storage.objects where bucket_id='customer-private'
     and name='a0000000-0000-0000-0000-000000000001/support/pending.png'),
@@ -100,11 +100,11 @@ select is(
 );
 reset role;
 update public.support_attachments set scan_status='clean'
-where storage_path='a0000000-0000-0000-000000000001/support/pending.png';
+where storage_path='a0000000-0000-0000-0000-000000000001/support/pending.png';
 set local role authenticated;
 select is(
   (select count(*) from storage.objects where bucket_id='customer-private'
-    and name='a0000000-0000-0000-000000000001/support/pending.png'),
+    and name='a0000000-0000-0000-0000-000000000001/support/pending.png'),
   1::bigint,
   'Dono acessa bytes somente após o backend marcar o anexo como limpo'
 );

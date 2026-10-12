@@ -125,11 +125,12 @@ select lives_ok($sql$ delete from public.product_import_sessions where id='c7400
 reset role;
 select is((select count(*) from public.product_import_sessions where id='c7400000-0000-4000-8000-000000000003'),0::bigint,'Expired session was actually deleted');
 
-update public.products set status='active' where slug='produto-import-workflow';
 insert into public.product_images(product_id,variant_id,storage_path,alt_text,sort_order,is_primary,width,height)
 select product.id, variant.id, 'products/imports/test/shared-color.webp', 'Chinelo lilás', 0, true, 800, 800
 from public.products product join public.product_variants variant on variant.product_id=product.id
 where product.slug='produto-import-workflow' and variant.size='34';
+-- A guarda exige a imagem antes da publicação.
+update public.products set status='active' where slug='produto-import-workflow';
 
 select is((select count(*) from private.storefront_catalog_items()
   where slug='produto-import-workflow' and image_path='products/imports/test/shared-color.webp'),2::bigint,

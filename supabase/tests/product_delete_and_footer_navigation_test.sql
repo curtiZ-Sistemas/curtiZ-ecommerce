@@ -108,6 +108,8 @@ values ('fd240000-0000-4000-8000-000000000060','fd240000-0000-4000-8000-00000000
   'fd240000-0000-4000-8000-000000000031','Produto com pedido','DELETE-PEDIDO-38','Branco','38',1,75,75);
 
 set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"fd240000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 select ok((public.admin_product_delete_eligibility(array['fd240000-0000-4000-8000-000000000020'::uuid])
   ->'fd240000-0000-4000-8000-000000000020'->>'canDelete')::boolean,
   'Marketing events, carts and import links remain removable');

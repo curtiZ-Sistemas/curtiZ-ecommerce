@@ -6,11 +6,13 @@ select plan(15);
 insert into public.categories(id, name, slug) values
  ('f1000000-0000-0000-0000-000000000001', 'Teste vitrine', 'teste-vitrine-variantes');
 insert into public.products(id, name, slug, short_description, description, category_id, status, base_price, weight_grams, height_cm, width_cm, length_cm)
-values ('f2000000-0000-0000-0000-000000000001', 'Sandália Teste Combinação', 'teste-combinacao-vitrine', 'Teste', 'Teste de variantes', 'f1000000-0000-0000-0000-000000000001', 'active', 50, 100, 5, 10, 20);
+values ('f2000000-0000-0000-0000-000000000001', 'Sandália Teste Combinação', 'teste-combinacao-vitrine', 'Teste', 'Teste de variantes', 'f1000000-0000-0000-0000-000000000001', 'draft', 50, 100, 5, 10, 20);
 insert into public.product_categories(product_id, category_id, is_primary) values
  ('f2000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000001', true) on conflict (product_id, category_id) do nothing;
 insert into public.product_images(product_id, storage_path, alt_text, width, height, is_primary) values
  ('f2000000-0000-0000-0000-000000000001', 'test/variant-match.webp', 'Teste', 720, 720, true);
+-- Publicação somente depois da imagem real (guarda products_require_real_image_*).
+update public.products set status='active' where id='f2000000-0000-0000-0000-000000000001';
 insert into public.product_variants(id, product_id, sku, color_name, color_hex, size, active) values
  ('f3000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001', 'TEST-MATCH-W37', 'Branco', '#FFFFFF', '37', true),
  ('f3000000-0000-0000-0000-000000000002', 'f2000000-0000-0000-0000-000000000001', 'TEST-MATCH-B38', 'Preto', '#171717', '38', true),
