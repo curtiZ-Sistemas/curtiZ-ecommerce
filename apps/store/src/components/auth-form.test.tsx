@@ -14,6 +14,9 @@ describe("submissão antes da hidratação", () => {
     const html = renderToStaticMarkup(<SignupForm />);
     expect(html).toMatch(/<form[^>]*method="post"/u);
     expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/u);
+    for (const id of ["signup-name", "signup-email", "signup-phone", "signup-password", "signup-confirm"]) {
+      expect(html).toMatch(new RegExp(`<input[^>]*id="${id}"[^>]*disabled=""`, "u"));
+    }
   });
   it.each(["login", "signup"] as const)("%s não habilita o envio nativo de credenciais por GET", (mode) => {
     const html = renderToStaticMarkup(<AuthForm mode={mode} />);
