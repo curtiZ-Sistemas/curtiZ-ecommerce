@@ -3,7 +3,7 @@ import {
   getMelhorEnvioEnvironment,
   getMelhorEnvioReadiness
 } from "@curtiz/config";
-import { FIXED_SHIPPING_IN_CENTS, MelhorEnvioError } from "@curtiz/integrations";
+import { FIXED_SHIPPING_IN_CENTS, MelhorEnvioError, melhorEnvioTokenKeyId } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     code: ShippingDiagnosticCode,
     httpStatus: number,
     details: { provider?: string; missing?: readonly string[]; invalid?: readonly string[]; latencyMs?: number | null;
-      failure?: unknown; stage?: ShippingQuoteStage } = {},
+      failure?: unknown; stage?: ShippingQuoteStage; tokenKeyId?: string } = {},
     db?: ReturnType<typeof createServiceSupabaseClient>
   ) => {
     let database = db;
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       environment: storeEnvironmentName(environment),
       provider: details.provider ?? "unknown",
       missing: details.missing, invalid: details.invalid, latencyMs: details.latencyMs ?? null,
-      failure: details.failure, stage: details.stage
+      failure: details.failure, stage: details.stage, tokenKeyId: details.tokenKeyId
     });
   };
 
@@ -122,6 +122,8 @@ export async function POST(request: NextRequest) {
   }
   const runtime = environment;
   const started = Date.now();
+  // Identificador público da chave ativa: permite ao painel confirmar que loja e painel usam a mesma chave.
+  const tokenKeyId = await melhorEnvioTokenKeyId(runtime.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY ?? "").catch(() => undefined);
   let stage: ShippingQuoteStage = "products";
   try {
     const resolved = await resolveShippingProducts(parsed.data.lines, db);
@@ -135,7 +137,7 @@ export async function POST(request: NextRequest) {
     stage = "persistence";
     if (quotes.length === 0) {
       await recordShippingDiagnostic(db, { code: null, support, httpStatus: 200, userId,
-        environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started });
+        environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started, tokenKeyId });
       return reply({ ok: true, quotes: [], message: "Nenhum serviço atende este CEP e estes itens." });
     }
     const rows = quotes.map((quote) => ({
@@ -153,7 +155,7 @@ export async function POST(request: NextRequest) {
       throw new ShippingQuotePersistenceError(isUnknownRecord(insertion.error) ? readString(insertion.error, "code") : undefined);
     }
     await recordShippingDiagnostic(db, { code: null, support, httpStatus: 200, userId,
-      environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started });
+      environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started, tokenKeyId });
     return reply({ ok: true, quotes: insertion.data.filter(isUnknownRecord).map((row) => ({
       id: readString(row, "id"), serviceId: readString(row, "service_id"), service: readString(row, "service"),
       carrier: readString(row, "carrier"), amountInCents: Math.round(readNumber(row, "amount") * 100),
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
     const inputProblem = code === "shipping_product_invalid"
       || code === "melhor_envio_validation" && error instanceof MelhorEnvioError && error.httpStatus < 500;
     const status = inputProblem && error instanceof MelhorEnvioError ? error.httpStatus : 503;
-    await diagnose(code, status, { provider: "melhorenvio", latencyMs: Date.now() - started, failure: error, stage }, db);
+    await diagnose(code, status, { provider: "melhorenvio", latencyMs: Date.now() - started, failure: error, stage, tokenKeyId }, db);
     if (code === "shipping_product_invalid") return fail(status, "SHIPPING_ITEMS_INVALID", "Revise os itens do carrinho.");
     if (inputProblem) return fail(status, "SHIPPING_INPUT_INVALID", "Revise o CEP e os itens do carrinho.");
     return fail(503, "SHIPPING_UNAVAILABLE", quoteFailedMessage);

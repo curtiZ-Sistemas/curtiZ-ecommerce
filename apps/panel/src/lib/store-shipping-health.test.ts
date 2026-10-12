@@ -18,7 +18,7 @@ describe("diagnóstico persistido do frete da loja", () => {
   it("mostra a falha de criptografia e o HTTP real sem expor texto arbitrário", () => {
     const service = getStoreShippingService({ state: "offline", error_summary: "melhor_envio_authentication",
       metadata_sanitized: { reason: "token_decryption_failed", upstreamStatus: 403, databaseCode: "PGRST202" } });
-    expect(service.detail).toContain("chave compartilhada entre loja e painel");
+    expect(service.detail).toContain("Não foi possível decifrar os tokens com as chaves configuradas");
     expect(service.detail).toContain("HTTP Melhor Envio 403");
     expect(service.detail).toContain("código do banco PGRST202");
     expect(getStoreShippingService({ state: "offline", metadata_sanitized: {
