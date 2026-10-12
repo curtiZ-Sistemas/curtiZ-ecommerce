@@ -80,6 +80,9 @@ export const getMelhorEnvioReadiness = (environment: IntegrationEnvironment): Me
   required("MELHOR_ENVIO_CLIENT_SECRET");
   required("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
   validWhenPresent("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY", isAes256Base64Key);
+  // Opcional: chaves anteriores aceitas só para decifrar durante a troca controlada da chave ativa.
+  validWhenPresent("MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS",
+    (value) => value.split(/[\s,]+/u).filter(Boolean).every(isAes256Base64Key));
   required("MELHOR_ENVIO_APP_NAME");
   required("MELHOR_ENVIO_TECHNICAL_CONTACT");
   validWhenPresent("MELHOR_ENVIO_TECHNICAL_CONTACT", (value) => /^\S+@\S+\.\S+$/u.test(value));

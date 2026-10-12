@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { configuredPublicOrigins, resolvePublicAppUrls } from "./public-urls";
 
 const previous = {
@@ -16,6 +16,19 @@ afterEach(() => {
 });
 
 describe("URLs públicas das aplicações", () => {
+  it.each(["https://curtiz.com.br/login", "https://painel.curtiz.com.br/selecionar-painel"])(
+    "protege %s de URLs de produção incorporadas incorretamente no build", (url) => {
+      vi.stubEnv("NEXT_PUBLIC_STORE_URL", "https://curtiz-ecommerce.sistemas-curtiz.workers.dev");
+      vi.stubEnv("NEXT_PUBLIC_PANEL_URL", "https://curtiz-painel.sistemas-curtiz.workers.dev");
+      // Even a mistaken test pair containing official domains cannot win.
+      vi.stubEnv("NEXT_PUBLIC_STORE_TEST_URL", "https://curtiz.com.br");
+      vi.stubEnv("NEXT_PUBLIC_PANEL_TEST_URL", "https://painel.curtiz.com.br");
+      expect(resolvePublicAppUrls(url)).toEqual({
+        storeUrl: "https://curtiz.com.br", panelUrl: "https://painel.curtiz.com.br"
+      });
+      vi.unstubAllEnvs();
+    }
+  );
   it("mantém o par canônico no domínio oficial", () => {
     process.env.NEXT_PUBLIC_STORE_URL = "https://curtiz.com.br";
     process.env.NEXT_PUBLIC_PANEL_URL = "https://painel.curtiz.com.br";

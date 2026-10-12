@@ -10,6 +10,31 @@ import {
 } from "./panel-roles";
 import { requestPublicAppUrls } from "./request-public-urls";
 
+async function requirePanelUser(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  storeUrl: string,
+  currentPath: string
+) {
+  const login = new URL("/login", storeUrl);
+  login.searchParams.set("next", safeInternalPath(currentPath, "/selecionar-painel"));
+  login.searchParams.set("reason", "session_unavailable");
+  if (!supabase) redirect(login.toString());
+
+  let result: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try {
+    result = await supabase.auth.getUser();
+  } catch {
+    redirect(login.toString());
+  }
+  if (!result.data.user || result.error) {
+    if (!result.error || result.error.name === "AuthSessionMissingError" || result.error.status === 401) {
+      login.searchParams.set("reason", "session_expired");
+    }
+    redirect(login.toString());
+  }
+  return { supabase, user: result.data.user };
+}
+
 export async function requirePanelAccess(role: PanelRouteRole, currentPath: string) {
   const { storeUrl, panelUrl } = await requestPublicAppUrls();
   const storeDestination = (path: string) => new URL(path, storeUrl).toString();
@@ -30,13 +55,9 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     } as const;
   }
 
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) redirect(storeDestination("/login"));
-  const userResult = await supabase.auth.getUser();
-  const user = userResult.data.user;
-  if (!user || userResult.error) {
-    redirect(storeDestination(`/login?next=${encodeURIComponent(currentPath)}`));
-  }
+  const { supabase, user } = await requirePanelUser(
+    await createServerSupabaseClient(), storeUrl, currentPath
+  );
 
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("full_name,status,avatar_path").eq("id", user.id).maybeSingle(),
@@ -96,11 +117,9 @@ export async function requirePanelSelectionAccess() {
     redirect(storeDestination("/403"));
   }
 
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) redirect(storeDestination("/login"));
-  const userResult = await supabase.auth.getUser();
-  const user = userResult.data.user;
-  if (!user || userResult.error) redirect(storeDestination("/login"));
+  const { supabase, user } = await requirePanelUser(
+    await createServerSupabaseClient(), storeUrl, currentPath
+  );
 
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("full_name,status").eq("id", user.id).maybeSingle(),

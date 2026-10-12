@@ -1,4 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loginDemoAccount } from "./demo-auth";
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 412, height: 915 }
+]) {
+  test(`autentica conta operacional pela loja e abre o painel em ${viewport.width}px`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await page.goto("http://localhost:3000/login", { waitUntil: "domcontentloaded" });
+    const email = page.locator('input[name="email"]:visible');
+    await email.fill("operacional.demo@curtiz.local");
+    await page.locator('input[name="password"]:visible').fill("1234567890");
+    await expect(email).toHaveValue("operacional.demo@curtiz.local");
+    await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+
+    await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible({ timeout: 60_000 });
+  });
+}
 
 async function loginAs(page: Page, email: string) {
   const destinationByAccount = {
@@ -9,11 +29,7 @@ async function loginAs(page: Page, email: string) {
   } as const;
   const destination = destinationByAccount[email as keyof typeof destinationByAccount];
   if (!destination) throw new Error(`Conta interna de teste não mapeada: ${email}`);
-  const response = await page.request.post("http://localhost:3000/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email, password: "1234567890" }
-  });
-  if (!response.ok()) throw new Error(`Login demo falhou com HTTP ${response.status()}`);
+  await loginDemoAccount(page, email);
   await page.goto(`http://localhost:3001/${destination}`, { waitUntil: "commit" });
   await expect(page.locator('main[aria-label="Carregando painel"]')).toHaveCount(0, {
     timeout: 60_000
@@ -41,7 +57,7 @@ for (const account of [
     await loginAs(page, account.email);
     await expect(page).toHaveURL(`http://localhost:3001/${account.route}`);
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
-    await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator("#panel-content")).toBeVisible();
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
     await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -160,7 +176,7 @@ test("remove configurações técnicas da administração e redireciona o bookma
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 24 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 26 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
   { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 32 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
@@ -267,15 +283,16 @@ test("mantém rotas críticas utilizáveis nos viewports exigidos", async ({ pag
 
 test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   test.setTimeout(120_000);
+  // Catalog/draft fixtures exercise the editor UI; persistence is validated separately.
   const failures: string[] = [];
-  const categoryId = "10000000-0000-0000-0000-000000000001";
+  const categoryId = "10000000-0000-4000-8000-000000000001";
   let savedName = "Produto com múltiplas variações";
   let savedPayload: Record<string, unknown> | null = null;
   let missingProductId = "";
   const openedProductIds: string[] = [];
   const products = [
     {
-      id: "20000000-0000-0000-0000-000000000001",
+      id: "20000000-0000-4000-8000-000000000001",
       name: savedName,
       slug: "produto-multiplas-variacoes",
       status: "active",
@@ -298,7 +315,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       canDelete: false,
       images: [
         {
-          id: "40000000-0000-0000-0000-000000000001",
+          id: "40000000-0000-4000-8000-000000000001",
           path: "/images/products/wave-preto.png",
           url: "http://localhost:3000/images/products/wave-preto.png",
           alt: "Produto com variações",
@@ -309,7 +326,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       stock: 7,
       variants: [
         {
-          id: "30000000-0000-0000-0000-000000000001",
+          id: "30000000-0000-4000-8000-000000000001",
           sku: "MULTI-PRETO-39",
           color: "Preto",
           colorHex: "#000000",
@@ -322,7 +339,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
           costInCents: null
         },
         {
-          id: "30000000-0000-0000-0000-000000000002",
+          id: "30000000-0000-4000-8000-000000000002",
           sku: "MULTI-PRETO-40",
           color: "Preto",
           colorHex: "#000000",
@@ -337,7 +354,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       ]
     },
     {
-      id: "20000000-0000-0000-0000-000000000002",
+      id: "20000000-0000-4000-8000-000000000002",
       name: "Produto sem imagem e sem variação",
       slug: "produto-sem-imagem-variacao",
       status: "draft",
@@ -363,7 +380,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       variants: []
     },
     {
-      id: "20000000-0000-0000-0000-000000000003",
+      id: "20000000-0000-4000-8000-000000000003",
       name: "Produto arquivado sem estoque",
       slug: "produto-arquivado-sem-estoque",
       status: "archived",
@@ -388,7 +405,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       stock: 0,
       variants: [
         {
-          id: "30000000-0000-0000-0000-000000000003",
+          id: "30000000-0000-4000-8000-000000000003",
           sku: "ARQ-40",
           color: "Areia",
           colorHex: "#d6c3a5",
@@ -404,6 +421,24 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     }
   ];
   const createdProducts: Array<(typeof products)[number]> = [];
+  let productDraft: Record<string, unknown> | null = null;
+  let draftWrites = 0;
+  let catalogPatches = 0;
+
+  await page.route("**/api/catalog/product-draft", async (route) => {
+    const method = route.request().method();
+    if (method === "GET") return route.fulfill({ json: { ok: true, draft: productDraft } });
+    if (method === "PUT") {
+      draftWrites += 1;
+      productDraft = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { ok: true, savedAt: productDraft.savedAt } });
+    }
+    if (method === "DELETE") {
+      productDraft = null;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.continue();
+  });
 
   page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
   page.on("response", (response) => {
@@ -453,24 +488,36 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
       return;
     }
     if (route.request().method() !== "PATCH") return route.continue();
+    catalogPatches += 1;
     savedPayload = route.request().postDataJSON() as Record<string, unknown>;
     const action = String(savedPayload.action);
+    let responseProductId = products[0]!.id;
     let message = "Alteração concluída.";
     if (action === "save" && savedPayload.productId) {
       savedName = String(savedPayload.name);
       message = "Produto atualizado.";
     } else if (action === "save") {
+      responseProductId = "20000000-0000-4000-8000-000000000004";
       createdProducts.push({
         ...products[1]!,
-        id: "20000000-0000-0000-0000-000000000004",
+        id: responseProductId,
         name: String(savedPayload.name),
-        slug: String(savedPayload.slug)
+        slug: String(savedPayload.slug),
+        status: String(savedPayload.status),
+        priceInCents: Number(savedPayload.priceInCents),
+        stock: 5,
+        images: [],
+        variants: [{ ...products[0]!.variants[0]!,
+          id: "30000000-0000-4000-8000-000000000004", sku: "E2E-NEW",
+          color: "Padrão", colorHex: "", size: "Único", active: true, available: 5, reserved: 0, sellable: 5 }]
       });
+      // New-product save clears the server draft atomically in the same RPC.
+      productDraft = null;
       message = "Produto criado como configurado.";
     } else if (action === "duplicate") {
       createdProducts.push({
         ...products[0]!,
-        id: "20000000-0000-0000-0000-000000000005",
+        id: "20000000-0000-4000-8000-000000000005",
         name: String(savedPayload.name),
         slug: String(savedPayload.slug),
         status: "draft",
@@ -478,7 +525,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
         stock: 0,
         variants: products[0]!.variants.map((variant, index) => ({
           ...variant,
-          id: `30000000-0000-0000-0000-00000000001${index}`,
+          id: `30000000-0000-4000-8000-00000000001${index}`,
           available: 0,
           reserved: 0,
           sellable: 0
@@ -492,7 +539,7 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ productId: products[0]!.id, message })
+      body: JSON.stringify({ productId: responseProductId, message })
     });
   });
 
@@ -532,9 +579,9 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
     .filter({ hasText: deletableProduct.name });
   await deletableRow.locator("details.product-action-menu > summary").click();
   await deletableRow.getByRole("button", { name: "Excluir permanentemente" }).click();
-  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir produto permanentemente?" });
+  const deleteDialog = page.getByRole("alertdialog", { name: "Excluir definitivamente?" });
   await expect(deleteDialog).toBeVisible();
-  await deleteDialog.getByRole("button", { name: "Excluir permanentemente" }).click();
+  await deleteDialog.getByRole("button", { name: "Excluir definitivamente", exact: true }).click();
   await expect(page.getByText("Produto excluído permanentemente.")).toBeVisible();
   await expect(deletableRow).toHaveCount(0);
 
@@ -551,10 +598,18 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const firstRow = page.locator("article.managed-product").filter({ hasText: savedName });
   await firstRow.getByRole("button", { name: "Editar", exact: true }).click();
   const updatedName = `${savedName} atualizado`;
-  await page.locator(".panel-drawer").getByLabel("Nome *").fill(updatedName);
+  const editDialog = page.locator(".panel-drawer");
+  await expect(editDialog.getByRole("group", { name: "Categorias", exact: true })
+    .getByRole("checkbox", { name: "Sandálias", exact: true })).toBeChecked();
+  await expect(editDialog.getByRole("button", { name: "Sandálias como categoria principal" }))
+    .toHaveAttribute("aria-pressed", "true");
+  await editDialog.getByLabel("Nome *").fill(updatedName);
+  await expect(editDialog.getByLabel("Nome *")).toHaveValue(updatedName);
+  expect(await editDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Produto atualizado.")).toBeVisible();
-  await expect(page.getByText(updatedName)).toBeVisible();
+  await expect(page.getByText("Produto atualizado.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("article.managed-product")
+    .getByRole("heading", { name: updatedName, exact: true })).toBeVisible();
   expect(savedPayload).toMatchObject({
     action: "save",
     productId: products[0]!.id,
@@ -568,12 +623,10 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   const updatedRow = page.locator("article.managed-product").filter({ hasText: updatedName });
   await updatedRow.locator("details.product-action-menu > summary").click();
   await updatedRow.getByRole("button", { name: "Desativar" }).click();
-  const statusDialog = page.getByRole("dialog", { name: "Alterar status para Inativo" });
-  await statusDialog.getByLabel("Motivo da alteração").fill("Pausa comercial planejada");
-  await statusDialog.getByRole("button", { name: "Confirmar alteração" }).click();
   await expect(page.getByText("Status do produto atualizado.")).toBeVisible();
+  expect(savedPayload).toMatchObject({ action: "status", productId: products[0]!.id, status: "draft" });
   await expect(
-    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Inativo")
+    page.locator("article.managed-product").filter({ hasText: updatedName }).getByText("Não ativo", { exact: true })
   ).toBeVisible();
 
   const inactiveRow = page.locator("article.managed-product").filter({ hasText: updatedName });
@@ -596,28 +649,51 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
 
   await page.getByRole("button", { name: "Cadastrar produto" }).click();
   const createDialog = page.locator(".panel-drawer");
-  await page.keyboard.press("Control+s");
   await expect(createDialog).toBeVisible();
+  const patchesBeforeInvalidSave = catalogPatches;
+  await page.keyboard.press("Control+s");
+  await expect(createDialog.getByLabel("Nome *")).toBeFocused();
+  await expect(createDialog).toBeVisible();
+  expect(catalogPatches).toBe(patchesBeforeInvalidSave);
+  expect(savedPayload).toMatchObject({ action: "duplicate" });
   await createDialog.getByLabel("Nome *").fill("Produto criado no fluxo E2E");
-  await createDialog.getByLabel("Slug *").fill("produto-criado-fluxo-e2e");
-  await createDialog.getByLabel("Categoria *").selectOption(categoryId);
-  await createDialog.getByLabel("Preço (R$) *").fill("79.90");
-  await createDialog.getByLabel("Custo (R$) *").fill("30.00");
-  await createDialog.getByLabel("Peso (g) *").fill("300");
-  await createDialog.getByLabel("Altura (cm) *").fill("8");
-  await createDialog.getByLabel("Largura (cm) *").fill("18");
-  await createDialog.getByLabel("Comprimento (cm) *").fill("27");
-  await createDialog.getByLabel("Descrição curta *").fill("Produto criado pelo fluxo completo");
+  await createDialog.getByLabel("Slug (opcional)").fill("produto-criado-fluxo-e2e");
+  const categoryCheckbox = createDialog.getByRole("group", { name: "Categorias", exact: true })
+    .getByRole("checkbox", { name: "Sandálias", exact: true });
+  await categoryCheckbox.check();
+  await expect(categoryCheckbox).toBeChecked();
+  await expect(createDialog.getByRole("button", { name: "Sandálias como categoria principal" }))
+    .toHaveAttribute("aria-pressed", "true");
+  await createDialog.getByLabel("Preço de venda *").fill("79.90");
+  await createDialog.getByLabel("Custo (R$)").fill("30.00");
+  await createDialog.getByLabel("Peso (g)").fill("300");
+  await createDialog.getByLabel("Altura (cm)").fill("8");
+  await createDialog.getByLabel("Largura (cm)").fill("18");
+  await createDialog.getByLabel("Comprimento (cm)").fill("27");
+  await createDialog.getByLabel("Resumo curto").fill("Produto criado pelo fluxo completo");
   await createDialog
-    .getByLabel("Descrição detalhada *")
+    .getByLabel("Descrição", { exact: true })
     .fill("Cadastro validado sem dados reais de produção.");
+  await createDialog.getByRole("spinbutton", { name: /^Estoque disponível/u }).fill("5");
+  expect(await createDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
+  await expect.poll(() => draftWrites).toBeGreaterThan(0);
+  expect(productDraft).not.toBeNull();
   await createDialog.getByRole("button", { name: "Salvar produto" }).click();
-  await expect(page.getByText("Produto criado no fluxo E2E")).toBeVisible();
+  await expect(page.locator("article.managed-product")
+    .getByRole("heading", { name: "Produto criado no fluxo E2E", exact: true })).toBeVisible();
+  expect(savedPayload).toMatchObject({ action: "save", name: "Produto criado no fluxo E2E",
+    status: "draft", categoryId, categoryIds: [categoryId], priceInCents: 7990,
+    variants: expect.arrayContaining([expect.objectContaining({ color: "Padrão", size: "Único", stock: 5, active: true })]) });
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage)
+    .filter((key) => key.startsWith("curtiz:product-draft:v1:")))).toEqual([]);
+  const writesAfterSave = draftWrites;
 
   for (const route of ["modelos", "variacoes", "midias", "estoque"]) {
     await page.goto(`/administracao/${route}`);
     await expect(page.getByRole("heading", { name: updatedName, exact: true })).toBeVisible();
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
   }
+  expect(draftWrites).toBe(writesAfterSave);
+  expect(productDraft).toBeNull();
   expect(failures).toEqual([]);
 });

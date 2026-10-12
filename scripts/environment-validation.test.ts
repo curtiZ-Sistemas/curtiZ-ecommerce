@@ -59,6 +59,17 @@ describe("environment validation", () => {
     realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL, realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL
   ];
 
+  it.each(["NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL"])(
+    "rejeita %s canônica em workers.dev mesmo com origens e cookies válidos", key => {
+      const result = validateEnvironment("production", {
+        ...disabledProduction, ...realPublicUrls,
+        [key]: key === "NEXT_PUBLIC_STORE_URL" ? realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL : realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL,
+        ALLOWED_ORIGINS: realOrigins.join(",")
+      });
+      expect(result.errors).toContain(`${key} deve usar o domínio oficial em produção; configure workers.dev somente em NEXT_PUBLIC_*_TEST_URL`);
+    }
+  );
+
   it("reproduz os três erros do build do painel sem aceitar o alias legado", () => {
     const result = validateEnvironment("production", {
       ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: "panel",

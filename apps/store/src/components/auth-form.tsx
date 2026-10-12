@@ -11,7 +11,7 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useCallback, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   CUSTOMER_EMAIL_MAX_LENGTH,
   formatBrazilianPhone,
@@ -36,10 +36,12 @@ export function AuthForm({
 }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const isSubmittingRef = useRef(false);
   const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
+  useEffect(() => setHydrated(true), []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -80,6 +82,7 @@ export function AuthForm({
   return (
     <form
       className="form-stack auth-form"
+      method="post"
       onSubmit={(event) => {
         void submit(event);
       }}
@@ -219,7 +222,7 @@ export function AuthForm({
       <button
         className="primary-button full-button auth-submit"
         type="submit"
-        disabled={loading || (turnstileEnabled && !turnstileToken)}
+        disabled={!hydrated || loading || (turnstileEnabled && !turnstileToken)}
         aria-busy={loading}
       >
         {loading ? (

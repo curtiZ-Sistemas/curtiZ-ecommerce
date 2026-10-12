@@ -16,8 +16,12 @@ insert into public.products(
   weight_grams,height_cm,width_cm,length_cm
 ) values (
   'c6200000-0000-4000-8000-000000000001','Produto operações','produto-operacoes','Teste','Teste',
-  'c6100000-0000-4000-8000-000000000001','active',50,20,200,5,10,20
+  'c6100000-0000-4000-8000-000000000001','draft',50,20,200,5,10,20
 );
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('c6200000-0000-4000-8000-000000000001');
+update public.products set status='active' where id in ('c6200000-0000-4000-8000-000000000001');
 insert into public.product_variants(id,product_id,sku,color_name,size)
 values('c6300000-0000-4000-8000-000000000001','c6200000-0000-4000-8000-000000000001','OPS-CHECKOUT-37','Preto','37');
 insert into public.inventory(variant_id,available_quantity)

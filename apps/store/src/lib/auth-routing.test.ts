@@ -28,6 +28,8 @@ describe("login routing", () => {
   it("direciona múltiplos painéis selecionáveis para a Central", () => {
     expect(resolveLoginDestination(["admin", "manager", "operational"])).toBe("/selecionar-painel");
     expect(resolveLoginDestination(["admin", "manager"])).toBe("/selecionar-painel");
+    expect(resolveLoginDestination(["admin", "technical"])).toBe("/selecionar-painel");
+    expect(resolveLoginDestination(["operational", "technical"])).toBe("/selecionar-painel");
   });
 
   it.each([

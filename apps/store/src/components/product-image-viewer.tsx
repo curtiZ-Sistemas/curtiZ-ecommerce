@@ -65,6 +65,7 @@ export function ProductImageViewer({
   const dialogRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const returnFocusTimer = useRef<number | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const gestureRef = useRef<Gesture>(null);
   const transformRef = useRef(INITIAL_TRANSFORM);
@@ -99,6 +100,10 @@ export function ProductImageViewer({
   }, [resetTransform, src]);
 
   useEffect(() => {
+    if (returnFocusTimer.current !== null) {
+      window.clearTimeout(returnFocusTimer.current);
+      returnFocusTimer.current = null;
+    }
     const previousOverflow = document.body.style.overflow;
     const previousPaddingRight = document.body.style.paddingRight;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
@@ -131,7 +136,10 @@ export function ProductImageViewer({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
       document.body.style.paddingRight = previousPaddingRight;
-      window.setTimeout(() => returnFocusRef.current?.focus(), 0);
+      returnFocusTimer.current = window.setTimeout(() => {
+        returnFocusTimer.current = null;
+        returnFocusRef.current?.focus();
+      }, 0);
     };
   }, [changeImage, imageCount, onClose, returnFocusRef]);
 

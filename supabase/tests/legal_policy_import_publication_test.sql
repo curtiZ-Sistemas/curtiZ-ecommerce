@@ -9,6 +9,9 @@ update public.profiles set status='active' where id in
   ('e1000000-0000-4000-8000-000000000001','e1000000-0000-4000-8000-000000000002');
 insert into public.user_roles(user_id,role) values
   ('e1000000-0000-4000-8000-000000000001','manager'),('e1000000-0000-4000-8000-000000000002','admin');
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select 'e1000000-0000-4000-8000-000000000002',id,false,'Fixture editor sem publicação',
+  'e1000000-0000-4000-8000-000000000001' from public.permissions where code='legal_content.publish';
 update public.company_legal_information set completeness_status='complete',legal_name=null,tax_id=null,
   address=null,email=null,privacy_channel=null where id;
 set local role authenticated;
@@ -59,8 +62,10 @@ select is((public.publish_legal_policy((select id from legal_before),(select upd
   true,'retry da publicação é idempotente');
 select is((select count(*)::integer from public.legal_document_versions where document_id=(select id from legal_before)),
   1,'retry não duplica versões');
-select throws_ok($$update public.legal_document_versions set snapshot='{}' where id=(select id from legal_published)$$,
-  '42501','permission denied for table legal_document_versions','versão imutável protegida contra edição direta');
+with attempted as (
+  update public.legal_document_versions set snapshot='{}' where id=(select id from legal_published) returning id
+)
+select is((select count(*) from attempted),0::bigint,'RLS impede edição direta da versão imutável');
 select public.import_legal_policy('aviso-de-privacidade','Política de Privacidade',
   '[{"section_number":"1","title":"Responsável","content":"Nova minuta com [RETENCAO_CONFIRMADA].","content_format":"markdown","sort_order":0}]',
   (select updated_at from public.legal_documents where slug='aviso-de-privacidade'));

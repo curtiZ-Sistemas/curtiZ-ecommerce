@@ -103,7 +103,8 @@ export async function POST(request: NextRequest) {
     }
 
     stage = "session";
-    await auth.supabase.from("product_import_sessions").delete().eq("user_id", auth.userId).lt("expires_at", new Date().toISOString());
+    const cleanup = await auth.supabase.rpc("delete_product_import_sessions", { p_session_id: null });
+    if (cleanup.error) throw new Error("IMPORT_SESSION_CLEANUP_FAILED");
     const session = await auth.supabase.from("product_import_sessions").insert({
       user_id: auth.userId,
       schema_version: batch.schemaVersion,
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest) {
       p_products_total: runnableProducts
     });
     if (run.error) {
-      await auth.supabase.from("product_import_sessions").delete().eq("id", sessionId).eq("user_id", auth.userId);
+      await auth.supabase.rpc("delete_product_import_sessions", { p_session_id: sessionId });
       logServerEvent("error", "panel_product_import_preview_failed", { requestId, stage, code: run.error.code ?? "RUN_CREATE_FAILED" });
       return NextResponse.json({
         message: "A migration da fila de imagens ainda não está disponível no banco.",
@@ -168,8 +169,7 @@ export async function DELETE(request: NextRequest) {
   if (body instanceof Response) return body;
   const parsed = deleteSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "Sessão inválida." }, { status: 400, headers: privateNoStore });
-  const removed = await auth.supabase.from("product_import_sessions").delete()
-    .eq("id", parsed.data.sessionId).eq("user_id", auth.userId);
+  const removed = await auth.supabase.rpc("delete_product_import_sessions", { p_session_id: parsed.data.sessionId });
   if (removed.error) return NextResponse.json({ message: "Não foi possível encerrar a sessão." }, { status: 503, headers: privateNoStore });
   return NextResponse.json({ ok: true }, { headers: privateNoStore });
 }

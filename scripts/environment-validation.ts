@@ -535,6 +535,16 @@ const validateCommonValues = (
 };
 
 const validateProductionRules = (environment: EnvironmentValues, errors: string[]): void => {
+  for (const key of ["NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL"] as const) {
+    try {
+      if (new URL(environment[key] ?? "").hostname.endsWith(".workers.dev")) {
+        errors.push(`${key} deve usar o domínio oficial em produção; configure workers.dev somente em NEXT_PUBLIC_*_TEST_URL`);
+      }
+    } catch {
+      // validateUrl reports missing or invalid URLs.
+    }
+  }
+
   if (enabledBoolean(environment.DEMO_MODE)) {
     errors.push("DEMO_MODE deve ser false em produção");
   }

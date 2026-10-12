@@ -16,6 +16,11 @@ todas as validações, o OpenNext compila as aplicações alteradas e o Wrangler
 correspondente. O controle de concorrência cancela uma execução antiga quando chega um commit mais
 novo, evitando deploy fora de ordem.
 
+Em pull requests, os builds e dry-runs também executam após qualidade e segurança aprovadas quando
+banco ou E2E falham, para revelar erros de compilação e empacotamento. Esses gates continuam falhando
+no CI; pull requests nunca publicam. Fora de pull requests, ambos os gates também precisam aprovar
+antes de iniciar os jobs de Worker.
+
 ### Deploy automático único (ação manual no Cloudflare)
 
 O GitHub Actions deve ser o **único** caminho automático. Confira manualmente, no Cloudflare, se os
@@ -39,6 +44,29 @@ um check `Workers Builds: …` no commit, ou `/api/version` mostrando um `commit
 publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA`/`BUILD_ID`).
 
 ### Onde cada configuração fica
+
+O gate de dependências executa `pnpm audit --audit-level high` sobre o lockfile completo,
+incluindo desenvolvimento. O Dependency Review nativo fica habilitado somente quando
+`DEPENDENCY_REVIEW_ENABLED=true` nas Repository Variables e o repositório disponibiliza
+Dependency graph/Dependency Review. Sem esse recurso, o workflow registra explicitamente
+a alternativa no resumo; erros da auditoria continuam bloqueando o CI. Essa alternativa
+cobre vulnerabilidades (a configuração anterior não validava licenças) e não cria custo
+de GitHub Advanced Security. As exceções de advisories existentes devem ser revisadas
+separadamente; a troca do gate não concede novas exceções.
+
+Referências: [disponibilidade do Dependency Review](https://github.com/actions/dependency-review-action)
+e [ativação do Dependency graph](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/enable-dependency-graph).
+
+O login em `curtiz.com.br` e o painel em `painel.curtiz.com.br` usam sempre o par oficial,
+mesmo se um build incorporar aliases incorretos em `NEXT_PUBLIC_STORE_URL` ou
+`NEXT_PUBLIC_PANEL_URL`. O validador de produção também rejeita `workers.dev` nessas duas
+variáveis; os aliases continuam disponíveis somente no par `NEXT_PUBLIC_*_TEST_URL`.
+Alterar bindings de Runtime ou republicar uma versão após trocar secrets **não recompila**
+valores `NEXT_PUBLIC_*` incorporados pelo Next.js: reconstrua ambos os Workers a partir do
+mesmo commit. Os cookies da produção devem usar `.curtiz.com.br`, e os dos aliases de teste,
+`.sistemas-curtiz.workers.dev`; uma sessão não atravessa esses dois domínios. Se o painel
+não conseguir validar a sessão, o login informa o motivo genérico com `reason=session_expired`
+ou `reason=session_unavailable`, sem incluir tokens ou detalhes do provedor.
 
 | Local | Responsabilidade |
 | --- | --- |
