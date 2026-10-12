@@ -18,12 +18,12 @@ type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
 type Job = { id: string; jobType: "melhorenvio.create" | "melhorenvio.cancel"; shipmentId: string };
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isUnknownRecord) : [];
 
-const serviceDatabase = (environment: ShippingJobEnvironment): ServiceDatabase | null => {
+const serviceDatabase = (environment: ShippingJobEnvironment, transport: typeof fetch): ServiceDatabase | null => {
   const secret = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
   try {
     const url = new URL(environment.SUPABASE_URL?.trim() ?? "");
     if (!secret || url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password) return null;
-    return createClient(url.origin, secret, { auth: { autoRefreshToken: false, persistSession: false } }) as ServiceDatabase;
+    return createClient(url.origin, secret, { global: { fetch: transport }, auth: { autoRefreshToken: false, persistSession: false } }) as ServiceDatabase;
   } catch { return null; }
 };
 
@@ -61,7 +61,7 @@ const readJob = (value: unknown): Job | null => {
     ? { id, shipmentId, jobType: jobType as Job["jobType"] } : null;
 };
 
-async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvironment, shipmentId: string) {
+async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvironment, shipmentId: string, transport: typeof fetch) {
   const result = readQueryResult(await db.from("shipments")
     .select("id,order_id,external_id,operation_state,shipping_quote_id,package_snapshot,metadata_sanitized")
     .eq("id", shipmentId).eq("provider", "melhorenvio").maybeSingle());
@@ -133,7 +133,7 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
         insurance_value: products.reduce((total, item) => total + item.quantity * item.unitary_value, 0), receipt: false,
         own_hand: false, reverse: false, ...(fiscalKey ? { invoice: { key: fiscalKey } } : {}),
         tags: [{ tag: readString(order, "public_code"), url: null }] } };
-    const created = await createMelhorEnvioProvider(environment, db).createShipment(input);
+    const created = await createMelhorEnvioProvider(environment, db, transport).createShipment(input);
     const saved = readQueryResult(await db.from("shipments").update({ external_id: created.externalId, operation_state: "created",
       last_error_code: null, updated_at: new Date().toISOString() }).eq("id", shipmentId).eq("operation_state", "creating")
       .select("id").maybeSingle());
@@ -147,13 +147,13 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
   }
 }
 
-async function cancelShipment(db: ServiceDatabase, environment: ShippingJobEnvironment, shipmentId: string) {
+async function cancelShipment(db: ServiceDatabase, environment: ShippingJobEnvironment, shipmentId: string, transport: typeof fetch) {
   const result = readQueryResult(await db.from("shipments").select("external_id,operation_state")
     .eq("id", shipmentId).eq("provider", "melhorenvio").maybeSingle());
   if (!isUnknownRecord(result.data)) throw new MelhorEnvioError("not_found", 404, false);
   const externalId = readString(result.data, "external_id");
   if (!externalId || !["purchased", "generated"].includes(readString(result.data, "operation_state"))) return;
-  const provider = createMelhorEnvioProvider(environment, db);
+  const provider = createMelhorEnvioProvider(environment, db, transport);
   if (!(await provider.isCancellable(externalId))) throw new MelhorEnvioError("conflict", 409, false);
   const claimed = readQueryResult(await db.from("shipments").update({ operation_state: "cancelling", updated_at: new Date().toISOString() })
     .eq("id", shipmentId).in("operation_state", ["purchased", "generated"]).select("id").maybeSingle());
@@ -173,8 +173,8 @@ async function cancelShipment(db: ServiceDatabase, environment: ShippingJobEnvir
   }
 }
 
-export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnvironment, executionId: string, limit = 5) {
-  const db = serviceDatabase(environment);
+export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnvironment, executionId: string, limit = 5, transport: typeof fetch = fetch) {
+  const db = serviceDatabase(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
   let processed = 0;
   let failed = 0;
@@ -184,8 +184,8 @@ export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnviron
     const job = readJob(claim.data);
     if (claim.error || !job) break;
     try {
-      if (job.jobType === "melhorenvio.create") await createShipment(db, environment, job.shipmentId);
-      else await cancelShipment(db, environment, job.shipmentId);
+      if (job.jobType === "melhorenvio.create") await createShipment(db, environment, job.shipmentId, transport);
+      else await cancelShipment(db, environment, job.shipmentId, transport);
       const finished = readQueryResult(await db.rpc("finish_melhor_envio_job", {
         p_job_id: job.id, p_lock_id: lockId, p_success: true, p_error_code: null
       }));

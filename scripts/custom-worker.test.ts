@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dependencies = {
   fetch: vi.fn(),
+  nativeFetch: vi.fn<typeof fetch>(),
   optimize: vi.fn(),
   housekeeping: vi.fn(),
   shipping: vi.fn(),
@@ -28,12 +29,13 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText;
 const module = { exports: {} as { default: Worker } };
-runInNewContext(compiled, {
+const workerGlobal = {
   module,
   exports: module.exports,
   crypto: { randomUUID: () => "scheduled-execution-id" },
   caches: { default: {} },
   Request,
+  fetch: dependencies.nativeFetch,
   require: (specifier: string) => {
     if (specifier === "./.open-next/worker.js") return { default: { fetch: dependencies.fetch } };
     if (specifier === "./.open-next/cloudflare/init.js") return { runWithCloudflareRequestContext: dependencies.context };
@@ -45,7 +47,8 @@ runInNewContext(compiled, {
     if (specifier === "@curtiz/security") return { logServerEvent: dependencies.log };
     throw new Error(`Unexpected Worker dependency: ${specifier}`);
   }
-});
+};
+runInNewContext(compiled, workerGlobal);
 const worker = module.exports.default;
 
 describe("custom Worker handlers", () => {
@@ -84,9 +87,26 @@ describe("custom Worker handlers", () => {
     expect(context.waitUntil).toHaveBeenCalledTimes(1);
     expect(dependencies.context).toHaveBeenCalledWith(expect.any(Request), environment, context, expect.any(Function));
     await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
-    for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email]) {
-      expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id");
+    expect(dependencies.housekeeping).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
+    for (const job of [dependencies.bling, dependencies.shipping, dependencies.email]) {
+      expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id", undefined, expect.any(Function));
     }
+  });
+
+  it("retains native I/O after HTTP handling replaces global fetch", async () => {
+    const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No Next request storage"));
+    workerGlobal.fetch = patchedFetch;
+    const response = new Response("native transport");
+    dependencies.nativeFetch.mockResolvedValue(response);
+    const context = { waitUntil: vi.fn() };
+    worker.scheduled({}, {}, context);
+    await context.waitUntil.mock.calls[0]?.[0];
+    const transport = dependencies.housekeeping.mock.calls[0]?.[2] as typeof fetch;
+    await expect(transport("https://example.invalid/rpc")).resolves.toBe(response);
+    for (const job of [dependencies.bling, dependencies.shipping, dependencies.email])
+      expect(job.mock.calls[0]?.[3]).toBe(transport);
+    expect(patchedFetch).not.toHaveBeenCalled();
+    workerGlobal.fetch = dependencies.nativeFetch;
   });
 
   it("runs queues only inside the OpenNext request context", async () => {

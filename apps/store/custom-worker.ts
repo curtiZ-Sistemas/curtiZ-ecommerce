@@ -20,6 +20,9 @@ const openNextHandler = handler as {
 const runWithWorkerContext = runWithCloudflareRequestContext as (
   request: Request, environment: WorkerEnvironment, context: WorkerContext, task: () => Promise<void>
 ) => Promise<void>;
+// Capture Workerd's transport before HTTP requests let Next patch global fetch.
+// Cron tasks have no Next render/request storage and must use native I/O.
+const scheduledFetch = globalThis.fetch.bind(globalThis);
 
 export default {
   async fetch(request: Request, environment: WorkerEnvironment, context: WorkerContext) {
@@ -33,17 +36,17 @@ export default {
   },
   scheduled(_controller: unknown, environment: WorkerEnvironment, context: WorkerContext) {
     const executionId = crypto.randomUUID();
-    // Next's patched fetch needs the adapter context even without an HTTP request.
+    // Populate runtime bindings without depending on Next's HTTP request storage.
     const request = new Request(environment.NEXT_PUBLIC_STORE_URL ?? "https://curtiz.com.br");
     context.waitUntil(runWithWorkerContext(request, environment, context, async () => {
       const runQueue = async (queue: string, task: () => Promise<unknown>) => {
         try { await task(); }
         catch { logServerEvent("error", "scheduled_queue_failed", { executionId, queue }); }
       };
-      await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId));
-      await runQueue("bling", () => runBlingJobs(environment, executionId));
-      await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId));
-      await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId));
+      await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
+      await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
+      await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId, undefined, scheduledFetch));
+      await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId, undefined, scheduledFetch));
     }));
   }
 };

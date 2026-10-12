@@ -33,7 +33,7 @@ export function melhorEnvioTokenKeyring(values: MelhorEnvioRuntimeEnvironment): 
   return { activeKey, previousKeys: parseMelhorEnvioPreviousKeys(values.MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS) };
 }
 
-export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
+export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase, transport: typeof fetch = fetch) {
   const tokenStore = createEncryptedMelhorEnvioTokenStore({
     encryptionKey: melhorEnvioTokenKeyring(values),
     async load() {
@@ -106,7 +106,7 @@ export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment,
     applicationName: values.MELHOR_ENVIO_APP_NAME?.trim() ?? "curti Z",
     technicalContact: values.MELHOR_ENVIO_TECHNICAL_CONTACT?.trim() ?? "",
     legacyBaseUrl: values.MELHOR_ENVIO_BASE_URL?.trim()
-  }, tokenStore);
+  }, tokenStore, transport);
 }
 
 export function configuredMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
