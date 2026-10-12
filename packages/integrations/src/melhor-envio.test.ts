@@ -35,6 +35,19 @@ describe("MelhorEnvioProvider", () => {
   const quoteInput = { originPostalCode: "01001000", destinationPostalCode: "20040002",
     products: [{ id: "variant-1", quantity: 1, weightKg: 0.35, widthCm: 12, heightCm: 8, lengthCm: 25, insuranceValue: 59.9 }] };
 
+  it("uses an explicit transport for OAuth refresh and API calls without global fetch", async () => {
+    const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No HTTP request storage"));
+    vi.stubGlobal("fetch", patchedFetch);
+    const transport = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "new-test-access", refresh_token: "new-test-refresh", expires_in: 3600 })))
+      .mockResolvedValueOnce(new Response("[]"));
+    const tokens = store({ ...initialTokens(), accessTokenExpiresAt: "2000-01-01T00:00:00Z" });
+    await expect(new MelhorEnvioProvider(config, tokens, transport).quote(quoteInput)).resolves.toEqual([]);
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(patchedFetch).not.toHaveBeenCalled();
+    expect(tokens.current()?.accessToken).toBe("new-test-access");
+  });
+
   it.each([400, 401, 403, 422])("OAuth HTTP %s não é tratado como erro do CEP/carrinho", async (status) => {
     const tokens = store({ ...initialTokens(), accessTokenExpiresAt: "2000-01-01T00:00:00Z" });
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant", message: "private detail" }), { status }));

@@ -54,12 +54,12 @@ async function call(db: SupabaseClient, name: string, args: Record<string, unkno
   if (result.error) throw new EmailError("email_storage_unavailable", true);
   return result.data;
 }
-function database(environment: Environment): SupabaseClient | null {
+function database(environment: Environment, transport: typeof fetch): SupabaseClient | null {
   try {
     const url = new URL(environment.SUPABASE_URL ?? "");
     const key = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
     if (!key || url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password) return null;
-    return createClient(url.origin, key, { auth: { autoRefreshToken: false, persistSession: false } });
+    return createClient(url.origin, key, { global: { fetch: transport }, auth: { autoRefreshToken: false, persistSession: false } });
   } catch { return null; }
 }
 
@@ -89,7 +89,7 @@ export function emailOrderFromSource(source: unknown): EmailOrder {
 
 // The scheduled handler supplies bindings directly. No build-time environment fallback.
 export async function runTransactionalEmailJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
-  const db = database(environment);
+  const db = database(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
   const readiness = getResendReadiness(environment);
   await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });

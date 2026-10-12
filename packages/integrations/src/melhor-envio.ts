@@ -262,7 +262,8 @@ export class MelhorEnvioProvider {
   readonly baseUrl: string;
   private readonly timeoutMs: number;
 
-  constructor(private readonly config: MelhorEnvioConfig, private readonly tokens: MelhorEnvioTokenStore) {
+  constructor(private readonly config: MelhorEnvioConfig, private readonly tokens: MelhorEnvioTokenStore,
+    private readonly transport: typeof fetch = fetch) {
     this.baseUrl = validateConfig(config);
     this.timeoutMs = Math.min(Math.max(config.timeoutMs ?? 15_000, 1_000), 30_000);
   }
@@ -294,7 +295,7 @@ export class MelhorEnvioProvider {
   private async oauthRequest(body: Record<string, string>): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(new URL("/oauth/token", this.baseUrl), {
+      response = await this.transport(new URL("/oauth/token", this.baseUrl), {
         method: "POST",
         headers: { accept: "application/json", "content-type": "application/json", "user-agent": this.userAgent },
         body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs)
@@ -348,7 +349,7 @@ export class MelhorEnvioProvider {
     const token = await this.accessToken();
     let response: Response;
     try {
-      response = await fetch(new URL(path, this.baseUrl), {
+      response = await this.transport(new URL(path, this.baseUrl), {
         ...init,
         headers: {
           accept: "application/json", ...(method === "GET" ? {} : { "content-type": "application/json" }),

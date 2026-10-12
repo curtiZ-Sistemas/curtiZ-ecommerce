@@ -26,12 +26,12 @@ export function assertBlingPaidOrder(order: Record<string, unknown>): void {
     throw new BlingError("order_not_eligible", 409);
 }
 
-function database(environment: Environment): SupabaseClient | null {
+function database(environment: Environment, transport: typeof fetch): SupabaseClient | null {
   const secret = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
   try {
     const url = new URL(environment.SUPABASE_URL?.trim() ?? "");
     if (!secret || url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password) return null;
-    return createClient(url.origin, secret, { auth: { autoRefreshToken: false, persistSession: false } });
+    return createClient(url.origin, secret, { global: { fetch: transport }, auth: { autoRefreshToken: false, persistSession: false } });
   } catch { return null; }
 }
 
@@ -421,8 +421,8 @@ async function reconcileWebhook(db: SupabaseClient, provider: BlingClient, event
   await call(db, "finish_bling_webhook_event", { p_event_id: eventId, p_status: status, p_error_code: null });
 }
 
-export async function runBlingJobs(environment: Environment, executionId: string, limit = 4) {
-  const db = database(environment);
+export async function runBlingJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
+  const db = database(environment, transport);
   if (!db || !environment.BLING_CLIENT_ID || !environment.BLING_CLIENT_SECRET || !environment.BLING_TOKEN_ENCRYPTION_KEY)
     return { ok: false, processed: 0 };
   const credential = row(await call(db, "read_integration_credential", {
@@ -448,7 +448,7 @@ export async function runBlingJobs(environment: Environment, executionId: string
     const provider = createBlingClient(environment, async (name, args) => db.rpc(name, args), async (input, init) => {
       if (await call(db, "renew_bling_job_lease", { p_job_id: job.id, p_lock_id: lockId }) !== true)
         throw new BlingError("job_lease_lost", 409);
-      return fetch(input, init);
+      return transport(input, init);
     });
     try {
       if (job.type === "bling.order.create") {
@@ -481,7 +481,7 @@ export async function runBlingJobs(environment: Environment, executionId: string
             throw new BlingError("email_reconciliation_required", 409, false, true);
           const externalId = await sendInvoiceEmail({ apiKey: environment.RESEND_API_KEY ?? "", from: environment.RESEND_FROM_EMAIL ?? "",
             to: readString(order, "customer_email_snapshot"), orderCode: readString(order, "public_code"),
-            storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", idempotencyKey: `bling-invoice:${orderId}:${invoiceId}` });
+            storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", idempotencyKey: `bling-invoice:${orderId}:${invoiceId}` }, transport);
           try {
             if (await call(db, "record_bling_email_acceptance", { p_order_id: orderId, p_provider_id: externalId }) !== true)
               throw new Error("email_receipt_not_saved");
