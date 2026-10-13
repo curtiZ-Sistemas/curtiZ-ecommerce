@@ -152,17 +152,17 @@ jobs:
         with:
           version: 2.110.0
       - name: Iniciar Supabase local (migrations + seed)
-        run: supabase start --debug
+        # Startup prints local credentials. Keep them out of public CI logs.
+        run: |
+          if ! supabase start > /dev/null 2>&1; then
+            echo "::error::Supabase local não iniciou; consulte o estado dos containers."
+            exit 1
+          fi
       - name: Diagnóstico do Supabase local
         if: failure()
         shell: bash
         run: |
           docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
-          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^supabase_(db|storage|auth|rest)_'); do
-            echo "::group::${container}"
-            docker logs --tail 300 "$container" 2>&1 || true
-            echo "::endgroup::"
-          done
       - run: supabase db lint --local --fail-on error
       - run: supabase test db
 
