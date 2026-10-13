@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePanelConfirm } from "./panel-prompt";
+import { LoadingBlock, SectionHeader, StateMessage, StatusLabel, type UiTone } from "./panel-ui";
 
 type Status = { status: string; connected: boolean; environment: string; companyName: string | null;
   apiCheckedAt: string | null; apiHealthy: boolean | null; scopeSetup: string[];
@@ -20,10 +22,15 @@ const labels: Record<string, string> = {
   reconnect_required: "Reconexão necessária", webhook_pending: "Webhook pendente",
   degraded: "Sincronização degradada"
 };
+const tones: Record<string, UiTone> = {
+  connected: "success", token_expiring: "warning", reconnect_required: "danger",
+  webhook_pending: "warning", degraded: "warning"
+};
 const dateTime = (value: string | null | undefined) => value && !Number.isNaN(Date.parse(value))
   ? new Date(value).toLocaleString("pt-BR") : "Ainda não disponível";
 
 export function BlingIntegration() {
+  const confirm = usePanelConfirm();
   const [status, setStatus] = useState<Status | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [localPreview, setLocalPreview] = useState<LocalPreview | null>(null);
@@ -45,7 +52,11 @@ export function BlingIntegration() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const connect = async () => {
+  const connect = async (reconnect: boolean) => {
+    const confirmed = await confirm(reconnect
+      ? { title: "Reconectar o Bling?", description: "Você será levado ao Bling para autorizar a integração de novo.", confirmLabel: "Reconectar" }
+      : { title: "Conectar o Bling?", description: "Você será levado ao Bling para autorizar a integração.", confirmLabel: "Conectar" });
+    if (!confirmed) return;
     setBusy(true); setMessage(""); setError("");
     try {
       const response = await fetch("/api/integrations/bling/connect", { method: "POST" });
@@ -58,7 +69,9 @@ export function BlingIntegration() {
   };
 
   const disconnect = async () => {
-    if (!window.confirm("Desconectar o Bling? Jobs pendentes continuarão guardados para reconciliação.")) return;
+    const confirmed = await confirm({ title: "Desconectar o Bling?",
+      description: "Jobs pendentes continuarão guardados para reconciliação.", confirmLabel: "Desconectar", tone: "danger" });
+    if (!confirmed) return;
     setBusy(true); setMessage(""); setError("");
     try {
       const response = await fetch("/api/integrations/bling/disconnect", { method: "POST" });
@@ -70,6 +83,9 @@ export function BlingIntegration() {
   };
 
   const test = async () => {
+    const confirmed = await confirm({ title: "Testar a comunicação com o Bling?",
+      description: "Uma chamada real à API do Bling será feita e o resultado do teste aparecerá no status.", confirmLabel: "Testar" });
+    if (!confirmed) return;
     setBusy(true); setMessage(""); setError("");
     try {
       const response = await fetch("/api/integrations/bling/status", { method: "POST" });
@@ -103,7 +119,9 @@ export function BlingIntegration() {
   };
 
   const createProduct = async (variantId: string) => {
-    if (!window.confirm("Verificar o SKU no Bling e criar o produto apenas se ele não existir?")) return;
+    const confirmed = await confirm({ title: "Sincronizar esta variante com o Bling?",
+      description: "O SKU será verificado no Bling e o produto só será criado se ele não existir.", confirmLabel: "Sincronizar" });
+    if (!confirmed) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const response = await fetch("/api/integrations/bling/products", { method: "POST",
@@ -116,7 +134,11 @@ export function BlingIntegration() {
   };
 
   const match = async () => {
-    if (!preview || !window.confirm(`Vincular os SKUs correspondentes da página ${preview.page}?`)) return;
+    if (!preview) return;
+    const confirmed = await confirm({ title: `Vincular os SKUs correspondentes da página ${preview.page}?`,
+      description: "Somente as correspondências encontradas nesta página serão vinculadas. Nenhum produto é criado no Bling.",
+      confirmLabel: "Vincular" });
+    if (!confirmed) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const response = await fetch("/api/integrations/bling/products", { method: "POST",
@@ -129,62 +151,100 @@ export function BlingIntegration() {
     finally { setBusy(false); }
   };
 
-  return <section className="panel-card technical-section bling-integration" aria-busy={loading || busy}>
-    <h2>Bling</h2>
-    {loading ? <p role="status">Carregando status do Bling…</p> : error && !status ? <p role="alert">{error} <button type="button" onClick={() => void load()}>Tentar novamente</button></p> : null}
-    {status ? <>
-      <p role="status"><strong>{labels[status.status] ?? status.status}</strong> · {status.environment === "production" ? "Produção" : "Aplicação de teste · API real do Bling"}</p>
-      <div className="technical-runtime-grid">
-        <div><strong>API</strong><span>{status.apiHealthy === true ? "Último teste confirmado" : status.apiHealthy === false ? "Último teste falhou" : "Ainda não testada"} · {dateTime(status.apiCheckedAt)}</span></div>
-        <div><strong>Empresa</strong><span>{status.companyName ?? "Não verificada"}</span></div>
-        <div><strong>Token</strong><span>{dateTime(status.accessTokenExpiresAt)}</span></div>
-        <div><strong>Webhook</strong><span>{status.webhookConfigured ? status.webhookStale ? "Sem eventos recentes" : "Configurado" : "Pendente"}</span></div>
-        <div><strong>Último evento</strong><span>{dateTime(status.metrics.lastWebhookAt)}</span></div>
-        <div><strong>Última sincronização</strong><span>{dateTime(status.metrics.lastSyncAt)}</span></div>
-        <div><strong>Fila</strong><span>{status.metrics.queued ?? 0} pendente(s), {status.metrics.running ?? 0} em execução, {status.metrics.failed ?? 0} falha(s)</span></div>
-        <div><strong>Pedidos</strong><span>{status.metrics.ordersSynced ?? 0} sincronizado(s), {status.metrics.ordersPending ?? 0} pendente(s)</span></div>
-        <div><strong>Variantes vinculadas</strong><span>{status.metrics.productsMatched ?? 0}</span></div>
-      </div>
-      <p className="technical-note">Permissões a conferir no aplicativo Bling: {status.scopeSetup.join(", ")}.</p>
-      <p className="technical-note">Produtos: {status.productSyncEnabled ? "atualização habilitada" : "atualização desabilitada"}. Estoque: {status.stockSyncEnabled ? "envio habilitado" : "envio desabilitado"}{status.stockDepositConfigured ? "" : " (depósito pendente)"}. Pedidos: {status.orderSyncEnabled ? "envio habilitado" : "envio desabilitado"}. Rascunho fiscal: {status.invoiceSyncEnabled ? "habilitado" : "desabilitado"}. Envio à SEFAZ: {status.invoiceSendEnabled ? "habilitado" : "desabilitado"}. Dados fiscais: {status.fiscalReady ? "confirmados no ambiente" : "aguardando conferência"}.</p>
-      <div className="table-actions">
-        {status.connected ? <>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void test()}>Testar conexão</button>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void connect()}>Reconectar</button>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void disconnect()}>Desconectar</button>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadPreview(1)}>Conferir SKUs</button>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadLocalPreview(1)}>Variantes locais</button>
-        </> : <button className="primary-button" type="button" disabled={busy || status.status === "not_configured"} onClick={() => void connect()}>Conectar Bling</button>}
-      </div>
-      {preview ? <div className="technical-section">
-        <h3>Prévia de SKUs · página {preview.page}</h3>
-        {preview.rows.length ? <div className="admin-compact-list">{preview.rows.map((item) => <div key={`${item.sku}-${item.externalProductId}`}>
-          <span><strong>{item.sku}</strong><small>{item.name}</small></span>
-          <span>{item.status === "ready_to_match" ? "Correspondência encontrada" : item.status === "duplicate_external_sku" ? "SKU duplicado no Bling" : "Sem variante local"}</span>
-        </div>)}</div> : <p>Nenhum produto nesta página.</p>}
-        <div className="table-actions">
-          <button className="primary-button" type="button" disabled={busy || !preview.rows.some((item) => item.status === "ready_to_match")} onClick={() => void match()}>Vincular correspondências</button>
-          <button className="secondary-button" type="button" disabled={busy || page <= 1} onClick={() => void loadPreview(page - 1)}>Anterior</button>
-          <button className="secondary-button" type="button" disabled={busy || !preview.hasMore} onClick={() => void loadPreview(page + 1)}>Próxima</button>
+  const previewStatus = (value: string) => value === "ready_to_match"
+    ? <StatusLabel tone="success">Correspondência encontrada</StatusLabel>
+    : value === "duplicate_external_sku"
+      ? <StatusLabel tone="warning">SKU duplicado no Bling</StatusLabel>
+      : <StatusLabel>Sem variante local</StatusLabel>;
+
+  return <section className="technical-section bling-integration" aria-labelledby="technical-bling" aria-busy={loading || busy}>
+    <SectionHeader id="technical-bling" title="Bling" />
+    <div className="technical-sheet">
+      {loading ? <LoadingBlock label="Carregando status do Bling…" rows={3} /> : error && !status
+        ? <StateMessage compact kind="error" level={3} title="Status do Bling indisponível" description={error}
+          action={<button className="secondary-button" type="button" onClick={() => void load()}>Tentar novamente</button>} />
+        : null}
+      {status ? <>
+        <p className="technical-lead" role="status"><StatusLabel tone={tones[status.status] ?? "neutral"}>{labels[status.status] ?? status.status}</StatusLabel> <span>{status.environment === "production" ? "Produção" : "Aplicação de teste · API real do Bling"}</span></p>
+        <dl className="technical-facts">
+          <div><dt>API</dt><dd>{status.apiHealthy === true ? "Último teste confirmado" : status.apiHealthy === false ? "Último teste falhou" : "Ainda não testada"} · <span className="ui-num">{dateTime(status.apiCheckedAt)}</span></dd></div>
+          <div><dt>Empresa</dt><dd>{status.companyName ?? "Não verificada"}</dd></div>
+          <div><dt>Token</dt><dd className="ui-num">{dateTime(status.accessTokenExpiresAt)}</dd></div>
+          <div><dt>Webhook</dt><dd>{status.webhookConfigured ? status.webhookStale ? "Sem eventos recentes" : "Configurado" : "Pendente"}</dd></div>
+          <div><dt>Último evento</dt><dd className="ui-num">{dateTime(status.metrics.lastWebhookAt)}</dd></div>
+          <div><dt>Última sincronização</dt><dd className="ui-num">{dateTime(status.metrics.lastSyncAt)}</dd></div>
+          <div><dt>Fila</dt><dd className="ui-num">{status.metrics.queued ?? 0} pendente(s), {status.metrics.running ?? 0} em execução, {status.metrics.failed ?? 0} falha(s)</dd></div>
+          <div><dt>Pedidos</dt><dd className="ui-num">{status.metrics.ordersSynced ?? 0} sincronizado(s), {status.metrics.ordersPending ?? 0} pendente(s)</dd></div>
+          <div><dt>Variantes vinculadas</dt><dd className="ui-num">{status.metrics.productsMatched ?? 0}</dd></div>
+        </dl>
+        <h3 className="technical-subheading">Sincronizações</h3>
+        <dl className="technical-facts">
+          <div><dt>Produtos</dt><dd>{status.productSyncEnabled ? "Atualização habilitada" : "Atualização desabilitada"}</dd></div>
+          <div><dt>Estoque</dt><dd>{status.stockSyncEnabled ? "Envio habilitado" : "Envio desabilitado"}{status.stockDepositConfigured ? "" : " (depósito pendente)"}</dd></div>
+          <div><dt>Pedidos</dt><dd>{status.orderSyncEnabled ? "Envio habilitado" : "Envio desabilitado"}</dd></div>
+          <div><dt>Rascunho fiscal</dt><dd>{status.invoiceSyncEnabled ? "Habilitado" : "Desabilitado"}</dd></div>
+          <div><dt>Envio à SEFAZ</dt><dd>{status.invoiceSendEnabled ? "Habilitado" : "Desabilitado"}</dd></div>
+          <div><dt>Dados fiscais</dt><dd>{status.fiscalReady ? "Confirmados no ambiente" : "Aguardando conferência"}</dd></div>
+        </dl>
+        <p className="technical-note">Permissões a conferir no aplicativo Bling: {status.scopeSetup.join(", ")}.</p>
+        {message ? <p role="status" className="admin-feedback success technical-inline-feedback">{message}</p> : null}
+        {error ? <p role="alert" className="admin-feedback error technical-inline-feedback">{error}</p> : null}
+        <div className="technical-actions">
+          {status.connected ? <>
+            <div className="technical-actions-group">
+              <button className="secondary-button" type="button" disabled={busy} onClick={() => void test()}>Testar conexão</button>
+              <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadPreview(1)}>Conferir SKUs</button>
+              <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadLocalPreview(1)}>Variantes locais</button>
+              <button className="secondary-button" type="button" disabled={busy} onClick={() => void connect(true)}>Reconectar</button>
+            </div>
+            <button className="secondary-button technical-danger-action" type="button" disabled={busy} onClick={() => void disconnect()}>Desconectar</button>
+          </> : <div className="technical-actions-group">
+            <button className="primary-button" type="button" disabled={busy || status.status === "not_configured"} onClick={() => void connect(false)}>Conectar Bling</button>
+          </div>}
         </div>
-      </div> : null}
-      {localPreview ? <div className="technical-section">
-        <h3>Variantes locais · página {localPreview.page}</h3>
-        {localPreview.rows.length ? <div className="admin-compact-list">{localPreview.rows.map((item) => <div key={item.id}>
-          <span><strong>{item.sku}</strong><small>{item.linked ? "Vinculado ao Bling" : "Sem vínculo confirmado"}</small></span>
-          {!item.linked && status.productCreateEnabled ? <button className="secondary-button" type="button" disabled={busy}
-            onClick={() => void createProduct(item.id)}>Sincronizar</button> : null}
-        </div>)}</div> : <p>Nenhuma variante nesta página.</p>}
-        {!status.productCreateEnabled ? <p className="technical-note">Criação controlada desabilitada neste ambiente.</p> : null}
-        <div className="table-actions">
-          <button className="secondary-button" type="button" disabled={busy || localPreview.page <= 1}
-            onClick={() => void loadLocalPreview(localPreview.page - 1)}>Anterior</button>
-          <button className="secondary-button" type="button" disabled={busy || !localPreview.hasMore}
-            onClick={() => void loadLocalPreview(localPreview.page + 1)}>Próxima</button>
-        </div>
-      </div> : null}
-    </> : null}
-    {message ? <p role="status" className="admin-feedback">{message}</p> : null}
-    {error && status ? <p role="alert" className="admin-feedback">{error}</p> : null}
+        {preview ? <div className="technical-subsection">
+          <h3 className="technical-subheading">Prévia de SKUs · página {preview.page}</h3>
+          {preview.rows.length ? <table className="data-table ui-table-stack technical-table">
+            <thead><tr><th scope="col">SKU</th><th scope="col">Produto no Bling</th><th scope="col">Resultado</th></tr></thead>
+            <tbody>{preview.rows.map((item) => <tr key={`${item.sku}-${item.externalProductId}`}>
+              <td data-label="SKU"><code className="ui-code">{item.sku}</code></td>
+              <td data-label="Produto no Bling" className="technical-wrap">{item.name}</td>
+              <td data-label="Resultado">{previewStatus(item.status)}</td>
+            </tr>)}</tbody>
+          </table> : <StateMessage compact level={3} title="Nenhum produto nesta página." />}
+          <div className="technical-actions">
+            <div className="technical-actions-group">
+              <button className="primary-button" type="button" disabled={busy || !preview.rows.some((item) => item.status === "ready_to_match")} onClick={() => void match()}>Vincular correspondências</button>
+            </div>
+            <div className="technical-actions-group">
+              <button className="secondary-button" type="button" disabled={busy || page <= 1} onClick={() => void loadPreview(page - 1)}>Anterior</button>
+              <button className="secondary-button" type="button" disabled={busy || !preview.hasMore} onClick={() => void loadPreview(page + 1)}>Próxima</button>
+            </div>
+          </div>
+        </div> : null}
+        {localPreview ? <div className="technical-subsection">
+          <h3 className="technical-subheading">Variantes locais · página {localPreview.page}</h3>
+          {localPreview.rows.length ? <table className="data-table ui-table-stack technical-table">
+            <thead><tr><th scope="col">SKU</th><th scope="col">Vínculo</th>{status.productCreateEnabled ? <th scope="col"><span className="sr-only">Ações</span></th> : null}</tr></thead>
+            <tbody>{localPreview.rows.map((item) => <tr key={item.id}>
+              <td data-label="SKU"><code className="ui-code">{item.sku}</code></td>
+              <td data-label="Vínculo">{item.linked ? <StatusLabel tone="success">Vinculado ao Bling</StatusLabel> : <StatusLabel>Sem vínculo confirmado</StatusLabel>}</td>
+              {status.productCreateEnabled ? <td className="technical-row-actions">{!item.linked ? <button className="secondary-button" type="button" disabled={busy}
+                onClick={() => void createProduct(item.id)}>Sincronizar</button> : null}</td> : null}
+            </tr>)}</tbody>
+          </table> : <StateMessage compact level={3} title="Nenhuma variante nesta página." />}
+          {!status.productCreateEnabled ? <p className="technical-note">Criação controlada desabilitada neste ambiente.</p> : null}
+          <div className="technical-actions">
+            <div className="technical-actions-group">
+              <button className="secondary-button" type="button" disabled={busy || localPreview.page <= 1}
+                onClick={() => void loadLocalPreview(localPreview.page - 1)}>Anterior</button>
+              <button className="secondary-button" type="button" disabled={busy || !localPreview.hasMore}
+                onClick={() => void loadLocalPreview(localPreview.page + 1)}>Próxima</button>
+            </div>
+          </div>
+        </div> : null}
+      </> : null}
+      {!status && message ? <p role="status" className="admin-feedback success technical-inline-feedback">{message}</p> : null}
+    </div>
   </section>;
 }
