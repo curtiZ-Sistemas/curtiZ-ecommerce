@@ -16,7 +16,8 @@ for (const viewport of [
     await page.getByRole("button", { name: "Entrar na minha conta" }).click();
 
     await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
-    await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", "operacional");
+    await expect(page.locator("#panel-content").getByRole("heading", { name: "Visão geral", level: 1 })).toBeVisible({ timeout: 60_000 });
   });
 }
 
@@ -59,12 +60,12 @@ for (const account of [
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
     await expect(page.locator("#panel-content")).toBeVisible();
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
-    await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
+    await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(245, 243, 240)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".topbar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".side-nav a.active")).toHaveCSS(
       "background-color",
-      "rgb(249, 227, 224)"
+      "rgb(255, 237, 232)"
     );
     const switchLink = page.locator(".sidebar-switch-link");
     if (await switchLink.count()) {
@@ -73,8 +74,7 @@ for (const account of [
       expect(switchBox).not.toBeNull();
       expect(supportBox).not.toBeNull();
       const gap = supportBox!.y - (switchBox!.y + switchBox!.height);
-      expect(gap).toBeGreaterThanOrEqual(12);
-      expect(gap).toBeLessThanOrEqual(16);
+      expect(gap).toBeCloseTo(0, 1);
     }
     expect(consoleErrors).toEqual([]);
   });
@@ -91,7 +91,7 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
 test("painel técnico separa os metadados de deploy da loja e do painel", async ({ page }) => {
   await loginAs(page, "tecnico.demo@curtiz.local");
   await page.goto("/tecnico/deploys");
-  const deploys = page.locator(".technical-deploy-grid");
+  const deploys = page.getByRole("region", { name: "Runtime, deploy e manutenção" }).locator(".technical-deploys");
   await expect(deploys.getByRole("heading", { name: "Loja" })).toBeVisible();
   await expect(deploys.getByRole("heading", { name: "Painel" })).toBeVisible();
   await expect(deploys.getByText("Commit")).toHaveCount(2);
@@ -107,13 +107,15 @@ test("busca global abre com teclado e mantém resultados protegidos por função
     await searchButton.click();
     await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  const search = page.getByLabel("Buscar no painel");
+  const search = page.getByRole("textbox", { name: "Buscar no painel", exact: true });
   await expect(search).toBeFocused();
   await search.fill("produto");
   await expect(page.locator("#panel-search-results")).toBeVisible();
   await expect(page.getByText("Nenhum resultado encontrado.")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(search).toBeHidden();
+  await expect(searchButton).toHaveAttribute("aria-expanded", "false");
+  await expect(searchButton).toBeFocused();
 });
 
 test("novo suporte aparece na fila administrativa", async ({ page }) => {
