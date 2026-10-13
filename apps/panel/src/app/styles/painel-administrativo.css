@@ -1,0 +1,8 @@
+/*
+  Painel Administrativo — estilos próprios.
+  Dono: Agente 1. Somente este agente edita este arquivo.
+  Carregado depois de globals.css e foundation.css (ver app/layout.tsx).
+  Seletores permitidos: .admin-dashboard*, .admin-resource*, .admin-permission*, .admin-user*, .managed-product*, .product-*, .variant-*, .banner-*, .store-navigation-*, .promotion-*, .homepage-*, .representative-*, .creative-*, .help-admin*, .legal-* (exceto .legal-operational)
+  Ou primitivos compartilhados escopados com [data-panel-role="administracao"], apenas para densidade/disposição.
+  Use somente tokens (var(--...)); sem hex novo, sem !important, sem fonte nova.
+*/

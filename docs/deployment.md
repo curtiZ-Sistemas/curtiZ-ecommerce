@@ -30,6 +30,15 @@ O GitHub Actions deve ser o **único** caminho automático. Confira manualmente,
 2. Se houver um repositório conectado, use **Disconnect**.
 3. Repita em `curtiz-painel`.
 
+O histórico de **Builds** pode continuar mostrando uma falha antiga mesmo após uma publicação
+correta pelo Actions. Nos logs de 12/10/2026 do commit `e5f5cda`, a compilação terminou, mas o
+comando nativo `wrangler versions upload --env production --keep-vars` foi rejeitado com
+`Unknown arguments: keep-vars, keepVars`. Esse comando não é o caminho oficial de produção.
+Mantenha os builds nativos desconectados e publique pelo workflow, que usa
+`wrangler deploy --config apps/<aplicação>/wrangler.jsonc --env production --keep-vars`.
+Confirme o SHA em `/api/version` de cada domínio e a versão ativa do Worker, além dos gates e
+smokes do Actions; a indicação histórica de "Latest build failed" não identifica a versão ativa.
+
 Um Workers Build conectado publica uma segunda versão a cada push, fora da ordem e **sem** os gates
 do workflow (qualidade, banco, E2E, segurança). Em 30/09/2026 isso estava acontecendo: os checks
 `Workers Builds: curtiz-ecommerce` e `Workers Builds: curtiz-painel` publicavam com sucesso enquanto o
