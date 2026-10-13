@@ -71,11 +71,16 @@ export async function runExpirationHousekeeping(
         databaseCode: failure.code
       });
       if (!shouldRetry) return { ok: false, expired: 0, attempts: attempt };
-    } catch {
+    } catch (error) {
+      // Only known exception names are emitted; never exception text or request data.
+      const failureType = error instanceof Error
+        && ["Error", "TypeError", "RangeError", "ReferenceError", "AbortError", "TimeoutError"].includes(error.name)
+        ? error.name : "unclassified";
       logServerEvent("error", "checkout_housekeeping_runtime_failure", {
         requestId,
         code: "EXPIRATION_RUNTIME_FAILURE",
         attempt,
+        failureType,
         message: null,
         details: null,
         hint: null

@@ -18,6 +18,13 @@ const environment = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scheduled tasks with the real Supabase HTTP client", () => {
+  it("propagates a failed shipping claim instead of reporting an empty completed queue", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"code":"temporary_unavailable"}', { status: 503 }));
+    await expect(runMelhorEnvioShippingJobs(environment, "test-execution", undefined, transport))
+      .rejects.toMatchObject({ code: "provider_unavailable", httpStatus: 503, retryable: true });
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it("calls every queue RPC through the injected transport while global fetch rejects", async () => {
     const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No Next request storage"));
     vi.stubGlobal("fetch", patchedFetch);

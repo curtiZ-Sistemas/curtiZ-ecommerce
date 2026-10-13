@@ -37,6 +37,15 @@ const workerGlobal = {
   Request,
   fetch: dependencies.nativeFetch,
   require: (specifier: string) => {
+    if (specifier === "./worker-native-fetch") {
+      const nativeModule = { exports: {} };
+      const nativeSource = readFileSync(resolve(process.cwd(), "apps/store/worker-native-fetch.ts"), "utf8");
+      const nativeCompiled = ts.transpileModule(nativeSource, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+      }).outputText;
+      runInNewContext(nativeCompiled, { module: nativeModule, exports: nativeModule.exports, fetch: dependencies.nativeFetch });
+      return nativeModule.exports;
+    }
     if (specifier === "./.open-next/worker.js") return { default: { fetch: dependencies.fetch } };
     if (specifier === "./.open-next/cloudflare/init.js") return { runWithCloudflareRequestContext: dependencies.context };
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
@@ -107,6 +116,38 @@ describe("custom Worker handlers", () => {
       expect(job.mock.calls[0]?.[3]).toBe(transport);
     expect(patchedFetch).not.toHaveBeenCalled();
     workerGlobal.fetch = dependencies.nativeFetch;
+  });
+
+  it("captures native I/O before importing OpenNext can replace global fetch", async () => {
+    const response = new Response("native transport before imports");
+    const nativeFetch = vi.fn<typeof fetch>().mockResolvedValue(response);
+    const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No Next request storage"));
+    const freshModule = { exports: {} as { default: Worker } };
+    const globals = { ...workerGlobal, module: freshModule, exports: freshModule.exports, fetch: nativeFetch };
+    globals.require = (specifier: string) => {
+      if (specifier === "./worker-native-fetch") {
+        const nativeModule = { exports: {} };
+        const nativeSource = readFileSync(resolve(process.cwd(), "apps/store/worker-native-fetch.ts"), "utf8");
+        const nativeCompiled = ts.transpileModule(nativeSource, {
+          compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+        }).outputText;
+        runInNewContext(nativeCompiled, { ...globals, module: nativeModule, exports: nativeModule.exports });
+        return nativeModule.exports;
+      }
+      if (specifier === "./.open-next/worker.js") globals.fetch = patchedFetch;
+      return workerGlobal.require(specifier);
+    };
+    runInNewContext(compiled, globals);
+    const context = { waitUntil: vi.fn() };
+    freshModule.exports.default.scheduled({}, {}, context);
+    await context.waitUntil.mock.calls[0]?.[0];
+    const transport = dependencies.housekeeping.mock.calls[0]?.[2] as typeof fetch;
+    await expect(transport("https://example.invalid/rpc")).resolves.toBe(response);
+    expect(patchedFetch).not.toHaveBeenCalled();
+    expect(nativeFetch).toHaveBeenCalledOnce();
+    expect(dependencies.log).toHaveBeenCalledWith("info", "scheduled_transport_selected", expect.objectContaining({
+      nextFetchPatchedAtCapture: false
+    }));
   });
 
   it("runs queues only inside the OpenNext request context", async () => {
