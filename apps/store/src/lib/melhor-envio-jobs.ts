@@ -182,7 +182,8 @@ export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnviron
     const lockId = crypto.randomUUID();
     const claim = readQueryResult(await db.rpc("claim_melhor_envio_job", { p_lock_id: lockId }));
     const job = readJob(claim.data);
-    if (claim.error || !job) break;
+    if (claim.error) throw new MelhorEnvioError("provider_unavailable", 503, true);
+    if (!job) break;
     try {
       if (job.jobType === "melhorenvio.create") await createShipment(db, environment, job.shipmentId, transport);
       else await cancelShipment(db, environment, job.shipmentId, transport);

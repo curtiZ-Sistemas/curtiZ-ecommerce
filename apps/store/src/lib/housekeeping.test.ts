@@ -65,6 +65,14 @@ describe("checkout expiration housekeeping", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("reports only a known exception type without leaking error text", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("test-only credential detail"));
+    await expect(runExpirationHousekeeping(environment, "request-id", fetcher)).resolves.toMatchObject({ ok: false, attempts: 2 });
+    expect(log).toHaveBeenCalledWith("checkout_housekeeping_runtime_failure", expect.objectContaining({ failureType: "TypeError" }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("test-only credential detail");
+  });
+
   it("does not send secrets to malformed or credential-bearing URLs", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetcher = vi.fn();
