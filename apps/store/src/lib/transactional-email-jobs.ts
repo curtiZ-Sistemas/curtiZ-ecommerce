@@ -89,12 +89,13 @@ export function emailOrderFromSource(source: unknown): EmailOrder {
 
 // The scheduled handler supplies bindings directly. No build-time environment fallback.
 export async function runTransactionalEmailJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
+  const readiness = getResendReadiness(environment);
+  // The explicit, disabled-commercial test is independent of database health.
+  if (!readiness.configured) await runEmailHomologation(environment, executionId, transport);
   const db = database(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
-  const readiness = getResendReadiness(environment);
   await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
   if (!readiness.configured) {
-    await runEmailHomologation(environment, executionId, transport);
     return { ok: true, processed: 0, failed: 0 };
   }
   let processed = 0;

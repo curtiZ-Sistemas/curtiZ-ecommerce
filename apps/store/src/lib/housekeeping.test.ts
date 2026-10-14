@@ -73,6 +73,28 @@ describe("checkout expiration housekeeping", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain("test-only credential detail");
   });
 
+  it("classifies a header error without emitting header values or error text", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("Header ByteString: test-only private detail"));
+    await runExpirationHousekeeping(environment, "request-id", fetcher);
+    expect(log).toHaveBeenCalledWith("checkout_housekeeping_runtime_failure", expect.objectContaining({
+      failureReason: "headers", failureStage: "request_fetch"
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("test-only private detail");
+  });
+
+  it("distinguishes timeout setup failure before invoking transport", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => { throw new TypeError("AbortSignal test-only detail"); });
+    const fetcher = vi.fn();
+    await runExpirationHousekeeping(environment, "request-id", fetcher);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith("checkout_housekeeping_runtime_failure", expect.objectContaining({
+      failureReason: "signal", failureStage: "request_timeout"
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("test-only detail");
+  });
+
   it("does not send secrets to malformed or credential-bearing URLs", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetcher = vi.fn();

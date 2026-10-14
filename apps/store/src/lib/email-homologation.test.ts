@@ -3,7 +3,7 @@ const state = vi.hoisted(() => ({ rpc: vi.fn(), log: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ rpc: state.rpc }) }));
 vi.mock("@curtiz/security", () => ({ logServerEvent: state.log }));
-import { runEmailHomologation } from "./transactional-email-jobs";
+import { runEmailHomologation, runTransactionalEmailJobs } from "./transactional-email-jobs";
 const now = Date.parse("2026-10-12T12:05:00.000Z");
 const environment = { EMAIL_PROVIDER: "resend", EMAIL_ENABLED: "false", RESEND_API_KEY: "test-provider-key",
   EMAIL_FROM: "pedidos@example.com", EMAIL_REPLY_TO: "reply@example.com", NEXT_PUBLIC_STORE_URL: "https://store.example.com",
@@ -55,5 +55,22 @@ describe("isolated runtime email homologation", () => {
     await runEmailHomologation(environment, "execution", transport, now);
     expect(state.log).toHaveBeenCalledWith("error", "transactional_email_homologation_failed", expect.objectContaining({ code: "email_acceptance_uncertain" }));
     expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/sensitive|authorized@|test-provider-key/u);
+  });
+
+  it("completes the explicit test before a database failure without claiming customer jobs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    state.rpc.mockResolvedValue({ data: null, error: { code: "test_storage_failure" } });
+    const transport = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => new Response(JSON.stringify(
+      init?.method === "POST" ? { id: "provider-test" } : { last_event: "delivered" })));
+    const result = runTransactionalEmailJobs({ ...environment, SUPABASE_URL: "https://test.supabase.co", SUPABASE_SECRET_KEY: "test-only-key" }, "execution", 4, transport);
+    const failed = expect(result).rejects.toMatchObject({ code: "email_storage_unavailable" });
+    await vi.runAllTimersAsync();
+    await failed;
+    expect(transport.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(transport.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(2);
+    expect(state.rpc).toHaveBeenCalledTimes(1);
+    expect(state.rpc).toHaveBeenCalledWith("sync_transactional_email_runtime", { p_enabled: false, p_configured: false });
+    expect(state.rpc).not.toHaveBeenCalledWith("claim_transactional_email", expect.anything());
   });
 });
