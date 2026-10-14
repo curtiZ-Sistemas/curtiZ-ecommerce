@@ -43,7 +43,11 @@ export function PanelDrawer({ open, title, eyebrow, dirty = false, busy = false,
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => closeRef.current?.focus(), 0);
-    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") requestCloseRef.current(); };
+    // Com confirmação ou prompt do painel aberto por cima, o Escape pertence a esse diálogo, não ao drawer.
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || document.querySelector(".panel-confirm-dialog, .panel-prompt-dialog")) return;
+      requestCloseRef.current();
+    };
     document.addEventListener("keydown", escape);
     return () => {
       window.clearTimeout(focusTimer);

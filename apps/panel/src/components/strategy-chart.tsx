@@ -52,7 +52,7 @@ export function StrategyChart({ data }: { data: StrategyPoint[] }) {
             <Tooltip {...chartTooltipProps} formatter={(value) => compactCurrency.format(Number(value))} />
             <Legend wrapperStyle={chartLegendStyle} iconType="plainline" />
             <Line type="monotone" dataKey="gross" name="Faturamento bruto" stroke="var(--brand-700)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="profit" name="Lucro estimado" stroke="var(--neutral-500)" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="profit" name="Lucro estimado" stroke="var(--neutral-500)" strokeWidth={2} strokeDasharray="6 4" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

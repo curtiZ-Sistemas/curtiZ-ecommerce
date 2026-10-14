@@ -21,7 +21,7 @@ export const gerenciaSectionCopy: SectionCopy = {
   "regras-comissao": "Consulte e ajuste as regras usadas no cálculo das comissões.",
   fechamentos: "Simule, aprove, bloqueie ou reabra fechamentos de comissão com registro em auditoria.",
   pagamentos: "Consulte os pagamentos de comissão efetivamente registrados.",
-  criativos: "Revise os criativos enviados pela rede e registre a decisão.",
+  criativos: "Revise os criativos em análise e aprove, rejeite, publique ou arquive cada material.",
   campanhas: "Consulte as campanhas e altere o estado de aprovação e publicação com justificativa.",
   "barra-promocional": "Edite a mensagem da barra promocional exibida na loja.",
   "conteudo-loja": "Monte a página inicial da loja, agende publicações e restaure versões.",
@@ -30,10 +30,10 @@ export const gerenciaSectionCopy: SectionCopy = {
   aprovacoes: "Escolha a fila para decidir; cada aprovação acontece no fluxo de origem.",
   auditoria: "Consulte quem fez o quê, em qual área e quando, com os detalhes de cada registro.",
   usuarios: "Consulte as pessoas com acesso ao painel e seus papéis.",
-  politicas: "Consulte as políticas e os textos de conformidade da loja.",
+  politicas: "Consulte as políticas da loja e, com permissão, edite e publique novas versões.",
   simulacoes: "Simule fechamentos de comissão por período antes de enviá-los para aprovação.",
   alertas: "Veja as ocorrências que pedem acompanhamento e abra a área responsável.",
   "configuracoes-estrategicas": "Consulte as políticas comerciais versionadas em vigor.",
   atendimentos: "Acompanhe as conversas de atendimento com clientes.",
-  "central-ajuda": "Consulte os artigos da Central de Ajuda."
+  "central-ajuda": "Consulte os artigos da Central de Ajuda e, com permissão, crie e edite conteúdos."
 };

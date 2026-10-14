@@ -48,7 +48,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
             <Tooltip {...chartTooltipProps} formatter={(value) => compactCurrency.format(Number(value))} />
             <Legend wrapperStyle={chartLegendStyle} iconType="plainline" />
             <Line type="monotone" dataKey="gross" stroke="var(--brand-700)" strokeWidth={2} dot={false} name="Bruto" />
-            <Line type="monotone" dataKey="net" stroke="var(--neutral-500)" strokeWidth={2} dot={false} name="Líquido" />
+            <Line type="monotone" dataKey="net" stroke="var(--neutral-500)" strokeWidth={2} strokeDasharray="6 4" dot={false} name="Líquido" />
           </LineChart>
         </ResponsiveContainer>
       </div>
