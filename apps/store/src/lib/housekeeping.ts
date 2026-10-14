@@ -15,6 +15,19 @@ type HousekeepingResult = {
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+function runtimeFailureReason(error: unknown): string {
+  if (!(error instanceof Error)) return "unclassified";
+  // Application-side classification emits fixed labels, never original error text.
+  const reasons: readonly [string, RegExp][] = [
+    ["headers", /header|ByteString/iu], ["signal", /AbortSignal|signal/iu],
+    ["receiver", /receiver|illegal invocation/iu], ["cache", /cache/iu],
+    ["io_context", /scope|context|different request|I\/O/iu],
+    ["request_body", /body|RequestInitializer/iu], ["request_url", /URL/iu],
+    ["network", /fetch failed|network|connection|certificate|TLS|DNS/iu]
+  ];
+  return reasons.find(([, pattern]) => pattern.test(error.message))?.[0] ?? "unclassified";
+}
+
 export async function runExpirationHousekeeping(
   environment: HousekeepingEnvironment,
   requestId: string,
@@ -39,7 +52,10 @@ export async function runExpirationHousekeeping(
   }
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let failureStage = "request_timeout";
     try {
+      const signal = AbortSignal.timeout(10_000);
+      failureStage = "request_fetch";
       const response = await fetcher(`${baseUrl}/rest/v1/rpc/expire_stale_mercadopago_orders`, {
         method: "POST",
         headers: {
@@ -50,8 +66,9 @@ export async function runExpirationHousekeeping(
         },
         body: JSON.stringify({ p_limit: 50 }),
         redirect: "error",
-        signal: AbortSignal.timeout(10_000)
+        signal
       });
+      failureStage = "response_read";
       const payload: unknown = await response.json().catch(() => null);
       if (response.ok && typeof payload === "number" && Number.isSafeInteger(payload) && payload >= 0) {
         logServerEvent("info", "checkout_housekeeping_completed", { requestId, expired: payload, attempts: attempt });
@@ -81,6 +98,8 @@ export async function runExpirationHousekeeping(
         code: "EXPIRATION_RUNTIME_FAILURE",
         attempt,
         failureType,
+        failureStage,
+        failureReason: runtimeFailureReason(error),
         message: null,
         details: null,
         hint: null
