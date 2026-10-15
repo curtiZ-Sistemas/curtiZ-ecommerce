@@ -174,7 +174,7 @@ jobs:
         # Only the ephemeral CI database is changed. The test still runs as
         # postgres; that role cannot LOAD native libraries directly.
         run: |
-          docker exec supabase_db_curtiz-local psql -X -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
+          docker exec -e PGPASSWORD=postgres supabase_db_curtiz-local psql -X -w -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
             -c "ALTER ROLE postgres SET session_preload_libraries = 'safeupdate'"
           supabase test db supabase/tests/singleton_runtime_safeupdate_test.sql
 
