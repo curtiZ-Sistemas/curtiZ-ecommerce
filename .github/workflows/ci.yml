@@ -164,7 +164,19 @@ jobs:
         run: |
           docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
       - run: supabase db lint --local --fail-on error
-      - run: supabase test db
+      - name: Testar contratos SQL
+        shell: bash
+        run: |
+          mapfile -t sql_tests < <(find supabase/tests -type f \( -name '*.sql' -o -name '*.pg' \) ! -name singleton_runtime_safeupdate_test.sql | sort)
+          test "${#sql_tests[@]}" -gt 0
+          supabase test db "${sql_tests[@]}"
+      - name: Testar runtime com safeupdate ativo
+        # Only the ephemeral CI database is changed. The test still runs as
+        # postgres; that role cannot LOAD native libraries directly.
+        run: |
+          docker exec -e PGPASSWORD=postgres supabase_db_curtiz-local psql -X -w -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER ROLE postgres SET session_preload_libraries = 'safeupdate'"
+          supabase test db supabase/tests/singleton_runtime_safeupdate_test.sql
 
   e2e:
     name: E2E / ${{ matrix.project }}

@@ -82,7 +82,8 @@ export type MercadoPagoPayment = {
 export class MercadoPagoProviderError extends Error {
   constructor(
     readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
-    readonly httpStatus = 502
+    readonly httpStatus = 502,
+    readonly providerCauseCodes: readonly string[] = []
   ) {
     super(code);
     this.name = "MercadoPagoProviderError";
@@ -177,10 +178,17 @@ export class MercadoPagoTestPaymentProvider {
       ...init, headers, signal: init.signal ?? AbortSignal.timeout(15_000)
     });
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw new MercadoPagoProviderError(
-      response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
-      response.status
-    );
+    if (!response.ok) {
+      const causes: unknown = body && typeof body === "object" && "cause" in body ? body.cause : null;
+      const codes = Array.isArray(causes) ? causes.flatMap((cause: unknown) => {
+        const code: unknown = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
+        return (typeof code === "string" || typeof code === "number") && /^\d{1,10}$/u.test(String(code)) ? [String(code)] : [];
+      }).slice(0, 5) : [];
+      throw new MercadoPagoProviderError(
+        response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
+        response.status, codes
+      );
+    }
     return mercadoPagoPayment(body);
   }
 

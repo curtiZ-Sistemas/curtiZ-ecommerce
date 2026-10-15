@@ -114,7 +114,8 @@ const logFailure = (code: string, status?: number, requestId?: string, error?: u
   const database = safeDatabaseError(error);
   logServerEvent("error", "mercadopago_bricks_payment_not_completed", {
     code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
-    message: database.message || null, details: database.details || null, hint: database.hint || null
+    message: database.message || null, details: database.details || null, hint: database.hint || null,
+    providerCauseCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : []
   });
 };
 const isPersistedPendingPix = (payment: Record<string, unknown>) => {
@@ -456,7 +457,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       if (rejection.error) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
         message: "Não foi possível confirmar a recusa. Verifique a mesma tentativa." }, 503);
     }
-    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus);
+    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus, error);
     return orderFailure({ code: definitelyRejected ? "PROVIDER_PAYMENT_REJECTED" : "PAYMENT_RESULT_UNCERTAIN",
       recovery: definitelyRejected ? "new_attempt" : "retry_attempt", message: definitelyRejected
         ? "Pagamento recusado. Revise os dados e tente novamente."
