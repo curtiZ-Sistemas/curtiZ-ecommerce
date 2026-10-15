@@ -15,6 +15,8 @@ Registro técnico desta execução. Não autoriza vendas reais nem emissão fisc
 
 ## Plataformas e integrações
 
+**Storage, achado P1:** a policy de pacotes de campanha resolve `name` como `creative_packages.name` dentro da subconsulta. Isso quebra a correlação com `storage.objects`: um pacote com nome igual ao caminho pode autorizar outros objetos do bucket. Metadados remotos confirmam essa definição e zero pacotes atuais. Migration qualifica `objects.name`, preservando as verificações de audiência; oito testes reais de RLS foram preparados para representante, cliente, gestor e anônimo. Aplicação pendente do CI, sem consulta de arquivos privados.
+
 - **Cloudflare — TESTADO:** domínios oficiais associados aos Workers corretos; Workers Builds sem triggers nos dois; cron `*/5 * * * *` da loja presente. CI da base `6cd84b0` aprovado, com banco/E2E/build/dry-run da loja; painel ativo na base anterior `fe7c876` por detecção de escopo. Isso não comprova o novo commit.
 - **Bling — TESTADO parcialmente:** chamada técnica real de leitura respondeu 200; renovação do access token comprovada por metadados de validade, sem consultar valores. Forma de pagamento configurada corresponde a Mercado Pago. Depósito único, ativo e padrão conferido na interface; `BLING_STOCK_DEPOSIT_ID` cadastrado como Text nos dois Workers, sem ativar sincronização.
 - **Bling — CONCLUÍDO:** aplicativo privado aprovado e callback conferidos na interface oficial; adicionados escopos de estoque, depósitos e leitura de notas fiscais, sem permissão de emissão. Reautorização concluída; leitura técnica retornou 200. Webhooks de produtos, pedidos, estoques e NF-e ativos e salvos. Permissões anteriores foram preservadas.
