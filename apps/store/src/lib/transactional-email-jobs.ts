@@ -51,7 +51,12 @@ export async function runEmailHomologation(environment: Environment, executionId
 
 async function call(db: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await db.rpc(name, args);
-  if (result.error) throw new EmailError("email_storage_unavailable", true);
+  if (result.error) {
+    const code = isUnknownRecord(result.error) ? result.error.code : null;
+    logServerEvent("error", "transactional_email_storage_request_failed", { rpc: name, status: result.status,
+      databaseCode: typeof code === "string" && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/u.test(code) ? code : "unknown" });
+    throw new EmailError("email_storage_unavailable", true);
+  }
   return result.data;
 }
 function database(environment: Environment, transport: typeof fetch): SupabaseClient | null {

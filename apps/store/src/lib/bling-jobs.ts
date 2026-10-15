@@ -37,7 +37,12 @@ function database(environment: Environment, transport: typeof fetch): SupabaseCl
 
 async function call(db: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await db.rpc(name, args);
-  if (result.error) throw new BlingError("storage_unavailable", 503, true);
+  if (result.error) {
+    const code = row(result.error)?.code;
+    logServerEvent("error", "bling_storage_request_failed", { rpc: name, status: result.status,
+      databaseCode: typeof code === "string" && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/u.test(code) ? code : "unknown" });
+    throw new BlingError("storage_unavailable", 503, true);
+  }
   return result.data;
 }
 

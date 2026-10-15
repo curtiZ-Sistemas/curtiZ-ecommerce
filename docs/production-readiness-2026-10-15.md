@@ -6,22 +6,23 @@ Registro técnico desta execução. Não autoriza vendas reais nem emissão fisc
 
 | Gravidade | Achado confirmado | Correção / estado |
 | --- | --- | --- |
-| P0 | O cron dispara, mas Workerd rejeita `redirect: "error"` nas chamadas de saída; expiração e filas falham. | Transporte nativo converte para `manual` e rejeita 301/302/303/307/308, sem seguir o destino nem repetir POST. Reproduzido e validado no Workerd local. Publicação pendente. |
+| P0 | O cron dispara, mas Workerd rejeita `redirect: "error"` nas chamadas de saída; expiração e filas falham. | Transporte nativo converte para `manual` e rejeita 301/302/303/307/308, sem seguir o destino nem repetir POST. Validado no Workerd e publicado. Cron remoto agora conclui expiração e frete; Bling/runtime de e-mails ainda falham, em investigação separada com diagnósticos sanitizados de RPC. |
 | P1 | `/tecnico/integracoes` renderiza somente a tabela genérica, ocultando os controles Bling/Melhor Envio já implementados. | Preservada a tabela e incluído o diagnóstico existente na rota. Regressão E2E acrescentada. |
-| P1 | `published_help_contents` aplica expiração somente ao caminho de agendamento por precedência de `AND`/`OR`. | Migration incremental e nove verificações pgTAP: prazo vencido/exato/futuro, publicação, agendamento, rascunho, papéis e metadados privados. Não aplicada remotamente nesta etapa. |
-| P1 | Query strings não eram removidas dos logs/traces dos dois Workers; callbacks OAuth usam parâmetros sensíveis. | `observability.redact_query_string=true` configurado e relido nos dois Workers; observabilidade e nomes/tipos dos bindings preservados. Não se afirma exposição anterior de credenciais. |
+| P1 | `published_help_contents` aplica expiração somente ao caminho de agendamento por precedência de `AND`/`OR`. | Migration incremental e nove verificações pgTAP: prazo vencido/exato/futuro, publicação, agendamento, rascunho, papéis e metadados privados. CI SQL aprovado; aplicada remotamente como versão `20261015142727`, nome `20261015135129_fix_published_help_expiration`. Definição relida e predicado confirmado. |
+| P1 | Query strings não eram removidas dos logs/traces dos dois Workers; callbacks OAuth usam parâmetros sensíveis. | `observability.redact_query_string=true` configurado e relido. Deploy redefiniu para false: restauração aplicada e etapa de aplicação/verificação adicionada ao deploy oficial, preservando logs/traces/bindings. Publicação dessa etapa pendente. Não se afirma exposição anterior de credenciais. |
 | P2 | Vitest podia descobrir testes de cópias antigas sob `.cache`. | Excluídos caches e artefatos da descoberta. |
 
 ## Plataformas e integrações
 
 - **Cloudflare — TESTADO:** domínios oficiais associados aos Workers corretos; Workers Builds sem triggers nos dois; cron `*/5 * * * *` da loja presente. CI da base `6cd84b0` aprovado, com banco/E2E/build/dry-run da loja; painel ativo na base anterior `fe7c876` por detecção de escopo. Isso não comprova o novo commit.
 - **Bling — TESTADO parcialmente:** chamada técnica real de leitura respondeu 200; renovação do access token comprovada por metadados de validade, sem consultar valores. Forma de pagamento configurada corresponde a Mercado Pago. Depósito único, ativo e padrão conferido na interface; `BLING_STOCK_DEPOSIT_ID` cadastrado como Text nos dois Workers, sem ativar sincronização.
-- **Bling — PENDENTE:** revisar aplicativo/escopos, comprovar entrega/processamento/idempotência do webhook e sincronização controlada por SKU. Não há eventos Bling registrados. Webhook cadastrado não comprova operação.
+- **Bling — CONCLUÍDO:** aplicativo privado aprovado e callback conferidos na interface oficial; adicionados escopos de estoque, depósitos e leitura de notas fiscais, sem permissão de emissão. Reautorização concluída; leitura técnica retornou 200. Webhooks de produtos, pedidos, estoques e NF-e ativos e salvos. Permissões anteriores foram preservadas.
+- **Bling — PENDENTE:** comprovar entrega/processamento/idempotência de evento real de teste e sincronização controlada por SKU. Prévia autenticada respondeu 200 com catálogo externo vazio; banco local tem 450 variantes, nenhum SKU ausente/duplicado e zero vínculos/eventos Bling. Webhook cadastrado não comprova operação. Revisar privilégios antigos com seus consumidores antes de reduzir escopos.
 - **Fiscal — BLOQUEADO:** `BLING_FISCAL_READY=false` e `BLING_INVOICE_SEND_ENABLED=false`. Natureza definitiva depende da contabilidade; nenhuma regra tributária foi definida. Sem NF-e, cancelamento ou escrita comercial real.
-- **Mercado Pago — PENDENTE:** runtime em `test`; o código mantém guardas `TEST-` e não oferece adapter live homologado. Testes automatizados não equivalem a pagamento oficial de teste concluído. Não trocar para produção por simples substituição do token.
-- **Melhor Envio — TESTADO parcialmente:** OAuth sandbox conectado; registro da loja indica cotação bem-sucedida em 14/10. Cotação/checkout completo e remessa de teste precisam de execução atual com dados fictícios. Não houve compra de frete real.
+- **Mercado Pago — PENDENTE:** aplicação oficial conferida; webhook de teste usa a URL esperada e evento Pagamentos selecionado. URL de produção vazia. Runtime em `test`; código mantém guardas `TEST-` e não oferece adapter live homologado. Teste oficial de compra ainda pendente. Checkout Bricks usa credenciais de teste da conta real e cartões oficiais para cartão/Pix, conforme a [documentação oficial](https://www.mercadopago.com.br/developers/pt/docs/checkout-bricks/integration-test/test-payment-flow); contas de teste separadas não são pré-requisito desses fluxos. Não trocar para produção por simples substituição do token.
+- **Melhor Envio — TESTADO parcialmente:** OAuth sandbox conectado; cotação autenticada executada nesta sessão com produto/variante públicos disponíveis e CEP de teste: HTTP 200, duas modalidades Jadlog retornadas e persistidas. Checkout rejeitou ID de cotação inexistente com `409 SHIPPING_QUOTE_EXPIRED`, antes de gravar perfil/criar pedido. Checkout completo, demais modalidades, remessa e rastreamento de teste permanecem pendentes. Não houve compra de frete real.
 - **Resend — TESTADO parcialmente:** domínio e DNS de envio verificados; API key presente. Templates são internos; acompanhamento usa consulta de recibos, sem necessidade de templates/webhook no provedor.
-- **E-mails — BLOQUEADO pelo cron até publicação:** runtime comercial permanece desligado no Worker e no banco. Homologação autorizada foi tentada com os dois modelos, sem pedido real; transporte falhou e métricas agregadas indicaram zero envios. Bindings temporários de homologação removidos após a tentativa. Aceitação e entrega ainda não comprovadas.
+- **E-mails — TESTADO parcialmente:** os dois modelos foram enviados com dados fictícios, sem pedido real, e ambos têm recibo individual `delivered` no Resend. Crons posteriores reutilizaram os mesmos IDs para cada tipo, confirmando idempotência no provedor. Métricas agregadas retornaram zero e não foram usadas como prova de entrega. Bindings temporários removidos; demais secrets preservados. Runtime comercial continua desligado: sua RPC ainda falha no cron e o fluxo completo de pagamento/entrega precisa de homologação.
 
 ## Supabase e segurança
 
@@ -29,7 +30,7 @@ Registro técnico desta execução. Não autoriza vendas reais nem emissão fisc
 - **PENDENTE, sem alteração indiscriminada:** quatro views com aviso SECURITY DEFINER, 24 funções acessíveis a anon e 142 a authenticated. As views são projeções públicas sobre dados editoriais protegidos; trocar para invoker exige preservar esse contrato. A correção localizada de expiração não remove esses avisos.
 - **PENDENTE:** proteção de senhas vazadas desativada; verificar disponibilidade no plano. MFA e Turnstile desligados; MFA obrigatório depende de conta interna de teste com fator e recuperação validados.
 - **PENDENTE, desempenho:** advisors apontaram 300 FKs sem índice, 219 avisos de initplan, 264 de policies permissivas e 38 índices sem uso. Não foram criados/removidos índices sem evidência de custo.
-- **PENDENTE:** histórico remoto contém somente cinco migrations, apesar de existir schema de outras migrations. Não reaplicar toda a história nem usar seed em produção; reconciliar definições/histórico antes de futuras mudanças amplas.
+- **PENDENTE:** histórico remoto continha somente cinco migrations antes desta execução, apesar de existir schema de outras migrations; agora contém seis. Não reaplicar toda a história nem usar seed em produção; reconciliar definições/histórico antes de futuras mudanças amplas.
 
 ## Evidências de validação
 
@@ -37,7 +38,10 @@ Registro técnico desta execução. Não autoriza vendas reais nem emissão fisc
 - **TESTADO:** 31 testes direcionados de transporte, expiração e e-mail; dez testes do wrapper do Worker. Incluem transporte capturado antes do Next, falhas e redirecionamentos sem replay. São testes com provedores simulados.
 - **TESTADO no runtime local:** antes da correção, Workerd reproduziu `Invalid redirect value`; depois, POST retornou 200 e 302 foi rejeitado. Serviços fictícios locais, sem dados/credenciais reais nem escrita externa.
 - **TESTADO:** typecheck de scripts, loja e painel; smoke remoto da loja (home, catálogo, configuração pública, versão e disponibilidade) passou sem iniciar compra.
-- **PENDENTE:** lint final e CI do novo commit, pgTAP da nova migration, E2E atualizado, builds/dry-runs completos Linux e smoke após publicação. Docker ausente neste notebook; não há validação SQL local equivalente.
+- **TESTADO no CI do commit `cec1931`:** lint, tipos, suites, auditoria de dependências, Gitleaks e CodeQL aprovados. Banco: 42 arquivos e 1.300 testes pgTAP aprovados, incluindo a migration nova. Builds OpenNext e dry-runs dos dois Workers aprovados em Linux. Docker ausente neste notebook; validação SQL foi executada no runner do CI.
+- **TESTADO E2E:** reexecução CI desktop passou 35 casos e quatro repetições críticas; os quatro projetos também passaram na main. A primeira repetição desktop falhou com 404 intermitente em dev, sem causa confirmada; não houve remoção/quarentena de teste. Três casos 404 e mais quatro repetições após reinício também passaram localmente com a instrumentação removida; hipótese de cache não confirmada. Monitorar recorrência.
+- **TESTADO após publicação:** smoke público aprovado; metadados dos Workers confirmam SHA igual e preservação dos 73 bindings da loja/68 do painel. Expiração conclui no cron; frete conclui sem jobs elegíveis. Bling e runtime de e-mails ainda registram falha de fila. Não considerar cron integralmente saudável.
+- **TESTADO local, próxima alteração:** oito testes da configuração de observabilidade, dez do wrapper e 24 de transporte/filas; typecheck de scripts/loja e lint dos arquivos alterados.
 
 ## Validação necessária com o contador/responsável
 
@@ -45,7 +49,7 @@ Confirmar documentalmente fabricação própria e regime tributário; inscriçã
 
 ## Entrega e rollback
 
-Branch `fix/production-readiness-20261015`, criada da `main` `6cd84b0880ec06bf5b60c4ec7aa8c1a274172e7c`. Commit, PR, checks e publicação desta execução ainda pendentes.
+Branch inicial `fix/production-readiness-20261015`, criada da `main` `6cd84b0880ec06bf5b60c4ec7aa8c1a274172e7c`. Commit `cec19313d471204bf4cd76f20dcc404209ed62f5` publicado e SHA remoto conferido. [PR #25](https://github.com/curtiZ-Sistemas/curtiZ-ecommerce/pull/25) aprovado e integrado; merge `72ffb648e7c416d71a9d0e6e1557a2f1254a36cf`. [CI e deploy oficiais da main](https://github.com/curtiZ-Sistemas/curtiZ-ecommerce/actions/runs/38754529014) aprovados nos dois Workers. Correção persistente de observabilidade e diagnóstico das falhas restantes em nova revisão.
 
 Rollback de código pelo caminho oficial do Actions com versão anterior validada. O predicado anterior da view permanece em `202608080006_help_center_reform.sql` para uma migration de reversão revisada; não apagar dados. O depósito pode ser removido do runtime com as flags comerciais desligadas. Manter a remoção de query strings dos logs.
 
