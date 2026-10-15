@@ -220,11 +220,14 @@ function Technical({ section, initialQuery }: { section: string; initialQuery: s
   if (section === "acessos-tecnicos") return <AdminUsers />;
   if (isTechnicalResource(section))
     return (
-      <TechnicalResourceManager
-        key={`${section}:${initialQuery}`}
-        resource={section}
-        initialQuery={initialQuery}
-      />
+      <>
+        <TechnicalResourceManager
+          key={`${section}:${initialQuery}`}
+          resource={section}
+          initialQuery={initialQuery}
+        />
+        {section === "integracoes" ? <TechnicalOverview section={section} /> : null}
+      </>
     );
   return <TechnicalOverview section={section} />;
 }

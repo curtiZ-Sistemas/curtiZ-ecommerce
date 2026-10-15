@@ -84,6 +84,8 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
   await loginAs(page, "tecnico.demo@curtiz.local");
   await page.goto("/tecnico/integracoes");
   await expect(page.getByRole("heading", { name: "Integrações", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bling", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Melhor Envio", exact: true })).toBeVisible();
   await expect(page.getByText("Não configurado").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Aguardando credenciais")).toBeVisible({ timeout: 20_000 });
 });
