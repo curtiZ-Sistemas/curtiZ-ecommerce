@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-load 'safeupdate';
+-- CI preloads safeupdate for this session as configured in ci.yml. The guard
+-- assertion below must fail if that setup is missing; never silently skip it.
 set local safeupdate.enabled='on';
 select plan(15);
 
