@@ -8,6 +8,7 @@ import { runExpirationHousekeeping } from "./housekeeping";
 import { runBlingJobs } from "./bling-jobs";
 import { runMelhorEnvioShippingJobs } from "./melhor-envio-jobs";
 import { runTransactionalEmailJobs } from "./transactional-email-jobs";
+import { logServerEvent } from "@curtiz/security";
 
 const environment = {
   SUPABASE_URL: "https://scheduled-test.supabase.co", SUPABASE_SECRET_KEY: "test-only-key",
@@ -18,6 +19,19 @@ const environment = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scheduled tasks with the real Supabase HTTP client", () => {
+  it.each(["bling", "transactional_email"])("reports a sanitized RPC failure for %s", async (queue) => {
+    const transport = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({
+      code: "PGRST202", message: "private fixture detail", details: "private fixture detail", hint: "private fixture detail"
+    }, { status: 404 }));
+    const run = queue === "bling" ? runBlingJobs : runTransactionalEmailJobs;
+    await expect(run(environment, "test-execution", undefined, transport)).rejects.toBeInstanceOf(Error);
+    expect(logServerEvent).toHaveBeenCalledWith("error", `${queue}_storage_request_failed`, {
+      rpc: queue === "bling" ? "read_integration_credential" : "sync_transactional_email_runtime",
+      status: 404, databaseCode: "PGRST202"
+    });
+    expect(JSON.stringify(vi.mocked(logServerEvent).mock.calls)).not.toContain("private fixture detail");
+  });
+
   it("propagates a failed shipping claim instead of reporting an empty completed queue", async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"code":"temporary_unavailable"}', { status: 503 }));
     await expect(runMelhorEnvioShippingJobs(environment, "test-execution", undefined, transport))

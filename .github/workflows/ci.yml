@@ -290,6 +290,7 @@ jobs:
             add_var "$name"
           done
           pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"
+          pnpm exec tsx scripts/cloudflare-observability.ts
       - name: Smoke test pós-deploy sem cobrança
         if: github.event_name != 'pull_request'
         run: pnpm smoke:storefront -- "$NEXT_PUBLIC_STORE_TEST_URL"
@@ -372,3 +373,4 @@ jobs:
             add_var "$name"
           done
           pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"
+          pnpm exec tsx scripts/cloudflare-observability.ts

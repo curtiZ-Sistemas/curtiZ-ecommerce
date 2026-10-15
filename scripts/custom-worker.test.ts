@@ -177,7 +177,7 @@ describe("custom Worker handlers", () => {
     for (const job of [dependencies.housekeeping, dependencies.bling, dependencies.shipping, dependencies.email])
       expect(job).toHaveBeenCalledOnce();
     expect(dependencies.log).toHaveBeenCalledWith("error", "scheduled_queue_failed", {
-      executionId: "scheduled-execution-id", queue
+      executionId: "scheduled-execution-id", queue, errorType: "other"
     });
   });
 });

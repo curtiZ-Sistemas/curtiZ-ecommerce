@@ -48,7 +48,10 @@ export default {
     context.waitUntil(runWithWorkerContext(request, environment, context, async () => {
       const runQueue = async (queue: string, task: () => Promise<unknown>) => {
         try { await task(); }
-        catch { logServerEvent("error", "scheduled_queue_failed", { executionId, queue }); }
+        catch (error) {
+          const errorType = error instanceof TypeError ? "type_error" : error instanceof SyntaxError ? "syntax_error" : "other";
+          logServerEvent("error", "scheduled_queue_failed", { executionId, queue, errorType });
+        }
       };
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
