@@ -1,4 +1,4 @@
-import { logServerEvent } from "@curtiz/security";
+import { redact } from "@curtiz/security";
 import { getIntegrationConfig } from "@curtiz/config";
 import { isMercadoPagoTestCredential, MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
@@ -112,11 +112,10 @@ const checkoutConflict = (error: unknown) => {
 };
 const logFailure = (code: string, status?: number, requestId?: string, error?: unknown) => {
   const database = safeDatabaseError(error);
-  logServerEvent("error", "mercadopago_bricks_payment_not_completed", {
+  console.error(redact({ event: "mercadopago_bricks_payment_not_completed",
     code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
-    message: database.message || null, details: database.details || null, hint: database.hint || null,
-    providerCauseCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : []
-  });
+    providerRejectionCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : []
+  }));
 };
 const isPersistedPendingPix = (payment: Record<string, unknown>) => {
   const method = readString(payment, "payment_method_summary");

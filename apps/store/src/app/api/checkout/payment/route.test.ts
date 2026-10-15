@@ -15,7 +15,7 @@ vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnable
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoProviderError: class extends Error {
-    constructor(code: string, readonly httpStatus = 502) { super(code); }
+    constructor(code: string, readonly httpStatus = 502, readonly providerCauseCodes: readonly string[] = []) { super(code); }
   },
   MercadoPagoTestPaymentProvider: class {
     getPaymentMethodIds = state.getPaymentMethodIds;
@@ -351,6 +351,19 @@ describe("confirmação de pagamento", () => {
     expect((await POST(request({ ...body, idempotencyKey: secondKey, payment: { ...body.payment, token: "corrected-token" } }))).status).toBe(200);
     expect(db.creationKeys.size).toBe(1); expect(db.attempts.size).toBe(2);
     expect(state.createPayment.mock.calls.map(([input]) => (input as MercadoPagoPaymentInput).idempotencyKey)).toEqual([firstKey, secondKey]);
+  });
+  it("preserva códigos numéricos no diagnóstico estruturado após a redação de privacidade", async () => {
+    database();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("payment_rejected", 400, ["2006"]));
+      const result = await POST(request());
+      expect(result.status).toBe(422);
+      expect(logged).toHaveBeenCalledWith({ event: "mercadopago_bricks_payment_not_completed",
+        code: "PROVIDER_REQUEST_FAILED", requestId: result.headers.get("x-request-id"), providerStatus: 400,
+        databaseCode: null, providerRejectionCodes: ["2006"] });
+      expect(await result.json()).not.toHaveProperty("providerRejectionCodes");
+    } finally { logged.mockRestore(); }
   });
   it("retry após rejected usa nova tentativa; replay antigo não cobra", async () => {
     const db = database(); state.createPayment.mockResolvedValueOnce(providerPayment("rejected"));
