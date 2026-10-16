@@ -48,7 +48,7 @@ export type MercadoPagoPaymentInput = {
   entityType: "individual" | "association";
   paymentMethodId: string;
   token?: string;
-  issuerId?: string;
+  issuerId?: number;
   installments: number;
   providerCustomerId?: string;
 };
@@ -81,7 +81,7 @@ export type MercadoPagoPayment = {
 
 export class MercadoPagoProviderError extends Error {
   constructor(
-    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
+    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "invalid_issuer" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
     readonly httpStatus = 502,
     readonly providerCauseCodes: readonly string[] = [],
     readonly providerRejectionFields: readonly string[] = []
@@ -224,6 +224,9 @@ export class MercadoPagoPaymentProvider {
   }
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
+    if (input.issuerId !== undefined && (!Number.isSafeInteger(input.issuerId) || input.issuerId <= 0)) {
+      throw new MercadoPagoProviderError("invalid_issuer", 400);
+    }
     const expiration = new Date(Date.now() + (input.paymentMethodId === "pix" ? 30 * 60_000 : 3 * 24 * 60 * 60_000));
     return this.request(
       "/v1/payments",
