@@ -160,6 +160,18 @@ describe("confirmação de pagamento", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it.each(["25", 25])("normalizes Brick issuer %s to the provider numeric contract", async issuer_id => {
+    database();
+    expect((await POST(request({ ...body, payment: { ...body.payment, issuer_id } }))).status).toBe(200);
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ issuerId: 25 }));
+  });
+  it.each(["", "-1", "1e2", "unknown", 0, 1.5, null])("rejects malformed issuer %s before creating an order", async issuer_id => {
+    const db = database();
+    expect((await POST(request({ ...body, payment: { ...body.payment, issuer_id } }))).status).toBe(400);
+    expect(db.creationKeys.size).toBe(0);
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
+
   it("prepares production orders through the dedicated RPC and reconciles the server amount", async () => {
     const db = database();
     vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production");

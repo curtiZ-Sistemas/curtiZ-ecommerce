@@ -9,7 +9,7 @@ describe("Mercado Pago production adapter with isolated provider fixtures", () =
     transaction_details: { net_received_amount: 48 } };
   const input = { orderId: "fixture", orderCode: "CZ-FIXTURE", amountInCents: 5000, currency: "BRL" as const,
     idempotencyKey: "fixture-key", customerEmail: "fixture@example.com", customerName: "Fixture",
-    customerDocument: "52998224725", entityType: "individual" as const, paymentMethodId: "visa", installments: 1, token: "fixture-token" };
+    customerDocument: "52998224725", entityType: "individual" as const, paymentMethodId: "visa", issuerId: 25, installments: 1, token: "fixture-token" };
   it("creates a live payment with server amount and stable idempotency, and parses financial values", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(payment));
     vi.stubGlobal("fetch", fetcher);
@@ -18,7 +18,13 @@ describe("Mercado Pago production adapter with isolated provider fixtures", () =
     const request = fetcher.mock.calls[0]?.[1];
     expect(new Headers(request?.headers).get("x-idempotency-key")).toBe("fixture-key");
     if (typeof request?.body !== "string") throw new Error("missing_fixture_request_body");
-    expect(JSON.parse(request.body)).toMatchObject({ transaction_amount: 50, external_reference: "CZ-FIXTURE" });
+    expect(JSON.parse(request.body)).toMatchObject({ transaction_amount: 50, external_reference: "CZ-FIXTURE", issuer_id: 25 });
+  });
+  it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])("rejects invalid issuer %s before contacting the provider", async issuerId => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    await expect(new MercadoPagoPaymentProvider("APP_USR-fixture", "production").createPayment({ ...input, issuerId }))
+      .rejects.toMatchObject({ code: "invalid_issuer" });
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it.each([false, undefined, "true"])("rejects a provider response whose live_mode is %s", async live_mode => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ...payment, live_mode })));

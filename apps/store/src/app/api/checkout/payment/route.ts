@@ -39,7 +39,9 @@ const schema = z.object({
   orderId: z.string().uuid().optional(), idempotencyKey: z.string().uuid(),
   checkoutIdempotencyKey: z.string().uuid().optional(), checkout: checkoutSchema.optional(),
   payment: z.object({
-    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
+    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(),
+    issuer_id: z.union([z.string().trim().regex(/^[1-9]\d{0,9}$/u), z.number().int().positive().max(Number.MAX_SAFE_INTEGER)])
+      .transform(Number).optional(),
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u), installments: z.coerce.number().int().min(1).max(48).default(1),
     payer: z.object({ entity_type: z.enum(["individual", "association"]), type: z.literal("customer").optional(),
       id: z.string().regex(/^[a-zA-Z0-9_+-]{1,100}$/u).optional(), identification: z.object({
@@ -389,7 +391,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       customerDocument, entityType: parsed.data.payment.payer.entity_type, paymentMethodId: method,
       ...(providerCustomerId ? { providerCustomerId } : {}),
       ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
-      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: String(parsed.data.payment.issuer_id) } : {}),
+      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: parsed.data.payment.issuer_id } : {}),
       installments: parsed.data.payment.installments
     });
     if (created.amountInCents !== amountInCents || created.currency !== "BRL" || created.externalReference !== orderCode) {
