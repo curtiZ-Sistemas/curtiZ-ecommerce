@@ -161,7 +161,7 @@ describe("environment validation", () => {
     );
   });
 
-  it("aceita somente credenciais de teste do Mercado Pago", () => {
+  it("rejeita chaves de produção quando o ambiente continua em teste", () => {
     const result = validateEnvironment("production", {
       ...disabledProduction,
       CHECKOUT_ENABLED: "true",
@@ -177,6 +177,16 @@ describe("environment validation", () => {
       "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste",
       "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste"
     ]));
+  });
+
+  it("requires documented release before accepting matching production credentials", () => {
+    const live = { ...disabledProduction, CHECKOUT_ENABLED: "true", PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true", MERCADO_PAGO_ENVIRONMENT: "production", SHIPPING_PROVIDER: "fixed",
+      MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-fixture", MERCADO_PAGO_WEBHOOK_SECRET: "fixture-webhook",
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "APP_USR-public" };
+    expect(validateEnvironment("production", live).errors).toContain("MERCADO_PAGO_PRODUCTION_READY deve ser true após homologação documentada");
+    expect(validateEnvironment("production", { ...live, MERCADO_PAGO_PRODUCTION_READY: "true" }).valid).toBe(true);
+    expect(validateEnvironment("production", { ...live, MERCADO_PAGO_PRODUCTION_READY: "true", MERCADO_PAGO_ACCESS_TOKEN: "TEST-fixture" }).valid).toBe(false);
   });
 
   it("aceita checkout de produção com Mercado Pago de teste e frete fixo", () => {

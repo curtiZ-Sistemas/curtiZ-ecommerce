@@ -6,7 +6,7 @@ Atualização de 16/10: os dados empresariais e orientações iniciais já foram
 
 ## Mensagem pronta para enviar
 
-> Olá! Recebemos os dados cadastrais e as orientações iniciais para a venda de chinelos da curti Z. Falta confirmar: os produtos são, fiscalmente, de produção do estabelecimento ou mercadorias de terceiros para revenda? Quem efetivamente fabrica e emite a nota de entrada? Os códigos de venda e devolução enviados estão aprovados para todos os cenários aplicáveis, inclusive consumidor final de outro estado, ou precisam ser corrigidos? Há procedimento fiscal/documental complementar para expedir de uma cidade diferente da sede fiscal?
+> Olá! Precisamos da confirmação expressa do tratamento fiscal das atividades efetivamente realizadas pela empresa. As orientações iniciais de CFOP e CSOSN atendem a essas atividades? Qual CFOP interestadual se aplica em cada situação? Há necessidade de ajuste cadastral, inscrição ou tratamento tributário específico, inclusive IPI? O contexto operacional e a pergunta específica estão no registro interno compartilhado com a empresa.
 >
 > Também precisamos definir inequivocamente a regra interestadual e a unidade por produto; confirmar classificação, origem, CEST e custo por SKU/documento; e conferir certificado, credenciamento SEFAZ, série, numeração e procedimentos de devolução, cancelamento e rejeição. A natureza de operação deve corresponder a cada cenário, sem uma regra estadual aplicada a todo o país.
 >

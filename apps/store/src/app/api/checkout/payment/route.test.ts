@@ -5,19 +5,20 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 import { POST } from "./route";
 import { validateSavedCardCustomer, validateSavedCardPayer } from "@/lib/mercadopago-saved-cards";
 import { decryptPII, encryptPII } from "../../../../lib/pii";
+import type * as Config from "@curtiz/config";
 
 const state = vi.hoisted(() => ({
   checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn(), getPaymentMethodIds: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled,
+vi.mock("@curtiz/config", async importOriginal => ({ ...await importOriginal<typeof Config>(), getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled,
   shipping: { enabled: true, provider: "fixed", melhorEnvioEnabled: false } }) }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoProviderError: class extends Error {
     constructor(code: string, readonly httpStatus = 502, readonly providerCauseCodes: readonly string[] = []) { super(code); }
   },
-  MercadoPagoTestPaymentProvider: class {
+  MercadoPagoPaymentProvider: class {
     getPaymentMethodIds = state.getPaymentMethodIds;
     createPayment = state.createPayment;
     getPayment = state.getPayment;
@@ -72,7 +73,8 @@ type Attempt = { id: string; provider_payment_id: string; status: string; paymen
 function database() {
   const identity = { customerId: "customer-id", cpfCiphertext: encryptPII(body.checkout.customer.cpf), cpfLastFour: "4725" };
   const order = { id: orderId, public_code: "CZ-123", customer_id: "customer-id", customer_email_snapshot: "cliente@example.com",
-    customer_name_snapshot: "Cliente Teste", cpf_last_four: "4725", status: "pending_payment", grand_total: 67.9, currency: "BRL" };
+    customer_name_snapshot: "Cliente Teste", cpf_last_four: "4725", status: "pending_payment", grand_total: 67.9, currency: "BRL",
+    commercial_rules_snapshot: { paymentProvider: "mercadopago", paymentMode: "test" } };
   const payment = { id: "local-payment", status: "pending", provider_payment_id: "", payment_method_summary: "",
     pix_copy_paste: "", pix_qr_code_base64: "", amount: 67.9, currency: "BRL" };
   const attempts = new Map<string, Attempt>();
@@ -104,7 +106,7 @@ function database() {
   }
   const rpc = vi.fn((name: string, args: Record<string, unknown>): Promise<QueryResult> => {
     if (name === "get_customer_checkout_identity") return Promise.resolve({ data: identity, error: null });
-    if (name === "confirm_professional_checkout_order") {
+    if (["confirm_professional_checkout_order", "confirm_professional_production_checkout_order"].includes(name)) {
       if (failures.creation) return Promise.resolve({ data: null, error: { code: "22023", message: failures.creation } });
       creationKeys.add(args.p_idempotency_key);
       return Promise.resolve({ data: { orderId }, error: null });
@@ -157,6 +159,33 @@ describe("confirmação de pagamento", () => {
     vi.mocked(validateSavedCardCustomer).mockReset().mockResolvedValue("customer-owned");
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it("prepares production orders through the dedicated RPC and reconciles the server amount", async () => {
+    const db = database();
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production");
+    vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture");
+    vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-public");
+    db.order.commercial_rules_snapshot.paymentMode = "production";
+    const response = await POST(request({ ...body, payment: { ...body.payment,
+      payer: { ...body.payment.payer, identification: { type: "CPF", number: body.checkout.customer.cpf } } } }));
+    expect(response.status).toBe(200);
+    expect(db.rpc).toHaveBeenCalledWith("confirm_professional_production_checkout_order", expect.any(Object));
+    expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ amountInCents: 6790, customerDocument: "52998224725" }));
+    expect(db.rpc).toHaveBeenCalledWith("finalize_mercadopago_payment", expect.objectContaining({ p_provider_event_id: "production-check-provider-1-approved" }));
+  });
+  it("keeps a test order out of production without sending a charge", async () => {
+    database();
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production");
+    vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture");
+    vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-public");
+    const response = await POST(request({ orderId, idempotencyKey: firstKey, payment: { ...body.payment,
+      payer: { ...body.payment.payer, identification: { type: "CPF", number: body.checkout.customer.cpf } } } }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "ORDER_PAYMENT_MODE_MISMATCH" });
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
 
   it("não inicia pagamento com CHECKOUT_ENABLED desligado", async () => {
     state.checkoutEnabled = false;

@@ -1,5 +1,6 @@
 import "server-only";
-import { MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
+import { MercadoPagoPaymentProvider } from "@curtiz/integrations";
+import { getMercadoPagoCredentials, getMercadoPagoEnvironment } from "@curtiz/config";
 import { createServiceSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "./unknown-data";
 
@@ -8,6 +9,13 @@ const pending = { ok: true, status: "refund_pending", message: "Seu cancelamento
 export async function cancelCustomerOrder(orderId: string, customerId: string) {
   const db = createServiceSupabaseClient();
   if (!db) return { statusCode: 503, body: { message: "Não foi possível iniciar o cancelamento." } };
+  const mode = getMercadoPagoEnvironment();
+  const modeCheck = mode ? readQueryResult(await db.rpc("check_mercadopago_order_mode", {
+    p_mode: mode, p_order_id: orderId, p_customer_id: customerId
+  })) : null;
+  if (!modeCheck || modeCheck.error || modeCheck.data !== true) return { statusCode: 409, body: {
+    code: "ORDER_PAYMENT_MODE_MISMATCH", message: "Este pedido precisa de verificação para ser cancelado."
+  } };
   const claim = readQueryResult(await db.rpc("begin_customer_order_cancellation", { p_order_id: orderId, p_customer_id: customerId }));
   if (claim.error || !isUnknownRecord(claim.data)) return { statusCode: 409, body: {
     message: "Este pedido não está disponível para cancelamento.", code: "CANCELLATION_NOT_ALLOWED"
@@ -33,7 +41,9 @@ export async function cancelCustomerOrder(orderId: string, customerId: string) {
       await finish(false);
       return { statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } };
     }
-    const provider = new MercadoPagoTestPaymentProvider(process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim() ?? "");
+    const credentials = getMercadoPagoCredentials();
+    if (!credentials) throw new Error("payment_configuration_invalid");
+    const provider = new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode);
     let payment = await provider.getPayment(providerId);
     const matches = () => payment.id === providerId && payment.externalReference === readString(data, "orderCode")
       && payment.amountInCents === readNumber(data, "amountInCents") && payment.currency === "BRL";

@@ -13,7 +13,7 @@ export const publicEnvSchema = z.object({
   NEXT_PUBLIC_PANEL_URL: z.string().url(),
   NEXT_PUBLIC_STORE_TEST_URL: z.string().url().optional(),
   NEXT_PUBLIC_PANEL_TEST_URL: z.string().url().optional(),
-  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().startsWith("TEST-").optional()
+  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().regex(/^(TEST-|APP_USR-).+/u).optional()
 });
 
 export const serverEnvSchema = z.object({
@@ -42,6 +42,8 @@ export const serverEnvSchema = z.object({
   AUTH_RATE_LIMIT_ENABLED: booleanString.default(true),
   CHECKOUT_ENABLED: booleanString.default(false),
   MERCADO_PAGO_ENABLED: booleanString.default(false),
+  MERCADO_PAGO_ENVIRONMENT: z.enum(["test", "production"]).default("test"),
+  MERCADO_PAGO_PRODUCTION_READY: booleanString.default(false),
   MELHOR_ENVIO_ENABLED: booleanString.default(false),
   MELHOR_ENVIO_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
   MELHOR_ENVIO_BASE_URL: z.string().url().optional(),
@@ -79,3 +81,4 @@ export const serverEnvSchema = z.object({
 export * from "./integrations";
 export * from "./public-urls";
 export * from "./email";
+export * from "./mercadopago";

@@ -22,4 +22,13 @@ describe("Mercado Pago sanitized rejection diagnostics", () => {
     await expect(new MercadoPagoTestPaymentProvider("TEST-fixture").getPayment("123"))
       .rejects.toMatchObject({ code: "provider_unavailable", httpStatus: 503, providerCauseCodes: ["0", "1", "2", "3", "4"] });
   });
+  it("classifies only fixed field names and never copies provider text or values", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      message: "Invalid payer email fixture@example.com", cause: [{ code: 10113, description: "card token private-fixture-value" }]
+    }, { status: 400 })));
+    const issue: unknown = await new MercadoPagoTestPaymentProvider("TEST-fixture").getPayment("123").catch((error: unknown) => error);
+    expect(issue).toMatchObject({ providerRejectionFields: ["payer", "email", "token", "card"] });
+    expect(JSON.stringify(issue)).not.toContain("fixture@example.com");
+    expect(JSON.stringify(issue)).not.toContain("private-fixture-value");
+  });
 });

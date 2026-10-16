@@ -7,6 +7,7 @@ const other = { ...user, id: "22222222-2222-4222-8222-222222222222" };
 const card = { id: "card-1", customer_id: "customer-1", expiration_month: 12, expiration_year: 2099,
   last_four_digits: "4242", payment_method: { id: "visa", payment_type_id: "credit_card" } };
 function setup(ready = true) {
+  const modeFilters: unknown[] = [];
   let state = ready ? "ready" : "new", providerId: string | null = ready ? "customer-1" : null;
   const operations = new Map<string, { state: string; cardId?: string }>();
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
@@ -27,7 +28,7 @@ function setup(ready = true) {
   });
   const db = { rpc, from(table: string) {
     const filters: Record<string, unknown> = {};
-    const query = { select: () => query, eq: (key: string, value: unknown) => { filters[key] = value; return query; },
+    const query = { select: () => query, eq: (key: string, value: unknown) => { filters[key] = value; if (key === "payment_mode") modeFilters.push(value); return query; },
       maybeSingle: async () => ({ data: (filters.user_id === other.id || filters.customer_id === other.id) ? null
         : table === "orders" ? { id: "order-1" } : { id: "local-1", provider_customer_id: providerId, state }, error: null }) };
     return query;
@@ -40,7 +41,7 @@ function setup(ready = true) {
     return new Response(JSON.stringify(init?.method === "POST" ? card : [card]));
   });
   vi.stubGlobal("fetch", fetchMock);
-  return { db, rpc, fetchMock, operations, customerState: () => state };
+  return { db, rpc, fetchMock, operations, modeFilters, customerState: () => state };
 }
 beforeEach(() => {
   vi.stubEnv("MERCADO_PAGO_SAVED_CARDS_ENABLED", "true"); vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-token");
@@ -48,6 +49,16 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("cartões salvos: associação e operações no servidor", () => {
+  it("uses production associations for a confirmed real-email customer without reusing test mappings", async () => {
+    const { db, rpc, modeFilters } = setup();
+    const productionUser = { ...user, email: "fixture@example.com" };
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production"); vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture"); vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-public");
+    expect(await listMyMercadoPagoCards(db, productionUser)).toMatchObject({ enabled: true, customerId: "customer-1" });
+    expect(modeFilters).toEqual(["production"]);
+    await getOrCreateMercadoPagoCustomer(db, productionUser);
+    expect(rpc).toHaveBeenCalledWith("claim_mercadopago_customer", { p_user_id: user.id, p_mode: "production" });
+  });
   it("default false não consulta o provider nem exige migration", async () => {
     const { db, fetchMock, rpc } = setup(); vi.stubEnv("MERCADO_PAGO_SAVED_CARDS_ENABLED", "");
     expect(await listMyMercadoPagoCards(db, user)).toEqual({ enabled: false, customerId: "", cards: [] });

@@ -1,16 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cancelCustomerOrder } from "./customer-order-cancellation";
 import { canCancelCustomerOrder, canContinueOrderPayment } from "./customer-account-presentation";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), get: vi.fn(), cancel: vi.fn(), refund: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("./supabase/server", () => ({ createServiceSupabaseClient: () => ({ rpc: mocks.rpc }) }));
-vi.mock("@curtiz/integrations", () => ({ MercadoPagoTestPaymentProvider: class {
+vi.mock("@curtiz/integrations", () => ({ MercadoPagoPaymentProvider: class {
   getPayment = mocks.get; cancelPayment = mocks.cancel; refundPayment = mocks.refund;
 } }));
 const payment = { id: "mp-1", externalReference: "CZT-1", amountInCents: 6790, currency: "BRL", status: "approved", refunds: [] };
 let context: Record<string, unknown>;
 beforeEach(() => {
+  vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "test");
+  vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-fixture");
+  vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public");
   vi.clearAllMocks();
   context = { orderCode: "CZT-1", amountInCents: 6790, providerPaymentId: "mp-1", paid: true };
   mocks.get.mockReset().mockResolvedValue(payment);
@@ -20,7 +23,21 @@ beforeEach(() => {
     name === "begin_customer_order_cancellation" ? context
       : name === "prepare_customer_order_cancellation" ? { paymentId: "local-payment", idempotencyKey: "stable-key" } : true }));
 });
+afterEach(() => { vi.unstubAllEnvs(); });
 describe("customer cancellation orchestration", () => {
+  it("blocks a cancellation from another environment before claiming or refunding", async () => {
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    expect((await cancelCustomerOrder("order", "owner")).statusCode).toBe(409);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith("check_mercadopago_order_mode", { p_mode: "test", p_order_id: "order", p_customer_id: "owner" });
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+  it("passes the explicit production mode and authenticated owner to the guard", async () => {
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production"); vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture"); vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-public");
+    expect((await cancelCustomerOrder("order", "owner")).body).toMatchObject({ status: "refunded" });
+    expect(mocks.rpc).toHaveBeenCalledWith("check_mercadopago_order_mode", { p_mode: "production", p_order_id: "order", p_customer_id: "owner" });
+  });
   it("unpaid checkout without a provider payment cancels without refund", async () => {
     context = { ...context, paid: false, providerPaymentId: "", paymentInFlight: false };
     expect((await cancelCustomerOrder("order", "owner")).body).toMatchObject({ status: "cancelled" });
@@ -52,6 +69,7 @@ describe("customer cancellation orchestration", () => {
   it("concurrent RPC lease admits one external refund", async () => {
     let claimed = false;
     mocks.rpc.mockImplementation(async name => {
+      if (name === "check_mercadopago_order_mode") return { data: true, error: null };
       if (name === "begin_customer_order_cancellation") {
         const data = claimed ? { busy: true } : context; claimed = true; return { data, error: null };
       }

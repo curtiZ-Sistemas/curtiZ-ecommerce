@@ -370,21 +370,24 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
       ],
       errors
     );
-    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT")
-      && normalize(environment.MERCADO_PAGO_ENVIRONMENT) !== "test") {
-      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test enquanto o adapter live não estiver habilitado");
+    const mode = normalize(environment.MERCADO_PAGO_ENVIRONMENT);
+    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT") && !["test", "production"].includes(mode)) {
+      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test ou production");
     }
+    if (mode === "production" && environment.MERCADO_PAGO_PRODUCTION_READY !== "true")
+      errors.push("MERCADO_PAGO_PRODUCTION_READY deve ser true após homologação documentada");
+    const credentialPrefix = mode === "production" ? "APP_USR-" : "TEST-";
     if (
       hasValue(environment, "MERCADO_PAGO_ACCESS_TOKEN") &&
-      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-")
+      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de produção" : "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
     }
     if (
       hasValue(environment, "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY") &&
-      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-")
+      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de produção" : "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
     }
   }
 
