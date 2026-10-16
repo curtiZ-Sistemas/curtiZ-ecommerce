@@ -2,11 +2,13 @@
 
 Preparado em 15/10/2026. Esta lista pede a validação do contador; não define códigos, impostos ou alíquotas.
 
+Atualização de 16/10: os dados empresariais e orientações iniciais já foram recebidos por canal privado. Não é necessário reenviar razão social, CNPJ, inscrição estadual, sede ou cidade de expedição. Os itens abaixo também servem à conferência técnica; a mensagem foi reduzida às decisões ainda abertas. O pacote privado não faz parte deste repositório.
+
 ## Mensagem pronta para enviar
 
-> Olá! Estamos preparando a loja virtual da curti Z, integrada ao Bling, para vender sandálias e chinelos. Informamos que há fabricação própria e enquadramento no Simples Nacional, mas precisamos que vocês confirmem essas informações documentalmente e validem a configuração fiscal antes de liberar as vendas.
+> Olá! Recebemos os dados cadastrais e as orientações iniciais para a venda de chinelos da curti Z. Falta confirmar: os produtos são, fiscalmente, de produção do estabelecimento ou mercadorias de terceiros para revenda? Quem efetivamente fabrica e emite a nota de entrada? Os códigos de venda e devolução enviados estão aprovados para todos os cenários aplicáveis, inclusive consumidor final de outro estado, ou precisam ser corrigidos? Há procedimento fiscal/documental complementar para expedir de uma cidade diferente da sede fiscal?
 >
-> Precisamos da natureza de operação de venda configurada e aprovada no Bling, dos dados fiscais dos produtos, das regras para vendas dentro e fora do estado e da confirmação de que a empresa pode emitir NF-e pelo sistema. Também precisamos do procedimento de devolução, cancelamento e tratamento de rejeições.
+> Também precisamos definir inequivocamente a regra interestadual e a unidade por produto; confirmar classificação, origem, CEST e custo por SKU/documento; e conferir certificado, credenciamento SEFAZ, série, numeração e procedimentos de devolução, cancelamento e rejeição. A natureza de operação deve corresponder a cada cenário, sem uma regra estadual aplicada a todo o país.
 >
 > Por favor, respondam à lista abaixo, indicando o que já está pronto, o que falta e quem fará cada configuração. Ao concluir, enviem uma aprovação por escrito com a data e os cenários autorizados. A emissão automática está desligada e só será ativada após essa validação. Não enviem senhas ou certificados por mensagens abertas; esses itens devem ser configurados diretamente no ambiente seguro combinado com a empresa.
 
