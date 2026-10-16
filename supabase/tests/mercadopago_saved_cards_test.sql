@@ -6,8 +6,8 @@ values
  ('ce000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','cards-a@test.local','{}','{"full_name":"Cards A"}',now(),now()),
  ('ce000000-0000-4000-8000-000000000002','00000000-0000-0000-0000-000000000000','authenticated','authenticated','cards-b@test.local','{}','{"full_name":"Cards B"}',now(),now());
 update public.profiles set status = 'active' where id in ('ce000000-0000-4000-8000-000000000001','ce000000-0000-4000-8000-000000000002');
-insert into public.orders(id,customer_id,customer_email_snapshot,customer_name_snapshot,subtotal,grand_total,shipping_address_snapshot,payment_status,status)
-values('ce100000-0000-4000-8000-000000000001','ce000000-0000-4000-8000-000000000001','cards-a@test.local','Cards A',50,50,'{}','approved','payment_approved');
+insert into public.orders(id,customer_id,customer_email_snapshot,customer_name_snapshot,subtotal,grand_total,shipping_address_snapshot,payment_status,status,commercial_rules_snapshot)
+values('ce100000-0000-4000-8000-000000000001','ce000000-0000-4000-8000-000000000001','cards-a@test.local','Cards A',50,50,'{}','approved','payment_approved','{"paymentProvider":"mercadopago","paymentMode":"test"}');
 select ok(not has_function_privilege('authenticated','public.claim_mercadopago_customer(uuid,text)','execute'),'customer creation is server-only');
 select ok(not has_function_privilege('anon','public.claim_mercadopago_card_save(uuid,uuid,uuid,uuid)','execute'),'anonymous cannot associate cards');
 select ok(not has_table_privilege('authenticated','public.payment_provider_customers','INSERT'),'browser cannot select its own provider identity');

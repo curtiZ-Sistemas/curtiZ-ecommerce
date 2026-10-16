@@ -53,7 +53,7 @@ Registro técnico desta execução. Não autoriza vendas reais nem emissão fisc
 
 ## Validação necessária com o contador/responsável
 
-Confirmar documentalmente fabricação própria e regime tributário; inscrição e situação fiscal; certificado/autorização SEFAZ; natureza ativa adequada; CFOP/CSOSN/CST/NCM/CEST e tributos aplicáveis; regras interestaduais e eventuais benefícios; procedimento de emissão/cancelamento e bloqueio fiscal da expedição. A lista não propõe códigos ou alíquotas.
+Confirmar documentalmente a classificação tributária das atividades efetivamente realizadas e o regime tributário; inscrição e situação fiscal; certificado/autorização SEFAZ; natureza ativa adequada; CFOP/CSOSN/CST/NCM/CEST e tributos aplicáveis; regras interestaduais e eventuais benefícios; procedimento de emissão/cancelamento e bloqueio fiscal da expedição. Orientações recebidas não equivalem à validação definitiva de todos os cenários. O esclarecimento operacional permanece no registro interno, fora do repositório público.
 
 Arquivo solicitado pelo titular: [mensagem pronta e checklist para a contabilidade](solicitacao-contabilidade-curtiz.md). O responsável ainda não sabe se há aprovação fiscal e não forneceu saldo físico conferido. A equipe técnica seleciona o item para homologação; saldo físico e configuração fiscal não são inventados para superar esses impedimentos.
 
@@ -68,3 +68,13 @@ Branch inicial `fix/production-readiness-20261015`, criada da `main` `6cd84b0880
 Rollback de código pelo caminho oficial do Actions com versão anterior validada. O predicado anterior da view permanece em `202608080006_help_center_reform.sql` para uma migration de reversão revisada; não apagar dados. O depósito pode ser removido do runtime com as flags comerciais desligadas. Manter a remoção de query strings dos logs.
 
 **NO-GO comercial:** pagamentos/frete reais, emissão fiscal, e-mails, MFA e validações externas completas ainda pendentes. **Preparação técnica em andamento:** não declarar entrega concluída somente por unitários, HTTP 200 ou credenciais presentes.
+
+## Continuação de 16/10 — estoque e preparação do Mercado Pago
+
+A correção de estoque foi aprovada no [PR #29](https://github.com/curtiZ-Sistemas/curtiZ-ecommerce/pull/29), aplicada no Supabase como versão `20261016183341` e publicada pelo [Actions oficial](https://github.com/curtiZ-Sistemas/curtiZ-ecommerce/actions/runs/38948334252). CI completo aprovado; `/api/version` da loja confirma `e0cb69b5b9bc4308cd4ad17607c967e9259edf82`. Os sete leitores remotos foram relidos e não contêm mais a subtração duplicada. O teste SQL de reserva/liberação passou; a próxima homologação controlada verificará também a disponibilidade pelo fluxo remoto.
+
+O diagnóstico estruturado confirmou HTTP 400 do provedor e código numérico `10113` na tentativa APRO. A Public Key confere com a aplicação e o runtime. A página oficial de qualidade apresentou medição inválida, sem explicar esse código; o painel de monitoramento exigiu nova validação do titular. Não atribuir o erro a CPF, emissor ou credencial sem evidência.
+
+Preparado caminho explícito de produção, ainda sem ativação: credenciais do mesmo ambiente, trava `MERCADO_PAGO_PRODUCTION_READY`, validação de `live_mode`, RPCs de produção exclusivas do backend, escopos distintos de idempotência, Customers/cartões separados por ambiente e bloqueio de pedidos incompatíveis antes de cobrar/reconciliar/cancelar. A cotação sandbox é recusada no checkout produtivo. A migration incremental e os testes SQL ainda dependem do CI antes de aplicação remota. Testes locais de configurações, adapter, rotas, webhook e cancelamento passaram; lint e tipos foram executados nos escopos alterados.
+
+O [roteiro de ativação controlada](mercadopago-ativacao-producao.md) documenta variáveis, origem, responsabilidade do titular, webhook, testes finais e retorno seguro. Nenhuma credencial, flag comercial ou configuração fiscal foi ativada por essa preparação. Aprovação real de cartão, reembolso e reflexos financeiros continuam sem homologação externa concluída.

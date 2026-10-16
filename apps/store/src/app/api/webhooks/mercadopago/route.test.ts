@@ -6,7 +6,7 @@ import { POST } from "./route";
 const provider = vi.hoisted(() => ({ getPayment: vi.fn() }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
-  MercadoPagoTestPaymentProvider: class { getPayment = provider.getPayment; }
+  MercadoPagoPaymentProvider: class { getPayment = provider.getPayment; }
 }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: vi.fn() }));
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../lib/mercadopago-payment"));
@@ -26,6 +26,7 @@ const request = (timestamp = Math.floor(Date.now() / 1000), overrides: HeadersIn
 describe("webhook canônico do Mercado Pago", () => {
   beforeEach(() => {
     vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "TEST-access-token");
+    vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "TEST-public");
     vi.stubEnv("MERCADO_PAGO_WEBHOOK_SECRET", secret);
     vi.mocked(createServiceSupabaseClient).mockReset();
     provider.getPayment.mockReset();
@@ -76,6 +77,7 @@ describe("webhook canônico do Mercado Pago", () => {
   const setupProcessing = (failure?: "payment" | "refund" | "lease", review = false) => {
     const rpc = vi.fn(async (name: string) => {
       if (name === "claim_payment_webhook") return { data: `acquired:${lease}`, error: null };
+      if (name === "check_mercadopago_order_mode") return { data: true, error: null };
       if (name === "finalize_mercadopago_payment") return { data: review ? "manual_review" : "processed", error: failure === "payment" ? { code: "XX000" } : null };
       if (name === "reconcile_mercadopago_provider_refund") return { data: "completed", error: failure === "refund" ? { code: "XX000" } : null };
       if (name === "finish_payment_webhook") return { data: failure !== "lease", error: null };
@@ -91,7 +93,7 @@ describe("webhook canônico do Mercado Pago", () => {
     expect((await POST(request())).status).toBe(200);
     expect(provider.getPayment).toHaveBeenCalledWith("123");
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
-      "claim_payment_webhook", "finalize_mercadopago_payment", "reconcile_mercadopago_provider_refund", "finish_payment_webhook"
+      "claim_payment_webhook", "check_mercadopago_order_mode", "finalize_mercadopago_payment", "reconcile_mercadopago_provider_refund", "finish_payment_webhook"
     ]);
     expect(rpc).toHaveBeenCalledWith("finalize_mercadopago_payment", expect.objectContaining({
       p_external_reference: "ORDER-server", p_amount: 149.9, p_currency: "BRL", p_provider_payment_id: "123"
@@ -99,6 +101,23 @@ describe("webhook canônico do Mercado Pago", () => {
     expect(rpc).toHaveBeenCalledWith("finish_payment_webhook", {
       p_event_id: "event-1", p_lease_token: lease, p_success: true, p_error_code: null
     });
+  });
+  it("does not reconcile a signed event against an order from another environment", async () => {
+    const rpc = setupProcessing();
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation(async name => name === "check_mercadopago_order_mode" ? { data: false, error: null }
+      : await original?.(name) ?? { data: false, error: null });
+    expect((await POST(request())).status).toBe(409);
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain("finalize_mercadopago_payment");
+    expect(rpc).toHaveBeenCalledWith("finish_payment_webhook", expect.objectContaining({ p_success: false, p_error_code: "payment_mode_mismatch" }));
+  });
+  it("uses explicit production mode for a matching signed event", async () => {
+    const rpc = setupProcessing();
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production"); vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture"); vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-public");
+    expect((await POST(request())).status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("check_mercadopago_order_mode", { p_mode: "production", p_external_reference: "ORDER-server" });
+    expect(rpc).toHaveBeenCalledWith("claim_payment_webhook", expect.objectContaining({ p_event_id: "production:event-1" }));
   });
 
   it.each(["payment", "refund", "lease"] as const)("does not acknowledge a %s reconciliation failure", async (failure) => {

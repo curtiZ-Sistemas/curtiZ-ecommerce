@@ -81,9 +81,10 @@ export type MercadoPagoPayment = {
 
 export class MercadoPagoProviderError extends Error {
   constructor(
-    readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
+    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
     readonly httpStatus = 502,
-    readonly providerCauseCodes: readonly string[] = []
+    readonly providerCauseCodes: readonly string[] = [],
+    readonly providerRejectionFields: readonly string[] = []
   ) {
     super(code);
     this.name = "MercadoPagoProviderError";
@@ -160,12 +161,12 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
   };
 };
 
-export class MercadoPagoTestPaymentProvider {
+export class MercadoPagoPaymentProvider {
   readonly name = "mercadopago";
 
-  constructor(private readonly accessToken: string) {
-    if (!isMercadoPagoTestCredential(accessToken)) {
-      throw new MercadoPagoProviderError("invalid_test_credential", 503);
+  constructor(private readonly accessToken: string, private readonly mode: "test" | "production") {
+    if (!(mode === "test" ? isMercadoPagoTestCredential(accessToken) : mode === "production" && accessToken.startsWith("APP_USR-"))) {
+      throw new MercadoPagoProviderError("invalid_payment_credential", 503);
     }
   }
 
@@ -184,10 +185,21 @@ export class MercadoPagoTestPaymentProvider {
         const code: unknown = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
         return (typeof code === "string" || typeof code === "number") && /^\d{1,10}$/u.test(String(code)) ? [String(code)] : [];
       }).slice(0, 5) : [];
+      // Emit only fixed field labels. Never retain provider descriptions or values.
+      const descriptions = (Array.isArray(causes) ? causes.slice(0, 5).flatMap((cause: unknown) =>
+        cause && typeof cause === "object" && "description" in cause && typeof cause.description === "string"
+          ? [cause.description.slice(0, 1000).toLowerCase()] : []).join(" ") : "")
+        + (body && typeof body === "object" && "message" in body && typeof body.message === "string" ? ` ${body.message.slice(0, 1000).toLowerCase()}` : "");
+      const fields = ["payer", "email", "issuer", "token", "card", "installments", "identification", "collector", "sandbox", "production", "name"]
+        .filter(field => new RegExp(`\\b${field}\\b`, "u").test(descriptions));
       throw new MercadoPagoProviderError(
         response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
-        response.status, codes
+        response.status, codes, fields
       );
+    }
+    if (!body || typeof body !== "object" || !("live_mode" in body)
+      || body.live_mode !== (this.mode === "production")) {
+      throw new MercadoPagoProviderError("payment_mode_mismatch");
     }
     return mercadoPagoPayment(body);
   }
@@ -245,10 +257,13 @@ export class MercadoPagoTestPaymentProvider {
   }
 
   async getPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
-    return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+    const payment = await this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+    if (payment.id !== providerPaymentId) throw new MercadoPagoProviderError("invalid_provider_response");
+    return payment;
   }
 
   async cancelPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
+    await this.getPayment(providerPaymentId);
     return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, {
       method: "PUT", body: JSON.stringify({ status: "cancelled" }), signal: AbortSignal.timeout(15_000)
     });
@@ -258,6 +273,8 @@ export class MercadoPagoTestPaymentProvider {
     if (!Number.isSafeInteger(amountInCents) || amountInCents <= 0 || !idempotencyKey) {
       throw new MercadoPagoProviderError("invalid_refund", 400);
     }
+    const payment = await this.getPayment(providerPaymentId);
+    if (amountInCents > payment.amountInCents) throw new MercadoPagoProviderError("invalid_refund", 400);
     const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
       method: "POST", headers: { authorization: `Bearer ${this.accessToken}`, "content-type": "application/json", "x-idempotency-key": idempotencyKey },
       body: JSON.stringify({ amount: amountInCents / 100 }), signal: AbortSignal.timeout(15_000)
@@ -270,6 +287,14 @@ export class MercadoPagoTestPaymentProvider {
       throw new MercadoPagoProviderError("refund_unconfirmed", 503);
     }
     return { id: String(refund.id) };
+  }
+}
+
+/** Compatibility entry point for callers that explicitly require test credentials. */
+export class MercadoPagoTestPaymentProvider extends MercadoPagoPaymentProvider {
+  constructor(accessToken: string) {
+    if (!isMercadoPagoTestCredential(accessToken)) throw new MercadoPagoProviderError("invalid_test_credential", 503);
+    super(accessToken, "test");
   }
 }
 
