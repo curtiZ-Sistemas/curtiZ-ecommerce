@@ -50,6 +50,9 @@ begin
     values('shipping','melhorenvio.'||p_action,jsonb_build_object('shipmentId',shipment.id),
       'melhorenvio:'||p_action||':'||shipment.id) on conflict(idempotency_key) do nothing;
   select * into job from public.background_jobs where idempotency_key='melhorenvio:'||p_action||':'||shipment.id for update;
+  if job.status='failed' and job.error_summary in ('uncertain_write','lease_expired_reconciliation_required') then
+    raise exception 'shipping_reconciliation_required' using errcode='55000';
+  end if;
   if job.status='failed' and coalesce(job.error_summary,'') not in
     ('uncertain_write','lease_expired_reconciliation_required') or (p_action='sync' and job.status='completed') then
     update public.background_jobs set status='pending',attempts=0,available_at=now(),completed_at=null,error_summary=null

@@ -37,6 +37,8 @@ select is((select count(*) from public.background_jobs where idempotency_key='me
 select is(public.apply_melhor_envio_webhook('part2-paid','hash1','order.released','part2-external','ready',now()),'processed','Authenticated provider observation reconciles payment');
 select is((select operation_state from public.shipments where id='f2200000-0000-4000-8000-000000000001'),'purchased','Confirmed carrier payment unlocks generation');
 select is((select count(*) from public.background_jobs where idempotency_key='melhorenvio:generate:f2200000-0000-4000-8000-000000000001'),1::bigint,'Generation is durably scheduled');
+update public.background_jobs set status='failed',error_summary='uncertain_write' where idempotency_key='melhorenvio:generate:f2200000-0000-4000-8000-000000000001';
+select throws_ok($$select public.request_shipping_action('f2200000-0000-4000-8000-000000000001','generate','f2000000-0000-4000-8000-000000000002')$$,'55000','shipping_reconciliation_required','Uncertain job never reports a false successful requeue after state reconciliation');
 select is(public.apply_melhor_envio_webhook('part2-generated','hash2','order.generated','part2-external','label_created',now()),'processed','Generated label advances after payment');
 select is((select operation_state from public.shipments where id='f2200000-0000-4000-8000-000000000001'),'generated','Label generation is confirmed, not inferred');
 select public.apply_melhor_envio_webhook('part2-posted','hash3','order.posted','part2-external','dispatched',now());
