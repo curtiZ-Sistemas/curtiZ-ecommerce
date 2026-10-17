@@ -1,4 +1,4 @@
-import { type BlingClient, BlingError, blingExternalSku, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, createBlingClient, executeBlingCatalogJob, sendInvoiceEmail } from "@curtiz/integrations";
+import { type BlingClient, BlingError, blingExternalSku, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, createBlingClient, executeBlingCatalogJob } from "@curtiz/integrations";
 import { logServerEvent } from "@curtiz/security";
 import { decryptPII } from "@curtiz/security/pii";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -406,7 +406,7 @@ export async function runBlingJobs(environment: Environment, executionId: string
       p_product_enabled: environment.BLING_PRODUCT_SYNC_ENABLED === "true",
       p_create_enabled: environment.BLING_PRODUCT_CREATE_ENABLED === "true",
       p_stock_enabled: environment.BLING_STOCK_SYNC_ENABLED === "true",
-      p_email_enabled: environment.BLING_INVOICE_EMAIL_ENABLED === "true" && Boolean(environment.RESEND_API_KEY && environment.RESEND_FROM_EMAIL) }));
+      p_email_enabled: false }));
     if (!claimed) break;
     const job: Job = { id: readString(claimed, "id"), type: readString(claimed, "jobType") as Job["type"],
       payload: row(claimed.payload) ?? {}, attempts: readNumber(claimed, "attempts") };
@@ -444,28 +444,7 @@ export async function runBlingJobs(environment: Environment, executionId: string
           throw new BlingError("invoice_processing", 503, true, false, 120_000);
         }
       } else if (job.type === "bling.invoice.email") {
-        const orderId = readString(job.payload, "orderId");
-        const link = row(await call(db, "read_bling_order_link", { p_order_id: orderId }));
-        if (!link?.email_provider_id) {
-          const invoiceId = idNumber(link?.invoice_id);
-          if (!invoiceId || link?.invoice_status !== "authorized") throw new BlingError("invoice_not_authorized", 409);
-          await observeInvoice(db, provider, invoiceId);
-          const current = row(await call(db, "read_bling_order_link", { p_order_id: orderId }));
-          if (current?.invoice_status !== "authorized") throw new BlingError("invoice_not_authorized", 409);
-          const orderResult = await db.from("orders").select("public_code,customer_email_snapshot").eq("id", orderId).maybeSingle();
-          if (orderResult.error || !orderResult.data) throw new BlingError("storage_unavailable", 503, true);
-          const order = row(orderResult.data)!;
-          const startedAt = await call(db, "begin_bling_email_attempt", { p_order_id: orderId });
-          if (typeof startedAt !== "string" || !Number.isFinite(Date.parse(startedAt)) || Date.now() - Date.parse(startedAt) > 23 * 60 * 60_000)
-            throw new BlingError("email_reconciliation_required", 409, false, true);
-          const externalId = await sendInvoiceEmail({ apiKey: environment.RESEND_API_KEY ?? "", from: environment.RESEND_FROM_EMAIL ?? "",
-            to: readString(order, "customer_email_snapshot"), orderCode: readString(order, "public_code"),
-            storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", idempotencyKey: `bling-invoice:${orderId}:${invoiceId}` }, transport);
-          try {
-            if (await call(db, "record_bling_email_acceptance", { p_order_id: orderId, p_provider_id: externalId }) !== true)
-              throw new Error("email_receipt_not_saved");
-          } catch { throw new BlingError("email_acceptance_uncertain", 503, false, true); }
-        }
+        throw new BlingError("email_kind_not_approved", 409);
       } else if (["bling.product.sync", "bling.product.create", "bling.product.reconcile", "bling.stock.sync"].includes(job.type)) {
         await executeBlingCatalogJob({ rpc: async (name, args) => db.rpc(name, args), provider, environment,
           type: job.type, variantId: readString(job.payload, "variantId") });

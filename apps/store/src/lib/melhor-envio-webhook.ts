@@ -2,17 +2,17 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const lifecycle: Record<string, { status: string; rank: number }> = {
-  created: { status: "pending", rank: 0 }, pending: { status: "pending", rank: 0 }, released: { status: "ready", rank: 3 },
+  created: { status: "pending", rank: 0 }, pending: { status: "pending", rank: 0 }, paid: { status: "ready", rank: 1 }, released: { status: "ready", rank: 1 },
   generated: { status: "label_created", rank: 2 }, posted: { status: "dispatched", rank: 4 },
   received: { status: "in_transit", rank: 5 }, in_transit: { status: "in_transit", rank: 5 },
-  delivered: { status: "delivered", rank: 7 }, undelivered: { status: "delayed", rank: 6 },
-  not_delivered: { status: "delayed", rank: 6 }, paused: { status: "delayed", rank: 6 },
-  suspended: { status: "delayed", rank: 6 },
+  delivered: { status: "delivered", rank: 7 }, undelivered: { status: "delayed", rank: 5 },
+  not_delivered: { status: "delayed", rank: 5 }, paused: { status: "delayed", rank: 5 },
+  suspended: { status: "delayed", rank: 5 },
   returned: { status: "returned", rank: 8 }, canceled: { status: "cancelled", rank: 8 },
   cancelled: { status: "cancelled", rank: 8 }, expired: { status: "cancelled", rank: 8 }
 };
-const internalRank: Record<string, number> = { pending: 0, label_created: 2, ready: 3, dispatched: 4,
-  in_transit: 5, delayed: 6, delivered: 7, returned: 8, cancelled: 8 };
+const internalRank: Record<string, number> = { pending: 0, label_created: 2, ready: 1, dispatched: 4,
+  in_transit: 5, delayed: 5, delivered: 7, returned: 8, cancelled: 8 };
 
 export function melhorEnvioStatusTransition(currentStatus: string, event: string, externalStatus: string) {
   const normalized = lifecycle[externalStatus.toLowerCase()] ?? lifecycle[event.replace(/^order\./u, "")];
