@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { expandBlingFiscalKit } from "@curtiz/integrations";
 vi.mock("server-only", () => ({}));
-import { assertBlingExternalOrder, assertBlingInvoiceItems, assertBlingPaidOrder, blingOrderPayload } from "./bling-jobs";
+import { assertBlingExternalOrder, assertBlingInvoiceItems, assertBlingInvoiceRecipient, assertBlingPaidOrder, blingOrderPayload } from "./bling-jobs";
 
 const snapshot = () => ({ order: { public_code: "CZ-TEST-ONE", status: "processing", payment_status: "approved",
   subtotal: 100, discount_total: 10, shipping_total: 15, fee_total: 0, grand_total: 105, placed_at: "2026-10-02T12:00:00Z",
@@ -10,6 +11,15 @@ const snapshot = () => ({ order: { public_code: "CZ-TEST-ONE", status: "processi
   productLinks: [{ variantId: "variant-test", sku: "SKU-COR-37", externalProductId: 101, commercialUnit: "PR" }], contactId: 201, paymentMethodId: 301 });
 
 describe("paid Bling order snapshots", () => {
+  it("blocks a changed fiscal recipient or missing taxpayer registration", () => {
+    const expected = { document: "12345678909", state: "MG", postalCode: "30000000", icmsTaxpayer: false };
+    const invoice = { contato: { numeroDocumento: expected.document, endereco: { uf: "MG", cep: expected.postalCode } } };
+    expect(() => assertBlingInvoiceRecipient(invoice, expected)).not.toThrow();
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, document: "52998224725" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, state: "SP" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, postalCode: "31000000" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, icmsTaxpayer: true })).toThrow("invoice_recipient_mismatch");
+  });
   it.each(["pending", "rejected", "cancelled", "refunded", "charged_back"])("blocks %s payment", (payment_status) => {
     expect(() => assertBlingPaidOrder({ payment_status, status: "processing" })).toThrow("order_not_eligible");
   });
@@ -48,6 +58,20 @@ describe("paid Bling order snapshots", () => {
 });
 
 describe("actual invoice against the approved mirror", () => {
+  it("accepts a legitimate fiscal decomposition while continuing to reject duplicate or missing pairs", () => {
+    const components = [1, 2, 3].map(i => ({ sku: `PAIR-${i}`, description: `Pair ${i}`, unit: "PR", quantity_pairs: 1,
+      allocation_weight: 1, source_current: true, ncm: "64022000", origin: 0, cest: "" }));
+    const expected = expandBlingFiscalKit({ sku: "KIT", description: "Commercial kit", unit: "UN", quantity: 2,
+      pairsPerSku: 3, unitPriceInCents: 5594, fiscalUnitApproved: false, ncm: "64022000", origin: 0, cest: "" }, components)
+      .map(i => ({ ...i, cfop: "6108" }));
+    const invoice = { valorNota: 111.88, valorFrete: 0, itens: expected.map(i => ({ codigo: i.sku, unidade: i.unit,
+      quantidade: i.quantity, valor: i.unitPriceInCents / 100, classificacaoFiscal: i.ncm, origem: i.origin, cest: i.cest, cfop: i.cfop })) };
+    const totals = { totalInCents: 11188, shippingInCents: 0 };
+    expect(() => assertBlingInvoiceItems(invoice, expected, totals)).not.toThrow();
+    expect(() => assertBlingInvoiceItems({ ...invoice, itens: [...invoice.itens, invoice.itens[0]!] }, expected, totals)).toThrow();
+    expect(() => assertBlingInvoiceItems({ ...invoice, itens: invoice.itens.slice(1) }, expected, totals)).toThrow();
+    expect(() => assertBlingInvoiceItems({ ...invoice, itens: invoice.itens.map(i => ({ ...i, valor: i.valor + 0.01 })) }, expected, totals)).toThrow();
+  });
   const expected = [{ sku: "SKU-COR-37", unit: "PR", quantity: 2, unitPriceInCents: 5000, ncm: "64022000", origin: 0, cest: "", cfop: "6108" }];
   const invoice = () => ({ valorNota: 115, valorFrete: 15, itens: [{ codigo: "SKU-COR-37", unidade: "PR", quantidade: 2,
     valor: 50, classificacaoFiscal: "6402.20.00", origem: 0, cest: "", cfop: "6108" }] });

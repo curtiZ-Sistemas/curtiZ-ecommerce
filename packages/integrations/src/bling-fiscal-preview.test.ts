@@ -65,4 +65,21 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
     expect(await blingFiscalMirrorHash(changed)).not.toBe(hash);
     await expect(buildBlingOrderFiscalMirror({ ...input, order: { ...input.order, grand_total: 1 } })).rejects.toThrow("fiscal_total_mismatch");
   });
+  it("binds the mirror to actual kit components, individual taxes, freight and discount", async () => {
+    const input = { rules: rules.map(r => ({ ...r, pis_cst: "49", cofins_cst: "49", ipi_cst: "99" })),
+      order: { id: "order", shipping_address_snapshot: { state: "MG" }, grand_total: 58.94, shipping_total: 5, discount_total: 2 },
+      items: [{ variant_id: "kit", sku_snapshot: "KIT", product_name_snapshot: "Actual kit", quantity: 1, unit_price: 55.94 }],
+      snapshots: [{ variant: { id: "kit", sku: "KIT" }, metadata: { commercial_unit: "UN", pairs_per_sku: 3,
+        fiscal_unit_approved: false, ncm: "64022000", origin: 0, cest: "" }, kit_components: [1, 2, 3].map(i => ({
+          sku: `PAIR-${i}`, description: `Actual pair ${i}`, unit: "PR", quantity_pairs: 1, allocation_weight: 1,
+          source_current: true, ncm: "64022000", origin: 0, cest: "" })) }], icmsTaxpayer: false, finalConsumer: true };
+    const mirror = await buildBlingOrderFiscalMirror(input);
+    expect(mirror.totalInCents).toBe(5894);
+    expect(mirror.items.map(i => i.unit)).toEqual(["PR", "PR", "PR"]);
+    expect(mirror.rule).toMatchObject({ pis_cst: "49", cofins_cst: "49", ipi_cst: "99" });
+    expect(mirror.blockers).not.toContain("kit_fiscal_unit_confirmation_required");
+    expect(mirror.blockers).not.toContain("fiscal_tax_codes_required");
+    const changed = structuredClone(input); changed.snapshots[0]!.kit_components[0]!.ncm = "12345678";
+    expect(await blingFiscalMirrorHash(await buildBlingOrderFiscalMirror(changed))).not.toBe(await blingFiscalMirrorHash(mirror));
+  });
 });

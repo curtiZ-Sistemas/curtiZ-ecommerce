@@ -4,6 +4,19 @@ import { MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "./inde
 
 afterEach(() => vi.unstubAllGlobals());
 describe("Mercado Pago sanitized rejection diagnostics", () => {
+  it("retains the provider request ID separately from the local correlation without copying response data", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      cause: [{ code: 10111, description: "Invalid issuer private-token-value" }]
+    }, { status: 400, headers: { "x-request-id": "11111111-2222-4333-8444-555555555555" } })));
+    const issue: unknown = await new MercadoPagoTestPaymentProvider("TEST-fixture").getPayment("123").catch((error: unknown) => error);
+    expect(issue).toMatchObject({ providerCauseCodes: ["10111"], providerRejectionFields: ["issuer", "token"],
+      providerRequestId: "11111111-2222-4333-8444-555555555555" });
+    expect(JSON.stringify(issue)).not.toContain("private-token-value");
+  });
+  it.each([undefined, null, "", "x".repeat(101), "private@example.com", "id\nsecret", "id?token=secret"])(
+    "discards an absent or malformed provider request ID: %s", providerRequestId => {
+      expect(new MercadoPagoProviderError("payment_rejected", 400, [], [], providerRequestId).providerRequestId).toBeNull();
+    });
   it("retains only bounded numeric cause codes, without provider descriptions or credentials", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json({
       message: "private fixture text", cause: [{ code: 2006, description: "private fixture text" },

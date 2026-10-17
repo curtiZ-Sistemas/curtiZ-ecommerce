@@ -6,6 +6,7 @@ import { POST } from "./route";
 import { validateSavedCardCustomer, validateSavedCardPayer } from "@/lib/mercadopago-saved-cards";
 import { decryptPII, encryptPII } from "../../../../lib/pii";
 import type * as Config from "@curtiz/config";
+import type * as Integrations from "@curtiz/integrations";
 
 const state = vi.hoisted(() => ({
   checkoutEnabled: true, createPayment: vi.fn(), getPayment: vi.fn(), getPaymentMethodIds: vi.fn()
@@ -13,11 +14,9 @@ const state = vi.hoisted(() => ({
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/config", async importOriginal => ({ ...await importOriginal<typeof Config>(), getIntegrationConfig: () => ({ checkoutEnabled: state.checkoutEnabled,
   shipping: { enabled: true, provider: "fixed", melhorEnvioEnabled: false } }) }));
-vi.mock("@curtiz/integrations", () => ({
+vi.mock("@curtiz/integrations", async importOriginal => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
-  MercadoPagoProviderError: class extends Error {
-    constructor(code: string, readonly httpStatus = 502, readonly providerCauseCodes: readonly string[] = []) { super(code); }
-  },
+  MercadoPagoProviderError: (await importOriginal<typeof Integrations>()).MercadoPagoProviderError,
   MercadoPagoPaymentProvider: class {
     getPaymentMethodIds = state.getPaymentMethodIds;
     createPayment = state.createPayment;
@@ -164,6 +163,24 @@ describe("confirmação de pagamento", () => {
     database();
     expect((await POST(request({ ...body, payment: { ...body.payment, issuer_id } }))).status).toBe(200);
     expect(state.createPayment).toHaveBeenCalledWith(expect.objectContaining({ issuerId: 25 }));
+  });
+  it("records an explicit fiscal recipient before creating the provider payment", async () => {
+    const db = database();
+    const original = db.rpc.getMockImplementation();
+    db.rpc.mockImplementation((name, args) => name === "set_bling_checkout_recipient"
+      ? Promise.resolve({ data: true, error: null }) : original!(name, args));
+    expect((await POST(request({ ...body, checkout: { ...body.checkout,
+      fiscalRecipient: { icmsTaxpayer: true, finalConsumer: false } } }))).status).toBe(200);
+    expect(db.rpc).toHaveBeenCalledWith("set_bling_checkout_recipient", expect.objectContaining({
+      p_user_id: "customer-id", p_icms_taxpayer: true, p_final_consumer: false }));
+    const declaration = db.rpc.mock.invocationCallOrder[db.rpc.mock.calls.findIndex(([name]) => name === "set_bling_checkout_recipient")];
+    expect(declaration).toBeLessThan(state.createPayment.mock.invocationCallOrder[0]!);
+  });
+  it("does not charge when the declaration conflicts with an existing order", async () => {
+    database();
+    expect((await POST(request({ ...body, checkout: { ...body.checkout,
+      fiscalRecipient: { icmsTaxpayer: false, finalConsumer: true } } }))).status).toBe(409);
+    expect(state.createPayment).not.toHaveBeenCalled();
   });
   it.each(["", "-1", "1e2", "unknown", 0, 1.5, null])("rejects malformed issuer %s before creating an order", async issuer_id => {
     const db = database();
@@ -393,17 +410,21 @@ describe("confirmação de pagamento", () => {
     expect(db.creationKeys.size).toBe(1); expect(db.attempts.size).toBe(2);
     expect(state.createPayment.mock.calls.map(([input]) => (input as MercadoPagoPaymentInput).idempotencyKey)).toEqual([firstKey, secondKey]);
   });
-  it("preserva códigos numéricos no diagnóstico estruturado após a redação de privacidade", async () => {
+  it("preserva códigos, campos e request ID do provedor somente no diagnóstico estruturado", async () => {
     database();
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("payment_rejected", 400, ["2006"]));
+      const providerRequestId = "11111111-2222-4333-8444-555555555555";
+      state.createPayment.mockRejectedValueOnce(new MercadoPagoProviderError("payment_rejected", 400, ["10111"], ["issuer"], providerRequestId));
       const result = await POST(request());
       expect(result.status).toBe(422);
       expect(logged).toHaveBeenCalledWith({ event: "mercadopago_bricks_payment_not_completed",
         code: "PROVIDER_REQUEST_FAILED", requestId: result.headers.get("x-request-id"), providerStatus: 400,
-        databaseCode: null, providerRejectionCodes: ["2006"] });
-      expect(await result.json()).not.toHaveProperty("providerRejectionCodes");
+        databaseCode: "payment_rejected", providerRejectionCodes: ["10111"], providerRejectionFields: ["issuer"], providerRequestId });
+      const payload: unknown = await result.json();
+      expect(payload).not.toHaveProperty("providerRejectionCodes");
+      expect(payload).not.toHaveProperty("providerRequestId");
+      expect(result.headers.get("x-request-id")).not.toBe(providerRequestId);
     } finally { logged.mockRestore(); }
   });
   it("retry após rejected usa nova tentativa; replay antigo não cobra", async () => {

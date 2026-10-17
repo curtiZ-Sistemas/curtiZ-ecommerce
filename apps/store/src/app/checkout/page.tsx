@@ -806,6 +806,10 @@ export default function CheckoutPage() {
       if (invalidField instanceof HTMLElement) invalidField.focus();
       return;
     }
+    if (!["yes", "no"].includes(formString("icmsTaxpayer")) || !["yes", "no"].includes(formString("finalConsumer"))) {
+      setMessage("Informe as duas declarações fiscais antes de continuar.");
+      return;
+    }
     if (!selectedShippingQuote) {
       setMessage("Calcule e selecione uma opção de frete antes de continuar.");
       return;
@@ -826,6 +830,7 @@ export default function CheckoutPage() {
 
     try {
       const checkout = {
+        fiscalRecipient: { icmsTaxpayer: formString("icmsTaxpayer") === "yes", finalConsumer: formString("finalConsumer") === "yes" },
         ...(couponCode ? { couponCode } : {}),
         ...(selectedShippingQuote.id !== "fixed" ? { shippingQuoteId: selectedShippingQuote.id } : {}),
         customer: {
@@ -1169,6 +1174,21 @@ export default function CheckoutPage() {
             </div>
           </section>
 
+          <section className="checkout-section" aria-labelledby="checkout-fiscal-title">
+            <h2 id="checkout-fiscal-title">Dados para a nota fiscal</h2>
+            <div className="form-grid">
+              <div className="field"><label htmlFor="icmsTaxpayer">Você é contribuinte de ICMS nesta compra?</label>
+                <select id="icmsTaxpayer" name="icmsTaxpayer" required defaultValue="">
+                  <option value="" disabled>Selecione</option><option value="no">Não</option><option value="yes">Sim</option>
+                </select>
+              </div>
+              <div className="field"><label htmlFor="finalConsumer">A compra é para uso próprio (consumidor final)?</label>
+                <select id="finalConsumer" name="finalConsumer" required defaultValue="">
+                  <option value="" disabled>Selecione</option><option value="yes">Sim</option><option value="no">Não</option>
+                </select>
+              </div>
+            </div>
+          </section>
           <section className="checkout-section" aria-labelledby="checkout-address-title">
             <h2 id="checkout-address-title">Endereço de entrega</h2>
             {savedAddresses.length ? (

@@ -33,12 +33,12 @@ export async function GET(request: NextRequest) {
       let used = false;
       for (const type of ["0", "1"]) for (const cancelled of [false, true]) {
         const query = new URLSearchParams({ pagina: "1", limite: "1", serie: String(series), tipo: type,
-          dataEmissaoInicial: "2000-01-01 00:00:00", dataEmissaoFinal: "2099-12-31 23:59:59" });
+          dataEmissaoInicial: "2000-01-01 00:00:00", dataEmissaoFinal: `${new Date().toISOString().slice(0, 10)} 23:59:59` });
         if (cancelled) query.set("situacao", "2");
         used = list(await provider.request(`/nfe?${query}`)).length > 0 || used;
       }
       return NextResponse.json({ series, used, includesCancelled: true, includesBothDirections: true,
-        numberingChanged: false }, { headers: technicalNoStore });
+        numberingChanged: false, productionHistoryVerified: false }, { headers: technicalNoStore });
     }
     const deposit = process.env.BLING_STOCK_DEPOSIT_ID;
     if (!positive(deposit)) throw new BlingError("stock_mapping_required", 409);

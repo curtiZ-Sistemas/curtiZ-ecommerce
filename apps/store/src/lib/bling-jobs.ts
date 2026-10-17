@@ -3,9 +3,11 @@ import { logServerEvent } from "@curtiz/security";
 import { decryptPII } from "@curtiz/security/pii";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readNumber, readString } from "./unknown-data";
+import { archiveBlingInvoice, ensureBlingFiscalApproval, resolveBlingOrderNature } from "./bling-fiscal-automation";
+import { prepareBlingFiscalDraft } from "./bling-invoice-draft";
 
 type Environment = Readonly<Record<string, string | undefined>>;
-type Job = { id: string; type: "bling.order.create" | "bling.order.reconcile" | "bling.webhook.reconcile" | "bling.invoice.generate" | "bling.invoice.send" | "bling.invoice.email" | "bling.product.sync" | "bling.product.create" | "bling.product.reconcile" | "bling.stock.sync";
+type Job = { id: string; type: "bling.order.create" | "bling.order.reconcile" | "bling.webhook.reconcile" | "bling.invoice.generate" | "bling.invoice.send" | "bling.invoice.poll" | "bling.invoice.archive" | "bling.invoice.email" | "bling.product.sync" | "bling.product.create" | "bling.product.reconcile" | "bling.stock.sync";
   payload: Record<string, unknown>; attempts: number };
 const row = (value: unknown): Record<string, unknown> | null => isUnknownRecord(value) ? value : null;
 const array = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(isUnknownRecord) : [];
@@ -62,7 +64,7 @@ async function findOrder(provider: BlingClient, code: string): Promise<number | 
 }
 
 export function blingOrderPayload(input: { order: Record<string, unknown>; items: Record<string, unknown>[];
-  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number }) {
+  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number; natureId?: number }) {
   const { order, items, productLinks, contactId, paymentMethodId } = input;
   assertBlingPaidOrder(order);
   const code = readString(order, "public_code");
@@ -88,7 +90,8 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
       || cents(item.discount_amount) !== 0 || !["PR", "UN", "KIT"].includes(unit))
       throw new BlingError("product_mapping_required", 409);
     return { codigo: blingExternalSku(sku, variantId), unidade: unit, quantidade: quantity, valor: Number(item.unit_price),
-      descricao: readString(item, "product_name_snapshot"), produto: { id: externalId } };
+      descricao: readString(item, "product_name_snapshot"), produto: { id: externalId },
+      ...(input.natureId ? { naturezaOperacao: { id: input.natureId } } : {}) };
   });
   const paidDate = date(order.placed_at);
   const address = row(order.shipping_address_snapshot);
@@ -178,6 +181,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
     return;
   }
   if (reconcileOnly) throw new BlingError("external_record_not_found", 409);
+  const natureId = environment.BLING_FISCAL_READY === "true" ? await resolveBlingOrderNature(db, order, items) : undefined;
   let contactId = await findContact(provider, cpf);
   if (!contactId) {
     const contactResult = await provider.request("/contatos", { method: "POST", body: {
@@ -191,7 +195,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
     contactId = idNumber(row(data(contactResult))?.id);
     if (!contactId) throw new BlingError("uncertain_write", 503, false, true);
   }
-  const payload = blingOrderPayload({ order, items, productLinks: array(links), contactId, paymentMethodId });
+  const payload = blingOrderPayload({ order, items, productLinks: array(links), contactId, paymentMethodId, natureId });
   if (await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)
     throw new BlingError("order_not_eligible", 409);
   const created = await provider.request("/pedidos/vendas", { method: "POST", body: payload });
@@ -228,9 +232,20 @@ export function assertBlingInvoiceItems(invoice: Record<string, unknown>, expect
     throw new BlingError("invoice_items_mismatch", 409);
 }
 
+export function assertBlingInvoiceRecipient(invoice: Record<string, unknown>, expected: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean }) {
+  const contact = row(invoice.contato), address = row(contact?.endereco);
+  if (!/^\d{11}$/u.test(expected.document) || readString(contact ?? {}, "numeroDocumento").replace(/\D/gu, "") !== expected.document
+    || readString(address ?? {}, "uf").toUpperCase() !== expected.state.toUpperCase()
+    || readString(address ?? {}, "cep").replace(/\D/gu, "") !== expected.postalCode.replace(/\D/gu, "")
+    || expected.icmsTaxpayer && !readString(contact ?? {}, "ie"))
+    throw new BlingError("invoice_recipient_mismatch", 409);
+}
+
 async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, environment: Environment,
   orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string;
-    expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number }> {
+    expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number;
+    expectedRecipient: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean };
+    mirror: Awaited<ReturnType<typeof buildBlingOrderFiscalMirror>>; commercialItems: Array<{ sku: string; unit: string; quantity: number; unitPriceInCents: number }> }> {
   if (environment.BLING_FISCAL_READY !== "true") throw new BlingError("fiscal_not_ready", 409);
   const [orderResult, itemsResult, linkValue, accountValue] = await Promise.all([
     db.from("orders").select("id,payment_status,status,customer_id,customer_name_snapshot,customer_email_snapshot,cpf_ciphertext,shipping_address_snapshot,shipping_total,discount_total,fee_total,grand_total").eq("id", orderId).maybeSingle(),
@@ -241,12 +256,14 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   if (orderResult.error || itemsResult.error) throw new BlingError("storage_unavailable", 503, true);
   const order = row(orderResult.data);
   const link = row(linkValue);
+  if (["uncertain_write", "lease_expired_reconciliation_required"].includes(readString(link ?? {}, "last_error_code")))
+    throw new BlingError("reconciliation_required", 409, false, true);
   const externalOrderId = idNumber(link?.external_order_id);
   if (!order || order.payment_status !== "approved" || ["cancelled", "refunded", "manual_review", "cancellation_requested", "refund_pending"].includes(readString(order, "status"))
     || link?.erp_status !== "synced" || !externalOrderId || !row(accountValue)?.companyId) throw new BlingError("fiscal_precondition_failed", 409);
   const items = array(itemsResult.data);
   if (!items.length) throw new BlingError("missing_order_items", 409);
-  const approval = row(await call(db, "read_bling_fiscal_mirror_approval", { p_order_id: orderId }));
+  const approval = await ensureBlingFiscalApproval(db, order, items);
   if (!approval || typeof approval.icms_taxpayer !== "boolean" || typeof approval.final_consumer !== "boolean")
     throw new BlingError("fiscal_mirror_approval_required", 409);
   const snapshots: Record<string, unknown>[] = [];
@@ -254,6 +271,8 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   const mirror = await buildBlingOrderFiscalMirror({ rules: await call(db, "read_bling_fiscal_rules", {}), order, items, snapshots,
     icmsTaxpayer: approval.icms_taxpayer, finalConsumer: approval.final_consumer });
   if (mirror.blockers.includes("kit_fiscal_unit_confirmation_required")) throw new BlingError("kit_fiscal_unit_confirmation_required", 409);
+  if (mirror.blockers.includes("kit_fiscal_composition_required")) throw new BlingError("kit_fiscal_composition_required", 409);
+  if (mirror.blockers.includes("fiscal_tax_codes_required")) throw new BlingError("fiscal_tax_codes_required", 409);
   if (await blingFiscalMirrorHash(mirror) !== approval.mirror_hash) throw new BlingError("fiscal_mirror_changed", 409);
   const natureId = idNumber(mirror.rule.external_nature_id);
   if (!natureId) throw new BlingError("nature_required", 409);
@@ -273,7 +292,10 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
     const externalId = idNumber(links.find((linkRow) => readString(linkRow, "variantId") === readString(item, "variant_id"))?.externalProductId);
     if (!externalId) throw new BlingError("product_mapping_required", 409);
     const product = row(data(await provider.request(`/produtos/${externalId}`)));
-    const approvedItem = mirror.items.find((approved) => approved.sku === readString(item, "sku_snapshot"));
+    const snapshot = snapshots.find(s => row(s.variant)?.id === item.variant_id);
+    const metadata = row(snapshot?.metadata);
+    const approvedItem = metadata ? { sku: readString(item, "sku_snapshot"), unit: readString(metadata, "commercial_unit"),
+      ncm: readString(metadata, "ncm"), origin: Number(metadata.origin), cest: readString(metadata, "cest") } : null;
     const tax = row(product?.tributacao);
     if (!product || product.situacao !== "A" || !approvedItem
       || readString(product, "codigo") !== blingExternalSku(approvedItem.sku, readString(item, "variant_id")) || readString(product, "unidade") !== approvedItem.unit
@@ -281,18 +303,34 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
       || readString(tax ?? {}, "cest").replace(/\D/gu, "") !== approvedItem.cest)
       throw new BlingError("product_fiscal_data_required", 409);
   }
-  const expectedItems = mirror.items.map((item) => ({ sku: blingExternalSku(item.sku, readString(items.find((line) => line.sku_snapshot === item.sku) ?? {}, "variant_id")),
+  const expectedItems = mirror.items.map((item) => ({ sku: item.sourceCommercialSku ? item.sku : blingExternalSku(item.sku, item.variantId ?? ""),
     unit: item.unit, quantity: item.quantity, unitPriceInCents: item.unitPriceInCents, ncm: item.ncm, origin: item.origin, cest: item.cest, cfop: mirror.rule.cfop }));
-  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop,
+  const address = row(order.shipping_address_snapshot) ?? {};
+  const expectedRecipient = { document: typeof order.cpf_ciphertext === "string" ? decryptPII(order.cpf_ciphertext, environment.PII_ENCRYPTION_KEY) : "",
+    state: readString(address, "state"), postalCode: readString(address, "postal_code"), icmsTaxpayer: approval.icms_taxpayer };
+  const commercialItems = items.map(i => ({ sku: blingExternalSku(readString(i, "sku_snapshot"), readString(i, "variant_id")),
+    unit: readString(links.find(l => readString(l, "variantId") === i.variant_id) ?? {}, "commercialUnit"), quantity: Number(i.quantity), unitPriceInCents: cents(i.unit_price) }));
+  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop, expectedRecipient, mirror, commercialItems,
     expectedItems, totalInCents: mirror.totalInCents, shippingInCents: mirror.shippingInCents };
 }
 
 async function generateInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
   if (environment.BLING_INVOICE_SYNC_ENABLED !== "true") throw new BlingError("invoice_sync_disabled", 409);
-  const { externalOrderId, invoiceId } = await fiscalPreconditions(db, provider, environment, orderId);
-  if (invoiceId) return;
+  const preconditions = await fiscalPreconditions(db, provider, environment, orderId);
+  const { externalOrderId, invoiceId, natureId } = preconditions;
+  if (preconditions.mirror.items.some(i => i.sourceCommercialSku) && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true")
+    throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
+  const prepare = (id: number) => prepareBlingFiscalDraft(provider, id, preconditions.mirror.items, preconditions.commercialItems,
+    { ...preconditions.expectedRecipient, natureId, totalInCents: preconditions.totalInCents, shippingInCents: preconditions.shippingInCents,
+      discountInCents: preconditions.mirror.discountInCents, additionalInCents: preconditions.mirror.additionalInCents },
+    environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true",
+    async () => await call(db, "assert_bling_order_writable", { p_order_id: orderId }) === true);
+  if (invoiceId) { await prepare(invoiceId); return; }
   const externalOrder = row(data(await provider.request(`/pedidos/vendas/${externalOrderId}`)));
   const existingInvoiceId = idNumber(row(externalOrder?.notaFiscal)?.id);
+  if (!existingInvoiceId && (!array(externalOrder?.itens).length
+    || array(externalOrder?.itens).some(item => idNumber(row(item.naturezaOperacao)?.id) !== natureId)))
+    throw new BlingError("order_nature_mismatch", 409);
   if (!existingInvoiceId && await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)
     throw new BlingError("order_not_eligible", 409);
   const id = existingInvoiceId ?? idNumber(row(await provider.request(`/pedidos/vendas/${externalOrderId}/gerar-nfe`,
@@ -300,12 +338,17 @@ async function generateInvoice(db: SupabaseClient, provider: BlingClient, enviro
   if (!id) throw new BlingError("uncertain_write", 503, false, true);
   const saved = await call(db, "save_bling_invoice_draft", { p_order_id: orderId, p_invoice_id: id });
   if (saved !== true) throw new BlingError("invoice_link_conflict", 409);
+  await prepare(id);
   await observeInvoice(db, provider, id);
 }
 
 async function sendInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
   if (environment.BLING_INVOICE_SEND_ENABLED !== "true") throw new BlingError("invoice_send_disabled", 409);
-  const { invoiceId, natureId, series, cfop, expectedItems, totalInCents, shippingInCents } = await fiscalPreconditions(db, provider, environment, orderId);
+  if (!["homologation", "production"].includes(environment.BLING_INVOICE_TRANSMISSION_MODE ?? ""))
+    throw new BlingError("invoice_environment_required", 409);
+  if (environment.BLING_INVOICE_TRANSMISSION_MODE === "production" && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED !== "true")
+    throw new BlingError("live_invoice_not_authorized", 409);
+  const { invoiceId, natureId, series, cfop, expectedItems, totalInCents, shippingInCents, expectedRecipient } = await fiscalPreconditions(db, provider, environment, orderId);
   if (!invoiceId) throw new BlingError("invoice_draft_required", 409);
   const invoice = row(data(await provider.request(`/nfe/${invoiceId}`)));
   const situation = Number(invoice?.situacao);
@@ -315,6 +358,7 @@ async function sendInvoice(db: SupabaseClient, provider: BlingClient, environmen
     throw new BlingError("invoice_fiscal_scenario_mismatch", 409);
   if (!invoice) throw new BlingError("invoice_draft_required", 409);
   assertBlingInvoiceItems(invoice, expectedItems, { totalInCents, shippingInCents });
+  assertBlingInvoiceRecipient(invoice, expectedRecipient);
   if (situation === 5 || situation === 6) { await observeInvoice(db, provider, invoiceId); return; }
   if (situation !== 1) throw new BlingError("invoice_not_sendable", 409);
   if (await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)
@@ -384,6 +428,20 @@ export async function runBlingJobs(environment: Environment, executionId: string
         await generateInvoice(db, provider, environment, readString(job.payload, "orderId"));
       } else if (job.type === "bling.invoice.send") {
         await sendInvoice(db, provider, environment, readString(job.payload, "orderId"));
+      } else if (job.type === "bling.invoice.poll" || job.type === "bling.invoice.archive") {
+        const orderId = readString(job.payload, "orderId");
+        const link = row(await call(db, "read_bling_order_link", { p_order_id: orderId }));
+        const invoiceId = idNumber(link?.invoice_id);
+        if (!invoiceId) throw new BlingError("invoice_draft_required", 409);
+        await observeInvoice(db, provider, invoiceId);
+        const current = row(await call(db, "read_bling_order_link", { p_order_id: orderId }));
+        if (job.type === "bling.invoice.archive") {
+          const key = readString(current ?? {}, "invoice_access_key");
+          if (current?.invoice_status !== "authorized" || !/^\d{44}$/u.test(key)) throw new BlingError("invoice_not_authorized", 409);
+          await archiveBlingInvoice(db, provider, orderId, invoiceId, key);
+        } else if (["pending", "processing"].includes(readString(current ?? {}, "invoice_status"))) {
+          throw new BlingError("invoice_processing", 503, true, false, 120_000);
+        }
       } else if (job.type === "bling.invoice.email") {
         const orderId = readString(job.payload, "orderId");
         const link = row(await call(db, "read_bling_order_link", { p_order_id: orderId }));

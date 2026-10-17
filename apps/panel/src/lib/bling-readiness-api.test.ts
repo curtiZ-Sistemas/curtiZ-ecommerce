@@ -44,7 +44,7 @@ describe("read-only provider readiness evidence", () => {
   it("checks both directions and cancelled documents before considering a series unused", async () => {
     state.request.mockImplementation(async (path: string) => ({ data: path.includes("tipo=0") && path.includes("situacao=2") ? [{ id: 100, numero: "1" }] : [] }));
     const response = await GET(request("scope=series&series=3"));
-    expect(await response.json()).toMatchObject({ series: 3, used: true, includesCancelled: true, includesBothDirections: true, numberingChanged: false });
+    expect(await response.json()).toMatchObject({ series: 3, used: true, includesCancelled: true, includesBothDirections: true, numberingChanged: false, productionHistoryVerified: false });
     expect(state.request).toHaveBeenCalledTimes(4);
   });
   it("does not report an unused series when a provider request fails", async () => {

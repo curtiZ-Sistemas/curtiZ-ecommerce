@@ -1,4 +1,4 @@
-import { BlingError, blingFiscalMirrorHash, buildBlingFiscalMirror, buildBlingOrderFiscalMirror, selectBlingFiscalRule } from "@curtiz/integrations";
+import { BlingError, blingFiscalMirrorHash, buildBlingFiscalMirror, buildBlingOrderFiscalMirror, expandBlingFiscalKit, selectBlingFiscalRule } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeBlingTechnicalRequest } from "@/lib/bling-server";
@@ -39,10 +39,10 @@ export async function POST(request: NextRequest) {
     if (rules.error || snapshot.error) throw new BlingError("storage_unavailable", 503);
     const value = row(snapshot.data), product = row(value.product), variant = row(value.variant), metadata = row(value.metadata);
     const rule = selectBlingFiscalRule(rules.data, input.data);
-    const mirror = buildBlingFiscalMirror(rule, [{ sku: text(variant.sku), description: text(product.name),
+    const mirror = buildBlingFiscalMirror(rule, expandBlingFiscalKit({ sku: text(variant.sku), description: text(product.name),
       quantity: input.data.quantity, unitPriceInCents: Math.round(Number(variant.price_override ?? product.base_price) * 100),
       unit: text(metadata.commercial_unit), pairsPerSku: Number(metadata.pairs_per_sku), fiscalUnitApproved: metadata.fiscal_unit_approved === true,
-      ncm: text(metadata.ncm), origin: Number(metadata.origin), cest: text(metadata.cest) }], input.data);
+      ncm: text(metadata.ncm), origin: Number(metadata.origin), cest: text(metadata.cest) }, value.kit_components), input.data);
     return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
   } catch (error) {
     return NextResponse.json({ message: "Prévia não disponível. Confira o cadastro e as regras recebidas.",

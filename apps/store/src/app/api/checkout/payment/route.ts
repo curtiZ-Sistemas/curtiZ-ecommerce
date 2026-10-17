@@ -18,6 +18,7 @@ import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@
 import { resolveShippingProducts } from "../../../../lib/melhor-envio-server";
 
 const checkoutSchema = z.object({
+  fiscalRecipient: z.object({ icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict().optional(),
   couponCode: z.string().trim().max(40).optional(),
   shippingQuoteId: z.string().uuid().optional(),
   customer: z.object({
@@ -117,7 +118,8 @@ const logFailure = (code: string, status?: number, requestId?: string, error?: u
   console.error(redact({ event: "mercadopago_bricks_payment_not_completed",
     code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
     providerRejectionCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : [],
-    providerRejectionFields: error instanceof MercadoPagoProviderError ? error.providerRejectionFields : []
+    providerRejectionFields: error instanceof MercadoPagoProviderError ? error.providerRejectionFields : [],
+    providerRequestId: error instanceof MercadoPagoProviderError ? error.providerRequestId : null
   }));
 };
 const isPersistedPendingPix = (payment: Record<string, unknown>) => {
@@ -271,6 +273,13 @@ async function handlePost(request: NextRequest, requestId: string) {
     }
   }
 
+  const fiscalRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (fiscalRecipient) {
+    const recipient = readQueryResult(await db.rpc("set_bling_checkout_recipient", { p_order_id: orderId,
+      p_user_id: user.id, p_icms_taxpayer: fiscalRecipient.icmsTaxpayer, p_final_consumer: fiscalRecipient.finalConsumer }));
+    if (recipient.error || recipient.data !== true) return response({ ok: false, code: "FISCAL_RECIPIENT_CONFLICT",
+      recovery: "review_checkout", message: "Não foi possível confirmar os dados fiscais deste pedido. Revise o checkout." }, 409);
+  }
   const orderResult = readQueryResult(await db.from("orders")
     .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency,commercial_rules_snapshot")
     .eq("id", orderId).eq("customer_id", user.id).maybeSingle());

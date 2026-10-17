@@ -162,4 +162,18 @@ describe("Bling HTTP reliability", () => {
     const provider = new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(json({ data: [{ nome: "nota.pdf", conteudo: content }] })));
     expect(new TextDecoder().decode(await provider.invoiceDocument("1".repeat(44)))).toBe("%PDF-1.7\ntest-only");
   });
+  it.each([
+    [`<nfeProc><NFe Id="NFe${"1".repeat(44)}"></NFe></nfeProc>`, true],
+    [`<nfeProc><NFe Id="NFe${"2".repeat(44)}"></NFe></nfeProc>`, false],
+    [`<!DOCTYPE NFe [<!ENTITY x SYSTEM "file:///test">]><NFe Id="NFe${"1".repeat(44)}">&x;</NFe>`, false],
+    ["%PDF-1.7", false]
+  ])("validates XML identity and rejects unsafe document content", async (xml, valid) => {
+    const compressed = await new Response(new Blob([String(xml)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ data: [{ conteudo: btoa(String.fromCharCode(...new Uint8Array(compressed))) }] }));
+    const result = new BlingClient(config, storage(), transport).invoiceDocument("1".repeat(44), "xml");
+    if (valid) expect(new TextDecoder().decode(await result)).toBe(xml);
+    else await expect(result).rejects.toMatchObject({ code: "invalid_document" });
+    const request = transport.mock.calls[0]?.[0];
+    expect(typeof request === "string" ? request : request instanceof URL ? request.href : request?.url).toContain("formato=xml");
+  });
 });

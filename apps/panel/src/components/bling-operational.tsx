@@ -9,6 +9,19 @@ type Order = { orderId: string; publicCode: string; externalOrderId: number | nu
   jobStatus: string | null; jobError: string | null; placed_at: string | null;
   history?: Array<{ attempt: number; outcome: string; error_code: string | null; occurred_at: string }> };
 const errorLabels: Record<string, string> = {
+  fiscal_automation_policy_required: "Regras fiscais ainda não liberadas para automação",
+  fiscal_recipient_required: "Confirme os dados fiscais do destinatário",
+  fiscal_mirror_changed: "O pedido ou as regras mudaram; confira o espelho fiscal",
+  kit_fiscal_composition_required: "Confira os pares, códigos e quantidades da composição fiscal do kit",
+  fiscal_tax_codes_required: "Confirme os CSTs de PIS, COFINS e IPI",
+  invoice_stock_automation_must_be_disabled: "Confirme no Bling que a NF-e não movimentará novamente o estoque",
+  invoice_draft_decomposition_conflict: "A nota difere do pedido; consulte e confira antes de reprocessar",
+  invoice_recipient_mismatch: "Confira documento, endereço e inscrição estadual do destinatário no Bling",
+  order_nature_mismatch: "A natureza fiscal do pedido precisa de conferência no Bling",
+  invoice_environment_required: "Ambiente de transmissão fiscal ainda não configurado",
+  live_invoice_not_authorized: "Transmissão de nota real ainda não autorizada",
+  invoice_processing: "Aguardando processamento da nota pelo Bling",
+  fiscal_archive_unavailable: "Não foi possível arquivar o documento fiscal; tente novamente",
   product_mapping_required: "SKU sem vínculo confirmado no Bling",
   customer_identity_required: "CPF do cliente indisponível",
   payment_method_required: "Forma de pagamento do Bling não configurada",
@@ -51,7 +64,7 @@ export function BlingOperational({ readOnly = false }: { readOnly?: boolean }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(filter); }, [filter, load]);
-  const retry = async (orderId: string, action: "retry" | "reconcile" = "retry") => {
+  const retry = async (orderId: string, action: "retry" | "reconcile" | "prepare" | "send" | "consult" = "retry") => {
     setProcessing(orderId); setError(""); setMessage("");
     try {
       const response = await fetch("/api/integrations/bling/orders", { method: "POST",
@@ -94,6 +107,12 @@ export function BlingOperational({ readOnly = false }: { readOnly?: boolean }) {
               </ul></details> : null}
             </div>
             {!readOnly ? <div className="bling-order-actions">
+              {order.erpStatus === "synced" && ["not_requested", "pending", "awaiting_data", "error"].includes(order.invoiceStatus) ? <button className="secondary-button" type="button"
+                disabled={Boolean(processing)} onClick={() => void retry(order.orderId, "prepare")}>Preparar NF-e</button> : null}
+              {order.erpStatus === "synced" && order.invoiceStatus === "pending" ? <button className="secondary-button" type="button"
+                disabled={Boolean(processing)} onClick={() => void retry(order.orderId, "send")}>Solicitar emissão</button> : null}
+              {["pending", "processing", "rejected", "error", "authorized"].includes(order.invoiceStatus) ? <button className="secondary-button" type="button"
+                disabled={Boolean(processing)} onClick={() => void retry(order.orderId, "consult")}>Consultar NF-e</button> : null}
               {order.erpStatus !== "reconciliation_required" && order.jobStatus === "failed" ? <button className="secondary-button" type="button"
                 disabled={Boolean(processing)} onClick={() => void retry(order.orderId)}>{processing === order.orderId ? <RefreshCw className="spin" aria-hidden="true" /> : null}Tentar novamente</button> : null}
               <button className="secondary-button" type="button" disabled={Boolean(processing)}

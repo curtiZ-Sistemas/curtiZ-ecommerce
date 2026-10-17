@@ -2,6 +2,12 @@
 
 E-commerce comercial de sandálias e chinelos, principalmente para a Geração Z. Prioridades: segurança; integridade de pedidos, pagamentos e estoque; autenticação e autorização; regras de negócio; funcionalidade; estabilidade; UX, mobile e acessibilidade; performance; UI; manutenção.
 
+## Skill obrigatória para agentes de IA
+
+- Todo agente de IA que trabalhar neste projeto deve ler e aplicar [lean-codex](.agents/skills/lean-codex/SKILL.md) no início da tarefa, reaproveitando a leitura durante a mesma execução. No Codex, invoque `$lean-codex`; em ferramentas sem suporte a skills, leia o arquivo Markdown diretamente e aplique suas orientações.
+- Mantenha o modelo e o nível de raciocínio selecionados pelo usuário. Economize leituras, contexto e operações redundantes, preservando a implementação completa, a segurança e os testes necessários.
+- A skill complementa estas instruções; não amplia autorizações, não habilita subagentes nem altera configurações de modelos, raciocínio ou MCPs. Em conflitos, respeite as instruções de maior prioridade e a solicitação atual do usuário.
+
 ## Ambiente
 
 - Windows, notebook com **4 GB de RAM**. Economize memória e processamento.
