@@ -148,6 +148,9 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
       address: readString(address, "street"), complement: readString(address, "complement"), number: readString(address, "number"),
       district: readString(address, "district"), city: readString(address, "city"),
       postal_code: (readString(address, "postalCode") || readString(address, "postal_code")).replace(/\D/gu, ""), state_abbr: readString(address, "state").toUpperCase(), country_id: "BR" };
+    if ([to.name, to.address, to.number, to.district, to.city].some(value => !value.trim())
+      || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(to.email) || !/^\d{10,11}$/u.test(to.phone)
+      || !/^\d{8}$/u.test(to.postal_code) || !/^[A-Z]{2}$/u.test(to.state_abbr)) throw new MelhorEnvioError("validation", 409, false);
     const input: MelhorEnvioShipmentInput = { serviceId: readString(quote, "service_id"), from: originParty(environment), to, products, volumes,
       options: { platform: environment.MELHOR_ENVIO_APP_NAME?.trim() ?? "curti Z",
         insurance_value: products.reduce((total, item) => total + item.quantity * item.unitary_value, 0), receipt: false,
@@ -221,9 +224,9 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     const remote = await provider.getShipment(externalId);
     const remoteStatus = readString(remote, "status").toLowerCase();
     const normalized = melhorEnvioStatusTransition("", `order.${remoteStatus}`, remoteStatus);
-    if (!normalized) throw new MelhorEnvioError("invalid_response_read", 502, true);
+    if (!normalized) throw new MelhorEnvioError("invalid_response", 502, true);
     const timestamp = readString(remote, `${remoteStatus}_at`) || readString(remote, "updated_at") || readString(remote, "created_at");
-    if (!timestamp || !Number.isFinite(Date.parse(timestamp))) throw new MelhorEnvioError("invalid_response_read", 502, true);
+    if (!timestamp || !Number.isFinite(Date.parse(timestamp))) throw new MelhorEnvioError("invalid_response", 502, true);
     const observed = { externalId, status: remoteStatus, occurredAt: new Date(timestamp).toISOString(),
       tracking: readString(remote, "tracking") || readString(remote, "self_tracking") };
     const hash = createHash("sha256").update(JSON.stringify(observed)).digest("hex");

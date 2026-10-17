@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), purchase: vi.fn()
   create: vi.fn(), casLost: false, saveFailed: false }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
+vi.mock("@curtiz/security/pii", () => ({ decryptPII: () => "12345678909" }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ rpc: state.rpc, from: state.from }) }));
 vi.mock("./melhor-envio-server", () => ({ createMelhorEnvioProvider: () => ({ purchase: state.purchase,
   generate: state.generate, getShipment: state.getShipment, createShipment: state.create }) }));
@@ -27,19 +28,23 @@ beforeEach(() => {
   let claimed = false;
   state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
     name === "claim_melhor_envio_fulfillment_job" ? claimed ? null : (claimed = true, { id: "job-1", jobType, payload: { shipmentId: "shipment-1" } })
-      : name === "read_bling_order_link" ? link : name === "apply_melhor_envio_webhook" ? "processed" : true }));
+      : name === "read_bling_order_link" ? link : name === "get_customer_checkout_identity" ? { cpfCiphertext: "test-only" }
+        : name === "apply_melhor_envio_webhook" ? "processed" : true }));
   state.from.mockImplementation((table: string) => {
     let changes: Record<string, unknown> | undefined;
     const filters: Record<string, unknown> = {};
     const query = {
       select: () => query, eq: (key: string, value: unknown) => { filters[key] = value; return query; },
+      in: (key: string, values: unknown[]) => { filters[key] = values; return query; },
       update: (value: Record<string, unknown>) => { changes = value; return query; },
       then: (resolve: (value: unknown) => unknown) => query.maybeSingle().then(resolve),
       maybeSingle: async () => {
         if (table === "orders") return { data: order, error: null };
-        if (table === "shipping_quotes") return { data: { provider_environment: quoteEnvironment }, error: null };
+        if (table === "shipping_quotes") return { data: { provider_environment: quoteEnvironment, service_id: "6" }, error: null };
+        if (table === "order_items") return { data: [{ variant_id: "kit-variant", product_name_snapshot: "Commercial kit", quantity: 1, unit_price: 50 }], error: null };
         if (changes) {
-          if (state.casLost || filters.operation_state !== shipment.operation_state) return { data: null, error: null };
+          const matches = Array.isArray(filters.operation_state) ? filters.operation_state.includes(shipment.operation_state) : filters.operation_state === shipment.operation_state;
+          if (state.casLost || !matches) return { data: null, error: null };
           if (state.saveFailed && changes.operation_state === "purchased") return { data: null, error: { code: "unavailable" } };
           Object.assign(shipment, changes);
         }
@@ -49,10 +54,32 @@ beforeEach(() => {
     return query;
   });
   state.purchase.mockReset().mockResolvedValue({}); state.generate.mockReset().mockResolvedValue({});
+  state.create.mockReset().mockResolvedValue({ externalId: "created-external" });
   state.getShipment.mockReset().mockResolvedValue({ status: "released", updated_at: "2026-10-17T12:00:00Z" });
 });
 
 describe("persistent shipping stages", () => {
+  const creation = () => {
+    jobType = "melhorenvio.create"; shipment.external_id = null; shipment.operation_state = "pending";
+    shipment.package_snapshot = [{ dimensions: { height: 5, width: 10, length: 20 }, weight: 0.2 }];
+    Object.assign(order, { customer_id: "owner", customer_name_snapshot: "Fixture", customer_email_snapshot: "fixture@example.invalid",
+      customer_phone_snapshot: "31999999999", shipping_address_snapshot: { street: "Fixture street", number: "1", district: "Fixture", city: "Test city", state: "SP", postalCode: "01001000" } });
+    return { ...environment, MELHOR_ENVIO_ORIGIN_NAME: "Fixture", MELHOR_ENVIO_ORIGIN_EMAIL: "fixture@example.invalid",
+      MELHOR_ENVIO_ORIGIN_PHONE: "31999999999", MELHOR_ENVIO_ORIGIN_DOCUMENT: "12345678909", MELHOR_ENVIO_ORIGIN_ADDRESS: "Fixture street",
+      MELHOR_ENVIO_ORIGIN_NUMBER: "1", MELHOR_ENVIO_ORIGIN_DISTRICT: "Fixture", MELHOR_ENVIO_ORIGIN_CITY: "Nova Serrana",
+      MELHOR_ENVIO_ORIGIN_STATE: "MG", MELHOR_ENVIO_ORIGIN_POSTAL_CODE: "35519000" };
+  };
+  it("uses the selected service, physical origin, invoice and commercial kit without inventory writes", async () => {
+    expect(await runMelhorEnvioShippingJobs(creation(), "test", 1)).toMatchObject({ processed: 1, failed: 0 });
+    expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ serviceId: "6", from: expect.objectContaining({ city: "Nova Serrana", state_abbr: "MG" }),
+      products: [{ name: "Commercial kit", quantity: 1, unitary_value: 50 }], options: expect.objectContaining({ invoice: { key: "1".repeat(44) } }) }));
+    expect(state.from).not.toHaveBeenCalledWith("inventory");
+  });
+  it("rejects an incomplete recipient before creating the provider cart", async () => {
+    const values = creation(); order.customer_email_snapshot = "";
+    expect(await runMelhorEnvioShippingJobs(values, "test", 1)).toMatchObject({ failed: 1 });
+    expect(state.create).not.toHaveBeenCalled();
+  });
   it("purchases once and waits for provider confirmation", async () => {
     expect(await runMelhorEnvioShippingJobs(environment, "test", 1)).toMatchObject({ processed: 1, failed: 0 });
     expect(state.purchase).toHaveBeenCalledExactlyOnceWith(["external-1"]);
