@@ -256,6 +256,8 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   if (orderResult.error || itemsResult.error) throw new BlingError("storage_unavailable", 503, true);
   const order = row(orderResult.data);
   const link = row(linkValue);
+  if (["uncertain_write", "lease_expired_reconciliation_required"].includes(readString(link ?? {}, "last_error_code")))
+    throw new BlingError("reconciliation_required", 409, false, true);
   const externalOrderId = idNumber(link?.external_order_id);
   if (!order || order.payment_status !== "approved" || ["cancelled", "refunded", "manual_review", "cancellation_requested", "refund_pending"].includes(readString(order, "status"))
     || link?.erp_status !== "synced" || !externalOrderId || !row(accountValue)?.companyId) throw new BlingError("fiscal_precondition_failed", 409);

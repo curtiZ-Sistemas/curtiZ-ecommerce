@@ -103,4 +103,12 @@ describe("persistent Bling job orchestration", () => {
     expect(state.request.mock.calls).toEqual([["/nfe/99"]]);
     expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_outcome: "retry", p_error_code: "invoice_processing", p_retry_after_ms: 120000 }));
   });
+  it("requires reconciliation after an uncertain draft write before another generation or transmission", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.generate", payload: { orderId }, attempts: 1 }
+        : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "synced", last_error_code: "uncertain_write" } : true }));
+    await runBlingJobs({ ...environment, BLING_FISCAL_READY: "true", BLING_INVOICE_SYNC_ENABLED: "true" }, "execution-test", 1);
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_outcome: "failed", p_error_code: "reconciliation_required" }));
+  });
 });
