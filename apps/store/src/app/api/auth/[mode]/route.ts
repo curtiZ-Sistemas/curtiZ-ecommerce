@@ -22,7 +22,7 @@ import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import {
   resolveLoginDestination,
   resolveLoginRole,
-  resolvePostLoginDestination
+  resolveLoginReturn
 } from "@/lib/auth-routing";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -242,10 +242,7 @@ function demoLoginResponse(
   }
 
   const destination = demoDestination(account.role);
-  const redirectTo =
-    account.role === "customer" || account.role === "representative"
-      ? resolvePostLoginDestination(safeInternalPath(login.next, destination))
-      : new URL(destination, panelBaseUrl(request)).toString();
+  const redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelBaseUrl(request));
   const response = NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
     { headers: { "cache-control": "no-store" } }
@@ -691,12 +688,7 @@ export async function POST(
     );
   }
   const panelUrl = panelBaseUrl(request);
-  let redirectTo =
-    role === "customer" || role === "representative"
-      ? resolvePostLoginDestination(
-          safeInternalPath(login.next, safeInternalPath(destination, "/minha-conta"))
-        )
-      : new URL(destination, panelUrl).toString();
+  let redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelUrl);
 
   if (internalRole && process.env.REQUIRE_INTERNAL_MFA === "true") {
     const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();

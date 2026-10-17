@@ -104,6 +104,12 @@ describe("login e sessão entre loja e painel", () => {
     state.roles = [role];
     expect(await (await login()).json()).toMatchObject({ redirectTo: "/minha-conta" });
   });
+  it.each(["admin", "manager", "technical", "operational"])("cliente + %s preserva conta e retorno expl?cito", async role => {
+    state.roles = ["customer", role];
+    expect(await (await login()).json()).toMatchObject({ redirectTo: "/minha-conta" });
+    expect(await (await login(false, "https://curtiz.com.br", "/checkout")).json()).toMatchObject({ redirectTo: "/checkout" });
+    expect(await (await login(false, "https://curtiz.com.br", "/selecionar-painel")).json()).toMatchObject({ redirectTo: "https://painel.curtiz.com.br/selecionar-painel" });
+  });
   it.each([false, true])("persiste sessão no painel com lembrar acesso %s", async remember => {
     const response = await login(remember);
     const sessionCookies = state.writes.filter(c => c.name.startsWith("sb-"));
@@ -124,7 +130,7 @@ describe("login e sessão entre loja e painel", () => {
   it("mantém o par workers.dev e seus cookies separados da produção", async () => {
     state.host = "curtiz-ecommerce.sistemas-curtiz.workers.dev";
     const response = await login();
-    expect(await response.json()).toMatchObject({ redirectTo: "https://curtiz-painel.sistemas-curtiz.workers.dev/administracao" });
+    expect(await response.json()).toMatchObject({ redirectTo: "https://painel.curtiz.com.br/administracao" });
     const sessionCookies = state.writes.filter(c => c.name.startsWith("sb-"));
     expect(sessionCookies.length).toBeGreaterThan(0);
     for (const cookie of sessionCookies) {

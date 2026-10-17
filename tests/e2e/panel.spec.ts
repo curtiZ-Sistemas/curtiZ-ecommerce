@@ -38,6 +38,25 @@ async function loginAs(page: Page, email: string) {
   await expect(page.locator(".panel-layout")).toBeAttached({ timeout: 60_000 });
 }
 
+test("funcionário usa a conta de cliente e volta ao painel com a mesma sessão", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, "operacional.demo@curtiz.local");
+  await page.getByRole("link", { name: "Minha conta de cliente" }).click();
+  await expect(page).toHaveURL("http://localhost:3000/minha-conta");
+  await expect(page.getByRole("heading", { name: "Entre na sua conta curti Z" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Acessar painéis", exact: true }).click();
+  await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
+  await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", "operacional");
+});
+
+test("cliente comum não recebe entrada nem permissão para painéis internos", async ({ page }) => {
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
+  await page.goto("http://localhost:3000/minha-conta");
+  await expect(page.getByRole("link", { name: "Acessar painéis", exact: true })).toHaveCount(0);
+  await page.goto("http://localhost:3001/operacional");
+  await expect(page).toHaveURL(/localhost:3000\/login/);
+});
+
 for (const account of [
   { email: "admin.demo@curtiz.local", route: "administracao" },
   { email: "operacional.demo@curtiz.local", route: "operacional" },
