@@ -19,6 +19,22 @@ Eventos de estoque/produto do Bling ficam registrados e são ignorados para alte
 
 ## Preparação manual por ambiente
 
+### Automação fiscal da Parte 1
+
+A migration `20261017175643_part1_fiscal_automation.sql` acrescenta a declaração fiscal imutável do comprador, aprovação automática de espelhos sob uma política privada e filas de consulta/arquivamento. Não contém dados empresariais, autorização fiscal nem ativação comercial.
+
+O checkout registra separadamente contribuinte de ICMS e consumidor final. Pedidos antigos sem declaração continuam bloqueados para aprovação automática; não se infere uma condição da outra. Após conferir regras, naturezas reais, unidades, certificado, ambiente e histórico das séries, o operador técnico registra a evidência e o hash de `private.bling_fiscal_configuration_hash()` em `private.bling_fiscal_automation_policy`. Essa autorização é privada e não pode ser criada pelo navegador. Mudanças na configuração impedem novas aprovações automáticas até nova conferência. Espelhos já aprovados continuam sujeitos à comparação exata antes de gerar/transmitir.
+
+Pedidos novos preparados para emissão incluem a natureza aprovada em cada item. Na geração, um pedido externo sem essa natureza é bloqueado, evitando adotar silenciosamente a natureza padrão do ERP. Pedidos anteriores exigem reconciliação e correção conferida no provedor.
+
+Além de `BLING_FISCAL_READY`, `BLING_INVOICE_SYNC_ENABLED` e `BLING_INVOICE_SEND_ENABLED`, a transmissão exige `BLING_INVOICE_TRANSMISSION_MODE=homologation|production`. Produção também exige `BLING_LIVE_INVOICE_SEND_AUTHORIZED=true`, somente após autorização específica. O nome interno OAuth `sandbox` não comprova homologação fiscal: a API de NF-e não expõe o ambiente nessa resposta; conferir o ambiente efetivo no Bling antes de configurar essa variável. Não se alteram contadores nem se pressupõe numeração inicial livre.
+
+As ações Preparar, Solicitar emissão e Consultar do painel enfileiram os mesmos jobs persistentes da automação, com permissões, origem, limite de requisições e controle de concorrência existentes. Consultas são somente leitura e podem reconciliar notas quando um webhook não chega. Processamento pendente usa retries limitados; após esgotá-los, a consulta manual permite reprocessar. Escritas incertas continuam exigindo reconciliação.
+
+Uma autorização observada no provedor agenda um único arquivamento de XML e DANFE no bucket privado `fiscal-documents`, com hash SHA-256, limite de tamanho e sem sobrescrita. Reexecução recupera um upload anterior conferindo seu conteúdo. O download autenticado existente aceita `?format=xml` e mantém a verificação de titularidade e da situação atual no provedor. Rejeição, cancelamento ou nota não autorizada não liberam documento. As interfaces de e-mail e expedição permanecem preservadas para a Parte 2; esta alteração não as ativa.
+
+Referência do contrato de documentos: [OpenAPI oficial do Bling](https://developer.bling.com.br/referencia#/Notas%20Fiscais%20Eletr%C3%B4nicas).
+
 O Bling usa a mesma API real para as operações aqui implementadas. O identificador interno `sandbox` reaproveita o contrato OAuth existente e **não representa um sandbox fiscal do Bling**. Use conta de teste, dados autorizados e Supabase isolado para validação. Não autorize a mesma instalação em bancos diferentes que operem a mesma conta: o rate limiter coordena apenas os Workers do mesmo banco. Instalações locais de teste e produção precisam de bases/contas separadas.
 
 1. Aplique `supabase/migrations/202610020001_bling_integration.sql` depois das migrations anteriores, primeiro em banco isolado. Execute `supabase test db`; SQL estático e typecheck não substituem a execução dos testes de RLS, triggers e concorrência.

@@ -37,4 +37,14 @@ describe("customer fiscal documents", () => {
     expect(result.headers.get("content-type")).toBe("application/pdf");
     expect(await result.text()).toBe("%PDF-test");
   });
+  it("serves XML through the same ownership and current authorization checks", async () => {
+    const result = await GET(new Request("https://store.example?format=xml"), context);
+    expect(result.status).toBe(200);
+    expect(result.headers.get("content-type")).toBe("application/xml");
+    expect(state.document).toHaveBeenCalledWith(key, "xml");
+  });
+  it("rejects unsupported document formats before any provider access", async () => {
+    expect((await GET(new Request("https://store.example?format=html"), context)).status).toBe(400);
+    expect(state.document).not.toHaveBeenCalled();
+  });
 });

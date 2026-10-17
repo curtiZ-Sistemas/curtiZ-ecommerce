@@ -18,6 +18,7 @@ export type MercadoPagoBrickSession = {
 };
 
 export type CheckoutConfirmationPayload = {
+  fiscalRecipient?: { icmsTaxpayer: boolean; finalConsumer: boolean };
   couponCode?: string;
   shippingQuoteId?: string;
   customer: { name: string; email: string; phone: string; cpf: string };

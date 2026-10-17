@@ -297,9 +297,10 @@ export class BlingClient {
     throw new BlingError("provider_error", 503, true);
   }
 
-  async invoiceDocument(accessKey: string): Promise<ArrayBuffer> {
+  async invoiceDocument(accessKey: string, format: "pdf" | "xml" = "pdf"): Promise<ArrayBuffer> {
     if (!/^\d{44}$/u.test(accessKey)) throw new BlingError("invalid_document", 400);
-    const result = record(await this.request(`/nfe/documento/${accessKey}?formato=pdf`));
+    if (format !== "pdf" && format !== "xml") throw new BlingError("invalid_document", 400);
+    const result = record(await this.request(`/nfe/documento/${accessKey}?formato=${format}`));
     const documents = Array.isArray(result?.data) ? result.data : [];
     const content = documents.length === 1 ? text(record(documents[0])?.conteudo) : "";
     if (!content || content.length > 14_000_000) throw new BlingError("invalid_document", 502);
@@ -320,7 +321,12 @@ export class BlingClient {
       const pdf = new Uint8Array(length);
       let offset = 0;
       for (const chunk of chunks) { pdf.set(chunk, offset); offset += chunk.byteLength; }
-      if (new TextDecoder().decode(pdf.slice(0, 5)) !== "%PDF-") throw new Error("not_pdf");
+      if (format === "pdf" && new TextDecoder().decode(pdf.slice(0, 5)) !== "%PDF-") throw new Error("not_pdf");
+      if (format === "xml") {
+        const xml = new TextDecoder("utf-8", { fatal: true }).decode(pdf);
+        if (/<!DOCTYPE|<!ENTITY/iu.test(xml) || !/<(?:\w+:)?NFe\b/u.test(xml)
+          || !xml.includes(`NFe${accessKey}`)) throw new Error("invalid_xml");
+      }
       return pdf.buffer;
     } catch { throw new BlingError("invalid_document", 502); }
   }

@@ -82,14 +82,18 @@ export type MercadoPagoPayment = {
 };
 
 export class MercadoPagoProviderError extends Error {
+  readonly providerRequestId: string | null;
   constructor(
     readonly code: "invalid_test_credential" | "invalid_payment_credential" | "invalid_issuer" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
     readonly httpStatus = 502,
     readonly providerCauseCodes: readonly string[] = [],
-    readonly providerRejectionFields: readonly string[] = []
+    readonly providerRejectionFields: readonly string[] = [],
+    providerRequestId?: string | null
   ) {
     super(code);
     this.name = "MercadoPagoProviderError";
+    this.providerRequestId = typeof providerRequestId === "string"
+      && /^[a-zA-Z0-9_-]{1,100}$/u.test(providerRequestId) ? providerRequestId : null;
   }
 }
 
@@ -196,7 +200,7 @@ export class MercadoPagoPaymentProvider {
         .filter(field => new RegExp(`\\b${field}\\b`, "u").test(descriptions));
       throw new MercadoPagoProviderError(
         response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
-        response.status, codes, fields
+        response.status, codes, fields, response.headers.get("x-request-id")
       );
     }
     if (!body || typeof body !== "object" || !("live_mode" in body)
