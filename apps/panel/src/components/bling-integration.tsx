@@ -133,6 +133,18 @@ export function BlingIntegration() {
     finally { setBusy(false); }
   };
 
+  const runCatalogBatch = async () => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/integrations/bling/catalog/run", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ limit: 4 }) });
+      const result = await response.json() as { ok?: boolean; processed?: number; failed?: number; message?: string };
+      if (!response.ok || !result.ok) throw new Error(result.message || "O lote encontrou uma falha. Confira as pendências antes de continuar.");
+      setMessage(`${result.processed ?? 0} tarefa(s) de catálogo concluída(s).`);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Lote indisponível."); }
+    finally { setBusy(false); }
+  };
+
   const match = async () => {
     if (!preview) return;
     const confirmed = await confirm({ title: `Vincular os SKUs correspondentes da página ${preview.page}?`,
@@ -195,6 +207,7 @@ export function BlingIntegration() {
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void test()}>Testar conexão</button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadPreview(1)}>Conferir SKUs</button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadLocalPreview(1)}>Variantes locais</button>
+              <button className="secondary-button" type="button" disabled={busy} onClick={() => void runCatalogBatch()}>Processar lote de catálogo</button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void connect(true)}>Reconectar</button>
             </div>
             <button className="secondary-button technical-danger-action" type="button" disabled={busy} onClick={() => void disconnect()}>Desconectar</button>

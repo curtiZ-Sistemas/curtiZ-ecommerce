@@ -1,4 +1,4 @@
-import { type BlingClient, BlingError, createBlingClient, sendInvoiceEmail } from "@curtiz/integrations";
+import { type BlingClient, BlingError, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, createBlingClient, executeBlingCatalogJob, sendInvoiceEmail } from "@curtiz/integrations";
 import { logServerEvent } from "@curtiz/security";
 import { decryptPII } from "@curtiz/security/pii";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -214,13 +214,11 @@ async function observeInvoice(db: SupabaseClient, provider: BlingClient, invoice
 }
 
 async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, environment: Environment,
-  orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null }> {
+  orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string }> {
   if (environment.BLING_FISCAL_READY !== "true") throw new BlingError("fiscal_not_ready", 409);
-  const natureId = idNumber(environment.BLING_NATURE_OF_OPERATION_ID);
-  if (!natureId) throw new BlingError("nature_required", 409);
   const [orderResult, itemsResult, linkValue, accountValue] = await Promise.all([
-    db.from("orders").select("payment_status,status").eq("id", orderId).maybeSingle(),
-    db.from("order_items").select("variant_id").eq("order_id", orderId),
+    db.from("orders").select("id,payment_status,status,customer_id,customer_name_snapshot,customer_email_snapshot,cpf_ciphertext,shipping_address_snapshot,shipping_total,discount_total,fee_total,grand_total").eq("id", orderId).maybeSingle(),
+    db.from("order_items").select("variant_id,sku_snapshot,product_name_snapshot,quantity,unit_price").eq("order_id", orderId),
     call(db, "read_bling_order_link", { p_order_id: orderId }),
     call(db, "read_bling_account", { p_environment: environment.APP_ENV === "production" ? "production" : "sandbox" })
   ]);
@@ -230,6 +228,19 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   const externalOrderId = idNumber(link?.external_order_id);
   if (!order || order.payment_status !== "approved" || ["cancelled", "refunded", "manual_review", "cancellation_requested", "refund_pending"].includes(readString(order, "status"))
     || link?.erp_status !== "synced" || !externalOrderId || !row(accountValue)?.companyId) throw new BlingError("fiscal_precondition_failed", 409);
+  const items = array(itemsResult.data);
+  if (!items.length) throw new BlingError("missing_order_items", 409);
+  const approval = row(await call(db, "read_bling_fiscal_mirror_approval", { p_order_id: orderId }));
+  if (!approval || typeof approval.icms_taxpayer !== "boolean" || typeof approval.final_consumer !== "boolean")
+    throw new BlingError("fiscal_mirror_approval_required", 409);
+  const snapshots: Record<string, unknown>[] = [];
+  for (const item of items) snapshots.push(row(await call(db, "read_bling_catalog_variant", { p_variant_id: item.variant_id })) ?? {});
+  const mirror = await buildBlingOrderFiscalMirror({ rules: await call(db, "read_bling_fiscal_rules", {}), order, items, snapshots,
+    icmsTaxpayer: approval.icms_taxpayer, finalConsumer: approval.final_consumer });
+  if (mirror.blockers.includes("kit_fiscal_unit_confirmation_required")) throw new BlingError("kit_fiscal_unit_confirmation_required", 409);
+  if (await blingFiscalMirrorHash(mirror) !== approval.mirror_hash) throw new BlingError("fiscal_mirror_changed", 409);
+  const natureId = idNumber(mirror.rule.external_nature_id);
+  if (!natureId) throw new BlingError("nature_required", 409);
   const company = row(data(await provider.request("/empresas/me/dados-basicos")));
   if (!company || String(company.id) !== String(row(accountValue)?.companyId)
     || !/^\d{14}$/u.test(readString(company, "cnpj").replace(/\D/gu, "")))
@@ -237,24 +248,28 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   let natureFound = false;
   for (let page = 1; page <= 20; page += 1) {
     const natureResult = array(data(await provider.request(`/naturezas-operacoes?pagina=${page}&limite=100&situacao=1`)));
-    if (natureResult.some((item) => idNumber(item.id) === natureId && [1, 3].includes(Number(item.padrao)))) { natureFound = true; break; }
+    if (natureResult.some((item) => idNumber(item.id) === natureId)) { natureFound = true; break; }
     if (natureResult.length < 100) break;
   }
   if (!natureFound) throw new BlingError("nature_not_active", 409);
-  const items = array(itemsResult.data);
-  if (!items.length) throw new BlingError("missing_order_items", 409);
   const links = array(await call(db, "read_bling_product_links", { p_variant_ids: items.map((item) => readString(item, "variant_id")) }));
   for (const item of items) {
     const externalId = idNumber(links.find((linkRow) => readString(linkRow, "variantId") === readString(item, "variant_id"))?.externalProductId);
     if (!externalId) throw new BlingError("product_mapping_required", 409);
     const product = row(data(await provider.request(`/produtos/${externalId}`)));
-    if (!product || product.situacao !== "A" || !/^\d{8}$/u.test(readString(row(product.tributacao) ?? {}, "ncm")))
+    const approvedItem = mirror.items.find((approved) => approved.sku === readString(item, "sku_snapshot"));
+    const tax = row(product?.tributacao);
+    if (!product || product.situacao !== "A" || !approvedItem
+      || readString(product, "codigo") !== approvedItem.sku || readString(product, "unidade") !== approvedItem.unit
+      || readString(tax ?? {}, "ncm").replace(/\D/gu, "") !== approvedItem.ncm || Number(tax?.origem) !== approvedItem.origin
+      || readString(tax ?? {}, "cest").replace(/\D/gu, "") !== approvedItem.cest)
       throw new BlingError("product_fiscal_data_required", 409);
   }
-  return { externalOrderId, invoiceId: idNumber(link?.invoice_id) };
+  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop };
 }
 
 async function generateInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
+  if (environment.BLING_INVOICE_SYNC_ENABLED !== "true") throw new BlingError("invoice_sync_disabled", 409);
   const { externalOrderId, invoiceId } = await fiscalPreconditions(db, provider, environment, orderId);
   if (invoiceId) return;
   const externalOrder = row(data(await provider.request(`/pedidos/vendas/${externalOrderId}`)));
@@ -270,142 +285,21 @@ async function generateInvoice(db: SupabaseClient, provider: BlingClient, enviro
 }
 
 async function sendInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
-  const { invoiceId } = await fiscalPreconditions(db, provider, environment, orderId);
+  if (environment.BLING_INVOICE_SEND_ENABLED !== "true") throw new BlingError("invoice_send_disabled", 409);
+  const { invoiceId, natureId, series, cfop } = await fiscalPreconditions(db, provider, environment, orderId);
   if (!invoiceId) throw new BlingError("invoice_draft_required", 409);
   const invoice = row(data(await provider.request(`/nfe/${invoiceId}`)));
   const situation = Number(invoice?.situacao);
-  if (idNumber(row(invoice?.naturezaOperacao)?.id) !== idNumber(environment.BLING_NATURE_OF_OPERATION_ID))
+  if (idNumber(row(invoice?.naturezaOperacao)?.id) !== natureId)
     throw new BlingError("invoice_nature_mismatch", 409);
+  if (Number(invoice?.serie) !== series || !array(invoice?.itens).length || array(invoice?.itens).some((item) => item.cfop !== cfop))
+    throw new BlingError("invoice_fiscal_scenario_mismatch", 409);
   if (situation === 5 || situation === 6) { await observeInvoice(db, provider, invoiceId); return; }
   if (situation !== 1) throw new BlingError("invoice_not_sendable", 409);
   if (await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)
     throw new BlingError("order_not_eligible", 409);
   await provider.request(`/nfe/${invoiceId}/enviar?enviarEmail=false`, { method: "POST" });
   await observeInvoice(db, provider, invoiceId);
-}
-
-async function syncProduct(db: SupabaseClient, provider: BlingClient, variantId: string) {
-  const link = row(await call(db, "read_bling_product_link", { p_variant_id: variantId }));
-  if (!link) return;
-  const externalId = idNumber(link.external_product_id);
-  const expectedUpdatedAt = readString(link, "updated_at");
-  if (!externalId || !expectedUpdatedAt) throw new BlingError("product_mapping_required", 409);
-  try {
-    if (link.removed === true) {
-      const external = row(data(await provider.request(`/produtos/${externalId}`)));
-      if (!external || readString(external, "codigo").toLowerCase() !== readString(link, "sku").toLowerCase())
-        throw new BlingError("external_sku_changed", 409);
-      await provider.request(`/produtos/${externalId}`, { method: "PATCH", body: { situacao: "I" } });
-      await call(db, "mark_bling_product_status", { p_variant_id: variantId, p_status: "synced", p_sku: readString(link, "sku"),
-        p_expected_updated_at: expectedUpdatedAt, p_error_code: null });
-      return;
-    }
-    const variantResult = await db.from("product_variants").select("id,product_id,sku,color_name,size,price_override,active")
-      .eq("id", variantId).maybeSingle();
-    if (variantResult.error || !variantResult.data) throw new BlingError("variant_unavailable", 503, true);
-    const variant = row(variantResult.data)!;
-    const productResult = await db.from("products").select("name,status,base_price,weight_grams,height_cm,width_cm,length_cm")
-      .eq("id", readString(variant, "product_id")).maybeSingle();
-    if (productResult.error || !productResult.data) throw new BlingError("product_unavailable", 503, true);
-    const product = row(productResult.data)!;
-    const external = row(data(await provider.request(`/produtos/${externalId}`)));
-    if (!external || readString(external, "codigo").toLowerCase() !== readString(link, "sku").toLowerCase())
-      throw new BlingError("external_sku_changed", 409);
-    const sku = readString(variant, "sku");
-    const name = [readString(product, "name"), readString(variant, "color_name"), readString(variant, "size")]
-      .filter(Boolean).join(" · ").slice(0, 120);
-    const price = variant.price_override == null ? Number(product.base_price) : Number(variant.price_override);
-    if (!sku || !name || !Number.isFinite(price) || price < 0) throw new BlingError("invalid_product_data", 409);
-    await provider.request(`/produtos/${externalId}`, { method: "PATCH", body: {
-      nome: name, codigo: sku, preco: price, tipo: "P", situacao: product.status === "active" && variant.active === true ? "A" : "I",
-      pesoBruto: Number(product.weight_grams) / 1000,
-      dimensoes: { altura: Number(product.height_cm), largura: Number(product.width_cm),
-        profundidade: Number(product.length_cm), unidadeMedida: 1 }
-    } });
-    await call(db, "mark_bling_product_status", { p_variant_id: variantId, p_status: "synced", p_sku: sku,
-      p_expected_updated_at: expectedUpdatedAt, p_error_code: null });
-  } catch (error) {
-    const issue = error instanceof BlingError ? error : new BlingError("product_sync_failed", 503, true);
-    await db.rpc("mark_bling_product_status", { p_variant_id: variantId,
-      p_status: issue.uncertainWrite || issue.code === "external_sku_changed" ? "reconciliation_required" : "failed",
-      p_sku: readString(link, "sku"), p_expected_updated_at: expectedUpdatedAt, p_error_code: issue.code });
-    throw issue;
-  }
-}
-
-async function createProduct(db: SupabaseClient, provider: BlingClient, variantId: string, reconcileOnly = false) {
-  const linked = row(await call(db, "read_bling_product_link", { p_variant_id: variantId }));
-  if (linked && !reconcileOnly) return;
-  const variantResult = await db.from("product_variants").select("id,product_id,sku,color_name,size,price_override,active")
-    .eq("id", variantId).maybeSingle();
-  if (variantResult.error || !variantResult.data) throw new BlingError("variant_unavailable", 503, true);
-  const variant = row(variantResult.data)!;
-  const productResult = await db.from("products").select("name,status,base_price,weight_grams,height_cm,width_cm,length_cm")
-    .eq("id", readString(variant, "product_id")).maybeSingle();
-  if (productResult.error || !productResult.data) throw new BlingError("product_unavailable", 503, true);
-  const product = row(productResult.data)!;
-  const sku = readString(variant, "sku");
-  const name = [readString(product, "name"), readString(variant, "color_name"), readString(variant, "size")]
-    .filter(Boolean).join(" · ").slice(0, 120);
-  const price = variant.price_override == null ? Number(product.base_price) : Number(variant.price_override);
-  if (!sku || !name || !Number.isFinite(price) || price < 0) throw new BlingError("invalid_product_data", 409);
-  const query = new URLSearchParams({ "codigos[]": sku, pagina: "1", limite: "100", criterio: "5" });
-  const listed = array(data(await provider.request(`/produtos?${query.toString()}`)));
-  if (listed.length >= 100) throw new BlingError("ambiguous_external_sku", 409);
-  const found = listed.filter((candidate) => readString(candidate, "codigo").toLowerCase() === sku.toLowerCase());
-  if (found.length > 1) throw new BlingError("duplicate_external_sku", 409);
-  let externalId = found.length ? idNumber(found[0]?.id) : null;
-  if (reconcileOnly && (!externalId || linked && externalId !== idNumber(linked.external_product_id)))
-    throw new BlingError("external_product_reconciliation_required", 409);
-  if (!externalId) {
-    const created = row(data(await provider.request("/produtos", { method: "POST", body: {
-      nome: name, codigo: sku, preco: price, tipo: "P", situacao: product.status === "active" && variant.active === true ? "A" : "I",
-      formato: "S", unidade: "UN", pesoBruto: Number(product.weight_grams) / 1000,
-      dimensoes: { altura: Number(product.height_cm), largura: Number(product.width_cm),
-        profundidade: Number(product.length_cm), unidadeMedida: 1 }
-    } })));
-    externalId = idNumber(created?.id);
-    if (!externalId) throw new BlingError("uncertain_write", 503, false, true);
-  }
-  await call(db, "match_bling_products", { p_matches: [{ sku, externalProductId: externalId }] });
-  if (reconcileOnly) {
-    if (await call(db, "confirm_bling_product_reconciliation", { p_variant_id: variantId, p_external_product_id: externalId, p_sku: sku }) !== true)
-      throw new BlingError("product_mapping_required", 409);
-  }
-}
-
-async function syncStock(db: SupabaseClient, provider: BlingClient, environment: Environment, variantId: string) {
-  const depositId = idNumber(environment.BLING_STOCK_DEPOSIT_ID);
-  if (!depositId) throw new BlingError("stock_deposit_required", 409);
-  const link = row(await call(db, "read_bling_product_link", { p_variant_id: variantId }));
-  if (link?.removed === true) return;
-  const externalId = idNumber(link?.external_product_id);
-  if (!externalId) throw new BlingError("product_mapping_required", 409);
-  const inventoryResult = await db.from("inventory").select("available_quantity,reserved_quantity,version")
-    .eq("variant_id", variantId).maybeSingle();
-  if (inventoryResult.error || !inventoryResult.data) throw new BlingError("inventory_unavailable", 503, true);
-  const inventory = row(inventoryResult.data)!;
-  const physical = readNumber(inventory, "available_quantity") + readNumber(inventory, "reserved_quantity");
-  const version = readNumber(inventory, "version");
-  if (!Number.isSafeInteger(physical) || physical < 0 || !Number.isSafeInteger(version) || version <= 0)
-    throw new BlingError("invalid_inventory", 409);
-  const query = new URLSearchParams({ "idsProdutos[]": String(externalId) });
-  const current = array(data(await provider.request(`/estoques/saldos/${depositId}?${query.toString()}`)))
-    .find((item) => idNumber(row(item.produto)?.id) === externalId);
-  if (!current || !Number.isFinite(Number(current.saldoFisicoTotal)))
-    throw new BlingError("stock_balance_unavailable", 503, true);
-  if (readString(row(current.produto) ?? {}, "codigo").toLowerCase() !== readString(link ?? {}, "sku").toLowerCase())
-    throw new BlingError("external_sku_changed", 409);
-  if (Number(current.saldoFisicoTotal) !== physical) {
-    const latest = await db.from("inventory").select("version,available_quantity,reserved_quantity").eq("variant_id", variantId).maybeSingle();
-    if (latest.error || !latest.data) throw new BlingError("storage_unavailable", 503, true);
-    if (Number(latest.data.available_quantity) + Number(latest.data.reserved_quantity) !== physical)
-      throw new BlingError("inventory_changed", 409, true);
-    await provider.request("/estoques", { method: "POST", body: {
-      produto: { id: externalId }, deposito: { id: depositId }, operacao: "B", quantidade: physical
-    } });
-  }
-  await call(db, "mark_bling_stock_synced", { p_variant_id: variantId, p_expected_version: version, p_expected_quantity: physical });
 }
 
 async function reconcileWebhook(db: SupabaseClient, provider: BlingClient, eventId: string) {
@@ -492,14 +386,9 @@ export async function runBlingJobs(environment: Environment, executionId: string
               throw new Error("email_receipt_not_saved");
           } catch { throw new BlingError("email_acceptance_uncertain", 503, false, true); }
         }
-      } else if (job.type === "bling.product.sync") {
-        await syncProduct(db, provider, readString(job.payload, "variantId"));
-      } else if (job.type === "bling.product.create") {
-        await createProduct(db, provider, readString(job.payload, "variantId"));
-      } else if (job.type === "bling.product.reconcile") {
-        await createProduct(db, provider, readString(job.payload, "variantId"), true);
-      } else if (job.type === "bling.stock.sync") {
-        await syncStock(db, provider, environment, readString(job.payload, "variantId"));
+      } else if (["bling.product.sync", "bling.product.create", "bling.product.reconcile", "bling.stock.sync"].includes(job.type)) {
+        await executeBlingCatalogJob({ rpc: async (name, args) => db.rpc(name, args), provider, environment,
+          type: job.type, variantId: readString(job.payload, "variantId") });
       } else if (job.type === "bling.webhook.reconcile") {
         await reconcileWebhook(db, provider, readString(job.payload, "eventId"));
       } else throw new BlingError("unsupported_job", 409);
