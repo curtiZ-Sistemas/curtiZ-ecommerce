@@ -746,6 +746,9 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.getByRole("button", { name: "Entrar na minha conta" }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
+  // The URL may commit before the login navigation replaces its previous tree.
+  // Wait for a unique account view; a persistent duplicate must still fail.
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
   await expect(page.getByText("#CZT-DEMO01")).toHaveCount(0);
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
@@ -781,6 +784,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/);
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });

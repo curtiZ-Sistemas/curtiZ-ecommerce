@@ -7,6 +7,7 @@ export * from "./melhor-envio";
 export * from "./bling";
 export * from "./bling-catalog";
 export * from "./bling-fiscal-preview";
+export * from "./bling-tax";
 export { sendInvoiceEmail } from "./invoice-email";
 export * from "./transactional-email";
 
