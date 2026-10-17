@@ -15,6 +15,7 @@ const errorLabels: Record<string, string> = {
   fiscal_after_sale_authorization_required: "Pós-venda pendente: confira cancelamento ou devolução fiscal no Bling e com a contabilidade",
   kit_fiscal_composition_required: "Confira os pares, códigos e quantidades da composição fiscal do kit",
   fiscal_tax_codes_required: "Confirme os CSTs de PIS, COFINS e IPI",
+  fiscal_tax_parameters_required: "Cadastre as alíquotas e o enquadramento IPI já aprovados",
   invoice_stock_automation_must_be_disabled: "Confirme no Bling que a NF-e não movimentará novamente o estoque",
   invoice_draft_decomposition_conflict: "A nota difere do pedido; consulte e confira antes de reprocessar",
   invoice_recipient_mismatch: "Confira documento, endereço e inscrição estadual do destinatário no Bling",

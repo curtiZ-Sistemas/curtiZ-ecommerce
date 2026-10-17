@@ -1,13 +1,17 @@
 import "server-only";
 import { BlingError } from "./bling";
 import { expandBlingFiscalKit, type BlingFiscalItem } from "./bling-kit-fiscal";
+import { readBlingTaxConfiguration, type BlingTaxConfiguration } from "./bling-tax";
 
 export type BlingFiscalRule = {
   scenario: string; issuer_state: string; cfop: string; csosn: string; icms_rate: number;
   document_model: number; series: number; external_nature_id: number | null;
   pis_cst?: string | null; cofins_cst?: string | null; ipi_cst?: string | null;
+  pis_rate?: number | null; cofins_rate?: number | null; ipi_rate?: number | null; ipi_cenq?: string | null;
 };
 const text = (value: unknown) => typeof value === "string" ? value : "";
+const rate = (value: unknown): number | null => typeof value === "number" ? value
+  : typeof value === "string" && /^\d+(?:\.\d{1,4})?$/u.test(value) ? Number(value) : null;
 const states = new Set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" "));
 
 export function selectBlingFiscalRule(value: unknown, input: { destinationState: string; icmsTaxpayer: boolean; operation: "sale" | "return"; finalConsumer?: boolean }): BlingFiscalRule {
@@ -35,7 +39,9 @@ export function selectBlingFiscalRule(value: unknown, input: { destinationState:
     external_nature_id: matchingNatures[0] ? Number(matchingNatures[0].external_nature_id) : null,
     pis_cst: /^\d{2}$/u.test(text(rule.pis_cst)) ? text(rule.pis_cst) : null,
     cofins_cst: /^\d{2}$/u.test(text(rule.cofins_cst)) ? text(rule.cofins_cst) : null,
-    ipi_cst: /^\d{2}$/u.test(text(rule.ipi_cst)) ? text(rule.ipi_cst) : null };
+    ipi_cst: /^\d{2}$/u.test(text(rule.ipi_cst)) ? text(rule.ipi_cst) : null,
+    pis_rate: rate(rule.pis_rate), cofins_rate: rate(rule.cofins_rate), ipi_rate: rate(rule.ipi_rate),
+    ipi_cenq: /^\d{3}$/u.test(text(rule.ipi_cenq)) ? text(rule.ipi_cenq) : null };
 }
 
 export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscalItem[],
@@ -51,11 +57,16 @@ export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscal
   if (items.some((item) => !item.fiscalUnitApproved)) blockers.push("kit_fiscal_unit_confirmation_required");
   if (items.some((item) => item.pairsPerSku > 1)) blockers.push("kit_fiscal_composition_required");
   if (!rule.pis_cst || !rule.cofins_cst || !rule.ipi_cst) blockers.push("fiscal_tax_codes_required");
+  let taxConfiguration: BlingTaxConfiguration | null = null;
+  try { taxConfiguration = readBlingTaxConfiguration(rule); }
+  catch { blockers.push("fiscal_tax_parameters_required"); }
   if (rule.scenario.startsWith("return_") && !/^\d{44}$/u.test(options.originalInvoiceKey ?? "")) blockers.push("original_invoice_key_required");
+  if (rule.scenario.startsWith("return_") && rule.ipi_cst === "99") blockers.push("return_entry_tax_treatment_required");
   const totalInCents = items.reduce((sum, item) => sum + item.quantity * item.unitPriceInCents, 0) + shippingInCents + additionalInCents - discountInCents;
   if (!Number.isSafeInteger(totalInCents) || totalInCents < 0) throw new BlingError("invalid_fiscal_mirror_total", 409);
   return { kind: "fiscal_preview", transmittable: false, consumesInvoiceNumber: false, number: null, rule,
-    internetPresence: 2, originalInvoiceKey: options.originalInvoiceKey ?? null, items: items.map((item) => ({ ...item,
+    internetPresence: 2, taxConfiguration, taxBases: "provider_calculation_requires_xml_verification",
+    originalInvoiceKey: options.originalInvoiceKey ?? null, items: items.map((item) => ({ ...item,
     totalInCents: item.quantity * item.unitPriceInCents })), shippingInCents, discountInCents, additionalInCents,
     totalInCents, blockers };
 }

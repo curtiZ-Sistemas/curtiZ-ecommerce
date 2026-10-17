@@ -51,6 +51,8 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
     const rule = selectBlingFiscalRule(rules, { destinationState: "SP", icmsTaxpayer: false, operation: "return" });
     expect(buildBlingFiscalMirror(rule, [item()]).blockers).toContain("original_invoice_key_required");
     expect(buildBlingFiscalMirror(rule, [item()], { originalInvoiceKey: "1".repeat(44) }).blockers).not.toContain("original_invoice_key_required");
+    expect(buildBlingFiscalMirror({ ...rule, ipi_cst: "99" }, [item()], { originalInvoiceKey: "1".repeat(44) }).blockers)
+      .toContain("return_entry_tax_treatment_required");
   });
   it("binds order approval to immutable prices, recipient, freight and fiscal metadata", async () => {
     const input = { rules, order: { id: "order-test", customer_id: "customer-test", customer_name_snapshot: "Fictitious buyer", cpf_ciphertext: "test-ciphertext",

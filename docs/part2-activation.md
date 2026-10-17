@@ -31,3 +31,11 @@ Cancelamentos de etiquetas já postadas, trocas que exigem novo frete e cancelam
 3. Etiqueta comprada/gerada no sandbox, rastreamento e cancelamento conciliados.
 4. Os dois e-mails de teste com retorno do provedor, sem envio histórico ou comercial.
 5. Restauração de uma cópia já armazenada em projeto isolado, incluindo Storage, RLS e configurações. O CI e a aplicação de migrations não comprovam recuperação de backup. Seguir [backup e recuperação](backup-and-recovery.md).
+
+## Parâmetros fiscais explícitos
+
+As regras privadas incluem `pis_rate`, `cofins_rate`, `ipi_rate` e `ipi_cenq`, além dos CSTs. A migration não preenche aprovações nem valores comerciais. Campo ausente bloqueia o espelho; uma alíquota zero informada expressamente é preservada. Mudanças nesses campos invalidam o hash da configuração e exigem nova conferência.
+
+O gerador de fragmentos tributários aceita bases explícitas em centavos. Ele não deduz base zero de alíquota zero, não gera numeração e não produz uma NF-e completa ou autorizada. A base percentual da natureza e o valor monetário da base de cada item são conceitos diferentes. Confira rateios de frete, desconto e despesas no XML efetivo calculado pelo Bling antes da ativação.
+
+O CST de IPI de saída não deve ser copiado automaticamente para uma devolução de entrada. O espelho de entrada permanece bloqueado quando esse tratamento não está definido, mesmo com a chave original; a conferência deve considerar a operação e o documento original. Isso não bloqueia os cenários de venda já configurados.
