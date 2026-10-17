@@ -310,7 +310,7 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
       if (result.data?.url && /^https:\/\/(sandbox\.)?melhorenvio\.com\.br\//u.test(result.data.url)) {
         window.open(result.data.url, "_blank", "noopener,noreferrer");
       }
-      setNotice(success);
+      setNotice(result.message ?? success);
       await load();
       return true;
     } catch (reason) {

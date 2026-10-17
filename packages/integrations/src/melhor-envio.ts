@@ -444,7 +444,7 @@ export class MelhorEnvioProvider {
       method: "POST", body: JSON.stringify({ ...input, service: Number(input.serviceId) })
     }, false));
     const externalId = stringValue(result?.id);
-    if (!externalId) throw new MelhorEnvioError("invalid_response", 502, false);
+    if (!externalId) throw new MelhorEnvioError("uncertain_write", 502, false);
     return { externalId };
   }
 

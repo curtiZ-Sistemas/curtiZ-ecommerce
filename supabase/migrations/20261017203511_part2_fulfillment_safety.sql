@@ -9,6 +9,10 @@ begin
   if tg_op='UPDATE' and old.operation_state=new.operation_state then return new; end if;
   stage:=case new.operation_state when 'created' then 'purchase' when 'purchased' then 'generate'
     when 'generated' then 'sync' when 'posted' then 'sync' when 'reconciliation_required' then 'sync' else null end;
+  if new.operation_state in ('created','purchased','generated') and exists(select 1 from public.orders
+    where id=new.order_id and status in ('cancellation_requested','refund_pending','cancelled','refunded')) then
+    stage:='cancel';
+  end if;
   if stage is not null then
     insert into public.background_jobs(queue,job_type,payload_sanitized,idempotency_key)
       values('shipping','melhorenvio.'||stage,jsonb_build_object('shipmentId',new.id),'melhorenvio:'||stage||':'||new.id)
@@ -101,13 +105,16 @@ begin
   repeat_poll:=p_success and job.job_type='melhorenvio.sync' and exists(select 1 from public.shipments
     where id::text=job.payload_sanitized->>'shipmentId' and status not in ('delivered','returned','cancelled'));
   retry_safe:=not p_success and job.attempts<5 and p_error_code in
-    ('provider_unavailable','rate_limited','fiscal_shipping_blocked','token_refresh_failed','invalid_response_read');
+    ('provider_unavailable','rate_limited','fiscal_shipping_blocked','token_refresh_failed','invalid_response_read','invalid_response','network','timeout');
   update public.background_jobs set status=case when repeat_poll or retry_safe then 'pending'::public.job_status
       when p_success then 'completed'::public.job_status else 'failed'::public.job_status end,
     available_at=now()+case when repeat_poll then interval '30 minutes' else least(1800,30*power(2,least(job.attempts,6))) * interval '1 second' end,
     attempts=case when repeat_poll then 0 else attempts end,completed_at=case when p_success and not repeat_poll then now() else null end,
     error_summary=case when p_success then null else left(coalesce(p_error_code,'shipping_job_failed'),120) end,
     locked_at=null,lock_id=null where id=p_job_id;
+  insert into public.audit_logs(action,entity_type,entity_id,new_data_sanitized)
+    values('shipping.job.finished','shipment',(job.payload_sanitized->>'shipmentId')::uuid,
+      jsonb_build_object('jobId',job.id,'jobType',job.job_type,'attempt',job.attempts,'success',p_success,'errorCode',p_error_code));
   return true;
 end;
 $$;

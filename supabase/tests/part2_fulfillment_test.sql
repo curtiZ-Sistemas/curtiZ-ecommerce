@@ -55,5 +55,19 @@ select ok(private.user_has_role('customer') and private.user_has_role('operation
 select lives_ok($$select public.create_support_conversation('order','Personal support for employee','A personal request from the employee customer account',null,'f2000000-0000-4000-8000-000000000099')$$,'Employee can open personal support without impersonating another customer');
 select throws_ok($$select public.request_operational_order_cancellation('f2100000-0000-4000-8000-000000000001','CI cancellation')$$,'23514','cancellation_not_allowed','Delivered order requires return flow, never ordinary cancellation');
 reset role;
+insert into public.orders(id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,status,payment_status,subtotal,grand_total,shipping_address_snapshot)
+values('f2100000-0000-4000-8000-000000000002','PART2-CANCEL-CI','f2000000-0000-4000-8000-000000000001','part2-customer@example.invalid','Part2 CI','pending_payment','pending',50,50,'{}');
+insert into public.payments(order_id,provider,external_reference,status,amount)
+values('f2100000-0000-4000-8000-000000000002','mercadopago','PART2-CANCEL-CI','pending',50);
+set local role authenticated;
+select ok(public.request_operational_order_cancellation('f2100000-0000-4000-8000-000000000002','Cancellation requested for CI') is not null,'Authorized staff starts the same durable cancellation flow');
+reset role;
+select is((select count(*) from public.background_jobs where idempotency_key='after-sale:cancel:f2100000-0000-4000-8000-000000000002'),1::bigint,'Cancellation transition schedules one recovery job');
+create temporary table part2_after_claim as select public.claim_after_sale_job('f2000000-0000-4000-8000-000000000012') job;
+select is((select job->>'customerId' from part2_after_claim),'f2000000-0000-4000-8000-000000000001','Worker uses the actual order owner, not the requesting staff identity');
+select is(public.claim_after_sale_job('f2000000-0000-4000-8000-000000000013'),null::jsonb,'Concurrent refund worker is excluded');
+select ok(not public.finish_after_sale_job((select (job->>'id')::uuid from part2_after_claim),'f2000000-0000-4000-8000-000000000013',true),'Wrong refund lease cannot finalize');
+select ok(public.finish_after_sale_job((select (job->>'id')::uuid from part2_after_claim),'f2000000-0000-4000-8000-000000000012',false),'Unconfirmed refund remains pending verification');
+select is((select status::text from public.background_jobs where id=(select (job->>'id')::uuid from part2_after_claim)),'pending','Failure cannot mark a refund as completed');
 select * from finish();
 rollback;
