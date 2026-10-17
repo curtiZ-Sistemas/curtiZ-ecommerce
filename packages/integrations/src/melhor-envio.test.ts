@@ -35,7 +35,7 @@ it("does not retry a cart accepted without a recoverable external ID", async () 
     address: "Test street", number: "1", district: "Test", city: "Nova Serrana", postal_code: "35519000", state_abbr: "MG" };
   await expect(new MelhorEnvioProvider(config, store(), transport).createShipment({ serviceId: "1", from: party, to: party,
     products: [{ name: "Test item", quantity: 1, unitary_value: 50 }], volumes: [{ height: 5, width: 10, length: 20, weight: 0.2 }],
-    options: { platform: "test", insurance_value: 50, receipt: false, own_hand: false, reverse: false } }))
+    options: { platform: "test", insurance_value: 50, receipt: false, own_hand: false, reverse: false, tags: [] } }))
     .rejects.toMatchObject({ code: "uncertain_write", retryable: false });
   expect(transport).toHaveBeenCalledOnce();
 });
