@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   DEMO_SESSION_COOKIE,
-  demoDestination,
   verifyDemoSession
 } from "@curtiz/security";
 import { cookies } from "next/headers";
@@ -14,6 +13,7 @@ import {
   type CustomerOrderItem
 } from "@/lib/customer-account-types";
 import { isCustomerOrderVisible } from "@/lib/customer-order-visibility";
+import { hasInternalPanelRole } from "@/lib/auth-routing";
 import {
   isUnknownRecord,
   readNumber,
@@ -84,12 +84,6 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
 
   if (demoSession) {
-    if (!demoSession.roles.includes("customer")) {
-      return {
-        ...emptyCustomerAccount(),
-        panelDestination: demoDestination(demoSession.role)
-      };
-    }
     const snapshot = emptyCustomerAccount({
       id: `demo:${demoSession.email}`,
       fullName: demoSession.fullName,
@@ -99,6 +93,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
     return {
       ...snapshot,
       authenticated: true,
+      panelDestination: hasInternalPanelRole(demoSession.roles) ? "/selecionar-painel" : "",
       demo: true,
       representative: {
         ...snapshot.representative,
@@ -115,7 +110,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   if (!supabase) return emptyCustomerAccount();
   const userResult = await supabase.auth.getUser();
   const user = userResult.data.user;
-  if (!user) return emptyCustomerAccount();
+  if (userResult.error || !user) return emptyCustomerAccount();
   const rolesResponse = await supabase
     .from("user_roles")
     .select("role")
@@ -123,17 +118,6 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const roles = readRows(readQueryResult(rolesResponse).data).map((row) =>
     readString(row, "role")
   );
-  const internalRole = roles.find((role) =>
-    ["admin", "manager", "operational", "technical"].includes(role)
-  );
-  if (internalRole) {
-    return {
-      ...emptyCustomerAccount(),
-      panelDestination: demoDestination(
-        internalRole as "admin" | "manager" | "operational" | "technical"
-      )
-    };
-  }
 
   // Housekeeping is scoped by auth.uid() in the RPC. PostgREST returns failures
   // as data, so a deployment still converging on the migration loads the account.
@@ -202,6 +186,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   ]);
 
   const profile = record(readQueryResult(profileResponse).data);
+  if (readQueryResult(profileResponse).error || profile.status !== "active") return emptyCustomerAccount();
   const orderRows = readRows(readQueryResult(ordersResponse).data);
   const orderIds = orderRows.map((item) => readString(item, "id")).filter(Boolean);
 
@@ -423,7 +408,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   return {
     authenticated: true,
     demo: false,
-    panelDestination: "",
+    panelDestination: !readQueryResult(rolesResponse).error && hasInternalPanelRole(roles) ? "/selecionar-painel" : "",
     profile: {
       id: user.id,
       fullName:

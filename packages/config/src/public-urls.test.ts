@@ -49,8 +49,8 @@ describe("URLs públicas das aplicações", () => {
     expect(
       resolvePublicAppUrls("https://curtiz-ecommerce.sistemas-curtiz.workers.dev/login")
     ).toEqual({
-      storeUrl: "https://curtiz-ecommerce.sistemas-curtiz.workers.dev",
-      panelUrl: "https://curtiz-painel.sistemas-curtiz.workers.dev"
+      storeUrl: "https://curtiz.com.br",
+      panelUrl: "https://painel.curtiz.com.br"
     });
     expect(configuredPublicOrigins()).toHaveLength(4);
   });

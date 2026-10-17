@@ -662,6 +662,13 @@ function Orders({
                 </div>
                 <div className="operational-actions">
                   <button className="secondary-button" type="button" onClick={() => setSelected(order.id)}>Detalhes</button>
+                  {capabilities.executeTasks && ["pending_payment", "payment_approved", "processing", "picking", "ready_to_ship"].includes(order.status) && (
+                    <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => {
+                      const reason = window.prompt("Motivo do cancelamento (mínimo 5 caracteres). O pagamento e eventual reembolso serão verificados no provedor.");
+                      if (reason && reason.trim().length >= 5 && window.confirm("Confirmar a solicitação de cancelamento deste pedido?"))
+                        void run({ action: "cancel_order", orderId: order.id, reason: reason.trim() }, "Cancelamento solicitado. Acompanhe a confirmação e eventual reembolso.");
+                    }}>Solicitar cancelamento</button>
+                  )}
                   {capabilities.executeTasks && order.paymentConfirmed && ["payment_approved", "processing", "picking"].includes(order.status) && (
                     <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_separation", orderId: order.id }, "Separação iniciada.")}>
                       {processing === "start_separation" ? <LoaderCircle className="spin" aria-hidden="true" /> : <ClipboardCheck aria-hidden="true" />} Separar

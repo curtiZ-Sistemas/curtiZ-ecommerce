@@ -6,10 +6,14 @@ import { isUnknownRecord, readNumber, readQueryResult, readString } from "./unkn
 
 const pending = { ok: true, status: "refund_pending", message: "Seu cancelamento foi recebido. O reembolso está sendo processado." };
 
-export async function cancelCustomerOrder(orderId: string, customerId: string) {
-  const db = createServiceSupabaseClient();
+export async function cancelCustomerOrder(orderId: string, customerId: string, runtime?: {
+  db: NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
+  environment: Readonly<Record<string, string | undefined>>;
+  transport: typeof fetch;
+}) {
+  const db = runtime?.db ?? createServiceSupabaseClient();
   if (!db) return { statusCode: 503, body: { message: "Não foi possível iniciar o cancelamento." } };
-  const mode = getMercadoPagoEnvironment();
+  const mode = getMercadoPagoEnvironment(runtime?.environment);
   const modeCheck = mode ? readQueryResult(await db.rpc("check_mercadopago_order_mode", {
     p_mode: mode, p_order_id: orderId, p_customer_id: customerId
   })) : null;
@@ -41,9 +45,9 @@ export async function cancelCustomerOrder(orderId: string, customerId: string) {
       await finish(false);
       return { statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } };
     }
-    const credentials = getMercadoPagoCredentials();
+    const credentials = getMercadoPagoCredentials(runtime?.environment);
     if (!credentials) throw new Error("payment_configuration_invalid");
-    const provider = new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode);
+    const provider = new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode, runtime?.transport);
     let payment = await provider.getPayment(providerId);
     const matches = () => payment.id === providerId && payment.externalReference === readString(data, "orderCode")
       && payment.amountInCents === readNumber(data, "amountInCents") && payment.currency === "BRL";
