@@ -6,12 +6,12 @@ import { isUnknownRecord } from "./unknown-data";
 export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Record<string, unknown>, items: Record<string, unknown>[]) {
   const existing = await db.rpc("read_bling_fiscal_mirror_approval", { p_order_id: order.id });
   if (existing.error) throw new BlingError("storage_unavailable", 503, true);
-  if (isUnknownRecord(existing.data)) return existing.data;
-  const context = await db.rpc("read_bling_fiscal_automation_context", { p_order_id: order.id });
+  const approved = isUnknownRecord(existing.data) ? existing.data : null;
+  const context = approved ? { data: null, error: null } : await db.rpc("read_bling_fiscal_automation_context", { p_order_id: order.id });
   if (context.error) throw new BlingError("storage_unavailable", 503, true);
   const value = isUnknownRecord(context.data) ? context.data : {};
-  const recipient = isUnknownRecord(value.recipient) ? value.recipient : {};
-  if (value.policyApproved !== true || typeof value.configurationHash !== "string") throw new BlingError("fiscal_automation_policy_required", 409);
+  const recipient = approved ?? (isUnknownRecord(value.recipient) ? value.recipient : {});
+  if (!approved && (value.policyApproved !== true || typeof value.configurationHash !== "string")) throw new BlingError("fiscal_automation_policy_required", 409);
   if (typeof recipient.icms_taxpayer !== "boolean" || typeof recipient.final_consumer !== "boolean") throw new BlingError("fiscal_recipient_required", 409);
   const rules = await db.rpc("read_bling_fiscal_rules");
   if (rules.error) throw new BlingError("storage_unavailable", 503, true);
@@ -26,6 +26,10 @@ export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Recor
   if (!mirror.rule.external_nature_id) throw new BlingError("nature_required", 409);
   if (mirror.blockers.includes("kit_fiscal_unit_confirmation_required")) throw new BlingError("kit_fiscal_unit_confirmation_required", 409);
   const hash = await blingFiscalMirrorHash(mirror);
+  if (approved) {
+    if (approved.mirror_hash !== hash) throw new BlingError("fiscal_mirror_changed", 409);
+    return approved;
+  }
   const saved = await db.rpc("save_bling_automatic_mirror_approval", { p_order_id: order.id, p_mirror_hash: hash,
     p_configuration_hash: value.configurationHash, p_icms_taxpayer: recipient.icms_taxpayer, p_final_consumer: recipient.final_consumer });
   if (saved.error) throw new BlingError("storage_unavailable", 503, true);

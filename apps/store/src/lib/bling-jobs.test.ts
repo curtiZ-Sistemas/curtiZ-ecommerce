@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { assertBlingExternalOrder, assertBlingInvoiceItems, assertBlingPaidOrder, blingOrderPayload } from "./bling-jobs";
+import { assertBlingExternalOrder, assertBlingInvoiceItems, assertBlingInvoiceRecipient, assertBlingPaidOrder, blingOrderPayload } from "./bling-jobs";
 
 const snapshot = () => ({ order: { public_code: "CZ-TEST-ONE", status: "processing", payment_status: "approved",
   subtotal: 100, discount_total: 10, shipping_total: 15, fee_total: 0, grand_total: 105, placed_at: "2026-10-02T12:00:00Z",
@@ -10,6 +10,15 @@ const snapshot = () => ({ order: { public_code: "CZ-TEST-ONE", status: "processi
   productLinks: [{ variantId: "variant-test", sku: "SKU-COR-37", externalProductId: 101, commercialUnit: "PR" }], contactId: 201, paymentMethodId: 301 });
 
 describe("paid Bling order snapshots", () => {
+  it("blocks a changed fiscal recipient or missing taxpayer registration", () => {
+    const expected = { document: "12345678909", state: "MG", postalCode: "30000000", icmsTaxpayer: false };
+    const invoice = { contato: { numeroDocumento: expected.document, endereco: { uf: "MG", cep: expected.postalCode } } };
+    expect(() => assertBlingInvoiceRecipient(invoice, expected)).not.toThrow();
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, document: "52998224725" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, state: "SP" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, postalCode: "31000000" })).toThrow("invoice_recipient_mismatch");
+    expect(() => assertBlingInvoiceRecipient(invoice, { ...expected, icmsTaxpayer: true })).toThrow("invoice_recipient_mismatch");
+  });
   it.each(["pending", "rejected", "cancelled", "refunded", "charged_back"])("blocks %s payment", (payment_status) => {
     expect(() => assertBlingPaidOrder({ payment_status, status: "processing" })).toThrow("order_not_eligible");
   });

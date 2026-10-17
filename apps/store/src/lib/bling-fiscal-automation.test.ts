@@ -46,9 +46,17 @@ describe("approved fiscal automation", () => {
     await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toMatchObject({ code: "fiscal_mirror_changed" });
   });
   it("preserves an existing exact approval without replacing it under a new policy", async () => {
-    state.rpc.mockResolvedValueOnce({ data: { mirror_hash: "b".repeat(64), icms_taxpayer: true, final_consumer: false }, error: null });
-    expect(await ensureBlingFiscalApproval(db, order, items)).toMatchObject({ mirror_hash: "b".repeat(64) });
-    expect(state.rpc).toHaveBeenCalledOnce();
+    const approval = await ensureBlingFiscalApproval(db, order, items);
+    state.rpc.mockClear();
+    state.rpc.mockResolvedValueOnce({ data: approval, error: null });
+    expect(await ensureBlingFiscalApproval(db, order, items)).toEqual(approval);
+    expect(state.rpc.mock.calls.some(([name]) => name === "save_bling_automatic_mirror_approval")).toBe(false);
+  });
+  it("does not reuse an old approval after an order snapshot changes", async () => {
+    const approval = await ensureBlingFiscalApproval(db, order, items);
+    state.rpc.mockResolvedValueOnce({ data: approval, error: null });
+    await expect(ensureBlingFiscalApproval(db, { ...order, customer_name_snapshot: "Changed" }, items))
+      .rejects.toMatchObject({ code: "fiscal_mirror_changed" });
   });
 });
 describe("private fiscal archiving", () => {

@@ -231,9 +231,19 @@ export function assertBlingInvoiceItems(invoice: Record<string, unknown>, expect
     throw new BlingError("invoice_items_mismatch", 409);
 }
 
+export function assertBlingInvoiceRecipient(invoice: Record<string, unknown>, expected: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean }) {
+  const contact = row(invoice.contato), address = row(contact?.endereco);
+  if (!/^\d{11}$/u.test(expected.document) || readString(contact ?? {}, "numeroDocumento").replace(/\D/gu, "") !== expected.document
+    || readString(address ?? {}, "uf").toUpperCase() !== expected.state.toUpperCase()
+    || readString(address ?? {}, "cep").replace(/\D/gu, "") !== expected.postalCode.replace(/\D/gu, "")
+    || expected.icmsTaxpayer && !readString(contact ?? {}, "ie"))
+    throw new BlingError("invoice_recipient_mismatch", 409);
+}
+
 async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, environment: Environment,
   orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string;
-    expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number }> {
+    expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number;
+    expectedRecipient: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean } }> {
   if (environment.BLING_FISCAL_READY !== "true") throw new BlingError("fiscal_not_ready", 409);
   const [orderResult, itemsResult, linkValue, accountValue] = await Promise.all([
     db.from("orders").select("id,payment_status,status,customer_id,customer_name_snapshot,customer_email_snapshot,cpf_ciphertext,shipping_address_snapshot,shipping_total,discount_total,fee_total,grand_total").eq("id", orderId).maybeSingle(),
@@ -286,7 +296,10 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   }
   const expectedItems = mirror.items.map((item) => ({ sku: blingExternalSku(item.sku, readString(items.find((line) => line.sku_snapshot === item.sku) ?? {}, "variant_id")),
     unit: item.unit, quantity: item.quantity, unitPriceInCents: item.unitPriceInCents, ncm: item.ncm, origin: item.origin, cest: item.cest, cfop: mirror.rule.cfop }));
-  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop,
+  const address = row(order.shipping_address_snapshot) ?? {};
+  const expectedRecipient = { document: typeof order.cpf_ciphertext === "string" ? decryptPII(order.cpf_ciphertext, environment.PII_ENCRYPTION_KEY) : "",
+    state: readString(address, "state"), postalCode: readString(address, "postal_code"), icmsTaxpayer: approval.icms_taxpayer };
+  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop, expectedRecipient,
     expectedItems, totalInCents: mirror.totalInCents, shippingInCents: mirror.shippingInCents };
 }
 
@@ -315,7 +328,7 @@ async function sendInvoice(db: SupabaseClient, provider: BlingClient, environmen
     throw new BlingError("invoice_environment_required", 409);
   if (environment.BLING_INVOICE_TRANSMISSION_MODE === "production" && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED !== "true")
     throw new BlingError("live_invoice_not_authorized", 409);
-  const { invoiceId, natureId, series, cfop, expectedItems, totalInCents, shippingInCents } = await fiscalPreconditions(db, provider, environment, orderId);
+  const { invoiceId, natureId, series, cfop, expectedItems, totalInCents, shippingInCents, expectedRecipient } = await fiscalPreconditions(db, provider, environment, orderId);
   if (!invoiceId) throw new BlingError("invoice_draft_required", 409);
   const invoice = row(data(await provider.request(`/nfe/${invoiceId}`)));
   const situation = Number(invoice?.situacao);
@@ -325,6 +338,7 @@ async function sendInvoice(db: SupabaseClient, provider: BlingClient, environmen
     throw new BlingError("invoice_fiscal_scenario_mismatch", 409);
   if (!invoice) throw new BlingError("invoice_draft_required", 409);
   assertBlingInvoiceItems(invoice, expectedItems, { totalInCents, shippingInCents });
+  assertBlingInvoiceRecipient(invoice, expectedRecipient);
   if (situation === 5 || situation === 6) { await observeInvoice(db, provider, invoiceId); return; }
   if (situation !== 1) throw new BlingError("invoice_not_sendable", 409);
   if (await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)

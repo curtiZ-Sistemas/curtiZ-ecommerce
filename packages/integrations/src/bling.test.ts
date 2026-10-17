@@ -173,6 +173,7 @@ describe("Bling HTTP reliability", () => {
     const result = new BlingClient(config, storage(), transport).invoiceDocument("1".repeat(44), "xml");
     if (valid) expect(new TextDecoder().decode(await result)).toBe(xml);
     else await expect(result).rejects.toMatchObject({ code: "invalid_document" });
-    expect(String(transport.mock.calls[0]?.[0])).toContain("formato=xml");
+    const request = transport.mock.calls[0]?.[0];
+    expect(typeof request === "string" ? request : request instanceof URL ? request.href : request?.url).toContain("formato=xml");
   });
 });

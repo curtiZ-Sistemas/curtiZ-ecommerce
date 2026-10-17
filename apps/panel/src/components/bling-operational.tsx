@@ -12,6 +12,7 @@ const errorLabels: Record<string, string> = {
   fiscal_automation_policy_required: "Regras fiscais ainda não liberadas para automação",
   fiscal_recipient_required: "Confirme os dados fiscais do destinatário",
   fiscal_mirror_changed: "O pedido ou as regras mudaram; confira o espelho fiscal",
+  invoice_recipient_mismatch: "Confira documento, endereço e inscrição estadual do destinatário no Bling",
   order_nature_mismatch: "A natureza fiscal do pedido precisa de conferência no Bling",
   invoice_environment_required: "Ambiente de transmissão fiscal ainda não configurado",
   live_invoice_not_authorized: "Transmissão de nota real ainda não autorizada",
