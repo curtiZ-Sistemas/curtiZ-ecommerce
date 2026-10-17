@@ -9,6 +9,17 @@ const rules = [
 const item = () => ({ sku: "SKU-37", description: "Test pair", unit: "PR", quantity: 1, unitPriceInCents: 2390,
   pairsPerSku: 1, fiscalUnitApproved: true, ncm: "64022000", origin: 0, cest: "" });
 describe("private fiscal scenarios and unnumbered mirrors", () => {
+  it("selects the nature independently from the ICMS taxpayer classification", () => {
+    const configured = rules.map((rule) => ({ ...rule, external_nature_id: 999,
+      natures: [{ final_consumer: true, external_nature_id: 101 }, { final_consumer: false, external_nature_id: 102 }] }));
+    const input = { destinationState: "SP", icmsTaxpayer: true, operation: "sale" as const };
+    expect(selectBlingFiscalRule(configured, { ...input, finalConsumer: true })).toMatchObject({ cfop: "6102", external_nature_id: 101 });
+    expect(selectBlingFiscalRule(configured, { ...input, finalConsumer: false })).toMatchObject({ cfop: "6102", external_nature_id: 102 });
+    expect(selectBlingFiscalRule(configured, input).external_nature_id).toBeNull();
+    expect(selectBlingFiscalRule(rules.map((rule) => ({ ...rule, external_nature_id: 999 })), { ...input, finalConsumer: true }).external_nature_id).toBeNull();
+    expect(() => selectBlingFiscalRule(configured.map((r) => ({ ...r, natures: [r.natures[0], r.natures[0]] })),
+      { ...input, finalConsumer: true })).toThrow("fiscal_rules_required");
+  });
   it("hashes equivalent JSON consistently regardless of property insertion order", async () => {
     expect(await blingFiscalMirrorHash({ a: 1, b: { c: 2, d: 3 } })).toBe(await blingFiscalMirrorHash({ b: { d: 3, c: 2 }, a: 1 }));
   });
