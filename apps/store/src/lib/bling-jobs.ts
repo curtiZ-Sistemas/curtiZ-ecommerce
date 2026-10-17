@@ -81,12 +81,13 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
     const sku = readString(item, "sku_snapshot");
     const link = productLinks.find((candidate) => readString(candidate, "variantId") === variantId);
     const externalId = idNumber(link?.externalProductId);
+    const unit = readString(link ?? {}, "commercialUnit");
     const quantity = readNumber(item, "quantity");
     if (!externalId || readString(link ?? {}, "sku").toLowerCase() !== sku.toLowerCase() || !sku || !validAmount(item.unit_price)
       || !Number.isSafeInteger(quantity) || quantity <= 0 || cents(item.total) !== cents(item.unit_price) * quantity
-      || cents(item.discount_amount) !== 0)
+      || cents(item.discount_amount) !== 0 || !["PR", "UN", "KIT"].includes(unit))
       throw new BlingError("product_mapping_required", 409);
-    return { codigo: blingExternalSku(sku, variantId), unidade: "UN", quantidade: quantity, valor: Number(item.unit_price),
+    return { codigo: blingExternalSku(sku, variantId), unidade: unit, quantidade: quantity, valor: Number(item.unit_price),
       descricao: readString(item, "product_name_snapshot"), produto: { id: externalId } };
   });
   const paidDate = date(order.placed_at);
@@ -213,8 +214,23 @@ async function observeInvoice(db: SupabaseClient, provider: BlingClient, invoice
   if (linked !== true) throw new BlingError("invoice_order_unlinked", 409);
 }
 
+type FiscalInvoiceItem = { sku: string; unit: string; quantity: number; unitPriceInCents: number; ncm: string; origin: number; cest: string; cfop: string };
+
+export function assertBlingInvoiceItems(invoice: Record<string, unknown>, expected: FiscalInvoiceItem[], totals: { totalInCents: number; shippingInCents: number }) {
+  const expectedLines = expected.map((item) => JSON.stringify([item.sku, item.unit, item.quantity, item.unitPriceInCents,
+    item.ncm, item.origin, item.cest, item.cfop])).sort();
+  const actualLines = array(invoice.itens).map((item) => JSON.stringify([readString(item, "codigo"), readString(item, "unidade"),
+    Number(item.quantidade), cents(item.valor), readString(item, "classificacaoFiscal").replace(/\D/gu, ""), Number(item.origem),
+    readString(item, "cest").replace(/\D/gu, ""), readString(item, "cfop")])).sort();
+  if (!expected.length || JSON.stringify(expectedLines) !== JSON.stringify(actualLines)
+    || !validAmount(invoice.valorNota) || !validAmount(invoice.valorFrete)
+    || cents(invoice.valorNota) !== totals.totalInCents || cents(invoice.valorFrete) !== totals.shippingInCents)
+    throw new BlingError("invoice_items_mismatch", 409);
+}
+
 async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, environment: Environment,
-  orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string }> {
+  orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string;
+    expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number }> {
   if (environment.BLING_FISCAL_READY !== "true") throw new BlingError("fiscal_not_ready", 409);
   const [orderResult, itemsResult, linkValue, accountValue] = await Promise.all([
     db.from("orders").select("id,payment_status,status,customer_id,customer_name_snapshot,customer_email_snapshot,cpf_ciphertext,shipping_address_snapshot,shipping_total,discount_total,fee_total,grand_total").eq("id", orderId).maybeSingle(),
@@ -265,7 +281,10 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
       || readString(tax ?? {}, "cest").replace(/\D/gu, "") !== approvedItem.cest)
       throw new BlingError("product_fiscal_data_required", 409);
   }
-  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop };
+  const expectedItems = mirror.items.map((item) => ({ sku: blingExternalSku(item.sku, readString(items.find((line) => line.sku_snapshot === item.sku) ?? {}, "variant_id")),
+    unit: item.unit, quantity: item.quantity, unitPriceInCents: item.unitPriceInCents, ncm: item.ncm, origin: item.origin, cest: item.cest, cfop: mirror.rule.cfop }));
+  return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop,
+    expectedItems, totalInCents: mirror.totalInCents, shippingInCents: mirror.shippingInCents };
 }
 
 async function generateInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
@@ -286,7 +305,7 @@ async function generateInvoice(db: SupabaseClient, provider: BlingClient, enviro
 
 async function sendInvoice(db: SupabaseClient, provider: BlingClient, environment: Environment, orderId: string) {
   if (environment.BLING_INVOICE_SEND_ENABLED !== "true") throw new BlingError("invoice_send_disabled", 409);
-  const { invoiceId, natureId, series, cfop } = await fiscalPreconditions(db, provider, environment, orderId);
+  const { invoiceId, natureId, series, cfop, expectedItems, totalInCents, shippingInCents } = await fiscalPreconditions(db, provider, environment, orderId);
   if (!invoiceId) throw new BlingError("invoice_draft_required", 409);
   const invoice = row(data(await provider.request(`/nfe/${invoiceId}`)));
   const situation = Number(invoice?.situacao);
@@ -294,6 +313,8 @@ async function sendInvoice(db: SupabaseClient, provider: BlingClient, environmen
     throw new BlingError("invoice_nature_mismatch", 409);
   if (Number(invoice?.serie) !== series || !array(invoice?.itens).length || array(invoice?.itens).some((item) => item.cfop !== cfop))
     throw new BlingError("invoice_fiscal_scenario_mismatch", 409);
+  if (!invoice) throw new BlingError("invoice_draft_required", 409);
+  assertBlingInvoiceItems(invoice, expectedItems, { totalInCents, shippingInCents });
   if (situation === 5 || situation === 6) { await observeInvoice(db, provider, invoiceId); return; }
   if (situation !== 1) throw new BlingError("invoice_not_sendable", 409);
   if (await call(db, "assert_bling_order_writable", { p_order_id: orderId }) !== true)
