@@ -90,6 +90,8 @@ As migrations não semeiam regras fiscais, IDs de natureza ou dados empresariais
 
 Antes da geração fiscal, o servidor exige `BLING_FISCAL_READY`, as flags específicas, pagamento aprovado, vínculo ERP, metadata fiscal e aprovação documentada do espelho exato em `private.bling_fiscal_mirror_approvals`. O hash vincula destinatário, endereço, itens, preços, frete, descontos e regra. Alterações invalidam a aprovação. Essa tabela não é gravável por clientes. O envio reconfere natureza, série e CFOPs da nota; ausência ou divergência bloqueia a transmissão. Certificado, SEFAZ e homologação real permanecem requisitos separados. O certificado A1 e sua senha são responsabilidade do titular e não passam por esse fluxo.
 
+Pedidos usam a unidade comercial revisada do produto vinculado; ausência de unidade bloqueia o envio ao ERP. Antes de transmitir uma nota, a releitura compara todos os códigos externos, unidades, quantidades, preços, NCM, origem, CEST, CFOPs, total e frete com o espelho aprovado. Alterações e linhas duplicadas bloqueiam a transmissão. Essa proteção não substitui a homologação dos demais campos tributários e dos indicadores que não são expostos integralmente pela API.
+
 O rate limiter no banco espaça requisições em 334 ms e compartilha a conta entre ambientes. Contabiliza até 120 mil chamadas em uma janela móvel conservadora de 24 horas, agrupada por hora (pode manter até uma hora adicional no limite). OAuth também tem espaçamento de 3,1 s para respeitar 20 chamadas/minuto da instalação. Outras aplicações/contas atrás do mesmo IP Cloudflare podem consumir limites que esta instalação não controla: 429 permanece tratado com Retry-After e tentativas limitadas.
 
 ## Operação e recuperação
