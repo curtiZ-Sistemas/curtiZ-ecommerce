@@ -8,7 +8,7 @@ O fluxo existente de checkout mantém snapshots, reservas por variante, confirma
 
 | Informação | Autoridade | Regra |
 | --- | --- | --- |
-| Catálogo, imagens por cor, SKU, preço e dimensões | curti Z/Supabase | Atualizações locais geram jobs; PATCH não altera imagens nem tributação no Bling. |
+| Catálogo, imagens por cor, SKU, preço e dimensões | curti Z/Supabase | Atualizações locais geram jobs; imagens vêm exclusivamente do bucket público do catálogo. Unidade/NCM/origem/CEST só são enviados quando existe metadata privada revisada. |
 | Estoque físico | Supabase | `available_quantity + reserved_quantity`; reservar não baixa o físico. Pagamento, devolução e ajustes locais alteram o físico. Envio ao depósito Bling usa saldo absoluto e versão local. |
 | Pagamento e reembolso | Mercado Pago confirmado no servidor | Bling nunca confirma pagamento local nem cria receita financeira adicional. |
 | Venda ERP e fiscal | Bling | Referência `numeroLoja` é o código imutável local; variante é mapeada por SKU, nunca por título. |
@@ -43,7 +43,7 @@ O Bling usa a mesma API real para as operações aqui implementadas. O identific
    | `PII_ENCRYPTION_KEY` | store | Chave existente para o CPF **salvo no pedido**, sem buscar o CPF atual do perfil. |
    | `BLING_PAYMENT_METHOD_ID` | store | ID real, no Bling, da forma de pagamento correspondente ao recebimento via Mercado Pago. |
    | `BLING_STOCK_DEPOSIT_ID` | store | ID real do depósito que receberá o saldo local. |
-   | `BLING_NATURE_OF_OPERATION_ID` | store | ID real e ativo, padrão venda ou venda pessoa física, validado pela contabilidade. |
+   | Naturezas fiscais por cenário | banco privado | `private.bling_fiscal_rules` registra IDs reais conferidos no Bling, por UF/contribuinte/operação. O antigo `BLING_NATURE_OF_OPERATION_ID` global não decide mais a emissão. |
    | `BLING_WEBHOOK_CONFIGURED` | panel | `true` somente depois de cadastrar e verificar o webhook; não prova entrega. |
    | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | store | API key existente e endereço remetente simples de domínio verificado; necessários apenas para a notificação. |
 
@@ -66,7 +66,21 @@ O Bling usa a mesma API real para as operações aqui implementadas. O identific
 | `BLING_REQUIRE_INVOICE_FOR_SHIPPING` | Política fiscal aprovada. Ative antes de operar expedição: `select public.set_bling_shipping_policy(true);` como dono do banco, em mudança revisada. O cron também ativa a política. Ela permanece ativa no banco mesmo se a flag sumir. Remoção exige revisão explícita pelo dono do banco. |
 | `BLING_INVOICE_EMAIL_ENABLED` | Remetente Resend verificado, origem da loja correta e teste de aceitação real autorizado. A fila fica pendente sem credenciais e não mostra envio fictício. |
 
-No panel, espelhe as flags de produto/estoque/pedido/fiscal para a informação técnica refletir a configuração do store. O processamento pertence ao store. Cron existente: a cada cinco minutos, até quatro jobs Bling por execução; trabalho sequencial, lease renovado antes de chamadas HTTP e histórico persistente.
+No panel, espelhe as flags de produto/estoque/pedido/fiscal para a informação técnica refletir a configuração do store. O cron pertence ao store; o painel também pode processar um lote explícito de catálogo. Cron existente: a cada cinco minutos, até quatro jobs Bling por execução; trabalho sequencial, lease renovado antes de chamadas HTTP e histórico persistente.
+
+O botão técnico **Processar lote de catálogo** executa até quatro tarefas já enfileiradas; a API aceita de uma a oito. Exige a mesma sessão ativa, permissão, MFA aplicável, origem e orçamento de mutações das demais ações técnicas. Compartilha a trava global com o cron e só reivindica tarefas de produto/estoque, nunca pedidos, notas ou e-mails. Falhas interrompem o lote; escritas incertas exigem conciliação por SKU, sem repetição automática.
+
+Custos permanecem nos campos existentes `cost_price`/`cost_override`. O balanço de estoque envia o custo unitário no campo documentado `custo`, sem adicionar despesas ao checkout. `precoCusto` do resumo de produto é um campo de leitura relacionado ao fornecedor padrão: não inventar fornecedor para preenchê-lo nem presumir que o custo do movimento equivale a esse cadastro. A conferência externa deve distinguir os dois.
+
+Uma variação é vinculada pelo seu SKU existente. Kits conservam sua quantidade por SKU e o número de pares em metadata; o sincronizador não cria vínculos de componentes nem baixa pares individuais por inferência. Unidade fiscal de kit e compartilhamento físico precisam de conferência própria; o saldo provisório autorizado não representa contagem física validada nem libera vendas reais.
+
+## Espelho fiscal sem numeração
+
+`POST /api/integrations/bling/fiscal-preview` no painel técnico prepara um espelho local por variante/cenário ou pelo snapshot de um pedido. Não chama o Bling, não cria pedido ou NF-e, não consome numeração e não transmite à SEFAZ. Retorna valores em centavos, unidade/pares, NCM, regra recebida, bloqueios e hash. Dados pessoais do pedido entram somente em um hash de contexto; não são reproduzidos no espelho.
+
+As migrations não semeiam regras fiscais, IDs de natureza ou dados empresariais. A configuração privada distingue venda interna, interestadual contribuinte, interestadual não contribuinte e devoluções internas/interestaduais. A escolha exige UF válida e situação do destinatário explícita; não há alternativa arbitrária entre CFOPs. IDs reais ainda precisam corresponder às regras e séries configuradas no provedor, preservando documentos/numeração existentes.
+
+Antes da geração fiscal, o servidor exige `BLING_FISCAL_READY`, as flags específicas, pagamento aprovado, vínculo ERP, metadata fiscal e aprovação documentada do espelho exato em `private.bling_fiscal_mirror_approvals`. O hash vincula destinatário, endereço, itens, preços, frete, descontos e regra. Alterações invalidam a aprovação. Essa tabela não é gravável por clientes. O envio reconfere natureza, série e CFOPs da nota; ausência ou divergência bloqueia a transmissão. Certificado, SEFAZ e homologação real permanecem requisitos separados. O certificado A1 e sua senha são responsabilidade do titular e não passam por esse fluxo.
 
 O rate limiter no banco espaça requisições em 334 ms e compartilha a conta entre ambientes. Contabiliza até 120 mil chamadas em uma janela móvel conservadora de 24 horas, agrupada por hora (pode manter até uma hora adicional no limite). OAuth também tem espaçamento de 3,1 s para respeitar 20 chamadas/minuto da instalação. Outras aplicações/contas atrás do mesmo IP Cloudflare podem consumir limites que esta instalação não controla: 429 permanece tratado com Retry-After e tentativas limitadas.
 

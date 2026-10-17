@@ -68,4 +68,20 @@ describe("persistent Bling job orchestration", () => {
     expect(await runBlingJobs(environment, "execution-test")).toMatchObject({ ok: false, processed: 0 });
     expect(state.request).not.toHaveBeenCalled();
   });
+  it.each(["bling.invoice.generate", "bling.invoice.send"])("blocks %s with its runtime gate off even if a job is erroneously claimed", async (jobType) => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType, payload: { orderId }, attempts: 1 } : true }));
+    expect(await runBlingJobs(environment, "execution-test", 1)).toMatchObject({ ok: false, failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+  });
+  it("requires documented approval before any fiscal provider call", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.generate", payload: { orderId }, attempts: 1 }
+        : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "synced" }
+          : name === "read_bling_account" ? { companyId: "company-test" } : name === "read_bling_fiscal_mirror_approval" ? null : true }));
+    expect(await runBlingJobs({ ...environment, BLING_FISCAL_READY: "true", BLING_INVOICE_SYNC_ENABLED: "true" }, "execution-test", 1))
+      .toMatchObject({ ok: false, failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.find(([name]) => name === "finish_bling_job")?.[1]).toMatchObject({ p_error_code: "fiscal_mirror_approval_required" });
+  });
 });

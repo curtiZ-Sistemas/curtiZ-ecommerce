@@ -5,6 +5,8 @@ import type { IntegrationState, RequestContext } from "@curtiz/domain";
 export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./mercadopago-cards";
 export * from "./melhor-envio";
 export * from "./bling";
+export * from "./bling-catalog";
+export * from "./bling-fiscal-preview";
 export { sendInvoiceEmail } from "./invoice-email";
 export * from "./transactional-email";
 
