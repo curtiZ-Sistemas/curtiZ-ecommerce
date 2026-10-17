@@ -45,6 +45,8 @@ select public.apply_melhor_envio_webhook('part2-delivered','hash4','order.delive
 select is((select status::text from public.orders where id='f2100000-0000-4000-8000-000000000001'),'delivered','Carrier delivery advances complete order');
 select public.apply_melhor_envio_webhook('part2-old','hash5','order.posted','part2-external','dispatched',now()-interval '1 day');
 select is((select status::text from public.shipments where id='f2200000-0000-4000-8000-000000000001'),'delivered','Out-of-order event cannot regress delivery');
+select public.apply_melhor_envio_webhook('part2-returned','hash6','order.returned','part2-external','returned',now());
+select is((select status::text from public.orders where id='f2100000-0000-4000-8000-000000000001'),'return_requested','Carrier return requires physical inspection, not an invented refund or restock');
 insert into public.background_jobs(queue,job_type,payload_sanitized,idempotency_key)
 values('bling','bling.invoice.email','{}','part2-unapproved-email');
 select is((select status::text from public.background_jobs where idempotency_key='part2-unapproved-email'),'cancelled','Third email kind cannot be activated by legacy flags');

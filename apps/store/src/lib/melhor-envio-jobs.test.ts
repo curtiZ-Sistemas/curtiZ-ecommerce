@@ -86,6 +86,12 @@ describe("persistent shipping stages", () => {
     expect(state.purchase).toHaveBeenCalledExactlyOnceWith(["external-1"]);
     expect(shipment.operation_state).toBe("purchased");
   });
+  it("does not generate again when reconciliation already confirms a generated label", async () => {
+    state.getShipment.mockResolvedValue({ status: "generated" });
+    await runMelhorEnvioShippingJobs(environment, "test", 1);
+    expect(shipment.operation_state).toBe("generated");
+    expect(state.generate).not.toHaveBeenCalled();
+  });
   it.each(["rejected", "pending", "cancelled"])("blocks invoice %s", async status => {
     link.invoice_status = status;
     expect(await runMelhorEnvioShippingJobs(environment, "test", 1)).toMatchObject({ failed: 1 });

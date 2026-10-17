@@ -231,6 +231,14 @@ begin
     end if;
   end if;
   if p_status='delivered' then perform private.enqueue_transactional_email(shipment.order_id,'review_requested'); end if;
+  if p_status='returned' then
+    select status into previous from public.orders where id=shipment.order_id for update;
+    if previous in ('shipped','delivered') then
+      update public.orders set status='return_requested',updated_at=now() where id=shipment.order_id;
+      insert into public.order_status_history(order_id,previous_status,new_status,reason)
+        values(shipment.order_id,previous,'return_requested','Transportador informou devolução; aguarda recebimento e conferência');
+    end if;
+  end if;
   return result;
 end;
 $$;

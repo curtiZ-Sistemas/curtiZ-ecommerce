@@ -264,10 +264,11 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     else await provider.generate([externalId]);
     acknowledged = true;
     const remote = await provider.getShipment(externalId);
+    const generated = readString(remote, "status").toLowerCase() === "generated";
     if (!(purchase ? ["paid", "released", "generated"] : ["generated"]).includes(readString(remote, "status").toLowerCase()))
       throw new MelhorEnvioError("uncertain_write", 503, false);
-    const saved = await db.from("shipments").update({ operation_state: purchase ? "purchased" : "generated",
-      ...(purchase ? {} : { status: "label_created", label_path: `private:${externalId}` }),
+    const saved = await db.from("shipments").update({ operation_state: generated ? "generated" : "purchased",
+      ...(generated ? { status: "label_created", label_path: `private:${externalId}` } : {}),
       last_error_code: null, updated_at: new Date().toISOString() }).eq("id", job.shipmentId).eq("operation_state", busy).select("id").maybeSingle();
     if (saved.error || !saved.data) throw new MelhorEnvioError("uncertain_write", 503, false);
   } catch (error) {
