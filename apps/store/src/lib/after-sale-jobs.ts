@@ -26,7 +26,7 @@ export async function runAfterSaleJobs(environment: Readonly<Record<string, stri
     } catch (error) { failure = error; }
     const finish = await db.rpc("finish_after_sale_job", { p_job_id: readString(job, "id"), p_lock_id: lockId, p_completed: completed });
     if (finish.error || finish.data !== true) throw new Error("after_sale_lease_lost");
-    if (failure) throw failure;
+    if (failure) throw failure instanceof Error ? failure : new Error("after_sale_processing_failed");
     processed += 1;
   }
   logServerEvent("info", "after_sale_jobs_completed", { executionId, processed });
