@@ -19,13 +19,14 @@ export async function runAfterSaleJobs(environment: Readonly<Record<string, stri
     if (!isUnknownRecord(claim.data)) break;
     const job = claim.data;
     let completed = false;
+    let failure: unknown;
     try {
       const result = await cancelCustomerOrder(readString(job, "orderId"), readString(job, "customerId"), { db, environment, transport });
       completed = result.statusCode === 200 && "status" in result.body && ["cancelled", "refunded"].includes(String(result.body.status));
-    } finally {
-      const finish = await db.rpc("finish_after_sale_job", { p_job_id: readString(job, "id"), p_lock_id: lockId, p_completed: completed });
-      if (finish.error || finish.data !== true) throw new Error("after_sale_lease_lost");
-    }
+    } catch (error) { failure = error; }
+    const finish = await db.rpc("finish_after_sale_job", { p_job_id: readString(job, "id"), p_lock_id: lockId, p_completed: completed });
+    if (finish.error || finish.data !== true) throw new Error("after_sale_lease_lost");
+    if (failure) throw failure;
     processed += 1;
   }
   logServerEvent("info", "after_sale_jobs_completed", { executionId, processed });

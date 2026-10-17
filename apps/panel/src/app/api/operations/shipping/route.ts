@@ -50,9 +50,10 @@ export async function POST(request: NextRequest) {
   try {
     if (action !== "preview" && action !== "print") {
       const queued = await db.rpc("request_shipping_action", { p_shipment_id: shipmentId, p_action: action, p_actor_id: auth.userId });
-      if (queued.error || !queued.data) return NextResponse.json({ ok: false,
+      const jobId: unknown = queued.data;
+      if (queued.error || typeof jobId !== "string" || !jobId) return NextResponse.json({ ok: false,
         message: "A a??o n?o ? permitida neste estado. Sincronize resultados incertos antes de repetir." }, { status: 409, headers: noStore });
-      return NextResponse.json({ ok: true, data: { queued: true, jobId: queued.data },
+      return NextResponse.json({ ok: true, data: { queued: true, jobId },
         message: "A??o registrada para processamento seguro. Acompanhe a remessa." }, { status: 202, headers: noStore });
     }
     const result = await db.from("shipments").select("external_id,operation_state").eq("id", shipmentId).eq("provider", "melhorenvio").maybeSingle();

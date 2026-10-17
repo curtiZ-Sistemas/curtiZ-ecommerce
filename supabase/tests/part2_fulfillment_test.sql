@@ -52,6 +52,7 @@ select ok(not private.transactional_email_eligible('f2100000-0000-4000-8000-0000
 select set_config('request.jwt.claims','{"sub":"f2000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 set local role authenticated;
 select ok(private.user_has_role('customer') and private.user_has_role('operational'),'Customer and employee roles coexist without replacing either');
+select lives_ok($$select public.create_support_conversation('order','Personal support for employee','A personal request from the employee customer account',null,'f2000000-0000-4000-8000-000000000099')$$,'Employee can open personal support without impersonating another customer');
 select throws_ok($$select public.request_operational_order_cancellation('f2100000-0000-4000-8000-000000000001','CI cancellation')$$,'23514','cancellation_not_allowed','Delivered order requires return flow, never ordinary cancellation');
 reset role;
 select * from finish();

@@ -121,6 +121,10 @@ values('ee300000-0000-4000-8000-000000000008','ee100000-0000-4000-8000-000000000
 insert into public.payments(order_id,provider,provider_payment_id,external_reference,status,amount)
 values('ee100000-0000-4000-8000-000000000008','mercadopago','email-reviewed-test','email-reviewed-test','approved',50);
 update public.orders set status='delivered' where id='ee100000-0000-4000-8000-000000000008';
+select ok(not private.transactional_email_eligible('ee100000-0000-4000-8000-000000000008','review_requested'),'Manual order status without carrier evidence cannot request review');
+insert into public.shipments(order_id,provider,service,external_id,status)
+values('ee100000-0000-4000-8000-000000000008','melhorenvio','test','email-reviewed-shipment','pending');
+select public.apply_melhor_envio_webhook('email-reviewed-delivered','reviewed-hash','order.delivered','email-reviewed-shipment','delivered',now());
 insert into public.reviews(product_id,customer_id,order_item_id,rating,status,content)
 values('ee200000-0000-4000-8000-000000000002','ee000000-0000-4000-8000-000000000001','ee300000-0000-4000-8000-000000000008',5,'pending','Recebido');
 update public.background_jobs set status='completed' where queue='transactional_email' and job_type='resend.purchase_confirmed';

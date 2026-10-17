@@ -139,6 +139,8 @@ returns boolean language sql security definer set search_path='' stable as $$
     and (p_kind='purchase_confirmed' or (p_kind='review_requested' and o.customer_id is not null and o.status='delivered'
       and exists(select 1 from public.shipments s where s.order_id=o.id and s.status='delivered' and s.delivered_at is not null)
       and not exists(select 1 from public.shipments s where s.order_id=o.id and s.status<>'delivered')
+      and not exists(select 1 from public.shipments s where s.order_id=o.id and not exists(
+        select 1 from public.tracking_events t where t.shipment_id=s.id and t.status='delivered' and t.provider_event_id is not null))
       and exists(select 1 from public.order_items i where i.order_id=o.id
         and not exists(select 1 from public.reviews r where r.order_item_id=i.id and r.customer_id=o.customer_id)))))
 $$;
@@ -221,6 +223,7 @@ begin
         values(shipment.order_id,previous,'shipped','Postagem confirmada pelo provedor de transporte'); end if;
     end if;
   end if;
+  if p_status='delivered' then perform private.enqueue_transactional_email(shipment.order_id,'review_requested'); end if;
   return result;
 end;
 $$;
@@ -313,6 +316,126 @@ revoke all on function public.claim_after_sale_job(uuid) from public,anon,authen
 revoke all on function public.finish_after_sale_job(uuid,uuid,boolean) from public,anon,authenticated;
 grant execute on function public.claim_after_sale_job(uuid) to service_role;
 grant execute on function public.finish_after_sale_job(uuid,uuid,boolean) to service_role;
+
+create or replace function public.list_bling_order_issues(p_filter text default 'all',p_limit integer default 50)
+returns jsonb language plpgsql security definer set search_path = '' stable as $
+declare result jsonb;
+begin
+  if not (private.has_permission('operations.documents.read') or private.has_permission('orders.read_all')
+    or private.has_permission('technical.integrations.manage'))
+    then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_filter not in ('all','pending','failed','invoice') or p_limit not between 1 and 100 then
+    raise exception 'invalid_filter'; end if;
+  select coalesce(jsonb_agg(to_jsonb(items) order by items.placed_at desc),'[]'::jsonb) into result
+  from (select o.id as "orderId",o.public_code as "publicCode",o.placed_at,
+    link.external_order_id as "externalOrderId",link.invoice_id as "invoiceId",
+    link.erp_status as "erpStatus",link.invoice_status as "invoiceStatus",
+    link.last_error_code as "lastErrorCode",
+    job.status::text as "jobStatus",job.error_summary as "jobError",
+    (select coalesce(jsonb_agg(to_jsonb(h)),'[]'::jsonb) from (
+      select history.attempt,history.outcome,history.error_code,history.occurred_at
+      from private.bling_job_history history join public.background_jobs hj on hj.id=history.job_id
+      where hj.queue='bling' and hj.payload_sanitized->>'orderId'=o.id::text
+      order by history.occurred_at desc limit 10) h) as history
+    from private.bling_order_links link join public.orders o on o.id=link.order_id
+    left join lateral (select j.status,j.error_summary from public.background_jobs j
+      where j.queue in ('bling','after_sale') and j.payload_sanitized->>'orderId'=o.id::text
+      order by (j.status='failed') desc,j.created_at desc limit 1) job on true
+    where p_filter='all' or (p_filter='pending' and link.erp_status='pending')
+      or (p_filter='failed' and (link.erp_status in ('failed','reconciliation_required') or job.status='failed'))
+      or (p_filter='invoice' and link.erp_status='synced' and link.invoice_status not in ('authorized','cancelled'))
+    order by o.placed_at desc nulls last limit p_limit) items;
+  return result;
+end;
+$;
+
+-- Creating personal support does not confer any staff permission. Ownership stays auth.uid().
+create or replace function public.create_support_conversation(
+  p_category text,
+  p_subject text,
+  p_initial_message text,
+  p_related_order_code text default null,
+  p_client_request_id uuid default gen_random_uuid()
+)
+returns public.support_conversations
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  existing_conversation public.support_conversations;
+  new_conversation public.support_conversations;
+  selected_category public.support_categories;
+  selected_order_id uuid;
+  category_slug text;
+begin
+  if auth.uid() is null or not private.is_active_user() then
+    raise exception 'authentication required' using errcode = '42501';
+  end if;
+  if char_length(trim(p_subject)) not between 5 and 120
+     or char_length(trim(p_initial_message)) not between 10 and 4000 then
+    raise exception 'invalid support content' using errcode = '22023';
+  end if;
+
+  select c.* into existing_conversation
+  from public.support_conversations c
+  where c.customer_id = auth.uid() and c.client_request_id = p_client_request_id;
+  if found then return existing_conversation; end if;
+
+  category_slug := case p_category
+    when 'order' then 'pedido'
+    when 'payment' then 'pagamento'
+    when 'delivery' then 'entrega'
+    when 'return' then 'troca-devolucao'
+    when 'product' then 'produto'
+    when 'account' then 'conta'
+    when 'technical' then 'problema-tecnico'
+    else 'outro'
+  end;
+
+  select c.* into selected_category
+  from public.support_categories c
+  where c.slug = category_slug and c.active = true;
+  if not found then raise exception 'support category unavailable'; end if;
+
+  if nullif(trim(coalesce(p_related_order_code, '')), '') is not null then
+    select o.id into selected_order_id
+    from public.orders o
+    where o.public_code = trim(p_related_order_code) and o.customer_id = auth.uid();
+    if not found then raise exception 'order not found' using errcode = '22023'; end if;
+  end if;
+
+  insert into public.support_conversations(
+    customer_id, related_order_id, category_id, priority, origin, subject, client_request_id
+  ) values (
+    auth.uid(), selected_order_id, selected_category.id, selected_category.default_priority,
+    'store', trim(p_subject), p_client_request_id
+  ) returning * into new_conversation;
+
+  insert into public.support_participants(conversation_id, user_id, participant_role)
+  values (new_conversation.id, auth.uid(), 'customer');
+
+  insert into public.support_messages(
+    conversation_id, sender_id, sender_role, content_sanitized, is_internal_note
+  ) values (
+    new_conversation.id, auth.uid(), 'customer', trim(p_initial_message), false
+  );
+
+  insert into public.support_status_history(
+    conversation_id, previous_status, new_status, reason, changed_by
+  ) values (
+    new_conversation.id, null, 'queued', 'Chamado criado pelo cliente', auth.uid()
+  );
+
+  insert into public.notifications(user_id, type, title, body)
+  select distinct ur.user_id, 'support_new', 'Novo atendimento na fila', new_conversation.public_code
+  from public.user_roles ur
+  join public.profiles p on p.id = ur.user_id and p.status = 'active'
+  where ur.role = 'admin';
+
+  return new_conversation;
+end;
+$;
 
 commit;
 notify pgrst,'reload schema';
