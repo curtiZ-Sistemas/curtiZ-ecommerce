@@ -71,8 +71,9 @@ describe("persistent shipping stages", () => {
   };
   it("uses the selected service, physical origin, invoice and commercial kit without inventory writes", async () => {
     expect(await runMelhorEnvioShippingJobs(creation(), "test", 1)).toMatchObject({ processed: 1, failed: 0 });
-    expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ serviceId: "6", from: expect.objectContaining({ city: "Nova Serrana", state_abbr: "MG" }),
-      products: [{ name: "Commercial kit", quantity: 1, unitary_value: 50 }], options: expect.objectContaining({ invoice: { key: "1".repeat(44) } }) }));
+    const input: unknown = state.create.mock.calls[0]?.[0];
+    expect(input).toMatchObject({ serviceId: "6", from: { city: "Nova Serrana", state_abbr: "MG" },
+      products: [{ name: "Commercial kit", quantity: 1, unitary_value: 50 }], options: { invoice: { key: "1".repeat(44) } } });
     expect(state.from).not.toHaveBeenCalledWith("inventory");
   });
   it("rejects an incomplete recipient before creating the provider cart", async () => {
