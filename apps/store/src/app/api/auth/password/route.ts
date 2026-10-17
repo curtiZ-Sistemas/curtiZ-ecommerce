@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
   }
 
   const userResult = await supabase.auth.getUser();
-  if (!userResult.data.user) {
+  if (userResult.error || !userResult.data.user) {
     return NextResponse.json(
       { message: "Este link expirou. Solicite uma nova recuperação de acesso." },
       { status: 401, headers }

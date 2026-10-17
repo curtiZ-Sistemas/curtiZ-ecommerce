@@ -73,6 +73,7 @@ import {
 } from "./account-mobile-home";
 
 type Props = {
+  panelUrl?: string;
   snapshot: CustomerAccountSnapshot;
   section: string;
   selectedOrderCode: string;
@@ -102,6 +103,7 @@ const addressValue = (address: Record<string, unknown>, key: string) => {
 };
 
 export function CustomerAccount({
+  panelUrl = "https://painel.curtiz.com.br",
   snapshot,
   section,
   selectedOrderCode,
@@ -219,6 +221,12 @@ export function CustomerAccount({
           Continuar comprando
         </Link>
       </header>
+
+      {snapshot.panelDestination && (
+        <p className="customer-account-notice">
+          <a href={new URL("/selecionar-painel", panelUrl).toString()}>Acessar painéis</a>
+        </p>
+      )}
 
       {(snapshot.warning || signupComplete) && (
         <p className="customer-account-notice" role="status">

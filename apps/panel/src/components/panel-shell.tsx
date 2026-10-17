@@ -617,8 +617,9 @@ export function PanelShell({
           ) : null}
           <a
             className="user-chip"
-            href={`${configuredStoreUrl.replace(/\/$/, "")}/perfil`}
-            title="Abrir meu perfil"
+            href={`${configuredStoreUrl.replace(/\/$/, "")}/minha-conta`}
+            title="Minha conta de cliente"
+            aria-label="Minha conta de cliente"
           >
             <div className="avatar">
               {avatarUrl ? (

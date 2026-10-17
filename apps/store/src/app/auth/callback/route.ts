@@ -1,12 +1,16 @@
 import { safeInternalPath } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { resolvePublicAppUrls } from "@curtiz/config";
+import { resolveLoginReturn } from "@/lib/auth-routing";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const next = safeInternalPath(request.nextUrl.searchParams.get("next"), "/minha-conta");
-  const destination = new URL(next, request.url);
+  const { storeUrl, panelUrl } = resolvePublicAppUrls(request.url);
+  const destination = new URL(resolveLoginReturn(next, panelUrl), storeUrl);
   if (!code) {
+    destination.host = new URL(storeUrl).host;
     destination.pathname = "/login";
     destination.search = "?erro=link-invalido";
     return NextResponse.redirect(destination, 303);
@@ -14,6 +18,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const result = supabase ? await supabase.auth.exchangeCodeForSession(code) : null;
   if (!result || result.error) {
+    destination.host = new URL(storeUrl).host;
     destination.pathname = "/login";
     destination.search = "?erro=link-expirado";
     return NextResponse.redirect(destination, 303);

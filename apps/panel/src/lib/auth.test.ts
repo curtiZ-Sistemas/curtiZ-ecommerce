@@ -85,7 +85,7 @@ describe("acesso ao painel após o login", () => {
     state.origin = "https://curtiz-painel.sistemas-curtiz.workers.dev";
     state.getUser.mockResolvedValue({ data: { user: null }, error: null });
     await expect(requirePanelSelectionAccess()).rejects.toThrow(
-      "redirect:https://curtiz-ecommerce.sistemas-curtiz.workers.dev/login?next=%2Fselecionar-painel&reason=session_expired"
+      "redirect:https://curtiz.com.br/login?next=%2Fselecionar-painel&reason=session_expired"
     );
   });
   it("continua exigindo MFA sem perder o destino oficial", async () => {
