@@ -63,7 +63,6 @@ describe("Bling catalogue authority", () => {
     const rpc = rpcFor(), provider = providerFor();
     provider.request.mockResolvedValueOnce({ data: [{ produto: { id: 456 }, saldoFisicoTotal: 0 }] })
       .mockResolvedValueOnce({ data: { codigo: "SKU-AZUL-37" } }).mockResolvedValueOnce({ data: { id: 1 } })
-      .mockResolvedValueOnce({ data: { produto: { id: 456 }, deposito: { id: 123 }, custo: 8.35 } })
       .mockResolvedValueOnce({ data: [{ produto: { id: 456 }, saldoFisicoTotal: 50 }] });
     await executeBlingCatalogJob({ rpc, provider, environment, type: "bling.stock.sync", variantId: "v1" });
     const stockCall = provider.request.mock.calls.find(([path]) => path === "/estoques");
@@ -74,15 +73,14 @@ describe("Bling catalogue authority", () => {
     const rpc = rpcFor({ marked: false }), provider = providerFor();
     await expect(executeBlingCatalogJob({ rpc, provider, environment, type: "bling.stock.sync", variantId: "v1" })).rejects.toThrow("inventory_changed");
   });
-  it("updates cost even when physical stock is unchanged and verifies the provider movement", async () => {
+  it("updates cost even when physical stock is unchanged and verifies the returned physical balance", async () => {
     const rpc = rpcFor({ link: { ...linked(), last_stock_cost: 5 } }), provider = providerFor();
     provider.request.mockResolvedValueOnce({ data: [{ produto: { id: 456 }, saldoFisicoTotal: 50 }] })
       .mockResolvedValueOnce({ data: { codigo: "SKU-AZUL-37" } }).mockResolvedValueOnce({ data: { id: 1 } })
-      .mockResolvedValueOnce({ data: { produto: { id: 456 }, deposito: { id: 123 }, custo: 8.35 } })
       .mockResolvedValueOnce({ data: [{ produto: { id: 456 }, saldoFisicoTotal: 50 }] });
     await executeBlingCatalogJob({ rpc, provider, environment, type: "bling.stock.sync", variantId: "v1" });
     expect(provider.request.mock.calls.find(([path]) => path === "/estoques")?.[1]?.body).toMatchObject({ quantidade: 50, custo: 8.35 });
-    expect(provider.request).toHaveBeenCalledWith("/estoques/1");
+    expect(provider.request.mock.calls.filter(([path]) => path.startsWith("/estoques/saldos/"))).toHaveLength(2);
   });
   it("never writes stock to a product whose external SKU changed", async () => {
     const rpc = rpcFor(), provider = providerFor();

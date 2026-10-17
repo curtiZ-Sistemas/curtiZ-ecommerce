@@ -8,7 +8,7 @@ select ok(not has_function_privilege('authenticated','public.claim_bling_catalog
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='private.bling_catalog_metadata'::regclass),'New private table has forced RLS');
 
 insert into public.products(id,name,slug,status,base_price,cost_price,weight_grams,height_cm,width_cm,length_cm)
-values('bc100000-0000-4000-8000-000000000001','Catalogue test','bling-catalogue-test','active',30,8.35,300,6,20,30);
+values('bc100000-0000-4000-8000-000000000001','Catalogue test','bling-catalogue-test','draft',30,8.35,300,6,20,30);
 insert into public.product_variants(id,product_id,sku,color_name,size,active)
 values('bc200000-0000-4000-8000-000000000001','bc100000-0000-4000-8000-000000000001','CATALOGUE-TEST-37','Azul','37',true);
 insert into public.inventory(variant_id,available_quantity,reserved_quantity)

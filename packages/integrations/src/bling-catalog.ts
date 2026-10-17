@@ -84,9 +84,8 @@ export async function executeBlingCatalogJob(input: { rpc: BlingCatalogRpc; prov
       const movementId = id(row(data(await provider.request("/estoques", { method: "POST", body: { produto: { id: externalId }, deposito: { id: depositId },
         operacao: "B", quantidade: physical, custo: cost, observacoes: "Sincronização de saldo absoluto curti Z" } })))?.id);
       if (!movementId) throw new BlingError("uncertain_write", 503, false, true);
-      const movement = row(data(await provider.request(`/estoques/${movementId}`)));
-      if (id(row(movement?.produto)?.id) !== externalId || id(row(movement?.deposito)?.id) !== depositId
-        || Number(movement?.custo) !== cost) throw new BlingError("stock_cost_verification_failed", 503, false, true);
+      // The API acknowledges the cost in POST, but exposes no GET for a stock
+      // movement. Verify physical balance below; supplier cost is a separate field.
       const observed = rows(data(await balance())).find((item) => id(row(item.produto)?.id) === externalId);
       if (Number(observed?.saldoFisicoTotal) !== physical) throw new BlingError("stock_verification_failed", 503, true);
     }
