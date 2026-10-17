@@ -1,4 +1,4 @@
-import { type BlingClient, BlingError, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, createBlingClient, executeBlingCatalogJob, sendInvoiceEmail } from "@curtiz/integrations";
+import { type BlingClient, BlingError, blingExternalSku, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, createBlingClient, executeBlingCatalogJob, sendInvoiceEmail } from "@curtiz/integrations";
 import { logServerEvent } from "@curtiz/security";
 import { decryptPII } from "@curtiz/security/pii";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -86,7 +86,7 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
       || !Number.isSafeInteger(quantity) || quantity <= 0 || cents(item.total) !== cents(item.unit_price) * quantity
       || cents(item.discount_amount) !== 0)
       throw new BlingError("product_mapping_required", 409);
-    return { codigo: sku, unidade: "UN", quantidade: quantity, valor: Number(item.unit_price),
+    return { codigo: blingExternalSku(sku, variantId), unidade: "UN", quantidade: quantity, valor: Number(item.unit_price),
       descricao: readString(item, "product_name_snapshot"), produto: { id: externalId } };
   });
   const paidDate = date(order.placed_at);
@@ -107,7 +107,7 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
 
 export function assertBlingExternalOrder(order: Record<string, unknown>, items: Record<string, unknown>[], external: Record<string, unknown> | null): void {
   const externalItems = array(external?.itens);
-  const localLines = items.map((item) => JSON.stringify([readString(item, "sku_snapshot").toLowerCase(), Number(item.quantity), cents(item.unit_price)])).sort();
+  const localLines = items.map((item) => JSON.stringify([blingExternalSku(readString(item, "sku_snapshot"), readString(item, "variant_id")).toLowerCase(), Number(item.quantity), cents(item.unit_price)])).sort();
   const externalLines = externalItems.map((item) => JSON.stringify([readString(item, "codigo").toLowerCase(), Number(item.quantidade), cents(item.valor)])).sort();
   if (!external || !items.length || readString(external, "numeroLoja") !== readString(order, "public_code")
     || !validAmount(external.total) || cents(external.total) !== cents(order.grand_total)
@@ -260,7 +260,7 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
     const approvedItem = mirror.items.find((approved) => approved.sku === readString(item, "sku_snapshot"));
     const tax = row(product?.tributacao);
     if (!product || product.situacao !== "A" || !approvedItem
-      || readString(product, "codigo") !== approvedItem.sku || readString(product, "unidade") !== approvedItem.unit
+      || readString(product, "codigo") !== blingExternalSku(approvedItem.sku, readString(item, "variant_id")) || readString(product, "unidade") !== approvedItem.unit
       || readString(tax ?? {}, "ncm").replace(/\D/gu, "") !== approvedItem.ncm || Number(tax?.origem) !== approvedItem.origin
       || readString(tax ?? {}, "cest").replace(/\D/gu, "") !== approvedItem.cest)
       throw new BlingError("product_fiscal_data_required", 409);

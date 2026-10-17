@@ -15,11 +15,19 @@ const call = async (rpc: BlingCatalogRpc, name: string, args: RecordValue): Prom
   return result.data;
 };
 
+export function blingExternalSku(sku: string, variantId: string): string {
+  if (!sku || sku !== sku.trim()) throw new BlingError("invalid_product_data", 409);
+  if (sku.length <= 60) return sku;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(variantId))
+    throw new BlingError("invalid_product_data", 409);
+  return `CZ-${variantId.replaceAll("-", "").toLowerCase()}`;
+}
+
 export function blingCatalogPayload(value: unknown, environment: Environment): RecordValue {
   const snapshot = row(value), variant = row(snapshot?.variant), product = row(snapshot?.product), metadata = row(snapshot?.metadata);
   if (!variant || !product) throw new BlingError("variant_unavailable", 409);
   const price = Number(variant.price_override ?? product.base_price);
-  const sku = text(variant.sku);
+  const sku = blingExternalSku(text(variant.sku), text(variant.id));
   const name = [text(product.name), text(variant.color_name), text(variant.size)].filter(Boolean).join(" · ").slice(0, 120);
   if (!sku || !name || !Number.isFinite(price) || price < 0) throw new BlingError("invalid_product_data", 409);
   const payload: RecordValue = { nome: name, codigo: sku, preco: price, tipo: "P",
@@ -76,7 +84,7 @@ export async function executeBlingCatalogJob(input: { rpc: BlingCatalogRpc; prov
     if (!current || !Number.isFinite(Number(current.saldoFisicoTotal))) throw new BlingError("stock_balance_unavailable", 503, true);
     // This endpoint documents only produto.id; verify SKU against the product resource.
     const external = row(data(await provider.request(`/produtos/${externalId}`)));
-    if (text(external?.codigo).toLowerCase() !== text(link?.sku).toLowerCase()) throw new BlingError("external_sku_changed", 409);
+    if (text(external?.codigo).toLowerCase() !== text(link?.external_sku ?? link?.sku).toLowerCase()) throw new BlingError("external_sku_changed", 409);
     if (Number(current.saldoFisicoTotal) !== physical || link?.last_stock_cost == null || Number(link.last_stock_cost) !== cost) {
       const latest = row((await snapshot(rpc, variantId)).inventory);
       if (Number(latest?.available_quantity) + Number(latest?.reserved_quantity) !== physical)
@@ -100,10 +108,11 @@ export async function executeBlingCatalogJob(input: { rpc: BlingCatalogRpc; prov
     if (!externalId || !expectedUpdatedAt) throw new BlingError("product_mapping_required", 409);
     try {
       const external = row(data(await provider.request(`/produtos/${externalId}`)));
-      if (text(external?.codigo).toLowerCase() !== text(link.sku).toLowerCase()) throw new BlingError("external_sku_changed", 409);
-      const payload = link.removed === true ? { situacao: "I" } : blingCatalogPayload(await snapshot(rpc, variantId), environment);
+      if (text(external?.codigo).toLowerCase() !== text(link.external_sku ?? link.sku).toLowerCase()) throw new BlingError("external_sku_changed", 409);
+      const current = link.removed === true ? null : await snapshot(rpc, variantId);
+      const payload = current ? blingCatalogPayload(current, environment) : { situacao: "I" };
       await provider.request(`/produtos/${externalId}`, { method: "PATCH", body: payload });
-      if (await call(rpc, "mark_bling_product_status", { p_variant_id: variantId, p_status: "synced", p_sku: text(payload.codigo) || text(link.sku),
+      if (await call(rpc, "mark_bling_product_status", { p_variant_id: variantId, p_status: "synced", p_sku: current ? text(row(current.variant)?.sku) : text(link.sku),
         p_expected_updated_at: expectedUpdatedAt, p_error_code: null }) !== true) throw new BlingError("product_changed", 409, true);
     } catch (error) {
       const issue = error instanceof BlingError ? error : new BlingError("product_sync_failed", 503, true);
@@ -113,7 +122,8 @@ export async function executeBlingCatalogJob(input: { rpc: BlingCatalogRpc; prov
     }
     return;
   }
-  const payload = blingCatalogPayload(await snapshot(rpc, variantId), environment), sku = text(payload.codigo);
+  const local = await snapshot(rpc, variantId);
+  const payload = blingCatalogPayload(local, environment), sku = text(payload.codigo), localSku = text(row(local.variant)?.sku);
   const query = new URLSearchParams({ "codigos[]": sku, pagina: "1", limite: "100", criterio: "5" });
   const listed = rows(data(await provider.request(`/produtos?${query.toString()}`)));
   if (listed.length >= 100) throw new BlingError("ambiguous_external_sku", 409);
@@ -127,9 +137,35 @@ export async function executeBlingCatalogJob(input: { rpc: BlingCatalogRpc; prov
     externalId = id(row(data(await provider.request("/produtos", { method: "POST", body: payload })))?.id);
     if (!externalId) throw new BlingError("uncertain_write", 503, false, true);
   }
-  await call(rpc, "match_bling_products", { p_matches: [{ sku, externalProductId: externalId }] });
+  await call(rpc, "match_bling_products", { p_matches: [{ sku: localSku, externalProductId: externalId, ...(sku !== localSku ? { externalSku: sku } : {}) }] });
   if (type === "bling.product.reconcile" && await call(rpc, "confirm_bling_product_reconciliation", {
-    p_variant_id: variantId, p_external_product_id: externalId, p_sku: sku }) !== true) throw new BlingError("product_mapping_required", 409);
+    p_variant_id: variantId, p_external_product_id: externalId, p_sku: localSku }) !== true) throw new BlingError("product_mapping_required", 409);
+}
+
+// Explicit repair of a verified provider truncation. Reconciliation itself stays
+// read-only. Preserve the acknowledged product ID and the original local SKU.
+export async function normalizeBlingCatalogSku(input: { rpc: BlingCatalogRpc; provider: Pick<BlingClient, "request">;
+  environment: Environment; variantId: string }) {
+  const { rpc, provider, environment, variantId } = input;
+  const local = await snapshot(rpc, variantId), link = row(await call(rpc, "read_bling_product_link", { p_variant_id: variantId }));
+  const localSku = text(row(local.variant)?.sku), payload = blingCatalogPayload(local, environment), alias = text(payload.codigo);
+  const externalId = id(link?.external_product_id);
+  if (!externalId || localSku.length <= 60 || link?.removed === true || text(link?.sku) !== localSku)
+    throw new BlingError("sku_normalization_not_eligible", 409);
+  const external = row(data(await provider.request(`/produtos/${externalId}`)));
+  if (!external || text(external.nome) !== text(payload.nome) || ![localSku.slice(0, 60), alias].includes(text(external.codigo)))
+    throw new BlingError("external_sku_changed", 409);
+  const query = new URLSearchParams({ "codigos[]": alias, criterio: "5", limite: "100", pagina: "1" });
+  const existing = rows(data(await provider.request(`/produtos?${query}`)));
+  if (existing.length >= 100 || existing.some((p) => text(p.codigo).toLowerCase() === alias.toLowerCase() && id(p.id) !== externalId))
+    throw new BlingError("duplicate_external_sku", 409);
+  if (text(external.codigo) !== alias) await provider.request(`/produtos/${externalId}`, { method: "PATCH", body: { codigo: alias } });
+  const verified = row(data(await provider.request(`/produtos/${externalId}`)));
+  if (text(verified?.codigo) !== alias) throw new BlingError("external_sku_verification_failed", 409);
+  await call(rpc, "match_bling_products", { p_matches: [{ sku: localSku, externalProductId: externalId, externalSku: alias }] });
+  if (await call(rpc, "confirm_bling_product_reconciliation", { p_variant_id: variantId, p_external_product_id: externalId, p_sku: localSku }) !== true)
+    throw new BlingError("product_mapping_required", 409);
+  return { variantId, externalProductId: externalId, externalSku: alias, localSkuPreserved: true };
 }
 
 export async function runBlingCatalogBatch(environment: Environment, rpc: BlingCatalogRpc, limit = 4) {

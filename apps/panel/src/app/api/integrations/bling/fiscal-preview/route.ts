@@ -6,7 +6,7 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
 
 const schema = z.union([z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(99), destinationState: z.string().regex(/^[A-Z]{2}$/u),
-  icmsTaxpayer: z.boolean(), operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
+  icmsTaxpayer: z.boolean(), finalConsumer: z.boolean().optional(), operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
 z.object({ orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict()]);
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const row = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};

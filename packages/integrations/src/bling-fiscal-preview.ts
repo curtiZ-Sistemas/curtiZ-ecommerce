@@ -8,7 +8,7 @@ export type BlingFiscalRule = {
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const states = new Set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" "));
 
-export function selectBlingFiscalRule(value: unknown, input: { destinationState: string; icmsTaxpayer: boolean; operation: "sale" | "return" }): BlingFiscalRule {
+export function selectBlingFiscalRule(value: unknown, input: { destinationState: string; icmsTaxpayer: boolean; operation: "sale" | "return"; finalConsumer?: boolean }): BlingFiscalRule {
   if (!states.has(input.destinationState) || typeof input.icmsTaxpayer !== "boolean" || !["sale", "return"].includes(input.operation))
     throw new BlingError("fiscal_recipient_required", 409);
   const rules = Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v)) : [];
@@ -24,8 +24,13 @@ export function selectBlingFiscalRule(value: unknown, input: { destinationState:
     || Number(rule.document_model) !== 55 || !Number.isSafeInteger(Number(rule.series)) || Number(rule.series) < 1 || Number(rule.series) > 999
     || rule.external_nature_id != null && (!Number.isSafeInteger(Number(rule.external_nature_id)) || Number(rule.external_nature_id) <= 0))
     throw new BlingError("fiscal_rules_required", 409);
+  const natures = Array.isArray(rule.natures) ? rule.natures.filter((v): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v)) : [];
+  const matchingNatures = typeof input.finalConsumer === "boolean" ? natures.filter((n) => n.final_consumer === input.finalConsumer) : [];
+  if (matchingNatures.length > 1 || matchingNatures.some((n) => !Number.isSafeInteger(Number(n.external_nature_id)) || Number(n.external_nature_id) <= 0))
+    throw new BlingError("fiscal_rules_required", 409);
   return { scenario, issuer_state: String(rule.issuer_state), cfop: String(rule.cfop), csosn: String(rule.csosn),
-    icms_rate: Number(rule.icms_rate), document_model: 55, series: Number(rule.series), external_nature_id: rule.external_nature_id == null ? null : Number(rule.external_nature_id) };
+    icms_rate: Number(rule.icms_rate), document_model: 55, series: Number(rule.series),
+    external_nature_id: matchingNatures[0] ? Number(matchingNatures[0].external_nature_id) : null };
 }
 
 export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: Array<{ sku: string; description: string; unit: string;
@@ -63,7 +68,7 @@ export async function buildBlingOrderFiscalMirror(input: { rules: unknown; order
   const address = record(input.order.shipping_address_snapshot);
   const destinationState = text(address.state);
   if (typeof input.finalConsumer !== "boolean") throw new BlingError("fiscal_recipient_required", 409);
-  const rule = selectBlingFiscalRule(input.rules, { destinationState, icmsTaxpayer: input.icmsTaxpayer, operation: "sale" });
+  const rule = selectBlingFiscalRule(input.rules, { destinationState, icmsTaxpayer: input.icmsTaxpayer, finalConsumer: input.finalConsumer, operation: "sale" });
   const orderedItems = [...input.items].sort((a, b) => text(a.variant_id) < text(b.variant_id) ? -1 : text(a.variant_id) > text(b.variant_id) ? 1 : 0);
   const mirror = buildBlingFiscalMirror(rule, orderedItems.map((item) => {
     const snapshot = input.snapshots.find((value) => record(value.variant).id === item.variant_id);

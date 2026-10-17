@@ -74,11 +74,19 @@ Custos permanecem nos campos existentes `cost_price`/`cost_override`. O balanço
 
 Uma variação é vinculada pelo seu SKU existente. Kits conservam sua quantidade por SKU e o número de pares em metadata; o sincronizador não cria vínculos de componentes nem baixa pares individuais por inferência. Unidade fiscal de kit e compartilhamento físico precisam de conferência própria; o saldo provisório autorizado não representa contagem física validada nem libera vendas reais.
 
+O Bling limita o código a 60 caracteres. SKUs locais que cabem permanecem idênticos; os maiores usam somente no provedor `CZ-` seguido do UUID da variante sem hífens. O SKU original e o ID externo permanecem no vínculo privado. Cadastros já truncados exigem a ação técnica explícita `POST /api/integrations/bling/catalog/normalize` com `variantId`: ela confere ID, descrição, prefixo truncado e ausência de alias conflitante, altera apenas o código do registro existente e relê o resultado. Não recria produto, não altera SKU local e não usa essa reparação como retry automático de escrita incerta.
+
 ## Espelho fiscal sem numeração
 
 `POST /api/integrations/bling/fiscal-preview` no painel técnico prepara um espelho local por variante/cenário ou pelo snapshot de um pedido. Não chama o Bling, não cria pedido ou NF-e, não consome numeração e não transmite à SEFAZ. Retorna valores em centavos, unidade/pares, NCM, regra recebida, bloqueios e hash. Dados pessoais do pedido entram somente em um hash de contexto; não são reproduzidos no espelho.
 
 As migrations não semeiam regras fiscais, IDs de natureza ou dados empresariais. A configuração privada distingue venda interna, interestadual contribuinte, interestadual não contribuinte e devoluções internas/interestaduais. A escolha exige UF válida e situação do destinatário explícita; não há alternativa arbitrária entre CFOPs. IDs reais ainda precisam corresponder às regras e séries configuradas no provedor, preservando documentos/numeração existentes.
+
+`private.bling_fiscal_natures` vincula cada cenário e indicador explícito de consumidor final a um ID conferido. Um contribuinte pode ser consumidor final; a escolha não deriva uma condição da outra. O ID legado único não serve como alternativa quando falta esse vínculo. Prévias por variante aceitam `finalConsumer`; sem esse dado continuam sem natureza selecionada. A aprovação de pedido sempre exige ambos os indicadores.
+
+`GET /api/integrations/bling/readiness?scope=catalog&page=1` consulta até cem produtos e seus saldos no depósito configurado e compara SKU, preço, situação e saldo físico com o Supabase. Saldo físico local soma disponível e reservado. Ausência de saldo externo é divergência, nunca zero confirmado. A conferência integral deve reunir todas as páginas e detectar SKUs repetidos também entre páginas.
+
+`GET /api/integrations/bling/readiness?scope=series&series=2` verifica existência de NF-e da série informada nas duas direções, incluindo canceladas em consulta separada e período amplo. Retorna somente o indicador de uso; não expõe destinatários, não cria nota e não modifica contadores. Falha de consulta impede afirmar que a série está livre. As duas consultas exigem sessão técnica ativa, permissão e MFA aplicável.
 
 Antes da geração fiscal, o servidor exige `BLING_FISCAL_READY`, as flags específicas, pagamento aprovado, vínculo ERP, metadata fiscal e aprovação documentada do espelho exato em `private.bling_fiscal_mirror_approvals`. O hash vincula destinatário, endereço, itens, preços, frete, descontos e regra. Alterações invalidam a aprovação. Essa tabela não é gravável por clientes. O envio reconfere natureza, série e CFOPs da nota; ausência ou divergência bloqueia a transmissão. Certificado, SEFAZ e homologação real permanecem requisitos separados. O certificado A1 e sua senha são responsabilidade do titular e não passam por esse fluxo.
 
