@@ -325,7 +325,7 @@ grant execute on function public.claim_after_sale_job(uuid) to service_role;
 grant execute on function public.finish_after_sale_job(uuid,uuid,boolean) to service_role;
 
 create or replace function public.list_bling_order_issues(p_filter text default 'all',p_limit integer default 50)
-returns jsonb language plpgsql security definer set search_path = '' stable as $
+returns jsonb language plpgsql security definer set search_path = '' stable as $$
 declare result jsonb;
 begin
   if not (private.has_permission('operations.documents.read') or private.has_permission('orders.read_all')
@@ -354,7 +354,7 @@ begin
     order by o.placed_at desc nulls last limit p_limit) items;
   return result;
 end;
-$;
+$$;
 
 -- Creating personal support does not confer any staff permission. Ownership stays auth.uid().
 create or replace function public.create_support_conversation(
@@ -368,7 +368,7 @@ returns public.support_conversations
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   existing_conversation public.support_conversations;
   new_conversation public.support_conversations;
@@ -442,7 +442,7 @@ begin
 
   return new_conversation;
 end;
-$;
+$$;
 
 commit;
 notify pgrst,'reload schema';
