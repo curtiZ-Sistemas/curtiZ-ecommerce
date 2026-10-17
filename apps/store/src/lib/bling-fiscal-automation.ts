@@ -27,6 +27,7 @@ export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Recor
   if (mirror.blockers.includes("kit_fiscal_unit_confirmation_required")) throw new BlingError("kit_fiscal_unit_confirmation_required", 409);
   if (mirror.blockers.includes("kit_fiscal_composition_required")) throw new BlingError("kit_fiscal_composition_required", 409);
   if (mirror.blockers.includes("fiscal_tax_codes_required")) throw new BlingError("fiscal_tax_codes_required", 409);
+  if (mirror.blockers.includes("fiscal_tax_parameters_required")) throw new BlingError("fiscal_tax_parameters_required", 409);
   const hash = await blingFiscalMirrorHash(mirror);
   if (approved) {
     if (approved.mirror_hash !== hash) throw new BlingError("fiscal_mirror_changed", 409);

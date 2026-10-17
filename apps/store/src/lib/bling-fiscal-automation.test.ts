@@ -16,7 +16,8 @@ beforeEach(() => {
       : name === "read_bling_fiscal_automation_context" ? { configurationHash: "a".repeat(64), policyApproved: true,
         recipient: { icms_taxpayer: false, final_consumer: true } }
         : name === "read_bling_fiscal_rules" ? [{ scenario: "sale_in_state", issuer_state: "MG", cfop: "5102", csosn: "102",
-          icms_rate: 0, document_model: 55, series: 2, pis_cst: "49", cofins_cst: "49", ipi_cst: "99", natures: [{ final_consumer: true, external_nature_id: 10 }] }]
+          icms_rate: 0, document_model: 55, series: 2, pis_cst: "49", cofins_cst: "49", ipi_cst: "99",
+          pis_rate: 0, cofins_rate: 0, ipi_rate: 0, ipi_cenq: "999", natures: [{ final_consumer: true, external_nature_id: 10 }] }]
           : name === "read_bling_catalog_variant" ? { variant: { id: "variant-test", sku: "SKU-TEST" }, metadata: {
             commercial_unit: "PR", pairs_per_sku: 1, fiscal_unit_approved: true, ncm: "64022000", origin: 0, cest: "" } }
             : name === "read_bling_invoice_archives" ? [] : true }));
@@ -44,6 +45,17 @@ describe("approved fiscal automation", () => {
     state.rpc.mockImplementation((name: string, ...args: unknown[]) => name === "save_bling_automatic_mirror_approval"
       ? Promise.resolve({ data: false, error: null }) : original(name, ...args) as Promise<unknown>);
     await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toMatchObject({ code: "fiscal_mirror_changed" });
+  });
+  it("blocks absent tax parameters even under an approved policy", async () => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation(async (name: string, ...args: unknown[]) => {
+      const result: unknown = await original(name, ...args);
+      if (name !== "read_bling_fiscal_rules" || !result || typeof result !== "object" || !("data" in result)
+        || !Array.isArray(result.data)) return result;
+      return { ...result, data: result.data.map((rule: unknown) => rule && typeof rule === "object" ? { ...rule, ipi_cenq: null } : rule) };
+    });
+    await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toThrow("fiscal_tax_parameters_required");
+    expect(state.rpc.mock.calls.some(([name]) => name === "save_bling_automatic_mirror_approval")).toBe(false);
   });
   it("preserves an existing exact approval without replacing it under a new policy", async () => {
     const approval = await ensureBlingFiscalApproval(db, order, items);
