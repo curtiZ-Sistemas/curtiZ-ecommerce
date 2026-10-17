@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { BlingError, type BlingClient } from "./bling";
-import { blingCatalogPayload, executeBlingCatalogJob, type BlingCatalogRpc } from "./bling-catalog";
+import { blingCatalogPayload, blingExternalSku, executeBlingCatalogJob, normalizeBlingCatalogSku, type BlingCatalogRpc } from "./bling-catalog";
 
 const environment = { SUPABASE_URL: "https://example.supabase.co", BLING_STOCK_DEPOSIT_ID: "123" };
 const local = () => ({ variant: { sku: "SKU-AZUL-37", color_name: "Azul", size: "37", active: true, price_override: 25.5 },
@@ -16,6 +16,39 @@ const providerFor = () => ({ request: vi.fn<BlingClient["request"]>(async (path)
   ? [{ produto: { id: 456 }, saldoFisicoTotal: 50 }] : path.startsWith("/produtos?") ? [] : { id: 456, codigo: "SKU-AZUL-37" } })) });
 
 describe("Bling catalogue authority", () => {
+  const variantId = "bc900000-0000-4000-8000-000000000001";
+  it("preserves compatible SKUs and derives distinct aliases without changing long local SKUs", () => {
+    expect(blingExternalSku("A".repeat(60), variantId)).toBe("A".repeat(60));
+    expect(blingExternalSku("A".repeat(61), variantId)).toBe("CZ-bc900000000040008000000000000001");
+    expect(blingExternalSku("A".repeat(61), "bc900000-0000-4000-8000-000000000002")).not.toBe(blingExternalSku("A".repeat(61), variantId));
+    expect(() => blingExternalSku("A".repeat(61), "unknown")).toThrow("invalid_product_data");
+  });
+  it("repairs a verified truncated SKU in place and reads it back without recreating the product", async () => {
+    const value = { ...local(), variant: { ...local().variant, id: variantId, sku: "LONG-".repeat(15) } };
+    const alias = blingExternalSku(value.variant.sku, variantId), payload = blingCatalogPayload(value, environment);
+    const rpc = rpcFor({ local: value, link: { ...linked(), sku: value.variant.sku, external_sku: alias } });
+    const provider = providerFor();
+    provider.request.mockResolvedValueOnce({ data: { id: 456, codigo: value.variant.sku.slice(0, 60), nome: payload.nome } })
+      .mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce(null).mockResolvedValueOnce({ data: { id: 456, codigo: alias } });
+    expect(await normalizeBlingCatalogSku({ rpc, provider, environment, variantId })).toMatchObject({ externalProductId: 456, localSkuPreserved: true });
+    expect(provider.request.mock.calls.filter(([, options]) => options?.method)).toEqual([["/produtos/456", { method: "PATCH", body: { codigo: alias } }]]);
+    expect(rpc).toHaveBeenCalledWith("match_bling_products", { p_matches: [{ sku: value.variant.sku, externalProductId: 456, externalSku: alias }] });
+  });
+  it("blocks a normalization when the acknowledged product no longer has the expected identity", async () => {
+    const value = { ...local(), variant: { ...local().variant, id: variantId, sku: "LONG-".repeat(15) } };
+    const rpc = rpcFor({ local: value, link: { ...linked(), sku: value.variant.sku } }), provider = providerFor();
+    provider.request.mockResolvedValueOnce({ data: { id: 456, codigo: value.variant.sku.slice(0, 60), nome: "Unrelated product" } });
+    await expect(normalizeBlingCatalogSku({ rpc, provider, environment, variantId })).rejects.toThrow("external_sku_changed");
+    expect(provider.request).toHaveBeenCalledTimes(1);
+  });
+  it("uses the persisted external alias for stock checks while preserving the local SKU", async () => {
+    const value = { ...local(), variant: { ...local().variant, id: variantId, sku: "LONG-".repeat(15) } };
+    const alias = blingExternalSku(value.variant.sku, variantId);
+    const rpc = rpcFor({ local: value, link: { ...linked(), sku: value.variant.sku, external_sku: alias } }), provider = providerFor();
+    provider.request.mockResolvedValueOnce({ data: [{ produto: { id: 456 }, saldoFisicoTotal: 50 }] }).mockResolvedValueOnce({ data: { codigo: alias } });
+    await executeBlingCatalogJob({ rpc, provider, environment, variantId, type: "bling.stock.sync" });
+    expect(provider.request.mock.calls.some(([, options]) => options?.method)).toBe(false);
+  });
   it("preserves the actual sale price, SKU, dimensions, pair unit and approved product classification", () => {
     expect(blingCatalogPayload(local(), environment)).toMatchObject({ codigo: "SKU-AZUL-37", preco: 25.5, unidade: "PR",
       pesoBruto: 0.3, tipoProducao: "T", tributacao: { origem: 0, ncm: "64022000", cest: "" },

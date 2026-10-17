@@ -74,6 +74,8 @@ Custos permanecem nos campos existentes `cost_price`/`cost_override`. O balanço
 
 Uma variação é vinculada pelo seu SKU existente. Kits conservam sua quantidade por SKU e o número de pares em metadata; o sincronizador não cria vínculos de componentes nem baixa pares individuais por inferência. Unidade fiscal de kit e compartilhamento físico precisam de conferência própria; o saldo provisório autorizado não representa contagem física validada nem libera vendas reais.
 
+O Bling limita o código a 60 caracteres. SKUs locais que cabem permanecem idênticos; os maiores usam somente no provedor `CZ-` seguido do UUID da variante sem hífens. O SKU original e o ID externo permanecem no vínculo privado. Cadastros já truncados exigem a ação técnica explícita `POST /api/integrations/bling/catalog/normalize` com `variantId`: ela confere ID, descrição, prefixo truncado e ausência de alias conflitante, altera apenas o código do registro existente e relê o resultado. Não recria produto, não altera SKU local e não usa essa reparação como retry automático de escrita incerta.
+
 ## Espelho fiscal sem numeração
 
 `POST /api/integrations/bling/fiscal-preview` no painel técnico prepara um espelho local por variante/cenário ou pelo snapshot de um pedido. Não chama o Bling, não cria pedido ou NF-e, não consome numeração e não transmite à SEFAZ. Retorna valores em centavos, unidade/pares, NCM, regra recebida, bloqueios e hash. Dados pessoais do pedido entram somente em um hash de contexto; não são reproduzidos no espelho.

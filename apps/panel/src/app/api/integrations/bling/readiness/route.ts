@@ -48,11 +48,15 @@ export async function GET(request: NextRequest) {
     const query = new URLSearchParams();
     for (const p of external) query.append("idsProdutos[]", String(p.id));
     const balances = list(await provider.request(`/estoques/saldos/${deposit}?${query}`));
+    const mapped = await db.rpc("read_bling_external_mappings", { p_external_ids: external.map((p) => Number(p.id)) });
+    if (mapped.error || !Array.isArray(mapped.data)) throw new BlingError("catalog_unavailable", 503);
+    const mappings = mapped.data.map(row);
     const local = await db.from("product_variants").select("id,sku,active,price_override,products!inner(base_price,status),inventory(available_quantity,reserved_quantity)")
-      .in("sku", external.map((p) => text(p.codigo)));
+      .in("id", mappings.map((m) => text(m.variantId)));
     if (local.error || !Array.isArray(local.data)) throw new BlingError("catalog_unavailable", 503);
     const rows = external.map((p) => {
-      const matching = local.data.map(row).filter((v) => text(v.sku).toLowerCase() === text(p.codigo).toLowerCase());
+      const mapping = mappings.find((m) => Number(m.externalProductId) === Number(p.id) && text(m.externalSku) === text(p.codigo));
+      const matching = local.data.map(row).filter((v) => mapping && v.id === mapping.variantId && text(v.sku) === text(mapping.sku));
       const variant = matching[0];
       const product = row(Array.isArray(variant?.products) ? variant.products[0] : variant?.products);
       const inventory = row(Array.isArray(variant?.inventory) ? variant.inventory[0] : variant?.inventory);
@@ -62,7 +66,7 @@ export async function GET(request: NextRequest) {
       const localPrice = variant && (variant.price_override ?? product.base_price) != null ? Number(variant.price_override ?? product.base_price) : null;
       const externalPrice = p.preco == null ? null : Number(p.preco);
       const duplicate = external.filter((e) => text(e.codigo).toLowerCase() === text(p.codigo).toLowerCase()).length !== 1;
-      return { sku: text(p.codigo), externalProductId: Number(p.id), localVariantId: variant?.id ?? null,
+      return { sku: text(p.codigo), localSku: variant?.sku ?? null, externalProductId: Number(p.id), localVariantId: variant?.id ?? null,
         localPhysical: Number.isFinite(physical) ? physical : null, externalPhysical: observed,
         localAvailable: inventory.available_quantity ?? null, localReserved: inventory.reserved_quantity ?? null,
         stockMatches: matching.length === 1 && observed !== null && Number.isFinite(physical) && observed === physical,

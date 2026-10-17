@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-const state = vi.hoisted(() => ({ auth: vi.fn(), request: vi.fn(), local: vi.fn() }));
+const state = vi.hoisted(() => ({ auth: vi.fn(), request: vi.fn(), local: vi.fn(), rpc: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/bling-server", () => ({ authorizeBlingTechnicalRequest: state.auth, panelBlingClient: () => ({ request: state.request }) }));
-vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: () => ({ from: () => ({ select: () => ({ in: state.local }) }) }) }));
+vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: () => ({ rpc: state.rpc, from: () => ({ select: () => ({ in: state.local }) }) }) }));
 vi.mock("@/lib/technical-api", () => ({ technicalNoStore: { "cache-control": "private, no-store" }, unauthorizedTechnicalResponse: () => new Response(null, { status: 401 }) }));
 import { GET } from "../app/api/integrations/bling/readiness/route";
 const request = (query: string) => new NextRequest(`https://panel.example/api/integrations/bling/readiness?${query}`);
 type Report = { rows: Array<Record<string, unknown>> };
 beforeEach(() => {
   vi.clearAllMocks(); state.auth.mockResolvedValue({ userId: "test" }); vi.stubEnv("BLING_STOCK_DEPOSIT_ID", "101");
+  state.rpc.mockResolvedValue({ error: null, data: [{ variantId: "local", sku: "SKU-1", externalSku: "SKU-1", externalProductId: 201 }] });
   state.local.mockResolvedValue({ error: null, data: [{ id: "local", sku: "SKU-1", active: true, price_override: null,
     products: { base_price: 23.9, status: "active" }, inventory: [{ available_quantity: 44, reserved_quantity: 6 }] }] });
   state.request.mockImplementation(async (path: string) => ({ data: path.startsWith("/produtos")
