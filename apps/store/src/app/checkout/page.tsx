@@ -792,10 +792,6 @@ export default function CheckoutPage() {
     const email = formString("email");
     const phone = formString("phone");
     const cpf = formString("cpf");
-    if (!["yes", "no"].includes(formString("icmsTaxpayer")) || !["yes", "no"].includes(formString("finalConsumer"))) {
-      setMessage("Informe as duas declarações fiscais antes de continuar.");
-      return;
-    }
     const couponCode = normalizeOptionalCouponCode(form.get("couponCode"));
     const missingFields = checkoutReadiness(event.currentTarget, cpfConfigured, selectedLines.length);
     const errors: Partial<Record<PersonalField, string>> = {};
@@ -808,6 +804,10 @@ export default function CheckoutPage() {
       setMessage("Complete os dados obrigatórios antes de continuar.");
       const invalidField = formRef.current?.elements.namedItem(firstInvalid);
       if (invalidField instanceof HTMLElement) invalidField.focus();
+      return;
+    }
+    if (!["yes", "no"].includes(formString("icmsTaxpayer")) || !["yes", "no"].includes(formString("finalConsumer"))) {
+      setMessage("Informe as duas declarações fiscais antes de continuar.");
       return;
     }
     if (!selectedShippingQuote) {

@@ -253,7 +253,7 @@ export class BlingClient {
     } finally { await this.store.releaseRefresh(lockId); }
   }
 
-  async request(path: string, options: { method?: "GET" | "POST" | "PATCH"; body?: unknown } = {}): Promise<unknown> {
+  async request(path: string, options: { method?: "GET" | "POST" | "PATCH" | "PUT"; body?: unknown } = {}): Promise<unknown> {
     if (!path.startsWith("/") || path.startsWith("//")) throw new BlingError("invalid_path", 400);
     const method = options.method ?? "GET";
     if (this.pendingConnection && method !== "GET") throw new BlingError("connection_not_verified", 409);

@@ -1,7 +1,7 @@
 import "server-only";
 import { BlingError, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, selectBlingFiscalRule } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isUnknownRecord } from "./unknown-data";
+import { isUnknownRecord, readString } from "./unknown-data";
 
 export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Record<string, unknown>, items: Record<string, unknown>[]) {
   const existing = await db.rpc("read_bling_fiscal_mirror_approval", { p_order_id: order.id });
@@ -25,6 +25,8 @@ export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Recor
     icmsTaxpayer: recipient.icms_taxpayer, finalConsumer: recipient.final_consumer });
   if (!mirror.rule.external_nature_id) throw new BlingError("nature_required", 409);
   if (mirror.blockers.includes("kit_fiscal_unit_confirmation_required")) throw new BlingError("kit_fiscal_unit_confirmation_required", 409);
+  if (mirror.blockers.includes("kit_fiscal_composition_required")) throw new BlingError("kit_fiscal_composition_required", 409);
+  if (mirror.blockers.includes("fiscal_tax_codes_required")) throw new BlingError("fiscal_tax_codes_required", 409);
   const hash = await blingFiscalMirrorHash(mirror);
   if (approved) {
     if (approved.mirror_hash !== hash) throw new BlingError("fiscal_mirror_changed", 409);
@@ -43,7 +45,7 @@ export async function resolveBlingOrderNature(db: SupabaseClient, order: Record<
   if (rules.error) throw new BlingError("storage_unavailable", 503, true);
   const address = isUnknownRecord(order.shipping_address_snapshot) ? order.shipping_address_snapshot : {};
   if (typeof approval.icms_taxpayer !== "boolean" || typeof approval.final_consumer !== "boolean") throw new BlingError("fiscal_recipient_required", 409);
-  const rule = selectBlingFiscalRule(rules.data, { destinationState: String(address.state ?? ""), operation: "sale",
+  const rule = selectBlingFiscalRule(rules.data, { destinationState: readString(address, "state"), operation: "sale",
     icmsTaxpayer: approval.icms_taxpayer, finalConsumer: approval.final_consumer });
   if (!rule.external_nature_id) throw new BlingError("nature_required", 409);
   return rule.external_nature_id;

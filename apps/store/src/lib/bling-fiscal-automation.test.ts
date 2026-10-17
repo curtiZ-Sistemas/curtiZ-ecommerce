@@ -16,7 +16,7 @@ beforeEach(() => {
       : name === "read_bling_fiscal_automation_context" ? { configurationHash: "a".repeat(64), policyApproved: true,
         recipient: { icms_taxpayer: false, final_consumer: true } }
         : name === "read_bling_fiscal_rules" ? [{ scenario: "sale_in_state", issuer_state: "MG", cfop: "5102", csosn: "102",
-          icms_rate: 0, document_model: 55, series: 2, natures: [{ final_consumer: true, external_nature_id: 10 }] }]
+          icms_rate: 0, document_model: 55, series: 2, pis_cst: "49", cofins_cst: "49", ipi_cst: "99", natures: [{ final_consumer: true, external_nature_id: 10 }] }]
           : name === "read_bling_catalog_variant" ? { variant: { id: "variant-test", sku: "SKU-TEST" }, metadata: {
             commercial_unit: "PR", pairs_per_sku: 1, fiscal_unit_approved: true, ncm: "64022000", origin: 0, cest: "" } }
             : name === "read_bling_invoice_archives" ? [] : true }));
@@ -33,16 +33,16 @@ describe("approved fiscal automation", () => {
   });
   it.each([{ policyApproved: false }, { policyApproved: true, configurationHash: "a".repeat(64), recipient: {} }])(
     "never invents approval or fiscal recipient", async context => {
-      const original = state.rpc.getMockImplementation();
+      const original = state.rpc.getMockImplementation()!;
       state.rpc.mockImplementation((name: string, ...args: unknown[]) => name === "read_bling_fiscal_automation_context"
-        ? Promise.resolve({ data: context, error: null }) : original?.(name, ...args));
+        ? Promise.resolve({ data: context, error: null }) : original(name, ...args) as Promise<unknown>);
       await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toThrow();
       expect(state.rpc.mock.calls.some(([name]) => name === "save_bling_automatic_mirror_approval")).toBe(false);
     });
   it("rejects a policy changed between read and save", async () => {
-    const original = state.rpc.getMockImplementation();
+    const original = state.rpc.getMockImplementation()!;
     state.rpc.mockImplementation((name: string, ...args: unknown[]) => name === "save_bling_automatic_mirror_approval"
-      ? Promise.resolve({ data: false, error: null }) : original?.(name, ...args));
+      ? Promise.resolve({ data: false, error: null }) : original(name, ...args) as Promise<unknown>);
     await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toMatchObject({ code: "fiscal_mirror_changed" });
   });
   it("preserves an existing exact approval without replacing it under a new policy", async () => {
@@ -62,10 +62,10 @@ describe("approved fiscal automation", () => {
 describe("private fiscal archiving", () => {
   it("archives XML and PDF by invoice and content hash, never a public URL", async () => {
     await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, "1".repeat(44));
-    expect(state.document.mock.calls.map(([, format]) => format)).toEqual(["xml", "pdf"]);
+    expect(state.document.mock.calls.map((call: unknown[]) => call[1])).toEqual(["xml", "pdf"]);
     expect(state.upload).toHaveBeenCalledTimes(2);
     expect(state.upload.mock.calls[0]?.[0]).toMatch(new RegExp(`^${orderId}/123/[a-f0-9]{64}\\.xml$`, "u"));
-    expect(state.upload.mock.calls.every(([, , options]) => options.upsert === false)).toBe(true);
+    expect(state.upload).toHaveBeenCalledWith(expect.any(String), expect.any(ArrayBuffer), expect.objectContaining({ upsert: false }));
   });
   it("does not write into an existing public bucket", async () => {
     state.bucket.mockResolvedValue({ data: { public: true }, error: null });

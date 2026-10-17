@@ -482,3 +482,5 @@ export class MockShippingProvider implements ShippingProvider {
 }
 
 export const unconfiguredState = async (): Promise<IntegrationState> => "not_configured";
+export { allocateBlingFiscalCents, expandBlingFiscalKit } from "./bling-kit-fiscal";
+export type { BlingFiscalItem } from "./bling-kit-fiscal";

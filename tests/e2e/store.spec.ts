@@ -437,6 +437,8 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
+  await page.getByLabel("Você é contribuinte de ICMS nesta compra?").selectOption("no");
+  await page.getByLabel("A compra é para uso próprio (consumidor final)?").selectOption("yes");
   await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
   await page.locator("form.checkout-layout").evaluate((form) => (form as HTMLFormElement).requestSubmit());
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
