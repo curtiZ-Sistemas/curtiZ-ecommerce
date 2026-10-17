@@ -8,6 +8,7 @@ import { runExpirationHousekeeping } from "./housekeeping";
 import { runBlingJobs } from "./bling-jobs";
 import { runMelhorEnvioShippingJobs } from "./melhor-envio-jobs";
 import { runTransactionalEmailJobs } from "./transactional-email-jobs";
+import { runAfterSaleJobs } from "./after-sale-jobs";
 import { logServerEvent } from "@curtiz/security";
 
 const environment = {
@@ -52,11 +53,12 @@ describe("scheduled tasks with the real Supabase HTTP client", () => {
     });
     await expect(runExpirationHousekeeping(environment, "test-execution", transport)).resolves.toMatchObject({ ok: true });
     await expect(runBlingJobs(environment, "test-execution", undefined, transport)).resolves.toMatchObject({ processed: 0 });
+    await expect(runAfterSaleJobs(environment, "test-execution", transport)).resolves.toMatchObject({ processed: 0 });
     await expect(runMelhorEnvioShippingJobs(environment, "test-execution", undefined, transport)).resolves.toMatchObject({ ok: true, processed: 0 });
     await expect(runTransactionalEmailJobs(environment, "test-execution", undefined, transport)).resolves.toMatchObject({ processed: 0 });
     expect(paths).toEqual([
       "/rest/v1/rpc/expire_stale_mercadopago_orders", "/rest/v1/rpc/read_integration_credential",
-      "/rest/v1/rpc/claim_melhor_envio_job", "/rest/v1/rpc/sync_transactional_email_runtime"
+      "/rest/v1/rpc/claim_after_sale_job", "/rest/v1/rpc/claim_melhor_envio_fulfillment_job", "/rest/v1/rpc/sync_transactional_email_runtime"
     ]);
     expect(patchedFetch).not.toHaveBeenCalled();
   });
