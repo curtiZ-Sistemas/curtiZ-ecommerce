@@ -101,9 +101,26 @@ def run_tool(args, *, env=None, input_bytes=None, timeout=60):
                                 timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise Blocked("Native recovery tool unavailable or timed out.") from None
-    require(result.returncode == 0,
-            "Native recovery tool failed; sensitive output was suppressed.")
+    require(result.returncode == 0, native_failure(result.stderr))
     return result.stdout
+
+
+def native_failure(stderr):
+    """Classify only known native errors; never return upstream text."""
+    message = stderr.decode("utf-8", errors="replace").lower()
+    if any(s in message for s in ("certificate verify failed", "root certificate file",
+                                  "certificate verification failed", "server certificate")):
+        return "Native TLS certificate validation failed; verification remains mandatory."
+    if any(s in message for s in ("password authentication failed", "28p01", "sasl authentication")):
+        return "Native database authentication failed for the temporary login."
+    if "tenant or user not found" in message:
+        return "Session pooler could not locate the temporary login."
+    if any(s in message for s in ("permission denied", "42501")):
+        return "Temporary database login lacks a required read permission."
+    if any(s in message for s in ("connection timed out", "timeout expired", "connection refused",
+                                  "could not translate host name", "network is unreachable")):
+        return "Native database network connection failed or timed out."
+    return "Native recovery tool failed; sensitive output was suppressed."
 
 
 def client_versions():
@@ -134,7 +151,7 @@ def database_environment(config, ref):
                          body={"read_only": True})
     require(isinstance(login, dict), "Invalid temporary database login response.")
     role, password, ttl = (login.get(k) for k in ("role", "password", "ttl_seconds"))
-    require(isinstance(role, str) and re.fullmatch(r"cli_login_[a-zA-Z0-9_]+", role)
+    require(role == "cli_login_supabase_read_only_user"
             and isinstance(password, str) and password
             and type(ttl) is int and ttl >= 120,
             "Invalid or expiring temporary database login.")
@@ -151,6 +168,7 @@ SELECT json_build_object(
  'server_major', current_setting('server_version_num')::int / 10000,
  'tls', (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()),
  'read_only', current_setting('transaction_read_only') = 'on',
+ 'effective_role', current_user,
  'public_tables', (SELECT count(*) FROM pg_class c JOIN pg_namespace n
     ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p')),
  'storage_objects', (SELECT count(*) FROM storage.objects));
@@ -158,14 +176,17 @@ SELECT json_build_object(
 
 
 def database_metadata(env):
-    raw = run_tool(["/usr/lib/postgresql/17/bin/psql", "-X", "-w", "-A", "-t",
-                    "-v", "ON_ERROR_STOP=1", "-c", METADATA_QUERY], env=env)
+    raw = run_tool(["/usr/lib/postgresql/17/bin/psql", "-X", "-w", "-A", "-t", "-q",
+                    "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate",
+                    "-c", "SET ROLE supabase_read_only_user",
+                    "-c", METADATA_QUERY], env=env)
     try:
         result = json.loads(raw)
     except ValueError:
         raise Blocked("Invalid native database metadata response.") from None
     require(result.get("server_major") == 17 and result.get("tls") is True
-            and result.get("read_only") is True,
+            and result.get("read_only") is True
+            and result.get("effective_role") == "supabase_read_only_user",
             "Database version, TLS or read-only verification failed.")
     require(all(type(result.get(k)) is int and result[k] >= 0
                 for k in ("public_tables", "storage_objects")),
