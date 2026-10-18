@@ -136,6 +136,41 @@ com `verify-full`, CA pública e sessões somente de leitura.
 
 Referência: [procedimento oficial para leitor de backup e RLS](https://supabase.com/docs/guides/troubleshooting/pg_dump-fails-with-query-would-be-affected-by-row-level-security-policy-1d5783).
 
+### Restauração isolada de uma cópia já armazenada
+
+A operação manual `restore` seleciona o recibo mais recente de backup completo
+no diretório privado autorizado, verifica proprietário/permissões, hashes do
+arquivo criptografado e de cada membro e autentica a descriptografia com a chave
+do cofre. A origem e o projeto isolado precisam coincidir com o manifesto.
+
+Antes de escrever, exige compatibilidade das colunas gerenciadas Auth/Storage,
+extensões e autorização, além de tabelas da aplicação/Auth/Storage vazias.
+`pg_restore` produz as seções revisadas de aplicação, dados Auth e buckets; uma
+única transação PostgreSQL importa esses dados, ownership, RLS, grants, funções,
+constraints, sequences, customizações e publications. Schemas gerenciados não
+são recriados e históricos internos da plataforma permanecem do destino.
+
+O acesso de escrita usa o login CLI temporário oficial, emitido pela API
+**somente no projeto isolado**, com grant de `postgres` pelo `supabase_admin`.
+O executor reutiliza a credencial durante sua validade, evitando rotações
+concorrentes no pooler; ela expira pelo mecanismo do provedor. Não cria roles
+administrativas próprias nem redefine a senha original do banco. Não tenta
+conceder `postgres` via SQL comum, operação vedada na plataforma. Se o acesso
+nativo não puder ser obtido com segurança, bloqueia sem escrever. Nenhuma
+conexão de escrita usa a origem.
+
+Os arquivos reais são enviados à API Storage do projeto isolado sem upsert.
+Preserva IDs, donos e metadados lógicos originais, mantendo somente o localizador
+físico `version` gerado pelo provedor para os novos bytes. Depois baixa os objetos
+do destino e compara tamanho/SHA-256. Uma retomada exige aplicação/Auth e catálogo
+exatamente iguais à cópia selecionada; objetos inesperados bloqueiam a operação.
+
+Somente após hashes de dados, tabelas, RLS/grants/ownership/funções, sequences,
+bytes Storage e teste negativo de pedidos de outro cliente passarem é gravado
+um recibo privado `restore-proof`. Configurações originais ficam criptografadas
+na cópia; OAuth/SMTP/Workers e demais saídas não são ativados no projeto isolado.
+Esse recibo comprova recuperação técnica; não autoriza vendas, NF-e ou etiquetas.
+
 ## Verificar e restaurar
 
 No PowerShell, gere hashes para registrar integridade dos arquivos:

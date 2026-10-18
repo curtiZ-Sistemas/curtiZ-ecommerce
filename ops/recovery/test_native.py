@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import backup as b
 import preflight as p
 import native_access as a
+import restore as r
 
 
 @unittest.skipUnless(os.environ.get("RUN_NATIVE_RECOVERY_TESTS") == "true",
@@ -128,6 +130,67 @@ class NativeTests(unittest.TestCase):
                 admin_sql(a.provisioning_sql(a.scram_verifier(password)))
         finally:
             admin_sql(f"DROP OWNED BY {a.READER}; DROP ROLE IF EXISTS {a.READER}")
+
+    def test_reviewed_native_restore_is_atomic_and_preserves_auth_rls_data_and_sequences(self):
+        target = {**self.admin, "PGDATABASE": "synthetic_restore"}
+        def query(sql, env):
+            return p.run_tool([b.PG + "psql", "-X", "-w", "-qAt", "-v", "ON_ERROR_STOP=1"],
+                              env=env, input_bytes=sql)
+        query(b"CREATE DATABASE synthetic_restore;", self.admin)
+        try:
+            query(b"CREATE SCHEMA auth; CREATE TABLE auth.users(id bigint PRIMARY KEY,value text); "
+                  b"CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY);", target)
+            with tempfile.TemporaryDirectory() as folder:
+                bundle = Path(folder)
+                for name, options in {
+                    "application.dump": ["--schema=public", "--schema=private", "--schema=supabase_migrations"],
+                    "auth-data.dump": ["--schema=auth", "--data-only"],
+                    "storage-data.dump": ["--data-only", "--table=storage.buckets"]
+                }.items():
+                    p.run_tool([b.PG + "pg_dump", "--format=custom", "--no-password",
+                                "--file=" + str(bundle / name), *options], env=self.admin)
+                payload = b"\n".join(r.sql_sections(bundle))
+                with self.assertRaises(p.Blocked):
+                    query(b"BEGIN; SET LOCAL session_replication_role=replica;\n" + payload
+                          + b"\nSELECT 1/0; COMMIT;", target)
+                self.assertEqual(query(b"SELECT count(*) FROM auth.users;", target).strip(), b"0")
+                self.assertEqual(query(b"SELECT count(*) FROM pg_tables WHERE schemaname='private';", target).strip(), b"0")
+                config = {"source_project_ref": "a" * 20, "restore_project_ref": "b" * 20,
+                          "recovery_passphrase": "synthetic-recovery-root", "supabase_access_token": "synthetic"}
+                def management(_url, **kwargs):
+                    self.assertTrue(_url.endswith("/" + "b" * 20 + "/cli/login-role"))
+                    self.assertEqual(kwargs["body"], {"read_only": False})
+                    query(b"CREATE ROLE cli_login_postgres LOGIN NOINHERIT PASSWORD 'synthetic-writer'; "
+                          b"GRANT postgres TO cli_login_postgres;", self.admin)
+                    return {"role": "cli_login_postgres", "password": "synthetic-writer", "ttl_seconds": 600}
+                with patch.dict(os.environ, {"GITHUB_RUN_ID": "98765", "GITHUB_RUN_ATTEMPT": "1"}), \
+                     patch.object(p, "json_request", side_effect=management), patch.object(r.time, "sleep"):
+                    with r.TargetWriter(config, target) as writer:
+                        # The synthetic PG service uses direct usernames, rather
+                        # than the Supavisor role.project routing suffix.
+                        writer.env["PGUSER"] = writer.role
+                        # Keep the production destination assertion; the fixture
+                        # username is mapped only immediately before libpq runs.
+                        original_run = p.run_tool
+                        def fixture_run(args, **kwargs):
+                            env = kwargs.get("env")
+                            if env and env.get("PGUSER", "").endswith("." + "b" * 20):
+                                kwargs["env"] = {**env, "PGUSER": writer.role}
+                            return original_run(args, **kwargs)
+                        writer.env["PGUSER"] = writer.role + "." + "b" * 20
+                        with patch.object(p, "run_tool", side_effect=fixture_run):
+                            writer.execute(b"BEGIN; SET LOCAL session_replication_role=replica;\n" + payload + b"\nCOMMIT;")
+                for schema, table in (("public", "orders"), ("private", "state"), ("auth", "users"),
+                                      ("supabase_migrations", "schema_migrations")):
+                    expected = b.native_json(self.readonly, b.fingerprint_sql(schema, table))
+                    self.assertEqual(b.native_json(target, b.fingerprint_sql(schema, table)), expected)
+                self.assertEqual(query(b"SELECT relrowsecurity FROM pg_class WHERE oid='public.orders'::regclass;", target).strip(), b"t")
+                self.assertEqual(r.verify_sequences(bundle, target), 1)
+                self.assertEqual(query(b"SELECT count(*) FROM pg_roles WHERE rolname LIKE 'curtiz_restore_%';", self.admin).strip(), b"0")
+        finally:
+            query(b"DROP DATABASE synthetic_restore WITH (FORCE);", self.admin)
+            query(b"DROP ROLE IF EXISTS cli_login_postgres;", self.admin)
+            r.TargetWriter.credentials.clear()
 
 
 if __name__ == "__main__":

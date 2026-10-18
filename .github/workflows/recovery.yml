@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Preflight does not export customers; backup creates an encrypted private copy.
+        description: Protected cloud backup or isolated recovery; never activates commercial integrations.
         type: choice
         required: true
         default: preflight
-        options: [preflight, provision-readers, backup]
+        options: [preflight, provision-readers, backup, restore]
 
 permissions:
   contents: read
@@ -76,6 +76,7 @@ jobs:
           BACKUP_NATIVE_AUTH_MODE: ${{ vars.BACKUP_NATIVE_AUTH_MODE }}
           PYTHONDONTWRITEBYTECODE: "1"
           BACKUP_SOURCE_PROJECT_REF: ${{ vars.BACKUP_SOURCE_PROJECT_REF }}
+          PYTHONUNBUFFERED: "1"
           BACKUP_RESTORE_PROJECT_REF: ${{ vars.BACKUP_RESTORE_PROJECT_REF }}
           BACKUP_GOOGLE_OWNER: ${{ vars.BACKUP_GOOGLE_OWNER }}
           BACKUP_DRIVE_FOLDER_ID: ${{ vars.BACKUP_DRIVE_FOLDER_ID }}
@@ -91,5 +92,6 @@ jobs:
             preflight) python3 ops/recovery/preflight.py ;;
             provision-readers) python3 ops/recovery/native_access.py ;;
             backup) python3 ops/recovery/backup.py ;;
+            restore) python3 ops/recovery/restore.py ;;
             *) echo '::error::Unsupported recovery operation.'; exit 1 ;;
           esac
