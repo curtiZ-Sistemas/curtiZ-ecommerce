@@ -54,6 +54,14 @@ publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA
 
 ### Onde cada configuração fica
 
+A prévia pública de frete no produto exige `SHIPPING_PREVIEW_ENABLED=true` no Runtime da loja,
+além do Melhor Envio habilitado, configurado e homologado em `production`. Ausente ou em sandbox,
+o endpoint responde indisponibilidade sem consultar o provedor. Não habilite a flag antes da
+validação comercial do frete. A prévia usa o orçamento distribuído existente de disponibilidade
+(60 consultas/minuto por identidade, com HMAC próprio), sem migration nova; indisponibilidade
+do orçamento bloqueia a consulta. O cache opcional de até um minuto guarda apenas dados públicos
+concluídos, após validar novamente o catálogo. O checkout mantém sua cotação autenticada oficial.
+
 O gate de dependências executa `pnpm audit --audit-level high` sobre o lockfile completo,
 incluindo desenvolvimento. O Dependency Review nativo fica habilitado somente quando
 `DEPENDENCY_REVIEW_ENABLED=true` nas Repository Variables e o repositório disponibiliza

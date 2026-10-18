@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 describe("headers de imagens de hero", () => {
+  it("preserva URLs comerciais antigas com redirecionamento permanente ao catálogo atual", async () => {
+    const redirects = await nextConfig.redirects?.();
+    expect(redirects).toContainEqual({ source: "/slides", destination: "/produtos", permanent: true });
+    expect(redirects).toContainEqual({ source: "/sandalias", destination: "/produtos", permanent: true });
+  });
   it("protege somente os recursos conhecidos de hero e suas variantes locais", async () => {
     const routes = await nextConfig.headers?.();
     const protectedSources = routes

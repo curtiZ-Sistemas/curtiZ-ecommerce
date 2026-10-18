@@ -26,6 +26,7 @@ import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
 import { ColorSwatch } from "./color-swatch";
 import { ProductImageViewer } from "./product-image-viewer";
+import { ProductShippingPreview } from "./product-shipping-preview";
 import { rememberViewedProduct, trackIntelligence } from "../lib/intelligence-client";
 
 export function ProductPurchase({
@@ -457,6 +458,7 @@ export function ProductPurchase({
             {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}
           </button>
         </div>
+        <ProductShippingPreview productId={product.id} variantId={selectedVariant?.id} />
       </div>
     </section>
   );

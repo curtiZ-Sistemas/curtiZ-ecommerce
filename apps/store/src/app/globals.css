@@ -15018,4 +15018,14 @@ body:has(.checkout-transition) .help-widget {
   .home-faq-list summary { transition: none; }
 }
 .catalog-load-trigger { min-height: 1px; }
+.product-shipping-preview { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--neutral-200); }
+.product-shipping-preview h2 { margin: 0 0 16px; font-size: 1rem; }
+.product-shipping-preview form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: end; }
+.product-shipping-preview .field { min-width: 0; }
+.product-shipping-preview input { width: 100%; min-width: 0; min-height: 44px; }
+.product-shipping-preview button { grid-column: 1 / -1; min-height: 44px; }
+.product-shipping-preview ul { list-style: none; padding: 0; }
+.product-shipping-preview li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 10px; border-bottom: 1px solid var(--neutral-200); }
+.product-shipping-preview li span:first-child { flex-basis: 100%; overflow-wrap: anywhere; }
+.product-shipping-note { font-size: .8125rem; color: var(--neutral-700); }
 .catalog-load-status { padding-block: 1.25rem; text-align: center; color: var(--neutral-700); }

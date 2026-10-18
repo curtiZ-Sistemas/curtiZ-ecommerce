@@ -1,0 +1,97 @@
+name: Recovery prerequisites
+
+on:
+  pull_request:
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml", ".github/actions/native-postgres-client/**"]
+  push:
+    branches: [main]
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml", ".github/actions/native-postgres-client/**"]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Protected cloud backup or isolated recovery; never activates commercial integrations.
+        type: choice
+        required: true
+        default: preflight
+        options: [preflight, provision-readers, backup, restore]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recovery-prerequisites
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Recovery safety tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s ops/recovery -p 'test_*.py' -v
+
+  native-tests:
+    name: Native snapshot and archive integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/native-postgres-client
+      - name: Exercise read-only snapshot, RLS reads, native archives and history
+        env:
+          RUN_NATIVE_RECOVERY_TESTS: "true"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s ops/recovery -p 'test_native.py' -v
+
+  preflight:
+    name: Protected cloud recovery operation
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [tests, native-tests]
+    runs-on: ubuntu-24.04
+    environment: backup-recovery
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/native-postgres-client
+      - name: Execute the selected protected cloud operation
+        env:
+          RECOVERY_OPERATION: ${{ inputs.operation }}
+          BACKUP_CLOUD_VAULT_CONFIRMED: ${{ vars.BACKUP_CLOUD_VAULT_CONFIRMED }}
+          BACKUP_NATIVE_AUTH_MODE: ${{ vars.BACKUP_NATIVE_AUTH_MODE }}
+          PYTHONDONTWRITEBYTECODE: "1"
+          BACKUP_SOURCE_PROJECT_REF: ${{ vars.BACKUP_SOURCE_PROJECT_REF }}
+          PYTHONUNBUFFERED: "1"
+          BACKUP_RESTORE_PROJECT_REF: ${{ vars.BACKUP_RESTORE_PROJECT_REF }}
+          BACKUP_GOOGLE_OWNER: ${{ vars.BACKUP_GOOGLE_OWNER }}
+          BACKUP_DRIVE_FOLDER_ID: ${{ vars.BACKUP_DRIVE_FOLDER_ID }}
+          BACKUP_GOOGLE_CLIENT_ID: ${{ vars.BACKUP_GOOGLE_CLIENT_ID }}
+          BACKUP_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKUP_GOOGLE_CLIENT_SECRET }}
+          BACKUP_GOOGLE_REFRESH_TOKEN: ${{ secrets.BACKUP_GOOGLE_REFRESH_TOKEN }}
+          BACKUP_SUPABASE_ACCESS_TOKEN: ${{ secrets.BACKUP_SUPABASE_ACCESS_TOKEN }}
+          BACKUP_RECOVERY_PASSPHRASE: ${{ secrets.BACKUP_RECOVERY_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RECOVERY_OPERATION" in
+            preflight) python3 ops/recovery/preflight.py ;;
+            provision-readers) python3 ops/recovery/native_access.py ;;
+            backup) python3 ops/recovery/backup.py ;;
+            restore) python3 ops/recovery/restore.py ;;
+            *) echo '::error::Unsupported recovery operation.'; exit 1 ;;
+          esac
