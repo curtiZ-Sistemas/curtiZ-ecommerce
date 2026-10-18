@@ -13,7 +13,7 @@ on:
         type: choice
         required: true
         default: preflight
-        options: [preflight, backup]
+        options: [preflight, provision-readers, backup]
 
 permissions:
   contents: read
@@ -73,6 +73,7 @@ jobs:
         env:
           RECOVERY_OPERATION: ${{ inputs.operation }}
           BACKUP_CLOUD_VAULT_CONFIRMED: ${{ vars.BACKUP_CLOUD_VAULT_CONFIRMED }}
+          BACKUP_NATIVE_AUTH_MODE: ${{ vars.BACKUP_NATIVE_AUTH_MODE }}
           PYTHONDONTWRITEBYTECODE: "1"
           BACKUP_SOURCE_PROJECT_REF: ${{ vars.BACKUP_SOURCE_PROJECT_REF }}
           BACKUP_RESTORE_PROJECT_REF: ${{ vars.BACKUP_RESTORE_PROJECT_REF }}
@@ -88,6 +89,7 @@ jobs:
           set -euo pipefail
           case "$RECOVERY_OPERATION" in
             preflight) python3 ops/recovery/preflight.py ;;
+            provision-readers) python3 ops/recovery/native_access.py ;;
             backup) python3 ops/recovery/backup.py ;;
             *) echo '::error::Unsupported recovery operation.'; exit 1 ;;
           esac
