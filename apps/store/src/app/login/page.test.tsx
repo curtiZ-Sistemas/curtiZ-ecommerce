@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/auth-form", () => ({ AuthForm: () => null }));
+vi.mock("@/components/google-sign-in", () => ({ GoogleSignIn: () => null }));
+vi.mock("@/lib/google-auth", () => ({ googleAuthReady: () => Promise.resolve(false) }));
 import LoginPage from "./page";
 
 beforeEach(() => vi.stubGlobal("React", React));
@@ -10,6 +12,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("mensagens ao retornar do painel", () => {
   it.each([
+    ["google_oauth_error", "O acesso com Google foi cancelado, expirou ou não pôde ser concluído."],
     ["session_expired", "Sua sessão não está disponível ou expirou."],
     ["session_unavailable", "Não foi possível confirmar sua sessão agora."]
   ])("explica %s sem alterar o formulário", async (reason, message) => {
