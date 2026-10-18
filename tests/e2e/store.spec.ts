@@ -5,13 +5,16 @@ test("prévia de frete valida CEP, variante, quantidade e recuperação sem alte
   test.setTimeout(90_000);
   const requests: Record<string, unknown>[] = [];
   let responseMode = "success";
+  let releaseLate: (() => void) | undefined;
   await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
   await page.route("**/api/shipping/preview", async (route) => {
     const body: unknown = route.request().postDataJSON();
     requests.push(body as Record<string, unknown>);
+    const delayed = responseMode === "delayed";
+    if (delayed) await new Promise<void>((resolve) => { releaseLate = resolve; });
     if (responseMode === "error") return route.fulfill({ status: 429, json: { message: "Aguarde e tente novamente." } });
     if (responseMode === "empty") return route.fulfill({ json: { ok: true, quotes: [] } });
-    return route.fulfill({ json: { ok: true, quotes: [{ serviceId: "fixture", service: "Entrega de teste",
+    return route.fulfill({ json: { ok: true, quotes: [{ serviceId: "fixture", service: delayed ? "Resposta antiga" : "Entrega de teste",
       carrier: "Fixture E2E", amountInCents: 2100, estimatedDays: 4 }] } });
   });
   await page.goto("/produto/flip-flop-wave-preto");
@@ -46,6 +49,16 @@ test("prévia de frete valida CEP, variante, quantidade e recuperação sem alte
   responseMode = "success";
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
   await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  responseMode = "delayed";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("button", { name: "Calculando…", exact: true })).toBeDisabled();
+  await expect.poll(() => Boolean(releaseLate)).toBe(true);
+  await preview.getByLabel("Qtd. na simulação").fill("3");
+  responseMode = "success";
+  releaseLate?.();
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Entrega de teste");
+  await expect(preview.getByRole("status")).not.toContainText("Resposta antiga");
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("curtiz.shipping-postal-code.v1") ?? "null") as unknown))
     .toMatchObject({ postalCode: "01310100" });
   for (const width of isMobile ? [320, 360, 390, 430] : [768, 1024, 1280]) {
