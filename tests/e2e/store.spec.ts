@@ -1,6 +1,62 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginDemoAccount } from "./demo-auth";
 
+test("prévia de frete valida CEP, variante, quantidade e recuperação sem alterar a compra", async ({ page, isMobile }) => {
+  test.setTimeout(90_000);
+  const requests: Record<string, unknown>[] = [];
+  let responseMode = "success";
+  await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
+  await page.route("**/api/shipping/preview", async (route) => {
+    const body: unknown = route.request().postDataJSON();
+    requests.push(body as Record<string, unknown>);
+    if (responseMode === "error") return route.fulfill({ status: 429, json: { message: "Aguarde e tente novamente." } });
+    if (responseMode === "empty") return route.fulfill({ json: { ok: true, quotes: [] } });
+    return route.fulfill({ json: { ok: true, quotes: [{ serviceId: "fixture", service: "Entrega de teste",
+      carrier: "Fixture E2E", amountInCents: 2100, estimatedDays: 4 }] } });
+  });
+  await page.goto("/produto/flip-flop-wave-preto");
+  const preview = page.getByRole("region", { name: "Calcule o frete e o prazo de entrega" });
+  await expect(preview).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("CEP válido");
+  await preview.getByLabel("CEP", { exact: true }).fill("01310100");
+  await expect(preview.getByLabel("CEP", { exact: true })).toHaveValue("01310-100");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Escolha a cor e o tamanho");
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  await expect(preview.getByRole("status")).toContainText("4 dias úteis");
+  await preview.getByLabel("Qtd. na simulação").fill("2");
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  expect(requests.at(-1)?.quantity).toBe(2);
+  const oldVariant = requests.at(-1)?.variantId;
+  await page.getByRole("button", { name: "41/42", exact: true }).click();
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  responseMode = "empty";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Nenhum serviço");
+  expect(requests.at(-1)?.variantId).not.toBe(oldVariant);
+  responseMode = "error";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Aguarde e tente novamente");
+  responseMode = "success";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("curtiz.shipping-postal-code.v1") ?? "null") as unknown))
+    .toMatchObject({ postalCode: "01310100" });
+  for (const width of isMobile ? [320, 360, 390, 430] : [768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(preview.getByRole("button", { name: "Calcular", exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Adicionar ao carrinho", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Adicionado ao carrinho", exact: true })).toBeVisible();
+});
+
 // UI contract fixture only: the demo backend has no persisted checkout addresses.
 // These tests do not prove Supabase persistence or an online Melhor Envio quote.
 async function fixtureCheckoutAddress(page: Page) {
