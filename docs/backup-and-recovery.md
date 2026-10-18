@@ -2,6 +2,30 @@
 
 `BACKUP_PROVIDER` apenas declara um provedor. Não comprova cópia, integridade ou restauração; o painel informa essa limitação.
 
+## Operação e entrega sem dependência do notebook
+
+Backups, acesso de recuperação e execução operacional devem permanecer em contas da empresa na nuvem. O notebook do desenvolvimento não é destino de backup, cofre nem executor permanente. O procedimento nativo abaixo também pode rodar em ambiente remoto confiável; os exemplos locais são referência, não autorização para armazenar dados no computador do desenvolvedor.
+
+- Use uma pasta/bucket privado da empresa e um cofre de recuperação separado, com acesso conferido pelos responsáveis. Não use a conta pessoal do desenvolvedor como único proprietário. O responsável precisa conseguir recuperar a chave, não apenas saber que ela foi cadastrada como um Secret que a interface não permite reler.
+- Execute a exportação e a restauração em ambiente remoto temporário controlado. Se usar GitHub Actions, utilize somente runner padrão dentro da modalidade gratuita conferida, execução manual de revisão confiável, permissões mínimas e Secrets protegidos. Nunca execute esse fluxo com código de PR não confiável. Não publique dumps, arquivos do Storage, TOCs, credenciais ou chaves em logs, caches ou artifacts públicos, mesmo durante falhas.
+- Criptografe os arquivos antes de enviá-los ao destino. Área temporária remota deve ter proteção apropriada e limpeza em sucesso/falha; nenhum dado de backup ou credencial precisa passar pelo disco deste notebook. Guarde evidências de integridade e recuperação em destino privado da empresa.
+- Custo adicional zero é requisito: confira modalidade, franquia disponível e comportamento ao atingir limites antes de contratar ou ativar serviço. No R2, franquia gratuita não equivale a bloqueio de excedentes; alertas apenas notificam. Não ative assinatura por uso presumindo que o valor inicial de US$ 0 impede cobranças futuras. [Preços R2](https://developers.cloudflare.com/r2/pricing/), [alertas de orçamento](https://developers.cloudflare.com/billing/manage/budget-alerts/) e [custos de Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+- A entrega exige teste de recuperação pelos responsáveis: localizar cópia e manifesto, obter a chave pelo cofre, executar a restauração isolada e ler o relatório. Acesso a arquivos na nuvem não substitui esse teste. Mantenha cópia independente da origem; limite de espaço ou indisponibilidade deve gerar falha explícita, sem aprovar backup parcial nem remover a última cópia verificada.
+
+Destino, cofre e credenciais do executor remoto precisam de configuração e comprovação. Estas orientações não constituem backup realizado.
+
+### Verificação inicial do executor na nuvem
+
+O workflow manual `Recovery prerequisites` (`.github/workflows/recovery.yml`) verifica o acesso antes de permitir qualquer exportação. A execução remota só aceita `main`, runner padrão temporário do GitHub e o ambiente protegido `backup-recovery`. PRs executam somente os testes sintéticos, sem Secrets. Não há agendamento nem publicação dos aplicativos neste workflow.
+
+Configure no ambiente as variáveis `BACKUP_SOURCE_PROJECT_REF`, `BACKUP_RESTORE_PROJECT_REF`, `BACKUP_GOOGLE_OWNER`, `BACKUP_GOOGLE_CLIENT_ID` e `BACKUP_DRIVE_FOLDER_ID`; configure como Secrets `BACKUP_GOOGLE_CLIENT_SECRET`, `BACKUP_GOOGLE_REFRESH_TOKEN`, `BACKUP_SUPABASE_ACCESS_TOKEN` e `BACKUP_RECOVERY_PASSPHRASE`. A senha de recuperação precisa estar também no cofre da empresa e ter no mínimo 24 caracteres. Identificadores privados do destino não pertencem ao código público.
+
+O OAuth usa somente `drive.file`, para arquivos criados pelo aplicativo, e a conta precisa ser a proprietária empresarial esperada. O PAT Supabase deve ser restrito aos dois projetos, com prazo de validade e permissões mínimas: Database read-write para emitir o login temporário; Connection Pooling read; configurações e chaves necessárias ao backup apenas read. Não conceda faturamento, administração da organização ou permissão para redefinir a senha do banco. Na verificação inicial, os dois logins temporários são emitidos com `read_only=true` e todas as sessões nativas forçam leitura.
+
+O executor instala somente clientes PostgreSQL 17 do repositório oficial assinado. Confere TLS com validação de hostname, projeto isolado vazio, propriedade/permissões/cota do Drive e envia um pequeno manifesto **sem dados de clientes**, criptografado com GPG/AES-256. Baixa o mesmo arquivo, confere SHA-256 e descriptografa para comparação integral. A senha temporária fica somente em tmpfs privado no runner e é removida ao terminar.
+
+**Preflight aprovado não é backup nem restauração.** Não exporta schemas/dados/roles/Storage, não altera o banco original e não libera migrations, PRs de negócio ou ativação comercial. A cópia completa e o teste de recuperação abaixo continuam obrigatórios. A renovação do PAT e a manutenção do consentimento OAuth devem constar da entrega aos responsáveis.
+
 ## Começar sem servidor próprio
 
 1. Mantenha código e migrations no Git e uma cópia independente do repositório. Git não guarda pedidos, clientes ou imagens do banco.
@@ -11,7 +35,7 @@
 5. Use desde o início uma pasta em volume criptografado e mantenha segunda cópia independente. Guarde a chave de recuperação em cofre separado. Não envie dumps ao Git, chats ou logs.
 6. Faça cópia diária enquanto houver alterações comerciais e antes de migrations. Comece com 7 cópias diárias e 4 semanais, ajustando às necessidades de recuperação e minimização de dados pessoais.
 
-A exportação pela CLI requer Docker, ausente neste notebook. Use outro computador preparado ou o download de backup do Dashboard, quando disponível no plano. Exportação CSV de tabelas não substitui backup completo. Após vincular e conferir o projeto na CLI, crie a pasta `backups` e execute separadamente:
+A exportação pela CLI requer Docker. Quando ele não estiver disponível, use os clientes PostgreSQL nativos conforme a seção abaixo, outro computador preparado ou o download de backup do Dashboard, quando disponível no plano. Exportação CSV de tabelas não substitui backup completo. Após vincular e conferir o projeto na CLI, crie a pasta `backups` e execute separadamente:
 
 ```sh
 pnpm exec supabase db dump --linked --role-only -f backups/roles.sql
@@ -24,6 +48,58 @@ Confira cada código de saída. Arquivos vazios ou interrompidos não são backu
 Esses comandos não exportam objetos do Storage nem toda configuração de Auth, OAuth, SMTP, Workers ou integrações. Mantenha inventário das configurações sem segredos; valores secretos e chaves ficam no cofre.
 
 Preserve também o histórico em `supabase_migrations` e alterações específicas em `auth`/`storage`, seguindo as considerações especiais do guia oficial. Se usar Vault ou criptografia de colunas, siga o procedimento de preservação da chave antes de considerar a recuperação viável.
+
+## Alternativa nativa sem Docker
+
+Use `pg_dump`, `pg_dumpall`, `pg_restore` e `psql` de uma distribuição indicada pelo [PostgreSQL](https://www.postgresql.org/download/windows/). Para servidores PostgreSQL 17, use clientes 17 atualizados. Extraia somente clientes e bibliotecas necessárias; não é preciso iniciar um servidor local, instalar pgAdmin ou modificar o PATH global. Confira `--version` e `--help` dos executáveis antes de usá-los.
+
+Antes de exportar, prepare fora do repositório:
+
+- acesso PostgreSQL à origem e ao destino isolado, por conexão direta ou pooler de **sessão**, não de transação;
+- serviços libpq `curtiz_backup_source` e `curtiz_restore_isolated`, com host, porta, usuário, banco, `sslmode=verify-full` e a CA confiável apropriada; as senhas são inseridas pelo responsável em prompt privado ou arquivo de senhas com acesso restrito, sem aparecer em argumentos, histórico ou logs;
+- um diretório em volume criptografado já autorizado, uma segunda cópia privada independente e a chave de recuperação em cofre separado;
+- acesso autorizado aos objetos privados do Storage e às configurações necessárias à recuperação. O MCP de consultas SQL não fornece, por si só, uma conexão libpq nem o conteúdo dos arquivos.
+
+Não redefina senhas existentes para contornar a falta de acesso. Um arquivo em `.cache`, um ZIP comum e um hash SHA-256 não são criptografia. Se faltar conexão segura, destino ou chave recuperável, pare antes da exportação; não produza um dump desprotegido para criptografar depois.
+
+Os comandos seguintes são um roteiro para uma máquina já preparada. `BACKUP_SECURE_DIR` precisa apontar para o volume criptografado autorizado, nunca para o checkout. Não os execute antes de conferir os dois serviços e a identidade dos projetos. Eles não realizam nem comprovam a configuração de criptografia.
+
+```powershell
+# Executar no diretório dos clientes, sem senha na linha de comando.
+if (-not $env:BACKUP_SECURE_DIR -or
+    -not (Test-Path -LiteralPath $env:BACKUP_SECURE_DIR -PathType Container)) {
+  throw 'Defina e confira o destino privado criptografado antes de exportar.'
+}
+$archivePath = Join-Path $env:BACKUP_SECURE_DIR 'database.dump'
+$rolesPath = Join-Path $env:BACKUP_SECURE_DIR 'roles.sql'
+if ((Test-Path -LiteralPath $archivePath) -or (Test-Path -LiteralPath $rolesPath)) {
+  throw 'Use um diretório novo por execução; não sobrescreva uma cópia existente.'
+}
+& .\pg_dump.exe --dbname=service=curtiz_backup_source --format=custom `
+  --lock-wait-timeout=30s --file=$archivePath
+if ($LASTEXITCODE -ne 0) { throw 'Exportação incompleta; não aprovar o backup.' }
+& .\pg_dumpall.exe --dbname=service=curtiz_backup_source --roles-only `
+  --no-role-passwords --file=$rolesPath
+if ($LASTEXITCODE -ne 0) { throw 'Exportação de roles incompleta.' }
+& .\pg_restore.exe --list --file=(Join-Path $env:BACKUP_SECURE_DIR 'archive.toc') $archivePath
+if ($LASTEXITCODE -ne 0) { throw 'Não foi possível ler o arquivo de backup.' }
+```
+
+O formato custom preserva schema, dados, sequences, funções, triggers, políticas e grants em um arquivo com snapshot consistente do banco. Não restrinja a cópia a `public`: confira também schemas privados, `auth`, `storage` e `supabase_migrations`, além dos objetos e configurações de extensões relevantes. Falta de permissão não autoriza ignorar tabelas nem desligar RLS. `pg_dumpall --no-role-passwords` preserva definições e associações de roles sem hashes de senhas; senhas de roles próprias precisam de recuperação separada no cofre. Evite mudanças de DDL, roles e configuração durante a coleta e registre a janela de cada exportação.
+
+**A restauração em Supabase exige revisão específica.** Um dump nativo contém objetos internos que já existem no projeto de destino. Não execute `pg_restore` integralmente contra esse projeto, não remova schemas gerenciados e não ignore erros indiscriminadamente. Revise privadamente o TOC e o SQL, separe roles próprias das reservadas, compare versões de extensões/Auth/Storage e prepare uma lista de restauração compatível. Preserve customizações, ownership e grants necessários, sem substituir identidades gerenciadas pela plataforma. Arquive também as exclusões e a justificativa de cada uma. A presença no TOC comprova apenas o inventário do arquivo, não sua restauração.
+
+Antes de importar dados, confirme o projeto isolado por identidade e mantenha suas filas, crons, webhooks, e-mails e integrações externas sem execução. O destino não deve receber tráfego da loja. Importe somente a seleção revisada com `pg_restore --exit-on-error --single-transaction`, usando `service=curtiz_restore_isolated`. O guia Supabase orienta `session_replication_role=replica` durante a importação de dados para evitar triggers e dupla criptografia; isso deve ficar restrito à sessão de restauração no destino e requer permissão apropriada. Verifique depois constraints, sequences, triggers, RLS, permissões e contagens; não execute testes com fixtures no banco original.
+
+Quando houver Vault ou criptografia de colunas, avalie a preservação da chave raiz pelo procedimento oficial, exclusivamente entre ambiente confiável e cofre. Não consulte chaves em saída de ferramentas, logs ou chats. Um projeto novo tem outra chave; copiar ciphertext não comprova que os dados serão recuperáveis. Não sobrescreva a chave de um destino que já contém dados úteis.
+
+Copie separadamente os bytes de **todos** os objetos do Storage, inclusive privados, preservando bucket/caminho e as restrições de acesso. Guarde manifesto privado por objeto com tamanho e SHA-256; compare metadados antes/depois para detectar alterações durante a coleta e estabeleça uma janela sem alterações quando necessário. Metadados SQL não substituem os arquivos. Restaure os objetos pela API de Storage no projeto isolado, conforme o procedimento do provedor, e compare os hashes dos bytes baixados do destino. URLs de acesso temporário e chaves não pertencem ao manifesto.
+
+Inclua inventário protegido das extensões, publications, histórico de migrations, configurações de Auth/OAuth/SMTP, Storage, Workers, DNS e integrações. Valores secretos e chaves de criptografia da aplicação exigem recuperação pelo cofre; não devem ser impressos no inventário. Mantenha ações externas desativadas durante os testes.
+
+Só aprove a cópia depois de reler a segunda cópia armazenada, conferir hashes e restaurar banco e objetos com verificações funcionais e de autorização. Migrations pendentes são testadas sobre a restauração e aplicadas à origem somente depois dessa aprovação. A leitura do TOC, o sucesso do CI ou a disponibilidade do projeto isolado não liberam essa etapa.
+
+Referências: [pg_dump](https://www.postgresql.org/docs/17/app-pgdump.html), [pg_dumpall](https://www.postgresql.org/docs/17/app-pg-dumpall.html), [pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html), [serviços libpq](https://www.postgresql.org/docs/17/libpq-pgservice.html), [TLS libpq](https://www.postgresql.org/docs/17/libpq-ssl.html) e [particularidades do Supabase](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore).
 
 ## Verificar e restaurar
 
