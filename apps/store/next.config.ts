@@ -47,6 +47,13 @@ const nextConfig: NextConfig = {
       { source: "/(.*)", headers: securityHeaders },
       ...heroAssetPaths.map((source) => ({ source, headers: [noImageIndexHeader] }))
     ];
+  },
+  async redirects() {
+    // These legacy category URLs are linked by older sitemaps. Keep a permanent path to the current catalog.
+    return [
+      { source: "/slides", destination: "/produtos", permanent: true },
+      { source: "/sandalias", destination: "/produtos", permanent: true }
+    ];
   }
 };
 

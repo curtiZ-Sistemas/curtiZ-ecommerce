@@ -18,7 +18,7 @@ const pages: Record<string, { title: string; lead: string; body: string[] }> = {
     title: "Sobre a curti Z",
     lead: "Conforto, estilo e escolhas feitas para a vida real.",
     body: [
-      "A curti Z é uma marca exclusivamente online de chinelos, slides e sandálias.",
+      "A curti Z é uma marca exclusivamente online de chinelos e kits de chinelos.",
       "Nossa experiência digital prioriza clareza, segurança e atendimento em todas as etapas."
     ]
   },

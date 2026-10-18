@@ -18,6 +18,7 @@ import {
   OFFICIAL_STORE_ORIGIN,
   organizationStructuredData,
   STORE_DESCRIPTION,
+  STORE_TITLE,
   websiteStructuredData
 } from "@/lib/seo";
 import "./globals.css";
@@ -27,7 +28,7 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", displa
 export const metadata: Metadata = {
   metadataBase: new URL(OFFICIAL_STORE_ORIGIN),
   title: {
-    default: "curti Z | Chinelos, slides e sandálias",
+    default: STORE_TITLE,
     template: "%s | curti Z"
   },
   description: STORE_DESCRIPTION,
@@ -35,13 +36,13 @@ export const metadata: Metadata = {
     type: "website",
     locale: "pt_BR",
     siteName: "curti Z",
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION,
     url: "/"
   },
   twitter: {
     card: "summary",
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION
   }
 };
