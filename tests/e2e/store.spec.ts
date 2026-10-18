@@ -8,7 +8,7 @@ test("Google indisponível preserva login e cadastro tradicionais", async ({ pag
   for (const path of ["/login", "/cadastro"]) {
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Continuar com Google", exact: true })).toBeDisabled();
-    await expect(page.getByText("Login com Google indisponível no momento. Use e-mail e senha.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Acesso com Google", exact: true }).getByText("Login com Google indisponível no momento. Use e-mail e senha.", { exact: true })).toBeVisible();
     await expect(page.locator('input[name="email"]')).toBeVisible();
     await expect(page.locator('input[name="password"]')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
