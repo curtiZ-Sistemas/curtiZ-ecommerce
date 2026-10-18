@@ -158,8 +158,11 @@ class NativeTests(unittest.TestCase):
                 config = {"source_project_ref": "a" * 20, "restore_project_ref": "b" * 20,
                           "recovery_passphrase": "synthetic-recovery-root", "supabase_access_token": "synthetic"}
                 def management(_url, **kwargs):
-                    query(kwargs["body"]["query"].encode(), self.admin)
-                    return []
+                    self.assertTrue(_url.endswith("/" + "b" * 20 + "/cli/login-role"))
+                    self.assertEqual(kwargs["body"], {"read_only": False})
+                    query(b"CREATE ROLE cli_login_postgres LOGIN NOINHERIT PASSWORD 'synthetic-writer'; "
+                          b"GRANT postgres TO cli_login_postgres;", self.admin)
+                    return {"role": "cli_login_postgres", "password": "synthetic-writer", "ttl_seconds": 600}
                 with patch.dict(os.environ, {"GITHUB_RUN_ID": "98765", "GITHUB_RUN_ATTEMPT": "1"}), \
                      patch.object(p, "json_request", side_effect=management), patch.object(r.time, "sleep"):
                     with r.TargetWriter(config, target) as writer:
@@ -183,9 +186,11 @@ class NativeTests(unittest.TestCase):
                     self.assertEqual(b.native_json(target, b.fingerprint_sql(schema, table)), expected)
                 self.assertEqual(query(b"SELECT relrowsecurity FROM pg_class WHERE oid='public.orders'::regclass;", target).strip(), b"t")
                 self.assertEqual(r.verify_sequences(bundle, target), 1)
-                self.assertEqual(query(b"SELECT count(*) FROM pg_roles WHERE rolname='curtiz_restore_98765_1';", self.admin).strip(), b"0")
+                self.assertEqual(query(b"SELECT count(*) FROM pg_roles WHERE rolname LIKE 'curtiz_restore_%';", self.admin).strip(), b"0")
         finally:
             query(b"DROP DATABASE synthetic_restore WITH (FORCE);", self.admin)
+            query(b"DROP ROLE IF EXISTS cli_login_postgres;", self.admin)
+            r.TargetWriter.credentials.clear()
 
 
 if __name__ == "__main__":

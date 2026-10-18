@@ -150,10 +150,14 @@ extensões e autorização, além de tabelas da aplicação/Auth/Storage vazias.
 constraints, sequences, customizações e publications. Schemas gerenciados não
 são recriados e históricos internos da plataforma permanecem do destino.
 
-Uma role de escrita temporária, exclusiva da execução, é criada **somente no
-projeto isolado**, assume `postgres` para a restauração e é removida ao fechar a
-conexão. Não redefine senhas existentes. Se o acesso não puder ser concedido
-com segurança, a execução bloqueia. Nenhuma conexão de escrita usa a origem.
+O acesso de escrita usa o login CLI temporário oficial, emitido pela API
+**somente no projeto isolado**, com grant de `postgres` pelo `supabase_admin`.
+O executor reutiliza a credencial durante sua validade, evitando rotações
+concorrentes no pooler; ela expira pelo mecanismo do provedor. Não cria roles
+administrativas próprias nem redefine a senha original do banco. Não tenta
+conceder `postgres` via SQL comum, operação vedada na plataforma. Se o acesso
+nativo não puder ser obtido com segurança, bloqueia sem escrever. Nenhuma
+conexão de escrita usa a origem.
 
 Os arquivos reais são enviados à API Storage do projeto isolado sem upsert.
 Preserva IDs, donos e metadados lógicos originais, mantendo somente o localizador

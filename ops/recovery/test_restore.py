@@ -62,17 +62,30 @@ class RestoreGuards(unittest.TestCase):
         self.assertNotEqual(r.normalized_objects(first), r.normalized_objects([{**second[0], "owner_id": "other"}]))
 
     def test_source_is_never_accepted_as_restore_write_destination(self):
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "12345", "GITHUB_RUN_ATTEMPT": "1"}):
-            writer = r.TargetWriter({"source_project_ref": "a" * 20, "restore_project_ref": "a" * 20}, {})
         with patch.object(p, "json_request") as request, self.assertRaises(p.Blocked):
-            writer.api("SELECT 1")
+            r.TargetWriter({"source_project_ref": "a" * 20, "restore_project_ref": "a" * 20}, {})
         request.assert_not_called()
 
-    def test_writer_identity_is_bounded_and_injection_is_rejected(self):
-        self.assertEqual(r.writer_role("12345", "1"), "curtiz_restore_12345_1")
-        for run, attempt in (("1; DROP ROLE postgres", "1"), ("1", "../2"), ("", "1")):
-            with self.assertRaises(p.Blocked):
-                r.writer_role(run, attempt)
+    def test_writer_uses_only_official_target_login_and_reuses_without_rotation(self):
+        config = {"source_project_ref": "a" * 20, "restore_project_ref": "b" * 20,
+                  "supabase_access_token": "synthetic"}
+        login = {"role": "cli_login_postgres", "password": "synthetic-writer", "ttl_seconds": 600}
+        r.TargetWriter.credentials.clear()
+        try:
+            with patch.object(p, "json_request", return_value=login) as request, patch.object(r.time, "sleep"):
+                with r.TargetWriter(config, {}) as first:
+                    self.assertEqual(first.env["PGUSER"], "cli_login_postgres." + "b" * 20)
+                with r.TargetWriter(config, {}) as second:
+                    self.assertEqual(second.env["PGPASSWORD"], "synthetic-writer")
+            self.assertEqual(request.call_count, 1)
+            self.assertIn("/" + "b" * 20 + "/cli/login-role", request.call_args.args[0])
+            self.assertEqual(request.call_args.kwargs["body"], {"read_only": False})
+            r.TargetWriter.credentials.clear()
+            with patch.object(p, "json_request", return_value={**login, "role": "postgres"}), self.assertRaises(p.Blocked):
+                with r.TargetWriter(config, {}):
+                    pass
+        finally:
+            r.TargetWriter.credentials.clear()
 
     def test_public_or_foreign_drive_files_are_rejected(self):
         config = {"drive_folder_id": "synthetic-folder", "google_owner": "owner@example.invalid"}

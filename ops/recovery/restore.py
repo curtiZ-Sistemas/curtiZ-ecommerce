@@ -4,10 +4,8 @@ Never point the write connection at the source. Managed platform schemas are not
 recreated. Logs contain fixed diagnostics, never SQL, data, credentials or paths.
 """
 
-import base64
 import datetime
 import hashlib
-import hmac
 import json
 import os
 from pathlib import Path
@@ -20,7 +18,6 @@ import time
 import urllib.parse
 
 import backup as b
-import native_access as a
 import preflight as p
 
 APPLICATION = {"public", "private", "supabase_migrations"}
@@ -155,35 +152,32 @@ def sql_sections(bundle):
     return [pre, auth, data, buckets, post]
 
 
-def writer_role(run_id, attempt):
-    p.require(re.fullmatch(r"[0-9]{1,20}", run_id) and re.fullmatch(r"[0-9]{1,5}", attempt),
-              "Invalid isolated restore execution identity.")
-    return "curtiz_restore_" + run_id + "_" + attempt
-
-
 class TargetWriter:
-    def __init__(self, config, reader):
-        self.config, self.reader, self.created = config, reader, False
-        self.role = writer_role(os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    # Reuse one provider-issued login throughout a process, avoiding concurrent
+    # credential rotations and the pooler's documented propagation window.
+    credentials = {}
 
-    def api(self, sql):
-        ref = self.config["restore_project_ref"]
-        p.require(ref != self.config["source_project_ref"], "Source is never a write destination.")
-        return p.json_request(f"https://api.supabase.com/v1/projects/{ref}/database/query",
-                              bearer=self.config["supabase_access_token"], body={"query": sql})
+    def __init__(self, config, reader):
+        self.config, self.reader = config, reader
+        p.require(config["restore_project_ref"] != config["source_project_ref"],
+                  "Source is never a write destination.")
+        self.role = "cli_login_postgres"
 
     def __enter__(self):
         ref = self.config["restore_project_ref"]
-        context = ("curtiz:isolated-restore-writer:v1\0" + ref + "\0" + self.role).encode("ascii")
-        password = base64.urlsafe_b64encode(hmac.new(self.config["recovery_passphrase"].encode(),
-                    context, hashlib.sha256).digest()).decode().rstrip("=")
-        verifier = a.scram_verifier(password)
-        # The role is unique to this run; a collision aborts rather than rotating a login.
-        self.api(f"BEGIN; CREATE ROLE {self.role} LOGIN NOINHERIT NOSUPERUSER NOCREATEDB "
-                 f"NOCREATEROLE NOREPLICATION PASSWORD '{verifier}'; GRANT postgres TO {self.role}; "
-                 f"COMMENT ON ROLE {self.role} IS 'curtiz-isolated-restore-writer:v1'; COMMIT;")
-        self.created = True
-        time.sleep(16)
+        cached = self.credentials.get(ref)
+        if cached is None or cached[1] - time.monotonic() < 180:
+            # Only supabase_admin can grant postgres. Use the official API that
+            # creates the managed CLI login with the correct grantor/expiry.
+            login = p.json_request(f"https://api.supabase.com/v1/projects/{ref}/cli/login-role",
+                bearer=self.config["supabase_access_token"], body={"read_only": False})
+            p.require(isinstance(login, dict) and login.get("role") == self.role
+                      and isinstance(login.get("password"), str) and login["password"]
+                      and type(login.get("ttl_seconds")) is int and login["ttl_seconds"] >= 300,
+                      "Official isolated restore login is unavailable or expiring.")
+            self.credentials[ref] = (login["password"], time.monotonic() + login["ttl_seconds"])
+            time.sleep(16)
+        password = self.credentials[ref][0]
         self.env = {**self.reader, "PGUSER": self.role + "." + ref, "PGPASSWORD": password,
                     "PGOPTIONS": "-c default_transaction_read_only=off -c statement_timeout=60000"}
         return self
@@ -197,8 +191,9 @@ class TargetWriter:
                           input_bytes=b"SET ROLE postgres; SET search_path=pg_catalog;\n" + sql, timeout=900)
 
     def __exit__(self, *_):
-        if self.created:
-            self.api(f"DROP ROLE {self.role};")
+        # Provider-managed CLI role credentials expire. Do not modify/drop a
+        # reserved platform role or reset the original database password.
+        pass
 
 
 def import_database(config, manifest, bundle, reader, target_catalog):
