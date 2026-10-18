@@ -1,8 +1,10 @@
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import tempfile
 import unittest
@@ -78,6 +80,17 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_official_public_ca_is_loadable_and_matches_dashboard_fingerprint(self):
+        path = Path(p.__file__).with_name("supabase-ca.crt")
+        pem = path.read_text(encoding="ascii")
+        self.assertNotIn("PRIVATE KEY", pem)
+        der = ssl.PEM_cert_to_DER_cert(pem)
+        self.assertEqual(hashlib.sha256(der).hexdigest(),
+                         "807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa")
+        context = ssl.create_default_context(cafile=str(path))
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
     def test_only_primary_supabase_host(self):
         rows = [{"database_type": "PRIMARY", "db_host": "aws-1-sa-east-1.pooler.supabase.com"}]
         self.assertEqual(p.pooler_host(rows), rows[0]["db_host"])
@@ -91,24 +104,26 @@ class DatabaseTests(unittest.TestCase):
     def test_temporary_login_is_read_only_and_password_not_in_arguments(self):
         cfg = p.configuration(settings())
         responses = [[{"database_type": "PRIMARY", "db_host": "aws-1.pooler.supabase.com"}],
-                     {"role": "cli_login_synthetic", "password": "synthetic-db-password", "ttl_seconds": 600}]
+                     {"role": "cli_login_supabase_read_only_user", "password": "synthetic-db-password", "ttl_seconds": 600}]
         with patch.object(p, "json_request", side_effect=responses) as request:
             env = p.database_environment(cfg, cfg["source_project_ref"])
         self.assertEqual(request.call_args.kwargs["body"], {"read_only": True})
         self.assertEqual(env["PGSSLMODE"], "verify-full")
-        self.assertEqual(env["PGSSLROOTCERT"], "system")
+        self.assertEqual(Path(env["PGSSLROOTCERT"]), Path(p.__file__).with_name("supabase-ca.crt").resolve())
         self.assertEqual(env["PGPORT"], "5432")
         self.assertIn("default_transaction_read_only=on", env["PGOPTIONS"])
         self.assertNotIn("BACKUP_SUPABASE_ACCESS_TOKEN", env)
         metadata = {"server_major": 17, "tls": True, "read_only": True,
+                    "effective_role": "supabase_read_only_user",
                     "public_tables": 1, "storage_objects": 0}
         with patch.object(p, "run_tool", return_value=json.dumps(metadata).encode()) as run:
             self.assertEqual(p.database_metadata(env), metadata)
         self.assertNotIn("synthetic-db-password", " ".join(run.call_args.args[0]))
+        self.assertIn("SET ROLE supabase_read_only_user", run.call_args.args[0])
 
     def test_invalid_temporary_login_is_rejected(self):
         cfg = p.configuration(settings())
-        login = {"role": "cli_login_synthetic", "password": "synthetic", "ttl_seconds": 600}
+        login = {"role": "cli_login_supabase_read_only_user", "password": "synthetic", "ttl_seconds": 600}
         for field, value in (("role", "postgres"), ("role", "cli_login_bad.otherref"),
                              ("password", ""), ("ttl_seconds", 1), ("ttl_seconds", True)):
             bad = {**login, field: value}
@@ -127,9 +142,11 @@ class DatabaseTests(unittest.TestCase):
 
     def test_metadata_tls_read_only_version_are_required(self):
         base = {"server_major": 17, "tls": True, "read_only": True,
+                "effective_role": "supabase_read_only_user",
                 "public_tables": 1, "storage_objects": 0}
         for key, value in (("server_major", 16), ("tls", False), ("read_only", False),
-                           ("public_tables", -1), ("storage_objects", True)):
+                           ("public_tables", -1), ("storage_objects", True),
+                           ("effective_role", "postgres")):
             with patch.object(p, "run_tool", return_value=json.dumps({**base, key: value}).encode()):
                 with self.assertRaises(p.Blocked):
                     p.database_metadata({})
@@ -197,6 +214,23 @@ class DriveTests(unittest.TestCase):
 
 
 class SuppressionTests(unittest.TestCase):
+    def test_diagnostics_classify_errors_without_returning_private_details(self):
+        cases = (
+            (b'certificate verify failed secret-host secret-token', 'TLS certificate'),
+            (b'password authentication failed for user "private-user"', 'authentication failed'),
+            (b'Tenant or user not found private-project', 'could not locate'),
+            (b'ERROR: 42501 private-table private-user', 'read permission'),
+            (b'connection timed out private-host', 'network connection'),
+            (b'unrecognized sensitive diagnostic', 'sensitive output was suppressed'),
+        )
+        for stderr, expected in cases:
+            with self.subTest(expected=expected):
+                result = p.native_failure(stderr)
+                self.assertIn(expected, result)
+                self.assertNotIn('private-', result)
+                self.assertNotIn('secret-', result)
+                self.assertNotIn('unrecognized', result)
+
     def test_remote_body_and_url_not_in_error(self):
         error = urllib.error.HTTPError("https://example.invalid/secret", 403, "sensitive", {}, None)
         with patch.object(p.urllib.request, "build_opener") as opener:

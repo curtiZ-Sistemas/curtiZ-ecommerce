@@ -24,6 +24,8 @@ O OAuth usa somente `drive.file`, para arquivos criados pelo aplicativo, e a con
 
 O executor instala somente clientes PostgreSQL 17 do repositório oficial assinado. Confere TLS com validação de hostname, projeto isolado vazio, propriedade/permissões/cota do Drive e envia um pequeno manifesto **sem dados de clientes**, criptografado com GPG/AES-256. Baixa o mesmo arquivo, confere SHA-256 e descriptografa para comparação integral. A senha temporária fica somente em tmpfs privado no runner e é removida ao terminar.
 
+A CA pública `ops/recovery/supabase-ca.crt` foi obtida pelo botão “Download certificate” do Dashboard oficial do banco. Não é o certificado A1 fiscal da empresa e não contém chave privada. Fingerprint SHA-256: `807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa`. O pooler exige essa CA para validação completa; não substitua `verify-full` por modos sem autenticação do servidor. O login temporário `cli_login_supabase_read_only_user` é `NOINHERIT`: o cliente assume explicitamente `supabase_read_only_user` e confirma `current_user` e transação somente de leitura. Referências: [TLS Supabase](https://supabase.com/docs/guides/platform/ssl-enforcement) e [conexões psql](https://supabase.com/docs/guides/database/psql).
+
 **Preflight aprovado não é backup nem restauração.** Não exporta schemas/dados/roles/Storage, não altera o banco original e não libera migrations, PRs de negócio ou ativação comercial. A cópia completa e o teste de recuperação abaixo continuam obrigatórios. A renovação do PAT e a manutenção do consentimento OAuth devem constar da entrega aos responsáveis.
 
 ## Começar sem servidor próprio
