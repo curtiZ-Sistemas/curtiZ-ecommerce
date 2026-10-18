@@ -3,8 +3,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePublicAppUrls } from "@curtiz/config";
 import { resolveLoginReturn } from "@/lib/auth-routing";
+import { GOOGLE_INTENT_COOKIE } from "@/lib/google-auth";
+import { googleCallback } from "@/lib/google-callback";
 
 export async function GET(request: NextRequest) {
+  if (request.nextUrl.searchParams.has("google_nonce") || (request.nextUrl.searchParams.has("error") && request.cookies.has(GOOGLE_INTENT_COOKIE))) return googleCallback(request);
   const code = request.nextUrl.searchParams.get("code");
   const next = safeInternalPath(request.nextUrl.searchParams.get("next"), "/minha-conta");
   const { storeUrl, panelUrl } = resolvePublicAppUrls(request.url);
@@ -24,19 +27,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(destination, 303);
   }
   const user = result.data.user;
+  if (user?.app_metadata.provider === "google") {
+    await supabase!.auth.signOut({ scope: "local" });
+    return NextResponse.redirect(new URL("/login?reason=google_oauth_error", storeUrl), 303);
+  }
   if (user) {
     const metadata = user.user_metadata;
     const fullName = typeof metadata.full_name === "string" ? metadata.full_name : undefined;
     const phone = typeof metadata.phone === "string" ? metadata.phone : undefined;
-    if (fullName || phone) {
-      await supabase!
-        .from("profiles")
-        .update({
-          ...(fullName ? { full_name: fullName } : {}),
-          ...(phone ? { phone } : {})
-        })
-        .eq("id", user.id);
-    }
+    // Fill missing signup data atomically; never overwrite later customer edits.
+    if (fullName) await supabase!.from("profiles").update({ full_name: fullName }).eq("id", user.id).is("full_name", null);
+    if (phone) await supabase!.from("profiles").update({ phone }).eq("id", user.id).is("phone", null);
     const existingConsent = await supabase!
       .from("customer_consents")
       .select("id")

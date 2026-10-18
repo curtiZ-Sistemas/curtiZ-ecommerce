@@ -1,6 +1,8 @@
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
+import { GoogleSignIn } from "@/components/google-sign-in";
+import { googleAuthReady } from "@/lib/google-auth";
 
 export const metadata = { title: "Acesse sua conta", robots: { index: false, follow: false } };
 
@@ -17,7 +19,9 @@ export default async function LoginPage({
     ? "Sua sessão não está disponível ou expirou. Entre novamente para acessar o painel."
     : query.reason === "session_unavailable"
       ? "Não foi possível confirmar sua sessão agora. Tente entrar novamente em alguns instantes."
-      : null;
+      : query.reason === "google_oauth_error"
+        ? "O acesso com Google foi cancelado, expirou ou não pôde ser concluído. Tente novamente ou use e-mail e senha."
+        : null;
   return (
     <div className="auth-page">
       <div className="auth-shell">
@@ -27,6 +31,7 @@ export default async function LoginPage({
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
           {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
+          <GoogleSignIn available={await googleAuthReady()} returnTo={returnTo} />
           <AuthForm
             mode="login"
             returnTo={returnTo}

@@ -15018,6 +15018,11 @@ body:has(.checkout-transition) .help-widget {
   .home-faq-list summary { transition: none; }
 }
 .catalog-load-trigger { min-height: 1px; }
+.google-sign-in { margin-bottom: 20px; }
+.google-sign-in form { display: grid; gap: 12px; }
+.google-sign-in-button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #747775; border-radius: 4px; background: #fff; color: #1f1f1f; font: 500 14px Arial, sans-serif; cursor: pointer; }
+.google-sign-in-button svg { flex: 0 0 20px; }
+.google-sign-in-button:disabled { cursor: not-allowed; opacity: .65; }
 .product-shipping-preview { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--neutral-200); }
 .product-shipping-preview h2 { margin: 0 0 16px; font-size: 1rem; }
 .product-shipping-preview form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: end; }
