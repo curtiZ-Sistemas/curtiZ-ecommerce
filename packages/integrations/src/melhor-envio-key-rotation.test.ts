@@ -71,12 +71,15 @@ describe("rotação da chave dos tokens Melhor Envio", () => {
   it("chave atual válida: grava v2 com key ID e lê sem recifrar", async () => {
     const database = fakeDatabase(null);
     const tokens = storeFor(database, rotating);
-    await tokens.write({ accessToken: "a", refreshToken: "r", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z", refreshTokenExpiresAt: null });
+    const accessToken = "synthetic-access-token-with-current-key";
+    const refreshToken = "synthetic-refresh-token-with-current-key";
+    await tokens.write({ accessToken, refreshToken, accessTokenExpiresAt: "2099-01-01T00:00:00.000Z", refreshTokenExpiresAt: null });
     const keyId = await melhorEnvioTokenKeyId(newKey);
     expect(keyId).toMatch(/^[0-9a-f]{12}$/u);
     expect(database.state.record?.accessTokenCiphertext.startsWith(`v2.${keyId}.`)).toBe(true);
-    expect(database.state.record?.accessTokenCiphertext).not.toContain("a.");
-    await expect(tokens.read()).resolves.toMatchObject({ accessToken: "a", refreshToken: "r" });
+    expect(database.state.record?.accessTokenCiphertext).not.toContain(accessToken);
+    expect(database.state.record?.refreshTokenCiphertext).not.toContain(refreshToken);
+    await expect(tokens.read()).resolves.toMatchObject({ accessToken, refreshToken });
     expect(database.state.replacements).toBe(0);
   });
 
