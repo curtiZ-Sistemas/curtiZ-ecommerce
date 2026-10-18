@@ -139,17 +139,57 @@ def managed_policy_sql(source, target):
     return "\n".join(commands).encode()
 
 
+def application_publications(manifest):
+    """Preserve app publications; never recreate empty provider runtime partitions."""
+    rows = []
+    fingerprints = {(t["schema"], t["table"]): t["count"] for t in manifest["fingerprints"]}
+    for item in manifest["catalog"]["publications"]:
+        if item["schemaname"] in APPLICATION:
+            rows.append(item)
+            continue
+        p.require(item["pubname"] == "supabase_realtime_messages_publication"
+                  and item["schemaname"] == "realtime"
+                  and re.fullmatch(r"messages(?:_[0-9]{4}_[0-9]{2}_[0-9]{2})?", item["tablename"])
+                  and fingerprints.get(("realtime", "messages")) == 0
+                  and fingerprints.get(("realtime", item["tablename"])) == 0,
+                  "Managed publication contains data or unknown runtime objects; recovery needs review.")
+    return rows
+
+
 def sql_sections(bundle):
-    pre = p.run_tool([b.PG + "pg_restore", "--section=pre-data", "--file=-", str(bundle / "application.dump")])
+    pre = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=pre-data", "--file=-", str(bundle / "application.dump")])
     p.require(pre.count(b"CREATE SCHEMA public;") == 1, "Unexpected public schema definition in archive.")
     pre = pre.replace(b"CREATE SCHEMA public;", b"-- public already exists in the empty managed project.", 1)
-    data = p.run_tool([b.PG + "pg_restore", "--section=data", "--file=-", str(bundle / "application.dump")])
-    post = p.run_tool([b.PG + "pg_restore", "--section=post-data", "--file=-", str(bundle / "application.dump")])
+    data = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=data", "--file=-", str(bundle / "application.dump")])
+    post = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=post-data", "--file=-", str(bundle / "application.dump")])
     auth = p.run_tool([b.PG + "pg_restore", "--data-only", "--file=-", str(bundle / "auth-data.dump")])
     # Restore bucket configuration before API-uploading the physical objects.
     buckets = p.run_tool([b.PG + "pg_restore", "--data-only", "--table=buckets", "--file=-",
                           str(bundle / "storage-data.dump")])
     return [pre, auth, data, buckets, post]
+
+
+def publication_sql(bundle, manifest):
+    expected = application_publications(manifest)
+    toc = p.run_tool([b.PG + "pg_restore", "--list", str(bundle / "database.dump")]).decode()
+    selected = []
+    for line in toc.splitlines():
+        if line.startswith(";"):
+            continue
+        p.require(" PUBLICATION TABLES IN SCHEMA " not in line,
+                  "Schema-wide publication requires additional recovery review.")
+        match = re.match(r"^[0-9]+; [0-9]+ [0-9]+ PUBLICATION TABLE ([^ ]+) ", line)
+        if match and match.group(1) in APPLICATION:
+            selected.append(line)
+    p.require(len(selected) == len(expected), "Native application publication inventory differs from its manifest.")
+    if not selected:
+        return b""
+    selection = bundle.parent / "application-publications.list"
+    selection.write_text("\n".join(selected) + "\n", encoding="utf-8")
+    # Preserve the archive's exact column lists/filters and implicit ALL columns,
+    # without duplicating publication membership in application post-data.
+    return p.run_tool([b.PG + "pg_restore", "--use-list=" + str(selection), "--section=post-data",
+                       "--file=-", str(bundle / "database.dump")])
 
 
 class TargetWriter:
@@ -207,11 +247,7 @@ def import_database(config, manifest, bundle, reader, target_catalog):
     for trigger in manifest["catalog"]["managed_custom_triggers"]:
         p.require(trigger["schema"] in MANAGED, "Unexpected managed trigger schema.")
         custom += ("\n" + trigger["definition"] + ";").encode()
-    for publication in manifest["catalog"]["publications"]:
-        p.require(publication["schemaname"] in APPLICATION,
-                  "Publication requires additional managed-schema review.")
-        custom += ("\nALTER PUBLICATION " + b.identifier(publication["pubname"]) + " ADD TABLE "
-                   + b.identifier(publication["schemaname"]) + "." + b.identifier(publication["tablename"]) + ";").encode()
+    custom += b"\n" + publication_sql(bundle, manifest)
     payload = (b"BEGIN; SET LOCAL session_replication_role=replica; "
                b"LOCK TABLE auth.users,storage.buckets,storage.objects IN ACCESS EXCLUSIVE MODE; "
                b"DO $empty$ BEGIN IF EXISTS(SELECT 1 FROM auth.users) OR EXISTS(SELECT 1 FROM storage.buckets) "
@@ -233,8 +269,15 @@ def verify_application(manifest, reader):
                       "Restored application/Auth data differs from the stored snapshot.")
             checked += 1
     catalog = b.native_json(reader, b.CATALOG_SQL)
-    for key in ("schemas", "functions", "policies", "managed_custom_triggers", "publications"):
+    for key in ("schemas", "functions", "policies", "managed_custom_triggers"):
         p.require(catalog[key] == manifest["catalog"][key], "Restored database authorization/catalog differs.")
+    expected_publications = application_publications(manifest)
+    p.require([v for v in catalog["publications"] if v["schemaname"] in APPLICATION] == expected_publications,
+              "Restored application publication tables, columns or filters differ.")
+    publication_names = {v["pubname"] for v in expected_publications}
+    p.require([v for v in catalog["publication_definitions"] if v["name"] in publication_names]
+              == [v for v in manifest["catalog"]["publication_definitions"] if v["name"] in publication_names],
+              "Restored application publication ownership or options differ.")
     return checked
 
 
@@ -345,6 +388,7 @@ def write_proof(config, token, directory, manifest, receipt, tables, sequences, 
                    "storage-logical-metadata", "storage-physical-byte-hashes", "cross-customer-rls"],
         "managed_exclusions": ["platform migration histories remain target-owned",
             "Storage physical version locators are regenerated by the provider",
+            "empty provider Realtime message partitions/publication remain target-owned; snapshot counts verified zero",
             "platform runtime state is archived but not activated in the isolated target"],
         "configuration": "Source configurations are encrypted in the backup; outbound integrations remain inactive.",
         "commercial_activation_authorized": False}

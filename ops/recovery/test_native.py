@@ -138,18 +138,22 @@ class NativeTests(unittest.TestCase):
                               env=env, input_bytes=sql)
         query(b"CREATE DATABASE synthetic_restore;", self.admin)
         try:
+            query(b"CREATE PUBLICATION synthetic_app FOR TABLE public.orders (id) WHERE (id > 0);", self.admin)
             query(b"CREATE SCHEMA auth; CREATE TABLE auth.users(id bigint PRIMARY KEY,value text); "
-                  b"CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY);", target)
+                  b"CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY); "
+                  b"CREATE PUBLICATION synthetic_app;", target)
             with tempfile.TemporaryDirectory() as folder:
                 bundle = Path(folder)
                 for name, options in {
+                    "database.dump": [],
                     "application.dump": ["--schema=public", "--schema=private", "--schema=supabase_migrations"],
                     "auth-data.dump": ["--schema=auth", "--data-only"],
                     "storage-data.dump": ["--data-only", "--table=storage.buckets"]
                 }.items():
                     p.run_tool([b.PG + "pg_dump", "--format=custom", "--no-password",
                                 "--file=" + str(bundle / name), *options], env=self.admin)
-                payload = b"\n".join(r.sql_sections(bundle))
+                manifest = {"catalog": b.native_json(self.readonly, b.CATALOG_SQL), "fingerprints": []}
+                payload = b"\n".join(r.sql_sections(bundle)) + r.publication_sql(bundle, manifest)
                 with self.assertRaises(p.Blocked):
                     query(b"BEGIN; SET LOCAL session_replication_role=replica;\n" + payload
                           + b"\nSELECT 1/0; COMMIT;", target)
@@ -186,9 +190,13 @@ class NativeTests(unittest.TestCase):
                     self.assertEqual(b.native_json(target, b.fingerprint_sql(schema, table)), expected)
                 self.assertEqual(query(b"SELECT relrowsecurity FROM pg_class WHERE oid='public.orders'::regclass;", target).strip(), b"t")
                 self.assertEqual(r.verify_sequences(bundle, target), 1)
+                self.assertEqual(query(b"SELECT to_json(attnames) FROM pg_publication_tables WHERE pubname='synthetic_app';", target).strip(), b'["id"]')
+                pub_query = b"SELECT json_build_object('columns',attnames,'filter',rowfilter) FROM pg_publication_tables WHERE pubname='synthetic_app';"
+                self.assertEqual(query(pub_query, target), query(pub_query, self.admin))
                 self.assertEqual(query(b"SELECT count(*) FROM pg_roles WHERE rolname LIKE 'curtiz_restore_%';", self.admin).strip(), b"0")
         finally:
             query(b"DROP DATABASE synthetic_restore WITH (FORCE);", self.admin)
+            query(b"DROP PUBLICATION IF EXISTS synthetic_app;", self.admin)
             query(b"DROP ROLE IF EXISTS cli_login_postgres;", self.admin)
             r.TargetWriter.credentials.clear()
 

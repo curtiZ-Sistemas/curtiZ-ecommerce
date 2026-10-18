@@ -149,6 +149,11 @@ extensões e autorização, além de tabelas da aplicação/Auth/Storage vazias.
 única transação PostgreSQL importa esses dados, ownership, RLS, grants, funções,
 constraints, sequences, customizações e publications. Schemas gerenciados não
 são recriados e históricos internos da plataforma permanecem do destino.
+Partições de mensagens da publicação interna `supabase_realtime_messages_publication`
+só podem ser omitidas quando o snapshot comprova contagem zero no pai e em cada
+partição. Elas continuam arquivadas na cópia integral. Qualquer dado ou objeto
+gerenciado desconhecido bloqueia a restauração para revisão; as publicações
+da aplicação precisam preservar tabelas, colunas, filtros, opções e ownership.
 
 O acesso de escrita usa o login CLI temporário oficial, emitido pela API
 **somente no projeto isolado**, com grant de `postgres` pelo `supabase_admin`.
