@@ -20,6 +20,24 @@ def catalog():
 
 
 class RestoreGuards(unittest.TestCase):
+    def test_application_publications_preserved_and_only_proven_empty_runtime_skipped(self):
+        application = {"pubname": "supabase_realtime", "schemaname": "public", "tablename": "support_messages",
+                       "rowfilter": None}
+        runtime = {"pubname": "supabase_realtime_messages_publication", "schemaname": "realtime",
+                   "tablename": "messages_2026_09_06"}
+        manifest = {"catalog": {"publications": [application, runtime]}, "fingerprints": [
+            {"schema": "realtime", "table": "messages", "count": 0},
+            {"schema": "realtime", "table": "messages_2026_09_06", "count": 0}]}
+        self.assertEqual(r.application_publications(manifest), [application])
+        for changed in (
+            {**manifest, "fingerprints": []},
+            {**manifest, "fingerprints": [{"schema": "realtime", "table": "messages", "count": 1}]},
+            {**manifest, "catalog": {"publications": [{**runtime, "schemaname": "auth"}]}},
+            {**manifest, "catalog": {"publications": [{**runtime, "pubname": "unknown"}]}},
+        ):
+            with self.subTest(manifest=changed), self.assertRaises(p.Blocked):
+                r.application_publications(changed)
+
     def test_literals_quote_apostrophes_and_reject_nuls(self):
         self.assertEqual(r.literal("synthetic'path"), "'synthetic''path'")
         with self.assertRaises(p.Blocked):
