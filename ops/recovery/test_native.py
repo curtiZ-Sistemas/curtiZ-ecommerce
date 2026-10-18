@@ -133,15 +133,28 @@ class NativeTests(unittest.TestCase):
 
     def test_reviewed_native_restore_is_atomic_and_preserves_auth_rls_data_and_sequences(self):
         target = {**self.admin, "PGDATABASE": "synthetic_restore"}
+        target_reader = {**self.readonly, "PGDATABASE": "synthetic_restore"}
+        platform_admin = {**self.admin, "PGUSER": "fixture_platform_admin", "PGPASSWORD": "synthetic-platform-password"}
         def query(sql, env):
             return p.run_tool([b.PG + "psql", "-X", "-w", "-qAt", "-v", "ON_ERROR_STOP=1"],
                               env=env, input_bytes=sql)
         query(b"CREATE DATABASE synthetic_restore;", self.admin)
+        query(b"CREATE ROLE fixture_platform_admin LOGIN SUPERUSER PASSWORD 'synthetic-platform-password'; "
+              b"CREATE ROLE supabase_admin NOLOGIN SUPERUSER; "
+              b"ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO postgres; "
+              b"CREATE FUNCTION public.synthetic_helper() RETURNS integer LANGUAGE sql AS 'SELECT 1'; "
+              b"GRANT SET ON PARAMETER session_replication_role TO postgres;", self.admin)
         try:
             query(b"CREATE PUBLICATION synthetic_app FOR TABLE public.orders (id) WHERE (id > 0);", self.admin)
             query(b"CREATE SCHEMA auth; CREATE TABLE auth.users(id bigint PRIMARY KEY,value text); "
                   b"CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY); "
-                  b"CREATE PUBLICATION synthetic_app;", target)
+                  b"CREATE PUBLICATION synthetic_app; "
+                  b"ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO postgres; "
+                  b"ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO supabase_read_only_user; "
+                  b"ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO supabase_read_only_user;", target)
+            # Model the actual platform: postgres is powerful but not a superuser,
+            # and cannot alter the reserved administrator's default privileges.
+            query(b"ALTER ROLE postgres NOSUPERUSER;", platform_admin)
             with tempfile.TemporaryDirectory() as folder:
                 bundle = Path(folder)
                 for name, options in {
@@ -152,20 +165,32 @@ class NativeTests(unittest.TestCase):
                 }.items():
                     p.run_tool([b.PG + "pg_dump", "--format=custom", "--no-password",
                                 "--file=" + str(bundle / name), *options], env=self.admin)
-                manifest = {"catalog": b.native_json(self.readonly, b.CATALOG_SQL), "fingerprints": []}
+                tables = b.native_json(self.readonly, b.TABLES_SQL)
+                manifest = {"catalog": b.native_json(self.readonly, b.CATALOG_SQL), "tables": tables,
+                    "fingerprints": [{"schema": t["schema"], "table": t["name"],
+                        **b.native_json(self.readonly, b.fingerprint_sql(t["schema"], t["name"]))} for t in tables]}
                 payload = b"\n".join(r.sql_sections(bundle)) + r.publication_sql(bundle, manifest)
-                with self.assertRaises(p.Blocked):
+                with self.assertRaises(p.Blocked) as denied:
                     query(b"BEGIN; SET LOCAL session_replication_role=replica;\n" + payload
                           + b"\nSELECT 1/0; COMMIT;", target)
+                self.assertIn("permission", str(denied.exception))
                 self.assertEqual(query(b"SELECT count(*) FROM auth.users;", target).strip(), b"0")
                 self.assertEqual(query(b"SELECT count(*) FROM pg_tables WHERE schemaname='private';", target).strip(), b"0")
+                target_platform_admin = {**platform_admin, "PGDATABASE": "synthetic_restore"}
+                query(b"ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO supabase_read_only_user;", target_platform_admin)
+                with self.assertRaises(p.Blocked):
+                    r.default_acl_plan(bundle, target_reader)
+                query(b"ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE UPDATE ON TABLES FROM supabase_read_only_user;", target_platform_admin)
+                reset, selection = r.default_acl_plan(bundle, target_reader)
+                self.assertNotIn(b"FOR ROLE supabase_admin", reset)
+                payload = reset + b"\n" + b"\n".join(r.sql_sections(bundle, selection)) + r.publication_sql(bundle, manifest)
                 config = {"source_project_ref": "a" * 20, "restore_project_ref": "b" * 20,
                           "recovery_passphrase": "synthetic-recovery-root", "supabase_access_token": "synthetic"}
                 def management(_url, **kwargs):
                     self.assertTrue(_url.endswith("/" + "b" * 20 + "/cli/login-role"))
                     self.assertEqual(kwargs["body"], {"read_only": False})
                     query(b"CREATE ROLE cli_login_postgres LOGIN NOINHERIT PASSWORD 'synthetic-writer'; "
-                          b"GRANT postgres TO cli_login_postgres;", self.admin)
+                          b"GRANT postgres TO cli_login_postgres;", platform_admin)
                     return {"role": "cli_login_postgres", "password": "synthetic-writer", "ttl_seconds": 600}
                 with patch.dict(os.environ, {"GITHUB_RUN_ID": "98765", "GITHUB_RUN_ATTEMPT": "1"}), \
                      patch.object(p, "json_request", side_effect=management), patch.object(r.time, "sleep"):
@@ -187,17 +212,23 @@ class NativeTests(unittest.TestCase):
                 for schema, table in (("public", "orders"), ("private", "state"), ("auth", "users"),
                                       ("supabase_migrations", "schema_migrations")):
                     expected = b.native_json(self.readonly, b.fingerprint_sql(schema, table))
-                    self.assertEqual(b.native_json(target, b.fingerprint_sql(schema, table)), expected)
+                    self.assertEqual(b.native_json(target_reader, b.fingerprint_sql(schema, table)), expected)
                 self.assertEqual(query(b"SELECT relrowsecurity FROM pg_class WHERE oid='public.orders'::regclass;", target).strip(), b"t")
-                self.assertEqual(r.verify_sequences(bundle, target), 1)
+                self.assertEqual(r.verify_sequences(bundle, target_reader), 1)
+                self.assertEqual(r.verify_application(manifest, target_reader), 4)
+                r.verify_default_privileges(bundle, target_reader)
+                self.assertEqual(query(b"SELECT proacl IS NULL FROM pg_proc WHERE oid='public.synthetic_helper()'::regprocedure;", target).strip(), b"t")
                 self.assertEqual(query(b"SELECT to_json(attnames) FROM pg_publication_tables WHERE pubname='synthetic_app';", target).strip(), b'["id"]')
                 pub_query = b"SELECT json_build_object('columns',attnames,'filter',rowfilter) FROM pg_publication_tables WHERE pubname='synthetic_app';"
                 self.assertEqual(query(pub_query, target), query(pub_query, self.admin))
                 self.assertEqual(query(b"SELECT count(*) FROM pg_roles WHERE rolname LIKE 'curtiz_restore_%';", self.admin).strip(), b"0")
         finally:
+            query(b"ALTER ROLE postgres SUPERUSER;", platform_admin)
             query(b"DROP DATABASE synthetic_restore WITH (FORCE);", self.admin)
             query(b"DROP PUBLICATION IF EXISTS synthetic_app;", self.admin)
+            query(b"DROP FUNCTION IF EXISTS public.synthetic_helper(); DROP OWNED BY supabase_admin;", self.admin)
             query(b"DROP ROLE IF EXISTS cli_login_postgres;", self.admin)
+            query(b"DROP ROLE IF EXISTS supabase_admin; DROP ROLE IF EXISTS fixture_platform_admin;", self.admin)
             r.TargetWriter.credentials.clear()
 
 

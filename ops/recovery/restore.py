@@ -156,17 +156,110 @@ def application_publications(manifest):
     return rows
 
 
-def sql_sections(bundle):
+def sql_sections(bundle, post_selection=None):
     pre = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=pre-data", "--file=-", str(bundle / "application.dump")])
     p.require(pre.count(b"CREATE SCHEMA public;") == 1, "Unexpected public schema definition in archive.")
     pre = pre.replace(b"CREATE SCHEMA public;", b"-- public already exists in the empty managed project.", 1)
     data = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=data", "--file=-", str(bundle / "application.dump")])
-    post = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=post-data", "--file=-", str(bundle / "application.dump")])
+    post = p.run_tool([b.PG + "pg_restore", "--no-publications", "--section=post-data", "--file=-",
+                       *(["--use-list=" + str(post_selection)] if post_selection else []),
+                       str(bundle / "application.dump")])
     auth = p.run_tool([b.PG + "pg_restore", "--data-only", "--file=-", str(bundle / "auth-data.dump")])
     # Restore bucket configuration before API-uploading the physical objects.
     buckets = p.run_tool([b.PG + "pg_restore", "--data-only", "--table=buckets", "--file=-",
                           str(bundle / "storage-data.dump")])
     return [pre, auth, data, buckets, post]
+
+
+def default_acl_entries(toc):
+    result = []
+    for line in toc.splitlines():
+        if line.startswith(";") or " DEFAULT ACL " not in line:
+            continue
+        match = re.match(r"^[0-9]+; [0-9]+ [0-9]+ DEFAULT ACL ([^ ]+) .+ ([^ ]+)$", line)
+        p.require(match is not None, "Unexpected native default privilege inventory.")
+        result.append({"line": line, "schema": match.group(1), "owner": match.group(2)})
+    return result
+
+
+def default_acl_commands(archive, entries, selection):
+    if not entries:
+        return []
+    selection.write_text("\n".join(e["line"] for e in entries) + "\n", encoding="utf-8")
+    sql = p.run_tool([b.PG + "pg_restore", "--use-list=" + str(selection), "--file=-", str(archive)])
+    commands = re.findall(rb"^ALTER DEFAULT PRIVILEGES [^\n]+;$", sql, flags=re.MULTILINE)
+    p.require(commands, "Native default privilege commands are missing.")
+    return sorted(command.strip() for command in commands)
+
+
+DEFAULT_ACL_RESET_SQL = """SELECT coalesce(json_agg(json_build_object(
+ 'schema',n.nspname,'kind',d.defaclobjtype::text,'grantees',
+ (SELECT coalesce(json_agg(json_build_object('role',pg_get_userbyid(g.grantee),
+    'public',g.grantee=0) ORDER BY g.grantee),'[]')
+  FROM (SELECT DISTINCT grantee FROM aclexplode(d.defaclacl)) g))
+ ORDER BY n.nspname,d.defaclobjtype),'[]') FROM pg_default_acl d
+ LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace
+ WHERE d.defaclrole='postgres'::regrole AND (d.defaclnamespace=0
+ OR n.nspname IN ('public','private','supabase_migrations'));"""
+
+
+def reset_application_defaults(rows):
+    commands = []
+    kinds = {"r": "TABLES", "S": "SEQUENCES", "f": "FUNCTIONS"}
+    for row in rows:
+        p.require(row["schema"] in APPLICATION and row["kind"] in kinds,
+                  "Global or unsupported application default privileges need recovery review.")
+        roles = ",".join("PUBLIC" if grant["public"] else b.identifier(grant["role"])
+                         for grant in row["grantees"])
+        if roles:
+            commands.append("ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA "
+                + b.identifier(row["schema"]) + " REVOKE ALL ON " + kinds[row["kind"]] + " FROM " + roles + ";")
+    return "\n".join(commands).encode()
+
+
+def default_acl_plan(bundle, reader):
+    directory = bundle.parent
+    source = bundle / "application.dump"
+    toc = p.run_tool([b.PG + "pg_restore", "--list", str(source)]).decode()
+    entries = default_acl_entries(toc)
+    p.require(all(e["schema"] in APPLICATION and e["owner"] in {"postgres", "supabase_admin"} for e in entries),
+              "Unknown default privilege owner/schema requires recovery review.")
+    schemas = native_namespaces(reader)
+    target = directory / "target-default-privileges.dump"
+    p.run_tool([b.PG + "pg_dump", "--no-password", "--schema-only", "--format=custom",
+        "--role=" + p.read_role(reader), "--file=" + str(target),
+        *("--schema=" + schema for schema in schemas)], env=reader, timeout=90)
+    target_toc = p.run_tool([b.PG + "pg_restore", "--list", str(target)]).decode()
+    reserved = [e for e in entries if e["owner"] != "postgres"]
+    target_reserved = [e for e in default_acl_entries(target_toc) if e["owner"] != "postgres"]
+    p.require(default_acl_commands(source, reserved, directory / "source-managed-defaults.list")
+              == default_acl_commands(target, target_reserved, directory / "target-managed-defaults.list"),
+              "Managed default privileges differ from the stored native archive; do not override them.")
+    excluded = {e["line"] for e in reserved}
+    selection = directory / "application-post-data.list"
+    selection.write_text("\n".join(line for line in toc.splitlines()
+                                    if not line.startswith(";") and line not in excluded) + "\n", encoding="utf-8")
+    # Objects must start with PostgreSQL built-in defaults. The archive restores
+    # each object's exact ACL, then postgres's future defaults in post-data.
+    return reset_application_defaults(b.native_json(reader, DEFAULT_ACL_RESET_SQL)), selection
+
+
+def native_namespaces(reader):
+    names = b.native_json(reader, "SELECT coalesce(json_agg(nspname ORDER BY nspname),'[]') "
+        "FROM pg_namespace WHERE nspname IN ('public','private','supabase_migrations');")
+    p.require(names and set(names) <= APPLICATION, "Invalid isolated application namespace inventory.")
+    return names
+
+
+def verify_default_privileges(bundle, reader):
+    default_acl_plan(bundle, reader)  # read-only comparison, never executes its reset commands
+    source = bundle / "application.dump"
+    target = bundle.parent / "target-default-privileges.dump"
+    source_entries = default_acl_entries(p.run_tool([b.PG + "pg_restore", "--list", str(source)]).decode())
+    target_entries = default_acl_entries(p.run_tool([b.PG + "pg_restore", "--list", str(target)]).decode())
+    p.require(default_acl_commands(source, source_entries, bundle.parent / "source-all-defaults.list")
+              == default_acl_commands(target, target_entries, bundle.parent / "target-all-defaults.list"),
+              "Restored application default privileges differ from the stored native archive.")
 
 
 def publication_sql(bundle, manifest):
@@ -242,7 +335,8 @@ def import_database(config, manifest, bundle, reader, target_catalog):
                                  "'buckets',(SELECT count(*) FROM storage.buckets));")
     p.require(empty == {"users": 0, "objects": 0, "buckets": 0},
               "Isolated Auth or Storage contains useful data; no overwrite is allowed.")
-    sections = sql_sections(bundle)
+    reset_defaults, post_selection = default_acl_plan(bundle, reader)
+    sections = sql_sections(bundle, post_selection)
     custom = managed_policy_sql(manifest["catalog"], target_catalog)
     for trigger in manifest["catalog"]["managed_custom_triggers"]:
         p.require(trigger["schema"] in MANAGED, "Unexpected managed trigger schema.")
@@ -252,7 +346,7 @@ def import_database(config, manifest, bundle, reader, target_catalog):
                b"LOCK TABLE auth.users,storage.buckets,storage.objects IN ACCESS EXCLUSIVE MODE; "
                b"DO $empty$ BEGIN IF EXISTS(SELECT 1 FROM auth.users) OR EXISTS(SELECT 1 FROM storage.buckets) "
                b"OR EXISTS(SELECT 1 FROM storage.objects) THEN RAISE EXCEPTION 'Target is not empty'; END IF; END $empty$;\n"
-               + b"\n".join(sections) + b"\n" + custom + b"\nCOMMIT;\n")
+               + reset_defaults + b"\n" + b"\n".join(sections) + b"\n" + custom + b"\nCOMMIT;\n")
     with TargetWriter(config, reader) as writer:
         writer.execute(payload)
 
@@ -432,6 +526,7 @@ def main():
             stage = "database-integrity"
             verified = verify_application(manifest, reader)
             sequences = verify_sequences(bundle, reader)
+            verify_default_privileges(bundle, reader)
             stage = "isolated-physical-storage"
             objects = restore_storage(config, manifest, bundle, directory, reader)
             stage = "authorization-and-final-integrity"
