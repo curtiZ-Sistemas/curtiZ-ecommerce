@@ -52,7 +52,8 @@ def native_json(env, sql):
     raw = p.run_tool([PG + "psql", "-X", "-w", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1",
                       "-v", "VERBOSITY=sqlstate",
                       "-c", "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
-                      "-c", "SET ROLE supabase_read_only_user",
+                      "-c", "SET ROLE " + p.read_role(env),
+                      "-c", "SET search_path = pg_catalog",
                       "-c", sql], env=env, timeout=90)
     try:
         return json.loads(raw)
@@ -75,7 +76,8 @@ class Snapshot:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errors)
         try:
             self.snapshot_id = self.line("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; "
-                                         "SET LOCAL ROLE supabase_read_only_user; "
+                                         "SET LOCAL ROLE " + p.read_role(self.env) + "; "
+                                         "SET LOCAL search_path = pg_catalog; "
                                          "SELECT pg_export_snapshot();")
             p.require(re.fullmatch(r"[A-Fa-f0-9-]{10,100}", self.snapshot_id),
                       "Invalid exported snapshot identifier.")
@@ -136,6 +138,23 @@ ROLES_SQL = """SELECT coalesce(json_agg(json_build_object('name',rolname,
  ORDER BY rolname),'[]') FROM pg_roles WHERE rolname NOT LIKE 'cli_login_%';"""
 
 CATALOG_SQL = """SELECT json_build_object(
+ 'large_objects',(SELECT count(*) FROM pg_largeobject_metadata),
+ 'schemas',(SELECT coalesce(json_agg(json_build_object('name',n.nspname,
+   'owner',pg_get_userbyid(n.nspowner),'acl',n.nspacl::text) ORDER BY n.nspname),'[]')
+   FROM pg_namespace n WHERE n.nspname IN ('public','private','supabase_migrations')),
+ 'functions',(SELECT coalesce(json_agg(json_build_object('schema',n.nspname,
+   'name',f.proname,'identity',pg_get_function_identity_arguments(f.oid),
+   'owner',pg_get_userbyid(f.proowner),'acl',f.proacl::text,
+   'definition_sha256',encode(sha256(convert_to(pg_get_functiondef(f.oid),'UTF8')),'hex'))
+   ORDER BY n.nspname,f.proname,pg_get_function_identity_arguments(f.oid)),'[]')
+   FROM pg_proc f JOIN pg_namespace n ON n.oid=f.pronamespace
+   WHERE n.nspname IN ('public','private','supabase_migrations') AND f.prokind IN ('f','p')
+   AND NOT EXISTS(SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass
+                  AND d.objid=f.oid AND d.deptype='e')),
+ 'publication_definitions',(SELECT coalesce(json_agg(json_build_object('name',pubname,
+   'owner',pg_get_userbyid(pubowner),'all_tables',puballtables,'insert',pubinsert,
+   'update',pubupdate,'delete',pubdelete,'truncate',pubtruncate,
+   'via_partition_root',pubviaroot) ORDER BY pubname),'[]') FROM pg_publication),
  'extensions',(SELECT coalesce(json_agg(json_build_object('name',e.extname,
    'version',e.extversion,'schema',n.nspname) ORDER BY e.extname),'[]')
    FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace),
@@ -361,13 +380,13 @@ def export(config, token, directory):
         }
         for name, options in archives.items():
             p.run_tool([PG + "pg_dump", "--no-password", "--format=custom",
-                        "--role=supabase_read_only_user", "--lock-wait-timeout=30s", snapshot_arg,
+                        "--role=" + p.read_role(source_env), "--lock-wait-timeout=30s", snapshot_arg,
                         "--file=" + str(bundle / name), *options], env=source_env, timeout=300)
             p.require((bundle / name).stat().st_size > 0, "Native archive is empty.")
             p.run_tool([PG + "pg_restore", "--list", "--file=" + str(bundle / (name + ".toc")),
                         str(bundle / name)])
         roles_bytes = p.run_tool([PG + "pg_dumpall", "--no-password", "--roles-only",
-                                  "--no-role-passwords", "--role=supabase_read_only_user"],
+                                  "--no-role-passwords", "--role=" + p.read_role(source_env)],
                                  env=source_env, timeout=90)
         p.require(roles_bytes, "Native roles export is empty.")
         (bundle / "roles.sql").write_bytes(roles_bytes)

@@ -18,6 +18,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import native_access
+
 
 class Blocked(Exception):
     """A deliberately non-sensitive, fixed diagnostic."""
@@ -91,6 +93,9 @@ def configuration(env):
     phrase = config["recovery_passphrase"]
     require(len(phrase) >= 24 and not any(c in phrase for c in "\r\n\0"),
             "Recovery passphrase must have at least 24 characters and no line breaks.")
+    config["native_auth_mode"] = env.get("BACKUP_NATIVE_AUTH_MODE") or "temporary"
+    require(config["native_auth_mode"] in ("temporary", "dedicated"),
+            "Unsupported native authentication mode.")
     return config
 
 
@@ -147,21 +152,37 @@ def database_environment(config, ref):
     base = f"https://api.supabase.com/v1/projects/{ref}"
     bearer = config["supabase_access_token"]
     host = pooler_host(json_request(base + "/config/database/pooler", bearer=bearer))
-    login = json_request(base + "/cli/login-role", bearer=bearer,
-                         body={"read_only": True})
-    require(isinstance(login, dict), "Invalid temporary database login response.")
-    role, password, ttl = (login.get(k) for k in ("role", "password", "ttl_seconds"))
-    require(role == "cli_login_supabase_read_only_user"
-            and isinstance(password, str) and password
-            and type(ttl) is int and ttl >= 120,
-            "Invalid or expiring temporary database login.")
+    require(ref in (config["source_project_ref"], config["restore_project_ref"]),
+            "Unexpected native database destination.")
+    if config.get("native_auth_mode") == "dedicated":
+        role = native_access.READER
+        password = native_access.reader_password(config["recovery_passphrase"], ref)
+        effective_role = role
+    else:
+        login = json_request(base + "/cli/login-role", bearer=bearer,
+                             body={"read_only": True})
+        require(isinstance(login, dict), "Invalid temporary database login response.")
+        role, password, ttl = (login.get(k) for k in ("role", "password", "ttl_seconds"))
+        require(role == "cli_login_supabase_read_only_user"
+                and isinstance(password, str) and password
+                and type(ttl) is int and ttl >= 120,
+                "Invalid or expiring temporary database login.")
+        effective_role = "supabase_read_only_user"
     # Never inherit unrelated application credentials or libpq overrides.
     return {"PATH": os.defpath, "LANG": "C.UTF-8", "PGHOST": host,
             "PGPORT": "5432", "PGDATABASE": "postgres", "PGUSER": f"{role}.{ref}",
             "PGPASSWORD": password, "PGSSLMODE": "verify-full",
             "PGSSLROOTCERT": str(Path(__file__).with_name("supabase-ca.crt").resolve()),
             "PGCONNECT_TIMEOUT": "15", "PGAPPNAME": "curtiz-recovery-preflight",
+            "CURTIZ_NATIVE_READ_ROLE": effective_role,
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=30000"}
+
+
+def read_role(env):
+    role = env.get("CURTIZ_NATIVE_READ_ROLE", "supabase_read_only_user")
+    require(role in ("supabase_read_only_user", native_access.READER),
+            "Unexpected native read role.")
+    return role
 
 
 METADATA_QUERY = """
@@ -180,7 +201,7 @@ def database_metadata(env):
     raw = run_tool(["/usr/lib/postgresql/17/bin/psql", "-X", "-w", "-A", "-t", "-q",
                     "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate",
                     "-c", "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
-                    "-c", "SET ROLE supabase_read_only_user",
+                    "-c", "SET ROLE " + read_role(env),
                     "-c", METADATA_QUERY, "-c", "\\conninfo"], env=env)
     try:
         lines = raw.splitlines()
@@ -194,7 +215,7 @@ def database_metadata(env):
     require(result.get("server_major") == 17, "Database is not PostgreSQL 17.")
     require(result["tls"] is True, "Native client did not confirm a TLS connection.")
     require(result.get("read_only") is True, "Native session is not read-only.")
-    require(result.get("effective_role") == "supabase_read_only_user",
+    require(result.get("effective_role") == read_role(env),
             "Native session did not assume the authorized read-only role.")
     require(all(type(result.get(k)) is int and result[k] >= 0
                 for k in ("public_tables", "storage_objects")),

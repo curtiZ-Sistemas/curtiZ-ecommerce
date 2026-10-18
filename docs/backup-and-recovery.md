@@ -115,6 +115,27 @@ Só aprove a cópia depois de reler a segunda cópia armazenada, conferir hashes
 
 Referências: [pg_dump](https://www.postgresql.org/docs/17/app-pgdump.html), [pg_dumpall](https://www.postgresql.org/docs/17/app-pg-dumpall.html), [pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html), [serviços libpq](https://www.postgresql.org/docs/17/libpq-pgservice.html), [TLS libpq](https://www.postgresql.org/docs/17/libpq-ssl.html) e [particularidades do Supabase](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore).
 
+### Acesso nativo dedicado quando o login temporário falha
+
+O workflow manual `Recovery prerequisites`, restrito a `main` e ao ambiente
+`backup-recovery`, oferece `provision-readers`. Essa operação cria somente a role
+técnica `curtiz_backup_reader` nos dois projetos autorizados: `BYPASSRLS`, associação
+`pg_read_all_data` e leitura por padrão, sem superusuário, criação de roles/bancos
+ou replicação. Não altera RLS das tabelas, dados comerciais nem senhas existentes.
+Um nome já utilizado sem o marcador esperado causa bloqueio; repetir a operação
+valida a role existente sem trocar sua senha.
+
+A senha de cada projeto deriva da chave de recuperação empresarial por
+HMAC-SHA256, com domínio e referência do projeto distintos. Somente seu verificador
+SCRAM salgado segue pela API administrativa; senha, verificador e SQL nunca entram
+nos logs. A chave raiz permanece no cofre e no Secret protegido. Trocar essa chave
+exige planejamento de recuperação e rotação dos leitores; não a substitua como
+tentativa de corrigir conexão. Após a verificação nativa dos dois leitores, defina
+`BACKUP_NATIVE_AUTH_MODE=dedicated` nas variáveis do ambiente protegido. TLS continua
+com `verify-full`, CA pública e sessões somente de leitura.
+
+Referência: [procedimento oficial para leitor de backup e RLS](https://supabase.com/docs/guides/troubleshooting/pg_dump-fails-with-query-would-be-affected-by-row-level-security-policy-1d5783).
+
 ## Verificar e restaurar
 
 No PowerShell, gere hashes para registrar integridade dos arquivos:

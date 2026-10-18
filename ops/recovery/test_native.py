@@ -8,6 +8,7 @@ import unittest
 
 import backup as b
 import preflight as p
+import native_access as a
 
 
 @unittest.skipUnless(os.environ.get("RUN_NATIVE_RECOVERY_TESTS") == "true",
@@ -93,6 +94,40 @@ class NativeTests(unittest.TestCase):
         self.assertIn(b"supabase_read_only_user", output)
         self.assertNotIn(b"synthetic-ci-password", output)
         self.assertNotIn(b"SCRAM-SHA-256$", output)
+
+    def test_dedicated_scram_reader_is_idempotent_readonly_and_rejects_role_collision(self):
+        password = a.reader_password("synthetic-root-only", "a" * 20)
+        def admin_sql(sql):
+            return p.run_tool([b.PG + "psql", "-X", "-w", "-qAt", "-v", "ON_ERROR_STOP=1",
+                               "-c", sql], env=self.admin)
+        try:
+            admin_sql(f"CREATE ROLE {a.READER} NOLOGIN BYPASSRLS")
+            with self.assertRaises(p.Blocked):
+                admin_sql(a.provisioning_sql(a.scram_verifier(password)))
+            admin_sql(f"DROP ROLE {a.READER}")
+            admin_sql(a.provisioning_sql(a.scram_verifier(password)))
+            # A second invocation must preserve the stored verifier, even if
+            # its proposed password differs. Never rotate an existing login.
+            before = admin_sql(f"SELECT rolpassword FROM pg_authid WHERE rolname='{a.READER}'")
+            admin_sql(a.provisioning_sql(a.scram_verifier("synthetic-must-not-replace")))
+            self.assertEqual(admin_sql(f"SELECT rolpassword FROM pg_authid WHERE rolname='{a.READER}'"), before)
+            reader = {**self.admin, "PGUSER": a.READER, "PGPASSWORD": password,
+                      "CURTIZ_NATIVE_READ_ROLE": a.READER}
+            with tempfile.TemporaryDirectory() as folder:
+                with b.Snapshot(reader, Path(folder)) as snapshot:
+                    self.assertEqual(snapshot.query(b.fingerprint_sql("public", "orders"))["count"], 1)
+                    self.assertEqual(snapshot.query("SELECT json_build_object('ro',"
+                        "current_setting('transaction_read_only'));"), {"ro": "on"})
+            for sql in ("INSERT INTO public.orders(value) VALUES ('forbidden')",
+                        "SET default_transaction_read_only=off; INSERT INTO public.orders(value) VALUES ('forbidden')"):
+                with self.assertRaises(p.Blocked):
+                    p.run_tool([b.PG + "psql", "-X", "-w", "-q", "-v", "ON_ERROR_STOP=1",
+                                "-c", sql], env=reader)
+            admin_sql(f"ALTER ROLE {a.READER} CREATEDB")
+            with self.assertRaises(p.Blocked):
+                admin_sql(a.provisioning_sql(a.scram_verifier(password)))
+        finally:
+            admin_sql(f"DROP OWNED BY {a.READER}; DROP ROLE IF EXISTS {a.READER}")
 
 
 if __name__ == "__main__":
