@@ -28,6 +28,18 @@ A CA pública `ops/recovery/supabase-ca.crt` foi obtida pelo botão “Download 
 
 **Preflight aprovado não é backup nem restauração.** Não exporta schemas/dados/roles/Storage, não altera o banco original e não libera migrations, PRs de negócio ou ativação comercial. A cópia completa e o teste de recuperação abaixo continuam obrigatórios. A renovação do PAT e a manutenção do consentimento OAuth devem constar da entrega aos responsáveis.
 
+### Exportação completa pelo executor
+
+Depois de confirmar a guarda da senha no cofre online da empresa, registre `BACKUP_CLOUD_VAULT_CONFIRMED=true` no ambiente protegido. Selecione `backup` no workflow manual; `preflight` continua sendo o padrão. A exportação roda exclusivamente em runner temporário, em tmpfs privado, sem artifacts, cache, dump ou credencial neste notebook.
+
+`ops/recovery/backup.py` mantém um snapshot PostgreSQL de leitura aberto para `pg_dump`: produz um archive integral e archives auxiliares de aplicação, Auth e metadados Storage com o mesmo snapshot. Inclui `private`, `supabase_migrations`, RLS/grants, inventários, fingerprints de linhas, extensões e customizações gerenciadas. Exporta roles com `pg_dumpall --no-role-passwords`; credenciais de roles próprias exigiriam cofre separado. Não existem roles próprias na conferência inicial, mas o inventário é refeito por execução.
+
+Todos os objetos públicos e privados do Storage são baixados pelo backend autorizado, preservando bucket/caminho no manifesto privado, com tamanho e SHA-256 dos bytes. Os nomes remotos não viram caminhos locais: os blobs usam nomes derivados de hash. A coleta compara novamente os metadados e as definições de roles ao terminar; mudança durante a exportação impede aprovação. Configurações de Auth, PostgreSQL, Data API, Storage e Realtime ficam dentro do bundle criptografado, nunca nos logs. Secrets que os provedores não permitem recuperar continuam exigindo guarda própria no cofre e inventário de dependências; não considere valores mascarados uma cópia recuperável.
+
+O bundle recebe GPG/AES-256 antes de ser enviado por upload retomável ao Drive privado. O executor baixa a cópia armazenada, compara o hash do ciphertext, descriptografa e verifica os hashes e a cobertura de cada membro. Um recibo de integridade fica na mesma pasta privada, sem conteúdo de clientes, caminhos originais de objetos ou valores de configuração. Cópias anteriores não são sobrescritas ou removidas. Sem espaço ou com resposta inconclusiva, a operação falha e não libera migrations.
+
+O resultado dessa operação é **cópia armazenada com leitura e integridade verificadas, restauração ainda não comprovada**. O PR de negócio permanece bloqueado até restauração isolada, verificações funcionais e de autorização. Os testes nativos de snapshot/archives usam PostgreSQL sintético exclusivamente no CI, sem acesso a projetos reais; o executor de backup usa os clientes nativos e não depende de Docker.
+
 ## Começar sem servidor próprio
 
 1. Mantenha código e migrations no Git e uma cópia independente do repositório. Git não guarda pedidos, clientes ou imagens do banco.

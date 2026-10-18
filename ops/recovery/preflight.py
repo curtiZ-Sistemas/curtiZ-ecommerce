@@ -167,7 +167,7 @@ def database_environment(config, ref):
 METADATA_QUERY = """
 SELECT json_build_object(
  'server_major', current_setting('server_version_num')::int / 10000,
- 'tls', (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()),
+ 'backend_tls', (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()),
  'read_only', current_setting('transaction_read_only') = 'on',
  'effective_role', current_user,
  'public_tables', (SELECT count(*) FROM pg_class c JOIN pg_namespace n
@@ -179,16 +179,23 @@ SELECT json_build_object(
 def database_metadata(env):
     raw = run_tool(["/usr/lib/postgresql/17/bin/psql", "-X", "-w", "-A", "-t", "-q",
                     "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate",
+                    "-c", "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
                     "-c", "SET ROLE supabase_read_only_user",
-                    "-c", METADATA_QUERY], env=env)
+                    "-c", METADATA_QUERY, "-c", "\\conninfo"], env=env)
     try:
-        result = json.loads(raw)
+        lines = raw.splitlines()
+        result = json.loads(lines[0])
     except ValueError:
         raise Blocked("Invalid native database metadata response.") from None
-    require(result.get("server_major") == 17 and result.get("tls") is True
-            and result.get("read_only") is True
-            and result.get("effective_role") == "supabase_read_only_user",
-            "Database version, TLS or read-only verification failed.")
+    # Supavisor terminates client TLS. pg_stat_ssl describes a different leg,
+    # between the managed pooler and PostgreSQL, not this libpq connection.
+    # Read conninfo from the SAME session; never log its host/user metadata.
+    result["tls"] = any(b"SSL connection (protocol: TLS" in line for line in lines[1:])
+    require(result.get("server_major") == 17, "Database is not PostgreSQL 17.")
+    require(result["tls"] is True, "Native client did not confirm a TLS connection.")
+    require(result.get("read_only") is True, "Native session is not read-only.")
+    require(result.get("effective_role") == "supabase_read_only_user",
+            "Native session did not assume the authorized read-only role.")
     require(all(type(result.get(k)) is int and result[k] >= 0
                 for k in ("public_tables", "storage_objects")),
             "Invalid database metadata counts.")

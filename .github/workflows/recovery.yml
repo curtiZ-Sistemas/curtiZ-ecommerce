@@ -2,11 +2,18 @@ name: Recovery prerequisites
 
 on:
   pull_request:
-    paths: ["ops/recovery/**", ".github/workflows/recovery.yml"]
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml", ".github/actions/native-postgres-client/**"]
   push:
     branches: [main]
-    paths: ["ops/recovery/**", ".github/workflows/recovery.yml"]
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml", ".github/actions/native-postgres-client/**"]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Preflight does not export customers; backup creates an encrypted private copy.
+        type: choice
+        required: true
+        default: preflight
+        options: [preflight, backup]
 
 permissions:
   contents: read
@@ -26,36 +33,47 @@ jobs:
           persist-credentials: false
       - run: python3 -m unittest discover -s ops/recovery -p 'test_*.py' -v
 
-  preflight:
-    name: Cloud recovery preflight (no customer export)
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    needs: tests
+  native-tests:
+    name: Native snapshot and archive integration
     runs-on: ubuntu-24.04
-    environment: backup-recovery
-    timeout-minutes: 15
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Install native PostgreSQL 17 clients from official signed repository
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-          printf '%s\n' \
-            'Types: deb' \
-            'URIs: https://apt.postgresql.org/pub/repos/apt' \
-            'Suites: noble-pgdg' \
-            'Components: main' \
-            'Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' \
-            | sudo tee /etc/apt/sources.list.d/curtiz-pgdg.sources > /dev/null
-          sudo apt-get update -qq
-          sudo apt-get install --no-install-recommends -y postgresql-client-17 gnupg
-      - name: Verify cloud prerequisites without exporting customer data
+      - uses: ./.github/actions/native-postgres-client
+      - name: Exercise read-only snapshot, RLS reads, native archives and history
         env:
+          RUN_NATIVE_RECOVERY_TESTS: "true"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s ops/recovery -p 'test_native.py' -v
+
+  preflight:
+    name: Protected cloud recovery operation
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [tests, native-tests]
+    runs-on: ubuntu-24.04
+    environment: backup-recovery
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/native-postgres-client
+      - name: Execute the selected protected cloud operation
+        env:
+          RECOVERY_OPERATION: ${{ inputs.operation }}
+          BACKUP_CLOUD_VAULT_CONFIRMED: ${{ vars.BACKUP_CLOUD_VAULT_CONFIRMED }}
+          PYTHONDONTWRITEBYTECODE: "1"
           BACKUP_SOURCE_PROJECT_REF: ${{ vars.BACKUP_SOURCE_PROJECT_REF }}
           BACKUP_RESTORE_PROJECT_REF: ${{ vars.BACKUP_RESTORE_PROJECT_REF }}
           BACKUP_GOOGLE_OWNER: ${{ vars.BACKUP_GOOGLE_OWNER }}
@@ -65,4 +83,11 @@ jobs:
           BACKUP_GOOGLE_REFRESH_TOKEN: ${{ secrets.BACKUP_GOOGLE_REFRESH_TOKEN }}
           BACKUP_SUPABASE_ACCESS_TOKEN: ${{ secrets.BACKUP_SUPABASE_ACCESS_TOKEN }}
           BACKUP_RECOVERY_PASSPHRASE: ${{ secrets.BACKUP_RECOVERY_PASSPHRASE }}
-        run: python3 ops/recovery/preflight.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RECOVERY_OPERATION" in
+            preflight) python3 ops/recovery/preflight.py ;;
+            backup) python3 ops/recovery/backup.py ;;
+            *) echo '::error::Unsupported recovery operation.'; exit 1 ;;
+          esac

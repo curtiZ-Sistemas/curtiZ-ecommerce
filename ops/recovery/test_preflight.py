@@ -116,7 +116,8 @@ class DatabaseTests(unittest.TestCase):
         metadata = {"server_major": 17, "tls": True, "read_only": True,
                     "effective_role": "supabase_read_only_user",
                     "public_tables": 1, "storage_objects": 0}
-        with patch.object(p, "run_tool", return_value=json.dumps(metadata).encode()) as run:
+        with patch.object(p, "run_tool", return_value=json.dumps(metadata).encode()
+                          + b'\nSSL connection (protocol: TLSv1.3, cipher: synthetic)\n') as run:
             self.assertEqual(p.database_metadata(env), metadata)
         self.assertNotIn("synthetic-db-password", " ".join(run.call_args.args[0]))
         self.assertIn("SET ROLE supabase_read_only_user", run.call_args.args[0])
@@ -144,12 +145,24 @@ class DatabaseTests(unittest.TestCase):
         base = {"server_major": 17, "tls": True, "read_only": True,
                 "effective_role": "supabase_read_only_user",
                 "public_tables": 1, "storage_objects": 0}
-        for key, value in (("server_major", 16), ("tls", False), ("read_only", False),
+        for key, value in (("server_major", 16), ("read_only", False),
                            ("public_tables", -1), ("storage_objects", True),
                            ("effective_role", "postgres")):
-            with patch.object(p, "run_tool", return_value=json.dumps({**base, key: value}).encode()):
+            with patch.object(p, "run_tool", return_value=json.dumps({**base, key: value}).encode()
+                              + b'\nSSL connection (protocol: TLSv1.3, cipher: synthetic)\n'):
                 with self.assertRaises(p.Blocked):
                     p.database_metadata({})
+
+    def test_pooler_backend_tls_is_distinct_from_verified_native_client_tls(self):
+        metadata = {"server_major": 17, "backend_tls": False, "read_only": True,
+                    "effective_role": "supabase_read_only_user", "public_tables": 1,
+                    "storage_objects": 0}
+        raw = json.dumps(metadata).encode()
+        with patch.object(p, "run_tool", return_value=raw + b'\nSSL connection (protocol: TLSv1.3, cipher: synthetic)\n'):
+            self.assertTrue(p.database_metadata({})["tls"])
+        with patch.object(p, "run_tool", return_value=raw + b'\nconnection metadata without TLS\n'):
+            with self.assertRaises(p.Blocked):
+                p.database_metadata({})
 
 
 class DriveTests(unittest.TestCase):
