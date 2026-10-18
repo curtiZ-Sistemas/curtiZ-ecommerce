@@ -22,6 +22,7 @@ import {
   sanitizeCpf
 } from "@/lib/personal-data";
 import { trackIntelligence } from "../../lib/intelligence-client";
+import { readShippingPostalCode } from "../../lib/shipping-postal-code";
 
 const states = [
   "AC",
@@ -1423,7 +1424,7 @@ export default function CheckoutPage() {
                       pattern="\d{5}-?\d{3}"
                       required
                       placeholder="00000-000"
-                      defaultValue={formatPostalCode(addressBeingEdited?.postalCode ?? "")}
+                      defaultValue={formatPostalCode(addressBeingEdited?.postalCode ?? readShippingPostalCode())}
                       aria-invalid={Boolean(addressFieldErrors.postalCode)}
                       aria-describedby={addressFieldErrors.postalCode ? "checkout-address-postal-error" : undefined}
                       onInput={(event) => {
