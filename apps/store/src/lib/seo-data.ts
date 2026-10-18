@@ -17,12 +17,12 @@ const SITEMAP_PAGE_SIZE = 50_000;
 
 export const getActiveProductSitemapEntries = cache(async (): Promise<SitemapProduct[]> => {
   const supabase = createPublicSupabaseClient();
-  if (!supabase) return [];
+  if (!supabase) throw new Error("Product sitemap source unavailable");
   const response = await supabase.rpc("get_storefront_product_seo_entries", {
     p_limit: SITEMAP_PAGE_SIZE
   });
   const result = readQueryResult(response);
-  if (result.error) return [];
+  if (result.error || !Array.isArray(result.data)) throw new Error("Product sitemap source unavailable");
 
   return readRows(result.data).flatMap((row): SitemapProduct[] => {
     const slug = readString(row, "slug");
@@ -30,6 +30,22 @@ export const getActiveProductSitemapEntries = cache(async (): Promise<SitemapPro
     const updatedAt = readString(row, "updatedAt");
     return [{ slug, ...(updatedAt ? { updatedAt } : {}) }];
   });
+});
+
+// The same public projection as the catalog, including secondary category membership.
+// Failures conservatively disable indexing; the catalog UI retains its own retry flow.
+export const hasPublicCatalogItems = cache(async (category?: string, promotion = false): Promise<boolean> => {
+  try {
+    const supabase = createPublicSupabaseClient();
+    if (!supabase) return false;
+    const result = readQueryResult(await supabase.rpc("search_catalog", {
+      p_category: category ?? null, p_promotion: promotion, p_page_size: 1
+    }));
+    return !result.error && isUnknownRecord(result.data) && readNumber(result.data, "total") > 0;
+  } catch {
+    logServerEvent("warn", "catalog_seo_unavailable", {});
+    return false;
+  }
 });
 
 export const getActiveProductImageSitemapEntries = cache(async (): Promise<SitemapProductImageEntry[] | null> => {

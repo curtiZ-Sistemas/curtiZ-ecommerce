@@ -1,14 +1,18 @@
 import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
 import { FemininoCatalog } from "./feminino-catalog";
+import { hasPublicCatalogItems } from "@/lib/seo-data";
 
 const description =
-  "Descubra chinelos e sandálias femininas curti Z com leveza, cores atuais e conforto para acompanhar sua rotina.";
-export const metadata = catalogMetadata({
-  title: "Chinelos e sandálias femininas",
-  description,
-  path: "/feminino"
-});
+  "Conheça os chinelos e kits de chinelos femininos curti Z. Consulte modelos, cores, tamanhos e disponibilidade no catálogo.";
+export async function generateMetadata() {
+  return catalogMetadata({
+    title: "Chinelos e kits de chinelos femininos",
+    description,
+    path: "/feminino",
+    indexable: await hasPublicCatalogItems("Feminino")
+  });
+}
 
 export default function Page() {
   return (

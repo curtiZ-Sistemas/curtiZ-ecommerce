@@ -8,12 +8,12 @@ vi.mock("./supabase/server", () => ({
   createPublicSupabaseClient: () => ({ rpc })
 }));
 
-import { getActiveProductImageSitemapEntries, getActiveProductSitemapEntries } from "./seo-data";
+import { getActiveProductImageSitemapEntries, getActiveProductSitemapEntries, hasPublicCatalogItems } from "./seo-data";
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("fonte de produtos do sitemap", () => {
-  beforeEach(() => rpc.mockReset());
+  beforeEach(() => { rpc.mockReset(); });
 
   it("usa a projeção comercial do banco e preserva updated_at real", async () => {
     rpc.mockResolvedValue({
@@ -33,7 +33,24 @@ describe("fonte de produtos do sitemap", () => {
 
   it("não publica fallback hardcoded quando o banco falha", async () => {
     rpc.mockResolvedValue({ data: null, error: { code: "database_unavailable" } });
-    await expect(getActiveProductSitemapEntries()).resolves.toEqual([]);
+    await expect(getActiveProductSitemapEntries()).rejects.toThrow("Product sitemap source unavailable");
+  });
+});
+
+describe("indexação de seleções comerciais", () => {
+  beforeEach(() => { rpc.mockReset(); });
+  it.each([[0, false], [12, true]])("consulta a projeção pública e verifica quantidade %s", async (total, expected) => {
+    rpc.mockResolvedValue({ data: { total }, error: null });
+    expect(await hasPublicCatalogItems("Feminino", true)).toBe(expected);
+    expect(rpc).toHaveBeenCalledWith("search_catalog", { p_category: "Feminino", p_promotion: true, p_page_size: 1 });
+  });
+  it("não indexa falha, resposta inválida ou seleção vazia", async () => {
+    for (const result of [{ data: null, error: {} }, { data: [], error: null }, { data: { total: 0 }, error: null }]) {
+      rpc.mockResolvedValue(result);
+      expect(await hasPublicCatalogItems()).toBe(false);
+    }
+    rpc.mockRejectedValue(new Error("offline"));
+    await expect(hasPublicCatalogItems()).resolves.toBe(false);
   });
 });
 
