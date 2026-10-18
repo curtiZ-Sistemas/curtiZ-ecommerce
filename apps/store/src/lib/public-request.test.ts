@@ -10,6 +10,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("public expensive API budgets", () => {
+  it("gives Google OAuth an independent distributed write budget, without a local fallback", async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    await publicBudgetResponse(new Request("https://store.test"), "google_oauth");
+    expect(rpc).toHaveBeenCalledWith("consume_public_api_rate_limit", { p_operation: "help_write", p_key_hash: expect.stringMatching(/^[a-f0-9]{64}$/u) as unknown });
+    vi.mocked(createServiceSupabaseClient).mockReturnValue(null);
+    expect((await publicBudgetResponse(new Request("https://store.test"), "google_oauth", { RATE_LIMIT_HMAC_KEY: "test-only-signing-key-at-least-thirty-two-bytes" }))?.status).toBe(503);
+  });
   it("reuses the installed distributed budget with an independent shipping identity and runtime key", async () => {
     const rpc = vi.fn(async () => ({ data: true, error: null }));
     vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
