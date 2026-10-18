@@ -158,7 +158,8 @@ def database_environment(config, ref):
     # Never inherit unrelated application credentials or libpq overrides.
     return {"PATH": os.defpath, "LANG": "C.UTF-8", "PGHOST": host,
             "PGPORT": "5432", "PGDATABASE": "postgres", "PGUSER": f"{role}.{ref}",
-            "PGPASSWORD": password, "PGSSLMODE": "verify-full", "PGSSLROOTCERT": "system",
+            "PGPASSWORD": password, "PGSSLMODE": "verify-full",
+            "PGSSLROOTCERT": str(Path(__file__).with_name("supabase-ca.crt").resolve()),
             "PGCONNECT_TIMEOUT": "15", "PGAPPNAME": "curtiz-recovery-preflight",
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=30000"}
 

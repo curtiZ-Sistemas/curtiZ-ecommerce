@@ -1,8 +1,10 @@
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import tempfile
 import unittest
@@ -78,6 +80,17 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_official_public_ca_is_loadable_and_matches_dashboard_fingerprint(self):
+        path = Path(p.__file__).with_name("supabase-ca.crt")
+        pem = path.read_text(encoding="ascii")
+        self.assertNotIn("PRIVATE KEY", pem)
+        der = ssl.PEM_cert_to_DER_cert(pem)
+        self.assertEqual(hashlib.sha256(der).hexdigest(),
+                         "807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa")
+        context = ssl.create_default_context(cafile=str(path))
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
     def test_only_primary_supabase_host(self):
         rows = [{"database_type": "PRIMARY", "db_host": "aws-1-sa-east-1.pooler.supabase.com"}]
         self.assertEqual(p.pooler_host(rows), rows[0]["db_host"])
@@ -96,7 +109,7 @@ class DatabaseTests(unittest.TestCase):
             env = p.database_environment(cfg, cfg["source_project_ref"])
         self.assertEqual(request.call_args.kwargs["body"], {"read_only": True})
         self.assertEqual(env["PGSSLMODE"], "verify-full")
-        self.assertEqual(env["PGSSLROOTCERT"], "system")
+        self.assertEqual(Path(env["PGSSLROOTCERT"]), Path(p.__file__).with_name("supabase-ca.crt").resolve())
         self.assertEqual(env["PGPORT"], "5432")
         self.assertIn("default_transaction_read_only=on", env["PGOPTIONS"])
         self.assertNotIn("BACKUP_SUPABASE_ACCESS_TOKEN", env)
