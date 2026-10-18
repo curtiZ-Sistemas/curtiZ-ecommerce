@@ -1,0 +1,68 @@
+name: Recovery prerequisites
+
+on:
+  pull_request:
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml"]
+  push:
+    branches: [main]
+    paths: ["ops/recovery/**", ".github/workflows/recovery.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recovery-prerequisites
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Recovery safety tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s ops/recovery -p 'test_*.py' -v
+
+  preflight:
+    name: Cloud recovery preflight (no customer export)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-24.04
+    environment: backup-recovery
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install native PostgreSQL 17 clients from official signed repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          printf '%s\n' \
+            'Types: deb' \
+            'URIs: https://apt.postgresql.org/pub/repos/apt' \
+            'Suites: noble-pgdg' \
+            'Components: main' \
+            'Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' \
+            | sudo tee /etc/apt/sources.list.d/curtiz-pgdg.sources > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y postgresql-client-17 gnupg
+      - name: Verify cloud prerequisites without exporting customer data
+        env:
+          BACKUP_SOURCE_PROJECT_REF: ${{ vars.BACKUP_SOURCE_PROJECT_REF }}
+          BACKUP_RESTORE_PROJECT_REF: ${{ vars.BACKUP_RESTORE_PROJECT_REF }}
+          BACKUP_GOOGLE_OWNER: ${{ vars.BACKUP_GOOGLE_OWNER }}
+          BACKUP_DRIVE_FOLDER_ID: ${{ vars.BACKUP_DRIVE_FOLDER_ID }}
+          BACKUP_GOOGLE_CLIENT_ID: ${{ vars.BACKUP_GOOGLE_CLIENT_ID }}
+          BACKUP_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKUP_GOOGLE_CLIENT_SECRET }}
+          BACKUP_GOOGLE_REFRESH_TOKEN: ${{ secrets.BACKUP_GOOGLE_REFRESH_TOKEN }}
+          BACKUP_SUPABASE_ACCESS_TOKEN: ${{ secrets.BACKUP_SUPABASE_ACCESS_TOKEN }}
+          BACKUP_RECOVERY_PASSPHRASE: ${{ secrets.BACKUP_RECOVERY_PASSPHRASE }}
+        run: python3 ops/recovery/preflight.py
