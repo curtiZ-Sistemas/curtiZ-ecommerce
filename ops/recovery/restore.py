@@ -228,7 +228,7 @@ def default_acl_plan(bundle, reader):
     target = directory / "target-default-privileges.dump"
     p.run_tool([b.PG + "pg_dump", "--no-password", "--schema-only", "--format=custom",
         "--role=" + p.read_role(reader), "--file=" + str(target),
-        *("--schema=" + schema for schema in schemas)], env=reader, timeout=90)
+        *("--schema=" + schema for schema in schemas)], env=reader, timeout=300)
     target_toc = p.run_tool([b.PG + "pg_restore", "--list", str(target)]).decode()
     reserved = [e for e in entries if e["owner"] != "postgres"]
     target_reserved = [e for e in default_acl_entries(target_toc) if e["owner"] != "postgres"]
@@ -380,10 +380,15 @@ def verify_application(manifest, reader):
     checked = 0
     for table in manifest["fingerprints"]:
         if table["schema"] in APPLICATION or (table["schema"] == "auth" and table["table"] != "schema_migrations"):
-            result = b.native_json(reader, b.fingerprint_sql(table["schema"], table["table"]))
+            try:
+                result = b.native_json(reader, b.fingerprint_sql(table["schema"], table["table"]))
+            except p.Blocked as exc:
+                raise p.Blocked(f"Stored table fingerprint {checked + 1} could not be checked: {exc}") from None
             p.require(result == {"count": table["count"], "sha256": table["sha256"]},
                       "Restored application/Auth data differs from the stored snapshot.")
             checked += 1
+            if checked % 50 == 0:
+                print(f"Verified {checked} stored table fingerprints.", flush=True)
     catalog = b.native_json(reader, b.CATALOG_SQL)
     for key, kind in (("schemas", "n"), ("functions", "f")):
         verify_acl_rows(manifest["catalog"][key], catalog[key], kind, reader)
@@ -549,7 +554,9 @@ def main():
             # backup. Existing customer data is never cleared or overwritten.
             stage = "database-integrity"
             verified = verify_application(manifest, reader)
+            stage = "sequence-integrity"
             sequences = verify_sequences(bundle, reader)
+            stage = "default-privilege-integrity"
             verify_default_privileges(bundle, reader)
             stage = "isolated-physical-storage"
             objects = restore_storage(config, manifest, bundle, directory, reader)
