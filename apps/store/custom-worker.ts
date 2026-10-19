@@ -9,6 +9,7 @@ import { runExpirationHousekeeping } from "./src/lib/housekeeping";
 import { runMelhorEnvioShippingJobs } from "./src/lib/melhor-envio-jobs";
 import { runBlingJobs } from "./src/lib/bling-jobs";
 import { runTransactionalEmailJobs } from "./src/lib/transactional-email-jobs";
+import { runAfterSaleJobs } from "./src/lib/after-sale-jobs";
 import { logServerEvent } from "@curtiz/security";
 import { optimizeStorefrontImageRequest, type StorefrontImageEnvironment } from "./src/lib/storefront-image-worker";
 
@@ -55,6 +56,7 @@ export default {
       };
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
+      await runQueue("after_sale", () => runAfterSaleJobs(environment, executionId, scheduledFetch));
       await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId, undefined, scheduledFetch));
     }));

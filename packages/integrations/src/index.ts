@@ -171,7 +171,7 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
 export class MercadoPagoPaymentProvider {
   readonly name = "mercadopago";
 
-  constructor(private readonly accessToken: string, private readonly mode: "test" | "production") {
+  constructor(private readonly accessToken: string, private readonly mode: "test" | "production", private readonly transport: typeof fetch = fetch) {
     if (!(mode === "test" ? isMercadoPagoTestCredential(accessToken) : mode === "production" && accessToken.startsWith("APP_USR-"))) {
       throw new MercadoPagoProviderError("invalid_payment_credential", 503);
     }
@@ -182,7 +182,7 @@ export class MercadoPagoPaymentProvider {
     headers.set("authorization", `Bearer ${this.accessToken}`);
     headers.set("content-type", "application/json");
     if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
-    const response = await fetch(`https://api.mercadopago.com${path}`, {
+    const response = await this.transport(`https://api.mercadopago.com${path}`, {
       ...init, headers, signal: init.signal ?? AbortSignal.timeout(15_000)
     });
     const body: unknown = await response.json().catch(() => null);
@@ -212,7 +212,7 @@ export class MercadoPagoPaymentProvider {
   }
 
   async getPaymentMethodIds(): Promise<string[]> {
-    const response = await fetch("https://api.mercadopago.com/v1/payment_methods", {
+    const response = await this.transport("https://api.mercadopago.com/v1/payment_methods", {
       method: "GET",
       headers: { authorization: `Bearer ${this.accessToken}` },
       signal: AbortSignal.timeout(15_000)
@@ -285,7 +285,7 @@ export class MercadoPagoPaymentProvider {
     }
     const payment = await this.getPayment(providerPaymentId);
     if (amountInCents > payment.amountInCents) throw new MercadoPagoProviderError("invalid_refund", 400);
-    const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
+    const response = await this.transport(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
       method: "POST", headers: { authorization: `Bearer ${this.accessToken}`, "content-type": "application/json", "x-idempotency-key": idempotencyKey },
       body: JSON.stringify({ amount: amountInCents / 100 }), signal: AbortSignal.timeout(15_000)
     });

@@ -212,6 +212,6 @@ do cofre de chaves e de um projeto Supabase isolado; não são ativadas por este
 
 ## Quando houver infraestrutura
 
-Automatize exportação, cópia de Storage, criptografia, retenção, alertas e testes de restauração. O painel só deve indicar backup verificado com evidências reais: última cópia, cobertura, integridade e último teste de restauração. Não há automação nem restauração remota implementada nesta etapa.
+O workflow protegido já implementa exportação criptografada e restauração isolada manuais na nuvem. Agendamento periódico, retenção automática e alertas operacionais ainda precisam ser configurados; não confunda uma execução manual comprovada com uma rotina recorrente ativa. O painel só deve indicar backup verificado com evidências reais: última cópia, cobertura, integridade e último teste de restauração.
 
 Referências: [Supabase Backups](https://supabase.com/docs/guides/platform/backups) e [exportação e restauração](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore).

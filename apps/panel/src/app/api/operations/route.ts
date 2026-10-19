@@ -54,6 +54,7 @@ const returnStatuses = [
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("start_separation"), orderId: z.string().uuid() }),
+  z.object({ action: z.literal("cancel_order"), orderId: z.string().uuid(), reason: z.string().trim().min(5).max(500) }),
   z.object({
     action: z.literal("start_dispatch"),
     orderId: z.string().uuid(),
@@ -686,7 +687,9 @@ export async function POST(request: NextRequest) {
   const supabase = authorized.supabase;
   const input = parsed.data;
   let response: unknown;
-  if (input.action === "start_separation") {
+  if (input.action === "cancel_order") {
+    response = await supabase.rpc("request_operational_order_cancellation", { p_order_id: input.orderId, p_reason: input.reason });
+  } else if (input.action === "start_separation") {
     response = await supabase.rpc("start_order_separation", { p_order_id: input.orderId });
   } else if (input.action === "start_dispatch") {
     response = await supabase.rpc("start_order_dispatch", {
