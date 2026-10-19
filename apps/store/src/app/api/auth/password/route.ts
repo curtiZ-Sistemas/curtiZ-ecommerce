@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolvePublicAppUrls } from "@curtiz/config";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
+import { RECOVERY_PATH, classifyResetError, verifyRecoverySession } from "@/lib/password-recovery";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
@@ -45,12 +46,19 @@ export async function POST(request: NextRequest) {
     );
   }
   if (parsed.data.action === "request") {
+    // Verify the human check first so automated callers cannot spend a victim's hourly budget.
+    if (!(await verifyTurnstile(request, parsed.data.turnstileToken))) {
+      return NextResponse.json(
+        { message: "Não foi possível confirmar a verificação de segurança." },
+        { status: 403, headers }
+      );
+    }
     const rateLimit = await enforceAuthRateLimit({
-        request,
-        email: parsed.data.email,
-        scope: "password_reset",
-        supabase: createServiceSupabaseClient()
-      });
+      request,
+      email: parsed.data.email,
+      scope: "password_reset",
+      supabase: createServiceSupabaseClient()
+    });
     if (rateLimit.status === "blocked") {
       return NextResponse.json(
         { message: "Aguarde antes de solicitar outro link." },
@@ -59,42 +67,72 @@ export async function POST(request: NextRequest) {
     }
     if (rateLimit.status === "error") {
       return NextResponse.json(
-        { message: "A prote\u00e7\u00e3o da recupera\u00e7\u00e3o est\u00e1 temporariamente indispon\u00edvel." },
+        { message: "A proteção da recuperação está temporariamente indisponível." },
         { status: 503, headers }
       );
     }
-    if (!(await verifyTurnstile(request, parsed.data.turnstileToken))) {
+    const baseUrl = resolvePublicAppUrls(request.url).storeUrl;
+    const result = await supabase.auth
+      .resetPasswordForEmail(parsed.data.email, { redirectTo: `${baseUrl}/auth/callback?next=${RECOVERY_PATH}` })
+      .then((sent) => classifyResetError(sent.error))
+      .catch(() => ({ outcome: "unavailable" as const, category: "provider_unreachable", status: null }));
+    if (result.category !== "sent") {
+      // Never log the address, the provider code or its message.
+      console.error({ event: "password_reset_provider_response", category: result.category, status: result.status });
+    }
+    if (result.outcome === "unavailable") {
       return NextResponse.json(
-        { message: "Não foi possível confirmar a verificação de segurança." },
-        { status: 403, headers }
+        { message: "Não foi possível processar sua solicitação agora. Tente novamente mais tarde." },
+        { status: 503, headers }
       );
     }
-    const baseUrl = resolvePublicAppUrls(request.url).storeUrl;
-    await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-      redirectTo: `${baseUrl}/auth/callback?next=/redefinir-senha`
-    });
     return NextResponse.json(
-      { message: "Se a conta existir, enviaremos as instruções para o e-mail informado." },
+      { message: "Se existir uma conta com esse e-mail, você receberá instruções para recuperar seu acesso." },
       { headers }
     );
   }
 
-  const userResult = await supabase.auth.getUser();
-  if (userResult.error || !userResult.data.user) {
+  const recovery = await verifyRecoverySession(supabase);
+  if (recovery.status === "no_password_identity") {
     return NextResponse.json(
-      { message: "Este link expirou. Solicite uma nova recuperação de acesso." },
-      { status: 401, headers }
+      { message: "Esta conta acessa a curti Z com o Google. Use o botão Entrar com Google." },
+      { status: 403, headers }
+    );
+  }
+  if (recovery.status !== "ok") {
+    return NextResponse.json(
+      { message: "Este link expirou ou não é válido. Solicite uma nova recuperação de acesso." },
+      { status: recovery.status === "unauthenticated" || recovery.status === "expired" ? 401 : 403, headers }
     );
   }
   const updated = await supabase.auth.updateUser({ password: parsed.data.password });
   if (updated.error) {
+    const code = (updated.error as { code?: string }).code;
+    if (code === "insufficient_aal") {
+      const next = encodeURIComponent(`${resolvePublicAppUrls(request.url).storeUrl}${RECOVERY_PATH}`);
+      return NextResponse.json(
+        { message: "Confirme sua identidade com o código de verificação para continuar.", redirectTo: `/mfa?next=${next}` },
+        { status: 403, headers }
+      );
+    }
+    if (code === "same_password" || code === "weak_password") {
+      return NextResponse.json(
+        { message: code === "same_password"
+          ? "Escolha uma senha diferente da atual."
+          : "Escolha uma senha mais forte, com letras, números e símbolos." },
+        { status: 422, headers }
+      );
+    }
     return NextResponse.json(
       { message: "Não foi possível atualizar a senha. Solicite um novo link." },
       { status: 422, headers }
     );
   }
+  // Single use: end the recovery session and every other session of this account.
+  const signedOut = await supabase.auth.signOut({ scope: "global" }).catch(() => ({ error: true }));
+  if (signedOut.error) console.error({ event: "password_reset_signout_failed" });
   return NextResponse.json(
-    { message: "Senha atualizada com segurança.", redirectTo: "/minha-conta" },
+    { message: "Senha atualizada. Entre com a nova senha.", redirectTo: "/login?senha=atualizada" },
     { headers }
   );
 }

@@ -8,7 +8,7 @@ export const metadata = { title: "Acesse sua conta", robots: { index: false, fol
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string; senha?: string }>;
 }) {
   const query = await searchParams;
   const requestedReturn = query.returnTo ?? query.next;
@@ -20,7 +20,9 @@ export default async function LoginPage({
       ? "Não foi possível confirmar sua sessão agora. Tente entrar novamente em alguns instantes."
       : query.reason === "google_oauth_error"
         ? "O acesso com Google foi cancelado, expirou ou não pôde ser concluído. Tente novamente ou use e-mail e senha."
-        : null;
+        : query.reason === "google_account"
+          ? "Esta conta acessa a curti Z com o Google. Use o botão Entrar com Google."
+          : null;
   return (
     <div className="auth-page">
       <div className="auth-shell">
@@ -29,6 +31,7 @@ export default async function LoginPage({
             <h1>Acesse sua conta</h1>
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
+          {query.senha === "atualizada" && <p className="form-message success" role="status">Senha atualizada. Entre com a nova senha.</p>}
           {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
           <AuthForm
             mode="login"
