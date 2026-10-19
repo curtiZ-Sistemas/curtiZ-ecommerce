@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import {
   legalPolicies,
   legalPlaceholders,
+  legalPendingLocations,
   legalCompanyProblems,
   legalCompanyReplacements,
   replaceLegalMarkers,
@@ -238,19 +239,28 @@ export function LegalPolicyManager() {
       )
     )
   ];
-  const ready = companyProblems.length
-    ? []
-    : (snapshot?.documents.filter(
-        (document) =>
-          legalPolicies.some((policy) => policy.slug === document.slug) &&
-          !["published", "archived", "scheduled", "superseded"].includes(
-            value(document, "status")
-          ) &&
-          !pendingFor(document).length &&
-          !reviews.some((review) => review.slug === document.slug && !review.saved)
-      ) ?? []);
+  // Pendências de texto ou de dados da empresa não impedem a publicação; só são exibidas.
+  const pendingLocationsFor = (document: Item) =>
+    legalPendingLocations(sectionsFor(snapshot!, value(document, "id")));
+  const ready =
+    snapshot?.documents.filter(
+      (document) =>
+        legalPolicies.some((policy) => policy.slug === document.slug) &&
+        !["published", "archived", "scheduled", "superseded"].includes(value(document, "status")) &&
+        !reviews.some((review) => review.slug === document.slug && !review.saved)
+    ) ?? [];
   const publish = async (documents: Item[]) => {
     if (!documents.length || locked.current) return;
+    const incomplete = documents.filter(
+      (document) => pendingFor(document).length || companyProblems.length
+    );
+    if (
+      incomplete.length &&
+      !window.confirm(
+        "Publicar mesmo com pendências? O texto atual, com os campos ainda não preenchidos, ficará visível no site. As pendências continuarão listadas aqui para você corrigir."
+      )
+    )
+      return;
     locked.current = true;
     setBusy(true);
     setError("");
@@ -488,7 +498,8 @@ export function LegalPolicyManager() {
           </button>
         </div>
         <p>
-          A publicação registra a aprovação do responsável sobre esta versão. A revisão jurídica
+          A publicação registra a aprovação do responsável sobre esta versão e pode ser feita mesmo
+          com pendências, que continuam listadas abaixo até serem corrigidas. A revisão jurídica
           permanece uma ação independente.
         </p>
         {!canPublish && (
@@ -498,11 +509,16 @@ export function LegalPolicyManager() {
           </p>
         )}
         {companyProblems.length > 0 && (
-          <p>Antes de publicar, complete os dados da empresa: {companyProblems.join("; ")}.</p>
+          <p className="legal-pending-markers">
+            Pendente (não impede a publicação): complete os dados da empresa em “Dados da empresa —
+            preencher uma vez”, abaixo: {companyProblems.join("; ")}.
+          </p>
         )}
         {legalPolicies.map((policy) => {
           const document = snapshot.documents.find((item) => item.slug === policy.slug);
           const placeholders = document ? pendingFor(document) : [];
+          const locations = document ? pendingLocationsFor(document) : [];
+          const incomplete = placeholders.length > 0 || companyProblems.length > 0;
           const unresolved = reviews.some((review) => review.slug === policy.slug && !review.saved);
           return (
             <div className="legal-policy-row" key={policy.slug}>
@@ -511,19 +527,26 @@ export function LegalPolicyManager() {
                 <span>
                   {!document
                     ? "Não cadastrada"
-                    : unresolved ||
-                        placeholders.length ||
-                        (companyProblems.length && document.status !== "published")
-                      ? "Pendências"
-                      : document.status === "published"
-                        ? "Publicada"
+                    : document.status === "published"
+                      ? incomplete || unresolved
+                        ? "Publicada com pendências"
+                        : "Publicada"
+                      : incomplete || unresolved
+                        ? "Minuta com pendências"
                         : "Minuta"}
                 </span>
                 {value(document, "last_published_at") && (
                   <small>Última publicação: {date(value(document, "last_published_at"))}</small>
                 )}
-                {placeholders.length > 0 && (
-                  <p className="legal-pending-markers">Preencher: {placeholders.join(", ")}</p>
+                {locations.length > 0 && (
+                  <div className="legal-pending-markers">
+                    <p>Preencher:</p>
+                    <ul>
+                      {locations.map((location) => (
+                        <li key={location}>{location}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
               <div className="legal-row-actions">
@@ -591,9 +614,12 @@ export function LegalPolicyManager() {
                   ? result.unchanged
                     ? "Já publicada; nenhuma versão duplicada."
                     : "Publicada com sucesso."
-                  : Array.isArray(result.problems)
+                  : Array.isArray(result.problems) && result.problems.length
                     ? result.problems.join("; ")
                     : "Não publicada."}
+                {result.published && Array.isArray(result.pending) && result.pending.length > 0
+                  ? ` Pendências que ainda precisam de correção: ${result.pending.join("; ")}.`
+                  : ""}
               </p>
             ))}
           </div>

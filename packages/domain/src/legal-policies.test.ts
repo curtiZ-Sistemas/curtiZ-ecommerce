@@ -8,7 +8,8 @@ import {
   legalPlaceholders,
   legalCompanyReplacements,
   legalCompanyProblems,
-  replaceLegalMarkers
+  replaceLegalMarkers,
+  legalPendingLocations
 } from "./legal-policies";
 import { legalInlineTokens, legalMarkdownBlocks } from "./legal-markdown";
 describe("políticas canônicas e conteúdo jurídico", () => {
@@ -102,5 +103,15 @@ describe("políticas canônicas e conteúdo jurídico", () => {
   it("mantém itens de lista como conteúdo, sem transformá-los em seções", () => {
     const sections = legalSectionsFromText("## 1 Direitos\n\n1. Primeiro direito\n2. Segundo direito", "markdown");
     expect(sections).toHaveLength(1); expect(sections[0]?.content).toContain("1. Primeiro direito");
+  });
+  it("indica onde corrigir cada campo pendente", () => {
+    expect(
+      legalPendingLocations([
+        { section_number: "1", title: "Responsável", content: "[RAZAO_SOCIAL] e [PRAZO_RETENCAO]" },
+        { section_number: "2", title: "Direitos", content: "Sem pendências." }
+      ])
+    ).toEqual([
+      "1 Responsável: [PRAZO_RETENCAO] (editar o texto), [RAZAO_SOCIAL] (Dados da empresa › Razão social)"
+    ]);
   });
 });
