@@ -41,10 +41,11 @@ jobs:
       postgres:
         image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
         env:
+          POSTGRES_USER: fixture_platform_admin
           POSTGRES_PASSWORD: synthetic-ci-password
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -U fixture_platform_admin"
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

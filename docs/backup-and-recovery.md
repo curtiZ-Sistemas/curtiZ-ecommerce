@@ -154,6 +154,13 @@ só podem ser omitidas quando o snapshot comprova contagem zero no pai e em cada
 partição. Elas continuam arquivadas na cópia integral. Qualquer dado ou objeto
 gerenciado desconhecido bloqueia a restauração para revisão; as publicações
 da aplicação precisam preservar tabelas, colunas, filtros, opções e ownership.
+O restaurador comum não altera defaults do papel reservado `supabase_admin`.
+Seus comandos nativos de default ACL são comparados com uma exportação de metadados
+do destino; só são preservados sem reexecução quando forem idênticos. Defaults
+prévios de `postgres` nos schemas da aplicação são removidos dentro da transação
+para não acrescentar permissões herdadas aos objetos importados. O archive repõe
+os grants de cada objeto e os defaults futuros de `postgres`; o resultado é
+comparado novamente com os comandos nativos da cópia. Divergências bloqueiam.
 
 O acesso de escrita usa o login CLI temporário oficial, emitido pela API
 **somente no projeto isolado**, com grant de `postgres` pelo `supabase_admin`.

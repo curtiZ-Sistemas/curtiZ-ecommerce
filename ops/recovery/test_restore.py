@@ -20,6 +20,37 @@ def catalog():
 
 
 class RestoreGuards(unittest.TestCase):
+    def test_effective_acl_comparison_preserves_all_other_guards(self):
+        source = [{"owner": "postgres", "acl": "{postgres=arwdDxtm/postgres}", "rls": True}]
+        target = [{**source[0], "acl": None}]
+        with patch.object(b, "native_json", return_value=True) as query:
+            r.verify_acl_rows(source, target, "r", {})
+            self.assertIn("aclexplode", query.call_args.args[1])
+            self.assertIn("is_grantable", query.call_args.args[1])
+        with patch.object(b, "native_json", return_value=False), self.assertRaises(p.Blocked):
+            r.verify_acl_rows(source, target, "r", {})
+        with patch.object(b, "native_json") as query, self.assertRaises(p.Blocked):
+            r.verify_acl_rows(source, [{**target[0], "rls": False}], "r", {})
+        query.assert_not_called()
+
+    def test_default_acl_inventory_identifies_owner_without_filtering_other_grants(self):
+        toc = ("; header\n1; 826 123 DEFAULT ACL public DEFAULT PRIVILEGES FOR TABLES supabase_admin\n"
+               "2; 826 456 DEFAULT ACL public DEFAULT PRIVILEGES FOR FUNCTIONS postgres\n"
+               "3; 0 0 ACL public TABLE orders postgres\n")
+        self.assertEqual([(e["schema"], e["owner"]) for e in r.default_acl_entries(toc)],
+                         [("public", "supabase_admin"), ("public", "postgres")])
+        with self.assertRaises(p.Blocked):
+            r.default_acl_entries("unexpected DEFAULT ACL format")
+
+    def test_only_postgres_application_defaults_can_be_reset(self):
+        rows = [{"schema": "public", "kind": "f", "grantees": [
+            {"role": "anon", "public": False}, {"role": "unused", "public": True}]}]
+        self.assertEqual(r.reset_application_defaults(rows),
+                         b'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA "public" REVOKE ALL ON FUNCTIONS FROM "anon",PUBLIC;')
+        for changed in ({**rows[0], "schema": None}, {**rows[0], "schema": "auth"}, {**rows[0], "kind": "unknown"}):
+            with self.assertRaises(p.Blocked):
+                r.reset_application_defaults([changed])
+
     def test_application_publications_preserved_and_only_proven_empty_runtime_skipped(self):
         application = {"pubname": "supabase_realtime", "schemaname": "public", "tablename": "support_messages",
                        "rowfilter": None}
