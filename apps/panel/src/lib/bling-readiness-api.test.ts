@@ -56,10 +56,12 @@ describe("read-only provider readiness evidence", () => {
   });
   it("bounds leap-year windows and exposes a contiguous cursor without claiming an unused series", async () => {
     state.request.mockResolvedValue({ data: [] });
-    const body = await (await GET(request("scope=series&series=2&before=2024-03-01"))).json();
+    const body = await (await GET(request("scope=series&series=2&before=2024-03-01"))).json() as { nextBefore: string | null };
     expect(body).toMatchObject({ used: null, usedInPeriod: false, historyComplete: false, productionHistoryVerified: false });
     expect(state.request).toHaveBeenCalledTimes(4);
-    for (const [path] of state.request.mock.calls) {
+    for (const call of state.request.mock.calls) {
+      const path: unknown = call[0];
+      if (typeof path !== "string") throw new Error("Expected a provider path");
       const query = new URL(path, "https://example.com").searchParams;
       const from = Date.parse(query.get("dataEmissaoInicial")!.replace(" ", "T") + "Z");
       const through = Date.parse(query.get("dataEmissaoFinal")!.replace(" ", "T") + "Z");
@@ -69,7 +71,7 @@ describe("read-only provider readiness evidence", () => {
   });
   it("clamps the last window at the documented lower bound without inventing earlier evidence", async () => {
     state.request.mockResolvedValue({ data: [] });
-    const body = await (await GET(request("scope=series&series=2&before=2000-01-02"))).json();
+    const body: unknown = await (await GET(request("scope=series&series=2&before=2000-01-02"))).json();
     expect(body).toMatchObject({ used: null, period: { from: "2000-01-01", through: "2000-01-02" }, nextBefore: null,
       historyComplete: false, productionHistoryVerified: false, numberingChanged: false });
   });
