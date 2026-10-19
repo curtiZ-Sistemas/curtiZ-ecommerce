@@ -295,10 +295,13 @@ test("tela real com respostas isoladas: mobile, teclado, minutas e conflito", as
   await expect(page.getByText("Minuta salva.", { exact: true })).toBeVisible();
   expect(calls).toHaveLength(1);
   expect(calls[0]?.slug).toBe("aviso-de-privacidade");
-  await expect(page.getByRole("button", { name: /Publicar políticas prontas/u })).toBeDisabled();
+  // Pendências não impedem a publicação; continuam listadas com o local da correção.
+  await expect(page.getByRole("button", { name: /Publicar políticas prontas/u })).toBeEnabled();
   const privacyRow = page
     .locator(".legal-policy-row")
     .filter({ hasText: "Política de Privacidade" });
+  await expect(privacyRow).toContainText("Minuta com pendências");
+  await expect(privacyRow).toContainText("[RAZAO_SOCIAL] (Dados da empresa › Razão social)");
   await privacyRow.getByRole("button", { name: "Editar", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Editar minuta:/u })).toBeFocused();
   await expect(page.getByLabel("Texto completo")).toContainText("[RAZAO_SOCIAL]");

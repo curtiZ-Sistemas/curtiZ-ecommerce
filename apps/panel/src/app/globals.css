@@ -7775,6 +7775,8 @@ button:not(:disabled):active,
 .legal-row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 540px; }
 .legal-policy-manager .legal-feedback { white-space: pre-line; }
 .legal-pending-markers { margin: 0; color: var(--muted); font-size: .875rem; }
+.legal-pending-markers ul { margin: 4px 0 0; padding-left: 1.2rem; }
+.legal-pending-markers p { margin: 0; }
 .legal-import-item { display: grid; gap: 10px; padding: 20px 0; border-top: 1px solid var(--line); }
 .legal-import-item label, .legal-simple-editor label { display: grid; gap: 6px; }
 .legal-import-item select, .legal-simple-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; background: var(--surface); color: inherit; }

@@ -142,11 +142,13 @@ async function postPolicies(request: NextRequest) {
   const results: Record<string, unknown>[] = [];
   for (const document of data.documents) {
     const check = preview.find((item) => item.id === document.id);
+    // Só impedimentos estruturais bloqueiam; pendências de conteúdo seguem como aviso.
     if (!check || !Array.isArray(check.problems) || check.problems.length) {
       results.push({
         id: document.id,
         published: false,
-        problems: check?.problems ?? ["Validação indisponível."]
+        problems: check?.problems ?? ["Validação indisponível."],
+        pending: Array.isArray(check?.pending) ? check.pending : []
       });
       continue;
     }
@@ -167,7 +169,8 @@ async function postPolicies(request: NextRequest) {
               ...result,
               id: document.id,
               published: Boolean(result && !result.problems),
-              problems: result?.problems ?? []
+              problems: result?.problems ?? [],
+              pending: Array.isArray(result?.pending) ? result.pending : []
             }
       );
     } catch (error) {
