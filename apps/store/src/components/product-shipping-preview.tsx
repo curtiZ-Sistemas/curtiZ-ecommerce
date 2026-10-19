@@ -75,29 +75,24 @@ export function ProductShippingPreview({ productId, variantId, quantity }: { pro
   }
 
   const failed = Boolean(visible?.message) && !visible?.quotes.length;
-  return <section className="product-shipping-preview" aria-labelledby="product-shipping-title">
-    <div className="shipping-heading"><Truck aria-hidden="true" />
-      <div><h2 id="product-shipping-title">Calcule o frete e o prazo de entrega</h2>
-        <p>Consulte opções e prazo para sua região.</p></div></div>
+  return <section className="product-shipping-preview" aria-label="Calcule o frete e o prazo de entrega">
     <form onSubmit={(event) => { void calculate(event); }} noValidate>
       <label className="sr-only" htmlFor="product-shipping-postal">CEP</label>
-      <input id="product-shipping-postal" inputMode="numeric" autoComplete="postal-code" maxLength={9}
-        placeholder="Digite seu CEP" value={postalCode} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
-        onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} />
+      <div className="shipping-input"><Truck aria-hidden="true" />
+        <input id="product-shipping-postal" inputMode="numeric" autoComplete="postal-code" maxLength={9}
+          placeholder="Digite seu CEP" value={postalCode} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
+          onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} /></div>
       <button type="submit" disabled={loading}>{loading ? "Calculando…" : "Calcular"}</button>
     </form>
     <div className="shipping-result" role="status" aria-live="polite" aria-busy={loading}>
       {loading ? <div className="shipping-skeleton" aria-hidden="true"><span /><span /></div> : null}
       {loading ? <p className="sr-only">Consultando os serviços de entrega…</p> : null}
       {visible?.message ? <p className="shipping-message" data-tone={failed && !visible?.message.startsWith("Nenhum") ? "error" : "info"}>{visible.message}</p> : null}
-      {visible?.quotes.length ? <>
-        <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
-          <div><strong>{quote.service}</strong>
-            <span>{quote.carrier} · {quote.estimatedDays} {quote.estimatedDays === 1 ? "dia útil" : "dias úteis"}</span></div>
-          <b>{formatBRL(quote.amountInCents)}</b>
-        </li>)}</ul>
-        <p className="product-shipping-note">Estimativa. O frete é confirmado no checkout.</p>
-      </> : null}
+      {visible?.quotes.length ? <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
+        <div><strong>{quote.service}</strong>
+          <span>{quote.carrier} · {quote.estimatedDays} {quote.estimatedDays === 1 ? "dia útil" : "dias úteis"}</span></div>
+        <b>{formatBRL(quote.amountInCents)}</b>
+      </li>)}</ul> : null}
     </div>
   </section>;
 }
