@@ -5,6 +5,12 @@ import { resolvePublicAppUrls } from "@curtiz/config";
 import { resolveLoginReturn } from "@/lib/auth-routing";
 import { GOOGLE_INTENT_COOKIE } from "@/lib/google-auth";
 import { googleCallback } from "@/lib/google-callback";
+import {
+  RECOVERY_PATH,
+  RECOVERY_REQUEST_PATH,
+  hasPasswordIdentity,
+  recoveryFreshness
+} from "@/lib/password-recovery";
 
 export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.has("google_nonce") || (request.nextUrl.searchParams.has("error") && request.cookies.has(GOOGLE_INTENT_COOKIE))) return googleCallback(request);
@@ -12,7 +18,15 @@ export async function GET(request: NextRequest) {
   const next = safeInternalPath(request.nextUrl.searchParams.get("next"), "/minha-conta");
   const { storeUrl, panelUrl } = resolvePublicAppUrls(request.url);
   const destination = new URL(resolveLoginReturn(next, panelUrl), storeUrl);
+  const recovery = next === RECOVERY_PATH;
+  // Recovery links land on the request page, which explains the problem and offers a new link.
+  const failRecovery = () => {
+    const failure = new URL(RECOVERY_REQUEST_PATH, storeUrl);
+    failure.searchParams.set("reason", "link_expired");
+    return NextResponse.redirect(failure, 303);
+  };
   if (!code) {
+    if (recovery) return failRecovery();
     destination.host = new URL(storeUrl).host;
     destination.pathname = "/login";
     destination.search = "?erro=link-invalido";
@@ -21,9 +35,24 @@ export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const result = supabase ? await supabase.auth.exchangeCodeForSession(code) : null;
   if (!result || result.error) {
+    if (recovery) return failRecovery();
     destination.host = new URL(storeUrl).host;
     destination.pathname = "/login";
     destination.search = "?erro=link-expirado";
+    return NextResponse.redirect(destination, 303);
+  }
+  if (recovery) {
+    // Only a session minted by a recovery link may reach the password form.
+    const user = result.data.user;
+    const freshness = recoveryFreshness(result.data.session?.access_token);
+    if (freshness !== "ok" || !user) {
+      await supabase!.auth.signOut({ scope: "local" });
+      return failRecovery();
+    }
+    if (!hasPasswordIdentity(user)) {
+      await supabase!.auth.signOut({ scope: "local" });
+      return NextResponse.redirect(new URL("/login?reason=google_account", storeUrl), 303);
+    }
     return NextResponse.redirect(destination, 303);
   }
   const user = result.data.user;
