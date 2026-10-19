@@ -4,6 +4,9 @@ import { BRAND_NAME, officialUrl } from "@/lib/seo";
 import { getPublicLegalDocument } from "@/lib/legal-data";
 import { getPublicCmsPage } from "@/lib/storefront-data";
 
+// Publicações do painel precisam valer sem novo build.
+export const dynamic = "force-dynamic";
+
 // Endereços antigos das políticas: quando a versão do painel está publicada, ela é a oficial.
 const publishedPolicySlugs: Record<string, string> = {
   "termos-de-uso": "termos-de-uso",
