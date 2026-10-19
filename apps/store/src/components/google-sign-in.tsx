@@ -123,8 +123,8 @@ export function GoogleSignIn({
             <label className="check-row">
               <input name="terms" type="checkbox" required disabled={!hydrated || busy} />
               <span>
-                Li e aceito os <Link href="/termos-de-uso">Termos de Uso</Link> e a{" "}
-                <Link href="/politica-de-privacidade">Política de Privacidade</Link> para continuar
+                Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+                <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link> para continuar
                 com Google.
               </span>
             </label>

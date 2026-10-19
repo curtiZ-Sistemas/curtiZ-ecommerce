@@ -389,8 +389,8 @@ export function SignupForm({
           onChange={() => setErrors((current) => ({ ...current, terms: undefined }))}
         />
         <span>
-          Li e aceito os <Link href="/termos-de-uso">Termos de Uso</Link> e a{" "}
-          <Link href="/politica-de-privacidade">Política de Privacidade</Link>.
+          Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+          <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link>.
         </span>
       </label>
       {errors.terms && (

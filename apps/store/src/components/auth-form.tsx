@@ -222,8 +222,8 @@ export function AuthForm({
           <label className="check-row">
             <input name="terms" type="checkbox" required />
             <span>
-              Li e aceito os <Link href="/termos-de-uso">Termos de Uso</Link> e a{" "}
-              <Link href="/politica-de-privacidade">Política de Privacidade</Link>.
+              Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+              <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link>.
             </span>
           </label>
         </>
@@ -249,8 +249,8 @@ export function AuthForm({
           <label className="check-row">
             <input name="terms" type="checkbox" required />
             <span>
-              Li e aceito os <Link href="/termos-de-uso">Termos de Uso</Link> e a{" "}
-              <Link href="/politica-de-privacidade">Política de Privacidade</Link>.
+              Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+              <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link>.
             </span>
           </label>
           <label className="check-row">
