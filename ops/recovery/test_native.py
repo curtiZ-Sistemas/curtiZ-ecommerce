@@ -219,6 +219,17 @@ class NativeTests(unittest.TestCase):
                 self.assertEqual(query(b"SELECT relrowsecurity FROM pg_class WHERE oid='public.orders'::regclass;", target).strip(), b"t")
                 self.assertEqual(r.verify_sequences(bundle, target_reader), 1)
                 self.assertEqual(r.verify_application(manifest, target_reader), 4)
+                # Explicit built-in defaults and NULL are equivalent, but extra
+                # grants, missing owner privileges and grant options must fail.
+                default = [{"owner": "postgres", "acl": None}]
+                for kind, explicit in (("r", "{postgres=arwdDxtm/postgres}"),
+                                       ("f", "{=X/postgres,postgres=X/postgres}"),
+                                       ("n", "{postgres=UC/postgres}")):
+                    r.verify_acl_rows(default, [{"owner": "postgres", "acl": explicit}], kind, target_reader)
+                for acl in ("{}", "{postgres=arwdDxtm/postgres,=r/postgres}",
+                            "{postgres=arwdDxtm*/postgres}"):
+                    with self.assertRaises(p.Blocked):
+                        r.verify_acl_rows(default, [{"owner": "postgres", "acl": acl}], "r", target_reader)
                 r.verify_default_privileges(bundle, target_reader)
                 self.assertEqual(query(b"SELECT proacl IS NULL FROM pg_proc WHERE oid='public.synthetic_helper()'::regprocedure;", target).strip(), b"t")
                 self.assertEqual(query(b"SELECT to_json(attnames) FROM pg_publication_tables WHERE pubname='synthetic_app';", target).strip(), b'["id"]')
