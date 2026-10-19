@@ -351,10 +351,32 @@ def import_database(config, manifest, bundle, reader, target_catalog):
         writer.execute(payload)
 
 
+def verify_acl_rows(expected, actual, kind, reader):
+    # pg_dump may omit an explicit ACL equal to PostgreSQL's built-in default.
+    # Compare effective entries, including grantor and grant option, not spelling.
+    p.require(kind in ("r", "f", "n"), "Unsupported authorization object kind.")
+    without_acl = lambda rows: [{k: v for k, v in row.items() if k != "acl"} for row in rows]
+    p.require(without_acl(expected) == without_acl(actual),
+              "Restored database object definitions, owners or RLS differ.")
+    pairs = []
+    for source, target in zip(expected, actual):
+        if source["acl"] != target["acl"]:
+            acl = lambda value: "NULL::aclitem[]" if value is None else literal(value) + "::aclitem[]"
+            pairs.append("(" + literal(source["owner"]) + "," + acl(source["acl"]) + "," + acl(target["acl"]) + ")")
+    if pairs:
+        canonical = lambda col: ("ARRAY(SELECT ROW(grantor,grantee,privilege_type,is_grantable)::text "
+            "FROM aclexplode(coalesce(" + col + ",acldefault('" + kind + "',owner::regrole))) "
+            "ORDER BY grantor,grantee,privilege_type,is_grantable)")
+        result = b.native_json(reader, "SELECT to_json(bool_and(" + canonical("source_acl") + "="
+            + canonical("target_acl") + ")) FROM (VALUES " + ",".join(pairs)
+            + ") AS a(owner,source_acl,target_acl);")
+        p.require(result is True, "Restored database privileges differ from the stored backup.")
+
+
 def verify_application(manifest, reader):
     expected = [t for t in manifest["tables"] if t["schema"] in APPLICATION]
     actual = [t for t in b.native_json(reader, b.TABLES_SQL) if t["schema"] in APPLICATION]
-    p.require(actual == expected, "Restored tables, owners, ACLs or RLS differ from the stored backup.")
+    verify_acl_rows(expected, actual, "r", reader)
     checked = 0
     for table in manifest["fingerprints"]:
         if table["schema"] in APPLICATION or (table["schema"] == "auth" and table["table"] != "schema_migrations"):
@@ -363,7 +385,9 @@ def verify_application(manifest, reader):
                       "Restored application/Auth data differs from the stored snapshot.")
             checked += 1
     catalog = b.native_json(reader, b.CATALOG_SQL)
-    for key in ("schemas", "functions", "policies", "managed_custom_triggers"):
+    for key, kind in (("schemas", "n"), ("functions", "f")):
+        verify_acl_rows(manifest["catalog"][key], catalog[key], kind, reader)
+    for key in ("policies", "managed_custom_triggers"):
         p.require(catalog[key] == manifest["catalog"][key], "Restored database authorization/catalog differs.")
     expected_publications = application_publications(manifest)
     p.require([v for v in catalog["publications"] if v["schemaname"] in APPLICATION] == expected_publications,

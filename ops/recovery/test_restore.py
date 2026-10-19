@@ -20,6 +20,19 @@ def catalog():
 
 
 class RestoreGuards(unittest.TestCase):
+    def test_effective_acl_comparison_preserves_all_other_guards(self):
+        source = [{"owner": "postgres", "acl": "{postgres=arwdDxtm/postgres}", "rls": True}]
+        target = [{**source[0], "acl": None}]
+        with patch.object(b, "native_json", return_value=True) as query:
+            r.verify_acl_rows(source, target, "r", {})
+            self.assertIn("aclexplode", query.call_args.args[1])
+            self.assertIn("is_grantable", query.call_args.args[1])
+        with patch.object(b, "native_json", return_value=False), self.assertRaises(p.Blocked):
+            r.verify_acl_rows(source, target, "r", {})
+        with patch.object(b, "native_json") as query, self.assertRaises(p.Blocked):
+            r.verify_acl_rows(source, [{**target[0], "rls": False}], "r", {})
+        query.assert_not_called()
+
     def test_default_acl_inventory_identifies_owner_without_filtering_other_grants(self):
         toc = ("; header\n1; 826 123 DEFAULT ACL public DEFAULT PRIVILEGES FOR TABLES supabase_admin\n"
                "2; 826 456 DEFAULT ACL public DEFAULT PRIVILEGES FOR FUNCTIONS postgres\n"
