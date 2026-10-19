@@ -1,10 +1,12 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
+import { Truck } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatPostalCode } from "../lib/personal-data";
 import { readShippingPostalCode, rememberShippingPostalCode } from "../lib/shipping-postal-code";
 
+const POSTAL_CODE = /^\d{5}-?\d{3}$/u;
 type Quote = { serviceId: string; service: string; carrier: string; amountInCents: number; estimatedDays: number };
 function isQuote(value: unknown): value is Quote {
   if (typeof value !== "object" || value === null) return false;
@@ -14,9 +16,8 @@ function isQuote(value: unknown): value is Quote {
     && Number.isInteger(row.estimatedDays) && Number(row.estimatedDays) > 0;
 }
 
-export function ProductShippingPreview({ productId, variantId }: { productId: string; variantId?: string }) {
+export function ProductShippingPreview({ productId, variantId, quantity }: { productId: string; variantId?: string; quantity: number }) {
   const [postalCode, setPostalCode] = useState("");
-  const [quantity, setQuantity] = useState(1);
   const [result, setResult] = useState<{ key: string; quotes: Quote[]; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -45,7 +46,7 @@ export function ProductShippingPreview({ productId, variantId }: { productId: st
       return;
     }
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
-      setResult({ key, quotes: [], message: "Informe uma quantidade de 1 a 10 para a simulação." });
+      setResult({ key, quotes: [], message: "Escolha uma quantidade de 1 a 10 para calcular." });
       return;
     }
     rememberShippingPostalCode(postalCode);
@@ -73,25 +74,30 @@ export function ProductShippingPreview({ productId, variantId }: { productId: st
     }
   }
 
+  const failed = Boolean(visible?.message) && !visible?.quotes.length;
   return <section className="product-shipping-preview" aria-labelledby="product-shipping-title">
-    <h2 id="product-shipping-title">Calcule o frete e o prazo de entrega</h2>
+    <div className="shipping-heading"><Truck aria-hidden="true" />
+      <div><h2 id="product-shipping-title">Calcule o frete e o prazo de entrega</h2>
+        <p>Consulte opções e prazo para sua região.</p></div></div>
     <form onSubmit={(event) => { void calculate(event); }} noValidate>
-      <div className="field"><label htmlFor="product-shipping-postal">CEP</label>
-        <input id="product-shipping-postal" inputMode="numeric" autoComplete="postal-code" maxLength={9}
-          placeholder="00000-000" value={postalCode} onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} /></div>
-      <div className="field"><label htmlFor="product-shipping-quantity">Qtd. na simulação</label>
-        <input id="product-shipping-quantity" type="number" min={1} max={10} value={quantity}
-          onChange={(event) => setQuantity(event.target.valueAsNumber || 0)} /></div>
-      <button className="secondary-button" type="submit" disabled={loading}>{loading ? "Calculando…" : "Calcular"}</button>
+      <label className="sr-only" htmlFor="product-shipping-postal">CEP</label>
+      <input id="product-shipping-postal" inputMode="numeric" autoComplete="postal-code" maxLength={9}
+        placeholder="Digite seu CEP" value={postalCode} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
+        onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} />
+      <button type="submit" disabled={loading}>{loading ? "Calculando…" : "Calcular"}</button>
     </form>
-    <div role="status" aria-live="polite" aria-busy={loading}>
-      {loading ? <p>Consultando os serviços de entrega…</p> : null}
-      {visible?.message ? <p>{visible.message}</p> : null}
-      {visible?.quotes.length ? <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
-        <span>{quote.carrier} — {quote.service}</span><strong>{formatBRL(quote.amountInCents)}</strong>
-        <span>{quote.estimatedDays} {quote.estimatedDays === 1 ? "dia útil" : "dias úteis"}</span>
-      </li>)}</ul> : null}
+    <div className="shipping-result" role="status" aria-live="polite" aria-busy={loading}>
+      {loading ? <div className="shipping-skeleton" aria-hidden="true"><span /><span /></div> : null}
+      {loading ? <p className="sr-only">Consultando os serviços de entrega…</p> : null}
+      {visible?.message ? <p className="shipping-message" data-tone={failed && !visible?.message.startsWith("Nenhum") ? "error" : "info"}>{visible.message}</p> : null}
+      {visible?.quotes.length ? <>
+        <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
+          <div><strong>{quote.service}</strong>
+            <span>{quote.carrier} · {quote.estimatedDays} {quote.estimatedDays === 1 ? "dia útil" : "dias úteis"}</span></div>
+          <b>{formatBRL(quote.amountInCents)}</b>
+        </li>)}</ul>
+        <p className="product-shipping-note">Estimativa. O frete é confirmado no checkout.</p>
+      </> : null}
     </div>
-    <p className="product-shipping-note">Estimativa para a quantidade informada. O frete será recalculado no checkout.</p>
   </section>;
 }

@@ -6,6 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Heart,
+  Minus,
+  Plus,
   PlayCircle,
   ShoppingBag,
   Star
@@ -56,6 +58,7 @@ export function ProductPurchase({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(false);
+  const [quantity, setQuantity] = useState(1);
   const galleryTriggerRef = useRef<HTMLButtonElement>(null);
   const swipeStart = useRef<{ x: number; y: number; id: number } | null>(null);
   const suppressGalleryClick = useRef(false);
@@ -79,6 +82,10 @@ export function ProductPurchase({
   const selectedDisplayTitle = productDisplayTitleForColor(variants, color, product.name);
   const currentPrice = selectedVariant?.priceInCents ?? product.priceInCents;
   const currentStock = selectedVariant?.stock;
+  const maxQuantity = Math.max(1, Math.min(10, currentStock ?? 10));
+  useEffect(() => {
+    setQuantity((current) => Math.min(current, maxQuantity));
+  }, [maxQuantity]);
   const favoriteProduct: Product = selectedVariant
     ? {
         ...product,
@@ -221,7 +228,8 @@ export function ProductPurchase({
       variantId: selectedVariant.id,
       unitPriceInCents: selectedVariant.priceInCents,
       stock: selectedVariant.stock,
-      image: selectedVariant.image ?? product.image
+      image: selectedVariant.image ?? product.image,
+      quantity
     });
     setBusy(true);
     window.setTimeout(() => setBusy(false), 1_000);
@@ -422,6 +430,28 @@ export function ProductPurchase({
               })}
             </div>
           </fieldset>
+          <fieldset className="product-quantity">
+            <legend>Quantidade</legend>
+            <div className="quantity-stepper">
+              <button
+                type="button"
+                onClick={() => { setQuantity((current) => Math.max(1, current - 1)); setAdded(false); }}
+                disabled={!selectedVariant || quantity <= 1}
+                aria-label="Diminuir quantidade"
+              >
+                <Minus aria-hidden="true" />
+              </button>
+              <output aria-live="polite" aria-label={`Quantidade: ${quantity}`}>{quantity}</output>
+              <button
+                type="button"
+                onClick={() => { setQuantity((current) => Math.min(maxQuantity, current + 1)); setAdded(false); }}
+                disabled={!selectedVariant || quantity >= maxQuantity}
+                aria-label="Aumentar quantidade"
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            </div>
+          </fieldset>
           {!selectedVariant && variants.some((variant) => variant.color === color && variant.stock > 0) ? (
             <p className="product-selection-hint">Escolha um tamanho para continuar.</p>
           ) : null}
@@ -458,7 +488,7 @@ export function ProductPurchase({
             {added ? "Adicionado ao carrinho" : "Adicionar ao carrinho"}
           </button>
         </div>
-        <ProductShippingPreview productId={product.id} variantId={selectedVariant?.id} />
+        <ProductShippingPreview productId={product.id} variantId={selectedVariant?.id} quantity={quantity} />
       </div>
     </section>
   );

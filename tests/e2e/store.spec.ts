@@ -44,10 +44,16 @@ test("prévia de frete valida CEP, variante, quantidade e recuperação sem alte
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
   await expect(preview.getByRole("status")).toContainText("Escolha a cor e o tamanho");
   await page.getByRole("button", { name: "39/40", exact: true }).click();
+  const quantityBox = await page.getByRole("group", { name: "Quantidade" }).boundingBox();
+  const sizeBox = await page.getByRole("button", { name: "39/40", exact: true }).boundingBox();
+  const buyBox = await page.getByRole("button", { name: "Comprar agora", exact: true }).boundingBox();
+  expect(sizeBox!.y).toBeLessThan(quantityBox!.y);
+  expect(quantityBox!.y).toBeLessThan(buyBox!.y);
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
   await expect(preview.getByRole("status")).toContainText("Fixture E2E");
   await expect(preview.getByRole("status")).toContainText("4 dias úteis");
-  await preview.getByLabel("Qtd. na simulação").fill("2");
+  await expect(preview.getByLabel("Qtd. na simulação")).toHaveCount(0);
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
   await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
   await expect(preview.getByRole("status")).toContainText("Fixture E2E");
@@ -69,7 +75,7 @@ test("prévia de frete valida CEP, variante, quantidade e recuperação sem alte
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
   await expect(preview.getByRole("button", { name: "Calculando…", exact: true })).toBeDisabled();
   await expect.poll(() => Boolean(releaseLate)).toBe(true);
-  await preview.getByLabel("Qtd. na simulação").fill("3");
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
   responseMode = "success";
   releaseLate?.();
   await preview.getByRole("button", { name: "Calcular", exact: true }).click();
@@ -84,6 +90,9 @@ test("prévia de frete valida CEP, variante, quantidade e recuperação sem alte
   }
   await page.getByRole("button", { name: "Adicionar ao carrinho", exact: true }).click();
   await expect(page.getByRole("button", { name: "Adicionado ao carrinho", exact: true })).toBeVisible();
+  // A quantidade escolhida na compra é a que entra no carrinho.
+  await page.goto("/carrinho");
+  await expect(page.getByLabel("Quantidade atual: 3")).toBeVisible();
 });
 
 // UI contract fixture only: the demo backend has no persisted checkout addresses.
