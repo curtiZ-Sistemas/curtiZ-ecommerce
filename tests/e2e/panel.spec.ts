@@ -13,7 +13,8 @@ for (const viewport of [
     await email.fill("operacional.demo@curtiz.local");
     await page.locator('input[name="password"]:visible').fill("1234567890");
     await expect(email).toHaveValue("operacional.demo@curtiz.local");
-    await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+    await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
     await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", "operacional");
@@ -145,7 +146,8 @@ test("novo suporte aparece na fila administrativa", async ({ page }) => {
   await page.goto("http://localhost:3000/login");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.getByPlaceholder("Digite sua senha").fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("http://localhost:3000/minha-conta", { timeout: 30_000 });
   await page.goto("http://localhost:3000/minha-conta/atendimento?new=1");
   await page.getByLabel("Assunto").fill(subject);

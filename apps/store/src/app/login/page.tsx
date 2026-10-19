@@ -1,7 +1,6 @@
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
-import { GoogleSignIn } from "@/components/google-sign-in";
 import { googleAuthReady } from "@/lib/google-auth";
 
 export const metadata = { title: "Acesse sua conta", robots: { index: false, follow: false } };
@@ -31,11 +30,11 @@ export default async function LoginPage({
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
           {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
-          <GoogleSignIn available={await googleAuthReady()} returnTo={returnTo} />
           <AuthForm
             mode="login"
             returnTo={returnTo}
             turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
+            googleAvailable={await googleAuthReady()}
           />
           <div className="auth-divider">
             <span>Primeira vez na curti Z?</span>

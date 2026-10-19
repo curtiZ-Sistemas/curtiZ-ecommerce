@@ -636,7 +636,8 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
   await page
@@ -716,7 +717,8 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
 
   const sessionCookies = await context.cookies();
@@ -749,7 +751,8 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
   const persistentCookies = await context.cookies();
   const nowInSeconds = Date.now() / 1_000;
@@ -811,7 +814,8 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("**/minha-conta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
 
@@ -828,7 +832,8 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
   // The URL may commit before the login navigation replaces its previous tree.
@@ -1089,7 +1094,8 @@ test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ pa
   await page.goto("/login?next=%2Fcarrinho");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/carrinho$/, { timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
