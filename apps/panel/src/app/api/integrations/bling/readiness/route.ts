@@ -20,24 +20,36 @@ export async function GET(request: NextRequest) {
   const scope = request.nextUrl.searchParams.get("scope");
   const page = Number(request.nextUrl.searchParams.get("page") ?? 1);
   const series = Number(request.nextUrl.searchParams.get("series"));
+  const today = new Date().toISOString().slice(0, 10);
+  const before = request.nextUrl.searchParams.get("before") ?? today;
+  const end = new Date(`${before}T00:00:00Z`);
+  const validPeriod = /^\d{4}-\d{2}-\d{2}$/u.test(before) && Number.isFinite(end.getTime())
+    && end.toISOString().slice(0, 10) === before && before >= "2000-01-01" && before <= today;
   if (scope !== "catalog" && scope !== "series" || !positive(page) || page > 100
-    || scope === "series" && (!positive(series) || series > 999))
+    || scope === "series" && (!positive(series) || series > 999 || !validPeriod))
     return NextResponse.json({ message: "Consulta inválida." }, { status: 400, headers: technicalNoStore });
   const db = createServiceSupabaseClient();
   if (!db) return NextResponse.json({ message: "Integração indisponível." }, { status: 503, headers: technicalNoStore });
   const provider = panelBlingClient(db);
   try {
     if (scope === "series") {
-      // The API excludes cancelled documents by default. Check those separately,
-      // and both directions, without a recent-date filter hiding older numbers.
+      // Bling rejects periods longer than a year. Page backwards in bounded windows;
+      // an empty window must never be reported as proof that the entire series is unused.
+      const start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - 179);
+      const from = start.toISOString().slice(0, 10) < "2000-01-01" ? "2000-01-01" : start.toISOString().slice(0, 10);
+      const previous = new Date(`${from}T00:00:00Z`);
+      previous.setUTCDate(previous.getUTCDate() - 1);
       let used = false;
       for (const type of ["0", "1"]) for (const cancelled of [false, true]) {
         const query = new URLSearchParams({ pagina: "1", limite: "1", serie: String(series), tipo: type,
-          dataEmissaoInicial: "2000-01-01 00:00:00", dataEmissaoFinal: `${new Date().toISOString().slice(0, 10)} 23:59:59` });
+          dataEmissaoInicial: `${from} 00:00:00`, dataEmissaoFinal: `${before} 23:59:59` });
         if (cancelled) query.set("situacao", "2");
         used = list(await provider.request(`/nfe?${query}`)).length > 0 || used;
       }
-      return NextResponse.json({ series, used, includesCancelled: true, includesBothDirections: true,
+      return NextResponse.json({ series, used: used ? true : null, usedInPeriod: used,
+        period: { from, through: before }, nextBefore: used || from === "2000-01-01" ? null : previous.toISOString().slice(0, 10),
+        historyComplete: false, includesCancelled: true, includesBothDirections: true,
         numberingChanged: false, productionHistoryVerified: false }, { headers: technicalNoStore });
     }
     const deposit = process.env.BLING_STOCK_DEPOSIT_ID;
