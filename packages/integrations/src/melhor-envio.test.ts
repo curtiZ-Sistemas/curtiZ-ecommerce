@@ -61,6 +61,18 @@ describe("MelhorEnvioProvider", () => {
   const quoteInput = { originPostalCode: "01001000", destinationPostalCode: "20040002",
     products: [{ id: "variant-1", quantity: 1, weightKg: 0.35, widthCm: 12, heightCm: 8, lengthCm: 25, insuranceValue: 59.9 }] };
 
+  it.each(["sandbox", "production"] as const)("seleciona serviços do sandbox sem alterar preferências de produção (%s)", async environment => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json([]));
+    await new MelhorEnvioProvider({ ...config, environment }, store(), transport).quote(quoteInput);
+    const rawBody = transport.mock.calls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const body: unknown = typeof rawBody === "string" ? JSON.parse(rawBody) : null;
+    if (environment === "sandbox") expect(body).toHaveProperty("services", "1,2,3,4,17");
+    else expect(body).not.toHaveProperty("services");
+    const target = transport.mock.calls[0]?.[0];
+    expect(target instanceof URL ? target.origin : null).toBe(environment === "sandbox" ? "https://sandbox.melhorenvio.com.br" : "https://melhorenvio.com.br");
+  });
+
   it("uses an explicit transport for OAuth refresh and API calls without global fetch", async () => {
     const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No HTTP request storage"));
     vi.stubGlobal("fetch", patchedFetch);

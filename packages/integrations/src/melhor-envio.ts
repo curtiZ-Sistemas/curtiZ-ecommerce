@@ -423,6 +423,8 @@ export class MelhorEnvioProvider {
         from: { postal_code: postal(input.originPostalCode) }, to: { postal_code: postal(input.destinationPostalCode) },
         products: input.products.map((item) => ({ id: item.id, quantity: item.quantity, weight: item.weightKg,
           width: item.widthCm, height: item.heightCm, length: item.lengthCm, insurance_value: item.insuranceValue })),
+        // Sandbox defaults can omit Correios even when explicit PAC/SEDEX quotes are available.
+        ...(this.config.environment === "sandbox" ? { services: "1,2,3,4,17" } : {}),
         options: { receipt: false, own_hand: false }
       })
     }, true);
