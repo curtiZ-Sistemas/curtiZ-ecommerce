@@ -75,7 +75,7 @@ describe("webhook canônico do Mercado Pago", () => {
     refunds: [{ id: "refund-1", amountInCents: 1000, status: "approved", dateCreated: "2026-09-14T13:00:00Z" }]
   });
   const setupProcessing = (failure?: "payment" | "refund" | "lease", review = false) => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string): Promise<{ data: unknown; error: { code: string } | null }> => {
       if (name === "claim_payment_webhook") return { data: `acquired:${lease}`, error: null };
       if (name === "check_mercadopago_order_mode") return { data: true, error: null };
       if (name === "finalize_mercadopago_payment") return { data: review ? "manual_review" : "processed", error: failure === "payment" ? { code: "XX000" } : null };
