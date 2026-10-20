@@ -533,9 +533,9 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
-  await expect(page.getByLabel("Você é contribuinte de ICMS nesta compra?")).toHaveValue("no");
-  await expect(page.getByLabel("A compra é para uso próprio (consumidor final)?")).toHaveValue("yes");
-  await expect(page.getByLabel("Você é contribuinte de ICMS nesta compra?")).toBeHidden();
+  await expect(page.locator("#checkout-fiscal-title")).toHaveCount(0);
+  await expect(page.getByText("Compra para revenda ou com inscrição estadual", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[name="icmsTaxpayer"], [name="finalConsumer"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
   await page.locator("form.checkout-layout").evaluate((form) => (form as HTMLFormElement).requestSubmit());
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
@@ -554,11 +554,6 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
     expect.objectContaining({ variantId: "wave-preto:Preto:39/40", quantity: 1 })
   ]);
   expect(submittedFiscalRecipients).toEqual([{ icmsTaxpayer: false, finalConsumer: true }]);
-  await page.getByText("Compra para revenda ou com inscrição estadual", { exact: true }).click();
-  await page.getByLabel("Você é contribuinte de ICMS nesta compra?").selectOption("yes");
-  await page.getByLabel("A compra é para uso próprio (consumidor final)?").selectOption("no");
-  await expect(page.getByLabel("Você é contribuinte de ICMS nesta compra?")).toHaveValue("yes");
-  await expect(page.getByLabel("A compra é para uso próprio (consumidor final)?")).toHaveValue("no");
   await page.goto("/carrinho");
   await expect(page.locator(".cart-item")).toHaveCount(2);
 });
@@ -634,8 +629,6 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
   await page.getByLabel("E-mail").fill("cliente.demo@curtiz.local");
   await page.getByLabel("Telefone").fill("11999999999");
   await page.getByLabel("CPF para o pedido").fill("52998224725");
-  await expect(page.getByLabel("Você é contribuinte de ICMS nesta compra?")).toHaveValue("no");
-  await expect(page.getByLabel("A compra é para uso próprio (consumidor final)?")).toHaveValue("yes");
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();

@@ -1,7 +1,5 @@
 "use client";
 
-import fiscalStyles from "./fiscal-options.module.css";
-
 import { calculateSubtotal, formatBRL, type CartLine } from "@curtiz/domain";
 import { BriefcaseBusiness, ChevronDown, House, LoaderCircle, LockKeyhole, Plus, ShoppingBag } from "lucide-react";
 import Link from "next/link";
@@ -809,10 +807,6 @@ export default function CheckoutPage() {
       if (invalidField instanceof HTMLElement) invalidField.focus();
       return;
     }
-    if (!["yes", "no"].includes(formString("icmsTaxpayer")) || !["yes", "no"].includes(formString("finalConsumer"))) {
-      setMessage("Informe as duas declarações fiscais antes de continuar.");
-      return;
-    }
     if (!selectedShippingQuote) {
       setMessage("Calcule e selecione uma opção de frete antes de continuar.");
       return;
@@ -833,7 +827,7 @@ export default function CheckoutPage() {
 
     try {
       const checkout = {
-        fiscalRecipient: { icmsTaxpayer: formString("icmsTaxpayer") === "yes", finalConsumer: formString("finalConsumer") === "yes" },
+        fiscalRecipient: { icmsTaxpayer: false, finalConsumer: true },
         ...(couponCode ? { couponCode } : {}),
         ...(selectedShippingQuote.id !== "fixed" ? { shippingQuoteId: selectedShippingQuote.id } : {}),
         customer: {
@@ -1177,25 +1171,6 @@ export default function CheckoutPage() {
             </div>
           </section>
 
-          <section className="checkout-section" aria-labelledby="checkout-fiscal-title">
-            <h2 id="checkout-fiscal-title">Nota fiscal</h2>
-            <p className={fiscalStyles.note}>Para compras de uso pessoal, não é necessário preencher informações fiscais adicionais.</p>
-            <details className={fiscalStyles.options}>
-              <summary>Compra para revenda ou com inscrição estadual</summary>
-              <div className="form-grid">
-                <div className="field"><label htmlFor="icmsTaxpayer">Você é contribuinte de ICMS nesta compra?</label>
-                  <select id="icmsTaxpayer" name="icmsTaxpayer" required defaultValue="no">
-                    <option value="no">Não</option><option value="yes">Sim</option>
-                  </select>
-                </div>
-                <div className="field"><label htmlFor="finalConsumer">A compra é para uso próprio (consumidor final)?</label>
-                  <select id="finalConsumer" name="finalConsumer" required defaultValue="yes">
-                    <option value="yes">Sim</option><option value="no">Não</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-          </section>
           <section className="checkout-section" aria-labelledby="checkout-address-title">
             <h2 id="checkout-address-title">Endereço de entrega</h2>
             {savedAddresses.length ? (
