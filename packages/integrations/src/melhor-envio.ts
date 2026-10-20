@@ -114,6 +114,22 @@ export type MelhorEnvioQuoteProduct = {
   insuranceValue: number;
 };
 
+export type MelhorEnvioUnavailableService = {
+  serviceId: string | null;
+  reason: "coverage" | "postal_code_rejected" | "package_rejected" | "provider_unavailable" | "provider_rejected";
+};
+
+function unavailableService(entry: JsonObject): MelhorEnvioUnavailableService {
+  // Classify in memory; provider messages can contain addresses and must never be logged verbatim.
+  const error = typeof entry.error === "string" ? entry.error.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLowerCase() : "";
+  const reason: MelhorEnvioUnavailableService["reason"] = /nao atend|sem cobertura|fora.*cobertura|trecho.*indispon/u.test(error) ? "coverage"
+    : /(?:cep|postal).*(?:invalid|nao encontrad|inexistent|nao localiz)|invalid.*(?:cep|postal)/u.test(error) ? "postal_code_rejected"
+      : /(?:peso|dimens|altura|largura|comprimento|volume|weight).*(?:limit|exced|maior|maxim|invalid|permit)/u.test(error) ? "package_rejected"
+        : /temporari|timeout|timed out|indisponibilidade|erro interno|fora do ar|temporar/u.test(error) ? "provider_unavailable" : "provider_rejected";
+  const id = typeof entry.id === "string" || typeof entry.id === "number" ? String(entry.id) : "";
+  return { serviceId: /^\d{1,6}$/u.test(id) ? id : null, reason };
+}
+
 export type MelhorEnvioQuote = {
   provider: "melhorenvio";
   serviceId: string;
@@ -393,7 +409,8 @@ export class MelhorEnvioProvider {
     }
   }
 
-  async quote(input: { originPostalCode: string; destinationPostalCode: string; products: MelhorEnvioQuoteProduct[] }): Promise<MelhorEnvioQuote[]> {
+  async quote(input: { originPostalCode: string; destinationPostalCode: string; products: MelhorEnvioQuoteProduct[] },
+    onUnavailable?: (services: readonly MelhorEnvioUnavailableService[]) => void): Promise<MelhorEnvioQuote[]> {
     const postal = (value: string) => value.replace(/\D/gu, "");
     if (!/^\d{8}$/u.test(postal(input.originPostalCode)) || !/^\d{8}$/u.test(postal(input.destinationPostalCode))
       || input.products.length === 0 || input.products.some((item) => !item.id || !Number.isInteger(item.quantity)
@@ -412,10 +429,11 @@ export class MelhorEnvioProvider {
     if (!Array.isArray(result)) throw new MelhorEnvioError("invalid_response", 502, false);
     const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
     let malformed = false;
+    const unavailable: MelhorEnvioUnavailableService[] = [];
     const quotes = result.flatMap((entry): MelhorEnvioQuote[] => {
       const row = asObject(entry);
       // A service explicitly unavailable is different from a malformed API response.
-      if (row?.error) return [];
+      if (row?.error) { unavailable.push(unavailableService(row)); return []; }
       const company = asObject(row?.company);
       const serviceId = typeof row?.id === "number" && Number.isFinite(row.id)
         ? String(row.id) : stringValue(row?.id);
@@ -435,6 +453,7 @@ export class MelhorEnvioProvider {
         estimatedDays: days, packages, expiresAt }];
     });
     if (quotes.length === 0 && malformed) throw new MelhorEnvioError("invalid_response", 502, false, { upstreamStatus: 200 });
+    if (quotes.length === 0) onUnavailable?.(unavailable.slice(0, 50));
     return quotes;
   }
 

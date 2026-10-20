@@ -359,7 +359,8 @@ export default function CheckoutPage() {
       }
       setShippingQuotes(quotes);
       setShippingState(quotes.length ? "options" : "empty");
-      setShippingMessage(quotes.length ? "Selecione uma opção de entrega." : "Nenhuma opção de entrega está disponível para este CEP.");
+      setShippingMessage(quotes.length ? "Selecione uma opção de entrega."
+        : typeof record.message === "string" ? record.message : "Nenhuma opção de entrega está disponível para este CEP.");
       if (quotes.length === 1 && quotes[0]) setSelectedShippingQuoteId(quotes[0].id);
     } catch {
       if (requestId !== shippingRequestRef.current) return;

@@ -3,7 +3,7 @@ import {
   getMelhorEnvioEnvironment,
   getMelhorEnvioReadiness
 } from "@curtiz/config";
-import { FIXED_SHIPPING_IN_CENTS, MelhorEnvioError, melhorEnvioTokenKeyId } from "@curtiz/integrations";
+import { FIXED_SHIPPING_IN_CENTS, MelhorEnvioError, melhorEnvioTokenKeyId, type MelhorEnvioUnavailableService } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
@@ -129,16 +129,18 @@ export async function POST(request: NextRequest) {
     const resolved = await resolveShippingProducts(parsed.data.lines, db);
     stage = "provider";
     const provider = configuredMelhorEnvioProvider(runtime, db);
+    let unavailableServices: readonly MelhorEnvioUnavailableService[] = [];
     const quotes = await provider.quote({
       originPostalCode: runtime.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "",
       destinationPostalCode: parsed.data.postalCode,
       products: resolved.products
-    });
+    }, services => { unavailableServices = services; });
     stage = "persistence";
     if (quotes.length === 0) {
-      await recordShippingDiagnostic(db, { code: null, support, httpStatus: 200, userId,
-        environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started, tokenKeyId });
-      return reply({ ok: true, quotes: [], message: "Nenhum serviço atende este CEP e estes itens." });
+      await recordShippingDiagnostic(db, { code: "shipping_services_unavailable", support, httpStatus: 200, userId,
+        environment: storeEnvironmentName(runtime), provider: "melhorenvio", latencyMs: Date.now() - started, tokenKeyId, unavailableServices });
+      return reply({ ok: true, quotes: [], supportCode: support.supportCode,
+        message: withSupport("Nenhuma opção de entrega está disponível para este endereço e estes itens. Tente novamente ou fale com o atendimento.", support.supportCode) });
     }
     const rows = quotes.map((quote) => ({
       customer_id: user.id, provider: quote.provider, service_id: quote.serviceId, service: quote.service,
