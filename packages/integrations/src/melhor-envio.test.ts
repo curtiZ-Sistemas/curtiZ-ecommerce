@@ -29,6 +29,21 @@ const store = (initial = initialTokens()) => {
   return value;
 };
 
+describe("cancelabilidade por remessa", () => {
+  it.each([true, false])("interpreta o contrato oficial indexado pelo ID: %s", async cancellable => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ "external-1": { cancellable, time: 0 } }));
+    const provider = new MelhorEnvioProvider(config, store(), transport);
+    expect(await provider.isCancellable("external-1")).toBe(cancellable);
+  });
+
+  it("não usa a autorização de outra remessa nem valores não booleanos", async () => {
+    for (const result of [{ other: { cancellable: true } }, { "external-1": { cancellable: "true" } }]) {
+      const provider = new MelhorEnvioProvider(config, store(), vi.fn<typeof fetch>().mockResolvedValue(Response.json(result)));
+      expect(await provider.isCancellable("external-1")).toBe(false);
+    }
+  });
+});
+
 it("does not retry a cart accepted without a recoverable external ID", async () => {
   const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 200 }));
   const party = { name: "Test", email: "test@example.invalid", phone: "31999999999", document: "12345678909",

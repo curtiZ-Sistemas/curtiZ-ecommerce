@@ -487,6 +487,8 @@ export class MelhorEnvioProvider {
       method: "POST", body: JSON.stringify({ orders: [externalId] })
     }, true);
     const row = asObject(result);
+    const shipment = asObject(row?.[externalId]);
+    if (shipment) return shipment.cancellable === true;
     if (typeof row?.cancellable === "boolean") return row.cancellable;
     if (Array.isArray(result)) return result.some((entry) => asObject(entry)?.cancellable === true);
     return false;
