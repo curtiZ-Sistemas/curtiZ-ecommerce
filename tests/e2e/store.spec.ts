@@ -542,6 +542,13 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
   await expect(page.locator(".checkout-address-card.selected")).toContainText("Avenida Paulista");
+  await page.route("**/api/shipping/quote", route => route.fulfill({ json: {
+    ok: true, quotes: [], supportCode: "FRT-TEST0001",
+    message: "Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001."
+  } }), { times: 1 });
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByText("Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   submittedLines.length = 0;

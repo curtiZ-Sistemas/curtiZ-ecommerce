@@ -103,6 +103,24 @@ describe("MelhorEnvioProvider", () => {
     await expect(provider.quote(quoteInput)).rejects.toMatchObject({ code: "invalid_response" });
   });
 
+  it("preserva apenas categorias e IDs seguros dos serviços recusados", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json([
+      { id: 1, error: "CEP 00000000 inválido; endereço privado" },
+      { id: 3, error: "Trecho não atendido para endereço privado" },
+      { id: 4, error: "Peso excede o limite permitido" },
+      { id: 5, error: "Falha temporária no serviço" },
+      { id: "private-id", error: "private provider response" }
+    ]));
+    const report = vi.fn();
+    expect(await new MelhorEnvioProvider(config, store(), transport).quote(quoteInput, report)).toEqual([]);
+    expect(report).toHaveBeenCalledExactlyOnceWith([
+      { serviceId: "1", reason: "postal_code_rejected" }, { serviceId: "3", reason: "coverage" },
+      { serviceId: "4", reason: "package_rejected" }, { serviceId: "5", reason: "provider_unavailable" },
+      { serviceId: null, reason: "provider_rejected" }
+    ]);
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(/00000000|privad|private/u);
+  });
+
   it("não renova novamente quando um 401 antigo chega após outro request renovar", async () => {
     let releaseOldRequest: () => void = () => undefined;
     const pending = new Promise<void>((resolve) => { releaseOldRequest = resolve; });
