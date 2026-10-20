@@ -548,7 +548,10 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   } }), { times: 1 });
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByText("Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
+  const attemptsWithoutShipping = submittedLines.length;
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Calcule e selecione uma opção de frete antes de continuar." })).toBeVisible();
+  expect(submittedLines).toHaveLength(attemptsWithoutShipping);
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   submittedLines.length = 0;
