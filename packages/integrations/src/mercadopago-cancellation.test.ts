@@ -3,6 +3,14 @@ import { MercadoPagoTestPaymentProvider } from "./index";
 vi.mock("server-only", () => ({}));
 afterEach(() => vi.unstubAllGlobals());
 describe("Mercado Pago cancellation/refund requests", () => {
+  it.each([undefined, null, 1, "pending", "rejected"])("never infers refund approval from status %s", async status => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      id: "123", live_mode: false, transaction_amount: 67.9,
+      refunds: [{ id: "refund-1", amount: 67.9, status }]
+    })));
+    const payment = await new MercadoPagoTestPaymentProvider("TEST-fixture").getPayment("123");
+    expect(payment.refunds.filter(refund => ["approved", "completed"].includes(refund.status))).toEqual([]);
+  });
   it("cancels the existing payment with PUT, without creating a charge", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ id: "123", live_mode: false, status: "cancelled", transaction_amount: 67.9, currency_id: "BRL", external_reference: "CZT-1" })));
     vi.stubGlobal("fetch", fetcher);

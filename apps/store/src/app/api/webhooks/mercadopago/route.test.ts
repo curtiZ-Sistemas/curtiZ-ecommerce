@@ -79,7 +79,7 @@ describe("webhook canônico do Mercado Pago", () => {
       if (name === "claim_payment_webhook") return { data: `acquired:${lease}`, error: null };
       if (name === "check_mercadopago_order_mode") return { data: true, error: null };
       if (name === "finalize_mercadopago_payment") return { data: review ? "manual_review" : "processed", error: failure === "payment" ? { code: "XX000" } : null };
-      if (name === "reconcile_mercadopago_provider_refund") return { data: "completed", error: failure === "refund" ? { code: "XX000" } : null };
+      if (name === "reconcile_mercadopago_provider_refund") return { data: true, error: failure === "refund" ? { code: "XX000" } : null };
       if (name === "finish_payment_webhook") return { data: failure !== "lease", error: null };
       throw new Error("Unexpected RPC");
     });
@@ -131,6 +131,17 @@ describe("webhook canônico do Mercado Pago", () => {
     provider.getPayment.mockResolvedValue({ ...confirmedPayment(), id: "foreign-payment" });
     expect((await POST(request())).status).toBe(502);
     expect(rpc.mock.calls.map(([name]) => name)).toEqual(["claim_payment_webhook", "finish_payment_webhook"]);
+  });
+
+  it.each([false, null, "completed"])("does not acknowledge an unconfirmed refund reconciliation: %s", async data => {
+    const rpc = setupProcessing();
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation(async name => name === "reconcile_mercadopago_provider_refund"
+      ? { data, error: null } : await original?.(name) ?? { data: false, error: null });
+    expect((await POST(request())).status).toBe(503);
+    expect(rpc).toHaveBeenCalledWith("finish_payment_webhook", expect.objectContaining({
+      p_success: false, p_error_code: "refund_reconciliation_failed"
+    }));
   });
 
   it("does not acknowledge an unexpected finalization result", async () => {

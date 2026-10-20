@@ -135,7 +135,7 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
         return [{
           id: refundId,
           amountInCents: Math.round(refundAmount * 100),
-          status: typeof refund.status === "string" ? refund.status : "approved",
+          status: typeof refund.status === "string" ? refund.status : "unknown",
           dateCreated: typeof refund.date_created === "string" ? refund.date_created : null
         }];
       })

@@ -103,7 +103,7 @@ export async function POST(request: Request) {
         p_amount: refund.amountInCents / 100, p_provider_event_id: eventId,
         p_completed_at: refund.dateCreated
       });
-      if (reconciled.error) {
+      if (reconciled.error || reconciled.data !== true) {
         await finish(false, "refund_reconciliation_failed");
         return reply({ ok: false }, 503);
       }
