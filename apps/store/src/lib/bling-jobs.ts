@@ -275,6 +275,10 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   if (mirror.blockers.includes("fiscal_tax_codes_required")) throw new BlingError("fiscal_tax_codes_required", 409);
   if (mirror.blockers.includes("fiscal_tax_parameters_required")) throw new BlingError("fiscal_tax_parameters_required", 409);
   if (await blingFiscalMirrorHash(mirror) !== approval.mirror_hash) throw new BlingError("fiscal_mirror_changed", 409);
+  // Recheck for both generation and transmission: the provider settings may have
+  // changed since a kit draft was prepared, including a manually prepared draft.
+  if (mirror.items.some(i => i.sourceCommercialSku) && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true")
+    throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const natureId = idNumber(mirror.rule.external_nature_id);
   if (!natureId) throw new BlingError("nature_required", 409);
   const company = row(data(await provider.request("/empresas/me/dados-basicos")));
@@ -319,8 +323,6 @@ async function generateInvoice(db: SupabaseClient, provider: BlingClient, enviro
   if (environment.BLING_INVOICE_SYNC_ENABLED !== "true") throw new BlingError("invoice_sync_disabled", 409);
   const preconditions = await fiscalPreconditions(db, provider, environment, orderId);
   const { externalOrderId, invoiceId, natureId } = preconditions;
-  if (preconditions.mirror.items.some(i => i.sourceCommercialSku) && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true")
-    throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const prepare = (id: number) => prepareBlingFiscalDraft(provider, id, preconditions.mirror.items, preconditions.commercialItems,
     { ...preconditions.expectedRecipient, natureId, totalInCents: preconditions.totalInCents, shippingInCents: preconditions.shippingInCents,
       discountInCents: preconditions.mirror.discountInCents, additionalInCents: preconditions.mirror.additionalInCents },
