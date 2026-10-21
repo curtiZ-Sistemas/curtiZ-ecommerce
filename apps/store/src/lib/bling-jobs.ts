@@ -391,6 +391,10 @@ async function reconcileWebhook(db: SupabaseClient, provider: BlingClient, event
 }
 
 export async function runBlingJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
+  const targetOrderId = environment.BLING_HOMOLOGATION_ORDER_ID;
+  if (targetOrderId !== undefined && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(targetOrderId)
+    || environment.BLING_INVOICE_TRANSMISSION_MODE !== "homologation"
+    || environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED === "true")) return { ok: false, processed: 0 };
   const db = database(environment, transport);
   if (!db || !environment.BLING_CLIENT_ID || !environment.BLING_CLIENT_SECRET || !environment.BLING_TOKEN_ENCRYPTION_KEY)
     return { ok: false, processed: 0 };
@@ -398,12 +402,13 @@ export async function runBlingJobs(environment: Environment, executionId: string
     p_provider: "bling", p_environment: environment.APP_ENV === "production" ? "production" : "sandbox"
   }));
   if (credential?.status !== "connected") return { ok: false, processed: 0 };
-  await call(db, "set_bling_shipping_policy", { p_required: environment.BLING_REQUIRE_INVOICE_FOR_SHIPPING === "true" });
+  if (!targetOrderId) await call(db, "set_bling_shipping_policy", { p_required: environment.BLING_REQUIRE_INVOICE_FOR_SHIPPING === "true" });
   let processed = 0;
   let failed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 8); index += 1) {
     const lockId = crypto.randomUUID();
-    const claimed = row(await call(db, "claim_bling_job", { p_lock_id: lockId,
+    const claimed = row(await call(db, targetOrderId ? "claim_bling_order_job" : "claim_bling_job", { p_lock_id: lockId,
+      ...(targetOrderId ? { p_order_id: targetOrderId } : {}),
       p_order_enabled: environment.BLING_ORDER_SYNC_ENABLED === "true",
       p_invoice_enabled: environment.BLING_INVOICE_SYNC_ENABLED === "true",
       p_send_enabled: environment.BLING_INVOICE_SEND_ENABLED === "true",
@@ -414,6 +419,9 @@ export async function runBlingJobs(environment: Environment, executionId: string
     if (!claimed) break;
     const job: Job = { id: readString(claimed, "id"), type: readString(claimed, "jobType") as Job["type"],
       payload: row(claimed.payload) ?? {}, attempts: readNumber(claimed, "attempts") };
+    if (targetOrderId && (readString(job.payload, "orderId") !== targetOrderId
+      || !["bling.order.create", "bling.order.reconcile", "bling.invoice.generate", "bling.invoice.send", "bling.invoice.poll", "bling.invoice.archive"].includes(job.type)))
+      return { ok: false, processed, failed: failed + 1 };
     const provider = createBlingClient(environment, async (name, args) => db.rpc(name, args), async (input, init) => {
       if (await call(db, "renew_bling_job_lease", { p_job_id: job.id, p_lock_id: lockId }) !== true)
         throw new BlingError("job_lease_lost", 409);
