@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readNumber, readString } from "./unknown-data";
 import { archiveBlingInvoice, ensureBlingFiscalApproval, resolveBlingOrderNature } from "./bling-fiscal-automation";
 import { prepareBlingFiscalDraft } from "./bling-invoice-draft";
+import { assertBlingB2CRecipient, readBlingFiscalRecipient } from "./bling-fiscal-scope";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type Job = { id: string; type: "bling.order.create" | "bling.order.reconcile" | "bling.webhook.reconcile" | "bling.invoice.generate" | "bling.invoice.send" | "bling.invoice.poll" | "bling.invoice.archive" | "bling.invoice.email" | "bling.product.sync" | "bling.product.create" | "bling.product.reconcile" | "bling.stock.sync";
@@ -155,6 +156,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
     }
     return;
   }
+  if (!reconcileOnly) assertBlingB2CRecipient(await readBlingFiscalRecipient(db, orderId));
   const code = readString(order, "public_code");
   const items = array(itemsResult.data);
   if (!items.length) throw new BlingError("missing_order_items", 409);

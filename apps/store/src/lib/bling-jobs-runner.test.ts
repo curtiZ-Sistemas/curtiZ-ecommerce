@@ -37,6 +37,19 @@ beforeEach(() => {
 });
 
 describe("persistent Bling job orchestration", () => {
+  it.each([{ icms_taxpayer: true, final_consumer: true }, { icms_taxpayer: false, final_consumer: false }, {}])(
+    "blocks an unsupported new ERP order even with fiscalReady off: %j", async recipient => {
+      state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+        name === "read_integration_credential" ? { status: "connected" }
+          : name === "claim_bling_job" ? { id: jobId, jobType: "bling.order.create", payload: { orderId }, attempts: 1 }
+            : name === "read_bling_order_link" ? null
+              : name === "read_bling_fiscal_automation_context" ? { recipient } : true }));
+      expect(await runBlingJobs({ ...environment, BLING_ORDER_SYNC_ENABLED: "true" }, "execution-test", 1))
+        .toMatchObject({ failed: 1 });
+      expect(state.request).not.toHaveBeenCalled();
+      expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({
+        p_error_code: "icms_taxpayer" in recipient ? "fiscal_scenario_not_homologated" : "fiscal_recipient_required" }));
+    });
   it("consults an existing sale and invoice, confirms reconciliation and completes under its lease", async () => {
     expect(await runBlingJobs(environment, "execution-test")).toMatchObject({ ok: true, processed: 1 });
     expect(state.request.mock.calls.map(([path]) => path)).toEqual(["/pedidos/vendas/88", "/nfe/99"]);

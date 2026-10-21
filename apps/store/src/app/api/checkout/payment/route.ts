@@ -16,6 +16,7 @@ import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 import { resolveShippingProducts } from "../../../../lib/melhor-envio-server";
+import { readBlingFiscalRecipient } from "../../../../lib/bling-fiscal-scope";
 
 const checkoutSchema = z.object({
   fiscalRecipient: z.object({ icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict().optional(),
@@ -177,6 +178,11 @@ async function handlePost(request: NextRequest, requestId: string) {
       message: invalidCustomerCpf ? "Revise o CPF do cliente no checkout." : "Revise os dados do pagamento." }, 400);
   }
 
+  const requestedRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (requestedRecipient && (requestedRecipient.icmsTaxpayer || !requestedRecipient.finalConsumer))
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este checkout atende consumidores finais não contribuintes do ICMS. Esta operação ainda não está disponível." }, 409);
+
   const credentials = getMercadoPagoCredentials();
   if (!credentials) {
     reportFailure("PAYMENT_CREDENTIALS_INVALID");
@@ -289,6 +295,14 @@ async function handlePost(request: NextRequest, requestId: string) {
   }
   if (!isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
   const order = orderResult.data;
+  // Re-read the persisted declaration: omitting or changing the request cannot bypass it.
+  let persistedRecipient: Record<string, unknown>;
+  try { persistedRecipient = await readBlingFiscalRecipient(db, orderId); }
+  catch { return response({ ok: false, code: "FISCAL_RECIPIENT_UNAVAILABLE", recovery: "retry_attempt",
+    message: "Não foi possível conferir os dados fiscais do pedido agora." }, 503); }
+  if (persistedRecipient.icms_taxpayer === true || persistedRecipient.final_consumer === false)
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este pedido depende de uma operação fiscal ainda não disponível." }, 409);
   if (!isUnknownRecord(order.commercial_rules_snapshot) || order.commercial_rules_snapshot.paymentMode !== paymentMode) {
     return response({ ok: false, code: "ORDER_PAYMENT_MODE_MISMATCH", recovery: "view_order",
       message: "Este pedido precisa ser verificado antes de receber um pagamento." }, 409);
