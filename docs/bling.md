@@ -130,6 +130,12 @@ O rate limiter no banco espaça requisições em 334 ms e compartilha a conta en
 
 ## Operação e recuperação
 
+### Homologação limitada a um pedido
+
+`BLING_HOMOLOGATION_ORDER_ID` restringe o processador ao UUID exato de um pedido. Exige `BLING_INVOICE_TRANSMISSION_MODE=homologation` e recusa autorização de emissão real. Valor vazio/inválido bloqueia a execução; a ausência da nova migration não provoca retorno à fila global. O mesmo serviço de geração, transmissão, consulta e arquivo mantém suas aprovações, pagamento, declaração B2C, lease e conferência fiscal. Catálogo, estoque e jobs de outros pedidos ficam fora dessa execução; a política global de expedição não é alterada pelo teste.
+
+Esse filtro não habilita nenhuma flag, não aprova espelhos e não comprova o ambiente SEFAZ. Antes de ativar um teste autorizado, aplicar a migration `20261021225251_bling_order_homologation_scope`, conferir no Bling ambiente2 e lançamentos fiscais de estoque/contas desligados e registrar evidência legítima do espelho do pedido. Manter emissão real e política global de automação bloqueadas. A habilitação temporária das flags necessárias ao teste exige autorização específica e deve preservar o filtro enquanto habilitadas. Ao encerrar, primeiro desabilitar as flags e só depois remover o filtro; removê-lo com flags habilitadas retoma a fila normal.
+
 - Técnico: status de configuração/conexão, empresa, recursos de escopo a conferir, expiração, último teste real da API, webhook, fila, preview e conexão/revogação. Ausência de eventos por 48 horas sinaliza verificação; não prova que o webhook quebrou, pois a conta pode não ter atividade.
 - Administrativo: estado por SKU no editor de variantes e lista de pedidos integrados no contexto de pedidos. Retry exige permissão de produto/pedido e estado elegível.
 - Operacional: filtros de ERP/nota/falhas, código local, ID externo, motivo sanitizado, histórico de tentativas e consulta/conciliação. Reprocessamento comum não repete operação incerta.
