@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select no_plan();
+select plan(32);
 
 insert into auth.users(id,instance_id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values('cf000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','remaining-refund-test@example.invalid','{}','{"full_name":"Cancellation test"}',now(),now());
@@ -111,6 +111,5 @@ select lives_ok(format('select public.finalize_mercadopago_refund(%L::uuid,%L,%L
   'Manager can still acknowledge an authorized partial refund');
 select is((select status::text from public.payments where order_id='cf100000-0000-4000-8000-000000000004'),'approved','Manager partial does not invent total cancellation');
 select is((select refunded_amount from public.accounts_receivable where order_id='cf100000-0000-4000-8000-000000000004'),5::numeric,'Manager partial keeps its actual financial amount');
-select num_failed() as failed,array(select finish()) as summary;
+select * from finish();
 rollback;
-
