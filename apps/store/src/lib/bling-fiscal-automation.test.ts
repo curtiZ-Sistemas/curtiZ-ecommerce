@@ -26,6 +26,12 @@ beforeEach(() => {
   state.document.mockResolvedValue(new TextEncoder().encode("test-only-document").buffer);
 });
 describe("approved fiscal automation", () => {
+  it.each([[true, true], [true, false], [false, false]])(
+    "rejects an existing approval outside B2C: taxpayer=%s finalConsumer=%s", async (icms_taxpayer, final_consumer) => {
+      state.rpc.mockResolvedValueOnce({ data: { mirror_hash: "a".repeat(64), icms_taxpayer, final_consumer }, error: null });
+      await expect(ensureBlingFiscalApproval(db, order, items)).rejects.toMatchObject({ code: "fiscal_scenario_not_homologated" });
+      expect(state.rpc).toHaveBeenCalledTimes(1);
+    });
   it("binds a paid order mirror to an approved configuration and explicit recipient", async () => {
     const result = await ensureBlingFiscalApproval(db, order, items);
     expect(result).toMatchObject({ icms_taxpayer: false, final_consumer: true, mirror_hash: expect.stringMatching(/^[a-f0-9]{64}$/u) as unknown });

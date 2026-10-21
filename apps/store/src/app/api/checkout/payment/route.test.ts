@@ -170,9 +170,9 @@ describe("confirmação de pagamento", () => {
     db.rpc.mockImplementation((name, args) => name === "set_bling_checkout_recipient"
       ? Promise.resolve({ data: true, error: null }) : original!(name, args));
     expect((await POST(request({ ...body, checkout: { ...body.checkout,
-      fiscalRecipient: { icmsTaxpayer: true, finalConsumer: false } } }))).status).toBe(200);
+      fiscalRecipient: { icmsTaxpayer: false, finalConsumer: true } } }))).status).toBe(200);
     expect(db.rpc).toHaveBeenCalledWith("set_bling_checkout_recipient", expect.objectContaining({
-      p_user_id: "customer-id", p_icms_taxpayer: true, p_final_consumer: false }));
+      p_user_id: "customer-id", p_icms_taxpayer: false, p_final_consumer: true }));
     const declaration = db.rpc.mock.invocationCallOrder[db.rpc.mock.calls.findIndex(([name]) => name === "set_bling_checkout_recipient")];
     expect(declaration).toBeLessThan(state.createPayment.mock.invocationCallOrder[0]!);
   });
@@ -180,6 +180,33 @@ describe("confirmação de pagamento", () => {
     database();
     expect((await POST(request({ ...body, checkout: { ...body.checkout,
       fiscalRecipient: { icmsTaxpayer: false, finalConsumer: true } } }))).status).toBe(409);
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
+  it.each([{ icmsTaxpayer: true, finalConsumer: true }, { icmsTaxpayer: true, finalConsumer: false },
+    { icmsTaxpayer: false, finalConsumer: false }])("does not create an order or charge an unsupported fiscal scenario: %j", async fiscalRecipient => {
+    const db = database();
+    const result = await POST(request({ ...body, checkout: { ...body.checkout, fiscalRecipient } }));
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({ code: "FISCAL_SCENARIO_NOT_HOMOLOGATED" });
+    expect(db.creationKeys.size).toBe(0);
+    expect(state.createPayment).not.toHaveBeenCalled();
+  });
+  it.each([{ icms_taxpayer: true, final_consumer: true }, { icms_taxpayer: false, final_consumer: false }])(
+    "cannot omit the persisted unsupported declaration when paying by orderId: %j", async recipient => {
+      const db = database(), original = db.rpc.getMockImplementation()!;
+      db.rpc.mockImplementation((name, args) => name === "read_bling_fiscal_automation_context"
+        ? Promise.resolve({ data: { recipient }, error: null }) : original(name, args));
+      const result = await POST(request({ ...body, orderId, checkout: undefined }));
+      expect(result.status).toBe(409);
+      expect(await result.json()).toMatchObject({ code: "FISCAL_SCENARIO_NOT_HOMOLOGATED" });
+      expect(state.createPayment).not.toHaveBeenCalled();
+    });
+  it("does not charge if the persisted fiscal declaration cannot be read", async () => {
+    const db = database(), original = db.rpc.getMockImplementation()!;
+    db.rpc.mockImplementation((name, args) => name === "read_bling_fiscal_automation_context"
+      ? Promise.resolve({ data: null, error: { code: "XX000" } }) : original(name, args));
+    const result = await POST(request());
+    expect(result.status).toBe(503);
     expect(state.createPayment).not.toHaveBeenCalled();
   });
   it.each(["", "-1", "1e2", "unknown", 0, 1.5, null])("rejects malformed issuer %s before creating an order", async issuer_id => {

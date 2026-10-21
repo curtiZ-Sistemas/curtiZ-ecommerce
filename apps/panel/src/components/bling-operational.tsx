@@ -11,6 +11,7 @@ type Order = { orderId: string; publicCode: string; externalOrderId: number | nu
 const errorLabels: Record<string, string> = {
   fiscal_automation_policy_required: "Regras fiscais ainda não liberadas para automação",
   fiscal_recipient_required: "Confirme os dados fiscais do destinatário",
+  fiscal_scenario_not_homologated: "Venda para contribuinte do ICMS ou revenda aguarda homologação própria",
   fiscal_mirror_changed: "O pedido ou as regras mudaram; confira o espelho fiscal",
   fiscal_after_sale_authorization_required: "Pós-venda pendente: confira cancelamento ou devolução fiscal no Bling e com a contabilidade",
   kit_fiscal_composition_required: "Confira os pares, códigos e quantidades da composição fiscal do kit",
