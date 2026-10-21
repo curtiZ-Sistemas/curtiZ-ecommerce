@@ -65,13 +65,28 @@ export async function cancelCustomerOrder(orderId: string, customerId: string, r
     const prepared = await finish(true);
     if (!isUnknownRecord(prepared.data)) throw new Error("refund_not_prepared");
     const key = readString(prepared.data, "idempotencyKey");
-    const confirmedRefund = payment.refunds.find(refund => refund.amountInCents === payment.amountInCents
+    const refundAmount = readNumber(prepared.data, "refundAmountInCents");
+    if (!key || !Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > payment.amountInCents
+      || !Array.isArray(prepared.data.completedRefundIds) || prepared.data.completedRefundIds.some(id => typeof id !== "string"))
+      throw new Error("refund_balance_not_confirmed");
+    const completedIds = new Set(prepared.data.completedRefundIds as string[]);
+    const confirmedRefund = payment.refunds.find(refund => !completedIds.has(refund.id) && refund.amountInCents === refundAmount
       && ["approved", "completed"].includes(refund.status));
     if (payment.status === "refunded" && !confirmedRefund) throw new Error("refund_requires_review");
-    const refund = confirmedRefund ?? await provider.refundPayment(providerId, payment.amountInCents, key);
+    const observed = new Map<string, number>();
+    for (const refund of payment.refunds) {
+      if (["rejected", "failed"].includes(refund.status)) continue;
+      if (!["approved", "completed"].includes(refund.status) || !refund.id || !Number.isSafeInteger(refund.amountInCents)
+        || refund.amountInCents <= 0 || observed.has(refund.id) && observed.get(refund.id) !== refund.amountInCents)
+        throw new Error("refund_requires_review");
+      observed.set(refund.id, refund.amountInCents);
+    }
+    if (payment.amountInCents - [...observed.values()].reduce((total, amount) => total + amount, 0) !== (confirmedRefund ? 0 : refundAmount))
+      throw new Error("refund_balance_not_confirmed");
+    const refund = confirmedRefund ?? await provider.refundPayment(providerId, refundAmount, key);
     const final = readQueryResult(await db.rpc("finalize_mercadopago_refund", {
       p_payment_id: readString(prepared.data, "paymentId"), p_provider_refund_id: refund.id,
-      p_requested_by: customerId, p_refund_amount: payment.amountInCents / 100, p_idempotency_key: key
+      p_requested_by: customerId, p_refund_amount: refundAmount / 100, p_idempotency_key: key
     }));
     if (final.error || final.data !== true) throw new Error("refund_not_finalized");
     return { statusCode: 200, body: { ok: true, status: "refunded", message: "Pedido cancelado e reembolso concluído." } };
