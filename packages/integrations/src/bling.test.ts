@@ -155,6 +155,26 @@ describe("Bling HTTP reliability", () => {
     await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(json({ secret: "do-not-expose" }, status)))
       .request("/produtos")).rejects.toMatchObject({ code: status === 403 ? "scope_denied" : "validation_error", retryable: false });
   });
+  it.each([400, 422])("keeps bounded numeric validation codes without provider/customer text (%s)", async status => {
+    const payload = { error: { message: "private customer", fields: [
+      { code: 49, msg: "private document", element: "private field", collection: [
+        { code: 12, msg: "private token" }, { code: 49 }, { code: "123" }, { code: -1 }, { code: 100000 }
+      ] }
+    ] } };
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json(payload, status));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ code: "validation_error", retryable: false, uncertainWrite: false, validationCodes: [49, 12] });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("bounds validation diagnostics and tolerates non-JSON rejections", async () => {
+    const fields = Array.from({ length: 100 }, (_, code) => ({ code }));
+    await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields } }, 400)))
+      .request("/nfe/1")).rejects.toMatchObject({ validationCodes: Array.from({ length: 16 }, (_, code) => code) });
+    await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(new Response("not json", { status: 422 })))
+      .request("/nfe/1")).rejects.toMatchObject({ code: "validation_error", validationCodes: [] });
+  });
   it("decodes the official gzip/base64 document envelope", async () => {
     const pdf = new TextEncoder().encode("%PDF-1.7\ntest-only");
     const compressed = await new Response(new Blob([pdf]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
