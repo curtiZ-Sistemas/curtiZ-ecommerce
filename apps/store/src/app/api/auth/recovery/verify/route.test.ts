@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ verify: vi.fn(), signOut: vi.fn(), budget: vi.fn(), status: "active",
+const state = vi.hoisted(() => ({ verify: vi.fn(), getUser: vi.fn(), signOut: vi.fn(), budget: vi.fn(), status: "active",
   identities: [{ provider: "email" }], updatedAt: "2026-10-22T12:00:00Z" }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/http-origin", () => import("../../../../../lib/http-origin"));
@@ -10,7 +10,7 @@ vi.mock("@/lib/recovery-proof", () => import("../../../../../lib/recovery-proof"
 vi.mock("@/lib/auth-rate-limit", () => ({ enforceRecoveryVerificationRateLimit: state.budget }));
 vi.mock("@/lib/supabase/server", () => ({
   createServiceSupabaseClient: () => ({}),
-  createServerSupabaseClient: async () => ({ auth: { verifyOtp: state.verify, signOut: state.signOut },
+  createServerSupabaseClient: async () => ({ auth: { verifyOtp: state.verify, getUser: state.getUser, signOut: state.signOut },
     from: () => { const query = { select: () => query, eq: () => query,
       maybeSingle: async () => ({ data: { status: state.status }, error: null }) }; return query; } })
 }));
@@ -25,6 +25,7 @@ beforeEach(() => {
   state.status = "active"; state.identities = [{ provider: "email" }];
   state.budget.mockResolvedValue({ status: "allowed" });
   state.signOut.mockResolvedValue({ error: null });
+  state.getUser.mockImplementation(async () => ({ data: { user: { id: "owner", identities: state.identities, updated_at: state.updatedAt } }, error: null }));
   state.verify.mockImplementation(async () => ({ data: { user: { id: "owner", identities: state.identities, updated_at: state.updatedAt },
     session: { access_token: accessToken } }, error: null }));
 });
@@ -76,6 +77,15 @@ describe("portable recovery verification", () => {
     expect(google.headers.get("set-cookie")).toBeNull();
     state.identities = [{ provider: "email" }]; state.status = "blocked";
     expect((await send()).status).toBe(403);
+    expect(state.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+  it("requires a freshly validated matching user before signing the recovery session", async () => {
+    state.getUser.mockResolvedValue({ data: { user: { id: "different" } }, error: null });
+    const mismatch = await send();
+    expect(mismatch.status).toBe(503); expect(mismatch.headers.get("set-cookie")).toBeNull();
+    state.getUser.mockRejectedValue(new Error("provider details"));
+    const unavailable = await send();
+    expect(unavailable.status).toBe(503); expect(unavailable.headers.get("set-cookie")).toBeNull();
     expect(state.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
 });
