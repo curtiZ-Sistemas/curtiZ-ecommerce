@@ -24,7 +24,7 @@ describe("isolated recovery document", () => {
     const nodes = { status: { textContent: "" }, retry: { hidden: true } };
     const fetchMock = vi.fn(async () => { calls.push("post"); return { ok: true }; });
     const execution: unknown = runInNewContext(script ?? "", { location, history,
-      document: { getElementById: (id: keyof typeof nodes) => nodes[id] }, fetch: fetchMock, AbortSignal,
+      document: { getElementById: (id: keyof typeof nodes) => nodes[id] }, fetch: fetchMock, AbortController, setTimeout, clearTimeout,
       URLSearchParams }, { timeout: 1000 });
     await execution;
     expect(calls).toEqual(["erase", "post"]);
@@ -41,7 +41,7 @@ describe("isolated recovery document", () => {
     const nodes = { status: { textContent: "" }, retry: { hidden: true } };
     const execution: unknown = runInNewContext(script ?? "", {
       location: { hash: "#token_hash=bad", replace: vi.fn() }, history: { replaceState: vi.fn() },
-      document: { getElementById: (id: keyof typeof nodes) => nodes[id] }, fetch: fetchMock, AbortSignal,
+      document: { getElementById: (id: keyof typeof nodes) => nodes[id] }, fetch: fetchMock, AbortController, setTimeout, clearTimeout,
       URLSearchParams }, { timeout: 1000 });
     await execution;
     expect(fetchMock).not.toHaveBeenCalled(); expect(nodes.retry.hidden).toBe(false);

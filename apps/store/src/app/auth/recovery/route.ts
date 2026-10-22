@@ -10,14 +10,16 @@ export function GET(request: NextRequest) {
     const status = document.getElementById("status");
     const fail = () => { status.textContent = "Não foi possível validar este link. Solicite um novo para continuar."; document.getElementById("retry").hidden = false; };
     if (!hash || !/^[a-zA-Z0-9_-]{32,256}$/.test(hash)) { fail(); return; }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const response = await fetch("/api/auth/recovery/verify", { method: "POST", credentials: "same-origin",
         headers: { "content-type": "application/json" }, body: JSON.stringify({ tokenHash: hash }),
-        cache: "no-store", signal: AbortSignal.timeout(10000) });
+        cache: "no-store", signal: controller.signal });
       if (response.ok) { location.replace("/redefinir-senha"); return; }
       if (response.status === 403) { const result = await response.json(); if (result.redirectTo === "/login?reason=google_account") { location.replace(result.redirectTo); return; } }
       fail();
-    } catch { fail(); }
+    } catch { fail(); } finally { clearTimeout(timeout); }
   })();`;
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
