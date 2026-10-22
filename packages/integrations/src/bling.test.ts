@@ -175,6 +175,19 @@ describe("Bling HTTP reliability", () => {
     await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(new Response("not json", { status: 422 })))
       .request("/nfe/1")).rejects.toMatchObject({ code: "validation_error", validationCodes: [] });
   });
+  it("keeps only exact schema field identifiers, including nested validation failures", async () => {
+    const fields = [{ code: 0, element: "itens", msg: "private customer", collection: [
+      { code: 0, element: "classificacaoFiscal", msg: "private document" },
+      { code: 0, element: "contato.private-customer.email" },
+      { code: 0, element: "private@example.com" }, { code: 0, element: "itens" }
+    ] }, { code: 0, element: { toString: "email" } }];
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields } }, 400));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ validationCodes: [0], validationFields: ["itens", "classificacaoFiscal"], retryable: false });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(transport).toHaveBeenCalledOnce();
+  });
   it("decodes the official gzip/base64 document envelope", async () => {
     const pdf = new TextEncoder().encode("%PDF-1.7\ntest-only");
     const compressed = await new Response(new Blob([pdf]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();

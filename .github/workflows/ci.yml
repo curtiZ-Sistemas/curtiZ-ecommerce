@@ -207,7 +207,21 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Preparar rede do instalador do navegador
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-curtiz-ci-network >/dev/null
+          if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' \
+              | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+      - name: Instalar Chromium e dependências
+        timeout-minutes: 10
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "30000"
+        run: pnpm exec playwright install --with-deps chromium
       - name: Executar suíte E2E sem aceitar flaky
         run: pnpm exec playwright test --project=${{ matrix.project }} --workers=1 --fail-on-flaky-tests
       - name: Repetir fluxos críticos da loja
