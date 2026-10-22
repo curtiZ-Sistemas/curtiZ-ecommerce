@@ -38,8 +38,8 @@ describe("isolated runtime email homologation", () => {
       if (typeof init?.body !== "string") throw new Error("Expected a serialized email payload");
       const payload: unknown = JSON.parse(init.body);
       expect(payload).toMatchObject({ to: ["sistemas.curtiz@gmail.com"], reply_to: "reply@example.com" });
-      expect(JSON.stringify(payload)).toContain("HOMOLOGAÃ‡ÃƒO â€” SEM PEDIDO REAL");
-      expect(JSON.stringify(payload)).toContain("NÃ£o existe pedido, pagamento");
+      expect(JSON.stringify(payload)).toContain("HOMOLOGAÇÃO — SEM PEDIDO REAL");
+      expect(JSON.stringify(payload)).toContain("Não existe pedido, pagamento");
     }
     expect(state.rpc).not.toHaveBeenCalled();
     expect(state.log).toHaveBeenCalledWith("info", "transactional_email_homologation_checked", expect.objectContaining({ lastEvent: "delivered" }));
@@ -75,4 +75,3 @@ describe("isolated runtime email homologation", () => {
     expect(state.rpc).not.toHaveBeenCalledWith("claim_transactional_email", expect.anything());
   });
 });
-
