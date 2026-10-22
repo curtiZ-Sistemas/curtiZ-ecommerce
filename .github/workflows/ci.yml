@@ -285,6 +285,15 @@ jobs:
         run: pnpm build:worker
       - name: Validar empacotamento de produção da loja
         run: pnpm deploy:dry-run
+      - name: Validar inicialização do Worker da loja
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/store/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/store-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/store-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "store") process.exit(1)' "$RUNNER_TEMP/store-version.json"
       - name: Publicar curtiz-ecommerce
         if: github.event_name != 'pull_request'
         env:
@@ -369,6 +378,15 @@ jobs:
         run: pnpm build:worker:panel
       - name: Validar empacotamento de produção do painel
         run: pnpm deploy:dry-run:panel
+      - name: Validar inicialização do Worker do painel
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/panel/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/panel-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/panel-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "panel") process.exit(1)' "$RUNNER_TEMP/panel-version.json"
       - name: Publicar curtiz-painel
         if: github.event_name != 'pull_request'
         env:
