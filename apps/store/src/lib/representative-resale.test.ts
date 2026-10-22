@@ -10,6 +10,15 @@ const item = () => ({ variantId, sku: "OWN-KIT", description: "Synthetic commerc
     unit: "PR", quantity_pairs: 1, allocation_weight: 1, source_current: true, ncm: "64022000", origin: 0, cest: "" })) });
 const context = () => ({ kitId, name: "Synthetic resale offer", merchandiseTotalInCents: 4345, items: [item()] });
 describe("representative resale preview, independent of B2C checkout", () => {
+  it("previews a catalog kit without requiring the empty legacy offer or inventing its price", () => {
+    const data = context(); data.items[0]!.quantity = 3;
+    const result = previewRepresentativeResale({ ...data, kitId: null, variantId, source: "catalog", merchandiseTotalInCents: 13035 }, false);
+    expect(result).toMatchObject({ source: "catalog", variantId, kitId: null, merchandiseTotalInCents: 13035, canPurchase: false });
+    expect(result.fiscalItems.reduce((s, i) => s + i.quantity * i.unitPriceInCents, 0)).toBe(13035);
+    expect(result.blockers).not.toContain("commercial_composition_required");
+    expect(result.blockers).not.toContain("commercial_allocation_required");
+    expect(() => previewRepresentativeResale({ ...data, kitId: null, source: "catalog" })).toThrow();
+  });
   it("preserves own stock SKU, fiscal pairs and exact cents without mutating its context", () => {
     const data = context(), before = structuredClone(data), result = previewRepresentativeResale(data, false);
     expect(result.commercialItems).toEqual([{ variantId, sku: "OWN-KIT", quantity: 1, unitPriceInCents: 4345, unit: "UN" }]);

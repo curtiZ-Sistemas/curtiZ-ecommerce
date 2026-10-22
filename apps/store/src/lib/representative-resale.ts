@@ -9,14 +9,15 @@ const metadataSchema = z.object({
   cest: z.string().regex(/^(?:|\d{7})$/u)
 });
 const contextSchema = z.object({
-  kitId: z.string().uuid(), name: z.string().min(1), merchandiseTotalInCents: integer,
+  kitId: z.string().uuid().nullable(), source: z.enum(["offer", "catalog"]).default("offer"),
+  variantId: z.string().uuid().optional(), name: z.string().min(1), merchandiseTotalInCents: integer,
   items: z.array(z.object({
     variantId: z.string().uuid(), sku: z.string().min(1), description: z.string().min(1), active: z.boolean(),
     quantity: z.number().int().min(1).max(10000), available: integer.nullable(),
     allocationWeight: z.number().int().min(1).max(1000000).nullable(),
     metadata: z.unknown(), composition: z.unknown()
   })).max(100)
-});
+}).refine(value => value.source === "catalog" ? value.kitId === null && Boolean(value.variantId) : value.kitId !== null);
 
 // A read-only merchandise preview. It neither approves taxation nor reserves
 // inventory. Fiscal pairs never become inventory/BOM deductions.
@@ -60,7 +61,8 @@ export function previewRepresentativeResale(context: unknown, icmsTaxpayer?: boo
     && !["product_fiscal_data_required", "kit_fiscal_composition_required", "commercial_kit_mapping_required"].some(b => blockers.has(b));
   if (compositionReady && (commercialTotal !== input.merchandiseTotalInCents || fiscalTotal !== commercialTotal))
     throw new Error("resale_total_mismatch");
-  return { kitId: input.kitId, name: input.name, purpose: "resale" as const, finalConsumer: false as const,
+  return { kitId: input.kitId, source: input.source, variantId: input.variantId ?? null,
+    name: input.name, purpose: "resale" as const, finalConsumer: false as const,
     icmsTaxpayer: icmsTaxpayer ?? null, canPurchase: false as const, merchandiseTotalInCents: input.merchandiseTotalInCents,
     shippingInCents: null, grandTotalInCents: null, taxes: null, commercialItems,
     fiscalItems: compositionReady ? fiscalItems : [], blockers: [...blockers] };

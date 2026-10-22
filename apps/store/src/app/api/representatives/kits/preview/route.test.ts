@@ -16,6 +16,14 @@ const request = (body: unknown = { kitId }) => new NextRequest("https://curtiz.c
 beforeEach(() => { state.origin = true; state.user = true; state.authError = false; state.rpc.mockReset();
   state.rpc.mockResolvedValue({ data: { kitId, name: "Synthetic offer", merchandiseTotalInCents: 4345, items: [] }, error: null }); });
 describe("authenticated resale preview boundary", () => {
+  it("uses an existing catalog variant and the selected quantity without requiring a legacy offer", async () => {
+    const response = await POST(request({ variantId: kitId, quantity: 3 }));
+    expect(response.status).toBe(200);
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("read_representative_catalog_kit_context", { p_variant_id: kitId, p_quantity: 3 });
+  });
+  it.each([0, 100, 1.5])("rejects invalid purchase quantity %s", async quantity => {
+    expect((await POST(request({ variantId: kitId, quantity }))).status).toBe(400); expect(state.rpc).not.toHaveBeenCalled();
+  });
   it("returns a blocked private preview, never a B2C order or payment", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");

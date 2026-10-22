@@ -1,5 +1,7 @@
 "use client";
 
+import { RepresentativeKitCatalog } from "./representative-kit-catalog";
+
 import { configuredPublicAppUrls } from "@curtiz/config";
 
 import { formatBRL } from "@curtiz/domain";
@@ -533,7 +535,6 @@ function PortalSection({
     return (
       <Kits
         orders={snapshot.kitOrders ?? []}
-        available={snapshot.availableKits ?? []}
         purchasing={section === "comprar-kit"}
       />
     );
@@ -1434,41 +1435,19 @@ function Referral({ referralCode }: { referralCode: string }) {
 
 function Kits({
   orders,
-  available,
   purchasing
 }: {
   orders: NonNullable<Snapshot["kitOrders"]>;
-  available: NonNullable<Snapshot["availableKits"]>;
   purchasing: boolean;
 }) {
+  if (purchasing) return <RepresentativeKitCatalog />;
   return (
     <section>
       <PageTitle
-        title={purchasing ? "Comprar kit" : "Meus kits"}
-        description={
-          purchasing
-            ? "As compras de kits para revenda aguardam homologação. Os kits podem ser consultados, mas a compra ainda não está disponível."
-            : "Acompanhe pagamento, separação e entrega."
-        }
+        title="Meus kits"
+        description="Acompanhe pagamento, separação e entrega."
       />
-      {purchasing && available.length ? (
-        <div className="representative-record-grid">
-          {available.map((kit) => (
-            <article className="representative-card representative-kit-card" key={kit.id}>
-              <PackageCheck />
-              <small>{kit.requiredForActivation ? "Kit de ativação" : "Kit disponível"}</small>
-              <h2>{kit.name}</h2>
-              <p>{kit.description}</p>
-              <strong>{formatBRL(kit.priceInCents)}</strong>
-              <button className="primary-button" disabled>
-                <ShoppingBag /> Compra em homologação
-              </button>
-            </article>
-          ))}
-        </div>
-      ) : purchasing ? (
-        <EmptyState icon={ShoppingBag} title="Nenhum kit disponível" description="A Gerência ainda não publicou uma oferta compatível com seu perfil." />
-      ) : orders.length ? (
+      {orders.length ? (
         <div className="representative-record-grid">
           {orders.map((order) => (
             <article className="representative-card representative-kit-card" key={order.id}>
