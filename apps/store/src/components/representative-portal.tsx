@@ -535,7 +535,6 @@ function PortalSection({
         orders={snapshot.kitOrders ?? []}
         available={snapshot.availableKits ?? []}
         purchasing={section === "comprar-kit"}
-        onRefresh={onRefresh}
       />
     );
   if (section === "treinamentos")
@@ -1436,45 +1435,22 @@ function Referral({ referralCode }: { referralCode: string }) {
 function Kits({
   orders,
   available,
-  purchasing,
-  onRefresh
+  purchasing
 }: {
   orders: NonNullable<Snapshot["kitOrders"]>;
   available: NonNullable<Snapshot["availableKits"]>;
   purchasing: boolean;
-  onRefresh: () => void;
 }) {
-  const [loadingId, setLoadingId] = useState("");
-  const [message, setMessage] = useState("");
-  const buy = async (kitId: string) => {
-    if (loadingId) return;
-    setLoadingId(kitId);
-    setMessage("");
-    try {
-      await postRepresentativeAction({
-        action: "buy_kit",
-        kitId,
-        idempotencyKey: crypto.randomUUID()
-      });
-      setMessage("Pedido criado. O pagamento permanece pendente até um provedor ser disponibilizado.");
-      onRefresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível criar o pedido.");
-    } finally {
-      setLoadingId("");
-    }
-  };
   return (
     <section>
       <PageTitle
         title={purchasing ? "Comprar kit" : "Meus kits"}
         description={
           purchasing
-            ? "Somente kits ativos e permitidos para seu nível aparecem aqui."
+            ? "As compras de kits para revenda aguardam homologação. Os kits podem ser consultados, mas a compra ainda não está disponível."
             : "Acompanhe pagamento, separação e entrega."
         }
       />
-      {message && <p className="form-message" role="status">{message}</p>}
       {purchasing && available.length ? (
         <div className="representative-record-grid">
           {available.map((kit) => (
@@ -1484,8 +1460,8 @@ function Kits({
               <h2>{kit.name}</h2>
               <p>{kit.description}</p>
               <strong>{formatBRL(kit.priceInCents)}</strong>
-              <button className="primary-button" disabled={loadingId === kit.id} onClick={() => void buy(kit.id)}>
-                {loadingId === kit.id ? <LoaderCircle className="spin" /> : <ShoppingBag />} Solicitar kit
+              <button className="primary-button" disabled>
+                <ShoppingBag /> Compra em homologação
               </button>
             </article>
           ))}
