@@ -30,8 +30,15 @@ export async function POST(request: NextRequest) {
   // The provider alone verifies and consumes the recovery token. Never log its request or response.
   const verified = await client.auth.verifyOtp({ type: "recovery", token_hash: input.data.tokenHash }).catch(() => null);
   if (!verified || verified.error || !verified.data.user || !verified.data.session) return fail(422);
-  const { user, session } = verified.data;
+  const { session } = verified.data;
   const rejectSession = async () => { await client.auth.signOut({ scope: "local" }).catch(() => undefined); };
+  // Read the current user version after token issuance, which may update sign-in metadata.
+  const current = await client.auth.getUser().catch(() => null);
+  if (!current || current.error || !current.data.user || current.data.user.id !== verified.data.user.id) {
+    await rejectSession();
+    return fail(503);
+  }
+  const user = current.data.user;
   if (!hasPasswordIdentity(user)) {
     await rejectSession();
     return NextResponse.json({ redirectTo: "/login?reason=google_account" }, { status: 403, headers });
