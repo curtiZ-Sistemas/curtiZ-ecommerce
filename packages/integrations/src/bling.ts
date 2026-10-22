@@ -113,7 +113,8 @@ export function createBlingClient(values: Readonly<Record<string, string | undef
 
 export class BlingError extends Error {
   constructor(readonly code: string, readonly status: number, readonly retryable = false,
-    readonly uncertainWrite = false, readonly retryAfterMs = 0) {
+    readonly uncertainWrite = false, readonly retryAfterMs = 0,
+    readonly validationCodes: readonly number[] = []) {
     super(code);
     this.name = "BlingError";
   }
@@ -287,9 +288,26 @@ export class BlingClient {
           await pause(waitMs); continue;
         }
         if (method !== "GET" && response.status >= 500) throw new BlingError("uncertain_write", response.status, false, true);
+        // Keep only bounded provider codes. Messages, field values and the raw
+        // response may contain customer data and must never reach logs.
+        const validationCodes: number[] = [];
+        if (response.status === 400 || response.status === 422) {
+          const payload = record(await response.json().catch(() => null));
+          const fields = record(payload?.error)?.fields;
+          const collect = (value: unknown) => {
+            const code = record(value)?.code;
+            if (typeof code === "number" && Number.isSafeInteger(code) && code >= 0 && code <= 99_999
+              && !validationCodes.includes(code) && validationCodes.length < 16) validationCodes.push(code);
+          };
+          if (Array.isArray(fields)) for (const field of fields.slice(0, 16)) {
+            collect(field);
+            const collection = record(field)?.collection;
+            if (Array.isArray(collection)) collection.slice(0, 16).forEach(collect);
+          }
+        }
         throw new BlingError(response.status === 429 ? "rate_limited" : response.status === 403 ? "scope_denied"
           : response.status === 400 || response.status === 422 ? "validation_error" : "provider_error",
-        response.status, response.status === 429 || response.status >= 500, false, waitMs);
+        response.status, response.status === 429 || response.status >= 500, false, waitMs, validationCodes);
       }
       if (response.status === 204) return null;
       return await response.json().catch(() => { throw new BlingError(method === "GET" ? "invalid_response" : "uncertain_write", 502, false, method !== "GET"); });
