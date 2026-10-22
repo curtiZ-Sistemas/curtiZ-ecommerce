@@ -7,6 +7,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readString } from "./unknown-data";
 
 type Environment = Readonly<Record<string, string | undefined>>;
+const HOMOLOGATION_RECIPIENT = "sistemas.curtiz@gmail.com";
 
 // Runtime-only opt-in for a short, isolated test. Never claims customer jobs.
 export async function runEmailHomologation(environment: Environment, executionId: string,
@@ -18,7 +19,7 @@ export async function runEmailHomologation(environment: Environment, executionId
   if (environment.EMAIL_ENABLED?.trim().toLowerCase() !== "false"
     || environment.EMAIL_PROVIDER?.trim().toLowerCase() !== "resend"
     || readiness.missing.length || readiness.invalid.length
-    || !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/u.test(recipient)
+    || recipient.toLowerCase() !== HOMOLOGATION_RECIPIENT
     || !Number.isFinite(started) || started > now || now - started >= 15 * 60_000
     || new Date(started).toISOString() !== startedAt) return;
 
