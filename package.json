@@ -54,21 +54,21 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@opennextjs/cloudflare": "1.20.2",
-    "@playwright/test": "^1.54.1",
-    "@types/node": "^24.0.0",
+    "@opennextjs/cloudflare": "1.20.12",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.19.2",
     "eslint": "^9.32.0",
-    "eslint-config-next": "16.3.3",
-    "prettier": "^3.6.2",
+    "eslint-config-next": "16.4.2",
+    "prettier": "^3.9.10",
     "rclone.js": "0.6.6",
-    "supabase": "^2.33.9",
-    "tsx": "^4.20.3",
-    "turbo": "^2.5.5",
+    "supabase": "^2.121.0",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.9",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.38.0",
-    "vite": "7.3.7",
-    "vitest": "4.1.11",
-    "wrangler": "4.86.0"
+    "typescript-eslint": "^8.72.0",
+    "vite": "8.3.4",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.2"
   },
   "pnpm": {
     "overrides": {
