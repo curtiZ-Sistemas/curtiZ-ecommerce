@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
+vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   conditions: [] as string[],
   signOut: vi.fn(),

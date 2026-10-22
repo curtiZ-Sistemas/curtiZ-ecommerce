@@ -7,6 +7,7 @@ import { RECOVERY_PATH, classifyResetError, verifyRecoverySession } from "@/lib/
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
+import { RECOVERY_PROOF_COOKIE, recoveryProofCookieOptions } from "@/lib/recovery-proof";
 
 const requestSchema = z.object({
   action: z.literal("request"),
@@ -26,7 +27,7 @@ const updateSchema = z
 const schema = z.discriminatedUnion("action", [requestSchema, updateSchema]);
 
 export async function POST(request: NextRequest) {
-  const headers = { "cache-control": "private, no-store", ...corsHeadersFor(request) };
+  const headers = { "cache-control": "private, no-store", "referrer-policy": "no-referrer", ...corsHeadersFor(request) };
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   }
@@ -36,7 +37,8 @@ export async function POST(request: NextRequest) {
     { status: error instanceof PrivateRequestError ? error.status : 400, headers }); }
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ message: "Revise os dados informados." }, { status: 400, headers });
+    const invalidEmail = parsed.error.issues.some((issue) => issue.path[0] === "email");
+    return NextResponse.json({ message: invalidEmail ? "Informe um e-mail válido." : "Revise os dados informados." }, { status: 400, headers });
   }
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
@@ -87,12 +89,14 @@ export async function POST(request: NextRequest) {
       );
     }
     return NextResponse.json(
-      { message: "Se existir uma conta com esse e-mail, você receberá instruções para recuperar seu acesso." },
+      { message: "Solicitação recebida. Confira seu e-mail e a pasta de spam para continuar.", redirectTo: "/login?recovery=requested" },
       { headers }
     );
   }
 
-  const recovery = await verifyRecoverySession(supabase);
+  const recovery = await verifyRecoverySession(supabase, {
+    value: request.cookies.get(RECOVERY_PROOF_COOKIE)?.value, key: process.env.RATE_LIMIT_HMAC_KEY ?? ""
+  });
   if (recovery.status === "no_password_identity") {
     return NextResponse.json(
       { message: "Esta conta acessa a curti Z com o Google. Use o botão Entrar com Google." },
@@ -131,8 +135,10 @@ export async function POST(request: NextRequest) {
   // Single use: end the recovery session and every other session of this account.
   const signedOut = await supabase.auth.signOut({ scope: "global" }).catch(() => ({ error: true }));
   if (signedOut.error) console.error({ event: "password_reset_signout_failed" });
-  return NextResponse.json(
+  const response = NextResponse.json(
     { message: "Senha atualizada. Entre com a nova senha.", redirectTo: "/login?senha=atualizada" },
     { headers }
   );
+  response.cookies.set(RECOVERY_PROOF_COOKIE, "", { ...recoveryProofCookieOptions(), maxAge: 0 });
+  return response;
 }
