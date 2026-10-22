@@ -1440,7 +1440,8 @@ function Kits({
   orders: NonNullable<Snapshot["kitOrders"]>;
   purchasing: boolean;
 }) {
-  if (purchasing) return <RepresentativeKitCatalog />;
+  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kits para revenda"
+    description="Escolha os kits do catálogo. Preços e estoque são os cadastrados na loja. As compras para revenda continuam em homologação." />} />;
   return (
     <section>
       <PageTitle

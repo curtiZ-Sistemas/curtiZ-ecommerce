@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatBRL } from "@curtiz/domain";
 import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/representative-kit-catalog";
 import { isUnknownRecord } from "../lib/unknown-data";
 
-export function RepresentativeKitCatalog() {
+export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
   const [page, setPage] = useState<RepresentativeKitPage | null>(null), [error, setError] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -42,8 +42,7 @@ export function RepresentativeKitCatalog() {
     finally { setChecking(""); }
   }
   return <section>
-    <h1>Comprar kits para revenda</h1>
-    <p>Escolha os kits do catálogo. Preços e estoque são os cadastrados na loja. As compras para revenda continuam em homologação.</p>
+    {header}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>
       : !page ? <p role="status">Carregando kits…</p>
       : !page.items.length ? <p>Nenhum kit disponível nesta página.</p>
