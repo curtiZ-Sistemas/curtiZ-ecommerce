@@ -15,6 +15,7 @@ test("recovery link keeps its token out of URLs and uses one protected POST", as
   const response = await page.goto("/auth/recovery#token_hash=" + tokenHash);
   expect(response?.headers()["cache-control"]).toContain("no-store");
   expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+  expect(response?.headers()["content-security-policy"]).toContain("default-src 'none'");
   await expect(page).toHaveURL(/\/auth\/recovery$/u);
   await expect(page.getByRole("link", { name: "Solicitar novo link" })).toBeVisible();
   expect(verifications).toBe(1);
