@@ -470,7 +470,7 @@ export async function runBlingJobs(environment: Environment, executionId: string
       failed += 1;
       const issue = error instanceof BlingError ? error : new BlingError("integration_failed", 503, true);
       if (issue.code === "validation_error") logServerEvent("error", "bling_job_validation_failed", {
-        executionId, jobType: job.type, validationCodes: issue.validationCodes
+        executionId, jobType: job.type, validationCodes: issue.validationCodes, validationFields: issue.validationFields
       });
       if (issue.code === "job_lease_lost") break;
       const outcome = issue.retryable && !issue.uncertainWrite ? "retry" : "failed";

@@ -114,7 +114,7 @@ export function createBlingClient(values: Readonly<Record<string, string | undef
 export class BlingError extends Error {
   constructor(readonly code: string, readonly status: number, readonly retryable = false,
     readonly uncertainWrite = false, readonly retryAfterMs = 0,
-    readonly validationCodes: readonly number[] = []) {
+    readonly validationCodes: readonly number[] = [], readonly validationFields: readonly string[] = []) {
     super(code);
     this.name = "BlingError";
   }
@@ -291,13 +291,26 @@ export class BlingClient {
         // Keep only bounded provider codes. Messages, field values and the raw
         // response may contain customer data and must never reach logs.
         const validationCodes: number[] = [];
+        const validationFields: string[] = [];
         if (response.status === 400 || response.status === 422) {
           const payload = record(await response.json().catch(() => null));
           const fields = record(payload?.error)?.fields;
+          // Only schema identifiers are safe diagnostics. Never retain arbitrary
+          // provider text, paths, namespaces or rejected customer values.
+          const allowedFields = new Set(["tipo", "numero", "serie", "dataOperacao", "naturezaOperacao", "contato",
+            "nome", "tipoPessoa", "numeroDocumento", "ie", "rg", "contribuinte", "telefone", "email", "endereco",
+            "cep", "municipio", "uf", "pais", "bairro", "complemento", "itens", "codigo", "descricao", "unidade",
+            "quantidade", "valor", "classificacaoFiscal", "origem", "cest", "tipo", "cfop", "impostos", "gtin",
+            "parcelas", "data", "formaPagamento", "caut", "desconto", "despesas", "transporte", "fretePorConta",
+            "frete", "transportador", "etiqueta", "finalidade", "id"]);
           const collect = (value: unknown) => {
-            const code = record(value)?.code;
+            const field = record(value);
+            const code = field?.code;
             if (typeof code === "number" && Number.isSafeInteger(code) && code >= 0 && code <= 99_999
               && !validationCodes.includes(code) && validationCodes.length < 16) validationCodes.push(code);
+            const element = field?.element;
+            if (typeof element === "string" && allowedFields.has(element)
+              && !validationFields.includes(element) && validationFields.length < 16) validationFields.push(element);
           };
           if (Array.isArray(fields)) for (const field of fields.slice(0, 16)) {
             collect(field);
@@ -307,7 +320,7 @@ export class BlingClient {
         }
         throw new BlingError(response.status === 429 ? "rate_limited" : response.status === 403 ? "scope_denied"
           : response.status === 400 || response.status === 422 ? "validation_error" : "provider_error",
-        response.status, response.status === 429 || response.status >= 500, false, waitMs, validationCodes);
+        response.status, response.status === 429 || response.status >= 500, false, waitMs, validationCodes, validationFields);
       }
       if (response.status === 204) return null;
       return await response.json().catch(() => { throw new BlingError(method === "GET" ? "invalid_response" : "uncertain_write", 502, false, method !== "GET"); });
