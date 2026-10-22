@@ -23,7 +23,7 @@ Após a validação, uma prova assinada HttpOnly/Secure, host-only, SameSite str
 
 O pedido retorna uma confirmação neutra profissional e direciona ao login. E-mail em formato inválido recebe aviso específico; existência de conta, cooldown individual e respostas internas do provedor não são expostos. Isso evita enumeração de usuários. Não aumentar validade de tokens nem enfraquecer validações para mascarar falhas.
 
-Se o link falhar, registrar somente etapa e código sanitizado. Verificar se o projeto/template são os corretos, se o link é o mais recente, se existe o verificador PKCE no navegador e o que foi retornado pelo Auth. Scanners e rastreamento são hipóteses até haver evidência; não aumentar validade, remover guardas ou migrar para outro mecanismo para mascarar o problema.
+Se o link falhar, registrar somente etapa e código sanitizado. Verificar projeto/template, mensagem mais recente, resultado do POST e estado retornado pelo Auth, sem expor token ou senha. Apenas as mensagens antigas com ConfirmationURL dependem do verificador PKCE do navegador anterior. Scanners e rastreamento são hipóteses até haver evidência; não aumentar validade nem remover guardas para mascarar o problema.
 
 A configuração de templates hospedados é independente dos arquivos locais: [documentação oficial Supabase](https://supabase.com/docs/guides/auth/auth-email-templates). O SMTP configurado por si só não traduz o conteúdo.
 
