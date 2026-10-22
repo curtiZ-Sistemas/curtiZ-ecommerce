@@ -23,16 +23,16 @@ export async function runEmailHomologation(environment: Environment, executionId
     || !Number.isFinite(started) || started > now || now - started >= 15 * 60_000
     || new Date(started).toISOString() !== startedAt) return;
 
-  const banner = "HOMOLOGAÃ‡ÃƒO: dados de exemplo. NÃ£o existe pedido, pagamento, entrega ou avaliaÃ§Ã£o real.";
-  const order: EmailOrder = { code: "TESTE-SEM-COMPRA", name: "DestinatÃ¡rio de homologaÃ§Ã£o", email: recipient,
-    subtotal: 0, discount: 0, shipping: 0, fees: 0, total: 0, address: "Sem entrega â€” exemplo de template",
-    items: [{ name: "EXEMPLO â€” nenhum produto foi comprado", color: "Exemplo", size: "Exemplo", quantity: 1, unitPrice: 0, total: 0 }] };
+  const banner = "HOMOLOGAÇÃO: dados de exemplo. Não existe pedido, pagamento, entrega ou avaliação real.";
+  const order: EmailOrder = { code: "TESTE-SEM-COMPRA", name: "Destinatário de homologação", email: recipient,
+    subtotal: 0, discount: 0, shipping: 0, fees: 0, total: 0, address: "Sem entrega — exemplo de template",
+    items: [{ name: "EXEMPLO — nenhum produto foi comprado", color: "Exemplo", size: "Exemplo", quantity: 1, unitPrice: 0, total: 0 }] };
   for (const kind of ["purchase_confirmed", "review_requested"] as const) {
     try {
       const messageId = `homologation_${kind}_${startedAt.replace(/\D/gu, "")}`;
       const payload = renderTransactionalEmail({ kind, order, from: readiness.from, replyTo: readiness.replyTo,
         storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
-      payload.subject = `[HOMOLOGAÃ‡ÃƒO â€” SEM PEDIDO REAL] ${payload.subject}`;
+      payload.subject = `[HOMOLOGAÇÃO — SEM PEDIDO REAL] ${payload.subject}`;
       payload.text = `${banner}\n\n${payload.text}`;
       payload.html = payload.html.replace('<table role="presentation" width="100%"',
         `<p style="padding:16px;background:#fff4cc;color:#242424;font-family:Arial,sans-serif">${banner}</p><table role="presentation" width="100%"`);
@@ -153,4 +153,3 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
   await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
   return { ok: failed === 0, processed, failed };
 }
-
