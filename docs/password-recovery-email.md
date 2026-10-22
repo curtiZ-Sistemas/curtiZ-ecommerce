@@ -1,8 +1,10 @@
-# Recuperação de senha — template para revisão
+# Recuperação de senha — template publicado
 
-Assunto proposto: **Redefina sua senha · curti Z**.
+Assunto preservado: **Redefina sua senha da curti Z**.
 
-O HTML em [recovery.html](../supabase/templates/recovery.html) é uma proposta para o template **Reset password** do Supabase Auth. Reutiliza logo, cores, tipografia e estrutura do e-mail transacional existente. Não é um novo tipo comercial. Não foi publicado nem vinculado automaticamente ao config local ou ao projeto hospedado.
+O HTML em [recovery.html](../supabase/templates/recovery.html) versiona o template **Reset password** conferido no projeto original. Em 22/10/2026, assunto e corpo já estavam em português; o visual existente foi preservado. A única alteração publicada acrescentou a orientação de abrir o e-mail no mesmo navegador da solicitação, compatível com o fluxo PKCE da aplicação. O conteúdo foi relido após recarga do painel e comparado integralmente à versão salva. O arquivo não aplica configuração automaticamente.
+
+Site URL conferida: https://curtiz.com.br. A allowlist existente contém o callback da loja com suporte à query de retorno; nenhum redirect foi adicionado. O template usa ConfirmationURL e o logo HTTPS existente, que respondeu HTTP 200. O e-mail antigo em inglês e a causa da expiração anterior não foram identificados como defeito atual; o teste completo exige o titular escolher sua senha diretamente.
 
 ## Aplicação controlada
 
