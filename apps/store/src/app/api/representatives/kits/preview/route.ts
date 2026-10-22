@@ -6,7 +6,10 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { previewRepresentativeResale } from "@/lib/representative-resale";
 
 const headers = { "cache-control": "private, no-store" };
-const schema = z.object({ kitId: z.string().uuid(), icmsTaxpayer: z.boolean().optional() }).strict();
+const schema = z.union([
+  z.object({ kitId: z.string().uuid(), icmsTaxpayer: z.boolean().optional() }).strict(),
+  z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99), icmsTaxpayer: z.boolean().optional() }).strict()
+]);
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   const body = await readJsonResponse(request, 1024);
@@ -16,7 +19,9 @@ export async function POST(request: NextRequest) {
   const db = await createServerSupabaseClient();
   const auth = db ? await db.auth.getUser() : null;
   if (!db || auth?.error || !auth?.data.user) return NextResponse.json({ message: "Acesso negado." }, { status: 401, headers });
-  const result = await db.rpc("read_representative_resale_context", { p_kit_id: input.data.kitId });
+  const result = "variantId" in input.data
+    ? await db.rpc("read_representative_catalog_kit_context", { p_variant_id: input.data.variantId, p_quantity: input.data.quantity })
+    : await db.rpc("read_representative_resale_context", { p_kit_id: input.data.kitId });
   if (result.error) return NextResponse.json({ message: "Conferência indisponível. Tente novamente." }, { status: 503, headers });
   if (!result.data) return NextResponse.json({ message: "Kit indisponível para seu perfil." }, { status: 404, headers });
   try {
