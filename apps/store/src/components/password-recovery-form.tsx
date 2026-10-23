@@ -87,8 +87,8 @@ export function PasswordRecoveryForm({
                 name="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
-                minLength={10}
-                placeholder="Crie uma senha com pelo menos 10 caracteres"
+                minLength={8}
+                placeholder="Crie uma senha com pelo menos 8 caracteres"
                 required
               />
               <button
@@ -111,7 +111,7 @@ export function PasswordRecoveryForm({
                 name="confirmPassword"
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
-                minLength={10}
+                minLength={8}
                 required
               />
             </div>

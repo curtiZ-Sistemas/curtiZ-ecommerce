@@ -17,6 +17,13 @@ const validPayload = {
 };
 
 describe("signup validation", () => {
+  it("requires eight characters for new passwords", () => {
+    for (const password of ["SolMar9", "SolMar92"]) {
+      const expected = password.length >= 8;
+      expect(assessPassword(password).minimumLength).toBe(expected);
+      expect(parseSignupInput({ ...validPayload, password, confirmPassword: password }).success).toBe(expected);
+    }
+  });
   it("normaliza nome, espaços, acentos, hífen e apóstrofo", () => {
     expect(normalizeFullName("  joão-pedro   d'ávila ")).toBe("João-Pedro D'Ávila ");
   });
