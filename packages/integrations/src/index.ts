@@ -40,6 +40,7 @@ export interface PaymentProvider {
 }
 
 export type MercadoPagoPaymentInput = {
+  aggregate?: "orders" | "kit_orders";
   orderId: string;
   orderCode: string;
   amountInCents: number;
@@ -231,6 +232,7 @@ export class MercadoPagoPaymentProvider {
   }
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
+    if (input.aggregate === "kit_orders" && this.mode !== "test") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
     if (input.issuerId !== undefined && (!Number.isSafeInteger(input.issuerId) || input.issuerId <= 0)) {
       throw new MercadoPagoProviderError("invalid_issuer", 400);
     }
@@ -255,7 +257,9 @@ export class MercadoPagoPaymentProvider {
           },
           external_reference: input.orderCode,
           statement_descriptor: "CURTIZ",
-          metadata: { order_id: input.orderId },
+          metadata: input.aggregate === "kit_orders"
+            ? { aggregate: "kit_orders", kit_order_id: input.orderId }
+            : { order_id: input.orderId },
           binary_mode: false,
           ...(input.paymentMethodId === "pix" || input.paymentMethodId.includes("bol")
             ? { date_of_expiration: expiration.toISOString() }

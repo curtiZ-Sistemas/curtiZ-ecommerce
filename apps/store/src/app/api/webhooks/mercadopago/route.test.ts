@@ -4,6 +4,8 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
 const provider = vi.hoisted(() => ({ getPayment: vi.fn() }));
+const kitReconciliation = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/representative-test-transactions", () => ({ reconcileKitTestPayment: kitReconciliation }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoPaymentProvider: class { getPayment = provider.getPayment; }
@@ -30,8 +32,28 @@ describe("webhook canônico do Mercado Pago", () => {
     vi.stubEnv("MERCADO_PAGO_WEBHOOK_SECRET", secret);
     vi.mocked(createServiceSupabaseClient).mockReset();
     provider.getPayment.mockReset();
+    kitReconciliation.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it("routes a verified kit TEST payment without using B2C finalizers", async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook" ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITTEST-10000000-0000-4000-8000-000000000001" });
+    kitReconciliation.mockResolvedValue(true);
+    expect((await POST(request())).status).toBe(200);
+    expect(kitReconciliation).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(["claim_payment_webhook", "finish_payment_webhook"]);
+  });
+
+  it("does not acknowledge a kit event when reconciliation fails", async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook" ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITTEST-10000000-0000-4000-8000-000000000001" });
+    kitReconciliation.mockRejectedValue(new Error("uncertain"));
+    expect((await POST(request())).status).toBe(502);
+    expect(rpc).toHaveBeenLastCalledWith("finish_payment_webhook", expect.objectContaining({ p_success: false }));
+  });
 
   it("rejeita assinatura inválida e replay expirado antes do banco e do provedor", async () => {
     expect((await POST(request(undefined, { "x-signature": "ts=1,v1=" + "0".repeat(64) }))).status).toBe(401);
