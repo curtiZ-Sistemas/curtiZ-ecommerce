@@ -4,14 +4,15 @@ import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 import { resolveShippingProducts } from "@/lib/melhor-envio-server";
-import { readCustomerCheckoutCpf } from "@/lib/checkout-identity";
+import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "@/lib/checkout-identity";
 import { isUnknownRecord, readString } from "@/lib/unknown-data";
 import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 
 const id = z.string().uuid();
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), variantId: id, quantity: z.number().int().min(1).max(99), quoteId: id, addressId: id, idempotencyKey: id }).strict(),
-  z.object({ action: z.enum(["read", "pay_pix", "reconcile", "cancel"]), orderId: id }).strict(),
+  z.object({ action: z.literal("pay_pix"), orderId: id, payerDocument: z.string().max(20).optional() }).strict(),
+  z.object({ action: z.enum(["read", "reconcile", "cancel"]), orderId: id }).strict(),
   z.object({ action: z.literal("refund"), orderId: id, idempotencyKey: id, amountInCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 ]);
 const headers = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
@@ -47,7 +48,9 @@ export async function POST(request: NextRequest) {
       if (data.action === "pay_pix") {
         const profile = await db.from("profiles").select("full_name,status").eq("id", user.id).maybeSingle();
         if (profile.error || !isUnknownRecord(profile.data) || profile.data.status !== "active" || !user.email) throw new KitTransactionError(403);
-        await beginKitPix(db, { id: user.id, email: user.email }, orderId, await readCustomerCheckoutCpf(db, user.id), readString(profile.data, "full_name"));
+        // TEST payer identification belongs to the provider; never save it as customer identity.
+        const document = await resolveCheckoutPayerDocument(db, user.id, data.payerDocument ?? "", "test");
+        await beginKitPix(db, { id: user.id, email: user.email }, orderId, document, readString(profile.data, "full_name"));
       } else if (data.action === "reconcile" && readString(context, "providerPaymentId")) {
         await reconcileKitTestPayment(db, await kitTestProvider().getPayment(readString(context, "providerPaymentId")));
       } else if (data.action === "cancel") await cancelKitTestOrder(db, user.id, orderId);
@@ -60,7 +63,8 @@ export async function POST(request: NextRequest) {
       refundedInCents: transaction.refundedInCents, remainingInCents: transaction.remainingInCents,
       fiscalValidation: "pending", shippingAllowed: false, instructions }, { headers });
   } catch (error) {
-    const status = error instanceof KitTransactionError ? error.status : error instanceof PrivateRequestError ? error.status : 503;
+    const status = error instanceof KitTransactionError || error instanceof PrivateRequestError || error instanceof CheckoutIdentityError ? error.status : 503;
     return NextResponse.json({ message: "Não foi possível concluir a operação. Consulte o pedido antes de tentar novamente." }, { status, headers });
   }
 }
+
