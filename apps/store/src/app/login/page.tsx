@@ -8,7 +8,7 @@ export const metadata = { title: "Acesse sua conta", robots: { index: false, fol
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string; senha?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string; senha?: string; recovery?: string }>;
 }) {
   const query = await searchParams;
   const requestedReturn = query.returnTo ?? query.next;
@@ -32,6 +32,7 @@ export default async function LoginPage({
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
           {query.senha === "atualizada" && <p className="form-message success" role="status">Senha atualizada. Entre com a nova senha.</p>}
+          {query.recovery === "requested" && <p className="form-message success" role="status">Solicitação recebida. Confira seu e-mail e a pasta de spam para continuar.</p>}
           {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
           <AuthForm
             mode="login"
