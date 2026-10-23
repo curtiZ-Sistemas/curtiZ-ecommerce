@@ -483,3 +483,14 @@ Esses gates não substituem RLS, autorização nem rotação de credenciais quan
     Workers. Remova a exceção assim que houver versão corrigida.
   - `.gitleaksignore`: somente a impressão digital do placeholder público de teste
     `ci-referral-placeholder-with-32-characters` em `scripts/ci-workflow.test.ts`. Nunca adicione credenciais reais.
+
+## Homologação restrita da fila transacional de e-mails
+
+A janela técnica usa `EMAIL_ENABLED=false` e três bindings temporários: `EMAIL_QUEUE_TEST_ACTOR_ID`, `EMAIL_QUEUE_TEST_CHECKOUT_KEY` (UUID do checkout) e `EMAIL_QUEUE_TEST_STARTED_AT` (UTC ISO canônico). Não habilita a fila comercial. O prazo de quinze minutos fica preso ao início informado, sem renovação automática.
+
+Somente um pedido novo desse ator, vinculado à mesma chave de `mercadopago.checkout.test`, com `paymentMode=test` e destinatário do snapshot `sistemas.curtiz@gmail.com`, pode entrar na fila. Não há redirecionamento de destinatário nem backfill de pedidos antigos. Configure a janela antes da compra e confira que o cron persistiu o escopo antes de aprovar o pagamento TEST, para testar o gatilho real. Identificação TEST do provedor não deve substituir identidade pessoal salva.
+
+A execução reutiliza claim, lease, payload estável, idempotência, envio e consulta de recibos existentes. O claim técnico verifica sob o mesmo advisory lock que o runtime comercial permanece desativado. Outros atores, chaves, destinatários e produção ficam excluídos. A aplicação também confere o destinatário antes do envio. Avaliação continua exigindo entrega válida e a janela comercial existente de24horas; a janela técnica não altera essas regras.
+
+Aplique a migration incremental antes do deploy. Ao encerrar, invalide a janela e confira que `configure_transactional_email_test_scope(null,null,null)` limpou o escopo. Preserve `EMAIL_ENABLED=false`. Resultado incerto exige consulta do recibo, sem reenvio cego. Não repetir os exemplos antigos para substituir a fila real.
+
