@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type SessionUser = { id: string; email: string };
-const state = vi.hoisted((): { user: SessionUser | null; record: ReturnType<typeof vi.fn>; rate: ReturnType<typeof vi.fn>; provider: ReturnType<typeof vi.fn>; identity: ReturnType<typeof vi.fn>; pix: ReturnType<typeof vi.fn> } => ({ user: { id: "actor", email: "fixture@example.invalid" },
-  record: vi.fn(), rate: vi.fn(), provider: vi.fn(), identity: vi.fn(), pix: vi.fn() }));
+const state = vi.hoisted((): { user: SessionUser | null; record: ReturnType<typeof vi.fn>; rate: ReturnType<typeof vi.fn>; provider: ReturnType<typeof vi.fn>; identity: ReturnType<typeof vi.fn>; pix: ReturnType<typeof vi.fn>; card: ReturnType<typeof vi.fn> } => ({ user: { id: "actor", email: "fixture@example.invalid" },
+  record: vi.fn(), rate: vi.fn(), provider: vi.fn(), identity: vi.fn(), pix: vi.fn(), card: vi.fn() }));
 vi.mock("@/lib/http-origin", () => import("../../../../../lib/http-origin"));
 vi.mock("@/lib/private-request", () => ({ readPrivateJson: (r: Request) => r.json(),
   requirePrivateRateLimit: state.rate, PrivateRequestError: class extends Error { status = 429; } }));
@@ -17,7 +17,7 @@ vi.mock("@/lib/checkout-identity", () => ({ resolveCheckoutPayerDocument: state.
 vi.mock("@/lib/representative-test-transactions", () => ({
   KitTransactionError: class extends Error { constructor(readonly status = 409) { super(); } },
   kitRecord: state.record, kitCall: vi.fn(), kitTestProvider: state.provider,
-  beginKitPix: state.pix, cancelKitTestOrder: vi.fn(), refundKitTestOrder: vi.fn(), reconcileKitTestPayment: vi.fn()
+  beginKitPix: state.pix, beginKitCard: state.card, cancelKitTestOrder: vi.fn(), refundKitTestOrder: vi.fn(), reconcileKitTestPayment: vi.fn()
 }));
 import { POST } from "./route";
 import { CheckoutIdentityError } from "@/lib/checkout-identity";
@@ -79,6 +79,24 @@ describe("kit transaction access", () => {
   });
   it("rejects payer identification on operations that do not create payment", async () => {
     expect((await send({ action: "read", orderId: order, payerDocument: "12345678909" })).status).toBe(400);
+  });
+  it("keeps card charging behind the same actor-specific gate", async () => {
+    expect((await send({ action: "pay_card", orderId: order, card: { paymentMethodId: "master", token: "test-only-card-token", installments: 1 } })).status).toBe(403);
+    expect(state.card).not.toHaveBeenCalled();
+  });
+  it("accepts only a provider token, never card number or security code", async () => {
+    expect((await send({ action: "pay_card", orderId: order, card: { paymentMethodId: "master", token: "test-only-card-token", installments: 1,
+      cardNumber: "test-only-number", securityCode: "test-only-code" } })).status).toBe(400);
+    expect(state.card).not.toHaveBeenCalled();
+  });
+  it("passes TEST card input to the existing separated payment service", async () => {
+    vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "true");
+    vi.stubEnv("REPRESENTATIVE_TEST_ACTOR_ID", "actor");
+    state.identity.mockResolvedValue("12345678909");
+    const card = { paymentMethodId: "master", token: "test-only-card-token", issuerId: 24, installments: 1 };
+    expect((await send({ action: "pay_card", orderId: order, payerDocument: "12345678909", card })).status).toBe(200);
+    expect(state.card).toHaveBeenCalledWith(expect.anything(), state.user, order, "12345678909", "Representante TESTE", card);
+    expect(state.pix).not.toHaveBeenCalled();
   });
 });
 
