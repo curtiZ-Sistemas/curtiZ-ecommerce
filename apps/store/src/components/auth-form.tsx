@@ -198,7 +198,7 @@ export function AuthForm({
             type={showPassword ? "text" : "password"}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             placeholder="Digite sua senha"
-            minLength={6}
+            minLength={mode === "signup" ? 8 : 6}
             required
           />
           <button
@@ -241,7 +241,7 @@ export function AuthForm({
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 placeholder="Repita a senha"
-                minLength={6}
+                minLength={mode === "signup" ? 8 : 6}
                 required
               />
             </div>

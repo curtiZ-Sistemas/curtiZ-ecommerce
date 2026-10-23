@@ -225,7 +225,7 @@ export function SignupForm({
   }
 
   const passwordRequirements = [
-    ["minimumLength", "Mínimo de 6 caracteres"],
+    ["minimumLength", "Mínimo de 8 caracteres"],
     ["hasLetter", "Pelo menos uma letra"],
     ["hasNumber", "Pelo menos um número"],
     ["noObviousSequence", "Sem sequência ou senha comum"],

@@ -17,7 +17,7 @@ const requestSchema = z.object({
 const updateSchema = z
   .object({
     action: z.literal("update"),
-    password: z.string().min(10).max(256),
+    password: z.string().min(8).max(256),
     confirmPassword: z.string().max(256)
   })
   .refine((input) => input.password === input.confirmPassword, {
