@@ -8,6 +8,18 @@ import { isUnknownRecord, readString } from "./unknown-data";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 const HOMOLOGATION_RECIPIENT = "sistemas.curtiz@gmail.com";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+export function emailQueueTestScope(environment: Environment, now = Date.now()) {
+  if (environment.EMAIL_ENABLED?.trim().toLowerCase() !== "false") return null;
+  const actor = environment.EMAIL_QUEUE_TEST_ACTOR_ID?.trim() ?? "";
+  const key = environment.EMAIL_QUEUE_TEST_CHECKOUT_KEY?.trim() ?? "";
+  const startedAt = environment.EMAIL_QUEUE_TEST_STARTED_AT?.trim() ?? "";
+  const started = Date.parse(startedAt);
+  if (!UUID.test(actor) || !UUID.test(key) || !Number.isFinite(started) || started > now
+    || now - started >= 15 * 60_000 || new Date(started).toISOString() !== startedAt) return null;
+  return { actor, key, startedAt };
+}
 
 // Runtime-only opt-in for a short, isolated test. Never claims customer jobs.
 export async function runEmailHomologation(environment: Environment, executionId: string,
@@ -95,12 +107,19 @@ export function emailOrderFromSource(source: unknown): EmailOrder {
 
 // The scheduled handler supplies bindings directly. No build-time environment fallback.
 export async function runTransactionalEmailJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
-  const readiness = getResendReadiness(environment);
+  const scope = emailQueueTestScope(environment);
+  const readiness = getResendReadiness(scope ? { ...environment, EMAIL_ENABLED: "true" } : environment);
   // The explicit, disabled-commercial test is independent of database health.
   if (!readiness.configured) await runEmailHomologation(environment, executionId, transport);
   const db = database(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
-  await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
+  if (scope && readiness.configured) {
+    await call(db, "configure_transactional_email_test_scope", { p_actor: scope.actor,
+      p_checkout_key: scope.key, p_started_at: scope.startedAt });
+  } else {
+    await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
+    await call(db, "configure_transactional_email_test_scope", { p_actor: null, p_checkout_key: null, p_started_at: null });
+  }
   if (!readiness.configured) {
     return { ok: true, processed: 0, failed: 0 };
   }
@@ -108,7 +127,8 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
   let failed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 8); index += 1) {
     const lockId = crypto.randomUUID();
-    const job = await call(db, "claim_transactional_email", { p_lock_id: lockId });
+    const job = await call(db, scope ? "claim_test_transactional_email" : "claim_transactional_email",
+      scope ? { p_lock_id: lockId, p_checkout_key: scope.key } : { p_lock_id: lockId });
     if (!isUnknownRecord(job)) break;
     if (job.skipped === true) continue;
     const jobId = readString(job, "id");
@@ -129,6 +149,10 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
         const payload = isUnknownRecord(job.payload) ? job.payload : renderTransactionalEmail({ kind,
           order: emailOrderFromSource(source), from: readiness.from, replyTo: readiness.replyTo,
           storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
+        if (scope && (!Array.isArray(payload.to) || payload.to.length !== 1
+          || typeof payload.to[0] !== "string" || payload.to[0].toLowerCase() !== HOMOLOGATION_RECIPIENT)) {
+          throw new EmailError("email_test_recipient_not_allowed");
+        }
         const attempt = await call(db, "begin_transactional_email", { p_job_id: jobId, p_lock_id: lockId, p_payload: payload });
         if (!isUnknownRecord(attempt) || !isUnknownRecord(attempt.payload) || !readString(attempt, "idempotencyKey")) {
           await finish({ p_outcome: "cancelled", p_error_code: "email_no_longer_eligible" }); continue;
@@ -150,6 +174,7 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
       logServerEvent("error", "transactional_email_job_failed", { executionId, jobId, messageId, code: issue.code });
     }
   }
-  await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
+  if (!scope) await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
   return { ok: failed === 0, processed, failed };
 }
+
