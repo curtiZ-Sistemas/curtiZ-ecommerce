@@ -6,12 +6,15 @@ import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@
 import { resolveShippingProducts } from "@/lib/melhor-envio-server";
 import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "@/lib/checkout-identity";
 import { isUnknownRecord, readString } from "@/lib/unknown-data";
-import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
+import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, beginKitCard, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 
 const id = z.string().uuid();
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), variantId: id, quantity: z.number().int().min(1).max(99), quoteId: id, addressId: id, idempotencyKey: id }).strict(),
   z.object({ action: z.literal("pay_pix"), orderId: id, payerDocument: z.string().max(20).optional() }).strict(),
+  z.object({ action: z.literal("pay_card"), orderId: id, payerDocument: z.string().max(20).optional(),
+    card: z.object({ paymentMethodId: z.enum(["master", "visa", "amex", "elo", "hipercard"]), token: z.string().min(16).max(128),
+      issuerId: z.number().int().positive().optional(), installments: z.number().int().min(1).max(12) }).strict() }).strict(),
   z.object({ action: z.enum(["read", "reconcile", "cancel"]), orderId: id }).strict(),
   z.object({ action: z.literal("refund"), orderId: id, idempotencyKey: id, amountInCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 ]);
@@ -30,7 +33,7 @@ export async function POST(request: NextRequest) {
     kitTestProvider(); // Production mode never opens this TEST-only transaction boundary.
     await requirePrivateRateLimit(session, "customer_write");
     const data = input.data;
-    if ((data.action === "create" || data.action === "pay_pix")
+    if ((data.action === "create" || data.action === "pay_pix" || data.action === "pay_card")
       && (process.env.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true" || process.env.REPRESENTATIVE_TEST_ACTOR_ID !== user.id)) {
       throw new KitTransactionError(403);
     }
@@ -45,12 +48,14 @@ export async function POST(request: NextRequest) {
     } else {
       orderId = data.orderId;
       const context = await kitRecord(db, "read_kit_test_transaction", { p_actor: user.id, p_order: orderId });
-      if (data.action === "pay_pix") {
+      if (data.action === "pay_pix" || data.action === "pay_card") {
         const profile = await db.from("profiles").select("full_name,status").eq("id", user.id).maybeSingle();
         if (profile.error || !isUnknownRecord(profile.data) || profile.data.status !== "active" || !user.email) throw new KitTransactionError(403);
         // TEST payer identification belongs to the provider; never save it as customer identity.
         const document = await resolveCheckoutPayerDocument(db, user.id, data.payerDocument ?? "", "test");
-        await beginKitPix(db, { id: user.id, email: user.email }, orderId, document, readString(profile.data, "full_name"));
+        if (data.action === "pay_card") await beginKitCard(db, { id: user.id, email: user.email }, orderId,
+          document, readString(profile.data, "full_name"), data.card);
+        else await beginKitPix(db, { id: user.id, email: user.email }, orderId, document, readString(profile.data, "full_name"));
       } else if (data.action === "reconcile" && readString(context, "providerPaymentId")) {
         await reconcileKitTestPayment(db, await kitTestProvider().getPayment(readString(context, "providerPaymentId")));
       } else if (data.action === "cancel") await cancelKitTestOrder(db, user.id, orderId);

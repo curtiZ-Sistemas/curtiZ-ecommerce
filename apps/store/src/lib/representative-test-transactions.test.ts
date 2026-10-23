@@ -9,7 +9,7 @@ vi.mock("@curtiz/integrations", () => ({ MercadoPagoPaymentProvider: class {
   getPayment = provider.getPayment; createPayment = provider.createPayment;
   cancelPayment = provider.cancelPayment; refundPayment = provider.refundPayment;
 } }));
-import { assertKitPayment, beginKitPix, cancelKitTestOrder, kitTestProvider, persistKitPayment, refundKitTestOrder } from "./representative-test-transactions";
+import { assertKitPayment, beginKitPix, beginKitCard, cancelKitTestOrder, kitTestProvider, persistKitPayment, refundKitTestOrder } from "./representative-test-transactions";
 
 const order = "10000000-0000-4000-8000-000000000001";
 const context = { orderId: order, mode: "test", reference: `KITTEST-${order}`, amountInCents: 8043,
@@ -66,6 +66,26 @@ describe("representative TEST payment boundary", () => {
     await expect(cancelKitTestOrder(db, "actor", order)).rejects.toThrow();
     expect(provider.cancelPayment).not.toHaveBeenCalled();
   });
+  it("uses the same ledger for a TEST card and never stores its raw token", async () => {
+    const card = { paymentMethodId: "master" as const, token: "test-only-card-token", issuerId: 24, installments: 1 };
+    rpc.mockImplementation(async (name: string) => ({ data: name === "claim_kit_test_creation"
+      ? { ...context, providerPaymentId: null, idempotencyKey: "stable-key" } : true, error: null }));
+    const approved = { ...payment, status: "approved" as const, paymentMethodId: "master", installments: 1 };
+    provider.createPayment.mockResolvedValue(approved);
+    provider.getPayment.mockResolvedValue(approved);
+    await beginKitCard(db, { id: "actor", email: "fixture@example.invalid" }, order, "test-document", "APRO", card);
+    expect(provider.createPayment).toHaveBeenCalledWith(expect.objectContaining({ ...card, aggregate: "kit_orders", amountInCents: 8043 }));
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain(card.token);
+    expect(rpc).toHaveBeenCalledWith("settle_kit_test_payment", expect.objectContaining({ p_status: "approved" }));
+  });
+  it.each([{ paymentMethodId: "visa", installments: 1 }, { paymentMethodId: "master", installments: 2 }])("rejects provider method/installment mismatch before settlement", async change => {
+    rpc.mockResolvedValue({ data: { ...context, providerPaymentId: "123" }, error: null });
+    provider.getPayment.mockResolvedValue({ ...payment, ...change });
+    await expect(beginKitCard(db, { id: "actor", email: "fixture@example.invalid" }, order, "test-document", "APRO",
+      { paymentMethodId: "master", token: "test-only-card-token", installments: 1 })).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(provider.createPayment).not.toHaveBeenCalled();
+  });
   it("does not repeat a completed refund", async () => {
     rpc.mockResolvedValue({ data: { state: "completed" }, error: null });
     await refundKitTestOrder(db, "actor", order, "refund-key", 100);
@@ -81,3 +101,4 @@ describe("representative TEST payment boundary", () => {
     expect(provider.refundPayment).not.toHaveBeenCalled();
   });
 });
+

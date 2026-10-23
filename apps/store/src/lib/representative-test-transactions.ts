@@ -60,12 +60,14 @@ export async function reconcileKitTestPayment(db: SupabaseClient, payment: Merca
   const context = await kitRecord(db, "claim_kit_test_reconciliation", { p_order: match[1], p_lock: lock });
   return persistKitPayment(db, context, lock, payment);
 }
-export async function beginKitPix(db: SupabaseClient, actor: { id: string; email: string }, orderId: string, document: string, name: string) {
+export type KitTestCard = { paymentMethodId: "master" | "visa" | "amex" | "elo" | "hipercard"; token: string; issuerId?: number; installments: number };
+type KitTestMethod = KitTestCard | { paymentMethodId: "pix"; installments: 1 };
+async function beginKitPayment(db: SupabaseClient, actor: { id: string; email: string }, orderId: string, document: string, name: string, method: KitTestMethod) {
   const provider = kitTestProvider();
   const fingerprintKey = process.env.RATE_LIMIT_HMAC_KEY?.trim();
   if (!fingerprintKey || fingerprintKey.length < 32) throw new KitTransactionError(503);
   const fingerprint = createHmac("sha256", fingerprintKey).update("kit-payment:v1:")
-    .update(JSON.stringify({ method: "pix", actor: actor.id, document })).digest("hex");
+    .update(JSON.stringify({ method: method.paymentMethodId === "pix" ? "pix" : method, actor: actor.id, document })).digest("hex");
   const lock = randomUUID();
   const context = await kitRecord(db, "claim_kit_test_creation", { p_actor: actor.id, p_order: orderId, p_fingerprint: fingerprint, p_lock: lock });
   let payment: MercadoPagoPayment;
@@ -74,11 +76,19 @@ export async function beginKitPix(db: SupabaseClient, actor: { id: string; email
     if (context.state && context.state !== "reserved") throw new KitTransactionError();
     const created = await provider.createPayment({ aggregate: "kit_orders", orderId, orderCode: readString(context, "reference"),
       amountInCents: readNumber(context, "amountInCents"), currency: "BRL", idempotencyKey: readString(context, "idempotencyKey"),
-      customerEmail: actor.email, customerName: name, customerDocument: document, entityType: "individual", paymentMethodId: "pix", installments: 1 });
+      customerEmail: actor.email, customerName: name, customerDocument: document, entityType: "individual", ...method });
     assertKitPayment(context, created);
     payment = await provider.getPayment(created.id);
   }
+  if (payment.paymentMethodId !== method.paymentMethodId
+    || (method.paymentMethodId !== "pix" && payment.installments !== method.installments)) throw new KitTransactionError();
   await persistKitPayment(db, { ...context, refundedInCents: 0 }, lock, payment);
+}
+export async function beginKitPix(db: SupabaseClient, actor: { id: string; email: string }, orderId: string, document: string, name: string) {
+  return beginKitPayment(db, actor, orderId, document, name, { paymentMethodId: "pix", installments: 1 });
+}
+export async function beginKitCard(db: SupabaseClient, actor: { id: string; email: string }, orderId: string, document: string, name: string, card: KitTestCard) {
+  return beginKitPayment(db, actor, orderId, document, name, card);
 }
 export async function cancelKitTestOrder(db: SupabaseClient, actor: string, orderId: string) {
   const provider = kitTestProvider();
@@ -119,3 +129,4 @@ export async function refundKitTestOrder(db: SupabaseClient, actor: string, orde
   const refund = outstanding[0] ?? await provider.refundPayment(payment.id, amount, key);
   if (await kitCall(db, "finish_kit_test_refund", { p_order: orderId, p_key: key, p_provider_refund: refund.id, p_amount: amount }) !== true) throw new KitTransactionError();
 }
+
