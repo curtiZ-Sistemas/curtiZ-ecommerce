@@ -342,7 +342,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("MELHOR_ENVIO_CLIENT_SECRET");
     required.add("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
   }
-  if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
+  if (enabledBoolean(environment.TURNSTILE_ENABLED)) {
     required.add("TURNSTILE_SECRET_KEY");
   }
   return [...required].sort();
