@@ -22,6 +22,7 @@ export function PasswordRecoveryForm({
   const [done, setDone] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
   const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -54,6 +55,8 @@ export function PasswordRecoveryForm({
       setError(true);
       setMessage("Não foi possível conectar ao serviço. Tente novamente em instantes.");
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       setLoading(false);
     }
   };
@@ -120,7 +123,7 @@ export function PasswordRecoveryForm({
       )}
 
       {mode === "request" && (
-        <TurnstileField enabled={turnstileEnabled} onToken={handleTurnstileToken} />
+        <TurnstileField action={"password_recovery"} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={handleTurnstileToken} />
       )}
 
       {message && (
