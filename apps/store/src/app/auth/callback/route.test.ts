@@ -8,6 +8,10 @@ const state = vi.hoisted(() => ({
   provider: "email",
   identities: [{ provider: "email" }] as Array<{ provider: string }>,
   token: "",
+  metadata: {},
+  existingConsent: true,
+  consentInsert: vi.fn(),
+  acceptance: vi.fn(),
   exchangeError: null as { message: string } | null
 }));
 const jwt = (amr: Array<{ method: string; timestamp: number }>) => {
@@ -30,7 +34,7 @@ vi.mock("@/lib/supabase/server", () => ({
                 id: "user",
                 app_metadata: { provider: state.provider },
                 identities: state.identities,
-                user_metadata: { full_name: "Old OAuth Name", phone: "11999999999" }
+                user_metadata: { full_name: "Old OAuth Name", phone: "11999999999", ...state.metadata }
               },
               session: state.token ? { access_token: state.token } : null
             },
@@ -38,16 +42,18 @@ vi.mock("@/lib/supabase/server", () => ({
           }),
         signOut: state.signOut
       },
+      rpc: state.acceptance,
       from: () => {
         const query = {
           update: () => query,
           select: () => query,
+          insert: state.consentInsert,
           eq: () => query,
           is: (column: string, value: null) => {
             state.conditions.push(`${column}:${String(value)}`);
             return Promise.resolve({ error: null });
           },
-          maybeSingle: () => Promise.resolve({ data: { id: "existing-consent" }, error: null })
+          maybeSingle: () => Promise.resolve({ data: state.existingConsent ? { id: "existing-consent" } : null, error: null })
         };
         return query;
       }
@@ -58,6 +64,10 @@ beforeEach(() => {
   state.provider = "email";
   state.identities = [{ provider: "email" }];
   state.token = "";
+  state.metadata = {};
+  state.existingConsent = true;
+  state.consentInsert.mockReset().mockResolvedValue({ error: null });
+  state.acceptance.mockReset().mockResolvedValue({ error: null });
   state.exchangeError = null;
   state.signOut.mockReset().mockResolvedValue({ error: null });
 });
@@ -100,6 +110,36 @@ describe("password recovery callback", () => {
   });
 });
 describe("email callback preservation", () => {
+  it("preserves the legal versions captured at signup when confirmation creates the session", async () => {
+    const ids = ["00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011"];
+    state.metadata = { terms_accepted_at: "2026-10-24T12:00:00Z", signup_legal_version_ids: ids };
+    state.existingConsent = false;
+    const response = await GET(new NextRequest("https://curtiz.com.br/auth/callback?code=email-code"));
+    expect(response.headers.get("location")).toBe("https://curtiz.com.br/minha-conta");
+    expect(state.consentInsert).toHaveBeenCalledWith(expect.objectContaining({ version: `legal:${ids.join(",")}` }));
+    expect(state.acceptance).toHaveBeenCalledWith("record_legal_acceptances", { p_context: "signup", p_version_ids: ids });
+  });
+  it("does not overwrite existing consent on a repeated callback", async () => {
+    state.metadata = { terms_accepted_at: "2026-10-24T12:00:00Z" };
+    await GET(new NextRequest("https://curtiz.com.br/auth/callback?code=email-code"));
+    expect(state.consentInsert).not.toHaveBeenCalled();
+    expect(state.acceptance).not.toHaveBeenCalled();
+  });
+  it("does not invent current legal versions for legacy metadata", async () => {
+    state.existingConsent = false;
+    state.metadata = { terms_accepted_at: "2026-10-24T12:00:00Z", signup_legal_version_ids: ["invalid"] };
+    await GET(new NextRequest("https://curtiz.com.br/auth/callback?code=email-code"));
+    expect(state.consentInsert).toHaveBeenCalledWith(expect.objectContaining({ version: "legacy:2026-08" }));
+    expect(state.acceptance).not.toHaveBeenCalled();
+  });
+  it("signs out and reports incomplete signup when consent persistence fails", async () => {
+    state.existingConsent = false;
+    state.metadata = { terms_accepted_at: "2026-10-24T12:00:00Z" };
+    state.consentInsert.mockResolvedValue({ error: { message: "unavailable" } });
+    const response = await GET(new NextRequest("https://curtiz.com.br/auth/callback?code=email-code"));
+    expect(response.headers.get("location")).toBe("https://curtiz.com.br/login?reason=signup_profile_unavailable");
+    expect(state.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
   it("only fills NULL fields, preserving profile changes made after signup", async () => {
     const response = await GET(
       new NextRequest("https://curtiz.com.br/auth/callback?code=email-code")

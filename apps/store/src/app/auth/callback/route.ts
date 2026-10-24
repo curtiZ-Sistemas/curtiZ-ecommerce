@@ -1,4 +1,5 @@
 import { safeInternalPath } from "@curtiz/security";
+import { z } from "zod";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePublicAppUrls } from "@curtiz/config";
@@ -65,21 +66,32 @@ export async function GET(request: NextRequest) {
     const fullName = typeof metadata.full_name === "string" ? metadata.full_name : undefined;
     const phone = typeof metadata.phone === "string" ? metadata.phone : undefined;
     // Fill missing signup data atomically; never overwrite later customer edits.
-    if (fullName) await supabase!.from("profiles").update({ full_name: fullName }).eq("id", user.id).is("full_name", null);
-    if (phone) await supabase!.from("profiles").update({ phone }).eq("id", user.id).is("phone", null);
+    const profileName = fullName ? await supabase!.from("profiles").update({ full_name: fullName }).eq("id", user.id).is("full_name", null) : null;
+    const profilePhone = phone ? await supabase!.from("profiles").update({ phone }).eq("id", user.id).is("phone", null) : null;
     const existingConsent = await supabase!
       .from("customer_consents")
       .select("id")
       .eq("user_id", user.id)
       .eq("consent_type", "terms_and_privacy")
       .maybeSingle();
-    if (!existingConsent.data && metadata.terms_accepted_at) {
-      await supabase!.from("customer_consents").insert({
+    let failed = Boolean(profileName?.error || profilePhone?.error || existingConsent.error);
+    if (!failed && metadata.terms_accepted_at) {
+      const versions = z.array(z.string().uuid()).max(10).safeParse(metadata.signup_legal_version_ids);
+      const ids = versions.success ? versions.data : [];
+      const consent = !existingConsent.data ? await supabase!.from("customer_consents").insert({
         user_id: user.id,
         consent_type: "terms_and_privacy",
         accepted: true,
-        version: "2026-08"
-      });
+        version: ids.length ? `legal:${ids.join(",")}` : "legacy:2026-08"
+      }) : null;
+      const acceptance = !consent?.error && ids.length ? await supabase!.rpc("record_legal_acceptances", {
+        p_context: "signup", p_version_ids: ids
+      }) : null;
+      failed = Boolean(consent?.error || acceptance?.error);
+    }
+    if (failed) {
+      await supabase!.auth.signOut({ scope: "local" });
+      return NextResponse.redirect(new URL("/login?reason=signup_profile_unavailable", storeUrl), 303);
     }
   }
   return NextResponse.redirect(destination, 303);

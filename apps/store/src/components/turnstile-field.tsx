@@ -15,10 +15,14 @@ const scriptId = "curtiz-turnstile-script";
 
 export function TurnstileField({
   enabled,
-  onToken
+  onToken,
+  action,
+  resetKey = 0
 }: {
   enabled: boolean;
   onToken: (token: string) => void;
+  action: "login" | "signup" | "password_recovery" | "privacy_request";
+  resetKey?: number;
 }) {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,12 +30,15 @@ export function TurnstileField({
 
   useEffect(() => {
     if (!enabled || !siteKey) return;
+    onToken("");
     let widgetId = "";
     let cancelled = false;
     const render = () => {
       if (cancelled || !containerRef.current || !window.turnstile || widgetId) return;
       widgetId = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
+        action,
+        size: "flexible",
         callback: (token: unknown) => typeof token === "string" && onToken(token),
         "expired-callback": () => onToken(""),
         "error-callback": () => onToken(""),
@@ -56,7 +63,7 @@ export function TurnstileField({
       cancelled = true;
       if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
     };
-  }, [enabled, onToken, siteKey]);
+  }, [enabled, onToken, siteKey, action, resetKey]);
 
   if (!enabled) return null;
   return <div id={id} ref={containerRef} className="turnstile-field" aria-label="Verificação de segurança" />;
