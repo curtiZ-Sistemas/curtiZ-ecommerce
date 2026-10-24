@@ -4,6 +4,9 @@ select no_plan();
 select ok(not has_function_privilege('authenticated','public.request_shipping_action(uuid,text,uuid)','execute'),'Actor IDs cannot be forged from the browser');
 select ok(not has_function_privilege('anon','public.claim_after_sale_job(uuid)','execute'),'After-sale workers are service-only');
 select ok(not has_function_privilege('authenticated','public.apply_melhor_envio_webhook_base(text,text,text,text,text,timestamptz,text)','execute'),'Legacy webhook implementation remains private');
+-- The isolated database need not contain the mutable commercial support catalog.
+insert into public.support_categories(name,slug,active) values('Isolated order support','pedido',true)
+on conflict(slug) do update set active=true;
 insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
 values('f2000000-0000-4000-8000-000000000001','part2-customer@example.invalid','{}','{}'),
 ('f2000000-0000-4000-8000-000000000002','part2-staff@example.invalid','{}','{}');

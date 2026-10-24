@@ -2,7 +2,7 @@ import "server-only";
 import { BlingError } from "./bling";
 
 export type BlingTaxConfiguration = {
-  pisCst: "49"; cofinsCst: "49"; ipiCst: "49" | "99";
+  pisCst: "49" | "98"; cofinsCst: "49" | "98"; ipiCst: "49" | "99";
   pisRate: number; cofinsRate: number; ipiRate: number; ipiCenq: string;
 };
 type TaxRule = {
@@ -15,14 +15,14 @@ type TaxRule = {
 // Never silently substitute a different CST or interpret a missing rate as zero.
 export function readBlingTaxConfiguration(rule: TaxRule): BlingTaxConfiguration {
   const isReturn = rule.scenario === "return_in_state" || rule.scenario === "return_interstate";
-  if (rule.pis_cst !== "49" || rule.cofins_cst !== "49" || rule.ipi_cst !== (isReturn ? "49" : "99")
+  if (rule.pis_cst !== (isReturn ? "98" : "49") || rule.cofins_cst !== (isReturn ? "98" : "49") || rule.ipi_cst !== (isReturn ? "49" : "99")
     || isReturn && (rule.ipi_cenq !== "999" || [rule.pis_rate, rule.cofins_rate, rule.ipi_rate].some(rate => rate !== 0))
     || !/^\d{3}$/u.test(rule.ipi_cenq ?? "") || rule.ipi_cenq === "000"
     || [rule.pis_rate, rule.cofins_rate, rule.ipi_rate].some(rate =>
       typeof rate !== "number" || !Number.isFinite(rate) || rate < 0 || rate > 100
       || Number(rate.toFixed(4)) !== rate))
     throw new BlingError("fiscal_tax_parameters_required", 409);
-  return { pisCst: "49", cofinsCst: "49", ipiCst: isReturn ? "49" : "99", pisRate: rule.pis_rate!,
+  return { pisCst: isReturn ? "98" : "49", cofinsCst: isReturn ? "98" : "49", ipiCst: isReturn ? "49" : "99", pisRate: rule.pis_rate!,
     cofinsRate: rule.cofins_rate!, ipiRate: rule.ipi_rate!, ipiCenq: rule.ipi_cenq! };
 }
 
@@ -39,7 +39,7 @@ export function buildBlingTaxXml(rule: TaxRule, bases: { pisInCents: number; cof
   if ([pis, cofins, ipi].some(value => !Number.isSafeInteger(value))) throw new BlingError("fiscal_tax_base_required", 409);
   return { kind: "tax_xml_preview", transmittable: false, consumesInvoiceNumber: false, bases, amountsInCents: { pis, cofins, ipi },
     xml: `<imposto><IPI><cEnq>${tax.ipiCenq}</cEnq><IPITrib><CST>${tax.ipiCst}</CST><vBC>${money(bases.ipiInCents)}</vBC><pIPI>${tax.ipiRate.toFixed(4)}</pIPI><vIPI>${money(ipi)}</vIPI></IPITrib></IPI>`
-      + `<PIS><PISOutr><CST>49</CST><vBC>${money(bases.pisInCents)}</vBC><pPIS>${tax.pisRate.toFixed(4)}</pPIS><vPIS>${money(pis)}</vPIS></PISOutr></PIS>`
-      + `<COFINS><COFINSOutr><CST>49</CST><vBC>${money(bases.cofinsInCents)}</vBC><pCOFINS>${tax.cofinsRate.toFixed(4)}</pCOFINS><vCOFINS>${money(cofins)}</vCOFINS></COFINSOutr></COFINS></imposto>` };
+      + `<PIS><PISOutr><CST>${tax.pisCst}</CST><vBC>${money(bases.pisInCents)}</vBC><pPIS>${tax.pisRate.toFixed(4)}</pPIS><vPIS>${money(pis)}</vPIS></PISOutr></PIS>`
+      + `<COFINS><COFINSOutr><CST>${tax.cofinsCst}</CST><vBC>${money(bases.cofinsInCents)}</vBC><pCOFINS>${tax.cofinsRate.toFixed(4)}</pCOFINS><vCOFINS>${money(cofins)}</vCOFINS></COFINSOutr></COFINS></imposto>` };
 }
 
