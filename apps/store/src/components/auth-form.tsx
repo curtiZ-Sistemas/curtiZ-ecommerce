@@ -44,6 +44,7 @@ export function AuthForm({
   const [hydrated, setHydrated] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
   // One lock for both sign-in methods: only a single request may be in flight.
   const isSubmittingRef = useRef(false);
@@ -85,6 +86,8 @@ export function AuthForm({
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       isSubmittingRef.current = false;
       setLoading(false);
     }
@@ -113,6 +116,8 @@ export function AuthForm({
       if (!result.alreadyAuthenticated) setClientAuthPersistence(remember);
       window.location.assign(result.redirectTo);
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       isSubmittingRef.current = false;
       setGoogleBusy(false);
     }
@@ -266,7 +271,7 @@ export function AuthForm({
         </p>
       )}
 
-      <TurnstileField enabled={turnstileEnabled} onToken={handleTurnstileToken} />
+      <TurnstileField action={mode} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={handleTurnstileToken} />
 
       <button
         className="primary-button full-button auth-submit"
