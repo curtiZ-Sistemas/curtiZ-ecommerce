@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   provider: "email",
   identities: [{ provider: "email" }] as Array<{ provider: string }>,
   token: "",
-  metadata: {} as Record<string, unknown>,
+  metadata: {},
   existingConsent: true,
   consentInsert: vi.fn(),
   acceptance: vi.fn(),
