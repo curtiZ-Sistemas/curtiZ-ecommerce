@@ -6,10 +6,14 @@ const taxes = { pis_cst: "49", cofins_cst: "49", ipi_cst: "99", pis_rate: 0, cof
 const bases = { pisInCents: 4337, cofinsInCents: 4337, ipiInCents: 4337 };
 describe("explicit fiscal tax configuration and XML groups", () => {
   it.each(["return_in_state", "return_interstate"])("uses the approved zero-rate entry treatment for %s", scenario => {
-    const entry = { ...taxes, scenario, ipi_cst: "49" };
+    const entry = { ...taxes, scenario, ipi_cst: "49", pis_cst: "98", cofins_cst: "98" };
     expect(readBlingTaxConfiguration(entry).ipiCst).toBe("49");
     const result = buildBlingTaxXml(entry, bases);
     expect(result.xml).toContain("<cEnq>999</cEnq><IPITrib><CST>49</CST>");
+    expect(result.xml).toContain("<PISOutr><CST>98</CST>");
+    expect(result.xml).toContain("<COFINSOutr><CST>98</CST>");
+    expect(() => readBlingTaxConfiguration({ ...entry, pis_cst: "49" })).toThrow();
+    expect(() => readBlingTaxConfiguration({ ...entry, cofins_cst: "49" })).toThrow();
     expect(result.amountsInCents).toEqual({ pis: 0, cofins: 0, ipi: 0 });
     expect(result.transmittable).toBe(false);
     expect(() => readBlingTaxConfiguration({ ...entry, ipi_cst: "99" })).toThrow("fiscal_tax_parameters_required");

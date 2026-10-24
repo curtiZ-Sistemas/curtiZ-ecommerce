@@ -11,7 +11,8 @@ vi.mock("@curtiz/integrations", () => ({ BlingError: class extends Error {}, bli
   buildBlingFiscalMirror: state.mirror, expandBlingFiscalKit: vi.fn(() => []) }));
 import { POST } from "../app/api/integrations/bling/fiscal-preview/route";
 const input = { variantId: "a0200000-0000-4000-8000-000000000001", quantity: 1, destinationState: "SP",
-  operation: "sale", icmsTaxpayer: true, finalConsumer: false, creditEligible: true, recipientIsCompany: true };
+  operation: "sale", icmsTaxpayer: true, finalConsumer: false, creditEligible: true, recipientIsCompany: true,
+  saleDate: "2026-10-24", stateRegistrationActive: true, recipientTaxRegime: "normal", goodsPurpose: "resale" };
 const request = (data: unknown) => new NextRequest("https://panel.example/api/integrations/bling/fiscal-preview", {
   method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
 beforeEach(() => {
@@ -33,11 +34,17 @@ describe("technical fiscal preview recipient declarations", () => {
   it("passes the explicit recipient and credit declarations to the fiscal selector", async () => {
     const result = await POST(request(input));
     expect(result.status).toBe(200); expect(result.headers.get("cache-control")).toContain("no-store");
-    expect(state.selectRule).toHaveBeenCalledWith([], expect.objectContaining({ creditEligible: true, recipientIsCompany: true, finalConsumer: false }));
+    expect(state.selectRule).toHaveBeenCalledWith([], expect.objectContaining({ creditEligible: true, recipientIsCompany: true, finalConsumer: false,
+      saleDate: "2026-10-24", stateRegistrationActive: true, recipientTaxRegime: "normal", goodsPurpose: "resale" }));
     expect(await result.json()).toMatchObject({ mirror: { transmittable: false, consumesInvoiceNumber: false } });
   });
   it("does not accept client supplied tax rates or series", async () => {
     expect((await POST(request({ ...input, icms_credit_rate: 1, series: 2 }))).status).toBe(400);
+    expect(state.selectRule).not.toHaveBeenCalled();
+  });
+  it("rejects a supplied monthly approval or reviewed credit bases", async () => {
+    for (const field of [{ credit_periods: [] }, { monthlyCredit: { rate: 1 } }, { icmsCreditBasesInCents: [100] }])
+      expect((await POST(request({ ...input, ...field }))).status).toBe(400);
     expect(state.selectRule).not.toHaveBeenCalled();
   });
   it("preserves the explicit PF declaration for entry previews", async () => {

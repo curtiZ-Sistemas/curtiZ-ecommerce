@@ -5,10 +5,13 @@ import { authorizeBlingTechnicalRequest } from "@/lib/bling-server";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
 
-const schema = z.union([z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(99), destinationState: z.string().regex(/^[A-Z]{2}$/u),
+const creditFields = { saleDate: z.iso.date().optional(), stateRegistrationActive: z.boolean().optional(),
+  recipientTaxRegime: z.enum(["normal", "simples", "unknown"]).optional(),
+  goodsPurpose: z.enum(["resale", "industrialization", "other"]).optional() };
+const schema = z.union([z.object({ ...creditFields, variantId: z.uuid(), quantity: z.number().int().min(1).max(99), destinationState: z.string().regex(/^[A-Z]{2}$/u),
   icmsTaxpayer: z.boolean(), finalConsumer: z.boolean().optional(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional(),
   operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
-z.object({ orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional() }).strict()]);
+z.object({ ...creditFields, orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional() }).strict()]);
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const row = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 
@@ -34,7 +37,9 @@ export async function POST(request: NextRequest) {
       }
       const mirror = await buildBlingOrderFiscalMirror({ rules: rules.data, order: row(orderResult.data), items, snapshots,
         icmsTaxpayer: input.data.icmsTaxpayer, finalConsumer: input.data.finalConsumer,
-        creditEligible: input.data.creditEligible, recipientIsCompany: input.data.recipientIsCompany });
+        creditEligible: input.data.creditEligible, recipientIsCompany: input.data.recipientIsCompany,
+        saleDate: input.data.saleDate, stateRegistrationActive: input.data.stateRegistrationActive,
+        recipientTaxRegime: input.data.recipientTaxRegime, goodsPurpose: input.data.goodsPurpose });
       return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
     }
     const [rules, snapshot] = await Promise.all([db.rpc("read_bling_fiscal_rules"), db.rpc("read_bling_catalog_variant", { p_variant_id: input.data.variantId })]);
