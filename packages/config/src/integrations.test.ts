@@ -47,8 +47,7 @@ describe("configuração opcional de integrações", () => {
       email: { provider: "disabled", enabled: false },
       whatsapp: { provider: "disabled", enabled: false },
       googleMerchant: { enabled: false },
-      turnstile: { enabled: false },
-      internalMfaRequired: false
+      turnstile: { enabled: false }
     });
   });
 

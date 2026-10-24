@@ -88,13 +88,12 @@ describe("acesso ao painel após o login", () => {
       "redirect:https://curtiz.com.br/login?next=%2Fselecionar-painel&reason=session_expired"
     );
   });
-  it("continua exigindo MFA sem perder o destino oficial", async () => {
+  it("ignora a antiga flag removida e mantém o destino oficial", async () => {
     vi.stubEnv("REQUIRE_INTERNAL_MFA", "true");
     state.roles = ["admin", "technical"];
     state.assurance.mockResolvedValue({ data: { currentLevel: "aal1" }, error: null });
-    await expect(requirePanelSelectionAccess()).rejects.toThrow(
-      "redirect:https://curtiz.com.br/mfa?next=https%3A%2F%2Fpainel.curtiz.com.br%2Fselecionar-painel"
-    );
+    expect(await requirePanelSelectionAccess()).toMatchObject({ roles: ["admin", "technical"] });
+    expect(state.assurance).not.toHaveBeenCalled();
   });
   it.each(["customer", "representative"])("não concede acesso interno a %s", async role => {
     state.roles = [role];

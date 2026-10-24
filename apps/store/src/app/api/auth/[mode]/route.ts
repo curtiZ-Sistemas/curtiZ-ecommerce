@@ -694,21 +694,8 @@ export async function POST(
     );
   }
   const panelUrl = panelBaseUrl(request);
-  let redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelUrl);
+  const redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelUrl);
 
-  if (internalRole && process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error) {
-      await supabase.auth.signOut();
-      return NextResponse.json(
-        { message: "Não foi possível verificar a segurança desta conta." },
-        { status: 503, headers: { "cache-control": "no-store" } }
-      );
-    }
-    if (assurance.data.currentLevel !== "aal2") {
-      redirectTo = `/mfa?next=${encodeURIComponent(redirectTo)}`;
-    }
-  }
 
   if (internalRole) {
     await supabase.rpc("log_internal_auth_event", { p_event: "LOGIN" });

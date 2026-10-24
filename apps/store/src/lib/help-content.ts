@@ -215,10 +215,10 @@ export const builtInHelpContents: HelpContent[] = [
     type: "article",
     title: "Como proteger minha conta?",
     summary: "Cuidados básicos para manter seus dados e seu acesso protegidos.",
-    body: "Use uma senha exclusiva e nunca compartilhe senha, código de segurança, token ou dados completos de cartão em chamados. Revise os acessos na seção Segurança e ative a proteção adicional quando ela estiver disponível para sua conta.",
+    body: "Use uma senha exclusiva e nunca compartilhe senha, código de segurança, token ou dados completos de cartão em chamados. Revise os acessos na seção Segurança.",
     categoryName: "Segurança e privacidade",
     categorySlug: "seguranca-privacidade",
-    keywords: ["segurança", "senha", "privacidade", "mfa", "acesso", "conta"],
+    keywords: ["segurança", "senha", "privacidade", "acesso", "conta"],
     relatedAction: { label: "Segurança da conta", href: "/minha-conta/seguranca" },
     version: 1,
     updatedAt: UPDATED_AT

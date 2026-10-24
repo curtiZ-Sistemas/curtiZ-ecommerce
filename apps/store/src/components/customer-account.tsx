@@ -1183,12 +1183,6 @@ function Security({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
           <p>Último acesso: <strong>{formatDate(snapshot.profile.lastSignInAt)}</strong></p>
           <small>A listagem completa de dispositivos aparecerá quando o provedor disponibilizar sessões por usuário.</small>
         </article>
-        <article className="customer-panel">
-          <UserRoundCheck aria-hidden="true" />
-          <h3>Autenticação adicional</h3>
-          <p>O MFA para clientes está planejado e será oferecido quando estiver disponível.</p>
-          <span className="customer-status">Futuro</span>
-        </article>
       </div>
       <article className="customer-panel customer-data-protection">
         <div><h3>Proteção dos seus dados</h3><p>Dados sensíveis são mascarados e operações usam sua sessão autenticada.</p></div>

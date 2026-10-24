@@ -326,7 +326,8 @@ describe("environment validation", () => {
     expect(validateEnvironment("production", build).valid).toBe(true);
     expect(validateEnvironment("production", { ...build, TURNSTILE_ENABLED: "true" }).errors)
       .toContain("TURNSTILE_SECRET_KEY não está configurada");
-    expect(requiredDeploymentSecrets(build)).toContain("TURNSTILE_SECRET_KEY");
+    expect(requiredDeploymentSecrets(build)).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(requiredDeploymentSecrets({ ...build, TURNSTILE_ENABLED: "true" })).toContain("TURNSTILE_SECRET_KEY");
   });
 
   it("rejeita false como provider e aceita somente em flags", () => {

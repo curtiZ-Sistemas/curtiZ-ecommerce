@@ -175,11 +175,11 @@ describe("password update authorization", () => {
     expect(await response.json()).toMatchObject({ redirectTo: "/login?senha=atualizada" });
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
-  it("sends accounts with a second factor to the verification step", async () => {
+  it("requires a new recovery link when the provider rejects session assurance", async () => {
     state.update.mockResolvedValue({ error: { code: "insufficient_aal" } });
     const response = await send(change);
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { redirectTo: string }).redirectTo).toMatch(/^\/mfa\?next=https%3A%2F%2F.+%2Fredefinir-senha$/u);
+    expect(((await response.json()) as { redirectTo: string }).redirectTo).toBe("/esqueci-senha");
     expect(state.signOut).not.toHaveBeenCalled();
   });
   it("explains same or weak passwords without ending the recovery session", async () => {

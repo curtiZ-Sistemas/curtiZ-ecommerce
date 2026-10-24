@@ -113,9 +113,8 @@ export async function POST(request: NextRequest) {
   if (updated.error) {
     const code = (updated.error as { code?: string }).code;
     if (code === "insufficient_aal") {
-      const next = encodeURIComponent(`${resolvePublicAppUrls(request.url).storeUrl}${RECOVERY_PATH}`);
       return NextResponse.json(
-        { message: "Confirme sua identidade com o código de verificação para continuar.", redirectTo: `/mfa?next=${next}` },
+        { message: "Solicite um novo link para atualizar sua senha com segurança.", redirectTo: "/esqueci-senha" },
         { status: 403, headers }
       );
     }
