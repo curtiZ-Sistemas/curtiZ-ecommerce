@@ -41,7 +41,6 @@ const productionRequired = [
   "SHIPPING_PROVIDER",
   "MELHOR_ENVIO_ENABLED",
   "TURNSTILE_ENABLED",
-  "REQUIRE_INTERNAL_MFA",
   "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
 
@@ -491,7 +490,6 @@ const validateCommonValues = (
   validateEnum(environment, "WHATSAPP_PROVIDER", errors);
 
   validateBoolean(environment, "DEMO_MODE", errors);
-  validateBoolean(environment, "REQUIRE_INTERNAL_MFA", errors);
   validateBoolean(environment, "AUTH_RATE_LIMIT_ENABLED", errors);
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);

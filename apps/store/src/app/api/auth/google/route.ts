@@ -52,8 +52,7 @@ export async function POST(request: NextRequest) {
         client,
         session.data.user.id,
         parsed.data.next,
-        request.url,
-        environment
+        request.url
       );
       return NextResponse.json(
         { redirectTo, alreadyAuthenticated: true },

@@ -3,7 +3,6 @@ import { MelhorEnvioError } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { consumePanelMutationBudget, panelRateLimitStatus } from "@/lib/api-rate-limit";
-import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { panelMelhorEnvioProvider } from "@/lib/melhor-envio-server";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 
@@ -23,7 +22,7 @@ async function authorize(request: NextRequest) {
   const client = await createServerSupabaseClient();
   const userResult = client ? await client.auth.getUser() : null;
   const user = userResult?.data.user;
-  if (!client || !user || userResult?.error || !(await hasRequiredInternalMfa(client))
+  if (!client || !user || userResult?.error
     || !(await consumePanelMutationBudget(request, client))) return null;
   const [profile, role] = await Promise.all([
     client.from("profiles").select("status").eq("id", user.id).maybeSingle(),

@@ -88,7 +88,7 @@ ou `reason=session_unavailable`, sem incluir tokens ou detalhes do provedor.
 | Local | Responsabilidade |
 | --- | --- |
 | GitHub Actions | build, deploy, metadados (`GIT_COMMIT_SHA`, `BUILD_ID`, `BUILD_TIMESTAMP`), URLs públicas e configuração de plataforma embutida no build |
-| Runtime do Cloudflare (Variables and Secrets de cada Worker) | flags e credenciais de integrações (checkout, Mercado Pago, Melhor Envio, e-mail, Turnstile), dados do remetente, `REQUIRE_INTERNAL_MFA` e `AUTH_RATE_LIMIT_ENABLED` |
+| Runtime do Cloudflare (Variables and Secrets de cada Worker) | flags e credenciais de integrações (checkout, Mercado Pago, Melhor Envio, e-mail, Turnstile), dados do remetente e `AUTH_RATE_LIMIT_ENABLED` |
 | Supabase | tokens OAuth do Melhor Envio, gravados cifrados |
 
 Os jobs compilam com checkout e integrações externas desativados de propósito
@@ -116,7 +116,7 @@ Configure no GitHub, em **Settings → Secrets and variables → Actions**:
   embutidas no bundle do navegador durante o build, essas chaves públicas continuam no GitHub.
 
 Não duplique no GitHub `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_*`,
-`SHIPPING_PROVIDER`, `MELHOR_ENVIO_*`, `EMAIL_*`, `TURNSTILE_ENABLED`, `REQUIRE_INTERNAL_MFA` nem
+`SHIPPING_PROVIDER`, `MELHOR_ENVIO_*`, `EMAIL_*`, `TURNSTILE_ENABLED` nem
 `AUTH_RATE_LIMIT_ENABLED`. O workflow ignora essas variables, que podem ser apagadas do GitHub
 depois de conferidas no Runtime do Worker. Client Secret, chave de criptografia, CNPJ e outros
 dados sensíveis nunca devem ir para GitHub Variables.
@@ -160,7 +160,7 @@ espelhadas com os mesmos valores no runtime dos dois Workers. As duas últimas s
 origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` também são obrigatórias no ambiente de
 build para `validate:production`: no caminho oficial, vêm do `env` versionado no workflow e são
 espelhadas no runtime dos dois Workers pelo workflow. A aplicação seleciona o par correspondente ao host da requisição; isso
-mantém login, logout, MFA e navegação loja/painel isolados entre produção e teste.
+mantém login, logout e navegação loja/painel isolados entre produção e teste.
 
 ### Correção de origens nos builds da loja e do painel
 
@@ -259,7 +259,6 @@ MELHOR_ENVIO_ENABLED=false
 EMAIL_PROVIDER=disabled
 EMAIL_ENABLED=false
 TURNSTILE_ENABLED=false
-REQUIRE_INTERNAL_MFA=false
 ```
 
 Para habilitar temporariamente o Checkout Bricks apenas em teste, configure na Worker da loja:
@@ -493,4 +492,3 @@ Somente um pedido novo desse ator, vinculado à mesma chave de `mercadopago.chec
 A execução reutiliza claim, lease, payload estável, idempotência, envio e consulta de recibos existentes. O claim técnico verifica sob o mesmo advisory lock que o runtime comercial permanece desativado. Outros atores, chaves, destinatários e produção ficam excluídos. A aplicação também confere o destinatário antes do envio. Avaliação continua exigindo entrega válida e a janela comercial existente de24horas; a janela técnica não altera essas regras.
 
 Aplique a migration incremental antes do deploy. Ao encerrar, invalide a janela e confira que `configure_transactional_email_test_scope(null,null,null)` limpou o escopo. Preserve `EMAIL_ENABLED=false`. Resultado incerto exige consulta do recibo, sem reenvio cego. Não repetir os exemplos antigos para substituir a fila real.
-

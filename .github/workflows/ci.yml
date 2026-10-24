@@ -43,7 +43,6 @@ env:
   EMAIL_PROVIDER: disabled
   EMAIL_ENABLED: "false"
   TURNSTILE_ENABLED: "false"
-  REQUIRE_INTERNAL_MFA: "false"
   AUTH_RATE_LIMIT_ENABLED: "true"
 
 jobs:
@@ -310,7 +309,7 @@ jobs:
           GIT_COMMIT_SHA="${GITHUB_SHA}"
           BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           BUILD_TIMESTAMP="${build_timestamp}"
-          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
           # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
           deploy_vars=()
           add_var() {
@@ -403,7 +402,7 @@ jobs:
           GIT_COMMIT_SHA="${GITHUB_SHA}"
           BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           BUILD_TIMESTAMP="${build_timestamp}"
-          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
           # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
           deploy_vars=()
           add_var() {
