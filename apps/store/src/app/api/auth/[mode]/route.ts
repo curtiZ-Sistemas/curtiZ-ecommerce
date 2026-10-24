@@ -49,7 +49,8 @@ const resendSchema = z.object({
     .email()
     .max(120)
     .transform((value) => value.toLocaleLowerCase("pt-BR")),
-  next: z.string().max(300).optional()
+  next: z.string().max(300).optional(),
+  turnstileToken: z.string().max(2048).optional()
 });
 
 const profileSchema = z.object({ status: z.string() }).nullable();
@@ -395,10 +396,10 @@ export async function POST(
     );
   }
   if (
-    mode !== "resend" &&
     !(await verifyTurnstile(
       request,
-      "turnstileToken" in authInput ? authInput.turnstileToken : undefined
+      "turnstileToken" in authInput ? authInput.turnstileToken : undefined,
+      mode === "resend" ? "signup" : mode
     ))
   ) {
     return NextResponse.json(
@@ -450,6 +451,19 @@ export async function POST(
 
   if (mode === "signup") {
     const signup = parsed.data as NormalizedSignupInput;
+    const legalVersions = await supabase
+      .from("published_legal_documents")
+      .select("version_id")
+      .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
+    const legalVersionIds =
+      z
+        .array(z.object({ version_id: z.string().uuid() }))
+        .safeParse(legalVersions.data)
+        .data?.map((item) => item.version_id) ?? [];
+    if (legalVersions.error) {
+      return NextResponse.json({ message: "N?o foi poss?vel consultar os termos do cadastro. Tente novamente." },
+        { status: 503, headers: corsHeaders(request) });
+    }
     const { data, error } = await supabase.auth.signUp({
       email: signup.email,
       password: signup.password,
@@ -459,6 +473,7 @@ export async function POST(
           full_name: signup.name,
           phone: signup.phone,
           terms_accepted_at: new Date().toISOString(),
+          signup_legal_version_ids: legalVersionIds,
           marketing_consent: signup.marketing === "on"
         }
       }
@@ -487,15 +502,6 @@ export async function POST(
       );
     }
 
-    const legalVersions = await supabase
-      .from("published_legal_documents")
-      .select("version_id")
-      .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
-    const legalVersionIds =
-      z
-        .array(z.object({ version_id: z.string().uuid() }))
-        .safeParse(legalVersions.data)
-        .data?.map((item) => item.version_id) ?? [];
     const [profileUpdate, consentInsert] = await Promise.all([
       supabase
         .from("profiles")
