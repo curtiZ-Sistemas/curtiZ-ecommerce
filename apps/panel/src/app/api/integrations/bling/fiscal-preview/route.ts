@@ -6,8 +6,9 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
 
 const schema = z.union([z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(99), destinationState: z.string().regex(/^[A-Z]{2}$/u),
-  icmsTaxpayer: z.boolean(), finalConsumer: z.boolean().optional(), operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
-z.object({ orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict()]);
+  icmsTaxpayer: z.boolean(), finalConsumer: z.boolean().optional(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional(),
+  operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
+z.object({ orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional() }).strict()]);
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const row = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 
@@ -32,7 +33,8 @@ export async function POST(request: NextRequest) {
         snapshots.push(row(result.data));
       }
       const mirror = await buildBlingOrderFiscalMirror({ rules: rules.data, order: row(orderResult.data), items, snapshots,
-        icmsTaxpayer: input.data.icmsTaxpayer, finalConsumer: input.data.finalConsumer });
+        icmsTaxpayer: input.data.icmsTaxpayer, finalConsumer: input.data.finalConsumer,
+        creditEligible: input.data.creditEligible, recipientIsCompany: input.data.recipientIsCompany });
       return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
     }
     const [rules, snapshot] = await Promise.all([db.rpc("read_bling_fiscal_rules"), db.rpc("read_bling_catalog_variant", { p_variant_id: input.data.variantId })]);
@@ -49,3 +51,4 @@ export async function POST(request: NextRequest) {
       code: error instanceof BlingError ? error.code : "fiscal_preview_failed" }, { status: 409, headers: technicalNoStore });
   }
 }
+
