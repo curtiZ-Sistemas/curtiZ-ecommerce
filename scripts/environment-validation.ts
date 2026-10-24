@@ -459,15 +459,8 @@ const validateTurnstile = (environment: EnvironmentValues, errors: string[]): vo
     return;
   }
 
-  const hasSiteKey = hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY");
-
-  const hasSecret = hasValue(environment, "TURNSTILE_SECRET_KEY");
-
-  if (hasSiteKey !== hasSecret) {
-    errors.push(
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY devem ser configuradas em conjunto"
-    );
-  }
+  // The public key is compiled into the browser bundle while the integration is
+  // disabled for builds. Its secret stays in the Worker's runtime, never in CI.
 };
 
 const validateCheckoutFlags = (environment: EnvironmentValues, errors: string[]): void => {
