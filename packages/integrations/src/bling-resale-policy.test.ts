@@ -59,6 +59,7 @@ describe("accountant resale and individual return policy", () => {
       .toThrow("resale_fiscal_parameters_required");
     const rule = selectBlingFiscalRule(rules, recipient);
     expect(buildBlingFiscalMirror(rule, [{ ...pair, ncm: "00000000" }]).blockers).toContain("resale_pair_classification_required");
+    expect(buildBlingFiscalMirror(rule, [{ ...pair, origin: 1 }]).blockers).toContain("resale_pair_classification_required");
   });
   it("keeps channel classification and reviewed credit bases explicit", () => {
     const input = { ...recipient, icmsTaxpayer: true, recipientIsCompany: true, creditEligible: true,

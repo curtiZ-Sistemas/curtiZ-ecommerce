@@ -81,7 +81,7 @@ export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscal
   if (!rule.external_nature_id) blockers.push("nature_configuration_required");
   if (items.some((item) => !item.fiscalUnitApproved)) blockers.push("kit_fiscal_unit_confirmation_required");
   if (items.some((item) => item.pairsPerSku > 1)) blockers.push("kit_fiscal_composition_required");
-  if (rule.scenario.startsWith("resale_") && items.some(item => item.unit !== "PR" || item.ncm !== "64022000"))
+  if (rule.scenario.startsWith("resale_") && items.some(item => item.unit !== "PR" || item.ncm !== "64022000" || item.origin !== 0))
     blockers.push("resale_pair_classification_required");
   if (!rule.pis_cst || !rule.cofins_cst || !rule.ipi_cst) blockers.push("fiscal_tax_codes_required");
   let taxConfiguration: BlingTaxConfiguration | null = null;
