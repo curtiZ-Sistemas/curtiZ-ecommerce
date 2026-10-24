@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
   if (parsed.data.action === "request") {
     // Verify the human check first so automated callers cannot spend a victim's hourly budget.
-    if (!(await verifyTurnstile(request, parsed.data.turnstileToken))) {
+    if (!(await verifyTurnstile(request, parsed.data.turnstileToken, "password_recovery"))) {
       return NextResponse.json(
         { message: "Não foi possível confirmar a verificação de segurança." },
         { status: 403, headers }
