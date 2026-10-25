@@ -20,6 +20,12 @@ export async function POST(request: NextRequest) {
   if (!await authorizeBlingTechnicalRequest(request)) return unauthorizedTechnicalResponse(request);
   const input = schema.safeParse(await request.json().catch(() => null));
   if (!input.success) return NextResponse.json({ message: "Dados da prévia inválidos." }, { status: 400, headers: technicalNoStore });
+  // A supplied access key does not bind a current catalog price/composition to
+  // an authorized original invoice or establish its remaining return balance.
+  if ("operation" in input.data && input.data.operation === "return") return NextResponse.json({
+    code: "return_original_invoice_context_required",
+    message: "A prévia de devolução exige as linhas, o rateio e o saldo da nota original conferida. O cadastro atual do produto não substitui esse documento."
+  }, { status: 409, headers: technicalNoStore });
   const db = createServiceSupabaseClient();
   if (!db) return NextResponse.json({ message: "Prévia indisponível." }, { status: 503, headers: technicalNoStore });
   try {
@@ -52,8 +58,13 @@ export async function POST(request: NextRequest) {
       ncm: text(metadata.ncm), origin: Number(metadata.origin), cest: text(metadata.cest) }, value.kit_components), input.data);
     return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
   } catch (error) {
-    return NextResponse.json({ message: "Prévia não disponível. Confira o cadastro e as regras recebidas.",
-      code: error instanceof BlingError ? error.code : "fiscal_preview_failed" }, { status: 409, headers: technicalNoStore });
+    const code = error instanceof BlingError ? error.code : "fiscal_preview_failed";
+    const message = code === "fiscal_monthly_credit_required"
+      ? "Falta o percentual de crédito aprovado pela contabilidade para a competência da venda, com base na apuração do mês anterior."
+      : code === "fiscal_credit_competence_required"
+        ? "Informe a data da operação para consultar o percentual de crédito da competência correta."
+        : "Prévia não disponível. Confira o cadastro e as regras recebidas.";
+    return NextResponse.json({ message, code }, { status: 409, headers: technicalNoStore });
   }
 }
 
