@@ -36,6 +36,7 @@ export function TurnstileField({
         "expired-callback": () => onToken(""),
         "error-callback": () => onToken(""),
         theme: "light",
+        size: "flexible",
         language: "pt-BR"
       });
     };

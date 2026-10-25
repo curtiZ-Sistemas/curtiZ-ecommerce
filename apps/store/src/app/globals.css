@@ -15069,3 +15069,12 @@ body:has(.checkout-transition) .help-widget {
 .quantity-stepper button:focus-visible { outline: 2px solid var(--brand-800); outline-offset: -2px; border-radius: var(--radius); }
 .quantity-stepper output { min-width: 40px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .catalog-load-status { padding-block: 1.25rem; text-align: center; color: var(--neutral-700); }
+
+/* Verificação Turnstile em retângulo horizontal, na largura do formulário. */
+.turnstile-field {
+  width: 100%;
+  min-height: 65px;
+}
+.turnstile-field iframe {
+  max-width: 100%;
+}
