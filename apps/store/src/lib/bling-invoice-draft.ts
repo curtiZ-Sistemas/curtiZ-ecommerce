@@ -30,6 +30,11 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
     throw new BlingError("fiscal_total_mismatch", 409);
   const transport = row(invoice.transporte);
   if (![0, 1, 2, 3, 4, 9].includes(Number(transport.fretePorConta))) throw new BlingError("invoice_freight_mapping_required", 409);
+  // GET can return an empty carrier; PUT requires a name whenever it is supplied.
+  const carrier = row(transport.transportador);
+  const hasCarrier = Object.values(carrier).some(value => typeof value === "string"
+    ? value.trim().length > 0 : value != null && value !== 0 && value !== false);
+  if (hasCarrier && !readString(carrier, "nome").trim()) throw new BlingError("invoice_carrier_mapping_required", 409);
   return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: readString(invoice, "dataOperacao"),
     finalidade: 1, naturezaOperacao: { id: input.natureId },
     contato: { nome: contact.nome, numeroDocumento: input.document, tipoPessoa: "F", contribuinte: input.icmsTaxpayer ? 1 : 9,
@@ -40,7 +45,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
       ...(i.sourceCommercialSku ? { informacoesAdicionais: `SKU comercial: ${i.sourceCommercialSku}` } : {}) })),
     desconto: input.discountInCents / 100, despesas: input.additionalInCents / 100,
     transporte: { fretePorConta: Number(transport.fretePorConta), frete: input.shippingInCents / 100,
-      transportador: transport.transportador, etiqueta: transport.etiqueta },
+      ...(hasCarrier ? { transportador: carrier } : {}), etiqueta: transport.etiqueta },
     parcelas: array(invoice.parcelas).map(p => ({ data: p.data, valor: p.valor, observacoes: p.observacoes,
       caut: p.caut, formaPagamento: p.formaPagamento })) };
 }

@@ -16,10 +16,13 @@ begin
   end if;
 end;
 $$;
-update private.bling_fiscal_rules set pis_cst='49',cofins_cst='49',ipi_cst='49',
+update private.bling_fiscal_rules set pis_cst='98',cofins_cst='98',ipi_cst='49',
   pis_rate=0,cofins_rate=0,ipi_rate=0,ipi_cenq='999',updated_at=now(),
-  evidence_reference='Owner accountant guidance 2026-10-24: PF final-consumer returns 49/49/49, cEnq999, rates0. Existing series preserved, production numbering unconfirmed.'
-where scenario in('return_in_state','return_interstate');
+  evidence_reference='Revised owner-provided entry policy: PIS98/COFINS98, IPI49/cEnq999, zero rates; existing series and provider IDs preserved.'
+where scenario in('return_in_state','return_interstate')
+  and (pis_cst is distinct from '98' or cofins_cst is distinct from '98'
+    or ipi_cst is distinct from '49' or pis_rate is distinct from 0
+    or cofins_rate is distinct from 0 or ipi_rate is distinct from 0 or ipi_cenq is distinct from '999');
 insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,document_model,series,
   pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq,evidence_reference)
 select region.scenario,base.issuer_state,region.cfop,'102',0,55,base.series,'49','49','99',0,0,0,'999',
