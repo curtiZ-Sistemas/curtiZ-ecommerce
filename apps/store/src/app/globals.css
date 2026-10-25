@@ -14563,6 +14563,13 @@ body:has(.checkout-transition) .help-widget {
 @media (max-width: 700px) {
   .hero-picture {
     aspect-ratio: 941 / 1672;
+    /* Limita o banner para a próxima seção aparecer abaixo da dobra e indicar que há mais conteúdo. */
+    max-height: max(440px, calc(100svh - 230px));
+  }
+
+  .homepage-hero .hero-picture > .hero-media {
+    object-fit: cover;
+    object-position: center top;
   }
 
   .product-page .product-gallery-main {
