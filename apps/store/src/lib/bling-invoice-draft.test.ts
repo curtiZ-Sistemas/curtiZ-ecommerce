@@ -23,6 +23,26 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
   it.each([2, 3, 4, 5, 6, 8])("never edits fiscal situation %s", situacao => {
     expect(() => blingFiscalDraftBody({ ...invoice(), situacao }, items, commercial, input)).toThrow();
   });
+  it.each([undefined, null, {}, { nome: "", numeroDocumento: "" }, { nome: "  ", id: 0 }])(
+    "omits an empty optional carrier without changing freight", transportador => {
+      const body = blingFiscalDraftBody({ ...invoice(), transporte: { fretePorConta: 1, transportador } }, items, commercial, input);
+      expect(body.transporte).not.toHaveProperty("transportador");
+      expect(body.transporte.fretePorConta).toBe(1);
+      expect(body.transporte.frete).toBe(0);
+    });
+  it("preserves a populated carrier and blocks an incomplete one", () => {
+    const carrier = { nome: "Transportadora teste", numeroDocumento: "00000000000000" };
+    const draft = (transportador: unknown) => ({ ...invoice(), transporte: { fretePorConta: 1, transportador } });
+    expect(blingFiscalDraftBody(draft(carrier), items, commercial, input).transporte.transportador).toEqual(carrier);
+    expect(() => blingFiscalDraftBody(draft({ numeroDocumento: carrier.numeroDocumento }), items, commercial, input))
+      .toThrow("invoice_carrier_mapping_required");
+  });
+  it("does not retry a rejected write or proceed to transmission", async () => {
+    const request = vi.fn().mockResolvedValueOnce({ data: invoice() }).mockRejectedValueOnce(new Error("validation_error"));
+    await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true))
+      .rejects.toThrow("validation_error");
+    expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT"]);
+  });
   it("blocks duplicate or modified commercial draft lines", () => {
     const value = invoice(); value.itens.push({ ...value.itens[0]! });
     expect(() => blingFiscalDraftBody(value, items, commercial, input)).toThrow("invoice_draft_decomposition_conflict");
