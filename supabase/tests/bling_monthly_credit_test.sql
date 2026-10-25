@@ -8,6 +8,12 @@ select ok(not has_table_privilege('authenticated','private.bling_monthly_credit_
 select ok(not has_table_privilege('service_role','private.bling_monthly_credit_rates','insert'),'Runtime cannot manufacture accounting approvals');
 select ok(not has_function_privilege('authenticated','public.read_bling_fiscal_rules()','execute'),'Fiscal RPC remains backend-only');
 insert into auth.users(id,email) values('bc980000-0000-4000-8000-000000000001','credit-fixture@example.invalid');
+-- A fresh CI database has no accountant-provided resale configuration. Supply
+-- this fixture before the baseline so the negative UPDATE must affect a row.
+insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,
+  pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq,icms_credit_rate)
+values('resale_in_state_no_credit','MG','5102','102',0,2,'Synthetic isolated no-credit scenario',
+  '49','49','99',0,0,0,'999',null) on conflict(scenario) do nothing;
 create temporary table baseline_noncredit as select jsonb_agg(to_jsonb(r) order by scenario) data
   from private.bling_fiscal_rules r where scenario not in('resale_in_state_credit','resale_interstate_credit');
 select lives_ok($q$insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,
