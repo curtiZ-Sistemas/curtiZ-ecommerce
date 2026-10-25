@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { BlingError } from "@curtiz/integrations";
 const state = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), rpc: vi.fn(), selectRule: vi.fn(), mirror: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/bling-server", () => ({ authorizeBlingTechnicalRequest: state.auth }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: () => ({ rpc: state.rpc }) }));
 vi.mock("@/lib/technical-api", () => ({ safeTechnicalOrigin: state.origin, technicalNoStore: { "cache-control": "private, no-store" },
   unauthorizedTechnicalResponse: () => new Response(null, { status: 401 }) }));
-vi.mock("@curtiz/integrations", () => ({ BlingError: class extends Error {}, blingFiscalMirrorHash: vi.fn(),
+vi.mock("@curtiz/integrations", () => ({ BlingError: class extends Error { constructor(public code: string) { super(code); } }, blingFiscalMirrorHash: vi.fn(),
   buildBlingOrderFiscalMirror: vi.fn(), selectBlingFiscalRule: state.selectRule,
   buildBlingFiscalMirror: state.mirror, expandBlingFiscalKit: vi.fn(() => []) }));
 import { POST } from "../app/api/integrations/bling/fiscal-preview/route";
@@ -47,10 +48,24 @@ describe("technical fiscal preview recipient declarations", () => {
       expect((await POST(request({ ...input, ...field }))).status).toBe(400);
     expect(state.selectRule).not.toHaveBeenCalled();
   });
-  it("preserves the explicit PF declaration for entry previews", async () => {
-    expect((await POST(request({ ...input, operation: "return", icmsTaxpayer: false, finalConsumer: true,
-      creditEligible: false, recipientIsCompany: false, originalInvoiceKey: "1".repeat(44) }))).status).toBe(200);
-    expect(state.selectRule).toHaveBeenCalledWith([], expect.objectContaining({ operation: "return", recipientIsCompany: false }));
+  it.each([undefined, "1".repeat(44)])("never substitutes catalog data for the original invoice even with key %s", async originalInvoiceKey => {
+    const result = await POST(request({ ...input, operation: "return", icmsTaxpayer: false, finalConsumer: true,
+      creditEligible: false, recipientIsCompany: false, originalInvoiceKey }));
+    expect(result.status).toBe(409);
+    expect(result.headers.get("cache-control")).toContain("no-store");
+    expect(await result.json()).toMatchObject({ code: "return_original_invoice_context_required" });
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.selectRule).not.toHaveBeenCalled();
+    expect(state.mirror).not.toHaveBeenCalled();
+  });
+  it.each(["fiscal_monthly_credit_required", "fiscal_credit_competence_required"])("explains the missing monthly information for %s", async code => {
+    state.selectRule.mockImplementation(() => { throw new BlingError(code, 409); });
+    const result = await POST(request(input));
+    expect(result.status).toBe(409);
+    const body: unknown = await result.json();
+    expect(body).toMatchObject({ code });
+    expect(body !== null && typeof body === "object" && "message" in body && typeof body.message === "string"
+      && /competência|data da operação/u.test(body.message)).toBe(true);
   });
 });
 

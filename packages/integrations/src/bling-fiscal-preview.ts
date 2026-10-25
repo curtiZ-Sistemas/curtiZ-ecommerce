@@ -118,6 +118,7 @@ export async function blingFiscalMirrorHash(value: unknown): Promise<string> {
 // This remains a preview: it neither transmits a note nor moves physical stock.
 export function buildBlingReturnFiscalMirror(rule: BlingFiscalRule, original: {
   invoiceKey: string; items: BlingFiscalItem[]; shippingInCents: number; discountInCents: number; additionalInCents: number;
+  itemAllocationsInCents?: { shippingInCents: number; discountInCents: number; additionalInCents: number }[];
 }, lines: { originalLine: number; quantity: number }[], allocation?: {
   shippingInCents: number; discountInCents: number; additionalInCents: number;
 }) {
@@ -143,6 +144,41 @@ export function buildBlingReturnFiscalMirror(rule: BlingFiscalRule, original: {
     + original.shippingInCents + original.additionalInCents - original.discountInCents;
   if (!Number.isSafeInteger(originalTotal) || originalTotal < 0 || mirror.totalInCents > originalTotal)
     throw new BlingError("return_exceeds_original_amounts", 409);
+  if (!complete) {
+    const fields = ["shippingInCents", "discountInCents", "additionalInCents"] as const;
+    // Use the verified invoice's item adjustments, never a new distribution of
+    // its global totals. The archive is server-supplied, not a browser declaration.
+    const archived = original.itemAllocationsInCents;
+    if (fields.some(field => original[field] !== 0)) {
+      if (fields.some(field => !Number.isSafeInteger(original[field]) || original[field] < 0)
+        || !Array.isArray(archived) || archived.length !== original.items.length
+        || original.items.some((item, index) => {
+          const amounts = archived[index];
+          return !Number.isSafeInteger(item.quantity) || item.quantity < 1
+            || !Number.isSafeInteger(item.unitPriceInCents) || item.unitPriceInCents < 0 || !amounts
+            || fields.some(field => !Number.isSafeInteger(amounts[field]) || amounts[field] < 0)
+            || BigInt(amounts.discountInCents) > BigInt(item.quantity) * BigInt(item.unitPriceInCents)
+              + BigInt(amounts.shippingInCents) + BigInt(amounts.additionalInCents);
+        })
+        || fields.some(field => archived.reduce((sum, amounts) => sum + BigInt(amounts[field]), 0n) !== BigInt(original[field])))
+        throw new BlingError("original_invoice_allocation_required", 409);
+    }
+    for (const field of fields) {
+      let expected = 0n;
+      for (const line of original[field] === 0 ? [] : lines) {
+        const prior = original.items[line.originalLine];
+        const archivedAmount = archived?.[line.originalLine]?.[field];
+        if (!prior || archivedAmount === undefined) throw new BlingError("original_invoice_allocation_required", 409);
+        const numerator = BigInt(archivedAmount) * BigInt(line.quantity);
+        const denominator = BigInt(prior.quantity);
+        // A subcent split needs the original unit-level allocation. Do not
+        // guess rounding that could be repeated across separate partial returns.
+        if (numerator % denominator !== 0n) throw new BlingError("partial_return_rounding_review_required", 409);
+        expected += numerator / denominator;
+      }
+      if (BigInt(amounts[field]) !== expected) throw new BlingError("partial_return_allocation_mismatch", 409);
+    }
+  }
   return { ...mirror,
     originalLines: lines.map(line => ({ ...line })), returnKind: complete ? "total" : "partial" };
 }

@@ -36,6 +36,8 @@ describe("accountant resale and individual return policy", () => {
     const input = { ...recipient, icmsTaxpayer: true, recipientIsCompany: true, creditEligible: true,
       saleDate: "2026-10-24", stateRegistrationActive: true, recipientTaxRegime: "normal" as const, goodsPurpose: "resale" as const };
     expect(selectBlingFiscalRule(rules, input)).toMatchObject({ csosn: "101", icms_credit_rate: 1.25 });
+    expect(selectBlingFiscalRule(rules.map(rule => ({ ...rule, icms_credit_rate: null })), input))
+      .toMatchObject({ csosn: "101", icms_credit_rate: 1.25, monthlyCredit: { revision: 1 } });
     for (const rate of [0, null, undefined, "", " ", false, -1, 101, 0.12345])
       expect(() => selectBlingFiscalRule(rules.map(rule => ({ ...rule, credit_periods: [{ ...period, rate }] })), input))
         .toThrow("fiscal_monthly_credit_required");

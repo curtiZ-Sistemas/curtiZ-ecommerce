@@ -5,6 +5,7 @@ select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid
 select ok(not has_table_privilege('authenticated','private.bling_fiscal_rules','update'),'Customer cannot approve credit or tax parameters');
 select ok(not has_function_privilege('authenticated','public.read_bling_fiscal_rules()','execute'),'Fiscal scenarios remain backend-only');
 create temporary table prior_rules as select * from private.bling_fiscal_rules where scenario not like 'resale%';
+create temporary table prior_natures as select jsonb_agg(to_jsonb(n) order by scenario,final_consumer) data from private.bling_fiscal_natures n;
 insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,
   pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq)
 values('resale_interstate_no_credit','MG','6102','102',0,2,'Synthetic isolated policy fixture','49','49','99',0,0,0,'999')
@@ -16,15 +17,16 @@ select throws_ok($$update private.bling_fiscal_rules set csosn='101' where scena
 select throws_ok($$update private.bling_fiscal_rules set pis_rate=1 where scenario='resale_interstate_no_credit'$$,'23514',null,'Main tax rates remain zero');
 select throws_ok($$update private.bling_fiscal_rules set ipi_cenq=null where scenario='resale_interstate_no_credit'$$,'23514',null,'SQL NULL cannot bypass the resale contract');
 select throws_ok($$update private.bling_fiscal_rules set icms_credit_rate=1 where scenario='resale_interstate_no_credit'$$,'23514',null,'No credit rate on a no-credit scenario');
-select throws_ok($$insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq)
-  values('resale_in_state_credit','MG','5102','101',0,2,'Synthetic isolated credit fixture','49','49','99',0,0,0,'999')$$,'23514',null,'Credit rate cannot be guessed');
-insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,
-  pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq,icms_credit_rate)
-values('resale_in_state_credit','MG','5102','101',0,2,'Synthetic isolated credit fixture','49','49','99',0,0,0,'999',1.25);
-select is((select icms_credit_rate from private.bling_fiscal_rules where scenario='resale_in_state_credit'),1.25::numeric,'Explicit fixture credit rate is preserved');
-select throws_ok($$update private.bling_fiscal_rules set icms_credit_rate=null where scenario='resale_in_state_credit'$$,'23514',null,'Configured credit cannot lose its rate silently');
+select lives_ok($$insert into private.bling_fiscal_rules(scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq)
+  values('resale_in_state_credit','MG','5102','101',0,2,'Synthetic isolated credit fixture','49','49','99',0,0,0,'999')$$,'Credit configuration does not require a timeless rate');
+select is((select jsonb_array_length(r->'credit_periods') from jsonb_array_elements(public.read_bling_fiscal_rules()) r
+  where r->>'scenario'='resale_in_state_credit'),0,'A missing monthly approval is never manufactured');
+update private.bling_fiscal_rules set icms_credit_rate=1.25 where scenario='resale_in_state_credit';
+select is((select icms_credit_rate from private.bling_fiscal_rules where scenario='resale_in_state_credit'),1.25::numeric,'Historical fixture rate can be retained without authorizing monthly credit');
+select lives_ok($$update private.bling_fiscal_rules set icms_credit_rate=null where scenario='resale_in_state_credit'$$,'Legacy rate may remain absent');
 select throws_ok($$update private.bling_fiscal_rules set icms_credit_rate=-1 where scenario='resale_in_state_credit'$$,'23514',null,'Negative credit rejected');
-select ok(not exists(select 1 from private.bling_fiscal_natures where scenario like 'resale%'),'No external nature is invented');
+select is((select jsonb_agg(to_jsonb(n) order by scenario,final_consumer) from private.bling_fiscal_natures n),
+  (select data from prior_natures),'No external nature is invented or changed');
 create temporary table prior_hash as select private.bling_fiscal_configuration_hash() hash;
 update private.bling_fiscal_rules set icms_credit_rate=2 where scenario='resale_in_state_credit';
 select isnt(private.bling_fiscal_configuration_hash(),(select hash from prior_hash),'Credit change invalidates old fiscal approval');
