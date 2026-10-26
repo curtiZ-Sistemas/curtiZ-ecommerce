@@ -1,9 +1,22 @@
 import "server-only";
 import { BlingError, blingExternalSku, type BlingClient, type BlingFiscalItem } from "@curtiz/integrations";
+import { logServerEvent } from "@curtiz/security";
 import { isUnknownRecord, readString } from "./unknown-data";
 const row = (v: unknown): Record<string, unknown> => isUnknownRecord(v) ? v : {};
 const array = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.filter(isUnknownRecord) : [];
 const cents = (v: unknown) => Math.round(Number(v) * 100);
+
+export async function requestBlingFiscalResource(provider: BlingClient, path: string,
+  stage: "company_read" | "nature_read" | "product_read" | "order_read" | "draft_read" | "draft_update" | "draft_verify",
+  input?: Parameters<BlingClient["request"]>[1]) {
+  try { return input === undefined ? await provider.request(path) : await provider.request(path, input); }
+  catch (error) {
+    if (error instanceof BlingError && error.code === "validation_error") logServerEvent("error", "bling_fiscal_validation_failed", {
+      stage, validationCodes: error.validationCodes, validationFields: error.validationFields, validationHints: error.validationHints
+    });
+    throw error;
+  }
+}
 
 function reviewedRecipientAddress(snapshot: Record<string, unknown>) {
   const address = { endereco: readString(snapshot, "street").trim(), numero: readString(snapshot, "number").trim(),
@@ -23,6 +36,49 @@ function assertReviewedAddress(invoice: Record<string, unknown>, expected: Retur
     return observed.normalize("NFC").toUpperCase() !== value.normalize("NFC").toUpperCase();
   })) throw new BlingError("invoice_recipient_mismatch", 409);
 }
+
+export type BlingInvoicePaymentTerm = { data: string; valor: number; formaPagamento: { id: number }; observacoes?: string; caut?: string };
+const paymentDateValid = (date: string) => {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/u.test(date) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+};
+const paymentAmount = (value: unknown) => {
+  const amount = cents(value);
+  if (!Number.isSafeInteger(amount) || amount < 1 || Math.abs(Number(value) * 100 - amount) > 0.000001)
+    throw new BlingError("invoice_payment_terms_mismatch", 409);
+  return amount;
+};
+const paymentSignature = (terms: Record<string, unknown>[]) => terms.map(p => {
+  const methodId = Number(row(p.formaPagamento).id), date = readString(p, "data");
+  if (!paymentDateValid(date) || !Number.isSafeInteger(methodId) || methodId < 1)
+    throw new BlingError("invoice_payment_terms_mismatch", 409);
+  return JSON.stringify([date, paymentAmount(p.valor), methodId, readString(p, "caut")]);
+}).sort().join("|");
+
+export function blingInvoicePaymentTerms(order: Record<string, unknown>, expected: { totalInCents: number; paymentMethodId: number }): BlingInvoicePaymentTerm[] {
+  const values = order.parcelas;
+  if (!Number.isSafeInteger(expected.totalInCents) || expected.totalInCents < 1
+    || !Number.isSafeInteger(expected.paymentMethodId) || expected.paymentMethodId < 1
+    || !Array.isArray(values) || !values.length || values.some(p => !isUnknownRecord(p)))
+    throw new BlingError("invoice_payment_terms_required", 409);
+  const terms = array(values).map(p => {
+    const date = readString(p, "dataVencimento"), amount = paymentAmount(p.valor);
+    if (!paymentDateValid(date) || Number(row(p.formaPagamento).id) !== expected.paymentMethodId)
+      throw new BlingError("invoice_payment_terms_mismatch", 409);
+    return { data: date, valor: amount / 100, formaPagamento: { id: expected.paymentMethodId },
+      ...(readString(p, "observacoes") ? { observacoes: readString(p, "observacoes") } : {}),
+      ...(readString(p, "caut") ? { caut: readString(p, "caut") } : {}) };
+  });
+  if (terms.reduce((sum, p) => sum + cents(p.valor), 0) !== expected.totalInCents)
+    throw new BlingError("invoice_payment_terms_mismatch", 409);
+  return terms;
+}
+
+export function assertBlingInvoicePaymentTerms(invoice: Record<string, unknown>, expected: BlingInvoicePaymentTerm[]) {
+  const actual = array(invoice.parcelas);
+  if (!expected.length || !Array.isArray(invoice.parcelas) || actual.length !== invoice.parcelas.length
+    || paymentSignature(actual) !== paymentSignature(expected)) throw new BlingError("invoice_payment_terms_mismatch", 409);
+}
 type CommercialLine = { sku: string; unit: string; quantity: number; unitPriceInCents: number };
 const signature = (items: CommercialLine[]) => items.map(i => JSON.stringify([i.sku, i.unit, i.quantity, i.unitPriceInCents])).sort().join("|");
 export function invoiceMatchesFiscalLines(invoice: Record<string, unknown>, items: CommercialLine[]) {
@@ -32,6 +88,7 @@ export function invoiceMatchesFiscalLines(invoice: Record<string, unknown>, item
 
 export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalItems: BlingFiscalItem[],
   commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number; recipientAddress: Record<string, unknown>;
+    paymentTerms: BlingInvoicePaymentTerm[];
     totalInCents: number; shippingInCents: number; discountInCents: number; additionalInCents: number }) {
   // Only the exact, untransmitted commercial draft may be transformed. Never repair
   // an arbitrary/partially edited provider note by overwriting it.
@@ -47,6 +104,12 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   // The reviewed order snapshot binds the fiscal destination. The provider's
   // contact record can carry a different address, including a different state.
   const address = reviewedRecipientAddress(input.recipientAddress);
+  if (!input.paymentTerms.length || input.paymentTerms.reduce((sum, p) => sum + cents(p.valor), 0) !== input.totalInCents)
+    throw new BlingError("invoice_payment_terms_required", 409);
+  if (invoice.parcelas != null && !Array.isArray(invoice.parcelas)) throw new BlingError("invoice_payment_terms_mismatch", 409);
+  // A generated draft can omit the original order's payment conditions. Never
+  // invent a payment method or silently replace different existing conditions.
+  if (Array.isArray(invoice.parcelas) && invoice.parcelas.length) assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
   const gross = fiscalItems.reduce((s, i) => s + i.quantity * i.unitPriceInCents, 0);
   if (!Number.isSafeInteger(gross) || gross + input.shippingInCents + input.additionalInCents - input.discountInCents !== input.totalInCents)
     throw new BlingError("fiscal_total_mismatch", 409);
@@ -68,26 +131,29 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
     desconto: input.discountInCents / 100, despesas: input.additionalInCents / 100,
     transporte: { fretePorConta: Number(transport.fretePorConta), frete: input.shippingInCents / 100,
       ...(hasCarrier ? { transportador: carrier } : {}), etiqueta: transport.etiqueta },
-    parcelas: array(invoice.parcelas).map(p => ({ data: p.data, valor: p.valor, observacoes: p.observacoes,
-      caut: p.caut, formaPagamento: p.formaPagamento })) };
+    parcelas: Array.isArray(invoice.parcelas) && invoice.parcelas.length
+      ? array(invoice.parcelas).map(p => ({ data: p.data, valor: p.valor, observacoes: p.observacoes,
+        caut: p.caut, formaPagamento: p.formaPagamento })) : input.paymentTerms };
 }
 
 export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: number,
   fiscalItems: BlingFiscalItem[], commercialItems: CommercialLine[], input: Parameters<typeof blingFiscalDraftBody>[3],
   stockAutomationDisabled: boolean, authorizeMutation: () => Promise<boolean> = async () => false) {
-  const response = await provider.request(`/nfe/${invoiceId}`);
+  const response = await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_read");
   const invoice = row(row(response).data);
   const expected = fiscalItems.map(i => ({ ...i, sku: i.sourceCommercialSku ? i.sku : blingExternalSku(i.sku, i.variantId ?? "") }));
   if (invoiceMatchesFiscalLines(invoice, expected)) {
     assertReviewedAddress(invoice, reviewedRecipientAddress(input.recipientAddress));
+    assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
     return;
   }
   if (!fiscalItems.some(i => i.sourceCommercialSku)) throw new BlingError("invoice_items_mismatch", 409);
   if (!stockAutomationDisabled) throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const body = blingFiscalDraftBody(invoice, fiscalItems, commercialItems, input);
   if (!await authorizeMutation()) throw new BlingError("order_not_eligible", 409);
-  await provider.request(`/nfe/${invoiceId}`, { method: "PUT", body });
-  const saved = row(row(await provider.request(`/nfe/${invoiceId}`)).data);
+  await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_update", { method: "PUT", body });
+  const saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
   if (!invoiceMatchesFiscalLines(saved, expected)) throw new BlingError("invoice_items_mismatch", 409);
   assertReviewedAddress(saved, body.contato.endereco);
+  assertBlingInvoicePaymentTerms(saved, input.paymentTerms);
 }
