@@ -2,14 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { expandBlingFiscalKit, type BlingClient } from "@curtiz/integrations";
 import { blingFiscalDraftBody, prepareBlingFiscalDraft } from "./bling-invoice-draft";
-const input = { document: "12345678909", icmsTaxpayer: false, natureId: 10, totalInCents: 5594, shippingInCents: 0, discountInCents: 0, additionalInCents: 0 };
+const input = { document: "12345678909", icmsTaxpayer: false, natureId: 10, totalInCents: 5594, shippingInCents: 0, discountInCents: 0, additionalInCents: 0,
+  recipientAddress: { street: "Rua Teste", number: "1", complement: "", district: "Centro", city: "Belo Horizonte", state: "MG", postal_code: "30000000" } };
 const commercial = [{ sku: "KIT", unit: "UN", quantity: 1, unitPriceInCents: 5594 }];
 const items = expandBlingFiscalKit({ sku: "KIT", description: "Kit", unit: "UN", quantity: 1, unitPriceInCents: 5594,
   pairsPerSku: 3, fiscalUnitApproved: false, ncm: "64022000", origin: 0, cest: "" }, [1, 2, 3].map(i => ({
   sku: `FISCAL-${i}`, description: `Pair ${i}`, unit: "PR", quantity_pairs: 1, allocation_weight: 1, source_current: true,
   ncm: "64022000", origin: 0, cest: "" })));
 const invoice = () => ({ tipo: 1, situacao: 1, numero: "existing-number", dataOperacao: "2026-10-17 12:00:00", naturezaOperacao: { id: 10 },
-  valorNota: 55.94, valorFrete: 0, contato: { nome: "Test", numeroDocumento: input.document, endereco: { uf: "MG" } },
+  valorNota: 55.94, valorFrete: 0, contato: { nome: "Test", numeroDocumento: input.document,
+    endereco: { endereco: "Rua Teste", numero: "1", complemento: "", bairro: "Centro", municipio: "Belo Horizonte", uf: "MG", cep: "30000000" } },
   transporte: { fretePorConta: 0 }, itens: [{ codigo: "KIT", unidade: "UN", quantidade: 1, valor: 55.94 }] });
 describe("safe fiscal decomposition of an existing untransmitted draft", () => {
   it("preserves number, recipient and totals, without product or stock references", () => {
@@ -22,6 +24,35 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
   });
   it.each([2, 3, 4, 5, 6, 8])("never edits fiscal situation %s", situacao => {
     expect(() => blingFiscalDraftBody({ ...invoice(), situacao }, items, commercial, input)).toThrow();
+  });
+  it("uses the reviewed order address instead of the provider contact address", () => {
+    const original = invoice();
+    const destination = { ...input, recipientAddress: { ...input.recipientAddress, street: "Rua Entrega", city: "Sao Paulo", state: "SP", postal_code: "01001-000" } };
+    const body = blingFiscalDraftBody(original, items, commercial, destination);
+    expect(body.contato.endereco).toEqual({ endereco: "Rua Entrega", numero: "1", complemento: "", bairro: "Centro", municipio: "Sao Paulo", uf: "SP", cep: "01001000" });
+    expect(body.contato.numeroDocumento).toBe(input.document);
+    expect(original.contato.endereco.uf).toBe("MG");
+    expect(body.contato).not.toHaveProperty("id");
+  });
+  it.each(["street", "number", "district", "city", "state", "postal_code"])("blocks an incomplete reviewed address: %s", field => {
+    expect(() => blingFiscalDraftBody(invoice(), items, commercial, { ...input, recipientAddress: { ...input.recipientAddress, [field]: "" } }))
+      .toThrow("invoice_recipient_address_required");
+  });
+  it("requires the provider to persist the reviewed address before completing preparation", async () => {
+    const body = blingFiscalDraftBody(invoice(), items, commercial, input);
+    const saved = { ...invoice(), itens: body.itens, contato: { ...invoice().contato, endereco: { ...invoice().contato.endereco, uf: "SP" } } };
+    const request = vi.fn().mockResolvedValueOnce({ data: invoice() }).mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: saved });
+    await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true))
+      .rejects.toThrow("invoice_recipient_mismatch");
+    expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT", "GET"]);
+  });
+  it("does not rewrite a decomposed draft whose address differs from the review", async () => {
+    const body = blingFiscalDraftBody(invoice(), items, commercial, input);
+    const request = vi.fn().mockResolvedValue({ data: { ...invoice(), itens: body.itens } });
+    await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial,
+      { ...input, recipientAddress: { ...input.recipientAddress, state: "SP" } }, true, async () => true))
+      .rejects.toThrow("invoice_recipient_mismatch");
+    expect(request).toHaveBeenCalledTimes(1);
   });
   it.each([undefined, null, {}, { nome: "", numeroDocumento: "" }, { nome: "  ", id: 0 }])(
     "omits an empty optional carrier without changing freight", transportador => {
