@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { BlingError } from "@curtiz/integrations";
-const state = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), rpc: vi.fn(), selectRule: vi.fn(), mirror: vi.fn() }));
+const state = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), rpc: vi.fn(), selectRule: vi.fn(), mirror: vi.fn(), returnPreview: vi.fn() }));
+vi.mock("@/lib/bling-return-preview", () => ({ buildArchivedBlingReturnPreview: state.returnPreview }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/bling-server", () => ({ authorizeBlingTechnicalRequest: state.auth }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: () => ({ rpc: state.rpc }) }));
 vi.mock("@/lib/technical-api", () => ({ safeTechnicalOrigin: state.origin, technicalNoStore: { "cache-control": "private, no-store" },
   unauthorizedTechnicalResponse: () => new Response(null, { status: 401 }) }));
-vi.mock("@curtiz/integrations", () => ({ BlingError: class extends Error { constructor(public code: string) { super(code); } }, blingFiscalMirrorHash: vi.fn(),
+vi.mock("@curtiz/integrations", () => ({ BlingError: class extends Error { constructor(public code: string, public status = 409) { super(code); } }, blingFiscalMirrorHash: vi.fn(),
   buildBlingOrderFiscalMirror: vi.fn(), selectBlingFiscalRule: state.selectRule,
   buildBlingFiscalMirror: state.mirror, expandBlingFiscalKit: vi.fn(() => []) }));
 import { POST } from "../app/api/integrations/bling/fiscal-preview/route";
@@ -24,6 +25,38 @@ beforeEach(() => {
   state.selectRule.mockReturnValue({}); state.mirror.mockReturnValue({ transmittable: false, consumesInvoiceNumber: false });
 });
 describe("technical fiscal preview recipient declarations", () => {
+  const returnId = "a0200000-0000-4000-8000-000000000002";
+  it("loads a return by server-side identity without accepting catalog prices or quantities", async () => {
+    state.returnPreview.mockResolvedValue({ returnId, source: "authorized_invoice_archive", transmittable: false });
+    const response = await POST(request({ returnId }));
+    expect(response.status).toBe(200);
+    expect(state.returnPreview).toHaveBeenCalledWith(expect.anything(), returnId);
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ mirror: { returnId, transmittable: false } });
+    expect(response.headers.get("cache-control")).toContain("no-store");
+  });
+  it.each([{ quantity: 2 }, { originalInvoiceKey: "1".repeat(44) }, { discountInCents: 0 }, { items: [] }])("rejects client supplied return context %j", patch => {
+    return POST(request({ returnId, ...patch })).then(response => {
+      expect(response.status).toBe(400); expect(state.returnPreview).not.toHaveBeenCalled();
+    });
+  });
+  it("protects the archived return route before reading documents", async () => {
+    state.auth.mockResolvedValue(null);
+    expect((await POST(request({ returnId }))).status).toBe(401);
+    expect(state.returnPreview).not.toHaveBeenCalled();
+  });
+  it("explains a missing original archive without leaking internal exceptions", async () => {
+    state.returnPreview.mockRejectedValue(new BlingError("return_original_invoice_context_required", 409));
+    const response = await POST(request({ returnId }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "return_original_invoice_context_required" });
+  });
+  it("distinguishes storage failure from missing fiscal data", async () => {
+    state.returnPreview.mockRejectedValue(new BlingError("return_context_unavailable", 503));
+    const response = await POST(request({ returnId }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "return_context_unavailable" });
+  });
   it("does not let supplied credit eligibility bypass technical authorization", async () => {
     state.auth.mockResolvedValue(null);
     expect((await POST(request(input))).status).toBe(401); expect(state.rpc).not.toHaveBeenCalled();

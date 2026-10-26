@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authorizeBlingTechnicalRequest } from "@/lib/bling-server";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore, unauthorizedTechnicalResponse } from "@/lib/technical-api";
+import { buildArchivedBlingReturnPreview } from "@/lib/bling-return-preview";
 
 const creditFields = { saleDate: z.iso.date().optional(), stateRegistrationActive: z.boolean().optional(),
   recipientTaxRegime: z.enum(["normal", "simples", "unknown"]).optional(),
@@ -11,7 +12,8 @@ const creditFields = { saleDate: z.iso.date().optional(), stateRegistrationActiv
 const schema = z.union([z.object({ ...creditFields, variantId: z.uuid(), quantity: z.number().int().min(1).max(99), destinationState: z.string().regex(/^[A-Z]{2}$/u),
   icmsTaxpayer: z.boolean(), finalConsumer: z.boolean().optional(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional(),
   operation: z.enum(["sale", "return"]), originalInvoiceKey: z.string().regex(/^\d{44}$/u).optional() }).strict(),
-z.object({ ...creditFields, orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional() }).strict()]);
+z.object({ ...creditFields, orderId: z.uuid(), icmsTaxpayer: z.boolean(), finalConsumer: z.boolean(), creditEligible: z.boolean().optional(), recipientIsCompany: z.boolean().optional() }).strict(),
+z.object({ returnId: z.uuid() }).strict()]);
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const row = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 
@@ -29,6 +31,10 @@ export async function POST(request: NextRequest) {
   const db = createServiceSupabaseClient();
   if (!db) return NextResponse.json({ message: "Prévia indisponível." }, { status: 503, headers: technicalNoStore });
   try {
+    if ("returnId" in input.data) {
+      const mirror = await buildArchivedBlingReturnPreview(db, input.data.returnId);
+      return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
+    }
     if ("orderId" in input.data) {
       const [rules, orderResult, itemsResult] = await Promise.all([db.rpc("read_bling_fiscal_rules"),
         db.from("orders").select("id,customer_id,customer_name_snapshot,customer_email_snapshot,cpf_ciphertext,shipping_address_snapshot,shipping_total,discount_total,fee_total,grand_total").eq("id", input.data.orderId).maybeSingle(),
@@ -59,12 +65,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ mirror, hash: await blingFiscalMirrorHash(mirror) }, { headers: technicalNoStore });
   } catch (error) {
     const code = error instanceof BlingError ? error.code : "fiscal_preview_failed";
-    const message = code === "fiscal_monthly_credit_required"
+    const status = "returnId" in input.data && (!(error instanceof BlingError) || error.status >= 500) ? 503 : 409;
+    const message = status === 503 ? "Serviço de prévia temporariamente indisponível. Tente novamente."
+      : code.startsWith("return_") || code.startsWith("original_invoice_") || code.startsWith("partial_return_")
+      ? "A devolução exige o XML autorizado arquivado, o rateio original e saldo disponível para os itens solicitados."
+      : code === "fiscal_monthly_credit_required"
       ? "Falta o percentual de crédito aprovado pela contabilidade para a competência da venda, com base na apuração do mês anterior."
       : code === "fiscal_credit_competence_required"
         ? "Informe a data da operação para consultar o percentual de crédito da competência correta."
         : "Prévia não disponível. Confira o cadastro e as regras recebidas.";
-    return NextResponse.json({ message, code }, { status: 409, headers: technicalNoStore });
+    return NextResponse.json({ message, code }, { status, headers: technicalNoStore });
   }
 }
 
