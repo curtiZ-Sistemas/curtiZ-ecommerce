@@ -116,11 +116,11 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
   });
   it("reports only the fixed stage and sanitized provider codes when an update is rejected", async () => {
     const request = vi.fn().mockResolvedValueOnce({ data: invoice() })
-      .mockRejectedValueOnce(new BlingError("validation_error", 400, false, false, 0, [0], ["contato"]));
+      .mockRejectedValueOnce(new BlingError("validation_error", 400, false, false, 0, [0], ["contato"], ["contact_reference"]));
     await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true))
       .rejects.toThrow("validation_error");
     expect(logServerEvent).toHaveBeenLastCalledWith("error", "bling_fiscal_validation_failed", {
-      stage: "draft_update", validationCodes: [0], validationFields: ["contato"]
+      stage: "draft_update", validationCodes: [0], validationFields: ["contato"], validationHints: ["contact_reference"]
     });
     expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT"]);
   });

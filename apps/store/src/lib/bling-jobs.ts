@@ -339,7 +339,7 @@ async function generateInvoice(db: SupabaseClient, provider: BlingClient, enviro
       discountInCents: preconditions.mirror.discountInCents, additionalInCents: preconditions.mirror.additionalInCents },
     environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true",
     async () => await call(db, "assert_bling_order_writable", { p_order_id: orderId }) === true);
-  if (invoiceId) { await prepare(invoiceId); return; }
+  if (invoiceId) { await prepare(invoiceId); await observeInvoice(db, provider, invoiceId); return; }
   const existingInvoiceId = idNumber(row(externalOrder?.notaFiscal)?.id);
   if (!existingInvoiceId && (!array(externalOrder?.itens).length
     || array(externalOrder?.itens).some(item => idNumber(row(item.naturezaOperacao)?.id) !== natureId)))

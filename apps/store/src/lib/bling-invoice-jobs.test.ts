@@ -91,6 +91,7 @@ describe("kit invoice job safety at generation and transmission", () => {
     expect(state.savedDraft).toMatchObject({ parcelas: [{ data: "2026-10-17", valor: 43.45, formaPagamento: { id: 100 } }] });
     expect(state.request.mock.calls.filter(([path]) => path === "/pedidos/vendas/88")).toHaveLength(1);
     expect(state.request.mock.calls.filter(([, options]) => options?.method === "PUT")).toHaveLength(1);
+    expect(state.rpc).toHaveBeenCalledWith("observe_bling_invoice", expect.objectContaining({ p_invoice_id: 99, p_situation: 1 }));
     expect(sent()).toHaveLength(0);
   });
   it("blocks transmission when the invoice omits the verified payment condition", async () => {
