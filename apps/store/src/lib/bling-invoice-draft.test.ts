@@ -18,10 +18,11 @@ const invoice = () => ({ tipo: 1, situacao: 1, numero: "existing-number", dataOp
     endereco: { endereco: "Rua Teste", numero: "1", complemento: "", bairro: "Centro", municipio: "Belo Horizonte", uf: "MG", cep: "30000000" } },
   transporte: { fretePorConta: 0 }, itens: [{ codigo: "KIT", unidade: "UN", quantidade: 1, valor: 55.94 }] });
 describe("safe fiscal decomposition of an existing untransmitted draft", () => {
-  it.each([undefined, "", "0000-00-00 00:00:00"])("does not resend an absent departure date or invent one: %s", dataOperacao => {
-    const body = blingFiscalDraftBody({ ...invoice(), dataOperacao }, items, commercial, input);
-    expect(body).not.toHaveProperty("dataOperacao");
-    expect(body).not.toHaveProperty("dataEmissao");
+  it.each([undefined, "", "0000-00-00 00:00:00"])("blocks a missing departure date before PUT instead of inventing one: %s", async dataOperacao => {
+    const request = vi.fn().mockResolvedValue({ data: { ...invoice(), dataOperacao } });
+    await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true))
+      .rejects.toThrow("invoice_operation_date_required");
+    expect(request).toHaveBeenCalledTimes(1);
   });
   it.each(["2026-02-30 12:00:00", "2026-10-21 25:00:00", "2026-10-21", "not-a-date"])("blocks invalid nonempty departure date %s before any write", async dataOperacao => {
     const request = vi.fn().mockResolvedValue({ data: { ...invoice(), dataOperacao } });
