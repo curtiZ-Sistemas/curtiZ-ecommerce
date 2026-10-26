@@ -21,6 +21,14 @@ type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
 type Job = { id: string; jobType: "melhorenvio.create" | "melhorenvio.cancel" | "melhorenvio.purchase" | "melhorenvio.generate" | "melhorenvio.sync"; shipmentId: string };
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isUnknownRecord) : [];
 
+function labelGenerationConfirmed(remote: Record<string, unknown>): boolean {
+  const status = readString(remote, "status").toLowerCase();
+  const generatedAt = readString(remote, "generated_at");
+  // Released also describes paid orders. Require the provider's generation
+  // timestamp before treating this response as a printable label.
+  return status === "generated" || status === "released" && Boolean(generatedAt) && Number.isFinite(Date.parse(generatedAt));
+}
+
 const serviceDatabase = (environment: ShippingJobEnvironment, transport: typeof fetch): ServiceDatabase | null => {
   const secret = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
   try {
@@ -226,13 +234,18 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     const remoteStatus = readString(remote, "status").toLowerCase();
     const normalized = melhorEnvioStatusTransition("", `order.${remoteStatus}`, remoteStatus);
     if (!normalized) throw new MelhorEnvioError("invalid_response", 502, true);
-    const timestamp = readString(remote, `${remoteStatus}_at`) || readString(remote, "updated_at") || readString(remote, "created_at");
+    const releasedLabel = remoteStatus === "released" && labelGenerationConfirmed(remote);
+    const timestamp = (releasedLabel ? readString(remote, "generated_at") : "")
+      || readString(remote, `${remoteStatus}_at`) || readString(remote, "updated_at") || readString(remote, "created_at");
     if (!timestamp || !Number.isFinite(Date.parse(timestamp))) throw new MelhorEnvioError("invalid_response", 502, true);
     const observed = { externalId, status: remoteStatus, occurredAt: new Date(timestamp).toISOString(),
-      tracking: readString(remote, "tracking") || readString(remote, "self_tracking") };
+      tracking: readString(remote, "tracking") || readString(remote, "self_tracking"),
+      // Distinguish this proof from an earlier paid-only observation, even if
+      // the provider reused its update timestamp. Preserve the raw event type.
+      ...(releasedLabel ? { labelGeneratedAt: new Date(timestamp).toISOString() } : {}) };
     const hash = createHash("sha256").update(JSON.stringify(observed)).digest("hex");
     const applied = await db.rpc("apply_melhor_envio_webhook", { p_event_key: `poll:${hash}`, p_payload_hash: hash,
-      p_event_type: `order.${remoteStatus}`, p_external_id: externalId, p_status: normalized.status,
+      p_event_type: `order.${remoteStatus}`, p_external_id: externalId, p_status: releasedLabel ? "label_created" : normalized.status,
       p_occurred_at: observed.occurredAt, p_tracking_code: observed.tracking || null });
     if (applied.error || !["processed", "duplicate"].includes(String(applied.data))) throw new MelhorEnvioError("provider_unavailable", 503, true);
     return;
@@ -265,8 +278,8 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     else await provider.generate([externalId]);
     acknowledged = true;
     const remote = await provider.getShipment(externalId);
-    const generated = readString(remote, "status").toLowerCase() === "generated";
-    if (!(purchase ? ["paid", "released", "generated"] : ["generated"]).includes(readString(remote, "status").toLowerCase()))
+    const generated = labelGenerationConfirmed(remote);
+    if (purchase ? !["paid", "released", "generated"].includes(readString(remote, "status").toLowerCase()) : !generated)
       throw new MelhorEnvioError("uncertain_write", 503, false);
     const saved = await db.from("shipments").update({ operation_state: generated ? "generated" : "purchased",
       ...(generated ? { status: "label_created", label_path: `private:${externalId}` } : {}),
