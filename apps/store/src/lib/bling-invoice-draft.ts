@@ -12,7 +12,7 @@ export async function requestBlingFiscalResource(provider: BlingClient, path: st
   try { return input === undefined ? await provider.request(path) : await provider.request(path, input); }
   catch (error) {
     if (error instanceof BlingError && error.code === "validation_error") logServerEvent("error", "bling_fiscal_validation_failed", {
-      stage, validationCodes: error.validationCodes, validationFields: error.validationFields, validationHints: error.validationHints
+      stage, validationCodes: error.validationCodes, validationFields: error.validationFields, validationTopics: error.validationHints
     });
     throw error;
   }
