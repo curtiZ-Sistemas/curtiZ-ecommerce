@@ -169,6 +169,8 @@ jobs:
           mapfile -t sql_tests < <(find supabase/tests -type f \( -name '*.sql' -o -name '*.pg' \) ! -name singleton_runtime_safeupdate_test.sql | sort)
           test "${#sql_tests[@]}" -gt 0
           supabase test db "${sql_tests[@]}"
+      - name: Testar concorrência do saldo de devoluções
+        run: bash scripts/test-return-balance-concurrency.sh
       - name: Testar runtime com safeupdate ativo
         # Only the ephemeral CI database is changed. The test still runs as
         # postgres; that role cannot LOAD native libraries directly.

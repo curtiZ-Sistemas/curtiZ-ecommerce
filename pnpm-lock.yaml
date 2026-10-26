@@ -235,6 +235,9 @@ importers:
       '@curtiz/domain':
         specifier: workspace:*
         version: link:../domain
+      saxes:
+        specifier: 5.0.1
+        version: 5.0.1
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
