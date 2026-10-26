@@ -59,6 +59,42 @@ beforeEach(() => {
 });
 
 describe("persistent shipping stages", () => {
+  const scopedShipmentId = "ba300000-0000-4000-8000-000000000010";
+  it.each([
+    { MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID: "" },
+    { MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID: "invalid" },
+    { MELHOR_ENVIO_ENVIRONMENT: "production" },
+    { MELHOR_ENVIO_ENVIRONMENT: undefined },
+    { MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED: "true" }
+  ])("rejects invalid or live homologation scope before touching the queue", async overrides => {
+    expect(await runMelhorEnvioShippingJobs({ ...environment, MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID: scopedShipmentId, ...overrides }, "test", 1))
+      .toMatchObject({ ok: false, processed: 0 });
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.purchase).not.toHaveBeenCalled();
+  });
+  it("uses the scoped claim and processes only the reserved shipment", async () => {
+    shipment.id = scopedShipmentId;
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+      name === "claim_melhor_envio_shipment_job" ? { id: "job-1", jobType, payload: { shipmentId: scopedShipmentId } }
+        : name === "read_bling_order_link" ? link : true }));
+    expect(await runMelhorEnvioShippingJobs({ ...environment, MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID: scopedShipmentId }, "test", 1))
+      .toMatchObject({ processed: 1, failed: 0 });
+    expect(state.rpc).toHaveBeenCalledWith("claim_melhor_envio_shipment_job", expect.objectContaining({ p_shipment_id: scopedShipmentId }));
+    expect(state.rpc).not.toHaveBeenCalledWith("claim_melhor_envio_fulfillment_job", expect.anything());
+    expect(state.purchase).toHaveBeenCalledExactlyOnceWith(["external-1"]);
+  });
+  it.each([
+    { jobType: "melhorenvio.purchase", shipmentId: "ba300000-0000-4000-8000-000000000099" },
+    { jobType: "melhorenvio.cancel", shipmentId: scopedShipmentId }
+  ])("stops without external writes or completion when the scoped claim is incompatible", async payload => {
+    state.rpc.mockResolvedValue({ error: null, data: { id: "job-1", jobType: payload.jobType, payload: { shipmentId: payload.shipmentId } } });
+    expect(await runMelhorEnvioShippingJobs({ ...environment, MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID: scopedShipmentId }, "test", 1))
+      .toMatchObject({ ok: false, processed: 0, failed: 1 });
+    expect(state.purchase).not.toHaveBeenCalled();
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.generate).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalledWith("finish_melhor_envio_job", expect.anything());
+  });
   const creation = () => {
     jobType = "melhorenvio.create"; shipment.external_id = null; shipment.operation_state = "pending";
     shipment.package_snapshot = [{ dimensions: { height: 5, width: 10, length: 20 }, weight: 0.2 }];

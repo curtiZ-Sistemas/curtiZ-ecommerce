@@ -14,6 +14,7 @@ type ShippingJobEnvironment = MelhorEnvioRuntimeEnvironment & {
   PII_ENCRYPTION_KEY?: string;
   BLING_REQUIRE_INVOICE_FOR_SHIPPING?: string;
   BLING_CLIENT_ID?: string;
+  MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID?: string;
 };
 
 type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
@@ -281,6 +282,10 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
 }
 
 export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnvironment, executionId: string, limit = 5, transport: typeof fetch = fetch) {
+  const targetShipmentId = environment.MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID;
+  if (targetShipmentId !== undefined && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(targetShipmentId)
+    || environment.MELHOR_ENVIO_ENVIRONMENT !== "sandbox"
+    || environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true")) return { ok: false, processed: 0, failed: 0 };
   const db = serviceDatabase(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
   let processed = 0;
@@ -288,11 +293,16 @@ export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnviron
   for (let index = 0; index < Math.min(Math.max(limit, 1), 10); index += 1) {
     const lockId = crypto.randomUUID();
     const liveAllowed = environment.MELHOR_ENVIO_ENVIRONMENT !== "production" || environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true";
-    const claim = readQueryResult(await db.rpc("claim_melhor_envio_fulfillment_job", { p_lock_id: lockId,
+    const claim = readQueryResult(await db.rpc(targetShipmentId ? "claim_melhor_envio_shipment_job" : "claim_melhor_envio_fulfillment_job", { p_lock_id: lockId,
+      ...(targetShipmentId ? { p_shipment_id: targetShipmentId } : {}),
       p_purchase_enabled: liveAllowed && environment.MELHOR_ENVIO_LABEL_PURCHASE_ENABLED === "true",
       p_generation_enabled: liveAllowed && environment.MELHOR_ENVIO_LABEL_GENERATION_ENABLED === "true" }));
     const job = readJob(claim.data);
     if (claim.error) throw new MelhorEnvioError("provider_unavailable", 503, true);
+    if (targetShipmentId && claim.data && (!job || job.shipmentId !== targetShipmentId || job.jobType === "melhorenvio.cancel")) {
+      logServerEvent("error", "shipping_homologation_scope_mismatch", { executionId });
+      return { ok: false, processed, failed: failed + 1 };
+    }
     if (!job) break;
     try {
       if (job.jobType === "melhorenvio.create") await createShipment(db, environment, job.shipmentId, transport);
