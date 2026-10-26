@@ -6,6 +6,18 @@ const row = (v: unknown): Record<string, unknown> => isUnknownRecord(v) ? v : {}
 const array = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.filter(isUnknownRecord) : [];
 const cents = (v: unknown) => Math.round(Number(v) * 100);
 
+function draftOperationDate(invoice: Record<string, unknown>) {
+  const value = readString(invoice, "dataOperacao");
+  // Bling represents an unfilled departure date as a zero datetime on GET.
+  // Preserve its absence on PUT instead of inventing an actual departure date.
+  if (!value || value === "0000-00-00 00:00:00") return undefined;
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2}):(\d{2})$/u.exec(value);
+  const parsed = new Date(`${value.replace(" ", "T")}Z`);
+  if (!match || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== value.replace(" ", "T"))
+    throw new BlingError("invoice_operation_date_invalid", 409);
+  return value;
+}
+
 export async function requestBlingFiscalResource(provider: BlingClient, path: string,
   stage: "company_read" | "nature_read" | "product_read" | "order_read" | "draft_read" | "draft_update" | "draft_verify",
   input?: Parameters<BlingClient["request"]>[1]) {
@@ -94,7 +106,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   // an arbitrary/partially edited provider note by overwriting it.
   if (Number(invoice.situacao) !== 1 || readString(invoice, "chaveAcesso") || Number(invoice.tipo) !== 1
     || Number(row(invoice.naturezaOperacao).id) !== input.natureId
-    || !readString(invoice, "numero") || !readString(invoice, "dataOperacao")
+    || !readString(invoice, "numero")
     || cents(invoice.valorNota) !== input.totalInCents || cents(invoice.valorFrete) !== input.shippingInCents
     || !invoiceMatchesFiscalLines(invoice, commercialItems)) throw new BlingError("invoice_draft_decomposition_conflict", 409);
   const contact = row(invoice.contato);
@@ -120,7 +132,8 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   const hasCarrier = Object.values(carrier).some(value => typeof value === "string"
     ? value.trim().length > 0 : value != null && value !== 0 && value !== false);
   if (hasCarrier && !readString(carrier, "nome").trim()) throw new BlingError("invoice_carrier_mapping_required", 409);
-  return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: readString(invoice, "dataOperacao"),
+  const operationDate = draftOperationDate(invoice);
+  return { tipo: 1, numero: readString(invoice, "numero"), ...(operationDate ? { dataOperacao: operationDate } : {}),
     finalidade: 1, naturezaOperacao: { id: input.natureId },
     contato: { nome: contact.nome, numeroDocumento: input.document, tipoPessoa: "F", contribuinte: input.icmsTaxpayer ? 1 : 9,
       ie: contact.ie, rg: contact.rg, telefone: contact.telefone, email: contact.email, endereco: address },
