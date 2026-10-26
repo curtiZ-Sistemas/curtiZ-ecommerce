@@ -246,7 +246,7 @@ export function assertBlingInvoiceRecipient(invoice: Record<string, unknown>, ex
 async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, environment: Environment,
   orderId: string): Promise<{ externalOrderId: number; invoiceId: number | null; natureId: number; series: number; cfop: string;
     expectedItems: FiscalInvoiceItem[]; totalInCents: number; shippingInCents: number;
-    expectedRecipient: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean };
+    expectedRecipient: { document: string; state: string; postalCode: string; icmsTaxpayer: boolean; recipientAddress: Record<string, unknown> };
     mirror: Awaited<ReturnType<typeof buildBlingOrderFiscalMirror>>; commercialItems: Array<{ sku: string; unit: string; quantity: number; unitPriceInCents: number }> }> {
   if (environment.BLING_FISCAL_READY !== "true") throw new BlingError("fiscal_not_ready", 409);
   const [orderResult, itemsResult, linkValue, accountValue] = await Promise.all([
@@ -314,7 +314,8 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
     unit: item.unit, quantity: item.quantity, unitPriceInCents: item.unitPriceInCents, ncm: item.ncm, origin: item.origin, cest: item.cest, cfop: mirror.rule.cfop }));
   const address = row(order.shipping_address_snapshot) ?? {};
   const expectedRecipient = { document: typeof order.cpf_ciphertext === "string" ? decryptPII(order.cpf_ciphertext, environment.PII_ENCRYPTION_KEY) : "",
-    state: readString(address, "state"), postalCode: readString(address, "postal_code"), icmsTaxpayer: approval.icms_taxpayer };
+    state: readString(address, "state"), postalCode: readString(address, "postal_code"), icmsTaxpayer: approval.icms_taxpayer,
+    recipientAddress: address };
   const commercialItems = items.map(i => ({ sku: blingExternalSku(readString(i, "sku_snapshot"), readString(i, "variant_id")),
     unit: readString(links.find(l => readString(l, "variantId") === i.variant_id) ?? {}, "commercialUnit"), quantity: Number(i.quantity), unitPriceInCents: cents(i.unit_price) }));
   return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop, expectedRecipient, mirror, commercialItems,

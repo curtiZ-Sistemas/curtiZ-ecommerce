@@ -4,6 +4,25 @@ import { isUnknownRecord, readString } from "./unknown-data";
 const row = (v: unknown): Record<string, unknown> => isUnknownRecord(v) ? v : {};
 const array = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.filter(isUnknownRecord) : [];
 const cents = (v: unknown) => Math.round(Number(v) * 100);
+
+function reviewedRecipientAddress(snapshot: Record<string, unknown>) {
+  const address = { endereco: readString(snapshot, "street").trim(), numero: readString(snapshot, "number").trim(),
+    complemento: readString(snapshot, "complement").trim(), bairro: readString(snapshot, "district").trim(),
+    municipio: readString(snapshot, "city").trim(), uf: readString(snapshot, "state").trim().toUpperCase(),
+    cep: readString(snapshot, "postal_code").replace(/\D/gu, "") };
+  if (!address.endereco || !address.numero || !address.bairro || !address.municipio
+    || !/^[A-Z]{2}$/u.test(address.uf) || !/^\d{8}$/u.test(address.cep))
+    throw new BlingError("invoice_recipient_address_required", 409);
+  return address;
+}
+
+function assertReviewedAddress(invoice: Record<string, unknown>, expected: ReturnType<typeof reviewedRecipientAddress>) {
+  const actual = row(row(invoice.contato).endereco);
+  if (Object.entries(expected).some(([key, value]) => {
+    const observed = key === "cep" ? readString(actual, key).replace(/\D/gu, "") : readString(actual, key).trim();
+    return observed.normalize("NFC").toUpperCase() !== value.normalize("NFC").toUpperCase();
+  })) throw new BlingError("invoice_recipient_mismatch", 409);
+}
 type CommercialLine = { sku: string; unit: string; quantity: number; unitPriceInCents: number };
 const signature = (items: CommercialLine[]) => items.map(i => JSON.stringify([i.sku, i.unit, i.quantity, i.unitPriceInCents])).sort().join("|");
 export function invoiceMatchesFiscalLines(invoice: Record<string, unknown>, items: CommercialLine[]) {
@@ -12,7 +31,7 @@ export function invoiceMatchesFiscalLines(invoice: Record<string, unknown>, item
 }
 
 export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalItems: BlingFiscalItem[],
-  commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number;
+  commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number; recipientAddress: Record<string, unknown>;
     totalInCents: number; shippingInCents: number; discountInCents: number; additionalInCents: number }) {
   // Only the exact, untransmitted commercial draft may be transformed. Never repair
   // an arbitrary/partially edited provider note by overwriting it.
@@ -25,6 +44,9 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   if (readString(contact, "numeroDocumento").replace(/\D/gu, "") !== input.document
     || !/^\d{11}$/u.test(input.document) || input.icmsTaxpayer && !readString(contact, "ie"))
     throw new BlingError("invoice_recipient_mismatch", 409);
+  // The reviewed order snapshot binds the fiscal destination. The provider's
+  // contact record can carry a different address, including a different state.
+  const address = reviewedRecipientAddress(input.recipientAddress);
   const gross = fiscalItems.reduce((s, i) => s + i.quantity * i.unitPriceInCents, 0);
   if (!Number.isSafeInteger(gross) || gross + input.shippingInCents + input.additionalInCents - input.discountInCents !== input.totalInCents)
     throw new BlingError("fiscal_total_mismatch", 409);
@@ -38,7 +60,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: readString(invoice, "dataOperacao"),
     finalidade: 1, naturezaOperacao: { id: input.natureId },
     contato: { nome: contact.nome, numeroDocumento: input.document, tipoPessoa: "F", contribuinte: input.icmsTaxpayer ? 1 : 9,
-      ie: contact.ie, rg: contact.rg, telefone: contact.telefone, email: contact.email, endereco: contact.endereco },
+      ie: contact.ie, rg: contact.rg, telefone: contact.telefone, email: contact.email, endereco: address },
     itens: fiscalItems.map(i => ({ codigo: i.sourceCommercialSku ? i.sku : blingExternalSku(i.sku, i.variantId ?? ""),
       descricao: i.description, unidade: "PR", quantidade: i.quantity, valor: i.unitPriceInCents / 100,
       classificacaoFiscal: i.ncm, origem: i.origin, cest: i.cest, tipo: "P",
@@ -56,7 +78,10 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   const response = await provider.request(`/nfe/${invoiceId}`);
   const invoice = row(row(response).data);
   const expected = fiscalItems.map(i => ({ ...i, sku: i.sourceCommercialSku ? i.sku : blingExternalSku(i.sku, i.variantId ?? "") }));
-  if (invoiceMatchesFiscalLines(invoice, expected)) return;
+  if (invoiceMatchesFiscalLines(invoice, expected)) {
+    assertReviewedAddress(invoice, reviewedRecipientAddress(input.recipientAddress));
+    return;
+  }
   if (!fiscalItems.some(i => i.sourceCommercialSku)) throw new BlingError("invoice_items_mismatch", 409);
   if (!stockAutomationDisabled) throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const body = blingFiscalDraftBody(invoice, fiscalItems, commercialItems, input);
@@ -64,4 +89,5 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   await provider.request(`/nfe/${invoiceId}`, { method: "PUT", body });
   const saved = row(row(await provider.request(`/nfe/${invoiceId}`)).data);
   if (!invoiceMatchesFiscalLines(saved, expected)) throw new BlingError("invoice_items_mismatch", 409);
+  assertReviewedAddress(saved, body.contato.endereco);
 }
