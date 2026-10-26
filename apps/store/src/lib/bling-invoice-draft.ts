@@ -9,8 +9,9 @@ const cents = (v: unknown) => Math.round(Number(v) * 100);
 function draftOperationDate(invoice: Record<string, unknown>) {
   const value = readString(invoice, "dataOperacao");
   // Bling represents an unfilled departure date as a zero datetime on GET.
-  // Preserve its absence on PUT instead of inventing an actual departure date.
-  if (!value || value === "0000-00-00 00:00:00") return undefined;
+  // The provider rejects both this sentinel and an omitted date on PUT.
+  // Require an actual reviewed timestamp instead of inventing a departure.
+  if (!value || value === "0000-00-00 00:00:00") throw new BlingError("invoice_operation_date_required", 409);
   const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2}):(\d{2})$/u.exec(value);
   const parsed = new Date(`${value.replace(" ", "T")}Z`);
   if (!match || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== value.replace(" ", "T"))
@@ -133,7 +134,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
     ? value.trim().length > 0 : value != null && value !== 0 && value !== false);
   if (hasCarrier && !readString(carrier, "nome").trim()) throw new BlingError("invoice_carrier_mapping_required", 409);
   const operationDate = draftOperationDate(invoice);
-  return { tipo: 1, numero: readString(invoice, "numero"), ...(operationDate ? { dataOperacao: operationDate } : {}),
+  return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: operationDate,
     finalidade: 1, naturezaOperacao: { id: input.natureId },
     contato: { nome: contact.nome, numeroDocumento: input.document, tipoPessoa: "F", contribuinte: input.icmsTaxpayer ? 1 : 9,
       ie: contact.ie, rg: contact.rg, telefone: contact.telefone, email: contact.email, endereco: address },

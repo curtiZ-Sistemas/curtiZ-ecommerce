@@ -304,6 +304,7 @@ export class BlingClient {
             ["operation_not_permitted", /\b(?:permissao|permissoes|nao autorizad[oa]|acesso negado|nao (?:e )?permitid[oa])\b/u],
             ["environment", /\b(?:homologacao|ambiente de teste|ambiente de producao)\b/u],
             ["required_data", /\b(?:obrigatori[oa]s?|nao informad[oa]s?|deve ser informado)\b/u],
+            ["operation_date", /\b(?:data de operacao|data de entrada|data de saida)\b/u],
             ["payment_terms", /\b(?:parcelas?|pagamentos?)\b/u],
             ["amount_totals", /\b(?:total|totais|somatorio|soma)\b/u],
             ["tax_rules", /\b(?:cfop|cst|csosn|ncm|tributacao|impostos?)\b/u],

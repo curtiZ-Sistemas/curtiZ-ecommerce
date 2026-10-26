@@ -176,6 +176,7 @@ describe("Bling HTTP reliability", () => {
       .request("/nfe/1")).rejects.toMatchObject({ code: "validation_error", validationCodes: [] });
   });
   it.each([
+    { msg: "Data de operação inválida", hints: ["operation_date"] },
     { msg: "Total das parcelas difere do total da nota", hints: ["amount_totals", "payment_terms"] },
     { msg: "Certificado digital não informado", hints: ["certificate", "required_data"] },
     { msg: "CFOP inválido para o destinatário", hints: ["contact_reference", "tax_rules"] },
