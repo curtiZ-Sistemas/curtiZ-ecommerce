@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type * as Security from "@curtiz/security";
 vi.mock("server-only", () => ({}));
-vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
-import { logServerEvent } from "@curtiz/security";
+vi.mock("@curtiz/security", async importOriginal => ({ ...await importOriginal<typeof Security>(), logServerEvent: vi.fn() }));
+import { logServerEvent, redact } from "@curtiz/security";
 import { BlingError, expandBlingFiscalKit, type BlingClient } from "@curtiz/integrations";
 import { blingFiscalDraftBody, blingInvoicePaymentTerms, prepareBlingFiscalDraft } from "./bling-invoice-draft";
 const input = { document: "12345678909", icmsTaxpayer: false, natureId: 10, totalInCents: 5594, shippingInCents: 0, discountInCents: 0, additionalInCents: 0,
@@ -120,7 +121,10 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
     await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true))
       .rejects.toThrow("validation_error");
     expect(logServerEvent).toHaveBeenLastCalledWith("error", "bling_fiscal_validation_failed", {
-      stage: "draft_update", validationCodes: [0], validationFields: ["contato"], validationHints: ["contact_reference"]
+      stage: "draft_update", validationCodes: [0], validationFields: ["contato"], validationTopics: ["contact_reference"]
+    });
+    expect(redact(vi.mocked(logServerEvent).mock.lastCall?.[2])).toEqual({
+      stage: "draft_update", validationCodes: [0], validationFields: ["contato"], validationTopics: ["contact_reference"]
     });
     expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT"]);
   });
