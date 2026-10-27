@@ -91,6 +91,9 @@ export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscal
   if (rule.scenario.startsWith("return_") && rule.ipi_cst === "99") blockers.push("return_entry_tax_treatment_required");
   let credit = null;
   if (rule.csosn === "101") {
+    // The current preview receives recipient eligibility and the operation date
+    // as operator declarations. They are not independent fiscal evidence.
+    blockers.push("fiscal_credit_recipient_evidence_required", "fiscal_credit_operation_date_evidence_required");
     if (!rule.monthlyCredit) blockers.push("fiscal_monthly_credit_required");
     else if (options.icmsCreditBasesInCents?.length !== items.length) blockers.push("fiscal_credit_base_required");
     else credit = calculateBlingMonthlyCredit(rule.monthlyCredit, options.icmsCreditBasesInCents);
