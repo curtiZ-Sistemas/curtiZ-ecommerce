@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { buildBlingFiscalMirror, type BlingFiscalRule } from "./bling-fiscal-preview";
+import { blingFiscalMirrorHash, buildBlingFiscalMirror, type BlingFiscalRule } from "./bling-fiscal-preview";
 
 const rule: BlingFiscalRule = { scenario: "resale_in_state_credit", issuer_state: "MG", cfop: "5102", csosn: "101", icms_rate: 0,
   document_model: 55, series: 2, external_nature_id: 123, pis_cst: "49", cofins_cst: "49", ipi_cst: "99",
@@ -31,5 +31,15 @@ describe("credit bases remain bounded by represented fiscal values", () => {
   it("continues to reject invalid numeric bases", () => {
     expect(() => buildBlingFiscalMirror(rule, [pair], { icmsCreditBasesInCents: [-1] }))
       .toThrow("fiscal_credit_base_required");
+  });
+  it("binds the exact item bases to the mirror even when rounding produces the same credit", async () => {
+    const bases = [998];
+    const first = buildBlingFiscalMirror(rule, [pair], { icmsCreditBasesInCents: bases });
+    const second = buildBlingFiscalMirror(rule, [pair], { icmsCreditBasesInCents: [999] });
+    expect(first.icmsCredit?.totalInCents).toBe(second.icmsCredit?.totalInCents);
+    expect(first.icmsCredit).toMatchObject({ basesInCents: [998] });
+    expect(await blingFiscalMirrorHash(first)).not.toBe(await blingFiscalMirrorHash(second));
+    bases[0] = 1000;
+    expect(first.icmsCredit).toMatchObject({ basesInCents: [998] });
   });
 });

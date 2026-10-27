@@ -106,7 +106,9 @@ export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscal
       if (bases.some((base, index) => gross[index] === undefined || BigInt(base) > (gross[index] ?? 0n) + adjustments)
         || bases.reduce((sum, base) => sum + BigInt(base), 0n) > gross.reduce((sum, amount) => sum + amount, 0n) + adjustments)
         throw new BlingError("fiscal_credit_base_exceeds_transaction", 409);
-      credit = calculateBlingMonthlyCredit(rule.monthlyCredit, bases);
+      // Retain the exact inputs so the mirror hash binds the reviewed bases,
+      // including distinct bases that round to the same item credit.
+      credit = { ...calculateBlingMonthlyCredit(rule.monthlyCredit, bases), basesInCents: [...bases] };
     }
   }
   const totalInCents = items.reduce((sum, item) => sum + item.quantity * item.unitPriceInCents, 0) + shippingInCents + additionalInCents - discountInCents;
