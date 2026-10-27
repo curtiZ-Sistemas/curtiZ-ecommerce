@@ -96,7 +96,18 @@ export function buildBlingFiscalMirror(rule: BlingFiscalRule, items: BlingFiscal
     blockers.push("fiscal_credit_recipient_evidence_required", "fiscal_credit_operation_date_evidence_required");
     if (!rule.monthlyCredit) blockers.push("fiscal_monthly_credit_required");
     else if (options.icmsCreditBasesInCents?.length !== items.length) blockers.push("fiscal_credit_base_required");
-    else credit = calculateBlingMonthlyCredit(rule.monthlyCredit, options.icmsCreditBasesInCents);
+    else {
+      const bases = options.icmsCreditBasesInCents;
+      if (bases.some(base => !Number.isSafeInteger(base) || base < 0)) throw new BlingError("fiscal_credit_base_required", 409);
+      // This is only an upper bound, not a tax-base allocation or approval.
+      // Discounts are not subtracted here: their fiscal treatment needs review.
+      const adjustments = BigInt(shippingInCents) + BigInt(additionalInCents);
+      const gross = items.map(item => BigInt(item.quantity) * BigInt(item.unitPriceInCents));
+      if (bases.some((base, index) => gross[index] === undefined || BigInt(base) > (gross[index] ?? 0n) + adjustments)
+        || bases.reduce((sum, base) => sum + BigInt(base), 0n) > gross.reduce((sum, amount) => sum + amount, 0n) + adjustments)
+        throw new BlingError("fiscal_credit_base_exceeds_transaction", 409);
+      credit = calculateBlingMonthlyCredit(rule.monthlyCredit, bases);
+    }
   }
   const totalInCents = items.reduce((sum, item) => sum + item.quantity * item.unitPriceInCents, 0) + shippingInCents + additionalInCents - discountInCents;
   if (!Number.isSafeInteger(totalInCents) || totalInCents < 0) throw new BlingError("invalid_fiscal_mirror_total", 409);
