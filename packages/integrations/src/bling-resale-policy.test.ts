@@ -73,6 +73,14 @@ describe("accountant resale and individual return policy", () => {
     expect(mirror.icmsCredit?.totalInCents).toBe(27);
     expect(mirror.transmittable).toBe(false);
     expect(mirror.blockers).toContain("accountant_mirror_approval_required");
+    expect(mirror.blockers).toContain("fiscal_credit_recipient_evidence_required");
+    expect(mirror.blockers).toContain("fiscal_credit_operation_date_evidence_required");
+  });
+  it("does not apply credit-specific evidence blockers to resale without credit", () => {
+    const mirror = buildBlingFiscalMirror(selectBlingFiscalRule(rules, recipient), [pair]);
+    expect(mirror.rule.csosn).toBe("102");
+    expect(mirror.blockers).not.toContain("fiscal_credit_recipient_evidence_required");
+    expect(mirror.blockers).not.toContain("fiscal_credit_operation_date_evidence_required");
   });
   it("does not extend the approved PF return treatment to company or undeclared recipients", () => {
     const entry = { ...tax, scenario: "return_interstate", issuer_state: "MG", cfop: "2202", csosn: "102",
