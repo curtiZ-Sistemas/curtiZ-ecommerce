@@ -67,7 +67,16 @@ select ok((select job->>'id' is not null from scoped_claim),'Same claim implemen
 select throws_ok($q$select public.begin_transactional_email((select (job->>'id')::uuid from scoped_claim),'ee000000-0000-4000-8000-000000000002','{"to":["other@example.invalid"]}')$q$,'P0001','invalid_email_payload','Recipient cannot be redirected');
 select ok(public.begin_transactional_email((select (job->>'id')::uuid from scoped_claim),'ee000000-0000-4000-8000-000000000002','{"to":["sistemas.curtiz@gmail.com"],"subject":"SQL-only test"}') is not null,'Normal queue payload validation is preserved');
 select ok(not (select enabled from private.transactional_email_runtime),'Claim and begin never enable global sending');
+select ok(public.finish_transactional_email((select (job->>'id')::uuid from scoped_claim),'ee000000-0000-4000-8000-000000000002','accepted','scope-provider-test'),'Confirmation lease finishes before the review test');
+insert into public.shipments(id,order_id,provider,service,external_id,status)
+values('ee400000-0000-4000-8000-000000000001','ee100000-0000-4000-8000-000000000001','melhorenvio','test','scope-review-shipment','pending');
+select public.apply_melhor_envio_webhook('scope-review-delivered','scope-review-hash','order.delivered','scope-review-shipment','delivered',now());
+select is((select count(*) from private.transactional_emails where kind='review_requested'),1::bigint,'Delivery during the authorized scope schedules one review');
+select ok((select e.due_at > s.expires_at from private.transactional_emails e cross join private.transactional_email_test_scope s where e.kind='review_requested'),'The 24-hour review is due after the 15-minute TEST scope expires');
 update private.transactional_email_test_scope set started_at=now()-interval '16 minutes',expires_at=now()-interval '1 minute';
+update private.transactional_emails set due_at=now()-interval '1 minute' where kind='review_requested';
+update public.background_jobs set available_at=now()-interval '1 minute' where job_type='resend.review_requested';
+select is(public.claim_test_transactional_email('ee000000-0000-4000-8000-000000000003','ee900000-0000-4000-8000-000000000001'),null::jsonb,'A due review cannot be sent through an expired TEST scope');
 select is(public.read_transactional_email_source((select (job->>'id')::uuid from scoped_claim),'ee000000-0000-4000-8000-000000000002'),null::jsonb,'Expired scope cannot read a source for dispatch');
 select is(public.begin_transactional_email((select (job->>'id')::uuid from scoped_claim),'ee000000-0000-4000-8000-000000000002','{}'),null::jsonb,'Expired window cannot dispatch');
 select ok(public.configure_transactional_email_test_scope(null,null,null),'Scope can be cleared without enabling commercial mail');
