@@ -38,7 +38,7 @@ export function TurnstileField({
       widgetId = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
         action,
-        size: "compact",
+        size: "flexible",
         callback: (token: unknown) => typeof token === "string" && onToken(token),
         "expired-callback": () => onToken(""),
         "error-callback": () => onToken(""),
