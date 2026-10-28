@@ -868,14 +868,9 @@ export async function POST(request: NextRequest) {
     });
   }
   if (input.action === "buy_kit") {
-    const rpcResponse: unknown = await supabase.rpc("create_representative_kit_order", {
-      p_kit_id: input.kitId,
-      p_idempotency_key: input.idempotencyKey
-    });
-    const { data, error } = readQueryResult(rpcResponse);
     return NextResponse.json(
-      error ? { message: "Este kit não está disponível para seu perfil." } : data,
-      { status: error ? 409 : 201, headers: noStore }
+      { code: "RESALE_NOT_HOMOLOGATED", message: "As compras de kits para revenda aguardam homologação. Nenhum pedido ou pagamento foi criado." },
+      { status: 409, headers: noStore }
     );
   }
   if (input.action === "cancel_sale") {

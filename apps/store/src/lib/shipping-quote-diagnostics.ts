@@ -1,5 +1,5 @@
 import "server-only";
-import { MelhorEnvioError } from "@curtiz/integrations";
+import { MelhorEnvioError, type MelhorEnvioUnavailableService } from "@curtiz/integrations";
 import { logServerEvent } from "@curtiz/security";
 
 // Códigos internos, categóricos e estáveis. Nunca incluem valores de ambiente ou dados pessoais.
@@ -19,7 +19,8 @@ export type ShippingDiagnosticCode =
   | "melhor_envio_rate_limited"
   | "melhor_envio_timeout"
   | "melhor_envio_provider_unavailable"
-  | "shipping_quote_persistence_unavailable";
+  | "shipping_quote_persistence_unavailable"
+  | "shipping_services_unavailable";
 
 export type ShippingHealthState = "online" | "degraded" | "offline" | "not_configured";
 
@@ -98,11 +99,13 @@ export type ShippingDiagnostic = {
   stage?: ShippingQuoteStage;
   /** Identificador público (hash truncado) da chave ativa de tokens; nunca a chave. */
   tokenKeyId?: string;
+  unavailableServices?: readonly MelhorEnvioUnavailableService[];
 };
 
 const route = "/api/shipping/quote";
 const configurationName = /^[A-Z][A-Z0-9_]{0,80}$/u;
 const safeNames = (names: readonly string[] | undefined) => (names ?? []).filter((name) => configurationName.test(name));
+const unavailableReasons = new Set(["coverage", "postal_code_rejected", "package_rejected", "provider_unavailable", "provider_rejected"]);
 
 const failureReasons = new Set([
   "credentials_missing", "credentials_read_failed", "credentials_write_failed", "token_decryption_failed", "token_key_unavailable",
@@ -135,6 +138,10 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
     invalid: safeNames(diagnostic.invalid),
     requestId: support.requestId,
     supportCode: support.supportCode,
+    ...(diagnostic.unavailableServices ? { unavailableServices: diagnostic.unavailableServices.slice(0, 50).map(service => ({
+      serviceId: typeof service.serviceId === "string" && /^\d{1,6}$/u.test(service.serviceId) ? service.serviceId : null,
+      reason: unavailableReasons.has(service.reason) ? service.reason : "provider_rejected"
+    })) } : {}),
     ...failureDetails(diagnostic.failure),
     ...(diagnostic.stage ? { stage: diagnostic.stage } : {}),
     ...(diagnostic.tokenKeyId && /^[0-9a-f]{12}$/u.test(diagnostic.tokenKeyId) ? { tokenKeyId: diagnostic.tokenKeyId } : {})
@@ -179,7 +186,7 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
   }
 
   if (code !== null || !persisted.health || !persisted.event) {
-    logServerEvent(code === null ? "warn" : "error", "shipping_quote_diagnostic", {
+    logServerEvent(code === null || code === "shipping_services_unavailable" ? "warn" : "error", "shipping_quote_diagnostic", {
       requestId: support.requestId,
       supportCode: support.supportCode,
       code: code ?? "shipping_health_persistence_unavailable",
@@ -187,6 +194,7 @@ export async function recordShippingDiagnostic(db: DiagnosticDatabase | null, di
       environment: diagnostic.environment,
       missing: metadata.missing,
       invalid: metadata.invalid,
+      ...(metadata.unavailableServices ? { unavailableServices: metadata.unavailableServices } : {}),
       ...failureDetails(diagnostic.failure),
       stage: diagnostic.stage,
       persisted

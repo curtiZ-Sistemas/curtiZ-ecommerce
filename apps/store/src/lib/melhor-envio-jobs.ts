@@ -14,11 +14,20 @@ type ShippingJobEnvironment = MelhorEnvioRuntimeEnvironment & {
   PII_ENCRYPTION_KEY?: string;
   BLING_REQUIRE_INVOICE_FOR_SHIPPING?: string;
   BLING_CLIENT_ID?: string;
+  MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID?: string;
 };
 
 type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
 type Job = { id: string; jobType: "melhorenvio.create" | "melhorenvio.cancel" | "melhorenvio.purchase" | "melhorenvio.generate" | "melhorenvio.sync"; shipmentId: string };
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isUnknownRecord) : [];
+
+function labelGenerationConfirmed(remote: Record<string, unknown>): boolean {
+  const status = readString(remote, "status").toLowerCase();
+  const generatedAt = readString(remote, "generated_at");
+  // Released also describes paid orders. Require the provider's generation
+  // timestamp before treating this response as a printable label.
+  return status === "generated" || status === "released" && Boolean(generatedAt) && Number.isFinite(Date.parse(generatedAt));
+}
 
 const serviceDatabase = (environment: ShippingJobEnvironment, transport: typeof fetch): ServiceDatabase | null => {
   const secret = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
@@ -225,13 +234,18 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     const remoteStatus = readString(remote, "status").toLowerCase();
     const normalized = melhorEnvioStatusTransition("", `order.${remoteStatus}`, remoteStatus);
     if (!normalized) throw new MelhorEnvioError("invalid_response", 502, true);
-    const timestamp = readString(remote, `${remoteStatus}_at`) || readString(remote, "updated_at") || readString(remote, "created_at");
+    const releasedLabel = remoteStatus === "released" && labelGenerationConfirmed(remote);
+    const timestamp = (releasedLabel ? readString(remote, "generated_at") : "")
+      || readString(remote, `${remoteStatus}_at`) || readString(remote, "updated_at") || readString(remote, "created_at");
     if (!timestamp || !Number.isFinite(Date.parse(timestamp))) throw new MelhorEnvioError("invalid_response", 502, true);
     const observed = { externalId, status: remoteStatus, occurredAt: new Date(timestamp).toISOString(),
-      tracking: readString(remote, "tracking") || readString(remote, "self_tracking") };
+      tracking: readString(remote, "tracking") || readString(remote, "self_tracking"),
+      // Distinguish this proof from an earlier paid-only observation, even if
+      // the provider reused its update timestamp. Preserve the raw event type.
+      ...(releasedLabel ? { labelGeneratedAt: new Date(timestamp).toISOString() } : {}) };
     const hash = createHash("sha256").update(JSON.stringify(observed)).digest("hex");
     const applied = await db.rpc("apply_melhor_envio_webhook", { p_event_key: `poll:${hash}`, p_payload_hash: hash,
-      p_event_type: `order.${remoteStatus}`, p_external_id: externalId, p_status: normalized.status,
+      p_event_type: `order.${remoteStatus}`, p_external_id: externalId, p_status: releasedLabel ? "label_created" : normalized.status,
       p_occurred_at: observed.occurredAt, p_tracking_code: observed.tracking || null });
     if (applied.error || !["processed", "duplicate"].includes(String(applied.data))) throw new MelhorEnvioError("provider_unavailable", 503, true);
     return;
@@ -264,8 +278,8 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
     else await provider.generate([externalId]);
     acknowledged = true;
     const remote = await provider.getShipment(externalId);
-    const generated = readString(remote, "status").toLowerCase() === "generated";
-    if (!(purchase ? ["paid", "released", "generated"] : ["generated"]).includes(readString(remote, "status").toLowerCase()))
+    const generated = labelGenerationConfirmed(remote);
+    if (purchase ? !["paid", "released", "generated"].includes(readString(remote, "status").toLowerCase()) : !generated)
       throw new MelhorEnvioError("uncertain_write", 503, false);
     const saved = await db.from("shipments").update({ operation_state: generated ? "generated" : "purchased",
       ...(generated ? { status: "label_created", label_path: `private:${externalId}` } : {}),
@@ -281,6 +295,10 @@ async function advanceShipment(db: ServiceDatabase, environment: ShippingJobEnvi
 }
 
 export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnvironment, executionId: string, limit = 5, transport: typeof fetch = fetch) {
+  const targetShipmentId = environment.MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID;
+  if (targetShipmentId !== undefined && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(targetShipmentId)
+    || environment.MELHOR_ENVIO_ENVIRONMENT !== "sandbox"
+    || environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true")) return { ok: false, processed: 0, failed: 0 };
   const db = serviceDatabase(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
   let processed = 0;
@@ -288,11 +306,16 @@ export async function runMelhorEnvioShippingJobs(environment: ShippingJobEnviron
   for (let index = 0; index < Math.min(Math.max(limit, 1), 10); index += 1) {
     const lockId = crypto.randomUUID();
     const liveAllowed = environment.MELHOR_ENVIO_ENVIRONMENT !== "production" || environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true";
-    const claim = readQueryResult(await db.rpc("claim_melhor_envio_fulfillment_job", { p_lock_id: lockId,
+    const claim = readQueryResult(await db.rpc(targetShipmentId ? "claim_melhor_envio_shipment_job" : "claim_melhor_envio_fulfillment_job", { p_lock_id: lockId,
+      ...(targetShipmentId ? { p_shipment_id: targetShipmentId } : {}),
       p_purchase_enabled: liveAllowed && environment.MELHOR_ENVIO_LABEL_PURCHASE_ENABLED === "true",
       p_generation_enabled: liveAllowed && environment.MELHOR_ENVIO_LABEL_GENERATION_ENABLED === "true" }));
     const job = readJob(claim.data);
     if (claim.error) throw new MelhorEnvioError("provider_unavailable", 503, true);
+    if (targetShipmentId && claim.data && (!job || job.shipmentId !== targetShipmentId || job.jobType === "melhorenvio.cancel")) {
+      logServerEvent("error", "shipping_homologation_scope_mismatch", { executionId });
+      return { ok: false, processed, failed: failed + 1 };
+    }
     if (!job) break;
     try {
       if (job.jobType === "melhorenvio.create") await createShipment(db, environment, job.shipmentId, transport);

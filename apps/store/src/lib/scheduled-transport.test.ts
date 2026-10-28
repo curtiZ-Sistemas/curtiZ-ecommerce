@@ -58,8 +58,10 @@ describe("scheduled tasks with the real Supabase HTTP client", () => {
     await expect(runTransactionalEmailJobs(environment, "test-execution", undefined, transport)).resolves.toMatchObject({ processed: 0 });
     expect(paths).toEqual([
       "/rest/v1/rpc/expire_stale_mercadopago_orders", "/rest/v1/rpc/read_integration_credential",
-      "/rest/v1/rpc/claim_after_sale_job", "/rest/v1/rpc/claim_melhor_envio_fulfillment_job", "/rest/v1/rpc/sync_transactional_email_runtime"
+      "/rest/v1/rpc/claim_after_sale_job", "/rest/v1/rpc/claim_melhor_envio_fulfillment_job", "/rest/v1/rpc/sync_transactional_email_runtime",
+      "/rest/v1/rpc/configure_transactional_email_test_scope"
     ]);
     expect(patchedFetch).not.toHaveBeenCalled();
   });
 });
+

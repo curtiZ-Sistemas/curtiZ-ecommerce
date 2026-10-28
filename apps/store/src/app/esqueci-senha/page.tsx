@@ -23,7 +23,7 @@ export default async function PasswordRecoveryPage({
         </header>
         {expired && (
           <p className="form-message error" role="alert">
-            Este link expirou, já foi usado ou não é válido. Solicite um novo link abaixo.
+            Não foi possível validar este link. Solicite um novo link abaixo para continuar.
           </p>
         )}
         <PasswordRecoveryForm turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"} mode="request" />

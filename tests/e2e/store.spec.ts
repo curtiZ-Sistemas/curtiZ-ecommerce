@@ -418,10 +418,12 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
     );
   });
   const submittedLines: unknown[] = [];
+  const submittedFiscalRecipients: unknown[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/api/checkout") && request.method() === "POST") {
-      const payload = request.postDataJSON() as { lines?: unknown[] };
+      const payload = request.postDataJSON() as { lines?: unknown[]; fiscalRecipient?: unknown };
       submittedLines.push(...(payload.lines ?? []));
+      submittedFiscalRecipients.push(payload.fiscalRecipient);
     }
   });
   await loginDemoAccount(page, "cliente.demo@curtiz.local");
@@ -531,17 +533,29 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
-  await page.getByLabel("Você é contribuinte de ICMS nesta compra?").selectOption("no");
-  await page.getByLabel("A compra é para uso próprio (consumidor final)?").selectOption("yes");
+  await expect(page.locator("#checkout-fiscal-title")).toHaveCount(0);
+  await expect(page.getByText("Compra para revenda ou com inscrição estadual", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[name="icmsTaxpayer"], [name="finalConsumer"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
   await page.locator("form.checkout-layout").evaluate((form) => (form as HTMLFormElement).requestSubmit());
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
   await expect(page.locator(".checkout-address-card.selected")).toContainText("Avenida Paulista");
+  await page.route("**/api/shipping/quote", route => route.fulfill({ json: {
+    ok: true, quotes: [], supportCode: "FRT-TEST0001",
+    message: "Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001."
+  } }), { times: 1 });
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByText("Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001.", { exact: true })).toBeVisible();
+  const attemptsWithoutShipping = submittedLines.length;
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Calcule e selecione uma opção de frete antes de continuar." })).toBeVisible();
+  expect(submittedLines).toHaveLength(attemptsWithoutShipping);
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   submittedLines.length = 0;
+  submittedFiscalRecipients.length = 0;
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Novas compras estão temporariamente indisponíveis." })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Escolha como pagar", { exact: true })).toHaveCount(0);
@@ -549,6 +563,7 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   expect(submittedLines).toEqual([
     expect.objectContaining({ variantId: "wave-preto:Preto:39/40", quantity: 1 })
   ]);
+  expect(submittedFiscalRecipients).toEqual([{ icmsTaxpayer: false, finalConsumer: true }]);
   await page.goto("/carrinho");
   await expect(page.locator(".cart-item")).toHaveCount(2);
 });
@@ -624,8 +639,6 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
   await page.getByLabel("E-mail").fill("cliente.demo@curtiz.local");
   await page.getByLabel("Telefone").fill("11999999999");
   await page.getByLabel("CPF para o pedido").fill("52998224725");
-  await page.getByLabel("Você é contribuinte de ICMS nesta compra?").selectOption("no");
-  await page.getByLabel("A compra é para uso próprio (consumidor final)?").selectOption("yes");
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();

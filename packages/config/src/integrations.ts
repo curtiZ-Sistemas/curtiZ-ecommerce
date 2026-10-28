@@ -164,8 +164,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
     email: { provider: emailProvider, enabled: emailEnabled },
     whatsapp: { provider: whatsappProvider, enabled: whatsappProvider !== "disabled" },
     googleMerchant: { enabled: googleMerchantEnabled },
-    turnstile: { enabled: turnstileEnabled },
-    internalMfaRequired: parseEnvironmentBoolean(environment.REQUIRE_INTERNAL_MFA)
+    turnstile: { enabled: turnstileEnabled }
   } as const;
 };
 
@@ -192,5 +191,3 @@ export const isTurnstileEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).turnstile.enabled;
 export const isGoogleMerchantEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).googleMerchant.enabled;
-export const isInternalMfaRequired = (environment?: IntegrationEnvironment) =>
-  getIntegrationConfig(environment).internalMfaRequired;

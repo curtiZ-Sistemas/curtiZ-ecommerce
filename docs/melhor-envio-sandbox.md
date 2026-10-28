@@ -78,6 +78,16 @@ da migration. O ciclo remoto só pode ser homologado com conta, aplicativo e sal
 - decisão fiscal documentada com o contador. Em produção comercial, a logística aguarda NF-e
   autorizada e sua chave real; CNPJ e Inscrição Estadual são obrigatórios nesse modo.
 
+## Homologação restrita a uma remessa
+
+Para uma janela autorizada de teste, `MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID` limita o worker à remessa indicada.
+O filtro exige UUID válido, `MELHOR_ENVIO_ENVIRONMENT=sandbox` e nenhuma autorização de compra real.
+Valor vazio ou configuração incompatível bloqueia o processamento; quando inativo, omita a variável.
+
+A fila restrita mantém as permissões de compra/geração, a liberação fiscal, o bloqueio por operação incerta
+e a exclusão mútua da conta. Não assume nem altera leases de outras remessas e não executa cancelamentos.
+Ao terminar, restaure as flags temporárias e remova somente o filtro adicionado pela própria janela.
+
 ## Referências oficiais
 
 - [Introdução, hosts e limitações do Sandbox](https://docs.melhorenvio.com.br/reference/introducao-api-melhor-envio)

@@ -78,22 +78,20 @@ describe("Google login authorization", () => {
         database([role]).client,
         "user",
         undefined,
-        "https://curtiz.com.br/login",
-        {}
+        "https://curtiz.com.br/login"
       )
     ).toBe(expected);
   });
   it("blocks missing roles, inactive profiles and untrusted redirects", async () => {
     await expect(
-      googleLoginDestination(database([]).client, "user", undefined, "https://curtiz.com.br", {})
+      googleLoginDestination(database([]).client, "user", undefined, "https://curtiz.com.br")
     ).rejects.toThrow();
     await expect(
       googleLoginDestination(
         database(["admin"], "blocked").client,
         "user",
         undefined,
-        "https://curtiz.com.br",
-        {}
+        "https://curtiz.com.br"
       )
     ).rejects.toThrow();
     expect(
@@ -101,8 +99,7 @@ describe("Google login authorization", () => {
         database(["customer"]).client,
         "user",
         "/administracao",
-        "https://curtiz.com.br",
-        {}
+        "https://curtiz.com.br"
       )
     ).toBe("https://curtiz.com.br/minha-conta");
     expect(
@@ -110,24 +107,22 @@ describe("Google login authorization", () => {
         database(["customer"]).client,
         "user",
         "https://evil.invalid",
-        "https://curtiz.com.br",
-        {}
+        "https://curtiz.com.br"
       )
     ).toBe("https://curtiz.com.br/minha-conta");
   });
-  it("requires internal MFA without granting privileges from Google metadata", async () => {
+  it("preserves the authorized panel destination without an authenticator option", async () => {
     const db = database(["admin"]);
     const destination = await googleLoginDestination(
       db.client,
       "user",
       undefined,
-      "https://curtiz.com.br",
-      { REQUIRE_INTERNAL_MFA: "true" }
+      "https://curtiz.com.br"
     );
     expect(destination).toBe(
-      "https://curtiz.com.br/mfa?next=https%3A%2F%2Fpainel.curtiz.com.br%2Fadministracao"
+      "https://painel.curtiz.com.br/administracao"
     );
-    expect(db.assurance).toHaveBeenCalledOnce();
+    expect(db.assurance).not.toHaveBeenCalled();
   });
   it("records explicit legal consent and only affirmative separate marketing consent", async () => {
     const insert = vi.fn(async () => ({ error: null }));

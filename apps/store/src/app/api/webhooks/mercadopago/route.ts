@@ -5,6 +5,7 @@ import { readBoundedBody, RequestBodyError } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { normalizeMercadoPagoStatus } from "@/lib/mercadopago-payment";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 
 const signed = (request: Request, dataId: string, secret: string) => {
   const signature = request.headers.get("x-signature") ?? "";
@@ -70,6 +71,13 @@ export async function POST(request: Request) {
   try {
     const payment = await new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode).getPayment(dataId);
     if (payment.id.toLowerCase() !== dataId.toLowerCase()) throw new Error("provider_payment_mismatch");
+    if (payment.externalReference.startsWith("KITTEST-")) {
+      if (credentials.mode !== "test") throw new Error("payment_mode_mismatch");
+      await reconcileKitTestPayment(db, payment);
+      const completed = await finish(true);
+      const ok = !completed.error && completed.data === true;
+      return reply({ ok }, ok ? 200 : 503);
+    }
     const modeCheck = await db.rpc("check_mercadopago_order_mode", {
       p_mode: credentials.mode, p_external_reference: payment.externalReference
     });
@@ -103,7 +111,7 @@ export async function POST(request: Request) {
         p_amount: refund.amountInCents / 100, p_provider_event_id: eventId,
         p_completed_at: refund.dateCreated
       });
-      if (reconciled.error) {
+      if (reconciled.error || reconciled.data !== true) {
         await finish(false, "refund_reconciliation_failed");
         return reply({ ok: false }, 503);
       }

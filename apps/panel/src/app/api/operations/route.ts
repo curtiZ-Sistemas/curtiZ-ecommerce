@@ -4,7 +4,6 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { isOperationallyActiveOrder } from "@/lib/operational-order-status";
 
 export const dynamic = "force-dynamic";
@@ -148,7 +147,6 @@ async function access(request: NextRequest) {
   ]);
   const roles = rows(rolesData).map((item) => text(item.role));
   if (profile?.status !== "active" || !roles.includes("operational")) return null;
-  if (!(await hasRequiredInternalMfa(supabase))) return null;
   if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return { demo: false as const, supabase, userId: user.id };
 }

@@ -13,10 +13,21 @@ const lifecycle: Record<string, { status: string; rank: number }> = {
 };
 const internalRank: Record<string, number> = { pending: 0, label_created: 2, ready: 1, dispatched: 4,
   in_transit: 5, delayed: 5, delivered: 7, returned: 8, cancelled: 8 };
+const statusAliases: Record<string, string> = {
+  paid: "released", in_transit: "received", not_delivered: "undelivered", canceled: "cancelled"
+};
+
+const canonicalStatus = (value: string) => statusAliases[value.toLowerCase()] ?? value.toLowerCase();
 
 export function melhorEnvioStatusTransition(currentStatus: string, event: string, externalStatus: string) {
-  const normalized = lifecycle[externalStatus.toLowerCase()] ?? lifecycle[event.replace(/^order\./u, "")];
-  if (!event.startsWith("order.") || !normalized || normalized.rank < (internalRank[currentStatus] ?? 0)) return null;
+  if (!event.startsWith("order.")) return null;
+  const eventStatus = canonicalStatus(event.slice("order.".length));
+  const payloadStatus = canonicalStatus(externalStatus);
+  const normalized = lifecycle[eventStatus];
+  // The provider contract carries the same lifecycle status in `event` and `data.status`.
+  // A mismatch must not turn an unrelated event into delivery evidence for post-sale email.
+  if (!normalized || !lifecycle[payloadStatus] || eventStatus !== payloadStatus
+    || normalized.rank < (internalRank[currentStatus] ?? 0)) return null;
   return normalized;
 }
 

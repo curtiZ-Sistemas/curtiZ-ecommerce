@@ -3,7 +3,6 @@ import { NextRequest } from "next/server";
 const state = vi.hoisted(() => ({ rpc: vi.fn(), active: true, role: "technical", mfa: true, origin: true, budget: true }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/security", () => ({ DEMO_SESSION_COOKIE: "demo", verifyDemoSession: () => false }));
-vi.mock("@/lib/internal-mfa", () => ({ hasRequiredInternalMfa: () => state.mfa }));
 vi.mock("@/lib/api-rate-limit", () => ({ consumePanelMutationBudget: () => state.budget }));
 vi.mock("@/lib/technical-api", () => ({ safeTechnicalOrigin: () => state.origin, technicalNoStore: { "cache-control": "private, no-store" } }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({
@@ -23,7 +22,7 @@ describe("panel fiscal queue actions", () => {
     expect((await POST(request(action))).status).toBe(200);
     expect(state.rpc).toHaveBeenCalledWith("request_bling_invoice_action", { p_order_id: orderId, p_action: action });
   });
-  it.each(["active", "mfa", "origin"] as const)("requires %s before mutation", async guard => {
+  it.each(["active", "origin"] as const)("requires %s before mutation", async guard => {
     state[guard] = false;
     expect((await POST(request("send"))).status).toBe(403);
     expect(state.rpc).not.toHaveBeenCalled();

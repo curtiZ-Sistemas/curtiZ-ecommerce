@@ -113,7 +113,9 @@ export function createBlingClient(values: Readonly<Record<string, string | undef
 
 export class BlingError extends Error {
   constructor(readonly code: string, readonly status: number, readonly retryable = false,
-    readonly uncertainWrite = false, readonly retryAfterMs = 0) {
+    readonly uncertainWrite = false, readonly retryAfterMs = 0,
+    readonly validationCodes: readonly number[] = [], readonly validationFields: readonly string[] = [],
+    readonly validationHints: readonly string[] = []) {
     super(code);
     this.name = "BlingError";
   }
@@ -287,9 +289,68 @@ export class BlingClient {
           await pause(waitMs); continue;
         }
         if (method !== "GET" && response.status >= 500) throw new BlingError("uncertain_write", response.status, false, true);
+        // Keep only bounded provider codes. Messages, field values and the raw
+        // response may contain customer data and must never reach logs.
+        const validationCodes: number[] = [];
+        const validationFields: string[] = [];
+        const validationHints: string[] = [];
+        if (response.status === 400 || response.status === 422) {
+          const payload = record(await response.json().catch(() => null));
+          const envelope = record(payload?.error);
+          const fields = envelope?.fields;
+          // Retain fixed topic labels only. Never persist provider prose or
+          // rejected values, and never change retry/write decisions from hints.
+          const topics: [string, RegExp][] = [
+            ["operation_not_permitted", /\b(?:permissao|permissoes|nao autorizad[oa]|acesso negado|nao (?:e )?permitid[oa])\b/u],
+            ["environment", /\b(?:homologacao|ambiente de teste|ambiente de producao)\b/u],
+            ["required_data", /\b(?:obrigatori[oa]s?|nao informad[oa]s?|deve ser informado)\b/u],
+            ["operation_date", /\b(?:data de operacao|data de entrada|data de saida)\b/u],
+            ["payment_terms", /\b(?:parcelas?|pagamentos?)\b/u],
+            ["amount_totals", /\b(?:total|totais|somatorio|soma)\b/u],
+            ["tax_rules", /\b(?:cfop|cst|csosn|ncm|tributacao|impostos?)\b/u],
+            ["product_reference", /\b(?:produtos?|sku|itens?)\b/u],
+            ["contact_reference", /\b(?:contato|cpf|cnpj|destinatario|endereco|cep)\b/u],
+            ["numbering", /\b(?:numeracao|serie|numero da nota)\b/u],
+            ["certificate", /\bcertificado\b/u],
+            ["request_limit", /\b(?:limite de requisicoes|muitas requisicoes|rate limit)\b/u],
+            ["integration_origin", /\b(?:integracao|pedido de venda|vinculad[oa])\b/u]
+          ];
+          let remainingText = 8192;
+          const collectHints = (value: unknown) => {
+            if (typeof value !== "string" || remainingText < 1) return;
+            const part = value.slice(0, Math.min(2048, remainingText));
+            remainingText -= part.length;
+            const normalized = part.normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+            for (const [hint, pattern] of topics) if (pattern.test(normalized) && !validationHints.includes(hint)) validationHints.push(hint);
+          };
+          for (const key of ["message", "description", "msg"]) collectHints(envelope?.[key]);
+          // Only schema identifiers are safe diagnostics. Never retain arbitrary
+          // provider text, paths, namespaces or rejected customer values.
+          const allowedFields = new Set(["tipo", "numero", "serie", "dataOperacao", "naturezaOperacao", "contato",
+            "nome", "tipoPessoa", "numeroDocumento", "ie", "rg", "contribuinte", "telefone", "email", "endereco",
+            "cep", "municipio", "uf", "pais", "bairro", "complemento", "itens", "codigo", "descricao", "unidade",
+            "quantidade", "valor", "classificacaoFiscal", "origem", "cest", "tipo", "cfop", "impostos", "gtin",
+            "parcelas", "data", "formaPagamento", "caut", "desconto", "despesas", "transporte", "fretePorConta",
+            "frete", "transportador", "etiqueta", "finalidade", "id"]);
+          const collect = (value: unknown) => {
+            const field = record(value);
+            for (const key of ["message", "description", "msg"]) collectHints(field?.[key]);
+            const code = field?.code;
+            if (typeof code === "number" && Number.isSafeInteger(code) && code >= 0 && code <= 99_999
+              && !validationCodes.includes(code) && validationCodes.length < 16) validationCodes.push(code);
+            const element = field?.element;
+            if (typeof element === "string" && allowedFields.has(element)
+              && !validationFields.includes(element) && validationFields.length < 16) validationFields.push(element);
+          };
+          if (Array.isArray(fields)) for (const field of fields.slice(0, 16)) {
+            collect(field);
+            const collection = record(field)?.collection;
+            if (Array.isArray(collection)) collection.slice(0, 16).forEach(collect);
+          }
+        }
         throw new BlingError(response.status === 429 ? "rate_limited" : response.status === 403 ? "scope_denied"
           : response.status === 400 || response.status === 422 ? "validation_error" : "provider_error",
-        response.status, response.status === 429 || response.status >= 500, false, waitMs);
+        response.status, response.status === 429 || response.status >= 500, false, waitMs, validationCodes, validationFields, validationHints.sort());
       }
       if (response.status === 204) return null;
       return await response.json().catch(() => { throw new BlingError(method === "GET" ? "invalid_response" : "uncertain_write", 502, false, method !== "GET"); });

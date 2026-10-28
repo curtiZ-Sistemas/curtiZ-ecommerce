@@ -23,7 +23,7 @@ describe("contexto do OpenNext no Worker da loja", () => {
 
   it("o template instalado envolve toda requisição no contexto com os bindings do Worker", () => {
     const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8")) as { version: string };
-    expect(packageJson.version).toBe("1.20.2");
+    expect(packageJson.version).toBe("1.20.13");
     expect(template("worker.js")).toMatch(/async fetch\(request, env, ctx\) \{\s*return runWithCloudflareRequestContext\(request, env, ctx,/u);
     const init = template("init.js");
     expect(init).toContain('Object.defineProperty(globalThis, Symbol.for("__cloudflare-context__")');

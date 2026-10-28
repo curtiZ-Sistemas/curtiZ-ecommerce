@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MelhorEnvioError } from "@curtiz/integrations";
+import { MelhorEnvioError, type MelhorEnvioUnavailableService } from "@curtiz/integrations";
 import type * as PrivateRequestModule from "@/lib/private-request";
 import { configuredMelhorEnvioProvider, resolveShippingProducts } from "@/lib/melhor-envio-server";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
@@ -269,7 +269,7 @@ describe("POST /api/shipping/quote", () => {
     expect(configuredMelhorEnvioProvider).toHaveBeenCalledWith(expect.objectContaining({
       SHIPPING_PROVIDER: "melhorenvio", MELHOR_ENVIO_ENABLED: "true", MELHOR_ENVIO_CLIENT_SECRET: "runtime-client-secret"
     }), database);
-    expect(providerQuote).toHaveBeenCalledWith(expect.objectContaining({ originPostalCode: "01001000", destinationPostalCode: "01310100" }));
+    expect(providerQuote).toHaveBeenCalledWith(expect.objectContaining({ originPostalCode: "01001000", destinationPostalCode: "01310100" }), expect.any(Function));
     expect(quoteInsert).toHaveBeenCalledWith([expect.objectContaining({
       customer_id: "customer-id", provider_environment: "sandbox", cart_fingerprint: "fingerprint", amount: 19.9
     })]);
@@ -322,6 +322,42 @@ describe("POST /api/shipping/quote", () => {
     expect(providerQuote).toHaveBeenCalled();
     expect(lastHealth()).toMatchObject({ error_summary: "shipping_quote_persistence_unavailable" });
     expect(lastEvent()).toMatchObject({ event_type: "shipping_quote_persistence_unavailable" });
+  });
+
+  it("registra frete vazio com suporte e categorias sem CEP ou mensagem privada", async () => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    providerQuote.mockImplementation((_input: unknown, report: (services: readonly MelhorEnvioUnavailableService[]) => void) => {
+      report([{ serviceId: "3", reason: "coverage" }, { serviceId: "private-id", reason: "private provider detail" as never }]);
+      return [];
+    });
+    const response = await POST(request());
+    const body = await publicBody(response);
+    expect(response.status).toBe(200);
+    expect(body.quotes).toEqual([]);
+    expect(body).not.toHaveProperty("unavailableServices");
+    expect(body.message).toContain(String(body.supportCode));
+    expect(response.headers.get("x-support-code")).toBe(body.supportCode);
+    expect(lastEvent()).toMatchObject({ event_type: "shipping_services_unavailable", severity: "warning",
+      context_sanitized: { supportCode: body.supportCode, unavailableServices: [
+        { serviceId: "3", reason: "coverage" }, { serviceId: null, reason: "provider_rejected" }
+      ] } });
+    expect(JSON.stringify(lastEvent())).not.toContain("01310100");
+    expect(JSON.stringify(lastEvent())).not.toMatch(/private-id|private provider detail/u);
+    expect(quoteInsert).not.toHaveBeenCalled();
+    expect(healthUpsert).not.toHaveBeenCalled();
+  });
+
+  it("registra resposta vazia sem inventar motivo ou falhar se a telemetria cair", async () => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    providerQuote.mockResolvedValue([]);
+    eventInsert.mockRejectedValue(new Error("private database failure"));
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect((await publicBody(response)).quotes).toEqual([]);
+    expect(serverLog).toHaveBeenCalledWith("warn", "shipping_quote_diagnostic", expect.objectContaining({
+      code: "shipping_services_unavailable", unavailableServices: [], persisted: { health: true, event: false }
+    }));
+    expect(JSON.stringify(serverLog.mock.calls)).not.toContain("private database failure");
   });
 
   it("OAuth rejeitado mantém 503 e registra HTTP do provedor sem culpar os itens", async () => {
