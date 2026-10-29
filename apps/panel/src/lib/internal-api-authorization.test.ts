@@ -22,6 +22,7 @@ import { GET as readProducts, PATCH as changeProducts, DELETE as deleteProducts 
 import { GET as readNavigation, PATCH as changeNavigation } from "../app/api/admin/store-navigation/route";
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.stubEnv("REQUIRE_INTERNAL_MFA", "true");
   mocks.status = "active";
   mocks.assurance.mockResolvedValue({ data: { currentLevel: "aal1" }, error: null });
