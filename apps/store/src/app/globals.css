@@ -15101,3 +15101,10 @@ body:has(.checkout-transition) .help-widget {
     transform: none;
   }
 }
+.return-photo-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-block: 16px; }
+.return-photo-grid a { display: block; border-radius: 4px; overflow: hidden; }
+.return-photo-grid img { display: block; object-fit: cover; width: 96px; height: 96px; }
+.customer-return-detail { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
+.customer-return-detail header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.customer-return-guidance { border-inline-start: 3px solid var(--brand, #62130f); padding-inline-start: 16px; }
+.customer-return-photos input[type="file"] { max-width: 100%; min-width: 0; }
