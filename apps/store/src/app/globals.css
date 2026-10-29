@@ -3555,23 +3555,23 @@ select:disabled {
 }
 
 .footer-brand p {
-  max-width: 31ch;
+  max-width: 34ch;
   margin: 14px 0 8px;
   color: var(--neutral-700);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   line-height: 1.6;
 }
 
 .footer-brand > span {
   color: var(--neutral-700);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
 }
 
 .footer-bottom {
   padding: 15px 0;
   color: rgb(255 255 255 / 80%);
   background: var(--brand-950);
-  font-size: 0.64rem;
+  font-size: 0.75rem;
 }
 
 .footer-bottom .container {
@@ -15019,6 +15019,85 @@ body:has(.checkout-transition) .help-widget {
   }
 
   .category-circles-link:hover .category-circles-image {
+    transform: none;
+  }
+}
+
+/* Rodapé: identificação do fornecedor (Decreto 7.962/2013, art. 2º) e leitura confortável. */
+.footer-legal {
+  border-top: 1px solid var(--neutral-250);
+  background: #f7f5f2;
+}
+
+.footer-legal-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px 28px;
+  margin-block: 0;
+  padding-block: 18px;
+}
+
+.footer-legal-list > div {
+  min-width: 0;
+}
+
+.footer-legal-list dt {
+  margin: 0 0 3px;
+  color: var(--neutral-700);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.footer-legal-list dd {
+  margin: 0;
+  color: var(--neutral-900);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.footer-legal-list a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.footer-legal-list a:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+}
+
+/* Correções de acabamento da home e dos cartões: leitura, alvo de toque e movimento reduzido. */
+.price-row strong,
+.price-row s,
+.product-price strong,
+.product-price s {
+  font-variant-numeric: tabular-nums;
+}
+
+.installments,
+.rating {
+  font-size: 0.75rem;
+}
+
+@media (pointer: coarse) {
+  .product-card .favorite-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .product-card .product-card-cart-button {
+    top: 61px;
+  }
+
+  .product-card .product-card-cart-button.standalone {
+    top: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-card:hover,
+  .product-card:hover .product-image img {
     transform: none;
   }
 }

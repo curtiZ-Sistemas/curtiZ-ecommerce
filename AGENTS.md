@@ -5,17 +5,19 @@ E-commerce comercial de sandálias e chinelos, principalmente para a Geração Z
 ## Skill obrigatória para agentes de IA
 
 - Todo agente de IA que trabalhar neste projeto deve ler e aplicar [lean-codex](.agents/skills/lean-codex/SKILL.md) no início da tarefa, reaproveitando a leitura durante a mesma execução. No Codex, invoque `$lean-codex`; em ferramentas sem suporte a skills, leia o arquivo Markdown diretamente e aplique suas orientações.
+- Antes de procurar, ler ou alterar código, todo agente deve consultar o mapa do código conforme [usar-graphify](.agents/skills/usar-graphify/SKILL.md) (`graphify query`, `explain` ou `path`) e abrir só os arquivos apontados. Não leia pastas ou arquivos grandes inteiros para "entender o projeto". Sem `graphify-out/` ou sem Graphify instalado, use `rg` com termos específicos e avise o usuário de que o mapa precisa ser gerado.
 - Mantenha o modelo e o nível de raciocínio selecionados pelo usuário. Economize leituras, contexto e operações redundantes, preservando a implementação completa, a segurança e os testes necessários.
 - A skill complementa estas instruções; não amplia autorizações, não habilita subagentes nem altera configurações de modelos, raciocínio ou MCPs. Em conflitos, respeite as instruções de maior prioridade e a solicitação atual do usuário.
 
 ## Skills sob demanda
 
-Em `.agents/skills/<nome>/SKILL.md`. Leia somente a skill que se aplica à tarefa, e só as referências que ela indicar. Nenhuma é obrigatória além de `lean-codex`. Estas instruções prevalecem sobre qualquer skill: elas não autorizam subagentes, instalação de dependências, rede, commit, push ou deploy. Cada pasta tem `ORIGEM.md` com repositório, commit e licença.
+Em `.agents/skills/<nome>/SKILL.md`. Leia somente a skill que se aplica à tarefa, e só as referências que ela indicar. São obrigatórias `lean-codex` e `usar-graphify`; as demais, só quando a tarefa pedir. Estas instruções prevalecem sobre qualquer skill: elas não autorizam subagentes, instalação de dependências, rede, commit, push ou deploy. Cada pasta tem `ORIGEM.md` com repositório, commit e licença.
 
 - Design e UX: `frontend-design`, `web-design-guidelines`, `emil-design-eng`, `padrao-premium`, `break-ui`, `accessibility`.
 - Performance: `performance`, `core-web-vitals`, `vercel-react-best-practices`.
 - Segurança: `endurecimento-web`, `sharp-edges`, `differential-review`, `best-practices`, `supabase`, `supabase-postgres-best-practices`, `navegador-seguro`.
-- Processo e economia: `writing-plans` (só tarefas grandes), `systematic-debugging`, `verification-before-completion`.
+- Processo e economia: `usar-graphify` (mapa do código, 100% local), `writing-plans` (só tarefas grandes), `systematic-debugging`, `verification-before-completion`.
+- Temporária: `equipe-leve-temporaria` (executa planos de `docs/planos/` com 3 papéis e modelos diferentes, um por vez). Só por pedido explícito do usuário; remover ao concluir o plano.
 
 ## Ambiente
 
@@ -32,7 +34,7 @@ Em `.agents/skills/<nome>/SKILL.md`. Leia somente a skill que se aplica à taref
 
 1. Leia este arquivo, instruções aplicáveis em subdiretórios e a solicitação atual. Leia `TAREFA.md` quando indicado; sua presença não autoriza executar tarefas antigas.
 2. Execute `git status --short` e preserve alterações preexistentes.
-3. Identifique o escopo (store, panel, packages, Supabase ou deploy). Use `rg --files` e `rg` primeiro nos diretórios diretamente envolvidos, sem enumerar todo o projeto por padrão.
+3. Identifique o escopo (store, panel, packages, Supabase ou deploy). Consulte primeiro o mapa do código (obrigatório, ver [usar-graphify](.agents/skills/usar-graphify/SKILL.md)). Depois use `rg --files` e `rg` nos diretórios apontados, sem enumerar todo o projeto por padrão.
 4. Leia as funções, componentes, contratos e dependências imediatas necessários. Abra o arquivo completo somente quando os trechos não bastarem para compreender o comportamento. Amplie a investigação apenas diante de uma dependência real ou dúvida concreta.
 5. Reaproveite arquivos e diagnósticos já presentes no contexto. Não releia conteúdo inalterado por rotina; confirme o estado atual dos trechos antes de editar quando houver possibilidade de mudanças desde a última leitura.
 6. Após interrupção, continue do progresso registrado. Atualizações de status, esclarecimentos e novas tarefas não exigem reiniciar a investigação global. Se faltar contexto, recupere apenas o necessário.
