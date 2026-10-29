@@ -39,8 +39,14 @@ const imageSizes = "(max-width: 700px) 22vw, 120px";
 const AUTOPLAY_MS = 3000;
 const RESUME_MS = 4000;
 
-// Três cópias da lista: a do meio é a real; as laterais permitem rolar sem fim para os dois lados.
-const COPIES = 3;
+// Cinco cópias da lista: a do meio é a real; as laterais dão folga para deslizes rápidos
+// no celular nunca chegarem ao fim físico antes de a posição ser reajustada.
+const COPIES = 5;
+const MIDDLE = Math.floor(COPIES / 2);
+
+function jumpTo(node: HTMLElement, left: number) {
+  node.scrollTo({ left, behavior: "instant" });
+}
 
 export function CategoryCarousel({ categories }: CategoryCarouselProps) {
   const list = useRef<HTMLUListElement>(null);
@@ -52,13 +58,27 @@ export function CategoryCarousel({ categories }: CategoryCarouselProps) {
   const [looping, setLooping] = useState(true);
   const [paused, setPaused] = useState(false);
 
-  // Largura de uma cópia (itens + espaçamentos); se a lista inteira cabe na tela, não há loop.
+  // Distância exata (com subpixel) entre o início de um item e o do seguinte.
+  const itemStep = useCallback(() => {
+    const node = list.current;
+    const first = node?.children.item(0);
+    const second = node?.children.item(1);
+    if (!(first instanceof HTMLElement)) return 0;
+    if (second instanceof HTMLElement) return second.getBoundingClientRect().left - first.getBoundingClientRect().left;
+    return first.getBoundingClientRect().width;
+  }, []);
+
+  // Largura de uma cópia; se a lista inteira cabe na tela, não há loop.
   const measure = useCallback(() => {
     const node = list.current;
-    const first = node?.firstElementChild;
-    if (!node || !(first instanceof HTMLElement) || categories.length === 0) return;
-    const gap = Number.parseFloat(getComputedStyle(node).columnGap) || 0;
-    const width = categories.length * (first.offsetWidth + gap);
+    if (!node || categories.length === 0) return;
+    const looped = node.children.length === categories.length * COPIES;
+    const first = node.children.item(0);
+    const nextCopy = looped ? node.children.item(categories.length) : null;
+    const width = first instanceof HTMLElement && nextCopy instanceof HTMLElement
+      ? nextCopy.getBoundingClientRect().left - first.getBoundingClientRect().left
+      : categories.length * itemStep();
+    if (width <= 0) return;
     const previous = setWidth.current;
     setWidth.current = width;
     const shouldLoop = categories.length > 1 && width > node.clientWidth;
@@ -67,13 +87,14 @@ export function CategoryCarousel({ categories }: CategoryCarouselProps) {
       positioned.current = false;
       return;
     }
-    // Só posiciona quando as três cópias já estão no DOM.
-    if (node.children.length !== categories.length * COPIES) return;
+    if (!looped) return;
     if (!positioned.current) {
       positioned.current = true;
-      node.scrollLeft = width;
-    } else if (Math.abs(previous - width) > 1) node.scrollLeft = width + ((node.scrollLeft % previous) / previous) * width;
-  }, [categories.length]);
+      jumpTo(node, width * MIDDLE);
+    } else if (previous > 0 && Math.abs(previous - width) > 0.5) {
+      jumpTo(node, (node.scrollLeft / previous) * width);
+    }
+  }, [categories.length, itemStep]);
 
   useEffect(() => {
     measure();
@@ -88,21 +109,39 @@ export function CategoryCarousel({ categories }: CategoryCarouselProps) {
     return () => observer.disconnect();
   }, [measure, looping]);
 
-  // Ao parar de rolar, volta para a cópia do meio sem salto visível.
+  // Ao terminar a rolagem, volta para a posição equivalente na cópia do meio. As cópias são
+  // idênticas, então o salto é invisível.
   const recenter = useCallback(() => {
     const node = list.current;
     const width = setWidth.current;
     if (!node || width <= 0 || !looping) return;
-    if (node.scrollLeft < width * 0.5) node.scrollLeft += width;
-    else if (node.scrollLeft >= width * 1.5) node.scrollLeft -= width;
+    const base = width * MIDDLE;
+    const offset = node.scrollLeft - base;
+    if (Math.abs(offset) < width / 2) return;
+    const wrapped = ((((offset + width / 2) % width) + width) % width) - width / 2;
+    jumpTo(node, base + wrapped);
   }, [looping]);
 
-  const onScroll = useCallback(() => {
+  const scheduleRecenter = useCallback(() => {
     if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
       settleTimer.current = null;
       recenter();
-    }, 120);
+    }, 160);
+  }, [recenter]);
+
+  // `scrollend` avisa o fim real da rolagem (inclusive da inércia do dedo); o temporizador cobre
+  // navegadores que ainda não o disparam.
+  useEffect(() => {
+    const node = list.current;
+    if (!node) return;
+    const onScrollEnd = () => {
+      if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+      recenter();
+    };
+    node.addEventListener("scrollend", onScrollEnd);
+    return () => node.removeEventListener("scrollend", onScrollEnd);
   }, [recenter]);
 
   const pauseBriefly = useCallback(() => {
@@ -121,12 +160,14 @@ export function CategoryCarousel({ categories }: CategoryCarouselProps) {
 
   const move = useCallback((direction: -1 | 1) => {
     const node = list.current;
-    const first = node?.firstElementChild;
-    if (!node || !(first instanceof HTMLElement)) return;
-    const gap = Number.parseFloat(getComputedStyle(node).columnGap) || 0;
+    const step = itemStep();
+    if (!node || step <= 0) return;
+    recenter();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    node.scrollBy({ left: direction * (first.offsetWidth + gap), behavior: reducedMotion ? "auto" : "smooth" });
-  }, []);
+    // Alinha ao início do item mais próximo para o passo nunca acumular desvio.
+    const target = (Math.round(node.scrollLeft / step) + direction) * step;
+    node.scrollTo({ left: target, behavior: reducedMotion ? "instant" : "smooth" });
+  }, [itemStep, recenter]);
 
   useEffect(() => {
     if (!looping || paused) return;
@@ -149,10 +190,10 @@ export function CategoryCarousel({ categories }: CategoryCarouselProps) {
       onFocusCapture={() => setPaused(true)}
       onBlurCapture={pauseBriefly}
     >
-      <ul className="category-circles-list" ref={list} aria-label="Categorias" onScroll={onScroll}>
+      <ul className="category-circles-list" ref={list} aria-label="Categorias" onScroll={scheduleRecenter}>
         {items.map((category, index) => {
-          const copy = looping ? Math.floor(index / categories.length) : 1;
-          const clone = copy !== 1;
+          const copy = looping ? Math.floor(index / categories.length) : MIDDLE;
+          const clone = copy !== MIDDLE;
           const srcSet = categoryImageSrcSet(category.image);
           return (
             <li className="category-circles-item" key={`${copy}:${category.href}`} aria-hidden={clone || undefined}>
