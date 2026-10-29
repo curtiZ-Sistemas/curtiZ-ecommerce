@@ -22,6 +22,8 @@ do $$begin
  if exists(select 1 from public.inventory where variant_id='bd300000-0000-4000-8000-000000000001'
   and (available_quantity<>0 or reserved_quantity<>0 or damaged_quantity<>0)) then raise exception 'fixture_stock_changed'; end if;
 end;$$;
+delete from private.return_jobs where return_id in(select id from public.returns where order_id='bd400000-0000-4000-8000-000000000001');
+delete from public.notifications where user_id='bd000000-0000-4000-8000-000000000001' and type='return_update';
 delete from public.return_items where return_id in(select id from public.returns where order_id='bd400000-0000-4000-8000-000000000001');
 delete from public.returns where order_id='bd400000-0000-4000-8000-000000000001';
 delete from public.order_items where order_id='bd400000-0000-4000-8000-000000000001';

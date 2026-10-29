@@ -1623,3 +1623,8 @@
     transition: none;
   }
 }
+.return-photo-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-block: 16px; }
+.return-photo-grid img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 4px; }
+.return-review-actions { display: grid; gap: 16px; }
+.return-review-actions form { display: grid; gap: 16px; min-width: 0; }
+.operational-return { overflow-wrap: anywhere; min-width: 0; }
