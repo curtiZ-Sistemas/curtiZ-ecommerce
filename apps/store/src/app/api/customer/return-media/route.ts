@@ -17,7 +17,8 @@ export async function GET(request: Request) {
   if (!db || !auth?.data.user || auth.error) return reply("Entre para continuar.", 401);
   const id = new URL(request.url).searchParams.get("id");
   if (!id || !/^[0-9a-f-]{36}$/iu.test(id)) return reply("Foto inválida.", 400);
-  const media = await db.from("return_media").select("storage_path").eq("id", id).maybeSingle();
+  const media = await db.from("return_media").select("storage_path,returns!inner(customer_id)")
+    .eq("id", id).eq("returns.customer_id", auth.data.user.id).maybeSingle();
   if (media.error) return reply("Foto indisponível.", 503);
   if (!media.data) return reply("Foto não encontrada.", 404);
   const path: unknown = media.data.storage_path;

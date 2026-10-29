@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, POST } from "./route";
 
 type TestState = { origin: boolean; user: { id: string } | null; row: Record<string, unknown> | null; queryError: unknown;
+  filters: Array<[string, string]>;
   rpc: ReturnType<typeof vi.fn>; upload: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; sign: ReturnType<typeof vi.fn>; prepare: ReturnType<typeof vi.fn>; rate: ReturnType<typeof vi.fn> };
 const state = vi.hoisted((): TestState => ({ origin: true, user: { id: "owner" },
-  row: null, queryError: null, rpc: vi.fn(), upload: vi.fn(), remove: vi.fn(), sign: vi.fn(), prepare: vi.fn(), rate: vi.fn() }));
+  row: null, queryError: null, filters: [], rpc: vi.fn(), upload: vi.fn(), remove: vi.fn(), sign: vi.fn(), prepare: vi.fn(), rate: vi.fn() }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => state.origin }));
 vi.mock("@/lib/image-upload", () => ({ prepareUploadImage: state.prepare }));
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
@@ -12,7 +13,7 @@ vi.mock("@/lib/file-validation", () => ({ inspectUpload: () => ({ mime: "image/j
 vi.mock("@/lib/private-request", () => ({ PrivateRequestError: class extends Error { constructor(readonly status: number) { super(); } }, readPrivateFormData: (request: Request) => request.formData(), requirePrivateRateLimit: state.rate }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: () => ({ auth: { getUser: async () => ({ data: { user: state.user }, error: null }) }, rpc: state.rpc,
-    from: () => { const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: state.row, error: state.queryError }) }; return query; },
+    from: () => { const query = { select: () => query, eq: (column: string, value: string) => { state.filters.push([column, value]); return query; }, maybeSingle: async () => ({ data: state.row, error: state.queryError }) }; return query; },
     storage: { from: () => ({ createSignedUrl: state.sign }) } }),
   createServiceSupabaseClient: () => ({ storage: { from: () => ({ upload: state.upload, remove: state.remove }) } })
 }));
@@ -23,6 +24,7 @@ const request = (type = "image/jpeg") => {
 };
 beforeEach(() => {
   vi.clearAllMocks(); state.origin = true; state.user = { id: "owner" }; state.queryError = null;
+  state.filters = [];
   state.row = { id, status: "requested", return_media: [] };
   state.rate.mockResolvedValue(undefined); state.prepare.mockResolvedValue(new Uint8Array([1, 2, 3]));
   state.upload.mockResolvedValue({ error: null }); state.rpc.mockResolvedValue({ data: id, error: null });
@@ -64,6 +66,7 @@ describe("private return photo boundary", () => {
     state.row = { storage_path: "private/photo.webp" }; state.sign.mockResolvedValue({ data: { signedUrl: "https://example.supabase.co/signed/photo" }, error: null });
     const response = await GET(new Request(`https://store.example/api/customer/return-media?id=${id}`));
     expect(response.status).toBe(302); expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(state.filters).toContainEqual(["returns.customer_id", "owner"]);
     expect(state.sign).toHaveBeenCalledWith("private/photo.webp", 60);
   });
 });
