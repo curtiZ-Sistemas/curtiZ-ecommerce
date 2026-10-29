@@ -37,9 +37,6 @@
     },
     "production": {
       "name": "curtiz-ecommerce",
-      "vars": {
-        "RETURNS_EMAIL_ENABLED": "true"
-      },
       "triggers": {
         "crons": ["*/5 * * * *"]
       },
