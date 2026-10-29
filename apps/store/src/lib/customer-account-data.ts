@@ -159,7 +159,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       .order("created_at", { ascending: false }),
     supabase
       .from("returns")
-      .select("id,public_code,order_id,reason,description,requested_resolution,status,requested_at,orders(public_code)")
+      .select("id,public_code,order_id,reason,description,requested_resolution,status,requested_at,request_kind,customer_message,return_instructions,reverse_logistics_code,reverse_tracking_code,exchange_tracking_code,refund_amount,refund_error,return_media(id),return_items(order_item_id,quantity),return_history(id,status,message,created_at),orders(public_code)")
       .eq("customer_id", user.id)
       .order("requested_at", { ascending: false }),
     supabase
@@ -452,7 +452,19 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       description: readString(row, "description"),
       resolution: readString(row, "requested_resolution"),
       status: readString(row, "status"),
-      requestedAt: readString(row, "requested_at")
+      requestedAt: readString(row, "requested_at"),
+      kind: readString(row, "request_kind"),
+      message: readString(row, "customer_message"),
+      instructions: readString(row, "return_instructions"),
+      postingCode: readString(row, "reverse_logistics_code"),
+      trackingCode: readString(row, "reverse_tracking_code"),
+      exchangeTrackingCode: readString(row, "exchange_tracking_code"),
+      refundAmountInCents: cents(row.refund_amount),
+      refundNeedsReview: Boolean(readString(row, "refund_error")),
+      media: readRows(row.return_media).map(media => ({ id: readString(media, "id") })),
+      items: readRows(row.return_items).map(item => ({ orderItemId: readString(item, "order_item_id"), quantity: readNumber(item, "quantity") })),
+      history: readRows(row.return_history).map(event => ({ id: readString(event, "id"), status: readString(event, "status"),
+        message: readString(event, "message"), createdAt: readString(event, "created_at") })).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     })),
     notifications: readRows(readQueryResult(notificationsResponse).data).map((row) => ({
       id: readString(row, "id"),
