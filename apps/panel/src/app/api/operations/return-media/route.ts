@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 
 const headers = { "cache-control": "private, no-store" };
 export async function GET(request: Request) {
   const db = await createServerSupabaseClient();
   const auth = db ? await db.auth.getUser() : null;
   if (!db || !auth?.data.user || auth.error) return NextResponse.json({ message: "Acesso negado." }, { status: 401, headers });
+  if (!(await hasRequiredInternalMfa(db))) return NextResponse.json({ message: "Confirme sua autenticação." }, { status: 403, headers });
   const permission = await db.rpc("has_permission", { permission_code: "returns.read" });
   if (permission.error || permission.data !== true) return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers });
   const id = new URL(request.url).searchParams.get("id");

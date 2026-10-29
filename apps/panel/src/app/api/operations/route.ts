@@ -4,6 +4,7 @@ import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { isOperationallyActiveOrder } from "@/lib/operational-order-status";
 
 export const dynamic = "force-dynamic";
@@ -136,8 +137,8 @@ const safeOrigin = (request: NextRequest) => {
 async function access(request: NextRequest) {
   const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (session) {
-    return session?.role === "operational"
-      ? { demo: true as const, supabase: null, userId: session.email }
+    return ["operational", "admin", "manager"].includes(session.role)
+      ? { demo: true as const, supabase: null, userId: session.email, returnsOnly: session.role !== "operational" }
       : null;
   }
   const supabase = await createServerSupabaseClient();
@@ -150,6 +151,7 @@ async function access(request: NextRequest) {
   ]);
   const roles = rows(rolesData).map((item) => text(item.role));
   if (profile?.status !== "active" || !roles.some(role => ["operational", "admin", "manager"].includes(role))) return null;
+  if (!(await hasRequiredInternalMfa(supabase))) return null;
   if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return { demo: false as const, supabase, userId: user.id, returnsOnly: !roles.includes("operational") };
 }
@@ -210,11 +212,11 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+  if (authorized.returnsOnly && !["trocas", "devolucoes"].includes(section)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   if (authorized.demo) {
     return NextResponse.json(demoSnapshot(section, page, pageSize), { headers: noStore });
   }
   const supabase = authorized.supabase;
-  if (authorized.returnsOnly && !["trocas", "devolucoes"].includes(section)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   const dashboard = section === "";
   const needsMetrics = dashboard || section === "relatorios-operacionais";
   const needsOrders = section === "pedidos" || section === "pendencias";
