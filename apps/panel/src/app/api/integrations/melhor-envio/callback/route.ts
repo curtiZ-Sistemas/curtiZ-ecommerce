@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { melhorEnvioEnvironment, panelMelhorEnvioProvider } from "@/lib/melhor-envio-server";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 
@@ -17,7 +16,7 @@ export async function GET(request: NextRequest) {
   const auth = await createServerSupabaseClient();
   const userResult = auth ? await auth.auth.getUser() : null;
   const user = userResult?.data.user;
-  if (!auth || !user || userResult?.error || !(await hasRequiredInternalMfa(auth))) {
+  if (!auth || !user || userResult?.error) {
     return NextResponse.redirect(destination(request, "error"));
   }
   const roleResult = await auth.from("user_roles").select("role").eq("user_id", user.id).eq("role", "technical").maybeSingle();

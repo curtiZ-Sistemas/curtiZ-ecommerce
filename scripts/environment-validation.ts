@@ -41,7 +41,6 @@ const productionRequired = [
   "SHIPPING_PROVIDER",
   "MELHOR_ENVIO_ENABLED",
   "TURNSTILE_ENABLED",
-  "REQUIRE_INTERNAL_MFA",
   "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
 
@@ -342,7 +341,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("MELHOR_ENVIO_CLIENT_SECRET");
     required.add("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
   }
-  if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
+  if (enabledBoolean(environment.TURNSTILE_ENABLED)) {
     required.add("TURNSTILE_SECRET_KEY");
   }
   return [...required].sort();
@@ -459,15 +458,8 @@ const validateTurnstile = (environment: EnvironmentValues, errors: string[]): vo
     return;
   }
 
-  const hasSiteKey = hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY");
-
-  const hasSecret = hasValue(environment, "TURNSTILE_SECRET_KEY");
-
-  if (hasSiteKey !== hasSecret) {
-    errors.push(
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY devem ser configuradas em conjunto"
-    );
-  }
+  // The public key is compiled into the browser bundle while the integration is
+  // disabled for builds. Its secret stays in the Worker's runtime, never in CI.
 };
 
 const validateCheckoutFlags = (environment: EnvironmentValues, errors: string[]): void => {
@@ -498,7 +490,6 @@ const validateCommonValues = (
   validateEnum(environment, "WHATSAPP_PROVIDER", errors);
 
   validateBoolean(environment, "DEMO_MODE", errors);
-  validateBoolean(environment, "REQUIRE_INTERNAL_MFA", errors);
   validateBoolean(environment, "AUTH_RATE_LIMIT_ENABLED", errors);
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);

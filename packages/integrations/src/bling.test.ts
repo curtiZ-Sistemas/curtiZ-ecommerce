@@ -155,6 +155,65 @@ describe("Bling HTTP reliability", () => {
     await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(json({ secret: "do-not-expose" }, status)))
       .request("/produtos")).rejects.toMatchObject({ code: status === 403 ? "scope_denied" : "validation_error", retryable: false });
   });
+  it.each([400, 422])("keeps bounded numeric validation codes without provider/customer text (%s)", async status => {
+    const payload = { error: { message: "private customer", fields: [
+      { code: 49, msg: "private document", element: "private field", collection: [
+        { code: 12, msg: "private token" }, { code: 49 }, { code: "123" }, { code: -1 }, { code: 100000 }
+      ] }
+    ] } };
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json(payload, status));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ code: "validation_error", retryable: false, uncertainWrite: false, validationCodes: [49, 12] });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("bounds validation diagnostics and tolerates non-JSON rejections", async () => {
+    const fields = Array.from({ length: 100 }, (_, code) => ({ code }));
+    await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields } }, 400)))
+      .request("/nfe/1")).rejects.toMatchObject({ validationCodes: Array.from({ length: 16 }, (_, code) => code) });
+    await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(new Response("not json", { status: 422 })))
+      .request("/nfe/1")).rejects.toMatchObject({ code: "validation_error", validationCodes: [] });
+  });
+  it.each([
+    { msg: "Data de operação inválida", hints: ["operation_date"] },
+    { msg: "Total das parcelas difere do total da nota", hints: ["amount_totals", "payment_terms"] },
+    { msg: "Certificado digital não informado", hints: ["certificate", "required_data"] },
+    { msg: "CFOP inválido para o destinatário", hints: ["contact_reference", "tax_rules"] },
+    { msg: "Não é permitido alterar itens vinculados a pedido de venda", hints: ["integration_origin", "operation_not_permitted", "product_reference"] }
+  ])("classifies bounded validation topics without retaining provider prose", async ({ msg, hints }) => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields: [
+      { code: 0, msg: `${msg}. Contato private-customer, CPF 12345678909, private@example.invalid, token private-token` }
+    ] } }, 400));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ code: "validation_error", retryable: false, uncertainWrite: false,
+      validationHints: [...new Set([...hints, "contact_reference"])].sort() });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(JSON.stringify(error)).not.toContain("12345678909");
+    expect(JSON.stringify(error)).not.toContain(msg);
+    expect(transport).toHaveBeenCalledOnce();
+  });
+  it("ignores non-text validation messages and bounds inspected prose", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { description: "x".repeat(2048) + " certificado",
+      fields: [{ code: 0, msg: { private: "CFOP" } }] } }, 422));
+    await expect(new BlingClient(config, storage(), transport).request("/nfe/1", { method: "PUT", body: {} }))
+      .rejects.toMatchObject({ code: "validation_error", validationHints: [] });
+    expect(transport).toHaveBeenCalledOnce();
+  });
+  it("keeps only exact schema field identifiers, including nested validation failures", async () => {
+    const fields = [{ code: 0, element: "itens", msg: "private customer", collection: [
+      { code: 0, element: "classificacaoFiscal", msg: "private document" },
+      { code: 0, element: "contato.private-customer.email" },
+      { code: 0, element: "private@example.com" }, { code: 0, element: "itens" }
+    ] }, { code: 0, element: { toString: "email" } }];
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields } }, 400));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ validationCodes: [0], validationFields: ["itens", "classificacaoFiscal"], retryable: false });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(transport).toHaveBeenCalledOnce();
+  });
   it("decodes the official gzip/base64 document envelope", async () => {
     const pdf = new TextEncoder().encode("%PDF-1.7\ntest-only");
     const compressed = await new Response(new Blob([pdf]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();

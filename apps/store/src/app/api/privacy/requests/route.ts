@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success)
     return NextResponse.json({ message: "Revise os dados da solicitação." }, { status: 400 });
-  if (!(await verifyTurnstile(request, parsed.data.turnstileToken)))
+  if (!(await verifyTurnstile(request, parsed.data.turnstileToken, "privacy_request")))
     return NextResponse.json({ message: "Verificação de segurança inválida." }, { status: 400 });
   const publicClient = await createServerSupabaseClient();
   const supabase = createServiceSupabaseClient();

@@ -21,7 +21,9 @@ describe("read-only provider readiness evidence", () => {
     state.auth.mockResolvedValue(null);
     expect((await GET(request("scope=catalog"))).status).toBe(401); expect(state.request).not.toHaveBeenCalled();
   });
-  it.each(["scope=anything", "scope=catalog&page=0", "scope=series&series=0", "scope=series&series=1000"])("rejects invalid input %s", async (query) => {
+  it.each(["scope=anything", "scope=catalog&page=0", "scope=series&series=0", "scope=series&series=1000",
+    "scope=series&series=2&before=2024-02-30", "scope=series&series=2&before=1999-12-31",
+    "scope=series&series=2&before=9999-01-01"])("rejects invalid input %s", async (query) => {
     expect((await GET(request(query))).status).toBe(400); expect(state.request).not.toHaveBeenCalled();
   });
   it("compares physical stock including reservations without subtracting them twice", async () => {
@@ -51,5 +53,26 @@ describe("read-only provider readiness evidence", () => {
     state.request.mockRejectedValue(new Error("private provider detail"));
     const response = await GET(request("scope=series&series=2"));
     expect(response.status).toBe(503); expect(await response.text()).not.toContain("private provider detail");
+  });
+  it("bounds leap-year windows and exposes a contiguous cursor without claiming an unused series", async () => {
+    state.request.mockResolvedValue({ data: [] });
+    const body = await (await GET(request("scope=series&series=2&before=2024-03-01"))).json() as { nextBefore: string | null };
+    expect(body).toMatchObject({ used: null, usedInPeriod: false, historyComplete: false, productionHistoryVerified: false });
+    expect(state.request).toHaveBeenCalledTimes(4);
+    for (const call of state.request.mock.calls) {
+      const path: unknown = call[0];
+      if (typeof path !== "string") throw new Error("Expected a provider path");
+      const query = new URL(path, "https://example.com").searchParams;
+      const from = Date.parse(query.get("dataEmissaoInicial")!.replace(" ", "T") + "Z");
+      const through = Date.parse(query.get("dataEmissaoFinal")!.replace(" ", "T") + "Z");
+      expect(through - from).toBe(180 * 86400000 - 1000);
+      expect(Date.parse(body.nextBefore + "T00:00:00Z") + 86400000).toBe(from);
+    }
+  });
+  it("clamps the last window at the documented lower bound without inventing earlier evidence", async () => {
+    state.request.mockResolvedValue({ data: [] });
+    const body: unknown = await (await GET(request("scope=series&series=2&before=2000-01-02"))).json();
+    expect(body).toMatchObject({ used: null, period: { from: "2000-01-01", through: "2000-01-02" }, nextBefore: null,
+      historyComplete: false, productionHistoryVerified: false, numberingChanged: false });
   });
 });

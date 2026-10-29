@@ -4,7 +4,6 @@ const state = vi.hoisted(() => ({ technical: vi.fn(), user: vi.fn(), mfa: vi.fn(
   roles: vi.fn<() => Promise<{ data: { role: string }[] | null; error: Error | null }>>(), rpc: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("./technical-api", () => ({ authorizeTechnicalRequest: state.technical }));
-vi.mock("./internal-mfa", () => ({ hasRequiredInternalMfa: state.mfa }));
 vi.mock("@curtiz/security", () => ({ DEMO_SESSION_COOKIE: "demo", verifyDemoSession: state.demo }));
 vi.mock("./supabase/server", () => ({ createServerSupabaseClient: () => ({ auth: { getUser: state.user },
   from: (table: string) => ({ select: () => ({ eq: () => table === "profiles" ? { maybeSingle: state.profile } : state.roles() }) }) }) }));
@@ -21,7 +20,7 @@ beforeEach(() => {
   state.rpc.mockResolvedValue({ data: true, error: null });
 });
 describe("Bling panel authorization", () => {
-  it("accepts an active internal session with applicable MFA", async () => {
+  it("accepts an active internal session with its database permissions", async () => {
     expect(await authorizeBlingPanelRequest(request())).not.toBeNull();
   });
   it("rejects demo sessions before accessing the database", async () => {
@@ -29,11 +28,8 @@ describe("Bling panel authorization", () => {
     expect(await authorizeBlingPanelRequest(request())).toBeNull();
     expect(state.user).not.toHaveBeenCalled();
   });
-  it("rejects missing authentication and MFA", async () => {
+  it("rejects missing authentication", async () => {
     state.user.mockResolvedValue({ data: { user: null }, error: null });
-    expect(await authorizeBlingPanelRequest(request())).toBeNull();
-    state.user.mockResolvedValue({ data: { user: { id: "actor-test" } }, error: null });
-    state.mfa.mockResolvedValue(false);
     expect(await authorizeBlingPanelRequest(request())).toBeNull();
   });
   it("rejects inactive profiles, customers and failed role queries", async () => {

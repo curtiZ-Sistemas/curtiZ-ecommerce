@@ -14,7 +14,8 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
       natures: [{ final_consumer: true, external_nature_id: 101 }, { final_consumer: false, external_nature_id: 102 }] }));
     const input = { destinationState: "SP", icmsTaxpayer: true, operation: "sale" as const };
     expect(selectBlingFiscalRule(configured, { ...input, finalConsumer: true })).toMatchObject({ cfop: "6102", external_nature_id: 101 });
-    expect(selectBlingFiscalRule(configured, { ...input, finalConsumer: false })).toMatchObject({ cfop: "6102", external_nature_id: 102 });
+    expect(() => selectBlingFiscalRule(configured, { ...input, finalConsumer: false })).toThrow("fiscal_credit_eligibility_required");
+    expect(() => selectBlingFiscalRule(configured, { ...input, finalConsumer: false, creditEligible: false })).toThrow("fiscal_rules_required");
     expect(selectBlingFiscalRule(configured, input).external_nature_id).toBeNull();
     expect(selectBlingFiscalRule(rules.map((rule) => ({ ...rule, external_nature_id: 999 })), { ...input, finalConsumer: true }).external_nature_id).toBeNull();
     expect(() => selectBlingFiscalRule(configured.map((r) => ({ ...r, natures: [r.natures[0], r.natures[0]] })),
@@ -27,7 +28,8 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
     ["MG", false, "sale", "5102", 2], ["MG", true, "sale", "5102", 2], ["SP", false, "sale", "6108", 2],
     ["SP", true, "sale", "6102", 2], ["MG", false, "return", "1202", 3], ["SP", false, "return", "2202", 3]
   ] as const)("selects %s / taxpayer %s / %s without arbitrary fallback", (destinationState, icmsTaxpayer, operation, cfop, series) => {
-    expect(selectBlingFiscalRule(rules, { destinationState, icmsTaxpayer, operation })).toMatchObject({ cfop, series });
+    expect(selectBlingFiscalRule(rules, { destinationState, icmsTaxpayer, operation,
+      ...(operation === "return" ? { finalConsumer: true, recipientIsCompany: false } : {}) })).toMatchObject({ cfop, series });
   });
   it("rejects missing rules, duplicate scenarios and unknown recipient state", () => {
     const input = { destinationState: "SP", icmsTaxpayer: false, operation: "sale" as const };
@@ -48,7 +50,7 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
     expect(mirror.blockers).toContain("kit_fiscal_unit_confirmation_required");
   });
   it("requires the original invoice reference for returns", () => {
-    const rule = selectBlingFiscalRule(rules, { destinationState: "SP", icmsTaxpayer: false, operation: "return" });
+    const rule = selectBlingFiscalRule(rules, { destinationState: "SP", icmsTaxpayer: false, operation: "return", finalConsumer: true, recipientIsCompany: false });
     expect(buildBlingFiscalMirror(rule, [item()]).blockers).toContain("original_invoice_key_required");
     expect(buildBlingFiscalMirror(rule, [item()], { originalInvoiceKey: "1".repeat(44) }).blockers).not.toContain("original_invoice_key_required");
     expect(buildBlingFiscalMirror({ ...rule, ipi_cst: "99" }, [item()], { originalInvoiceKey: "1".repeat(44) }).blockers)
@@ -85,3 +87,4 @@ describe("private fiscal scenarios and unnumbered mirrors", () => {
     expect(await blingFiscalMirrorHash(await buildBlingOrderFiscalMirror(changed))).not.toBe(await blingFiscalMirrorHash(mirror));
   });
 });
+

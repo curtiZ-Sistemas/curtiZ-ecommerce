@@ -8,6 +8,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/http-origin", () => import("./http-origin"));
 vi.mock("@/lib/private-request", () => import("./private-request"));
 vi.mock("@/lib/password-recovery", () => import("./password-recovery"));
+vi.mock("@/lib/recovery-proof", () => import("./recovery-proof"));
 vi.mock("@/lib/auth-rate-limit", () => ({ enforceAuthRateLimit: state.rate }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: state.turnstile }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceSupabaseClient: () => ({}), createServerSupabaseClient: async () => ({
@@ -25,6 +26,7 @@ import { POST } from "../app/api/auth/password/route";
 import {
   classifyResetError, recoveryAuthenticatedAt, recoveryFreshness, RECOVERY_WINDOW_SECONDS
 } from "./password-recovery";
+import { issueRecoveryProof, RECOVERY_PROOF_COOKIE } from "./recovery-proof";
 
 const now = () => Math.floor(Date.now() / 1_000);
 const token = (amr: Array<{ method: string; timestamp: number }> | undefined) => {
@@ -47,8 +49,8 @@ beforeEach(() => {
   state.getSession.mockResolvedValue(recoverySession());
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
-const send = (data: unknown, origin = "https://curtiz.com.br") => POST(new NextRequest("https://curtiz.com.br/api/auth/password", {
-  method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data)
+const send = (data: unknown, origin = "https://curtiz.com.br", proof?: string) => POST(new NextRequest("https://curtiz.com.br/api/auth/password", {
+  method: "POST", headers: { origin, "content-type": "application/json", ...(proof ? { cookie: `${RECOVERY_PROOF_COOKIE}=${proof}` } : {}) }, body: JSON.stringify(data)
 }));
 const change = { action: "update", password: "test-password-only", confirmPassword: "test-password-only" };
 const ask = { action: "request", email: "fixture@example.invalid" };
@@ -64,7 +66,15 @@ describe("recovery request", () => {
   });
   it("uses the public wording for the neutral response", async () => {
     expect(((await (await send(ask)).json()) as { message: string }).message)
-      .toBe("Se existir uma conta com esse e-mail, você receberá instruções para recuperar seu acesso.");
+      .toBe("Solicitação recebida. Confira seu e-mail e a pasta de spam para continuar.");
+  });
+  it("returns to login without an account-existence signal and explains invalid email syntax", async () => {
+    expect(await (await send(ask)).json()).toMatchObject({ redirectTo: "/login?recovery=requested" });
+    state.reset.mockClear();
+    const invalid = await send({ action: "request", email: "invalid" });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ message: "Informe um e-mail válido." });
+    expect(state.reset).not.toHaveBeenCalled();
   });
   it.each([
     ["SMTP failure", { name: "AuthApiError", status: 500, code: "unexpected_failure", message: "Error sending recovery email" }],
@@ -108,6 +118,22 @@ describe("recovery request", () => {
 });
 
 describe("password update authorization", () => {
+  it("accepts a recovery-only signed OTP session but rejects changed session or user versions", async () => {
+    const key = "test-only-recovery-signing-key-with-at-least-32-bytes";
+    vi.stubEnv("RATE_LIMIT_HMAC_KEY", key);
+    const updatedAt = "2026-10-22T12:00:00Z";
+    state.getUser.mockResolvedValue({ data: { user: { ...emailUser, updated_at: updatedAt } }, error: null });
+    const claims = { sub: "owner", session_id: "verified-session", amr: [{ method: "otp", timestamp: now() }] };
+    const access = `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+    state.getSession.mockResolvedValue({ data: { session: { access_token: access } } });
+    expect((await send(change)).status).toBe(403);
+    const proof = issueRecoveryProof(access, "owner", updatedAt, key)!;
+    expect((await send(change, "https://curtiz.com.br", proof)).status).toBe(200);
+    state.update.mockClear();
+    state.getUser.mockResolvedValue({ data: { user: { ...emailUser, updated_at: "changed" } }, error: null });
+    expect((await send(change, "https://curtiz.com.br", proof)).status).toBe(403);
+    expect(state.update).not.toHaveBeenCalled();
+  });
   it("rejects a request without any session", async () => {
     state.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401 } });
     expect((await send(change)).status).toBe(401);
@@ -147,12 +173,13 @@ describe("password update authorization", () => {
     expect(state.update).toHaveBeenCalledExactlyOnceWith({ password: "test-password-only" });
     expect(state.signOut).toHaveBeenCalledExactlyOnceWith({ scope: "global" });
     expect(await response.json()).toMatchObject({ redirectTo: "/login?senha=atualizada" });
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
-  it("sends accounts with a second factor to the verification step", async () => {
+  it("requires a new recovery link when the provider rejects session assurance", async () => {
     state.update.mockResolvedValue({ error: { code: "insufficient_aal" } });
     const response = await send(change);
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { redirectTo: string }).redirectTo).toMatch(/^\/mfa\?next=https%3A%2F%2F.+%2Fredefinir-senha$/u);
+    expect(((await response.json()) as { redirectTo: string }).redirectTo).toBe("/esqueci-senha");
     expect(state.signOut).not.toHaveBeenCalled();
   });
   it("explains same or weak passwords without ending the recovery session", async () => {

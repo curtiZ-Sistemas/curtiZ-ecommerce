@@ -1,11 +1,12 @@
 import type { createServerSupabaseClient } from "./supabase/server";
+import { readRecoveryClaims, RECOVERY_PROOF_SECONDS, verifyRecoveryProof } from "./recovery-proof";
 
 type ServerSupabase = NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>;
 
 export const RECOVERY_PATH = "/redefinir-senha";
 export const RECOVERY_REQUEST_PATH = "/esqueci-senha";
 /** A recovery link may only authorize a password change for a short time after it was opened. */
-export const RECOVERY_WINDOW_SECONDS = 15 * 60;
+export const RECOVERY_WINDOW_SECONDS = RECOVERY_PROOF_SECONDS;
 
 export type RecoveryRefusal =
   | "unauthenticated"
@@ -21,26 +22,12 @@ type RecoveryUser = {
 };
 type ResetError = { name?: string; code?: string; status?: number; message?: string };
 
-const decodeClaims = (accessToken: string): Record<string, unknown> | null => {
-  try {
-    const payload = accessToken.split(".")[1];
-    if (!payload) return null;
-    const base64 = payload.replace(/-/gu, "+").replace(/_/gu, "/");
-    const parsed: unknown = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 /**
  * Reads the newest "recovery" entry of the session's authentication methods (amr claim).
  * Callers must only pass a token the Auth server just issued or verified.
  */
 export function recoveryAuthenticatedAt(accessToken: string | undefined): number | null {
-  const amr = accessToken ? decodeClaims(accessToken)?.amr : null;
+  const amr = readRecoveryClaims(accessToken)?.amr;
   if (!Array.isArray(amr)) return null;
   let newest: number | null = null;
   for (const entry of amr) {
@@ -69,13 +56,16 @@ export function recoveryFreshness(
  * Proves that the current session came from an official recovery link, not from an ordinary
  * password or Google login. `getUser()` makes the Auth server validate the token first.
  */
-export async function verifyRecoverySession(supabase: ServerSupabase): Promise<RecoveryCheck> {
+export async function verifyRecoverySession(supabase: ServerSupabase,
+  proof?: { value: string | undefined; key: string }): Promise<RecoveryCheck> {
   const userResult = await supabase.auth.getUser();
   const user = userResult.data.user;
   if (userResult.error || !user) return { status: "unauthenticated" };
   const session = await supabase.auth.getSession();
-  const freshness = recoveryFreshness(session.data.session?.access_token);
-  if (freshness !== "ok") return { status: freshness };
+  const accessToken = session.data.session?.access_token;
+  const freshness = recoveryFreshness(accessToken);
+  const signedRecovery = proof && verifyRecoveryProof(proof.value, accessToken, user.id, user.updated_at, proof.key);
+  if (freshness !== "ok" && !signedRecovery) return { status: freshness };
   if (!hasPasswordIdentity(user)) return { status: "no_password_identity" };
   const profile = await supabase.from("profiles").select("status").eq("id", user.id).maybeSingle();
   if (profile.error || profile.data?.status !== "active") return { status: "inactive" };

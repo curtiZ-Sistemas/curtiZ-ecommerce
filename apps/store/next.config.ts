@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },
+      ...["/auth/recovery", "/api/auth/recovery/verify", "/api/auth/password"].map((source) => ({
+        source,
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }]
+      })),
       ...heroAssetPaths.map((source) => ({ source, headers: [noImageIndexHeader] }))
     ];
   },

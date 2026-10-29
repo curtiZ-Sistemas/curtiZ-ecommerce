@@ -19,6 +19,17 @@ function readCspDirective(csp: string, name: string): string {
 }
 
 describe("store security headers", () => {
+  it("preserves the standalone recovery handler security policy without refreshing a session", async () => {
+    const response = await middleware(new NextRequest("https://curtiz.com.br/auth/recovery", {
+      headers: { cookie: "sb-project-auth-token=existing" }
+    }));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.has("content-security-policy")).toBe(false);
+    expect(response.headers.has("referrer-policy")).toBe(false);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetAllMocks();

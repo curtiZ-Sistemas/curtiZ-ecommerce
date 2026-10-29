@@ -2,6 +2,7 @@ import "server-only";
 import { BlingError, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, selectBlingFiscalRule } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readString } from "./unknown-data";
+import { assertBlingB2CRecipient } from "./bling-fiscal-scope";
 
 export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Record<string, unknown>, items: Record<string, unknown>[]) {
   const existing = await db.rpc("read_bling_fiscal_mirror_approval", { p_order_id: order.id });
@@ -13,6 +14,7 @@ export async function ensureBlingFiscalApproval(db: SupabaseClient, order: Recor
   const recipient = approved ?? (isUnknownRecord(value.recipient) ? value.recipient : {});
   if (!approved && (value.policyApproved !== true || typeof value.configurationHash !== "string")) throw new BlingError("fiscal_automation_policy_required", 409);
   if (typeof recipient.icms_taxpayer !== "boolean" || typeof recipient.final_consumer !== "boolean") throw new BlingError("fiscal_recipient_required", 409);
+  assertBlingB2CRecipient(recipient);
   const rules = await db.rpc("read_bling_fiscal_rules");
   if (rules.error) throw new BlingError("storage_unavailable", 503, true);
   const snapshots: Record<string, unknown>[] = [];

@@ -7,14 +7,15 @@ import { runEmailHomologation, runTransactionalEmailJobs } from "./transactional
 const now = Date.parse("2026-10-12T12:05:00.000Z");
 const environment = { EMAIL_PROVIDER: "resend", EMAIL_ENABLED: "false", RESEND_API_KEY: "test-provider-key",
   EMAIL_FROM: "pedidos@example.com", EMAIL_REPLY_TO: "reply@example.com", NEXT_PUBLIC_STORE_URL: "https://store.example.com",
-  EMAIL_HOMOLOGATION_RECIPIENT: "authorized@example.com", EMAIL_HOMOLOGATION_STARTED_AT: "2026-10-12T12:00:00.000Z" };
+  EMAIL_HOMOLOGATION_RECIPIENT: "sistemas.curtiz@gmail.com", EMAIL_HOMOLOGATION_STARTED_AT: "2026-10-12T12:00:00.000Z" };
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.useRealTimers());
 
 describe("isolated runtime email homologation", () => {
   it.each([
     { EMAIL_ENABLED: "true" }, { EMAIL_ENABLED: "" }, { EMAIL_PROVIDER: "disabled" }, { RESEND_API_KEY: "" },
-    { EMAIL_HOMOLOGATION_RECIPIENT: "" }, { EMAIL_HOMOLOGATION_RECIPIENT: "one@example.com,two@example.com" },
+    { EMAIL_HOMOLOGATION_RECIPIENT: "" }, { EMAIL_HOMOLOGATION_RECIPIENT: "one@example.com" },
+    { EMAIL_HOMOLOGATION_RECIPIENT: "one@example.com,two@example.com" },
     { EMAIL_HOMOLOGATION_STARTED_AT: "invalid" }, { EMAIL_HOMOLOGATION_STARTED_AT: "2026-10-12T12:06:00.000Z" },
     { EMAIL_HOMOLOGATION_STARTED_AT: "2026-10-12T11:50:00.000Z" }
   ])("does no work without explicit safe test configuration: %j", async override => {
@@ -36,13 +37,13 @@ describe("isolated runtime email homologation", () => {
     for (const [, init] of posts) {
       if (typeof init?.body !== "string") throw new Error("Expected a serialized email payload");
       const payload: unknown = JSON.parse(init.body);
-      expect(payload).toMatchObject({ to: ["authorized@example.com"], reply_to: "reply@example.com" });
+      expect(payload).toMatchObject({ to: ["sistemas.curtiz@gmail.com"], reply_to: "reply@example.com" });
       expect(JSON.stringify(payload)).toContain("HOMOLOGAÇÃO — SEM PEDIDO REAL");
       expect(JSON.stringify(payload)).toContain("Não existe pedido, pagamento");
     }
     expect(state.rpc).not.toHaveBeenCalled();
     expect(state.log).toHaveBeenCalledWith("info", "transactional_email_homologation_checked", expect.objectContaining({ lastEvent: "delivered" }));
-    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/authorized@|reply@|test-provider-key|<html/u);
+    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/sistemas\.curtiz@gmail\.com|reply@|test-provider-key|<html/u);
     const second = runEmailHomologation(environment, "two", transport, now + 60_000);
     await vi.runAllTimersAsync();
     await second;
@@ -54,7 +55,7 @@ describe("isolated runtime email homologation", () => {
     const transport = vi.fn<typeof fetch>().mockRejectedValue(new Error("sensitive transport details"));
     await runEmailHomologation(environment, "execution", transport, now);
     expect(state.log).toHaveBeenCalledWith("error", "transactional_email_homologation_failed", expect.objectContaining({ code: "email_acceptance_uncertain" }));
-    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/sensitive|authorized@|test-provider-key/u);
+    expect(JSON.stringify(state.log.mock.calls)).not.toMatch(/sensitive|sistemas\.curtiz@gmail\.com|test-provider-key/u);
   });
 
   it("completes the explicit test before a database failure without claiming customer jobs", async () => {

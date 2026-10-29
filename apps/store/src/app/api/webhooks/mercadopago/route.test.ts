@@ -4,6 +4,8 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
 const provider = vi.hoisted(() => ({ getPayment: vi.fn() }));
+const kitReconciliation = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/representative-test-transactions", () => ({ reconcileKitTestPayment: kitReconciliation }));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoPaymentProvider: class { getPayment = provider.getPayment; }
@@ -30,8 +32,28 @@ describe("webhook canônico do Mercado Pago", () => {
     vi.stubEnv("MERCADO_PAGO_WEBHOOK_SECRET", secret);
     vi.mocked(createServiceSupabaseClient).mockReset();
     provider.getPayment.mockReset();
+    kitReconciliation.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it("routes a verified kit TEST payment without using B2C finalizers", async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook" ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITTEST-10000000-0000-4000-8000-000000000001" });
+    kitReconciliation.mockResolvedValue(true);
+    expect((await POST(request())).status).toBe(200);
+    expect(kitReconciliation).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(["claim_payment_webhook", "finish_payment_webhook"]);
+  });
+
+  it("does not acknowledge a kit event when reconciliation fails", async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook" ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITTEST-10000000-0000-4000-8000-000000000001" });
+    kitReconciliation.mockRejectedValue(new Error("uncertain"));
+    expect((await POST(request())).status).toBe(502);
+    expect(rpc).toHaveBeenLastCalledWith("finish_payment_webhook", expect.objectContaining({ p_success: false }));
+  });
 
   it("rejeita assinatura inválida e replay expirado antes do banco e do provedor", async () => {
     expect((await POST(request(undefined, { "x-signature": "ts=1,v1=" + "0".repeat(64) }))).status).toBe(401);
@@ -75,11 +97,11 @@ describe("webhook canônico do Mercado Pago", () => {
     refunds: [{ id: "refund-1", amountInCents: 1000, status: "approved", dateCreated: "2026-09-14T13:00:00Z" }]
   });
   const setupProcessing = (failure?: "payment" | "refund" | "lease", review = false) => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string): Promise<{ data: unknown; error: { code: string } | null }> => {
       if (name === "claim_payment_webhook") return { data: `acquired:${lease}`, error: null };
       if (name === "check_mercadopago_order_mode") return { data: true, error: null };
       if (name === "finalize_mercadopago_payment") return { data: review ? "manual_review" : "processed", error: failure === "payment" ? { code: "XX000" } : null };
-      if (name === "reconcile_mercadopago_provider_refund") return { data: "completed", error: failure === "refund" ? { code: "XX000" } : null };
+      if (name === "reconcile_mercadopago_provider_refund") return { data: true, error: failure === "refund" ? { code: "XX000" } : null };
       if (name === "finish_payment_webhook") return { data: failure !== "lease", error: null };
       throw new Error("Unexpected RPC");
     });
@@ -131,6 +153,17 @@ describe("webhook canônico do Mercado Pago", () => {
     provider.getPayment.mockResolvedValue({ ...confirmedPayment(), id: "foreign-payment" });
     expect((await POST(request())).status).toBe(502);
     expect(rpc.mock.calls.map(([name]) => name)).toEqual(["claim_payment_webhook", "finish_payment_webhook"]);
+  });
+
+  it.each([false, null, "completed"])("does not acknowledge an unconfirmed refund reconciliation: %s", async data => {
+    const rpc = setupProcessing();
+    const original = rpc.getMockImplementation();
+    rpc.mockImplementation(async name => name === "reconcile_mercadopago_provider_refund"
+      ? { data, error: null } : await original?.(name) ?? { data: false, error: null });
+    expect((await POST(request())).status).toBe(503);
+    expect(rpc).toHaveBeenCalledWith("finish_payment_webhook", expect.objectContaining({
+      p_success: false, p_error_code: "refund_reconciliation_failed"
+    }));
   });
 
   it("does not acknowledge an unexpected finalization result", async () => {

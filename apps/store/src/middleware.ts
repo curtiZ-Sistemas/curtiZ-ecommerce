@@ -464,6 +464,12 @@ function redirectToLogin(
 }
 
 export async function middleware(request: NextRequest) {
+  // The standalone recovery handler owns its stricter CSP and nonce. Do not
+  // overwrite them or refresh an unrelated session before verifying the link.
+  if (request.nextUrl.pathname === "/auth/recovery") {
+    return NextResponse.next();
+  }
+
   const supabaseUrl = getSupabaseUrl();
 
   const supabasePublishableKey =
