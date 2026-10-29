@@ -8,6 +8,15 @@ E-commerce comercial de sandálias e chinelos, principalmente para a Geração Z
 - Mantenha o modelo e o nível de raciocínio selecionados pelo usuário. Economize leituras, contexto e operações redundantes, preservando a implementação completa, a segurança e os testes necessários.
 - A skill complementa estas instruções; não amplia autorizações, não habilita subagentes nem altera configurações de modelos, raciocínio ou MCPs. Em conflitos, respeite as instruções de maior prioridade e a solicitação atual do usuário.
 
+## Skills sob demanda
+
+Em `.agents/skills/<nome>/SKILL.md`. Leia somente a skill que se aplica à tarefa, e só as referências que ela indicar. Nenhuma é obrigatória além de `lean-codex`. Estas instruções prevalecem sobre qualquer skill: elas não autorizam subagentes, instalação de dependências, rede, commit, push ou deploy. Cada pasta tem `ORIGEM.md` com repositório, commit e licença.
+
+- Design e UX: `frontend-design`, `web-design-guidelines`, `emil-design-eng`, `padrao-premium`, `break-ui`, `accessibility`.
+- Performance: `performance`, `core-web-vitals`, `vercel-react-best-practices`.
+- Segurança: `endurecimento-web`, `sharp-edges`, `differential-review`, `best-practices`, `supabase`, `supabase-postgres-best-practices`, `navegador-seguro`.
+- Processo e economia: `writing-plans` (só tarefas grandes), `systematic-debugging`, `verification-before-completion`.
+
 ## Ambiente
 
 - Windows, notebook com **4 GB de RAM**. Economize memória e processamento.
