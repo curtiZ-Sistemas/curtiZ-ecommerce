@@ -270,6 +270,8 @@ begin
     on conflict (payment_id)
     where origin = 'mercadopago_fee'
     do update set
+      issued_on = excluded.issued_on,
+      due_on = excluded.due_on,
       category_id = excluded.category_id,
       amount = excluded.amount,
       paid_on = excluded.paid_on,
