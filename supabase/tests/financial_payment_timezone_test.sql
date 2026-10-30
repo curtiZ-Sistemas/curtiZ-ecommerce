@@ -2,7 +2,7 @@
 begin;
 set local timezone to 'UTC';
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(12);
 
 insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
 values ('fe550000-0000-4000-8000-000000000001','financial-timezone-test@example.invalid','{}','{}');
@@ -13,10 +13,13 @@ values
  ('fe550000-0000-4000-8000-000000000004','FIN-TZ-CI-2','fe550000-0000-4000-8000-000000000001','financial-timezone-test@example.invalid','Timezone fixture','picking','approved',50,50,'{}',
   ((now() at time zone 'America/Sao_Paulo')::date + interval '1 day 1 hour') at time zone 'UTC');
 
-insert into public.payments(id,order_id,provider,provider_payment_id,external_reference,status,amount)
-values('fe550000-0000-4000-8000-000000000003','fe550000-0000-4000-8000-000000000002','mercadopago','financial-timezone-fixture-1','FIN-TZ-CI-1','pending',50);
+insert into public.payments(id,order_id,provider,provider_payment_id,external_reference,status,amount,expires_at)
+values('fe550000-0000-4000-8000-000000000003','fe550000-0000-4000-8000-000000000002','mercadopago','financial-timezone-fixture-1','FIN-TZ-CI-1','pending',50,
+ ((now() at time zone 'America/Sao_Paulo')::date + interval '1 day 2 hours') at time zone 'UTC');
 select is((select issued_on from public.accounts_receivable where payment_id='fe550000-0000-4000-8000-000000000003'),
   (now() at time zone 'America/Sao_Paulo')::date,'Order issue date uses the business timezone even in a UTC session');
+select is((select due_on from public.accounts_receivable where payment_id='fe550000-0000-4000-8000-000000000003'),
+  (now() at time zone 'America/Sao_Paulo')::date,'Provider expiry uses the business timezone');
 
 -- A pending integration row could have been recorded before the timezone fix.
 update public.accounts_receivable set issued_on=(now() at time zone 'America/Sao_Paulo')::date+1,
@@ -46,6 +49,12 @@ select lives_ok($$select private.sync_mercadopago_financial_payment('fe550000-00
   'Reconciliation also repairs a legacy provider fee date');
 select is((select issued_on from public.accounts_payable where payment_id='fe550000-0000-4000-8000-000000000005' and origin='mercadopago_fee'),
   (now() at time zone 'America/Sao_Paulo')::date,'Provider fee issue date is reconciled consistently');
+set local timezone to 'Pacific/Auckland';
+select lives_ok($$select private.sync_mercadopago_financial_payment('fe550000-0000-4000-8000-000000000005')$$,
+  'Replaying with another connection timezone succeeds');
+select is((select count(*) from public.financial_transactions t join public.accounts_receivable r on r.id=t.receivable_id
+ where r.payment_id='fe550000-0000-4000-8000-000000000005' and t.occurred_on=(now() at time zone 'America/Sao_Paulo')::date),
+  1::bigint,'Replay keeps one income transaction on the business date');
 select * from finish();
 rollback;
 
