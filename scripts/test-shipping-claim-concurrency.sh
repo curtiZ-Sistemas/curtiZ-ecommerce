@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # The CI job owns this temporary Supabase container; never use a shared project.
+# The synthetic job disappears with the CI database after the job ends.
 set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo 'Requires an ephemeral CI database.' >&2; exit 1; }
 task_tmp="$(mktemp -d)"
