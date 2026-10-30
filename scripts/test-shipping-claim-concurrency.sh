@@ -66,5 +66,12 @@ do $$ begin
   end if;
 end $$;
 SQL
+db_psql <<'SQL'
+do $$ begin
+  if public.finish_melhor_envio_job('fe540000-0000-4000-8000-000000000001','fe540000-0000-4000-8000-000000000011',true) then
+    raise exception 'wrong_worker_finished_job';
+  end if;
+end $$;
+SQL
 echo 'Shipping: two concurrent workers cannot claim the same job.'
 
