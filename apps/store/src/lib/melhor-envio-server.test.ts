@@ -34,6 +34,14 @@ describe("catálogo → OAuth cifrado → cotação Melhor Envio", () => {
     expect((await resolveShippingProducts([{ ...line, quantity: 1 }], db)).fingerprint).not.toBe(resolved.fingerprint);
   });
 
+  it("cota o kit com o volume próprio cadastrado e multiplica pela quantidade comercial", async () => {
+    const db = catalogDatabase([{ ...variant, id: "kit-variant", product_id: "kit-product", price_override: null,
+      products: { ...product, id: "kit-product", base_price: 150, weight_grams: 1100, width_cm: 25, height_cm: 18, length_cm: 32 } }]);
+    const resolved = await resolveShippingProducts([{ productId: "kit-product", variantId: "kit-variant", quantity: 3 }], db);
+    expect(resolved.products).toEqual([{ id: "kit-variant", quantity: 3, weightKg: 1.1,
+      widthCm: 25, heightCm: 18, lengthCm: 32, insuranceValue: 150 }]);
+  });
+
   it.each([0, null, -1])("recusa peso inválido sem fabricar dimensões (%s)", async (weight) => {
     const db = catalogDatabase([{ ...variant, products: { ...product, weight_grams: weight } }]);
     await expect(resolveShippingProducts([line], db)).rejects.toMatchObject({ code: "validation", httpStatus: 409 });

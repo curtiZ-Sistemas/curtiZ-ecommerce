@@ -1,18 +1,12 @@
 "use client";
 
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
-  CircleDollarSign,
   Download,
-  FileClock,
   FilterX,
   RefreshCw,
-  Search,
-  ShieldCheck,
-  Trash2,
-  UserRoundCog
+  Search
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -28,6 +22,8 @@ import {
 } from "@/lib/activity-logs";
 import { exportActivityWorkbook } from "@/lib/activity-export";
 import { PanelDrawer } from "./panel-drawer";
+import { ManagementPageHeader } from "./management-ui";
+import { Code, Kpi, KpiStrip, StateMessage, StatusLabel } from "./panel-ui";
 
 type Filters = {
   preset: "today" | "7days" | "30days" | "custom";
@@ -166,28 +162,29 @@ export function ActivityLogs() {
   const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
   const hasExtraFilters = Boolean(filters.actor || filters.actionType || filters.module || filters.origin || filters.q || filters.preset !== "7days");
   const metrics = [
-    { label: "Hoje", value: data.summary.today, icon: CalendarDays },
-    { label: "Últimos 7 dias", value: data.summary.last7Days, icon: FileClock },
-    { label: "Exclusões", value: data.summary.deletions, icon: Trash2 },
-    { label: "Financeiro", value: data.summary.financial, icon: CircleDollarSign },
-    { label: "Administrativas", value: data.summary.administrative, icon: UserRoundCog }
+    { label: "Hoje", value: data.summary.today },
+    { label: "Últimos 7 dias", value: data.summary.last7Days },
+    { label: "Exclusões", value: data.summary.deletions },
+    { label: "Financeiro", value: data.summary.financial },
+    { label: "Administrativas", value: data.summary.administrative }
   ];
 
   return (
-    <section className="activity-logs manager-resource">
-      <header className="activity-header">
-        <div><span className="activity-eyebrow"><ShieldCheck aria-hidden="true" /> Governança e segurança</span><h1>Logs de Atividades</h1><p>Acompanhe alterações administrativas e operacionais com origem, responsável e diferenças registradas.</p></div>
-        <div className="activity-header-actions">
+    <section className="activity-logs">
+      <ManagementPageHeader
+        title="Logs de Atividades"
+        description="Acompanhe alterações administrativas e operacionais com origem, responsável e diferenças registradas."
+        actions={<>
           {data.capabilities.export ? <button className="secondary-button" type="button" onClick={() => void exportLogs()} disabled={exporting || loading}><Download aria-hidden="true" /> {exporting ? "Preparando..." : "Exportar XLSX"}</button> : null}
-          <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar logs"><RefreshCw className={loading ? "spin" : ""} /></button>
-        </div>
-      </header>
+          <button className="icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="Atualizar logs" title="Atualizar logs"><RefreshCw className={loading ? "spin" : ""} aria-hidden="true" /></button>
+        </>}
+      />
 
-      <div className="activity-summary" aria-label="Resumo da auditoria">
-        {metrics.map(({ label, value, icon: Icon }) => <article key={label}><Icon aria-hidden="true" /><span>{label}</span><strong>{value.toLocaleString("pt-BR")}</strong></article>)}
-      </div>
+      <KpiStrip label="Resumo da auditoria" busy={loading}>
+        {metrics.map(({ label, value }) => <Kpi key={label} label={label} value={loading ? "—" : value.toLocaleString("pt-BR")} />)}
+      </KpiStrip>
 
-      <div className="activity-filters panel-card">
+      <div className="activity-filters">
         <div className="activity-filter-top">
           <form className="admin-search" onSubmit={(event) => { event.preventDefault(); setDebouncedSearch(filters.q.trim()); setPage(1); }}>
             <Search aria-hidden="true" /><label className="sr-only" htmlFor="activity-search">Buscar nos logs</label>
@@ -212,16 +209,16 @@ export function ActivityLogs() {
 
       {feedback ? <p className="admin-feedback" role="status">{feedback}</p> : null}
       {loading ? <ActivityLoading /> : error ? (
-        <div className="admin-empty-state panel-card" role="alert"><h2>Consulta indisponível</h2><p>{error}</p><button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button></div>
+        <div className="activity-state"><StateMessage kind="error" title="Consulta indisponível" description={error} action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button>} /></div>
       ) : data.items.length === 0 ? (
-        <div className="admin-empty-state panel-card"><FileClock aria-hidden="true" /><h2>Nenhuma atividade encontrada</h2><p>Ajuste os filtros ou o período para consultar outros registros reais.</p>{hasExtraFilters ? <button className="secondary-button" type="button" onClick={clearFilters}><FilterX aria-hidden="true" /> Limpar filtros</button> : null}</div>
+        <div className="activity-state"><StateMessage title="Nenhuma atividade encontrada" description="Ajuste os filtros ou o período para consultar outros registros reais." action={hasExtraFilters ? <button className="secondary-button" type="button" onClick={clearFilters}><FilterX aria-hidden="true" /> Limpar filtros</button> : undefined} /></div>
       ) : (
         <div className="activity-list" aria-label="Atividades registradas">
           {data.items.map((item) => <ActivityRow key={item.id} item={item} onOpen={() => setSelected(item)} />)}
         </div>
       )}
 
-      {!loading && !error && data.total > 0 ? <footer className="admin-pagination activity-pagination"><span>{data.total.toLocaleString("pt-BR")} registros</span><div><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} aria-label="Página anterior"><ChevronLeft /></button><span>Página {page} de {pages}</span><button type="button" disabled={page >= pages} onClick={() => setPage((current) => current + 1)} aria-label="Próxima página"><ChevronRight /></button></div></footer> : null}
+      {!loading && !error && data.total > 0 ? <footer className="admin-pagination activity-pagination"><span className="ui-num">{((page - 1) * data.pageSize + 1).toLocaleString("pt-BR")}–{Math.min(page * data.pageSize, data.total).toLocaleString("pt-BR")} de {data.total.toLocaleString("pt-BR")}</span><div><button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} aria-label="Página anterior" title="Página anterior"><ChevronLeft aria-hidden="true" /></button><span>Página {page} de {pages}</span><button type="button" disabled={page >= pages} onClick={() => setPage((current) => current + 1)} aria-label="Próxima página" title="Próxima página"><ChevronRight aria-hidden="true" /></button></div></footer> : null}
 
       <ActivityDetails item={selected} onClose={() => setSelected(null)} />
     </section>
@@ -231,7 +228,7 @@ export function ActivityLogs() {
 function ActivityRow({ item, onOpen }: { item: ActivityLog; onOpen: () => void }) {
   return <button className="activity-row" type="button" onClick={onOpen} aria-label={`Ver detalhes: ${item.description}`}>
     <span className={`activity-origin activity-origin-${item.origin_type}`} aria-hidden="true">{item.origin_type === "person" ? actorLabel(item).slice(0, 2).toUpperCase() : item.origin_type === "integration" ? "IN" : "SZ"}</span>
-    <span className="activity-row-main"><span><strong>{actorLabel(item)}</strong><span className={`activity-badge activity-action-${item.action_type.toLowerCase()}`}>{actionLabels[item.action_type]}</span><span className="activity-badge">{moduleLabel(item.module)}</span></span><span>{item.description}</span><small>{item.entity_label || item.entity_type}{item.entity_id ? ` · ${item.entity_id.slice(0, 8)}` : ""}</small></span>
+    <span className="activity-row-main"><span><strong>{actorLabel(item)}</strong><StatusLabel tone={item.action_type === "DELETE" ? "danger" : "neutral"}>{actionLabels[item.action_type]}</StatusLabel><span className="activity-module">{moduleLabel(item.module)}</span></span><span>{item.description}</span><small>{item.entity_label || item.entity_type}{item.entity_id ? <> · <Code>{item.entity_id.slice(0, 8)}</Code></> : null}</small></span>
     <time dateTime={item.created_at}>{dateTime.format(new Date(item.created_at))}</time>
   </button>;
 }
@@ -241,10 +238,10 @@ function ActivityDetails({ item, onClose }: { item: ActivityLog | null; onClose:
   return <PanelDrawer open={Boolean(item)} title="Detalhes da atividade" eyebrow="Registro imutável" size="large" onClose={onClose}>
     {item ? <div className="activity-detail">
       <div className="activity-detail-summary"><div><span>Responsável</span><strong>{actorLabel(item)}</strong><small>{item.actor_email_snapshot || originLabel(item.origin_type)}{item.actor_role ? ` · ${item.actor_role}` : ""}</small></div><div><span>Data e hora</span><strong>{dateTime.format(new Date(item.created_at))}</strong><small>America/Sao_Paulo</small></div></div>
-      <dl className="activity-detail-grid"><div><dt>Ação</dt><dd>{actionLabels[item.action_type]} <small>{item.action}</small></dd></div><div><dt>Módulo</dt><dd>{moduleLabel(item.module)}</dd></div><div><dt>Entidade</dt><dd>{item.entity_label || item.entity_type}</dd></div><div><dt>Identificador</dt><dd className="activity-mono">{item.entity_id || "—"}</dd></div><div><dt>Origem</dt><dd>{originLabel(item.origin_type)} · {item.origin_name || actorLabel(item)}</dd></div><div><dt>Descrição</dt><dd>{item.description}</dd></div></dl>
+      <dl className="activity-detail-grid"><div><dt>Ação</dt><dd>{actionLabels[item.action_type]} <small>{item.action}</small></dd></div><div><dt>Módulo</dt><dd>{moduleLabel(item.module)}</dd></div><div><dt>Entidade</dt><dd>{item.entity_label || item.entity_type}</dd></div><div><dt>Identificador</dt><dd>{item.entity_id ? <Code>{item.entity_id}</Code> : "—"}</dd></div><div><dt>Origem</dt><dd>{originLabel(item.origin_type)} · {item.origin_name || actorLabel(item)}</dd></div><div><dt>Descrição</dt><dd>{item.description}</dd></div></dl>
       {item.reason ? <div className="activity-reason"><strong>Justificativa</strong><p>{item.reason}</p></div> : null}
       <section className="activity-diff"><h3>O que mudou</h3>{differences.length ? <div>{differences.map((difference) => <article key={difference.field}><strong>{difference.field}</strong><div><span>Antes</span><pre>{displayAuditValue(difference.before)}</pre></div><div><span>Depois</span><pre>{displayAuditValue(difference.after)}</pre></div></article>)}</div> : <p>Este evento não possui comparação de campos.</p>}</section>
-      <details className="activity-technical"><summary>Detalhes técnicos sanitizados</summary><dl><div><dt>ID do log</dt><dd className="activity-mono">{item.id}</dd></div><div><dt>Request ID</dt><dd className="activity-mono">{item.request_id || "—"}</dd></div><div><dt>IP anonimizado</dt><dd>{item.ip_hash || "—"}</dd></div><div><dt>Agente</dt><dd>{item.user_agent_summary || "—"}</dd></div></dl><pre>{displayAuditValue({ antes: item.previous_data_sanitized, depois: item.new_data_sanitized, metadados: item.metadata_sanitized })}</pre></details>
+      <details className="activity-technical"><summary>Detalhes técnicos sanitizados</summary><dl><div><dt>ID do log</dt><dd><Code>{item.id}</Code></dd></div><div><dt>Request ID</dt><dd>{item.request_id ? <Code>{item.request_id}</Code> : "—"}</dd></div><div><dt>IP anonimizado</dt><dd>{item.ip_hash || "—"}</dd></div><div><dt>Agente</dt><dd>{item.user_agent_summary || "—"}</dd></div></dl><pre>{displayAuditValue({ antes: item.previous_data_sanitized, depois: item.new_data_sanitized, metadados: item.metadata_sanitized })}</pre></details>
     </div> : null}
   </PanelDrawer>;
 }

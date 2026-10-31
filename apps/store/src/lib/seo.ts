@@ -7,7 +7,8 @@ export const BRAND_ALTERNATE_NAMES = ["curtiZ", "Curtiz", "curti z"] as const;
 export const OFFICIAL_STORE_ORIGIN = "https://curtiz.com.br";
 
 export const STORE_DESCRIPTION =
-  "Chinelos, slides e sandálias curti Z com conforto, design e compra online segura.";
+  "Conheça os chinelos e kits de chinelos curti Z. Consulte modelos, cores, tamanhos e disponibilidade no catálogo oficial.";
+export const STORE_TITLE = "curti Z | Chinelos e kits de chinelos";
 
 export function officialUrl(path = "/"): string {
   return new URL(path, `${OFFICIAL_STORE_ORIGIN}/`).toString();
@@ -30,50 +31,43 @@ export const websiteStructuredData = {
 
 export const organizationStructuredData = {
   "@context": "https://schema.org",
-  "@type": "Organization",
+  "@type": "OnlineStore",
   "@id": `${OFFICIAL_STORE_ORIGIN}/#organization`,
   name: BRAND_NAME,
   alternateName: [...BRAND_ALTERNATE_NAMES],
-  url: officialUrl()
+  url: officialUrl(),
+  description: STORE_DESCRIPTION
 };
 
-export const catalogNavigationStructuredData = {
+export const catalogNavigationStructuredData = (navigation: ReadonlyArray<{ label: string; href: string; placement: string }>) => ({
   "@context": "https://schema.org",
   "@type": "ItemList",
   name: "Categorias e seleções da curti Z",
-  itemListElement: [
-    ["Todos os produtos", "/produtos"],
-    ["Masculino", "/masculino"],
-    ["Feminino", "/feminino"],
-    ["Infantil", "/infantil"],
-    ["Slides", "/slides"],
-    ["Sandálias", "/sandalias"],
-    ["Lançamentos", "/lancamentos"],
-    ["Ofertas", "/ofertas"],
-    ["Mais vendidos", "/mais-vendidos"]
-  ].map(([name, path], index) => ({
-    "@type": "ListItem",
-    position: index + 1,
-    name,
-    url: officialUrl(path)
-  }))
-};
+  itemListElement: navigation.filter((item) => item.placement === "main"
+    && !["/", "/slides", "/sandalias"].includes(item.href.split("?")[0] ?? ""))
+    .map(({ label, href }, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: label,
+      url: officialUrl(href)
+    }))
+});
 
 export const homeMetadata: Metadata = {
-  title: { absolute: "curti Z | Chinelos, slides e sandálias" },
+  title: { absolute: STORE_TITLE },
   description: STORE_DESCRIPTION,
   alternates: { canonical: officialUrl() },
   openGraph: {
     type: "website",
     locale: "pt_BR",
     siteName: BRAND_NAME,
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION,
     url: officialUrl()
   },
   twitter: {
     card: "summary",
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION
   }
 };
@@ -88,8 +82,8 @@ const legacyCategoryRoutes: Record<string, `/${string}`> = {
   Masculino: "/masculino",
   Feminino: "/feminino",
   Infantil: "/infantil",
-  Slides: "/slides",
-  Sandálias: "/sandalias"
+  Slides: "/produtos",
+  Sandálias: "/produtos"
 };
 
 function categorySlug(value: string) {
@@ -240,6 +234,7 @@ export function productStructuredData(detail: ProductSeoDetail, preferredVariant
     },
     offers: {
       "@type": "Offer",
+      seller: { "@id": `${OFFICIAL_STORE_ORIGIN}/#organization` },
       url: variantUrl,
       priceCurrency: "BRL",
       price: (priceInCents / 100).toFixed(2),

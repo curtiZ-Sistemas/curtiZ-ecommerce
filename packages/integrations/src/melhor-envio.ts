@@ -114,6 +114,22 @@ export type MelhorEnvioQuoteProduct = {
   insuranceValue: number;
 };
 
+export type MelhorEnvioUnavailableService = {
+  serviceId: string | null;
+  reason: "coverage" | "postal_code_rejected" | "package_rejected" | "provider_unavailable" | "provider_rejected";
+};
+
+function unavailableService(entry: JsonObject): MelhorEnvioUnavailableService {
+  // Classify in memory; provider messages can contain addresses and must never be logged verbatim.
+  const error = typeof entry.error === "string" ? entry.error.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLowerCase() : "";
+  const reason: MelhorEnvioUnavailableService["reason"] = /nao atend|sem cobertura|fora.*cobertura|trecho.*indispon/u.test(error) ? "coverage"
+    : /(?:cep|postal).*(?:invalid|nao encontrad|inexistent|nao localiz)|invalid.*(?:cep|postal)/u.test(error) ? "postal_code_rejected"
+      : /(?:peso|dimens|altura|largura|comprimento|volume|weight).*(?:limit|exced|maior|maxim|invalid|permit)/u.test(error) ? "package_rejected"
+        : /temporari|timeout|timed out|indisponibilidade|erro interno|fora do ar|temporar/u.test(error) ? "provider_unavailable" : "provider_rejected";
+  const id = typeof entry.id === "string" || typeof entry.id === "number" ? String(entry.id) : "";
+  return { serviceId: /^\d{1,6}$/u.test(id) ? id : null, reason };
+}
+
 export type MelhorEnvioQuote = {
   provider: "melhorenvio";
   serviceId: string;
@@ -262,7 +278,8 @@ export class MelhorEnvioProvider {
   readonly baseUrl: string;
   private readonly timeoutMs: number;
 
-  constructor(private readonly config: MelhorEnvioConfig, private readonly tokens: MelhorEnvioTokenStore) {
+  constructor(private readonly config: MelhorEnvioConfig, private readonly tokens: MelhorEnvioTokenStore,
+    private readonly transport: typeof fetch = fetch) {
     this.baseUrl = validateConfig(config);
     this.timeoutMs = Math.min(Math.max(config.timeoutMs ?? 15_000, 1_000), 30_000);
   }
@@ -294,7 +311,7 @@ export class MelhorEnvioProvider {
   private async oauthRequest(body: Record<string, string>): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(new URL("/oauth/token", this.baseUrl), {
+      response = await this.transport(new URL("/oauth/token", this.baseUrl), {
         method: "POST",
         headers: { accept: "application/json", "content-type": "application/json", "user-agent": this.userAgent },
         body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs)
@@ -348,7 +365,7 @@ export class MelhorEnvioProvider {
     const token = await this.accessToken();
     let response: Response;
     try {
-      response = await fetch(new URL(path, this.baseUrl), {
+      response = await this.transport(new URL(path, this.baseUrl), {
         ...init,
         headers: {
           accept: "application/json", ...(method === "GET" ? {} : { "content-type": "application/json" }),
@@ -392,7 +409,8 @@ export class MelhorEnvioProvider {
     }
   }
 
-  async quote(input: { originPostalCode: string; destinationPostalCode: string; products: MelhorEnvioQuoteProduct[] }): Promise<MelhorEnvioQuote[]> {
+  async quote(input: { originPostalCode: string; destinationPostalCode: string; products: MelhorEnvioQuoteProduct[] },
+    onUnavailable?: (services: readonly MelhorEnvioUnavailableService[]) => void): Promise<MelhorEnvioQuote[]> {
     const postal = (value: string) => value.replace(/\D/gu, "");
     if (!/^\d{8}$/u.test(postal(input.originPostalCode)) || !/^\d{8}$/u.test(postal(input.destinationPostalCode))
       || input.products.length === 0 || input.products.some((item) => !item.id || !Number.isInteger(item.quantity)
@@ -405,16 +423,19 @@ export class MelhorEnvioProvider {
         from: { postal_code: postal(input.originPostalCode) }, to: { postal_code: postal(input.destinationPostalCode) },
         products: input.products.map((item) => ({ id: item.id, quantity: item.quantity, weight: item.weightKg,
           width: item.widthCm, height: item.heightCm, length: item.lengthCm, insurance_value: item.insuranceValue })),
+        // Sandbox defaults can omit Correios even when explicit PAC/SEDEX quotes are available.
+        ...(this.config.environment === "sandbox" ? { services: "1,2,3,4,17" } : {}),
         options: { receipt: false, own_hand: false }
       })
     }, true);
     if (!Array.isArray(result)) throw new MelhorEnvioError("invalid_response", 502, false);
     const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
     let malformed = false;
+    const unavailable: MelhorEnvioUnavailableService[] = [];
     const quotes = result.flatMap((entry): MelhorEnvioQuote[] => {
       const row = asObject(entry);
       // A service explicitly unavailable is different from a malformed API response.
-      if (row?.error) return [];
+      if (row?.error) { unavailable.push(unavailableService(row)); return []; }
       const company = asObject(row?.company);
       const serviceId = typeof row?.id === "number" && Number.isFinite(row.id)
         ? String(row.id) : stringValue(row?.id);
@@ -434,6 +455,7 @@ export class MelhorEnvioProvider {
         estimatedDays: days, packages, expiresAt }];
     });
     if (quotes.length === 0 && malformed) throw new MelhorEnvioError("invalid_response", 502, false, { upstreamStatus: 200 });
+    if (quotes.length === 0) onUnavailable?.(unavailable.slice(0, 50));
     return quotes;
   }
 
@@ -443,7 +465,7 @@ export class MelhorEnvioProvider {
       method: "POST", body: JSON.stringify({ ...input, service: Number(input.serviceId) })
     }, false));
     const externalId = stringValue(result?.id);
-    if (!externalId) throw new MelhorEnvioError("invalid_response", 502, false);
+    if (!externalId) throw new MelhorEnvioError("uncertain_write", 502, false);
     return { externalId };
   }
 
@@ -486,6 +508,8 @@ export class MelhorEnvioProvider {
       method: "POST", body: JSON.stringify({ orders: [externalId] })
     }, true);
     const row = asObject(result);
+    const shipment = asObject(row?.[externalId]);
+    if (shipment) return shipment.cancellable === true;
     if (typeof row?.cancellable === "boolean") return row.cancellable;
     if (Array.isArray(result)) return result.some((entry) => asObject(entry)?.cancellable === true);
     return false;

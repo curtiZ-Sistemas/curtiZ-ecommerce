@@ -317,15 +317,14 @@ function mapHomepageItem(value: unknown): HomepageSectionItem | null {
     config: isUnknownRecord(value.config) ? value.config : {}, media };
 }
 
-const directProductSelect = "id,slug,name,description,base_price,featured,status,categories(name,slug),product_images(storage_path,is_primary,width,height),product_variants(color_name,size,active,inventory(available_quantity,reserved_quantity)),reviews(rating,status)";
+const directProductSelect = "id,slug,name,description,base_price,featured,status,categories(name,slug),product_images(storage_path,is_primary,width,height),product_variants(color_name,size,active,inventory(available_quantity)),reviews(rating,status)";
 
 function mapDirectProducts(data: unknown): Product[] {
   return readRows(data).flatMap((row): Product[] => {
     const variants = readRows(row.product_variants).filter((variant) => variant.active === true);
     const stock = variants.reduce((sum, variant) => {
       const inventory = readRows(variant.inventory)[0];
-      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity")
-        - readNumber(inventory ?? {}, "reserved_quantity"), 0);
+      return sum + Math.max(readNumber(inventory ?? {}, "available_quantity"), 0);
     }, 0);
     const images = readRows(row.product_images)
       .filter((image) => publicCatalogImage(readString(image, "storage_path"), readString(row, "slug"))

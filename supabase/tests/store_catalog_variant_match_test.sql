@@ -22,7 +22,7 @@ insert into public.product_variants(id, product_id, sku, color_name, color_hex, 
 insert into public.inventory(variant_id, available_quantity, reserved_quantity) values
  ('f3000000-0000-0000-0000-000000000001', 3, 0),
  ('f3000000-0000-0000-0000-000000000002', 2, 0),
- ('f3000000-0000-0000-0000-000000000003', 1, 1),
+ ('f3000000-0000-0000-0000-000000000003', 0, 1),
  ('f3000000-0000-0000-0000-000000000004', 5, 0),
  ('f3000000-0000-0000-0000-000000000005', 0, 0)
 on conflict (variant_id) do update set available_quantity = excluded.available_quantity, reserved_quantity = excluded.reserved_quantity;
@@ -46,7 +46,7 @@ select is((select count(*)::integer from jsonb_array_elements(public.search_cata
 select is((select (option->>'count')::integer from jsonb_array_elements(public.search_catalog(p_category => 'teste-vitrine-variantes')->'facets'->'colors') option where option->>'value' = 'Bege Strass'), 1, 'Count da cor corresponde ao resultado real');
 select is((public.search_catalog(p_category => 'teste-vitrine-variantes', p_colors => array['Bege Strass'], p_sizes => array['38'])->>'total')::integer, 0, 'Cor e tamanho incompatíveis não geram resultado falso');
 reset role;
-update public.inventory set reserved_quantity = 0 where variant_id = 'f3000000-0000-0000-0000-000000000003';
+update public.inventory set available_quantity = 1, reserved_quantity = 0 where variant_id = 'f3000000-0000-0000-0000-000000000003';
 set local role anon;
 select is((public.search_catalog(p_category => 'teste-vitrine-variantes', p_colors => array['Preto'], p_sizes => array['37'])->>'total')::integer, 1, 'Combinação aparece quando estoque é liberado');
 reset role;

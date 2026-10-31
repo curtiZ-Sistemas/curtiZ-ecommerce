@@ -1,9 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enforceAuthRateLimit } from "./auth-rate-limit";
+import { enforceAuthRateLimit, enforceRecoveryVerificationRateLimit } from "./auth-rate-limit";
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("shared authentication budgets", () => {
+  it("bounds recovery verification with a separate HMAC-only IP budget and fails closed without the trusted header", async () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("RATE_LIMIT_HMAC_KEY", "test-only-rate-limit-key-at-least-32-bytes");
+    const rpc = vi.fn<(name: string, args: Record<string, string | number>) => Promise<{
+      data: { status: string; remaining: number }; error: null;
+    }>>(async () => ({ data: { status: "allowed", remaining: 9 }, error: null }));
+    const request = new Request("https://curtiz.com.br/api/auth/recovery/verify", { headers: { "cf-connecting-ip": "192.0.2.1" } });
+    expect(await enforceRecoveryVerificationRateLimit({ request, supabase: { rpc } })).toMatchObject({ status: "allowed" });
+    expect(rpc).toHaveBeenCalledWith("consume_auth_rate_limit", expect.objectContaining({
+      p_scope: "password_reset", p_limit: 10, p_window_seconds: 900
+    }));
+    expect(rpc.mock.calls[0]?.[1]?.p_key_hash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain("192.0.2.1");
+    expect(await enforceRecoveryVerificationRateLimit({ request: new Request("https://curtiz.com.br"), supabase: { rpc } })).toEqual({ status: "error" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
   it("uses one normalized, HMAC-only account key regardless of IP", async () => {
     vi.stubEnv("RATE_LIMIT_HMAC_KEY", "test-only-rate-limit-key-at-least-32-bytes");
     const rpc = vi.fn<(name: string, args: Record<string, string | number>) => Promise<{

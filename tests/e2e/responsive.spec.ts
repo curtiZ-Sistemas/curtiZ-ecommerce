@@ -415,7 +415,9 @@ test("produto mantém recomendações em grade responsiva sem repetir o item atu
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
-  const shelf = page.locator(".product-recommendations");
+  // React stages streamed HTML outside the rendered main content.
+  const shelf = page.locator("#main-content .product-recommendations");
+  await expect(shelf).toHaveCount(1);
   await expect(shelf).toBeVisible();
   // The loading section can be replaced while Playwright waits for scroll stability.
   await shelf.evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));

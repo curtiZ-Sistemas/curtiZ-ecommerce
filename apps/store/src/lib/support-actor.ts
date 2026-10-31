@@ -52,10 +52,6 @@ export async function getSupportActor(request: NextRequest, scope = request.meth
     roleValue === "technical"
       ? roleValue
       : "customer";
-  if (role !== "customer" && process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error || assurance.data.currentLevel !== "aal2") throw new PrivateRequestError(403);
-  }
   const metadataName: unknown = data.user.user_metadata.full_name;
   return {
     kind: "supabase",

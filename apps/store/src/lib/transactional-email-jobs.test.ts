@@ -3,7 +3,7 @@ const state = vi.hoisted(() => ({ rpc: vi.fn<(name: string, args: Record<string,
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ rpc: state.rpc }) }));
 vi.mock("@curtiz/security", () => ({ logServerEvent: state.log }));
-import { runTransactionalEmailJobs, emailOrderFromSource } from "./transactional-email-jobs";
+import { runTransactionalEmailJobs, emailOrderFromSource, emailQueueTestScope } from "./transactional-email-jobs";
 const environment = { SUPABASE_URL: "https://test.supabase.co", SUPABASE_SECRET_KEY: "test-only-key", EMAIL_PROVIDER: "resend",
   EMAIL_ENABLED: "true", RESEND_API_KEY: "test-provider-key", EMAIL_FROM: "pedidos@example.com", NEXT_PUBLIC_STORE_URL: "https://store.example.com" };
 const source = { order: { public_code: "CZT-TEST", customer_name_snapshot: "Pessoa Teste", customer_email_snapshot: "buyer@example.com",
@@ -18,7 +18,7 @@ let claimAvailable = true;
 beforeEach(() => {
   vi.clearAllMocks(); kind = "purchase_confirmed"; providerId = null; eligible = true; begin = true; savedPayload = null; claimAvailable = true;
   state.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
-    if (name === "claim_transactional_email") {
+    if (name === "claim_transactional_email" || name === "claim_test_transactional_email") {
       if (!claimAvailable) return { data: null, error: null };
       claimAvailable = false;
       return { data: { id: "job-test", messageId: "message-test", kind, providerId, payload: savedPayload }, error: null };
@@ -32,6 +32,60 @@ beforeEach(() => {
   });
 });
 const accepted = () => vi.fn<typeof fetch>().mockResolvedValue(new Response('{"id":"provider-test"}'));
+const testScope = () => ({ ...environment, EMAIL_ENABLED: "false",
+  EMAIL_QUEUE_TEST_ACTOR_ID: "10000000-0000-4000-8000-000000000001",
+  EMAIL_QUEUE_TEST_CHECKOUT_KEY: "10000000-0000-4000-8000-000000000002",
+  EMAIL_QUEUE_TEST_STARTED_AT: new Date(Date.now() - 1000).toISOString() });
+describe("single-checkout email TEST window", () => {
+  it("requires a fixed recent window and disabled commercial sending", () => {
+    const env = testScope();
+    expect(emailQueueTestScope(env)).toMatchObject({ actor: env.EMAIL_QUEUE_TEST_ACTOR_ID, key: env.EMAIL_QUEUE_TEST_CHECKOUT_KEY });
+    expect(emailQueueTestScope({ ...env, EMAIL_ENABLED: "true" })).toBeNull();
+    expect(emailQueueTestScope({ ...env, EMAIL_QUEUE_TEST_CHECKOUT_KEY: "invalid" })).toBeNull();
+    expect(emailQueueTestScope({ ...env, EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "invalid" })).toBeNull();
+    expect(emailQueueTestScope(env, Date.parse(env.EMAIL_QUEUE_TEST_STARTED_AT) - 1)).toBeNull();
+    expect(emailQueueTestScope(env, Date.parse(env.EMAIL_QUEUE_TEST_STARTED_AT) + 15 * 60_000)).toBeNull();
+  });
+  it("refuses a recipient outside the explicit allowlist before dispatch", async () => {
+    const transport = accepted();
+    expect(await runTransactionalEmailJobs(testScope(), "test", 1, transport)).toMatchObject({ failed: 1, processed: 0 });
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it("uses the real queue with a scoped claim and never enables the commercial runtime", async () => {
+    const original = state.rpc.getMockImplementation();
+    if (!original) throw new Error("Missing test implementation");
+    state.rpc.mockImplementation((name, args) => name === "read_transactional_email_source"
+      ? Promise.resolve({ data: { ...source, order: { ...source.order, customer_email_snapshot: "sistemas.curtiz@gmail.com" } }, error: null })
+      : original(name, args));
+    const transport = accepted();
+    expect(await runTransactionalEmailJobs(testScope(), "test", 1, transport)).toMatchObject({ processed: 1, failed: 0 });
+    expect(transport).toHaveBeenCalledOnce();
+    expect(state.rpc).toHaveBeenCalledWith("claim_test_transactional_email", expect.objectContaining({ p_checkout_key: testScope().EMAIL_QUEUE_TEST_CHECKOUT_KEY }));
+    expect(state.rpc).not.toHaveBeenCalledWith("claim_transactional_email", expect.anything());
+    expect(state.rpc).not.toHaveBeenCalledWith("sync_transactional_email_runtime", expect.objectContaining({ p_enabled: true }));
+  });
+  it("dispatches only the authorized review and labels it as a sandbox delivery", async () => {
+    kind = "review_requested";
+    const env = { ...testScope(), EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "58c273d0-f41e-4188-9c8c-3805b8a305aa" };
+    const transport = accepted();
+    expect(await runTransactionalEmailJobs(env, "test", 1, transport)).toMatchObject({ processed: 1, failed: 0 });
+    expect(state.rpc).toHaveBeenCalledWith("configure_transactional_review_test_scope", expect.objectContaining({ p_order_id: env.EMAIL_QUEUE_TEST_REVIEW_ORDER_ID }));
+    const body = transport.mock.calls[0]?.[1]?.body;
+    expect(typeof body).toBe("string");
+    expect(body).toContain("HOMOLOGAÇÃO");
+    expect(body).toContain("entrega simulada em sandbox");
+    expect(body).not.toContain("buyer@example.com");
+    expect(body).not.toContain("Pessoa Teste");
+    expect(state.rpc).not.toHaveBeenCalledWith("sync_transactional_email_runtime", expect.objectContaining({ p_enabled: true }));
+  });
+  it("refuses a non-review message in the review-only window", async () => {
+    savedPayload = { to: ["sistemas.curtiz@gmail.com"], subject: "TEST", text: "TEST", html: "TEST" };
+    const transport = accepted();
+    const env = { ...testScope(), EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "58c273d0-f41e-4188-9c8c-3805b8a305aa" };
+    expect(await runTransactionalEmailJobs(env, "test", 1, transport)).toMatchObject({ processed: 0, failed: 1 });
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
 describe("scheduled transactional email orchestration", () => {
   it.each(["purchase_confirmed", "review_requested"])("processes eligible persisted %s under a database lease", async (value) => {
     kind = value;
@@ -63,7 +117,7 @@ describe("scheduled transactional email orchestration", () => {
     const transport = accepted();
     await runTransactionalEmailJobs({ ...environment, ...override }, "execution", 1, transport);
     expect(transport).not.toHaveBeenCalled();
-    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual(["sync_transactional_email_runtime"]);
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual(["sync_transactional_email_runtime", "configure_transactional_email_test_scope"]);
   });
   it("does no work without service database credentials", async () => {
     await runTransactionalEmailJobs({ ...environment, SUPABASE_SECRET_KEY: "" }, "execution");
@@ -117,3 +171,4 @@ describe("scheduled transactional email orchestration", () => {
     }));
   });
 });
+

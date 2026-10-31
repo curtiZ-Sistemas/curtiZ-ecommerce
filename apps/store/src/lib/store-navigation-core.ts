@@ -62,6 +62,11 @@ export function serializeStoreNavigation(value: unknown): StoreNavigationItem[] 
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
     const row = candidate as NavigationRow;
     const href = navigationHref(row);
+    if (href) {
+      const url = new URL(href, "https://curtiz.com.br");
+      if (["/slides", "/sandalias"].includes(url.pathname)
+        || ["slides", "sandalias"].includes(url.searchParams.get("categoria") ?? "")) return [];
+    }
     const id = typeof row.id === "string" ? row.id : "";
     const label = typeof row.label === "string" ? row.label.trim() : "";
     const placement = row.placement === "utility" ? "utility" : "main";

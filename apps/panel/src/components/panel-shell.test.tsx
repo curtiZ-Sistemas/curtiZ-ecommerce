@@ -78,9 +78,9 @@ describe("PanelShell multipainel", () => {
       </PanelShell>
     );
 
-    expect(markup).toContain(`href="${storeUrl}/perfil"`);
+    expect(markup).toContain(`href="${storeUrl}/minha-conta"`);
     expect(markup).toContain("avatar-assinado");
-    expect(markup).toContain("Abrir meu perfil");
+    expect(markup).toContain('aria-label="Minha conta de cliente"');
   });
 
   it("expõe contexto e estado ativo sem o bloco explicativo de prioridade", () => {

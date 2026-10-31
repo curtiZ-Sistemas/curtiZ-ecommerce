@@ -18,6 +18,8 @@ describe("two transactional email templates", () => {
     expect(payload.html).toContain("max-width:600px"); expect(payload.html).toContain('width="100%"');
     expect(payload.html).toContain("#62130f"); expect(payload.html).toContain("#eeeeee");
     expect(payload.html).not.toContain("@import");
+    expect(payload.html).toContain('src="https://store.example.com/images/logo-curtiz.png"');
+    expect(payload.html).toContain('alt="curti Z"');
   });
   it("requests review without offers and uses the existing protected reviews section", () => {
     const payload = render("review_requested");

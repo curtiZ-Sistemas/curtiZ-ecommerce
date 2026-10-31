@@ -7,17 +7,79 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readString } from "./unknown-data";
 
 type Environment = Readonly<Record<string, string | undefined>>;
+const HOMOLOGATION_RECIPIENT = "sistemas.curtiz@gmail.com";
+const HOMOLOGATION_REVIEW_ORDER_ID = "58c273d0-f41e-4188-9c8c-3805b8a305aa";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+export function emailQueueTestScope(environment: Environment, now = Date.now()) {
+  if (environment.EMAIL_ENABLED?.trim().toLowerCase() !== "false") return null;
+  const actor = environment.EMAIL_QUEUE_TEST_ACTOR_ID?.trim() ?? "";
+  const key = environment.EMAIL_QUEUE_TEST_CHECKOUT_KEY?.trim() ?? "";
+  const startedAt = environment.EMAIL_QUEUE_TEST_STARTED_AT?.trim() ?? "";
+  const reviewOrder = environment.EMAIL_QUEUE_TEST_REVIEW_ORDER_ID?.trim() ?? "";
+  const started = Date.parse(startedAt);
+  if (!UUID.test(actor) || !UUID.test(key) || (reviewOrder !== "" && reviewOrder !== HOMOLOGATION_REVIEW_ORDER_ID) || !Number.isFinite(started) || started > now
+    || now - started >= 15 * 60_000 || new Date(started).toISOString() !== startedAt) return null;
+  return { actor, key, startedAt, reviewOrder };
+}
+
+// Runtime-only opt-in for a short, isolated test. Never claims customer jobs.
+export async function runEmailHomologation(environment: Environment, executionId: string,
+  transport: typeof fetch = fetch, now = Date.now()) {
+  const recipient = environment.EMAIL_HOMOLOGATION_RECIPIENT?.trim() ?? "";
+  const startedAt = environment.EMAIL_HOMOLOGATION_STARTED_AT?.trim() ?? "";
+  const started = Date.parse(startedAt);
+  const readiness = getResendReadiness(environment);
+  if (environment.EMAIL_ENABLED?.trim().toLowerCase() !== "false"
+    || environment.EMAIL_PROVIDER?.trim().toLowerCase() !== "resend"
+    || readiness.missing.length || readiness.invalid.length
+    || recipient.toLowerCase() !== HOMOLOGATION_RECIPIENT
+    || !Number.isFinite(started) || started > now || now - started >= 15 * 60_000
+    || new Date(started).toISOString() !== startedAt) return;
+
+  const banner = "HOMOLOGAÇÃO: dados de exemplo. Não existe pedido, pagamento, entrega ou avaliação real.";
+  const order: EmailOrder = { code: "TESTE-SEM-COMPRA", name: "Destinatário de homologação", email: recipient,
+    subtotal: 0, discount: 0, shipping: 0, fees: 0, total: 0, address: "Sem entrega — exemplo de template",
+    items: [{ name: "EXEMPLO — nenhum produto foi comprado", color: "Exemplo", size: "Exemplo", quantity: 1, unitPrice: 0, total: 0 }] };
+  for (const kind of ["purchase_confirmed", "review_requested"] as const) {
+    try {
+      const messageId = `homologation_${kind}_${startedAt.replace(/\D/gu, "")}`;
+      const payload = renderTransactionalEmail({ kind, order, from: readiness.from, replyTo: readiness.replyTo,
+        storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
+      payload.subject = `[HOMOLOGAÇÃO — SEM PEDIDO REAL] ${payload.subject}`;
+      payload.text = `${banner}\n\n${payload.text}`;
+      payload.html = payload.html.replace('<table role="presentation" width="100%"',
+        `<p style="padding:16px;background:#fff4cc;color:#242424;font-family:Arial,sans-serif">${banner}</p><table role="presentation" width="100%"`);
+      const providerId = await sendTransactionalEmail(environment.RESEND_API_KEY ?? "", payload,
+        `curtiz:homologation:${startedAt}:${kind}`, transport);
+      // Resend's account rate limit is shared by sending and receipt queries.
+      await new Promise(resolve => setTimeout(resolve, 1_000));
+      const lastEvent = await getTransactionalEmailStatus(environment.RESEND_API_KEY ?? "", providerId, transport);
+      logServerEvent("info", "transactional_email_homologation_checked", { executionId, kind, providerId, lastEvent });
+      await new Promise(resolve => setTimeout(resolve, 1_000));
+    } catch (error) {
+      logServerEvent("error", "transactional_email_homologation_failed", { executionId, kind,
+        code: error instanceof EmailError ? error.code : "email_homologation_failed" });
+    }
+  }
+}
+
 async function call(db: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await db.rpc(name, args);
-  if (result.error) throw new EmailError("email_storage_unavailable", true);
+  if (result.error) {
+    const code = isUnknownRecord(result.error) ? result.error.code : null;
+    logServerEvent("error", "transactional_email_storage_request_failed", { rpc: name, status: result.status,
+      databaseCode: typeof code === "string" && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/u.test(code) ? code : "unknown" });
+    throw new EmailError("email_storage_unavailable", true);
+  }
   return result.data;
 }
-function database(environment: Environment): SupabaseClient | null {
+function database(environment: Environment, transport: typeof fetch): SupabaseClient | null {
   try {
     const url = new URL(environment.SUPABASE_URL ?? "");
     const key = (environment.SUPABASE_SECRET_KEY ?? environment.SUPABASE_SERVICE_ROLE_KEY)?.trim();
     if (!key || url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password) return null;
-    return createClient(url.origin, key, { auth: { autoRefreshToken: false, persistSession: false } });
+    return createClient(url.origin, key, { global: { fetch: transport }, auth: { autoRefreshToken: false, persistSession: false } });
   } catch { return null; }
 }
 
@@ -47,16 +109,29 @@ export function emailOrderFromSource(source: unknown): EmailOrder {
 
 // The scheduled handler supplies bindings directly. No build-time environment fallback.
 export async function runTransactionalEmailJobs(environment: Environment, executionId: string, limit = 4, transport: typeof fetch = fetch) {
-  const db = database(environment);
+  const scope = emailQueueTestScope(environment);
+  const readiness = getResendReadiness(scope ? { ...environment, EMAIL_ENABLED: "true" } : environment);
+  // The explicit, disabled-commercial test is independent of database health.
+  if (!readiness.configured) await runEmailHomologation(environment, executionId, transport);
+  const db = database(environment, transport);
   if (!db) return { ok: false, processed: 0, failed: 0 };
-  const readiness = getResendReadiness(environment);
-  await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
-  if (!readiness.configured) return { ok: true, processed: 0, failed: 0 };
+  if (scope && readiness.configured) {
+    await call(db, scope.reviewOrder ? "configure_transactional_review_test_scope" : "configure_transactional_email_test_scope", {
+      p_actor: scope.actor, p_checkout_key: scope.key, p_started_at: scope.startedAt,
+      ...(scope.reviewOrder ? { p_order_id: scope.reviewOrder } : {}) });
+  } else {
+    await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
+    await call(db, "configure_transactional_email_test_scope", { p_actor: null, p_checkout_key: null, p_started_at: null });
+  }
+  if (!readiness.configured) {
+    return { ok: true, processed: 0, failed: 0 };
+  }
   let processed = 0;
   let failed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 8); index += 1) {
     const lockId = crypto.randomUUID();
-    const job = await call(db, "claim_transactional_email", { p_lock_id: lockId });
+    const job = await call(db, scope ? "claim_test_transactional_email" : "claim_transactional_email",
+      scope ? { p_lock_id: lockId, p_checkout_key: scope.key } : { p_lock_id: lockId });
     if (!isUnknownRecord(job)) break;
     if (job.skipped === true) continue;
     const jobId = readString(job, "id");
@@ -74,9 +149,30 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
         if (kind !== "purchase_confirmed" && kind !== "review_requested") throw new EmailError("invalid_email_kind");
         const source = await call(db, "read_transactional_email_source", { p_job_id: jobId, p_lock_id: lockId });
         if (!source) { await finish({ p_outcome: "cancelled", p_error_code: "email_no_longer_eligible" }); continue; }
-        const payload = isUnknownRecord(job.payload) ? job.payload : renderTransactionalEmail({ kind,
-          order: emailOrderFromSource(source), from: readiness.from, replyTo: readiness.replyTo,
-          storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
+        if (scope?.reviewOrder && kind !== "review_requested") throw new EmailError("email_test_scope_invalid");
+        const payload = isUnknownRecord(job.payload) ? job.payload : (() => {
+          const order = emailOrderFromSource(source);
+          if (scope?.reviewOrder) {
+            order.email = HOMOLOGATION_RECIPIENT;
+            order.name = "Teste de homologação";
+            order.address = "Entrega simulada em sandbox";
+          }
+          return renderTransactionalEmail({ kind, order, from: readiness.from, replyTo: readiness.replyTo,
+            storeUrl: environment.NEXT_PUBLIC_STORE_URL ?? "", messageId });
+        })();
+        if (scope?.reviewOrder && !isUnknownRecord(job.payload)) {
+          if (typeof payload.subject !== "string" || typeof payload.text !== "string"
+            || typeof payload.html !== "string") throw new EmailError("email_test_scope_invalid");
+          const banner = "HOMOLOGAÇÃO: entrega simulada em sandbox; não é entrega física.";
+          payload.subject = `[HOMOLOGAÇÃO] ${payload.subject}`;
+          payload.text = `${banner}\n\n${payload.text}`;
+          payload.html = payload.html.replace('<table role="presentation" width="100%"',
+            `<p style="padding:16px;background:#fff4cc;color:#242424">${banner}</p><table role="presentation" width="100%"`);
+        }
+        if (scope && (!Array.isArray(payload.to) || payload.to.length !== 1
+          || typeof payload.to[0] !== "string" || payload.to[0].toLowerCase() !== HOMOLOGATION_RECIPIENT)) {
+          throw new EmailError("email_test_recipient_not_allowed");
+        }
         const attempt = await call(db, "begin_transactional_email", { p_job_id: jobId, p_lock_id: lockId, p_payload: payload });
         if (!isUnknownRecord(attempt) || !isUnknownRecord(attempt.payload) || !readString(attempt, "idempotencyKey")) {
           await finish({ p_outcome: "cancelled", p_error_code: "email_no_longer_eligible" }); continue;
@@ -98,6 +194,7 @@ export async function runTransactionalEmailJobs(environment: Environment, execut
       logServerEvent("error", "transactional_email_job_failed", { executionId, jobId, messageId, code: issue.code });
     }
   }
-  await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
+  if (!scope) await call(db, "sync_transactional_email_runtime", { p_enabled: readiness.enabled, p_configured: readiness.configured });
   return { ok: failed === 0, processed, failed };
 }
+

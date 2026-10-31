@@ -29,11 +29,62 @@ const store = (initial = initialTokens()) => {
   return value;
 };
 
+describe("cancelabilidade por remessa", () => {
+  it.each([true, false])("interpreta o contrato oficial indexado pelo ID: %s", async cancellable => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ "external-1": { cancellable, time: 0 } }));
+    const provider = new MelhorEnvioProvider(config, store(), transport);
+    expect(await provider.isCancellable("external-1")).toBe(cancellable);
+  });
+
+  it("não usa a autorização de outra remessa nem valores não booleanos", async () => {
+    for (const result of [{ other: { cancellable: true } }, { "external-1": { cancellable: "true" } }]) {
+      const provider = new MelhorEnvioProvider(config, store(), vi.fn<typeof fetch>().mockResolvedValue(Response.json(result)));
+      expect(await provider.isCancellable("external-1")).toBe(false);
+    }
+  });
+});
+
+it("does not retry a cart accepted without a recoverable external ID", async () => {
+  const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 200 }));
+  const party = { name: "Test", email: "test@example.invalid", phone: "31999999999", document: "12345678909",
+    address: "Test street", number: "1", district: "Test", city: "Nova Serrana", postal_code: "35519000", state_abbr: "MG" };
+  await expect(new MelhorEnvioProvider(config, store(), transport).createShipment({ serviceId: "1", from: party, to: party,
+    products: [{ name: "Test item", quantity: 1, unitary_value: 50 }], volumes: [{ height: 5, width: 10, length: 20, weight: 0.2 }],
+    options: { platform: "test", insurance_value: 50, receipt: false, own_hand: false, reverse: false, tags: [] } }))
+    .rejects.toMatchObject({ code: "uncertain_write", retryable: false });
+  expect(transport).toHaveBeenCalledOnce();
+});
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("MelhorEnvioProvider", () => {
   const quoteInput = { originPostalCode: "01001000", destinationPostalCode: "20040002",
     products: [{ id: "variant-1", quantity: 1, weightKg: 0.35, widthCm: 12, heightCm: 8, lengthCm: 25, insuranceValue: 59.9 }] };
+
+  it.each(["sandbox", "production"] as const)("seleciona serviços do sandbox sem alterar preferências de produção (%s)", async environment => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json([]));
+    await new MelhorEnvioProvider({ ...config, environment }, store(), transport).quote(quoteInput);
+    const rawBody = transport.mock.calls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const body: unknown = typeof rawBody === "string" ? JSON.parse(rawBody) : null;
+    if (environment === "sandbox") expect(body).toHaveProperty("services", "1,2,3,4,17");
+    else expect(body).not.toHaveProperty("services");
+    const target = transport.mock.calls[0]?.[0];
+    expect(target instanceof URL ? target.origin : null).toBe(environment === "sandbox" ? "https://sandbox.melhorenvio.com.br" : "https://melhorenvio.com.br");
+  });
+
+  it("uses an explicit transport for OAuth refresh and API calls without global fetch", async () => {
+    const patchedFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("No HTTP request storage"));
+    vi.stubGlobal("fetch", patchedFetch);
+    const transport = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "new-test-access", refresh_token: "new-test-refresh", expires_in: 3600 })))
+      .mockResolvedValueOnce(new Response("[]"));
+    const tokens = store({ ...initialTokens(), accessTokenExpiresAt: "2000-01-01T00:00:00Z" });
+    await expect(new MelhorEnvioProvider(config, tokens, transport).quote(quoteInput)).resolves.toEqual([]);
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(patchedFetch).not.toHaveBeenCalled();
+    expect(tokens.current()?.accessToken).toBe("new-test-access");
+  });
 
   it.each([400, 401, 403, 422])("OAuth HTTP %s não é tratado como erro do CEP/carrinho", async (status) => {
     const tokens = store({ ...initialTokens(), accessTokenExpiresAt: "2000-01-01T00:00:00Z" });
@@ -62,6 +113,24 @@ describe("MelhorEnvioProvider", () => {
     const provider = new MelhorEnvioProvider(config, store());
     await expect(provider.quote(quoteInput)).resolves.toEqual([]);
     await expect(provider.quote(quoteInput)).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
+  it("preserva apenas categorias e IDs seguros dos serviços recusados", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json([
+      { id: 1, error: "CEP 00000000 inválido; endereço privado" },
+      { id: 3, error: "Trecho não atendido para endereço privado" },
+      { id: 4, error: "Peso excede o limite permitido" },
+      { id: 5, error: "Falha temporária no serviço" },
+      { id: "private-id", error: "private provider response" }
+    ]));
+    const report = vi.fn();
+    expect(await new MelhorEnvioProvider(config, store(), transport).quote(quoteInput, report)).toEqual([]);
+    expect(report).toHaveBeenCalledExactlyOnceWith([
+      { serviceId: "1", reason: "postal_code_rejected" }, { serviceId: "3", reason: "coverage" },
+      { serviceId: "4", reason: "package_rejected" }, { serviceId: "5", reason: "provider_unavailable" },
+      { serviceId: null, reason: "provider_rejected" }
+    ]);
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(/00000000|privad|private/u);
   });
 
   it("não renova novamente quando um 401 antigo chega após outro request renovar", async () => {

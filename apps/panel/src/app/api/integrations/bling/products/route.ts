@@ -32,6 +32,10 @@ async function preview(db: Database, page: number) {
   const local = products.length ? await db.from("product_variants").select("id,sku,active").in("sku", products.map((item) => item.sku))
     : { data: [], error: null };
   if (local.error) throw new BlingError("catalog_unavailable", 503, true);
+  const mappingResult = products.length ? await db.rpc("read_bling_external_mappings", { p_external_ids: products.map((p) => p.externalProductId) })
+    : { data: [], error: null };
+  if (mappingResult.error) throw new BlingError("catalog_unavailable", 503, true);
+  const mappings = Array.isArray(mappingResult.data) ? mappingResult.data.map(entry) : [];
   const localRows: unknown = local.data;
   const localBySku = new Map<string, string>(Array.isArray(localRows) ? localRows.flatMap((value: unknown) => {
     const variant = entry(value);
@@ -39,8 +43,9 @@ async function preview(db: Database, page: number) {
       ? [[variant.sku.toLowerCase(), variant.id] as [string, string]] : [];
   }) : []);
   const rows = products.map((item) => {
-    const variant = localBySku.get(item.sku.toLowerCase());
-    return { ...item, localVariantId: variant ?? null,
+    const mapping = mappings.find((m) => m?.externalProductId === item.externalProductId && m.externalSku === item.sku);
+    const variant = typeof mapping?.variantId === "string" ? mapping.variantId : localBySku.get(item.sku.toLowerCase());
+    return { ...item, localSku: typeof mapping?.sku === "string" ? mapping.sku : item.sku, localVariantId: variant ?? null,
       status: duplicateCodes.has(item.sku.toLowerCase()) ? "duplicate_external_sku"
         : variant ? "ready_to_match" : "no_local_match" };
   });
@@ -108,11 +113,11 @@ export async function POST(request: NextRequest) {
     if (current.digest !== input.digest) return NextResponse.json({ message: "A página mudou. Confira a prévia novamente." },
       { status: 409, headers: technicalNoStore });
     const matches = current.rows.filter((item) => item.status === "ready_to_match")
-      .map(({ sku, externalProductId }) => ({ sku, externalProductId }));
+      .map(({ sku, localSku, externalProductId }) => ({ sku: localSku, externalSku: sku, externalProductId }));
     // A duplicate SKU can be on another page. Recheck the filtered catalogue before linking.
     if (matches.length) {
       const query = new URLSearchParams({ limite: "100", criterio: "5" });
-      for (const match of matches) query.append("codigos[]", match.sku);
+      for (const match of matches) query.append("codigos[]", match.externalSku);
       const found: Array<{ sku: string; id: number }> = [];
       for (let checkPage = 1; checkPage <= 20; checkPage += 1) {
         query.set("pagina", String(checkPage));
@@ -126,7 +131,7 @@ export async function POST(request: NextRequest) {
         if (checkPage === 20) throw new BlingError("catalog_too_large", 409);
       }
       for (const match of matches) {
-        const candidates = found.filter((candidate) => candidate.sku === match.sku.toLowerCase());
+        const candidates = found.filter((candidate) => candidate.sku === match.externalSku.toLowerCase());
         if (candidates.length !== 1 || candidates[0]?.id !== match.externalProductId)
           throw new BlingError("duplicate_external_sku", 409);
       }

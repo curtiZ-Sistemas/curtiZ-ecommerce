@@ -59,7 +59,14 @@ describe("SEO da loja", () => {
     expect(organizationStructuredData.name).toBe(BRAND_NAME);
     expect(websiteStructuredData.alternateName).toEqual([...BRAND_ALTERNATE_NAMES]);
     expect(organizationStructuredData.url).toBe("https://curtiz.com.br/");
-    expect(catalogNavigationStructuredData.itemListElement).toHaveLength(9);
+    const navigation = catalogNavigationStructuredData([
+      { label: "Produtos", href: "/produtos", placement: "main" },
+      { label: "Kits", href: "/produtos?categoria=kits", placement: "main" },
+      { label: "Slides", href: "/slides", placement: "main" }
+    ]);
+    expect(navigation.itemListElement.map((item) => item.name)).toEqual(["Produtos", "Kits"]);
+    expect(organizationStructuredData["@type"]).toBe("OnlineStore");
+    expect(JSON.stringify(homeMetadata)).not.toMatch(/slides|sandálias/iu);
   });
 
   it("impede indexação de URLs arbitrárias da busca interna", () => {
@@ -94,9 +101,15 @@ describe("SEO da loja", () => {
     expect(schema).not.toHaveProperty("aggregateRating");
     expect(breadcrumb.itemListElement.map((item) => item.item)).toEqual([
       "https://curtiz.com.br/",
-      "https://curtiz.com.br/slides",
+      "https://curtiz.com.br/produtos",
       "https://curtiz.com.br/produto/slide-wave-preto"
     ]);
+  });
+
+  it("não indexa categoria sem conteúdo e vincula a oferta à loja real", () => {
+    expect(catalogMetadata({ title: "Infantil", description: "Seleção infantil", path: "/infantil", indexable: false }).robots)
+      .toEqual({ index: false, follow: true });
+    expect(productStructuredData(detail).offers.seller).toEqual({ "@id": "https://curtiz.com.br/#organization" });
   });
 
   it("escapa conteúdo perigoso ao serializar JSON-LD", () => {

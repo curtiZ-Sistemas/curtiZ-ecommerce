@@ -13,10 +13,12 @@ for (const viewport of [
     await email.fill("operacional.demo@curtiz.local");
     await page.locator('input[name="password"]:visible').fill("1234567890");
     await expect(email).toHaveValue("operacional.demo@curtiz.local");
-    await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+    await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
     await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
-    await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", "operacional");
+    await expect(page.locator("#panel-content").getByRole("heading", { name: "Visão geral", level: 1 })).toBeVisible({ timeout: 60_000 });
   });
 }
 
@@ -36,6 +38,25 @@ async function loginAs(page: Page, email: string) {
   });
   await expect(page.locator(".panel-layout")).toBeAttached({ timeout: 60_000 });
 }
+
+test("funcionário usa a conta de cliente e volta ao painel com a mesma sessão", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loginAs(page, "operacional.demo@curtiz.local");
+  await page.getByRole("link", { name: "Minha conta de cliente" }).click();
+  await expect(page).toHaveURL("http://localhost:3000/minha-conta");
+  await expect(page.getByRole("heading", { name: "Entre na sua conta curti Z" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Acessar painéis", exact: true }).click();
+  await expect(page).toHaveURL("http://localhost:3001/operacional", { timeout: 60_000 });
+  await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", "operacional");
+});
+
+test("cliente comum não recebe entrada nem permissão para painéis internos", async ({ page }) => {
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
+  await page.goto("http://localhost:3000/minha-conta");
+  await expect(page.getByRole("link", { name: "Acessar painéis", exact: true })).toHaveCount(0);
+  await page.goto("http://localhost:3001/operacional");
+  await expect(page).toHaveURL(/localhost:3000\/login/);
+});
 
 for (const account of [
   { email: "admin.demo@curtiz.local", route: "administracao" },
@@ -59,12 +80,12 @@ for (const account of [
     await expect(page.getByText("Falha ao carregar")).toHaveCount(0);
     await expect(page.locator("#panel-content")).toBeVisible();
     await expect(page.locator(".panel-layout")).toHaveAttribute("data-panel-role", account.route);
-    await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(238, 238, 238)");
+    await expect(page.locator(".panel-layout")).toHaveCSS("background-color", "rgb(245, 243, 240)");
     await expect(page.locator(".sidebar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".topbar")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.locator(".side-nav a.active")).toHaveCSS(
       "background-color",
-      "rgb(249, 227, 224)"
+      "rgb(255, 237, 232)"
     );
     const switchLink = page.locator(".sidebar-switch-link");
     if (await switchLink.count()) {
@@ -73,8 +94,7 @@ for (const account of [
       expect(switchBox).not.toBeNull();
       expect(supportBox).not.toBeNull();
       const gap = supportBox!.y - (switchBox!.y + switchBox!.height);
-      expect(gap).toBeGreaterThanOrEqual(12);
-      expect(gap).toBeLessThanOrEqual(16);
+      expect(gap).toBeCloseTo(0, 1);
     }
     expect(consoleErrors).toEqual([]);
   });
@@ -84,6 +104,8 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
   await loginAs(page, "tecnico.demo@curtiz.local");
   await page.goto("/tecnico/integracoes");
   await expect(page.getByRole("heading", { name: "Integrações", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bling", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Melhor Envio", exact: true })).toBeVisible();
   await expect(page.getByText("Não configurado").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Aguardando credenciais")).toBeVisible({ timeout: 20_000 });
 });
@@ -91,7 +113,7 @@ test("painel técnico não finge integrações conectadas", async ({ page }) => 
 test("painel técnico separa os metadados de deploy da loja e do painel", async ({ page }) => {
   await loginAs(page, "tecnico.demo@curtiz.local");
   await page.goto("/tecnico/deploys");
-  const deploys = page.locator(".technical-deploy-grid");
+  const deploys = page.getByRole("region", { name: "Runtime, deploy e manutenção" }).locator(".technical-deploys");
   await expect(deploys.getByRole("heading", { name: "Loja" })).toBeVisible();
   await expect(deploys.getByRole("heading", { name: "Painel" })).toBeVisible();
   await expect(deploys.getByText("Commit")).toHaveCount(2);
@@ -107,13 +129,15 @@ test("busca global abre com teclado e mantém resultados protegidos por função
     await searchButton.click();
     await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  const search = page.getByLabel("Buscar no painel");
+  const search = page.getByRole("textbox", { name: "Buscar no painel", exact: true });
   await expect(search).toBeFocused();
   await search.fill("produto");
   await expect(page.locator("#panel-search-results")).toBeVisible();
   await expect(page.getByText("Nenhum resultado encontrado.")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(search).toBeHidden();
+  await expect(searchButton).toHaveAttribute("aria-expanded", "false");
+  await expect(searchButton).toBeFocused();
 });
 
 test("novo suporte aparece na fila administrativa", async ({ page }) => {
@@ -122,7 +146,8 @@ test("novo suporte aparece na fila administrativa", async ({ page }) => {
   await page.goto("http://localhost:3000/login");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.getByPlaceholder("Digite sua senha").fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("http://localhost:3000/minha-conta", { timeout: 30_000 });
   await page.goto("http://localhost:3000/minha-conta/atendimento?new=1");
   await page.getByLabel("Assunto").fill(subject);
@@ -176,9 +201,9 @@ test("remove configurações técnicas da administração e redireciona o bookma
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 26 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 27 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
-  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 32 },
+  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 33 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
 ] as const;
 
@@ -607,7 +632,8 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   await expect(editDialog.getByLabel("Nome *")).toHaveValue(updatedName);
   expect(await editDialog.locator("form").evaluate((form: HTMLFormElement) => form.checkValidity())).toBe(true);
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Produto atualizado.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Produto atualizado com sucesso.")).toBeVisible({ timeout: 15_000 });
+  await expect(editDialog).toHaveCount(0);
   await expect(page.locator("article.managed-product")
     .getByRole("heading", { name: updatedName, exact: true })).toBeVisible();
   expect(savedPayload).toMatchObject({

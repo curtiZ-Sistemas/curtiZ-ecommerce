@@ -37,6 +37,75 @@ beforeEach(() => {
 });
 
 describe("persistent Bling job orchestration", () => {
+  it("processes the selected order through the existing reconciliation service", async () => {
+    let claimed = false;
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+      name === "read_integration_credential" ? { status: "connected" }
+        : name === "claim_bling_order_job" ? claimed ? null : (claimed = true, { id: jobId, jobType: "bling.order.reconcile", payload: { orderId }, attempts: 1 })
+          : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "reconciliation_required" } : true }));
+    expect(await runBlingJobs({ ...environment, BLING_HOMOLOGATION_ORDER_ID: orderId,
+      BLING_INVOICE_TRANSMISSION_MODE: "homologation" }, "homologation-test"))
+      .toMatchObject({ ok: true, processed: 1 });
+    expect(state.request.mock.calls.map(([path]) => path)).toEqual(["/pedidos/vendas/88", "/nfe/99"]);
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_job_id: jobId, p_outcome: "completed" }));
+  });
+  it("does not fall back to the global queue if the scoped migration is unavailable", async () => {
+    state.rpc.mockImplementation(async (name: string) => name === "read_integration_credential"
+      ? { error: null, data: { status: "connected" } } : { error: { message: "function unavailable" }, data: null });
+    await expect(runBlingJobs({ ...environment, BLING_HOMOLOGATION_ORDER_ID: orderId,
+      BLING_INVOICE_TRANSMISSION_MODE: "homologation" }, "homologation-test")).rejects.toBeInstanceOf(BlingError);
+    expect(state.rpc.mock.calls.some(([name]) => name === "claim_bling_job")).toBe(false);
+    expect(state.request).not.toHaveBeenCalled();
+  });
+  it.each([
+    { BLING_HOMOLOGATION_ORDER_ID: "" },
+    { BLING_HOMOLOGATION_ORDER_ID: "not-an-order" },
+    { BLING_HOMOLOGATION_ORDER_ID: orderId },
+    { BLING_HOMOLOGATION_ORDER_ID: orderId, BLING_INVOICE_TRANSMISSION_MODE: "production" },
+    { BLING_HOMOLOGATION_ORDER_ID: orderId, BLING_INVOICE_TRANSMISSION_MODE: "homologation", BLING_LIVE_INVOICE_SEND_AUTHORIZED: "true" }
+  ])("rejects unsafe single-order configuration before database or provider access: %j", async settings => {
+    expect(await runBlingJobs({ ...environment, ...settings }, "homologation-test"))
+      .toEqual({ ok: false, processed: 0 });
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.request).not.toHaveBeenCalled();
+  });
+  it("claims only the homologation order without changing shipping policy or enabling flags", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+      name === "read_integration_credential" ? { status: "connected" } : null }));
+    expect(await runBlingJobs({ ...environment, BLING_HOMOLOGATION_ORDER_ID: orderId,
+      BLING_INVOICE_TRANSMISSION_MODE: "homologation" }, "homologation-test", 1))
+      .toMatchObject({ ok: true, processed: 0 });
+    expect(state.rpc).toHaveBeenCalledWith("claim_bling_order_job", expect.objectContaining({
+      p_order_id: orderId, p_order_enabled: false, p_invoice_enabled: false, p_send_enabled: false }));
+    expect(state.rpc.mock.calls.some(([name]) => name === "claim_bling_job" || name === "set_bling_shipping_policy")).toBe(false);
+    expect(state.request).not.toHaveBeenCalled();
+  });
+  it.each([
+    { jobType: "bling.order.create", payload: { orderId: "ba100000-0000-4000-8000-000000000099" } },
+    { jobType: "bling.stock.sync", payload: { orderId } }
+  ])("rejects a claimed job outside the homologation scope: %j", async claimed => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+      name === "read_integration_credential" ? { status: "connected" }
+        : name === "claim_bling_order_job" ? { id: jobId, attempts: 1, ...claimed } : null }));
+    expect(await runBlingJobs({ ...environment, BLING_HOMOLOGATION_ORDER_ID: orderId,
+      BLING_INVOICE_TRANSMISSION_MODE: "homologation" }, "homologation-test", 1))
+      .toMatchObject({ ok: false, processed: 0, failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.some(([name]) => name === "finish_bling_job")).toBe(false);
+  });
+  it.each([{ icms_taxpayer: true, final_consumer: true }, { icms_taxpayer: false, final_consumer: false }, {}])(
+    "blocks an unsupported new ERP order even with fiscalReady off: %j", async recipient => {
+      state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
+        name === "read_integration_credential" ? { status: "connected" }
+          : name === "claim_bling_job" ? { id: jobId, jobType: "bling.order.create", payload: { orderId }, attempts: 1 }
+            : name === "read_bling_order_link" ? null
+              : name === "read_bling_fiscal_automation_context" ? { recipient } : true }));
+      expect(await runBlingJobs({ ...environment, BLING_ORDER_SYNC_ENABLED: "true" }, "execution-test", 1))
+        .toMatchObject({ failed: 1 });
+      expect(state.request).not.toHaveBeenCalled();
+      expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({
+        p_error_code: "icms_taxpayer" in recipient ? "fiscal_scenario_not_homologated" : "fiscal_recipient_required" }));
+    });
   it("consults an existing sale and invoice, confirms reconciliation and completes under its lease", async () => {
     expect(await runBlingJobs(environment, "execution-test")).toMatchObject({ ok: true, processed: 1 });
     expect(state.request.mock.calls.map(([path]) => path)).toEqual(["/pedidos/vendas/88", "/nfe/99"]);
@@ -67,5 +136,48 @@ describe("persistent Bling job orchestration", () => {
     state.rpc.mockResolvedValue({ data: { status: "refresh_required" }, error: null });
     expect(await runBlingJobs(environment, "execution-test")).toMatchObject({ ok: false, processed: 0 });
     expect(state.request).not.toHaveBeenCalled();
+  });
+  it.each(["bling.invoice.generate", "bling.invoice.send"])("blocks %s with its runtime gate off even if a job is erroneously claimed", async (jobType) => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType, payload: { orderId }, attempts: 1 } : true }));
+    expect(await runBlingJobs(environment, "execution-test", 1)).toMatchObject({ ok: false, failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+  });
+  it("requires documented approval before any fiscal provider call", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.generate", payload: { orderId }, attempts: 1 }
+        : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "synced" }
+          : name === "read_bling_account" ? { companyId: "company-test" } : name === "read_bling_fiscal_mirror_approval" ? null : true }));
+    expect(await runBlingJobs({ ...environment, BLING_FISCAL_READY: "true", BLING_INVOICE_SYNC_ENABLED: "true" }, "execution-test", 1))
+      .toMatchObject({ ok: false, failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.find(([name]) => name === "finish_bling_job")?.[1]).toMatchObject({ p_error_code: "fiscal_automation_policy_required" });
+  });
+  it.each([
+    [{ BLING_INVOICE_SEND_ENABLED: "true" }, "invoice_environment_required"],
+    [{ BLING_INVOICE_SEND_ENABLED: "true", BLING_INVOICE_TRANSMISSION_MODE: "production" }, "live_invoice_not_authorized"]
+  ])("requires explicit transmission environment and authorization for real invoices", async (flags, code) => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.send", payload: { orderId }, attempts: 1 } : true }));
+    expect(await runBlingJobs({ ...environment, ...flags }, "execution-test", 1)).toMatchObject({ failed: 1 });
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_error_code: code }));
+  });
+  it("retries a processing invoice through read-only calls without resending it", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.poll", payload: { orderId }, attempts: 1 }
+        : name === "read_bling_order_link" ? { invoice_id: 99, invoice_status: "processing" } : true }));
+    state.request.mockResolvedValue({ data: { numeroPedidoLoja: "CZ-TEST", situacao: 3 } });
+    await runBlingJobs(environment, "execution-test", 1);
+    expect(state.request.mock.calls).toEqual([["/nfe/99"]]);
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_outcome: "retry", p_error_code: "invoice_processing", p_retry_after_ms: 120000 }));
+  });
+  it("requires reconciliation after an uncertain draft write before another generation or transmission", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
+      : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.generate", payload: { orderId }, attempts: 1 }
+        : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "synced", last_error_code: "uncertain_write" } : true }));
+    await runBlingJobs({ ...environment, BLING_FISCAL_READY: "true", BLING_INVOICE_SYNC_ENABLED: "true" }, "execution-test", 1);
+    expect(state.request).not.toHaveBeenCalled();
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_outcome: "failed", p_error_code: "reconciliation_required" }));
   });
 });

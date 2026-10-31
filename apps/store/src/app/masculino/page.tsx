@@ -1,24 +1,23 @@
 import { CatalogPage } from "@/components/catalog-page";
 import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
+import { hasPublicCatalogItems } from "@/lib/seo-data";
 
-const description =
-  "Conheça chinelos e slides masculinos curti Z com conforto, praticidade e estilo para todos os dias.";
-export const metadata = catalogMetadata({
-  title: "Chinelos e slides masculinos",
-  description,
-  path: "/masculino"
-});
+const description = "Consulte a disponibilidade da seleção masculina no catálogo curti Z.";
+export async function generateMetadata() {
+  return catalogMetadata({
+    title: "Masculino",
+    description,
+    path: "/masculino",
+    indexable: await hasPublicCatalogItems("Masculino")
+  });
+}
 
 export default function Page() {
   return (
     <>
       <CatalogSeo name="Masculino" path="/masculino" />
-      <CatalogPage
-        title="Chinelos e slides masculinos"
-        description={description}
-        category="Masculino"
-      />
+      <CatalogPage title="Masculino" description={description} category="Masculino" />
     </>
   );
 }

@@ -20,4 +20,25 @@ describe("webhook Melhor Envio", () => {
       .toEqual({ status: "delivered", rank: 7 });
     expect(melhorEnvioStatusTransition("pending", "unknown", "unknown")).toBeNull();
   });
+
+  it.each([
+    ["order.created", "created"], ["order.pending", "pending"], ["order.released", "released"],
+    ["order.generated", "generated"], ["order.received", "received"], ["order.posted", "posted"],
+    ["order.delivered", "delivered"], ["order.cancelled", "cancelled"], ["order.undelivered", "undelivered"],
+    ["order.paused", "paused"], ["order.suspended", "suspended"]
+  ])("accepts matching provider lifecycle event %s", (event, status) => {
+    expect(melhorEnvioStatusTransition("pending", event, status)).not.toBeNull();
+  });
+
+  it.each([
+    ["order.posted", "delivered"], ["order.delivered", "posted"], ["order.unknown", "delivered"],
+    ["order.delivered", ""]
+  ])("rejects mismatched or unknown provider lifecycle event %s/%s", (event, status) => {
+    expect(melhorEnvioStatusTransition("pending", event, status)).toBeNull();
+  });
+
+  it("accepts documented status aliases only when event and payload still agree", () => {
+    expect(melhorEnvioStatusTransition("pending", "order.released", "paid")).toEqual({ status: "ready", rank: 1 });
+    expect(melhorEnvioStatusTransition("pending", "order.delivered", "posted")).toBeNull();
+  });
 });

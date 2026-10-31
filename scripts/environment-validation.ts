@@ -41,7 +41,6 @@ const productionRequired = [
   "SHIPPING_PROVIDER",
   "MELHOR_ENVIO_ENABLED",
   "TURNSTILE_ENABLED",
-  "REQUIRE_INTERNAL_MFA",
   "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
 
@@ -342,7 +341,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("MELHOR_ENVIO_CLIENT_SECRET");
     required.add("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
   }
-  if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
+  if (enabledBoolean(environment.TURNSTILE_ENABLED)) {
     required.add("TURNSTILE_SECRET_KEY");
   }
   return [...required].sort();
@@ -370,21 +369,24 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
       ],
       errors
     );
-    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT")
-      && normalize(environment.MERCADO_PAGO_ENVIRONMENT) !== "test") {
-      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test enquanto o adapter live não estiver habilitado");
+    const mode = normalize(environment.MERCADO_PAGO_ENVIRONMENT);
+    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT") && !["test", "production"].includes(mode)) {
+      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test ou production");
     }
+    if (mode === "production" && environment.MERCADO_PAGO_PRODUCTION_READY !== "true")
+      errors.push("MERCADO_PAGO_PRODUCTION_READY deve ser true após homologação documentada");
+    const credentialPrefix = mode === "production" ? "APP_USR-" : "TEST-";
     if (
       hasValue(environment, "MERCADO_PAGO_ACCESS_TOKEN") &&
-      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-")
+      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de produção" : "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
     }
     if (
       hasValue(environment, "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY") &&
-      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-")
+      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de produção" : "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
     }
   }
 
@@ -456,15 +458,8 @@ const validateTurnstile = (environment: EnvironmentValues, errors: string[]): vo
     return;
   }
 
-  const hasSiteKey = hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY");
-
-  const hasSecret = hasValue(environment, "TURNSTILE_SECRET_KEY");
-
-  if (hasSiteKey !== hasSecret) {
-    errors.push(
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY devem ser configuradas em conjunto"
-    );
-  }
+  // The public key is compiled into the browser bundle while the integration is
+  // disabled for builds. Its secret stays in the Worker's runtime, never in CI.
 };
 
 const validateCheckoutFlags = (environment: EnvironmentValues, errors: string[]): void => {
@@ -495,7 +490,6 @@ const validateCommonValues = (
   validateEnum(environment, "WHATSAPP_PROVIDER", errors);
 
   validateBoolean(environment, "DEMO_MODE", errors);
-  validateBoolean(environment, "REQUIRE_INTERNAL_MFA", errors);
   validateBoolean(environment, "AUTH_RATE_LIMIT_ENABLED", errors);
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);

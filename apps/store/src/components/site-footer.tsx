@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { BrandLogo } from "./brand-logo";
 import { CookieSettingsButton } from "./cookie-preferences";
+import { formatCnpj, type CompanyIdentification } from "../lib/company-identification";
 import type { StoreNavigationItem } from "@/lib/store-navigation-core";
 
 const institutionalGroups = [
@@ -56,7 +57,13 @@ export function footerShoppingLinks(navigation: StoreNavigationItem[]): Array<re
   return links;
 }
 
-export function SiteFooter({ navigation }: { navigation: StoreNavigationItem[] }) {
+export function SiteFooter({
+  navigation,
+  company = null
+}: {
+  navigation: StoreNavigationItem[];
+  company?: CompanyIdentification | null;
+}) {
   const groups = [{ title: "Comprar", links: footerShoppingLinks(navigation) }, ...institutionalGroups];
   return (
     <footer className="site-footer">
@@ -95,6 +102,34 @@ export function SiteFooter({ navigation }: { navigation: StoreNavigationItem[] }
           </nav>
         ))}
       </div>
+      {company ? (
+        <section className="footer-legal" aria-label="Identificação do fornecedor">
+          <dl className="container footer-legal-list">
+            <div>
+              <dt>Razão social</dt>
+              <dd>{company.legalName}</dd>
+            </div>
+            <div>
+              <dt>CNPJ</dt>
+              <dd>{formatCnpj(company.taxId)}</dd>
+            </div>
+            <div>
+              <dt>Endereço</dt>
+              <dd>{company.address}</dd>
+            </div>
+            {company.email || company.phone ? (
+              <div>
+                <dt>Contato</dt>
+                <dd>
+                  {company.email ? <a href={`mailto:${company.email}`}>{company.email}</a> : null}
+                  {company.email && company.phone ? <br /> : null}
+                  {company.phone}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
       <div className="footer-bottom">
         <div className="container">
           <span>© {new Date().getFullYear()} curti Z. Todos os direitos reservados.</span>

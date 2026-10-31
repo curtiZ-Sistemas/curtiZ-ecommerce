@@ -2,6 +2,8 @@ import { ArrowLeft } from "lucide-react";
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { SignupForm } from "@/components/signup-form";
+import { GoogleSignIn } from "@/components/google-sign-in";
+import { googleAuthReady } from "@/lib/google-auth";
 
 export const metadata = { title: "Criar conta", robots: { index: false, follow: false } };
 
@@ -49,6 +51,7 @@ export default async function Page({
             e abra novamente o link recebido.
           </p>
         )}
+        <GoogleSignIn available={await googleAuthReady()} returnTo={returnTo} signup />
         <SignupForm
           returnTo={returnTo}
           turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
