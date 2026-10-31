@@ -13,6 +13,7 @@ const sectionSchema = z.object({
   section_number: z.string().regex(/^\d+(?:\.\d+)*$/u),
   title: z.string().trim().min(2).max(180),
   content: z.string().max(30000),
+  content_format: z.enum(["plain", "markdown"]).default("plain"),
   sort_order: z.number().int().min(0).max(1000)
 });
 
@@ -64,6 +65,7 @@ const updateSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("document"),
     id: z.string().uuid(),
+    expectedUpdatedAt: z.string().datetime({ offset: true }),
     document: documentSchema,
     sections: z.array(sectionSchema).min(1).max(80)
   }),
@@ -131,7 +133,14 @@ const updateSchema = z.discriminatedUnion("kind", [
 ]);
 
 function message(error: unknown) {
-  const text = error instanceof Error ? error.message : "";
+  const text =
+    error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : "";
+  if (text.includes("concurrent"))
+    return "O documento foi alterado por outra pessoa. Atualize a tela antes de editar.";
+  if (text.includes("unresolved fields"))
+    return "Há campos pendentes no texto ou nos dados empresariais. Corrija antes de publicar.";
   if (text.includes("duplicate key")) return "Já existe um documento com esse identificador.";
   if (text.includes("company legal information is incomplete"))
     return "Preencha e marque os dados empresariais como completos antes de publicar.";
@@ -170,7 +179,9 @@ export async function GET(request: NextRequest) {
     auth.supabase.from("legal_document_sections").select("*").order("sort_order"),
     auth.supabase
       .from("legal_document_versions")
-      .select("id,document_id,version,content_hash,snapshot,effective_from,effective_until,published_at")
+      .select(
+        "id,document_id,version,content_hash,snapshot,effective_from,effective_until,published_at"
+      )
       .order("version", { ascending: false }),
     auth.supabase
       .from("legal_document_reviews")
@@ -366,7 +377,8 @@ export async function PATCH(request: NextRequest) {
       const result = await auth.supabase.rpc("save_legal_document", {
         p_document_id: parsed.data.id,
         p_document: parsed.data.document,
-        p_sections: parsed.data.sections
+        p_sections: parsed.data.sections,
+        p_expected_updated_at: parsed.data.expectedUpdatedAt
       });
       if (result.error) throw result.error;
     } else if (parsed.data.kind === "transition") {

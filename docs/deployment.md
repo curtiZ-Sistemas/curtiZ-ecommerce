@@ -3,7 +3,7 @@
 A produção usa dois aplicativos Next.js e dois Workers Cloudflare independentes:
 
 - loja: `apps/store` → Worker `curtiz-ecommerce`;
-- painel: `apps/panel` → Worker `curtiz-panel`.
+- painel: `apps/panel` → Worker `curtiz-painel`.
 
 O Supabase gerenciado continua sendo a fonte de verdade dos dados. Loja e painel precisam de URLs,
 variáveis e rotas próprias.
@@ -16,6 +16,11 @@ todas as validações, o OpenNext compila as aplicações alteradas e o Wrangler
 correspondente. O controle de concorrência cancela uma execução antiga quando chega um commit mais
 novo, evitando deploy fora de ordem.
 
+Em pull requests, os builds e dry-runs também executam após qualidade e segurança aprovadas quando
+banco ou E2E falham, para revelar erros de compilação e empacotamento. Esses gates continuam falhando
+no CI; pull requests nunca publicam. Fora de pull requests, ambos os gates também precisam aprovar
+antes de iniciar os jobs de Worker.
+
 ### Deploy automático único (ação manual no Cloudflare)
 
 O GitHub Actions deve ser o **único** caminho automático. Confira manualmente, no Cloudflare, se os
@@ -23,7 +28,16 @@ O GitHub Actions deve ser o **único** caminho automático. Confira manualmente,
 
 1. Abra **Workers & Pages** → `curtiz-ecommerce` → **Settings → Builds**.
 2. Se houver um repositório conectado, use **Disconnect**.
-3. Repita em `curtiz-panel`.
+3. Repita em `curtiz-painel`.
+
+O histórico de **Builds** pode continuar mostrando uma falha antiga mesmo após uma publicação
+correta pelo Actions. Nos logs de 12/10/2026 do commit `e5f5cda`, a compilação terminou, mas o
+comando nativo `wrangler versions upload --env production --keep-vars` foi rejeitado com
+`Unknown arguments: keep-vars, keepVars`. Esse comando não é o caminho oficial de produção.
+Mantenha os builds nativos desconectados e publique pelo workflow, que usa
+`wrangler deploy --config apps/<aplicação>/wrangler.jsonc --env production --keep-vars`.
+Confirme o SHA em `/api/version` de cada domínio e a versão ativa do Worker, além dos gates e
+smokes do Actions; a indicação histórica de "Latest build failed" não identifica a versão ativa.
 
 Um Workers Build conectado publica uma segunda versão a cada push, fora da ordem e **sem** os gates
 do workflow (qualidade, banco, E2E, segurança). Em 30/09/2026 isso estava acontecendo: os checks
@@ -40,10 +54,41 @@ publicado pelo Actions (deploys do Workers Builds não atualizam `GIT_COMMIT_SHA
 
 ### Onde cada configuração fica
 
+A prévia pública de frete no produto exige `SHIPPING_PREVIEW_ENABLED=true` no Runtime da loja,
+além do Melhor Envio habilitado, configurado e homologado em `production`. Ausente ou em sandbox,
+o endpoint responde indisponibilidade sem consultar o provedor. Não habilite a flag antes da
+validação comercial do frete. A prévia usa o orçamento distribuído existente de disponibilidade
+(60 consultas/minuto por identidade, com HMAC próprio), sem migration nova; indisponibilidade
+do orçamento bloqueia a consulta. O cache opcional de até um minuto guarda apenas dados públicos
+concluídos, após validar novamente o catálogo. O checkout mantém sua cotação autenticada oficial.
+
+O gate de dependências executa `pnpm audit --audit-level high` sobre o lockfile completo,
+incluindo desenvolvimento. O Dependency Review nativo fica habilitado somente quando
+`DEPENDENCY_REVIEW_ENABLED=true` nas Repository Variables e o repositório disponibiliza
+Dependency graph/Dependency Review. Sem esse recurso, o workflow registra explicitamente
+a alternativa no resumo; erros da auditoria continuam bloqueando o CI. Essa alternativa
+cobre vulnerabilidades (a configuração anterior não validava licenças) e não cria custo
+de GitHub Advanced Security. As exceções de advisories existentes devem ser revisadas
+separadamente; a troca do gate não concede novas exceções.
+
+Referências: [disponibilidade do Dependency Review](https://github.com/actions/dependency-review-action)
+e [ativação do Dependency graph](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/enable-dependency-graph).
+
+O login em `curtiz.com.br` e o painel em `painel.curtiz.com.br` usam sempre o par oficial,
+mesmo se um build incorporar aliases incorretos em `NEXT_PUBLIC_STORE_URL` ou
+`NEXT_PUBLIC_PANEL_URL`. O validador de produção também rejeita `workers.dev` nessas duas
+variáveis; os aliases continuam disponíveis somente no par `NEXT_PUBLIC_*_TEST_URL`.
+Alterar bindings de Runtime ou republicar uma versão após trocar secrets **não recompila**
+valores `NEXT_PUBLIC_*` incorporados pelo Next.js: reconstrua ambos os Workers a partir do
+mesmo commit. Os cookies da produção devem usar `.curtiz.com.br`, e os dos aliases de teste,
+`.sistemas-curtiz.workers.dev`; uma sessão não atravessa esses dois domínios. Se o painel
+não conseguir validar a sessão, o login informa o motivo genérico com `reason=session_expired`
+ou `reason=session_unavailable`, sem incluir tokens ou detalhes do provedor.
+
 | Local | Responsabilidade |
 | --- | --- |
 | GitHub Actions | build, deploy, metadados (`GIT_COMMIT_SHA`, `BUILD_ID`, `BUILD_TIMESTAMP`), URLs públicas e configuração de plataforma embutida no build |
-| Runtime do Cloudflare (Variables and Secrets de cada Worker) | flags e credenciais de integrações (checkout, Mercado Pago, Melhor Envio, e-mail, Turnstile), dados do remetente, `REQUIRE_INTERNAL_MFA` e `AUTH_RATE_LIMIT_ENABLED` |
+| Runtime do Cloudflare (Variables and Secrets de cada Worker) | flags e credenciais de integrações (checkout, Mercado Pago, Melhor Envio, e-mail, Turnstile), dados do remetente e `AUTH_RATE_LIMIT_ENABLED` |
 | Supabase | tokens OAuth do Melhor Envio, gravados cifrados |
 
 Os jobs compilam com checkout e integrações externas desativados de propósito
@@ -65,22 +110,25 @@ que o workflow volte a sobrescrever essas configurações.
 Configure no GitHub, em **Settings → Secrets and variables → Actions**:
 
 - secrets: `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`;
-- variables: `NEXT_PUBLIC_STORE_URL`, `NEXT_PUBLIC_PANEL_URL`,
-  `NEXT_PUBLIC_STORE_TEST_URL`, `NEXT_PUBLIC_PANEL_TEST_URL`,
-  `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DEMO_MODE`, `ALLOWED_ORIGINS` e
-  `AUTH_COOKIE_DOMAINS`;
+- variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `DEMO_MODE`;
 - variables condicionais: `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` quando o Mercado Pago estiver
   habilitado e `NEXT_PUBLIC_TURNSTILE_SITE_KEY` quando o Turnstile estiver habilitado. Por serem
   embutidas no bundle do navegador durante o build, essas chaves públicas continuam no GitHub.
 
 Não duplique no GitHub `CHECKOUT_ENABLED`, `PAYMENT_PROVIDER`, `MERCADO_PAGO_*`,
-`SHIPPING_PROVIDER`, `MELHOR_ENVIO_*`, `EMAIL_*`, `TURNSTILE_ENABLED`, `REQUIRE_INTERNAL_MFA` nem
+`SHIPPING_PROVIDER`, `MELHOR_ENVIO_*`, `EMAIL_*`, `TURNSTILE_ENABLED` nem
 `AUTH_RATE_LIMIT_ENABLED`. O workflow ignora essas variables, que podem ser apagadas do GitHub
 depois de conferidas no Runtime do Worker. Client Secret, chave de criptografia, CNPJ e outros
 dados sensíveis nunca devem ir para GitHub Variables.
 
 O token Cloudflare deve ter somente as permissões necessárias para publicar os dois Workers na
 conta correta. Não armazene tokens em variables públicas.
+
+As quatro URLs públicas, `ALLOWED_ORIGINS` e `AUTH_COOKIE_DOMAINS` ficam juntas no `env` versionado
+de `.github/workflows/ci.yml`. Os dois jobs herdam os mesmos valores e os publicam na lista de
+bindings já existente. GitHub Variables antigas com esses seis nomes não são mais lidas; uma
+lista remota desatualizada não pode divergir do alias compilado. Pull requests compilam com essas
+URLs públicas reais e com as credenciais efêmeras já previstas, sem publicar.
 
 Antes do build, o workflow consulta somente os **nomes** dos secrets já presentes em cada Worker.
 Ele exige `SUPABASE_SECRET_KEY`, `PII_ENCRYPTION_KEY`, `AUDIT_HASH_KEY`,
@@ -102,19 +150,71 @@ par de teste devem ser configurados assim:
 NEXT_PUBLIC_STORE_URL=https://curtiz.com.br
 NEXT_PUBLIC_PANEL_URL=https://painel.curtiz.com.br
 NEXT_PUBLIC_STORE_TEST_URL=https://curtiz-ecommerce.sistemas-curtiz.workers.dev
-NEXT_PUBLIC_PANEL_TEST_URL=https://curtiz-panel.sistemas-curtiz.workers.dev
+NEXT_PUBLIC_PANEL_TEST_URL=https://curtiz-painel.sistemas-curtiz.workers.dev
 AUTH_COOKIE_DOMAINS=curtiz.com.br,sistemas-curtiz.workers.dev
-ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-panel.sistemas-curtiz.workers.dev
+ALLOWED_ORIGINS=https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-painel.sistemas-curtiz.workers.dev
 ```
 
-As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build do GitHub Actions e devem ser
+As quatro variáveis `NEXT_PUBLIC_*_URL` são variáveis de build versionadas no GitHub Actions e devem ser
 espelhadas com os mesmos valores no runtime dos dois Workers. As duas últimas são aliases, não
-origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` são variáveis somente de runtime dos
-dois Workers no Cloudflare. A aplicação seleciona o par correspondente ao host da requisição; isso
-mantém login, logout, MFA e navegação loja/painel isolados entre produção e teste.
+origens canônicas. `AUTH_COOKIE_DOMAINS` e `ALLOWED_ORIGINS` também são obrigatórias no ambiente de
+build para `validate:production`: no caminho oficial, vêm do `env` versionado no workflow e são
+espelhadas no runtime dos dois Workers pelo workflow. A aplicação seleciona o par correspondente ao host da requisição; isso
+mantém login, logout e navegação loja/painel isolados entre produção e teste.
+
+### Correção de origens nos builds da loja e do painel
+
+Se `scripts/validate-production.ts` informar `ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL`,
+o valor de `ALLOWED_ORIGINS` recebido pelo **Build** não contém a origem exata da URL de teste do
+painel. `curtiz-panel` e `curtiz-painel` são Workers e origens distintos: adicionar um não autoriza
+o outro. O Worker oficial confirmado é `curtiz-painel`, também usado pelo domínio de produção;
+o Wrangler de produção e o workflow estão alinhados com esse nome. O Worker legado
+`curtiz-panel` não é incluído na allowlist nem é removido automaticamente. O ambiente separado
+de homologação conserva o nome existente `curtiz-panel-staging`.
+
+Se o script informar ausência de `AUTH_COOKIE_DOMAINS`,
+`NEXT_PUBLIC_STORE_TEST_URL` ou `NEXT_PUBLIC_PANEL_TEST_URL`, o processo de build não recebeu essas
+variáveis. A falha acontece antes do OpenNext; não exige reinstalar dependências nem reduzir as
+validações. Os valores corretos são os do bloco acima.
+
+No Cloudflare, em **cada** Worker (`curtiz-ecommerce` e `curtiz-painel`), **Settings → Builds →
+Build variables and secrets** configura o ambiente de compilação do Workers Builds. Corrija os
+seis valores do bloco acima como texto ali, caso o build ainda esteja conectado. **Settings →
+Variables and Secrets** configura o runtime: atualize as seis entradas existentes com os mesmos
+valores, preservando os demais bindings. A alteração indispensável para a mensagem relatada é
+`ALLOWED_ORIGINS`; `NEXT_PUBLIC_PANEL_TEST_URL` deve apontar para `curtiz-painel`, e os outros
+quatro valores devem coincidir com o bloco. Não adicione variáveis separadas para cada origem.
+Variáveis de runtime não alimentam automaticamente o build, e variáveis de
+build não criam bindings de runtime. As URLs de teste são aliases do Worker de produção, não o
+ambiente Wrangler `staging`. Confira também que `ALLOWED_ORIGINS` inclui as quatro origens acima.
+
+Referência: [configuração de Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
+
+Para conferir o comando do painel sem publicar, parta da raiz do repositório (`/`) e use
+`pnpm build:worker:panel`; ele valida produção e executa `build:worker` em `apps/panel` via filtro.
+`pnpm build:worker` na raiz compila a **loja**. Executar somente `pnpm build:worker` em `apps/panel`
+chama o OpenNext diretamente e omite o preflight de produção da raiz. O dry-run correspondente,
+após um build completo, é `pnpm deploy:dry-run:panel`.
+
+Esse diagnóstico não habilita Workers Builds como estratégia de produção. Mantenha o GitHub Actions
+como caminho único: as seis configurações públicas já estão no workflow versionado;
+desconecte manualmente Workers Builds conforme o checklist
+acima e use **Actions → CI → Run workflow**, branch `main`, target `both`, quando for publicar.
+Não use **Retry build** no Cloudflare: um build bem-sucedido pode acionar o deploy concorrente.
+
+O plano Free permite **64 variáveis por Worker, somando texto e secrets**. Os valores de Build
+não precisam ser copiados integralmente para Runtime: flags usadas apenas para compilar,
+`DEPLOY_TARGET`, credenciais efêmeras do CI e credenciais de deploy não são bindings adicionais.
+Esta correção altera nomes/valores já usados; a lista de bindings enviados pelo Actions permanece
+com 16 nomes na loja e 14 no painel, incluindo metadados. Os demais bindings de Runtime e secrets
+são preservados por `--keep-vars` e também contam no limite total. Não é possível confirmar o total
+cadastrado sem acesso à configuração da conta; confira-o no painel antes de publicar, sem apagar
+credenciais nem configurações funcionais para abrir espaço.
+
+Referência: [limites de variáveis dos Workers](https://developers.cloudflare.com/workers/platform/limits/#environment-variables).
 
 No Cloudflare, associe `curtiz.com.br` ao Worker `curtiz-ecommerce` e
-`painel.curtiz.com.br` ao Worker `curtiz-panel` como **Custom Domains**. Não adicione essas rotas ao
+`painel.curtiz.com.br` ao Worker `curtiz-painel` como **Custom Domains**. Não adicione essas rotas ao
 Wrangler: assim os domínios podem ser retirados e recolocados no painel sem alteração de código e
 os endereços `workers.dev` permanecem habilitados. Para o `www`, crie um registro DNS `A` proxied
 `www` apontando para `192.0.2.0` e um Single Redirect com padrão de entrada `https://www.*`, destino
@@ -137,7 +237,7 @@ Para republicar sem criar commit, abra **Actions → CI → Run workflow** e esc
 `both`. A execução manual passa pelas mesmas validações antes do deploy.
 
 Cada deploy injeta metadados (`GIT_COMMIT_SHA`, `BUILD_ID` e `BUILD_TIMESTAMP`) e espelha somente
-as variáveis de plataforma **não secretas** do GitHub; configurações de integrações não são
+as variáveis de plataforma **não secretas** do workflow e das GitHub Variables; configurações de integrações não são
 tocadas. O commit ativo pode ser consultado em `/api/version`
 na URL de cada aplicação. Secrets de runtime permanecem somente no Cloudflare.
 
@@ -159,7 +259,6 @@ MELHOR_ENVIO_ENABLED=false
 EMAIL_PROVIDER=disabled
 EMAIL_ENABLED=false
 TURNSTILE_ENABLED=false
-REQUIRE_INTERNAL_MFA=false
 ```
 
 Para habilitar temporariamente o Checkout Bricks apenas em teste, configure na Worker da loja:
@@ -220,6 +319,20 @@ próprias.
 | `shipping_product_invalid` / `shipping_product_lookup_unavailable` | itens do carrinho inválidos / consulta de produtos falhou |
 | `shipping_quote_persistence_unavailable` | cotação obtida, mas a gravação em `shipping_quotes` falhou |
 
+O contexto sanitizado diferencia `credentials_missing`, `credentials_read_failed`,
+`token_decryption_failed`, `refresh_token_expired`, `oauth_rejected`, `permission_denied`,
+`credentials_write_failed`, `refresh_lock_failed` e `refresh_lock_timeout`. `upstreamStatus` é o HTTP
+recebido do Melhor Envio; o HTTP 503 devolvido pela loja não o substitui. `databaseCode` contém
+somente SQLSTATE/PGRST válido, sem mensagem/SQL do banco. Falhas são registradas também nos logs da
+Cloudflare quando a telemetria no Supabase funciona. Ausência de diagnóstico e falha na consulta
+são mostradas como indisponibilidade, não como integração desconfigurada.
+
+Uma falha `token_decryption_failed` exige conferir a mesma `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY`
+nos dois Workers antes de reconectar. Não rotacione a chave aleatoriamente: isso tornaria os tokens
+atuais ilegíveis. `oauth_rejected` exige conferir Client ID/Secret do mesmo ambiente e a autorização;
+`permission_denied` exige conferir `shipping-calculate`. O evento antigo `melhor_envio_authentication`
+sem esses detalhes confirma somente a categoria da falha, não qual desses requisitos falhou.
+
 Configure também todos os dados reais `MELHOR_ENVIO_ORIGIN_*` do remetente. Todas as
 `MELHOR_ENVIO_*` e as flags `SHIPPING_PROVIDER`/`MELHOR_ENVIO_ENABLED` são cadastradas somente no
 Runtime dos Workers (**Settings → Variables and Secrets**), nunca no GitHub. Use **Secret** para
@@ -237,6 +350,48 @@ publicação dos dois Workers pertencem ao workflow; o acionamento manual permit
 valores.
 
 ## Preflight, smoke e housekeeping
+
+### Empacotamento final dos Workers
+
+O build OpenNext e o empacotamento Wrangler são etapas distintas. O CI executa
+`pnpm deploy:dry-run` (loja) e `pnpm deploy:dry-run:panel` (painel) depois dos builds,
+inclusive em pull requests. Esses scripts verificam os assets públicos e executam
+`wrangler deploy --dry-run --config wrangler.jsonc --env production --keep-vars` dentro
+da aplicação correspondente. O dry-run não faz upload nem ativa uma versão.
+
+Os filtros pnpm executam cada script em `apps/store` ou `apps/panel`, preservando os links
+`workspace:*` dos nove projetos. A publicação pelo Actions parte da raiz e usa os caminhos
+explícitos `apps/store/wrangler.jsonc` e `apps/panel/wrangler.jsonc`. Não publique com uma
+configuração gerada ou um entrypoint diferente: a loja usa `custom-worker.ts`, que reutiliza
+o HTTP do OpenNext, otimiza imagens e executa os jobs via `scheduled`; o painel usa diretamente
+`.open-next/worker.js`, com seus próprios assets, imagens e produtor de fila.
+
+Somente o Wrangler da loja possui um alias `server-only` para `worker-server-only.ts`.
+Esse marcador não contém lógica de negócio: o Next.js o resolve internamente e rejeita imports
+em Client Components. No segundo empacotamento, o Wrangler alcança novamente os módulos privados
+pelos jobs do Worker personalizado, fora do compilador Next.js. O alias corresponde à entrada
+vazia `react-server` do marcador e permite empacotar esses módulos no Worker. Nenhum import
+funcional é substituído ou externalizado. Os imports `server-only`, as configurações Next.js
+e as verificações de exposição de código e assets continuam ativos. Não se aplica alias ao
+painel, cujo entrypoint é o Worker gerado pelo OpenNext.
+
+Referências: [Module Aliasing do Wrangler](https://developers.cloudflare.com/workers/wrangler/configuration/#module-aliasing)
+e [fronteira server/client do Next.js](https://nextjs.org/docs/app/getting-started/server-and-client-components#preventing-environment-poisoning).
+
+`wrangler deploy` envia e ativa uma versão imediatamente, como já faz o workflow oficial.
+`wrangler versions upload` apenas envia uma versão; `wrangler versions deploy` escolhe e ativa
+versões previamente enviadas. Não substitua o caminho oficial por uploads do Workers Builds,
+especialmente de branches Dependabot. A publicação corrigida deve partir de `main` após os
+gates do CI, com Workers Builds desconectados manualmente nos dois Workers. Preserve a versão
+anterior para o rollback existente e valide `/api/version`, o smoke sem cobrança e os Cron
+Triggers após a publicação.
+
+No Windows, um erro `EPERM ... symlink` durante a cópia dos arquivos pelo OpenNext impede a
+geração completa do Worker, mesmo quando `next build` passou. Nesse caso, os dois builds e
+dry-runs completos precisam ser confirmados no runner Linux; assets parciais não comprovam
+sucesso. Se o painel falhar no Cloudflare, forneça o log desde o comando de build após a
+instalação do Node até a primeira mensagem de erro, stack e código de saída, incluindo o
+diretório de execução, SHA e versões Node/pnpm/Next/OpenNext/Wrangler. Não inclua valores de secrets.
 
 O deploy da loja executa `pnpm build:worker`, que reutiliza `validate:production`. Antes de publicar,
 o CI confirma os secrets do Worker e chama a RPC pública
@@ -321,3 +476,19 @@ Esses gates não substituem RLS, autorização nem rotação de credenciais quan
 - A auditoria foi corrigida para Next.js/eslint-config-next `16.3.3` e versões transitivas vulneráveis via overrides restritos. OpenNext `1.20.2` e Wrangler `4.86.0` foram preservados. A instalação aponta peers WASM opcionais do resolver ESLint; lint no host não equivale à validação dessa plataforma opcional.
 - No Windows, o build Next passou, mas o empacotamento OpenNext encontrou `EPERM` ao criar symlinks. Confirme os builds completos dos dois Workers no CI Linux antes de publicar; o suporte de versão declarado pelo pacote não comprova execução do Worker.
 - Os jobs de segurança fazem parte dos requisitos do deploy. CodeQL/dependency review dependem das funcionalidades disponíveis no plano GitHub; a Action oficial do Gitleaks exige licença para repositórios de organizações. Configure essas permissões/licença externamente quando aplicável, sem silenciar falhas.
+- Exceções revisadas (reavaliar a cada atualização de dependências):
+  - `pnpm.auditConfig.ignoreGhsas`: `GHSA-vfj7-8cjw-p6xm` (`braces` ≤ 3.0.3). Sem versão corrigida publicada;
+    chega apenas por `eslint-config-next` → `fast-glob`, ferramenta de lint que não entra no bundle nem nos
+    Workers. Remova a exceção assim que houver versão corrigida.
+  - `.gitleaksignore`: somente a impressão digital do placeholder público de teste
+    `ci-referral-placeholder-with-32-characters` em `scripts/ci-workflow.test.ts`. Nunca adicione credenciais reais.
+
+## Homologação restrita da fila transacional de e-mails
+
+A janela técnica usa `EMAIL_ENABLED=false` e três bindings temporários: `EMAIL_QUEUE_TEST_ACTOR_ID`, `EMAIL_QUEUE_TEST_CHECKOUT_KEY` (UUID do checkout) e `EMAIL_QUEUE_TEST_STARTED_AT` (UTC ISO canônico). Não habilita a fila comercial. O prazo de quinze minutos fica preso ao início informado, sem renovação automática.
+
+Somente um pedido novo desse ator, vinculado à mesma chave de `mercadopago.checkout.test`, com `paymentMode=test` e destinatário do snapshot `sistemas.curtiz@gmail.com`, pode entrar na fila. Não há redirecionamento de destinatário nem backfill de pedidos antigos. Configure a janela antes da compra e confira que o cron persistiu o escopo antes de aprovar o pagamento TEST, para testar o gatilho real. Identificação TEST do provedor não deve substituir identidade pessoal salva.
+
+A execução reutiliza claim, lease, payload estável, idempotência, envio e consulta de recibos existentes. O claim técnico verifica sob o mesmo advisory lock que o runtime comercial permanece desativado. Outros atores, chaves, destinatários e produção ficam excluídos. A aplicação também confere o destinatário antes do envio. Avaliação continua exigindo entrega válida e a janela comercial existente de24horas; a janela técnica não altera essas regras.
+
+Aplique a migration incremental antes do deploy. Ao encerrar, invalide a janela e confira que `configure_transactional_email_test_scope(null,null,null)` limpou o escopo. Preserve `EMAIL_ENABLED=false`. Resultado incerto exige consulta do recibo, sem reenvio cego. Não repetir os exemplos antigos para substituir a fila real.

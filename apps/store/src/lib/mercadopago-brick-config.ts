@@ -18,6 +18,7 @@ export type MercadoPagoBrickSession = {
 };
 
 export type CheckoutConfirmationPayload = {
+  fiscalRecipient?: { icmsTaxpayer: boolean; finalConsumer: boolean };
   couponCode?: string;
   shippingQuoteId?: string;
   customer: { name: string; email: string; phone: string; cpf: string };
@@ -40,10 +41,11 @@ export function readMercadoPagoBrickSession(
   identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "checkout">,
   expectedShippingInCents?: number
 ): MercadoPagoBrickSession | null {
-  if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
+  if (!isUnknownRecord(value) || value.ok !== true || !["test", "production"].includes(String(value.paymentMode))) return null;
+  const paymentMode = value.paymentMode === "production" ? "production" : "test";
   const { subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
   if (
-    typeof publicKey !== "string" || !publicKey.startsWith("TEST-") ||
+    typeof publicKey !== "string" || !publicKey.startsWith(paymentMode === "test" ? "TEST-" : "APP_USR-") ||
     !positiveSafeInteger(subtotalInCents) ||
     typeof discountInCents !== "number" || !Number.isSafeInteger(discountInCents) || discountInCents < 0 ||
     typeof couponName !== "string" ||
@@ -62,8 +64,10 @@ export function readMercadoPagoBrickSession(
     shippingInCents,
     amountInCents,
     publicKey,
-    paymentMode: "test",
-    ...identity
+    paymentMode,
+    idempotencyKey: identity.idempotencyKey,
+    email: identity.email,
+    checkout: identity.checkout
   };
 }
 

@@ -1,0 +1,626 @@
+/*
+  Painel Técnico — estilos próprios.
+  Dono: Agente 4. Somente este agente edita este arquivo.
+  Carregado depois de globals.css e foundation.css (ver app/layout.tsx).
+  Seletores permitidos: .technical-*, .bling-integration
+  Ou primitivos compartilhados escopados com [data-panel-role="tecnico"], apenas para densidade/disposição.
+  Use somente tokens (var(--...)); sem hex novo, sem !important, sem fonte nova.
+
+  Direção: console de diagnóstico. Estado primeiro, detalhe sob demanda, densidade alta.
+  Várias regras abaixo sobrescrevem as antigas do bloco "Técnico" de globals.css com a mesma especificidade.
+*/
+
+/* 1. Visão geral e blocos ------------------------------------------------------------------------ */
+
+.technical-overview {
+  display: grid;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.technical-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+
+.technical-toolbar p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.technical-toolbar svg {
+  width: 16px;
+}
+
+.technical-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.technical-alert p {
+  margin: 0;
+}
+
+.technical-overview > .admin-feedback {
+  margin: 0;
+}
+
+[data-panel-role="tecnico"] .technical-overview > .ui-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.technical-kpi-skeleton {
+  display: inline-block;
+  width: 56px;
+  height: 28px;
+  vertical-align: middle;
+}
+
+.technical-section {
+  --technical-sheet-pad-x: var(--space-5);
+  --technical-sheet-pad-y: var(--space-4);
+  display: block;
+  min-width: 0;
+}
+
+.technical-sheet {
+  min-width: 0;
+  overflow-x: auto;
+  padding: var(--technical-sheet-pad-y) var(--technical-sheet-pad-x);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* Tabela encostada nas bordas da folha, como numa ficha. */
+.technical-sheet > .technical-table {
+  width: calc(100% + 2 * var(--technical-sheet-pad-x));
+  margin-inline: calc(-1 * var(--technical-sheet-pad-x));
+}
+
+.technical-sheet > .technical-table:first-child {
+  margin-top: calc(-1 * var(--technical-sheet-pad-y));
+}
+
+.technical-sheet > .technical-table:last-child {
+  margin-bottom: calc(-1 * var(--technical-sheet-pad-y));
+}
+
+.technical-sheet > .technical-table:first-child thead th:first-child {
+  border-top-left-radius: calc(var(--radius) - 1px);
+}
+
+.technical-sheet > .technical-table:first-child thead th:last-child {
+  border-top-right-radius: calc(var(--radius) - 1px);
+}
+
+[data-panel-role="tecnico"] .technical-sheet > .ui-state[data-compact] {
+  padding-inline: 0;
+}
+
+/* Pares chave–valor: rótulo discreto acima, valor firme abaixo, linhas finas entre itens. */
+.technical-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 0 var(--space-6);
+  margin: 0;
+}
+
+.technical-facts > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.technical-facts dt {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.technical-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.technical-facts dd.ui-code {
+  font-weight: 500;
+}
+
+.technical-facts-stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.technical-facts-stacked > div {
+  grid-template-columns: minmax(84px, 30%) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.technical-deploys {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-3);
+}
+
+.technical-deploy {
+  min-width: 0;
+}
+
+.technical-deploy h3,
+.technical-subheading {
+  margin: 0 0 var(--space-1);
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.technical-subheading {
+  margin-top: var(--space-5);
+}
+
+.technical-subsection {
+  margin-top: var(--space-5);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+.technical-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.technical-notes {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.technical-note {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border: 0;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.technical-notes > .technical-note {
+  margin: 0;
+}
+
+.technical-safety-note {
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.technical-inline-feedback {
+  margin: var(--space-3) 0 0;
+}
+
+.technical-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.technical-actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.technical-actions .secondary-button,
+.technical-actions .primary-button {
+  white-space: normal;
+}
+
+/* Ação destrutiva: contorno de perigo; o preenchimento fica para o botão de confirmação do diálogo. */
+.secondary-button.technical-danger-action {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.secondary-button.technical-danger-action:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.technical-muted {
+  color: var(--muted);
+}
+
+.technical-wrap {
+  min-width: 16ch;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* 2. Tabelas técnicas (modo compacto) ------------------------------------------------------------ */
+
+.technical-table th {
+  height: 36px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.technical-table td {
+  height: 36px;
+  padding: 6px var(--space-3);
+  font-size: var(--text-base);
+  line-height: 1.4;
+}
+
+.technical-table td.ui-num {
+  white-space: nowrap;
+}
+
+/* Textos de ausência e data/hora podem quebrar para a tabela caber na folha. */
+.technical-table td.ui-num .technical-muted {
+  white-space: normal;
+}
+
+.technical-table time {
+  font-variant-numeric: tabular-nums;
+}
+
+.technical-cell-text {
+  max-width: 36ch;
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.technical-details summary {
+  width: max-content;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--brand-800);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.technical-details pre {
+  max-width: min(480px, 70vw);
+  max-height: 240px;
+  overflow: auto;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--neutral-50);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.technical-row-actions,
+.technical-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: normal;
+}
+
+.technical-row-actions .primary-button,
+.technical-row-actions .secondary-button,
+.technical-row-actions .ghost-button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.technical-actions-head {
+  width: 1%;
+}
+
+/* 3. Recursos técnicos: cabeçalho, filtros e paginação ------------------------------------------- */
+
+.technical-resource {
+  min-width: 0;
+}
+
+.technical-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+}
+
+.technical-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.technical-field {
+  min-width: 0;
+  flex: 1 1 160px;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.technical-field > span:first-child {
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.technical-search {
+  flex: 2 1 260px;
+}
+
+.technical-field-date {
+  flex: 0 1 160px;
+}
+
+.technical-filters input,
+.technical-filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background-color: var(--surface);
+  font-size: var(--text-base);
+}
+
+.technical-search-input {
+  position: relative;
+  display: block;
+}
+
+.technical-search svg {
+  top: 50%;
+  left: var(--space-3);
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+}
+
+.technical-search input {
+  padding-left: 36px;
+}
+
+.technical-filter-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.technical-more-filters > summary {
+  width: max-content;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.technical-more-filters > summary::-webkit-details-marker {
+  display: none;
+}
+
+.technical-more-filters > summary svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--duration-fast) var(--ease);
+}
+
+.technical-more-filters[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.technical-more-filters > .technical-filter-row {
+  margin-top: var(--space-2);
+}
+
+.technical-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.technical-table-wrap {
+  margin-top: 0;
+}
+
+[data-panel-role="tecnico"] .technical-table-wrap > .ui-loading {
+  padding: var(--space-4);
+}
+
+.technical-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.technical-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 4. Bling --------------------------------------------------------------------------------------- */
+
+.bling-integration .technical-table {
+  margin-top: var(--space-2);
+}
+
+/* 5. Responsivo ---------------------------------------------------------------------------------- */
+
+@media (min-width: 700px) {
+  [data-panel-role="tecnico"] .technical-overview > .ui-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1360px) {
+  [data-panel-role="tecnico"] .technical-overview > .ui-kpis {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Barra de filtros fixa ao rolar só no desktop, onde há altura para isso. */
+@media (min-width: 1024px) {
+  .technical-filters {
+    position: sticky;
+    z-index: 5;
+    top: var(--topbar-height);
+  }
+}
+
+@media (max-width: 800px) {
+  .technical-section {
+    --technical-sheet-pad-x: var(--space-4);
+  }
+
+  .technical-filters input,
+  .technical-filters select {
+    min-height: 44px;
+    font-size: var(--text-md);
+  }
+}
+
+@media (max-width: 768px) {
+  /* Lista empilhada (.ui-table-stack): devolve altura livre e alinhamento à esquerda. */
+  .technical-table td {
+    height: auto;
+    padding: 3px 0;
+  }
+
+  .technical-table td.ui-num {
+    text-align: left;
+  }
+
+  [data-panel-role="tecnico"] .technical-table td > .ui-label {
+    justify-self: start;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  [data-panel-role="tecnico"] .technical-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .technical-cell-text {
+    max-width: none;
+    display: block;
+    -webkit-line-clamp: none;
+    line-clamp: none;
+  }
+
+  .technical-table td.ui-num {
+    white-space: normal;
+  }
+
+  .technical-details pre {
+    max-width: 100%;
+  }
+
+  .technical-wrap {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .technical-deploys {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .technical-field-date {
+    flex: 1 1 130px;
+  }
+
+  .technical-filter-actions {
+    flex: 1 1 100%;
+  }
+
+  .technical-filter-actions .primary-button {
+    flex: 1 1 auto;
+  }
+
+  .technical-actions,
+  .technical-actions-group {
+    align-items: stretch;
+  }
+
+  .technical-actions-group > button,
+  .technical-actions > button {
+    flex: 1 1 auto;
+  }
+
+  .technical-pagination {
+    flex-wrap: wrap;
+  }
+}
+
+@media (pointer: coarse) {
+  .technical-row-actions .primary-button,
+  .technical-row-actions .secondary-button,
+  .technical-row-actions .ghost-button,
+  .technical-details summary,
+  .technical-more-filters > summary {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .technical-more-filters > summary svg {
+    transition: none;
+  }
+}

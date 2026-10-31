@@ -1,3 +1,5 @@
+import { getResendReadiness } from "./email";
+
 export type OptionalPaymentProvider = "disabled" | "mock" | "mercadopago";
 export type OptionalEmailProvider = "disabled" | "mock" | "resend";
 export type OptionalShippingProvider = "disabled" | "fixed" | "mock" | "melhorenvio" | "correios" | "custom";
@@ -78,6 +80,9 @@ export const getMelhorEnvioReadiness = (environment: IntegrationEnvironment): Me
   required("MELHOR_ENVIO_CLIENT_SECRET");
   required("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
   validWhenPresent("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY", isAes256Base64Key);
+  // Opcional: chaves anteriores aceitas só para decifrar durante a troca controlada da chave ativa.
+  validWhenPresent("MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS",
+    (value) => value.split(/[\s,]+/u).filter(Boolean).every(isAes256Base64Key));
   required("MELHOR_ENVIO_APP_NAME");
   required("MELHOR_ENVIO_TECHNICAL_CONTACT");
   validWhenPresent("MELHOR_ENVIO_TECHNICAL_CONTACT", (value) => /^\S+@\S+\.\S+$/u.test(value));
@@ -138,7 +143,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
   // checkout instead of substituting a different shipping price.
   const shippingProvider = requestedShippingProvider;
   const emailEnabled =
-    parseEnvironmentBoolean(environment.EMAIL_ENABLED) || emailProvider === "resend";
+    getResendReadiness(environment).configured;
   const turnstileEnabled = parseEnvironmentBoolean(environment.TURNSTILE_ENABLED);
   const googleMerchantEnabled = parseEnvironmentBoolean(environment.GOOGLE_MERCHANT_ENABLED);
   const paymentEnabled =
@@ -159,8 +164,7 @@ export const getIntegrationConfig = (environment: IntegrationEnvironment = proce
     email: { provider: emailProvider, enabled: emailEnabled },
     whatsapp: { provider: whatsappProvider, enabled: whatsappProvider !== "disabled" },
     googleMerchant: { enabled: googleMerchantEnabled },
-    turnstile: { enabled: turnstileEnabled },
-    internalMfaRequired: parseEnvironmentBoolean(environment.REQUIRE_INTERNAL_MFA)
+    turnstile: { enabled: turnstileEnabled }
   } as const;
 };
 
@@ -187,5 +191,3 @@ export const isTurnstileEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).turnstile.enabled;
 export const isGoogleMerchantEnabled = (environment?: IntegrationEnvironment) =>
   getIntegrationConfig(environment).googleMerchant.enabled;
-export const isInternalMfaRequired = (environment?: IntegrationEnvironment) =>
-  getIntegrationConfig(environment).internalMfaRequired;

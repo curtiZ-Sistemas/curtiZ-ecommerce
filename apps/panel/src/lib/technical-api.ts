@@ -1,7 +1,6 @@
 import { DEMO_SESSION_COOKIE, isAllowedBrowserRequest, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { hasRequiredInternalMfa } from "./internal-mfa";
 import { consumePanelMutationBudget, panelRateLimitStatus } from "./api-rate-limit";
 import { type TechnicalRecord } from "@/lib/technical-sanitizer";
 
@@ -55,7 +54,6 @@ export async function authorizeTechnicalRequest(request: NextRequest, options: {
   ) {
     return null;
   }
-  if (!(await hasRequiredInternalMfa(supabase))) return null;
   if (options.mutation !== false && !(await consumePanelMutationBudget(request, supabase))) return null;
   return { supabase, userId: user.id };
 }

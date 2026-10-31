@@ -14,6 +14,13 @@ insert into public.user_permission_overrides(user_id, permission_id, allowed, re
 select 'd1000000-0000-4000-8000-000000000001', permission.id, true,
   'Teste de publicação sem revisão', 'd1000000-0000-4000-8000-000000000001'
 from public.permissions permission where permission.code = 'homepage.publish';
+-- Baseline roles may acquire these permissions; the negative cases require explicit denials.
+insert into public.user_permission_overrides(user_id, permission_id, allowed, reason, created_by)
+select 'd1000000-0000-4000-8000-000000000002', id, false, 'Fixture sem publicação',
+  'd1000000-0000-4000-8000-000000000001' from public.permissions where code='homepage.publish';
+insert into public.user_permission_overrides(user_id, permission_id, allowed, reason, created_by)
+select 'd1000000-0000-4000-8000-000000000001', id, false, 'Fixture sem revisão',
+  'd1000000-0000-4000-8000-000000000001' from public.permissions where code='homepage.review';
 
 insert into public.categories(id, name, slug)
 values ('d2000000-0000-4000-8000-000000000001', 'Categoria da home', 'categoria-home-direta');
@@ -21,7 +28,11 @@ insert into public.products(id, name, slug, short_description, description, cate
   status, base_price, weight_grams, height_cm, width_cm, length_cm)
 values ('d3000000-0000-4000-8000-000000000001', 'Produto da home', 'produto-home-direta',
   'Teste', 'Produto para validação', 'd2000000-0000-4000-8000-000000000001',
-  'active', 50, 100, 5, 10, 20);
+  'draft', 50, 100, 5, 10, 20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('d3000000-0000-4000-8000-000000000001');
+update public.products set status='active' where id in ('d3000000-0000-4000-8000-000000000001');
 
 set local role authenticated;
 select set_config('request.jwt.claims',

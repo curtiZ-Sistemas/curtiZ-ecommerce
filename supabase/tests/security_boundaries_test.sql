@@ -5,15 +5,15 @@ select plan(8);
 
 select ok(to_regclass('public.payment_refunds') is not null, '1. Tabela de reembolsos existe');
 select ok(
-  to_regprocedure('public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz)') is not null,
+  to_regprocedure('public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz,numeric,numeric,text,integer,text)') is not null,
   '2. Finalização transacional de pagamento existe'
 );
 select ok(
-  has_function_privilege('service_role', 'public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz)', 'execute'),
+  has_function_privilege('service_role', 'public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz,numeric,numeric,text,integer,text)', 'execute'),
   '3. Service role executa finalização de pagamento'
 );
 select ok(
-  not has_function_privilege('anon', 'public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz)', 'execute'),
+  not has_function_privilege('anon', 'public.finalize_mercadopago_payment(text,text,text,numeric,text,public.payment_status,timestamptz,numeric,numeric,text,integer,text)', 'execute'),
   '4. Anônimo não finaliza pagamento'
 );
 select ok(

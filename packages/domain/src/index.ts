@@ -1,4 +1,6 @@
 export * from "./money";
+export * from "./legal-policies";
+export * from "./legal-markdown";
 export * from "./merchant";
 export * from "./storefront-item";
 export * from "./permissions";
@@ -8,4 +10,5 @@ export * from "./representatives";
 export * from "./status";
 export * from "./store-campaigns";
 export * from "./support";
+export * from "./returns";
 export * from "./types";

@@ -1,0 +1,12 @@
+# Ativação controlada do Mercado Pago
+
+O código aceita teste e produção em caminhos separados. Este documento não libera cobranças reais. Homologação de cartões e validações externas ainda precisam ser concluídas e registradas.
+
+1. Concluir no ambiente de teste aprovação, recusa, pendência, repetição idempotente, webhook assinado, cancelamento e reembolso. Conferir estoque e financeiro, incluindo taxas e valores líquidos. A rejeição de requisição HTTP 400 com código 10113 ainda não equivale a uma recusa do emissor homologada.
+2. O titular configura diretamente nos ambientes seguros as credenciais da mesma aplicação: `MERCADO_PAGO_ACCESS_TOKEN` e `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` com prefixo `APP_USR-`; `MERCADO_PAGO_WEBHOOK_SECRET` correspondente ao webhook de produção. O token e o segredo são Secrets; a Public Key é pública. Não colocar valores em documentos, chat, Git ou logs. Preservar as credenciais de teste no gerenciador seguro aprovado pelo titular.
+3. Configurar no painel oficial o webhook de produção da aplicação em `https://curtiz.com.br/api/webhooks/mercadopago`, com o evento Pagamentos. Conferir assinatura, timestamp e entrega. Uma URL preenchida não comprova reconciliação.
+4. Após aprovação documentada, definir `MERCADO_PAGO_ENVIRONMENT=production` e `MERCADO_PAGO_PRODUCTION_READY=true`; manter `CHECKOUT_ENABLED=false` durante a troca. A simples substituição das chaves é recusada. A publicação ocorre pelo Actions oficial, com migrations, qualidade, segurança, E2E, builds e smoke aprovados.
+5. Validar a sessão do Brick com a Public Key do mesmo ambiente. Pedidos, chaves de idempotência e Customers de teste não são convertidos em produção. Respostas de pagamento devem ter `live_mode=true`; pedidos de outro ambiente são bloqueados antes da cobrança, reconciliação ou cancelamento.
+6. Fazer o teste produtivo final somente com autorização explícita para o valor real e o respectivo reembolso. Validar o pedido, o webhook, a reserva/baixa e a contabilização. Liberar o checkout apenas após os critérios comerciais e fiscais aplicáveis estarem cumpridos.
+
+Para recuar, desligar novos checkouts e retornar pelo fluxo oficial à configuração e versão previamente validadas. Não apagar pagamentos, pedidos, reservas, eventos ou Customers. Pagamentos reais pendentes exigem reconciliação no ambiente de origem; uma troca de ambiente não resolve essas pendências. E-mails, Bling, emissão fiscal e compra de etiquetas têm liberações próprias e continuam sujeitos às suas validações.

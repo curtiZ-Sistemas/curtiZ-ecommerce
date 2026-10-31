@@ -3,6 +3,23 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(19);
 
+-- Read fixtures through the authorized snapshot RPC; no production table grants are changed.
+create temporary view test_financial_categories as
+  select * from jsonb_populate_recordset(null::public.financial_categories,public.financial_control_snapshot(current_date,current_date)->'categories');
+grant select on test_financial_categories to authenticated;
+create temporary view test_financial_accounts as
+  select * from jsonb_populate_recordset(null::public.financial_accounts,public.financial_control_snapshot(current_date,current_date)->'accounts');
+grant select on test_financial_accounts to authenticated;
+create temporary view test_accounts_payable as
+  select * from jsonb_populate_recordset(null::public.accounts_payable,public.financial_control_snapshot(current_date,current_date)->'payables');
+grant select on test_accounts_payable to authenticated;
+create temporary view test_accounts_receivable as
+  select * from jsonb_populate_recordset(null::public.accounts_receivable,public.financial_control_snapshot(current_date,current_date)->'receivables');
+grant select on test_accounts_receivable to authenticated;
+create temporary view test_financial_transactions as
+  select * from jsonb_populate_recordset(null::public.financial_transactions,public.financial_control_snapshot(current_date,current_date)->'transactions');
+grant select on test_financial_transactions to authenticated;
+
 insert into auth.users(
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -22,16 +39,16 @@ select lives_ok(
   '1. Cria conta totalizadora'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('category.save',jsonb_build_object('name','Internet teste financeiro','code','9.90.01','kind','expense','is_group',false,'parent_id',(select id from public.financial_categories where name='Grupo teste financeiro'),'sort_order',1,'active',true))$$,
+  $$select public.financial_control_mutate('category.save',jsonb_build_object('name','Internet teste financeiro','code','9.90.01','kind','expense','is_group',false,'parent_id',(select id from pg_temp.test_financial_categories where name='Grupo teste financeiro'),'sort_order',1,'active',true))$$,
   '2. Cria subconta vinculada ao grupo'
 );
 select is(
-  (select parent_id from public.financial_categories where name='Internet teste financeiro'),
-  (select id from public.financial_categories where name='Grupo teste financeiro'),
+  (select parent_id from pg_temp.test_financial_categories where name='Internet teste financeiro'),
+  (select id from pg_temp.test_financial_categories where name='Grupo teste financeiro'),
   '3. Mantem o vinculo hierarquico'
 );
 select throws_ok(
-  $$select public.financial_control_mutate('category.save',jsonb_build_object('id',(select id from public.financial_categories where name='Grupo teste financeiro'),'name','Grupo teste financeiro','code','9.90','kind','expense','is_group',true,'parent_id',(select id from public.financial_categories where name='Grupo teste financeiro'),'sort_order',1,'active',true))$$,
+  $$select public.financial_control_mutate('category.save',jsonb_build_object('id',(select id from pg_temp.test_financial_categories where name='Grupo teste financeiro'),'name','Grupo teste financeiro','code','9.90','kind','expense','is_group',true,'parent_id',(select id from pg_temp.test_financial_categories where name='Grupo teste financeiro'),'sort_order',1,'active',true))$$,
   'financial category cannot be its own parent',
   '4. Impede autorreferencia'
 );
@@ -40,25 +57,25 @@ select lives_ok(
   '5. Cria conta financeira de teste'
 );
 select throws_ok(
-  $$select public.financial_control_mutate('payable.create',jsonb_build_object('party','Fornecedor teste','description','Internet','category_id',(select id from public.financial_categories where name='Grupo teste financeiro'),'issued_on',current_date,'due_on',current_date,'document_number','','amount_cents',50000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
+  $$select public.financial_control_mutate('payable.create',jsonb_build_object('party','Fornecedor teste','description','Internet','category_id',(select id from pg_temp.test_financial_categories where name='Grupo teste financeiro'),'issued_on',current_date,'due_on',current_date,'document_number','','amount_cents',50000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
   'invalid analytic financial category',
   '6. Rejeita grupo em conta a pagar pela RPC'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('payable.create',jsonb_build_object('party','Fornecedor teste','description','Internet','category_id',(select id from public.financial_categories where name='Internet teste financeiro'),'issued_on',current_date,'due_on',current_date,'document_number','T-1','amount_cents',50000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
+  $$select public.financial_control_mutate('payable.create',jsonb_build_object('party','Fornecedor teste','description','Internet','category_id',(select id from pg_temp.test_financial_categories where name='Internet teste financeiro'),'issued_on',current_date,'due_on',current_date,'document_number','T-1','amount_cents',50000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
   '7. Cadastra conta a pagar na subconta'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('payable.settle',jsonb_build_object('id',(select id from public.accounts_payable where document_number='T-1'),'settled_on',current_date,'account_id',(select id from public.financial_accounts where name='Conta teste hierarquia')))$$,
+  $$select public.financial_control_mutate('payable.settle',jsonb_build_object('id',(select id from pg_temp.test_accounts_payable where document_number='T-1'),'settled_on',current_date,'account_id',(select id from pg_temp.test_financial_accounts where name='Conta teste hierarquia')))$$,
   '8. Paga a conta'
 );
 select is(
-  (select count(*) from public.financial_transactions where payable_id=(select id from public.accounts_payable where document_number='T-1')),
+  (select count(*) from pg_temp.test_financial_transactions where payable_id=(select id from pg_temp.test_accounts_payable where document_number='T-1')),
   1::bigint,
   '9. Pagamento gera exatamente um lancamento'
 );
 select is(
-  (select sum(amount) from public.financial_transactions where payable_id=(select id from public.accounts_payable where document_number='T-1') and reversed_at is null),
+  (select sum(amount) from pg_temp.test_financial_transactions where payable_id=(select id from pg_temp.test_accounts_payable where document_number='T-1') and reversed_at is null),
   500.00::numeric,
   '10. Caixa recebe uma unica saida de R$ 500'
 );
@@ -77,24 +94,24 @@ select lives_ok(
   '13. Cria totalizadora de receita'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('category.save',jsonb_build_object('name','Loja teste','code','8.80.01','kind','income','is_group',false,'parent_id',(select id from public.financial_categories where name='Grupo receita teste'),'sort_order',1,'active',true))$$,
+  $$select public.financial_control_mutate('category.save',jsonb_build_object('name','Loja teste','code','8.80.01','kind','income','is_group',false,'parent_id',(select id from pg_temp.test_financial_categories where name='Grupo receita teste'),'sort_order',1,'active',true))$$,
   '14. Cria subconta de receita'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('receivable.create',jsonb_build_object('party','Cliente teste','description','Venda teste','category_id',(select id from public.financial_categories where name='Loja teste'),'issued_on',current_date,'due_on',current_date,'document_number','R-1','amount_cents',70000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
+  $$select public.financial_control_mutate('receivable.create',jsonb_build_object('party','Cliente teste','description','Venda teste','category_id',(select id from pg_temp.test_financial_categories where name='Loja teste'),'issued_on',current_date,'due_on',current_date,'document_number','R-1','amount_cents',70000,'account_id','','notes','','installment_count',1,'interval_days',30))$$,
   '15. Cadastra conta a receber na subconta'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('receivable.settle',jsonb_build_object('id',(select id from public.accounts_receivable where document_number='R-1'),'settled_on',current_date,'account_id',(select id from public.financial_accounts where name='Conta teste hierarquia')))$$,
+  $$select public.financial_control_mutate('receivable.settle',jsonb_build_object('id',(select id from pg_temp.test_accounts_receivable where document_number='R-1'),'settled_on',current_date,'account_id',(select id from pg_temp.test_financial_accounts where name='Conta teste hierarquia')))$$,
   '16. Recebe a conta'
 );
 select is(
-  (select count(*) from public.financial_transactions where receivable_id=(select id from public.accounts_receivable where document_number='R-1')),
+  (select count(*) from pg_temp.test_financial_transactions where receivable_id=(select id from pg_temp.test_accounts_receivable where document_number='R-1')),
   1::bigint,
   '17. Recebimento gera exatamente um lancamento'
 );
 select lives_ok(
-  $$select public.financial_control_mutate('category.save',jsonb_build_object('id',(select id from public.financial_categories where name='Internet teste financeiro'),'name','Internet teste financeiro','code','9.90.01','kind','expense','is_group',false,'parent_id','','sort_order',1,'active',false))$$,
+  $$select public.financial_control_mutate('category.save',jsonb_build_object('id',(select id from pg_temp.test_financial_categories where name='Internet teste financeiro'),'name','Internet teste financeiro','code','9.90.01','kind','expense','is_group',false,'parent_id','','sort_order',1,'active',false))$$,
   '18. Categoria com historico pode ser desativada sem apagar movimentos'
 );
 select ok(

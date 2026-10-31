@@ -4,6 +4,12 @@ export { FIXED_SHIPPING_IN_CENTS } from "./client";
 import type { IntegrationState, RequestContext } from "@curtiz/domain";
 export { MercadoPagoCustomerCardsProvider, type MercadoPagoSavedCard } from "./mercadopago-cards";
 export * from "./melhor-envio";
+export * from "./bling";
+export * from "./bling-catalog";
+export * from "./bling-fiscal-preview";
+export * from "./bling-tax";
+export { sendInvoiceEmail } from "./invoice-email";
+export * from "./transactional-email";
 
 export type CheckoutRequest = {
   orderId: string;
@@ -34,6 +40,7 @@ export interface PaymentProvider {
 }
 
 export type MercadoPagoPaymentInput = {
+  aggregate?: "orders" | "kit_orders";
   orderId: string;
   orderCode: string;
   amountInCents: number;
@@ -45,7 +52,7 @@ export type MercadoPagoPaymentInput = {
   entityType: "individual" | "association";
   paymentMethodId: string;
   token?: string;
-  issuerId?: string;
+  issuerId?: number;
   installments: number;
   providerCustomerId?: string;
 };
@@ -77,12 +84,18 @@ export type MercadoPagoPayment = {
 };
 
 export class MercadoPagoProviderError extends Error {
+  readonly providerRequestId: string | null;
   constructor(
-    readonly code: "invalid_test_credential" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
-    readonly httpStatus = 502
+    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "invalid_issuer" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
+    readonly httpStatus = 502,
+    readonly providerCauseCodes: readonly string[] = [],
+    readonly providerRejectionFields: readonly string[] = [],
+    providerRequestId?: string | null
   ) {
     super(code);
     this.name = "MercadoPagoProviderError";
+    this.providerRequestId = typeof providerRequestId === "string"
+      && /^[a-zA-Z0-9_-]{1,100}$/u.test(providerRequestId) ? providerRequestId : null;
   }
 }
 
@@ -123,7 +136,7 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
         return [{
           id: refundId,
           amountInCents: Math.round(refundAmount * 100),
-          status: typeof refund.status === "string" ? refund.status : "approved",
+          status: typeof refund.status === "string" ? refund.status : "unknown",
           dateCreated: typeof refund.date_created === "string" ? refund.date_created : null
         }];
       })
@@ -156,12 +169,12 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
   };
 };
 
-export class MercadoPagoTestPaymentProvider {
+export class MercadoPagoPaymentProvider {
   readonly name = "mercadopago";
 
-  constructor(private readonly accessToken: string) {
-    if (!isMercadoPagoTestCredential(accessToken)) {
-      throw new MercadoPagoProviderError("invalid_test_credential", 503);
+  constructor(private readonly accessToken: string, private readonly mode: "test" | "production", private readonly transport: typeof fetch = fetch) {
+    if (!(mode === "test" ? isMercadoPagoTestCredential(accessToken) : mode === "production" && accessToken.startsWith("APP_USR-"))) {
+      throw new MercadoPagoProviderError("invalid_payment_credential", 503);
     }
   }
 
@@ -170,19 +183,37 @@ export class MercadoPagoTestPaymentProvider {
     headers.set("authorization", `Bearer ${this.accessToken}`);
     headers.set("content-type", "application/json");
     if (idempotencyKey) headers.set("x-idempotency-key", idempotencyKey);
-    const response = await fetch(`https://api.mercadopago.com${path}`, {
+    const response = await this.transport(`https://api.mercadopago.com${path}`, {
       ...init, headers, signal: init.signal ?? AbortSignal.timeout(15_000)
     });
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw new MercadoPagoProviderError(
-      response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
-      response.status
-    );
+    if (!response.ok) {
+      const causes: unknown = body && typeof body === "object" && "cause" in body ? body.cause : null;
+      const codes = Array.isArray(causes) ? causes.flatMap((cause: unknown) => {
+        const code: unknown = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
+        return (typeof code === "string" || typeof code === "number") && /^\d{1,10}$/u.test(String(code)) ? [String(code)] : [];
+      }).slice(0, 5) : [];
+      // Emit only fixed field labels. Never retain provider descriptions or values.
+      const descriptions = (Array.isArray(causes) ? causes.slice(0, 5).flatMap((cause: unknown) =>
+        cause && typeof cause === "object" && "description" in cause && typeof cause.description === "string"
+          ? [cause.description.slice(0, 1000).toLowerCase()] : []).join(" ") : "")
+        + (body && typeof body === "object" && "message" in body && typeof body.message === "string" ? ` ${body.message.slice(0, 1000).toLowerCase()}` : "");
+      const fields = ["payer", "email", "issuer", "token", "card", "installments", "identification", "collector", "sandbox", "production", "name"]
+        .filter(field => new RegExp(`\\b${field}\\b`, "u").test(descriptions));
+      throw new MercadoPagoProviderError(
+        response.status === 400 || response.status === 422 ? "payment_rejected" : "provider_unavailable",
+        response.status, codes, fields, response.headers.get("x-request-id")
+      );
+    }
+    if (!body || typeof body !== "object" || !("live_mode" in body)
+      || body.live_mode !== (this.mode === "production")) {
+      throw new MercadoPagoProviderError("payment_mode_mismatch");
+    }
     return mercadoPagoPayment(body);
   }
 
   async getPaymentMethodIds(): Promise<string[]> {
-    const response = await fetch("https://api.mercadopago.com/v1/payment_methods", {
+    const response = await this.transport("https://api.mercadopago.com/v1/payment_methods", {
       method: "GET",
       headers: { authorization: `Bearer ${this.accessToken}` },
       signal: AbortSignal.timeout(15_000)
@@ -201,6 +232,10 @@ export class MercadoPagoTestPaymentProvider {
   }
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
+    if (input.aggregate === "kit_orders" && this.mode !== "test") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+    if (input.issuerId !== undefined && (!Number.isSafeInteger(input.issuerId) || input.issuerId <= 0)) {
+      throw new MercadoPagoProviderError("invalid_issuer", 400);
+    }
     const expiration = new Date(Date.now() + (input.paymentMethodId === "pix" ? 30 * 60_000 : 3 * 24 * 60 * 60_000));
     return this.request(
       "/v1/payments",
@@ -222,7 +257,9 @@ export class MercadoPagoTestPaymentProvider {
           },
           external_reference: input.orderCode,
           statement_descriptor: "CURTIZ",
-          metadata: { order_id: input.orderId },
+          metadata: input.aggregate === "kit_orders"
+            ? { aggregate: "kit_orders", kit_order_id: input.orderId }
+            : { order_id: input.orderId },
           binary_mode: false,
           ...(input.paymentMethodId === "pix" || input.paymentMethodId.includes("bol")
             ? { date_of_expiration: expiration.toISOString() }
@@ -234,10 +271,13 @@ export class MercadoPagoTestPaymentProvider {
   }
 
   async getPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
-    return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+    const payment = await this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, { method: "GET" });
+    if (payment.id !== providerPaymentId) throw new MercadoPagoProviderError("invalid_provider_response");
+    return payment;
   }
 
   async cancelPayment(providerPaymentId: string): Promise<MercadoPagoPayment> {
+    await this.getPayment(providerPaymentId);
     return this.request(`/v1/payments/${encodeURIComponent(providerPaymentId)}`, {
       method: "PUT", body: JSON.stringify({ status: "cancelled" }), signal: AbortSignal.timeout(15_000)
     });
@@ -247,7 +287,9 @@ export class MercadoPagoTestPaymentProvider {
     if (!Number.isSafeInteger(amountInCents) || amountInCents <= 0 || !idempotencyKey) {
       throw new MercadoPagoProviderError("invalid_refund", 400);
     }
-    const response = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
+    const payment = await this.getPayment(providerPaymentId);
+    if (amountInCents > payment.amountInCents) throw new MercadoPagoProviderError("invalid_refund", 400);
+    const response = await this.transport(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
       method: "POST", headers: { authorization: `Bearer ${this.accessToken}`, "content-type": "application/json", "x-idempotency-key": idempotencyKey },
       body: JSON.stringify({ amount: amountInCents / 100 }), signal: AbortSignal.timeout(15_000)
     });
@@ -259,6 +301,14 @@ export class MercadoPagoTestPaymentProvider {
       throw new MercadoPagoProviderError("refund_unconfirmed", 503);
     }
     return { id: String(refund.id) };
+  }
+}
+
+/** Compatibility entry point for callers that explicitly require test credentials. */
+export class MercadoPagoTestPaymentProvider extends MercadoPagoPaymentProvider {
+  constructor(accessToken: string) {
+    if (!isMercadoPagoTestCredential(accessToken)) throw new MercadoPagoProviderError("invalid_test_credential", 503);
+    super(accessToken, "test");
   }
 }
 
@@ -437,3 +487,8 @@ export class MockShippingProvider implements ShippingProvider {
 }
 
 export const unconfiguredState = async (): Promise<IntegrationState> => "not_configured";
+export { allocateBlingFiscalCents, expandBlingFiscalKit } from "./bling-kit-fiscal";
+export type { BlingFiscalItem } from "./bling-kit-fiscal";
+export { readBlingReturnOriginalXml, BLING_RETURN_XML_LIMIT } from "./bling-return-xml";
+export { buildBlingArchivedReturnMirror } from "./bling-return-context";
+export type { BlingReturnOrderLine } from "./bling-return-context";

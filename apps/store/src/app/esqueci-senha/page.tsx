@@ -4,7 +4,12 @@ import { PasswordRecoveryForm } from "@/components/password-recovery-form";
 
 export const metadata = { title: "Recuperar senha", robots: { index: false, follow: false } };
 
-export default function PasswordRecoveryPage() {
+export default async function PasswordRecoveryPage({
+  searchParams
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  const expired = (await searchParams).reason === "link_expired";
   return (
     <main className="auth-page">
       <section className="auth-card auth-signup-card">
@@ -16,6 +21,11 @@ export default function PasswordRecoveryPage() {
           <h1>Redefina sua senha</h1>
           <p>Enviaremos as instruções para o e-mail informado.</p>
         </header>
+        {expired && (
+          <p className="form-message error" role="alert">
+            Não foi possível validar este link. Solicite um novo link abaixo para continuar.
+          </p>
+        )}
         <PasswordRecoveryForm turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"} mode="request" />
       </section>
     </main>

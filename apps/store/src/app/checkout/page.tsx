@@ -22,6 +22,7 @@ import {
   sanitizeCpf
 } from "@/lib/personal-data";
 import { trackIntelligence } from "../../lib/intelligence-client";
+import { readShippingPostalCode } from "../../lib/shipping-postal-code";
 
 const states = [
   "AC",
@@ -358,7 +359,8 @@ export default function CheckoutPage() {
       }
       setShippingQuotes(quotes);
       setShippingState(quotes.length ? "options" : "empty");
-      setShippingMessage(quotes.length ? "Selecione uma opção de entrega." : "Nenhuma opção de entrega está disponível para este CEP.");
+      setShippingMessage(quotes.length ? "Selecione uma opção de entrega."
+        : typeof record.message === "string" ? record.message : "Nenhuma opção de entrega está disponível para este CEP.");
       if (quotes.length === 1 && quotes[0]) setSelectedShippingQuoteId(quotes[0].id);
     } catch {
       if (requestId !== shippingRequestRef.current) return;
@@ -826,6 +828,7 @@ export default function CheckoutPage() {
 
     try {
       const checkout = {
+        fiscalRecipient: { icmsTaxpayer: false, finalConsumer: true },
         ...(couponCode ? { couponCode } : {}),
         ...(selectedShippingQuote.id !== "fixed" ? { shippingQuoteId: selectedShippingQuote.id } : {}),
         customer: {
@@ -1403,7 +1406,7 @@ export default function CheckoutPage() {
                       pattern="\d{5}-?\d{3}"
                       required
                       placeholder="00000-000"
-                      defaultValue={formatPostalCode(addressBeingEdited?.postalCode ?? "")}
+                      defaultValue={formatPostalCode(addressBeingEdited?.postalCode ?? readShippingPostalCode())}
                       aria-invalid={Boolean(addressFieldErrors.postalCode)}
                       aria-describedby={addressFieldErrors.postalCode ? "checkout-address-postal-error" : undefined}
                       onInput={(event) => {

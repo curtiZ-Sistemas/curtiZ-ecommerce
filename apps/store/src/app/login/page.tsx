@@ -1,18 +1,28 @@
 import { safeInternalPath } from "@curtiz/security";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
+import { googleAuthReady } from "@/lib/google-auth";
 
 export const metadata = { title: "Acesse sua conta", robots: { index: false, follow: false } };
 
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string; account?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; account?: string; reason?: string; senha?: string; recovery?: string }>;
 }) {
   const query = await searchParams;
   const requestedReturn = query.returnTo ?? query.next;
   const returnTo = requestedReturn ? safeInternalPath(requestedReturn, "/minha-conta") : undefined;
   const signupHref = returnTo ? `/cadastro?returnTo=${encodeURIComponent(returnTo)}` : "/cadastro";
+  const sessionMessage = query.reason === "session_expired"
+    ? "Sua sessão não está disponível ou expirou. Entre novamente para acessar o painel."
+    : query.reason === "session_unavailable"
+      ? "Não foi possível confirmar sua sessão agora. Tente entrar novamente em alguns instantes."
+      : query.reason === "google_oauth_error"
+        ? "O acesso com Google foi cancelado, expirou ou não pôde ser concluído. Tente novamente ou use e-mail e senha."
+        : query.reason === "google_account"
+          ? "Esta conta acessa a curti Z com o Google. Use o botão Entrar com Google."
+          : null;
   return (
     <div className="auth-page">
       <div className="auth-shell">
@@ -21,10 +31,14 @@ export default async function LoginPage({
             <h1>Acesse sua conta</h1>
           </header>
           {query.account === "deleted" && <p className="form-message" role="status">Sua conta foi excluída e seu carrinho foi apagado.</p>}
+          {query.senha === "atualizada" && <p className="form-message success" role="status">Senha atualizada. Entre com a nova senha.</p>}
+          {query.recovery === "requested" && <p className="form-message success" role="status">Solicitação recebida. Confira seu e-mail e a pasta de spam para continuar.</p>}
+          {sessionMessage && <p className="form-message" role="alert">{sessionMessage}</p>}
           <AuthForm
             mode="login"
             returnTo={returnTo}
             turnstileEnabled={process.env.TURNSTILE_ENABLED === "true"}
+            googleAvailable={await googleAuthReady()}
           />
           <div className="auth-divider">
             <span>Primeira vez na curti Z?</span>

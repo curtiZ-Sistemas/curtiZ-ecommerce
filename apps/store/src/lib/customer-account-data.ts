@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   DEMO_SESSION_COOKIE,
-  demoDestination,
   verifyDemoSession
 } from "@curtiz/security";
 import { cookies } from "next/headers";
@@ -14,6 +13,7 @@ import {
   type CustomerOrderItem
 } from "@/lib/customer-account-types";
 import { isCustomerOrderVisible } from "@/lib/customer-order-visibility";
+import { hasInternalPanelRole } from "@/lib/auth-routing";
 import {
   isUnknownRecord,
   readNumber,
@@ -84,12 +84,6 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const demoSession = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
 
   if (demoSession) {
-    if (!demoSession.roles.includes("customer")) {
-      return {
-        ...emptyCustomerAccount(),
-        panelDestination: demoDestination(demoSession.role)
-      };
-    }
     const snapshot = emptyCustomerAccount({
       id: `demo:${demoSession.email}`,
       fullName: demoSession.fullName,
@@ -99,6 +93,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
     return {
       ...snapshot,
       authenticated: true,
+      panelDestination: hasInternalPanelRole(demoSession.roles) ? "/selecionar-painel" : "",
       demo: true,
       representative: {
         ...snapshot.representative,
@@ -115,7 +110,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   if (!supabase) return emptyCustomerAccount();
   const userResult = await supabase.auth.getUser();
   const user = userResult.data.user;
-  if (!user) return emptyCustomerAccount();
+  if (userResult.error || !user) return emptyCustomerAccount();
   const rolesResponse = await supabase
     .from("user_roles")
     .select("role")
@@ -123,17 +118,6 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   const roles = readRows(readQueryResult(rolesResponse).data).map((row) =>
     readString(row, "role")
   );
-  const internalRole = roles.find((role) =>
-    ["admin", "manager", "operational", "technical"].includes(role)
-  );
-  if (internalRole) {
-    return {
-      ...emptyCustomerAccount(),
-      panelDestination: demoDestination(
-        internalRole as "admin" | "manager" | "operational" | "technical"
-      )
-    };
-  }
 
   // Housekeeping is scoped by auth.uid() in the RPC. PostgREST returns failures
   // as data, so a deployment still converging on the migration loads the account.
@@ -175,7 +159,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       .order("created_at", { ascending: false }),
     supabase
       .from("returns")
-      .select("id,public_code,order_id,reason,description,requested_resolution,status,requested_at,orders(public_code)")
+      .select("id,public_code,order_id,reason,description,requested_resolution,status,requested_at,request_kind,customer_message,return_instructions,reverse_logistics_code,reverse_tracking_code,exchange_tracking_code,refund_amount,refund_error,return_media(id),return_items(order_item_id,quantity),return_history(id,status,message,created_at),orders(public_code)")
       .eq("customer_id", user.id)
       .order("requested_at", { ascending: false }),
     supabase
@@ -202,10 +186,11 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   ]);
 
   const profile = record(readQueryResult(profileResponse).data);
+  if (readQueryResult(profileResponse).error || profile.status !== "active") return emptyCustomerAccount();
   const orderRows = readRows(readQueryResult(ordersResponse).data);
   const orderIds = orderRows.map((item) => readString(item, "id")).filter(Boolean);
 
-  const [itemsResponse, paymentResponse, paymentAttemptResponse, shipmentResponse, historyResponse] =
+  const [itemsResponse, paymentResponse, paymentAttemptResponse, shipmentResponse, historyResponse, invoiceResponse] =
     orderIds.length > 0
       ? await Promise.all([
           supabase
@@ -231,15 +216,17 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
             .from("order_status_history")
             .select("id,order_id,new_status,reason,created_at")
             .in("order_id", orderIds)
-            .order("created_at", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase.rpc("list_my_bling_invoice_states", { p_order_ids: orderIds })
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const itemRows = readRows(readQueryResult(itemsResponse).data);
   const paymentRows = readRows(readQueryResult(paymentResponse).data);
   const paymentAttemptRows = readRows(readQueryResult(paymentAttemptResponse).data);
   const shipmentRows = readRows(readQueryResult(shipmentResponse).data);
   const historyRows = readRows(readQueryResult(historyResponse).data);
+  const invoiceRows = readRows(readQueryResult(invoiceResponse).data);
 
   const orders: CustomerOrder[] = orderRows.flatMap((row) => {
     const id = readString(row, "id");
@@ -267,11 +254,14 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       && (readString(entry, "dispatched_at") || ["dispatched", "in_transit", "delivered", "returned"].includes(readString(entry, "status"))))
       ?? shipmentRows.find((entry) => readString(entry, "order_id") === id);
     const trackingRows = shipment ? readRows(shipment.tracking_events) : [];
+    const invoice = invoiceRows.find((entry) => readString(entry, "orderId") === id);
     return [{
       id,
       publicCode: readString(row, "public_code"),
       status: readString(row, "status"),
       paymentStatus: readString(row, "payment_status"),
+      invoice: invoice?.available === true ? { available: true, number: readString(invoice, "number") || null } : null,
+      invoiceUnavailable: Boolean(readQueryResult(invoiceResponse).error),
       subtotalInCents: cents(row.subtotal),
       discountInCents: cents(row.discount_total),
       shippingInCents: cents(row.shipping_total),
@@ -418,7 +408,7 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
   return {
     authenticated: true,
     demo: false,
-    panelDestination: "",
+    panelDestination: !readQueryResult(rolesResponse).error && hasInternalPanelRole(roles) ? "/selecionar-painel" : "",
     profile: {
       id: user.id,
       fullName:
@@ -462,7 +452,19 @@ export async function loadCustomerAccount(): Promise<CustomerAccountSnapshot> {
       description: readString(row, "description"),
       resolution: readString(row, "requested_resolution"),
       status: readString(row, "status"),
-      requestedAt: readString(row, "requested_at")
+      requestedAt: readString(row, "requested_at"),
+      kind: readString(row, "request_kind"),
+      message: readString(row, "customer_message"),
+      instructions: readString(row, "return_instructions"),
+      postingCode: readString(row, "reverse_logistics_code"),
+      trackingCode: readString(row, "reverse_tracking_code"),
+      exchangeTrackingCode: readString(row, "exchange_tracking_code"),
+      refundAmountInCents: cents(row.refund_amount),
+      refundNeedsReview: Boolean(readString(row, "refund_error")),
+      media: readRows(row.return_media).map(media => ({ id: readString(media, "id") })),
+      items: readRows(row.return_items).map(item => ({ orderItemId: readString(item, "order_item_id"), quantity: readNumber(item, "quantity") })),
+      history: readRows(row.return_history).map(event => ({ id: readString(event, "id"), status: readString(event, "status"),
+        message: readString(event, "message"), createdAt: readString(event, "created_at") })).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     })),
     notifications: readRows(readQueryResult(notificationsResponse).data).map((row) => ({
       id: readString(row, "id"),

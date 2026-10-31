@@ -5,6 +5,8 @@ export type StoreShippingService = {
   detail: string;
   checkedAt?: string | null;
   latencyMs?: number | null;
+  /** Identificador público da chave ativa de tokens usada pela loja na última cotação. */
+  tokenKeyId?: string | null;
 };
 
 // Códigos gravados por /api/shipping/quote no Worker da loja (apps/store/src/lib/shipping-quote-diagnostics.ts).
@@ -27,18 +29,37 @@ const reasonLabels: Readonly<Record<string, string>> = {
 };
 
 const supportCodePattern = /^FRT-[0-9A-F]{8}$/u;
+const failureLabels: Readonly<Record<string, string>> = {
+  credentials_missing: "Não há conexão OAuth ativa para o ambiente da loja",
+  credentials_read_failed: "A RPC de leitura das credenciais falhou no Supabase",
+  credentials_write_failed: "A RPC de persistência dos tokens renovados falhou no Supabase",
+  token_decryption_failed: "Não foi possível decifrar os tokens com as chaves configuradas; confira a chave ativa e, durante a troca, MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS",
+  token_key_unavailable: "Os tokens foram cifrados por uma chave que não está configurada neste Worker; configure-a como chave anterior ou reconecte o OAuth",
+  refresh_token_expired: "O refresh token expirou; reconecte o aplicativo no ambiente selecionado",
+  oauth_rejected: "O endpoint OAuth rejeitou as credenciais/token; confira Client ID, Client Secret e a autorização do ambiente",
+  permission_denied: "A API negou a permissão; confira shipping-calculate e a conta/aplicativo do ambiente",
+  refresh_lock_failed: "A RPC de bloqueio para renovar o token falhou no Supabase",
+  refresh_lock_timeout: "A renovação do token está ocupada; tente novamente"
+};
+
+export const melhorEnvioFailureLabel = (reason: unknown): string | null =>
+  typeof reason === "string" && Object.hasOwn(failureLabels, reason) ? failureLabels[reason] ?? null : null;
 
 const safeConfigurationCodes = (value: unknown): string[] => Array.isArray(value)
   ? [...new Set(value.filter((item): item is string =>
     typeof item === "string" && /^MELHOR_ENVIO_[A-Z0-9_]+$/u.test(item)))]
   : [];
 
-export function getStoreShippingService(value: unknown): StoreShippingService {
+export function getStoreShippingService(value: unknown, queryFailed = false): StoreShippingService {
+  if (queryFailed) return {
+    name: "Frete da loja", state: "unavailable",
+    detail: "Não foi possível consultar o diagnóstico da loja no Supabase."
+  };
   const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
   if (!row) return {
     name: "Frete da loja",
-    state: "not_configured",
-    detail: "A loja ainda não registrou uma verificação de cotação no runtime. Esta linha, e não o OAuth do painel, indica se /api/shipping/quote está pronta."
+    state: "unavailable",
+    detail: "A loja ainda não registrou uma verificação de cotação no runtime. Esta linha mostra o último resultado de /api/shipping/quote; o OAuth do painel verifica outra conexão."
   };
 
   const state = ["online", "degraded", "offline", "not_configured"].includes(String(row.state))
@@ -58,12 +79,19 @@ export function getStoreShippingService(value: unknown): StoreShippingService {
   const supportCode = typeof metadata.supportCode === "string" && supportCodePattern.test(metadata.supportCode)
     ? metadata.supportCode : null;
   const supportDetail = supportCode ? ` · código ${supportCode}` : "";
+  const failureDetail = typeof metadata.reason === "string" && failureLabels[metadata.reason]
+    ? ` · ${failureLabels[metadata.reason]}` : "";
+  const upstreamDetail = typeof metadata.upstreamStatus === "number" && Number.isInteger(metadata.upstreamStatus)
+    && metadata.upstreamStatus >= 100 && metadata.upstreamStatus <= 599 ? ` · HTTP Melhor Envio ${metadata.upstreamStatus}` : "";
+  const databaseDetail = typeof metadata.databaseCode === "string" && /^(?:[A-Z0-9]{5}|PGRST\d{3})$/u.test(metadata.databaseCode)
+    ? ` · código do banco ${metadata.databaseCode}` : "";
 
   return {
     name: "Frete da loja",
     state,
-    detail: `${summary} · ${environment}${requirementDetail}${supportDetail}${checkedAtDetail}`,
+    detail: `${summary} · ${environment}${requirementDetail}${failureDetail}${upstreamDetail}${databaseDetail}${supportDetail}${checkedAtDetail}`,
     checkedAt,
-    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : null
+    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : null,
+    tokenKeyId: typeof metadata.tokenKeyId === "string" && /^[0-9a-f]{12}$/u.test(metadata.tokenKeyId) ? metadata.tokenKeyId : null
   };
 }

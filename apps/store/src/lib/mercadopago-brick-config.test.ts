@@ -17,6 +17,12 @@ const validResponse = {
 };
 
 describe("configuração do Payment Brick", () => {
+  it("accepts a production session only with its matching public key and preserves the server mode", () => {
+    expect(readMercadoPagoBrickSession({ ...validResponse, publicKey: "APP_USR-fixture", paymentMode: "production" }, identity))
+      .toMatchObject({ paymentMode: "production", publicKey: "APP_USR-fixture" });
+    expect(readMercadoPagoBrickSession({ ...validResponse, paymentMode: "production" }, identity)).toBeNull();
+    expect(readMercadoPagoBrickSession({ ...validResponse, publicKey: "APP_USR-fixture" }, identity)).toBeNull();
+  });
   it("converte o total validado pelo backend em 67.90 como number", () => {
     const session = readMercadoPagoBrickSession(validResponse, identity, 1690);
     expect(session).not.toBeNull();

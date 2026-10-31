@@ -23,17 +23,23 @@ describe("contexto do OpenNext no Worker da loja", () => {
 
   it("o template instalado envolve toda requisição no contexto com os bindings do Worker", () => {
     const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8")) as { version: string };
-    expect(packageJson.version).toBe("1.20.2");
+    expect(packageJson.version).toBe("1.20.13");
     expect(template("worker.js")).toMatch(/async fetch\(request, env, ctx\) \{\s*return runWithCloudflareRequestContext\(request, env, ctx,/u);
     const init = template("init.js");
     expect(init).toContain('Object.defineProperty(globalThis, Symbol.for("__cloudflare-context__")');
     expect(init).toContain("return cloudflareContextALS.run({ env, ctx, cf: request.cf }, handler);");
   });
 
-  it("custom-worker.ts repassa os bindings recebidos para o handler do OpenNext", () => {
-    const worker = readFileSync(resolve(process.cwd(), "custom-worker.ts"), "utf8");
-    expect(worker).toContain('import handler from "./.open-next/worker.js"');
-    expect(worker).toContain("handler.fetch(request, environment, context)");
+  it("mantém os bindings isolados entre requisições concorrentes", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const environments = [{ SHIPPING_PROVIDER: "disabled" }, { SHIPPING_PROVIDER: "melhorenvio" }];
+    const results = await Promise.all(environments.map((env) =>
+      contextStorage.run({ env, ctx: {}, cf: undefined }, async () => {
+        await Promise.resolve();
+        return getStoreRuntimeEnvironment().SHIPPING_PROVIDER;
+      })
+    ));
+    expect(results).toEqual(environments.map((env) => env.SHIPPING_PROVIDER));
   });
 
   it("lê bindings de runtime dentro da requisição mesmo com process.env desativado pelo build", async () => {

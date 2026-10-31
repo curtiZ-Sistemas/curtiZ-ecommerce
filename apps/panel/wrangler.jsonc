@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "curtiz-panel",
+  "name": "curtiz-painel",
   "main": ".open-next/worker.js",
   "keep_vars": true,
   "compatibility_date": "2026-07-31",
@@ -25,7 +25,7 @@
       "queues": { "producers": [{ "binding": "PRODUCT_IMPORT_IMAGES", "queue": "curtiz-product-images-staging" }] }
     },
     "production": {
-      "name": "curtiz-panel",
+      "name": "curtiz-painel",
       "images": { "binding": "IMAGES" },
       "queues": { "producers": [{ "binding": "PRODUCT_IMPORT_IMAGES", "queue": "curtiz-product-images" }] }
     }

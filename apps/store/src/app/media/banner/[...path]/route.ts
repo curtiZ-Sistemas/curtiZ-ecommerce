@@ -10,7 +10,7 @@ const protectedHeaders = {
   "x-content-type-options": "nosniff"
 };
 
-export function isValidBannerObjectPath(segments: string[]): boolean {
+function isValidBannerObjectPath(segments: string[]): boolean {
   if (segments.some((segment) =>
     !segment || segment === "." || segment === ".." || segment.includes("..") ||
     segment.includes("/") || segment.includes("\\") || /\p{Cc}/u.test(segment)

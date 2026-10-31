@@ -13,7 +13,6 @@ const state = vi.hoisted(() => ({
   remove: vi.fn<(paths: string[]) => Promise<{ error: null }>>()
 }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: state.client }));
-vi.mock("@/lib/internal-mfa", () => ({ hasRequiredInternalMfa: async () => true }));
 vi.mock("@curtiz/security", async (importOriginal) => ({
   ...await importOriginal<typeof Security>(),
   verifyDemoSession: () => null

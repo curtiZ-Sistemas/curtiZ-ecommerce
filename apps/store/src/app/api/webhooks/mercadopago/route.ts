@@ -1,9 +1,11 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { isMercadoPagoTestCredential, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
+import { MercadoPagoPaymentProvider } from "@curtiz/integrations";
+import { getMercadoPagoCredentials } from "@curtiz/config";
 import { readBoundedBody, RequestBodyError } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { normalizeMercadoPagoStatus } from "@/lib/mercadopago-payment";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 
 const signed = (request: Request, dataId: string, secret: string) => {
   const signature = request.headers.get("x-signature") ?? "";
@@ -23,8 +25,8 @@ const reply = (body: Record<string, unknown>, status = 200) =>
 
 export async function POST(request: Request) {
   const secret = process.env.MERCADO_PAGO_WEBHOOK_SECRET?.trim();
-  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
-  if (!secret || !isMercadoPagoTestCredential(accessToken)) return reply({ ok: false }, 503);
+  const credentials = getMercadoPagoCredentials();
+  if (!secret || !credentials) return reply({ ok: false }, 503);
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return reply({ ok: false }, 415);
   }
@@ -46,10 +48,12 @@ export async function POST(request: Request) {
   const db = createServiceSupabaseClient();
   if (!db) return reply({ ok: false }, 503);
   const bodyRecord = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {};
-  const eventId = typeof bodyRecord.id === "number" || typeof bodyRecord.id === "string"
+  const rawEventId = typeof bodyRecord.id === "number" || typeof bodyRecord.id === "string"
     ? String(bodyRecord.id)
     : request.headers.get("x-request-id") ?? "";
-  if (!eventId || eventId.length > 200) return reply({ ok: false }, 400);
+  // Preserve test event identities already processed; live IDs use a distinct namespace.
+  const eventId = credentials.mode === "production" ? `production:${rawEventId}` : rawEventId;
+  if (!rawEventId || eventId.length > 200) return reply({ ok: false }, 400);
   const payloadHash = createHash("sha256").update(rawBody).digest("hex");
   const claim = await db.rpc("claim_payment_webhook", {
     p_event_id: eventId, p_payment_id: dataId, p_payload_hash: payloadHash,
@@ -65,8 +69,22 @@ export async function POST(request: Request) {
     p_event_id: eventId, p_lease_token: leaseToken, p_success: success, p_error_code: errorCode
   });
   try {
-    const payment = await new MercadoPagoTestPaymentProvider(accessToken).getPayment(dataId);
+    const payment = await new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode).getPayment(dataId);
     if (payment.id.toLowerCase() !== dataId.toLowerCase()) throw new Error("provider_payment_mismatch");
+    if (payment.externalReference.startsWith("KITTEST-")) {
+      if (credentials.mode !== "test") throw new Error("payment_mode_mismatch");
+      await reconcileKitTestPayment(db, payment);
+      const completed = await finish(true);
+      const ok = !completed.error && completed.data === true;
+      return reply({ ok }, ok ? 200 : 503);
+    }
+    const modeCheck = await db.rpc("check_mercadopago_order_mode", {
+      p_mode: credentials.mode, p_external_reference: payment.externalReference
+    });
+    if (modeCheck.error || modeCheck.data !== true) {
+      await finish(false, "payment_mode_mismatch");
+      return reply({ ok: false }, 409);
+    }
     const method = [payment.paymentTypeId, payment.paymentMethodId].filter(Boolean).join(":");
     const statusDetail = payment.status === "expired" ? "expired" : payment.statusDetail;
     const result = await db.rpc("finalize_mercadopago_payment", { p_provider_event_id: eventId,
@@ -93,7 +111,7 @@ export async function POST(request: Request) {
         p_amount: refund.amountInCents / 100, p_provider_event_id: eventId,
         p_completed_at: refund.dateCreated
       });
-      if (reconciled.error) {
+      if (reconciled.error || reconciled.data !== true) {
         await finish(false, "refund_reconciliation_failed");
         return reply({ ok: false }, 503);
       }

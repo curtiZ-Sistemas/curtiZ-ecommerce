@@ -27,6 +27,7 @@ const heroAssetPaths = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: { cpus: 1 },
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
@@ -44,7 +45,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },
+      ...["/auth/recovery", "/api/auth/recovery/verify", "/api/auth/password"].map((source) => ({
+        source,
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }]
+      })),
       ...heroAssetPaths.map((source) => ({ source, headers: [noImageIndexHeader] }))
+    ];
+  },
+  async redirects() {
+    // These legacy category URLs are linked by older sitemaps. Keep a permanent path to the current catalog.
+    return [
+      { source: "/slides", destination: "/produtos", permanent: true },
+      { source: "/sandalias", destination: "/produtos", permanent: true }
     ];
   }
 };

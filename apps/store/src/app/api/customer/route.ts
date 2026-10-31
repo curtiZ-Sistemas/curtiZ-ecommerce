@@ -78,8 +78,9 @@ const schemas = {
     action: z.literal("return_request"),
     orderItemId: uuid,
     quantity: z.number().int().min(1).max(20),
-    reason: z.string().trim().min(3).max(120),
-    description: z.string().trim().min(10).max(2000),
+    reason: z.string().trim().max(120).default(""),
+    description: z.string().trim().max(2000).default(""),
+    kind: z.enum(["withdrawal", "defect", "preference"]).default("preference"),
     resolution: z.enum(["exchange", "refund", "store_credit"])
   }),
   data_request: base.extend({
@@ -292,12 +293,13 @@ export async function POST(request: Request) {
       return json(result.body, result.statusCode);
     }
     case "return_request":
-      response = await supabase.rpc("request_customer_return", {
+      response = await supabase.rpc("request_customer_return_v2", {
         p_order_item_id: data.orderItemId,
         p_quantity: data.quantity,
         p_reason: data.reason,
         p_description: data.description,
-        p_resolution: data.resolution
+        p_resolution: data.resolution,
+        p_kind: data.kind
       });
       break;
     case "data_request":
@@ -310,6 +312,10 @@ export async function POST(request: Request) {
 
   const result = readQueryResult(response);
   if (result.error) return json({ message: friendlyError(result.error) }, 409);
+  if (action === "return_request" && typeof result.data === "string") {
+    revalidatePath("/minha-conta", "layout");
+    return json({ ok: true, data: { id: result.data } });
+  }
   if (action === "address_save" && typeof result.data === "string") {
     const saved = readQueryResult(await supabase.from("addresses")
       .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")

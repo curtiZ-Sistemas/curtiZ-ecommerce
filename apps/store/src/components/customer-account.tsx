@@ -2,6 +2,8 @@
 
 import { CustomerCpfField } from "./customer-cpf-field";
 
+import { CustomerReturns } from "./customer-returns";
+
 import { DeleteAccount } from "./delete-account";
 
 import { formatBRL, type Product } from "@curtiz/domain";
@@ -73,6 +75,7 @@ import {
 } from "./account-mobile-home";
 
 type Props = {
+  panelUrl?: string;
   snapshot: CustomerAccountSnapshot;
   section: string;
   selectedOrderCode: string;
@@ -102,6 +105,7 @@ const addressValue = (address: Record<string, unknown>, key: string) => {
 };
 
 export function CustomerAccount({
+  panelUrl = "https://painel.curtiz.com.br",
   snapshot,
   section,
   selectedOrderCode,
@@ -156,12 +160,13 @@ export function CustomerAccount({
       }
       savedResult = result;
       const reviewId = result.data?.id;
+      const returnUpload = body.action === "return_request";
       if (files?.length && reviewId) {
-        for (const file of Array.from(files).slice(0, 4)) {
+        for (const file of Array.from(files).slice(0, returnUpload ? 3 : 4)) {
           const form = new FormData();
-          form.set("reviewId", reviewId);
+          form.set(returnUpload ? "returnId" : "reviewId", reviewId);
           form.set("file", file);
-          const upload = await fetch("/api/customer/review-media", {
+          const upload = await fetch(returnUpload ? "/api/customer/return-media" : "/api/customer/review-media", {
             method: "POST",
             body: form,
             signal: AbortSignal.timeout(60_000)
@@ -172,7 +177,7 @@ export function CustomerAccount({
             };
             setError(
               uploadResult.message ??
-                "A avaliação foi salva, mas um arquivo não pôde ser enviado."
+                "Os dados foram salvos, mas um arquivo não pôde ser enviado. Confira os arquivos já salvos antes de tentar novamente."
             );
             startTransition(() => router.refresh());
             return result;
@@ -184,7 +189,7 @@ export function CustomerAccount({
       return result;
     } catch {
       if (savedResult) {
-        setError("A avaliação foi salva, mas não conseguimos concluir o envio dos arquivos. Confira sua avaliação antes de tentar novamente.");
+        setError("Os dados foram salvos, mas não conseguimos concluir o envio dos arquivos. Confira os arquivos já salvos antes de tentar novamente.");
         startTransition(() => router.refresh());
         return savedResult;
       }
@@ -219,6 +224,12 @@ export function CustomerAccount({
           Continuar comprando
         </Link>
       </header>
+
+      {snapshot.panelDestination && (
+        <p className="customer-account-notice">
+          <a href={new URL("/selecionar-painel", panelUrl).toString()}>Acessar painéis</a>
+        </p>
+      )}
 
       {(snapshot.warning || signupComplete) && (
         <p className="customer-account-notice" role="status">
@@ -314,7 +325,7 @@ export function CustomerAccount({
           )}
           {activeSection === "seguranca" && <Security snapshot={snapshot} />}
           {activeSection === "trocas" && (
-            <Returns
+            <CustomerReturns
               returns={snapshot.returns}
               orders={snapshot.orders}
               runAction={runAction}
@@ -790,6 +801,8 @@ function OrderDetails({
             Código de rastreio: <strong>{order.shipment.trackingCode}</strong>
           </p>
         )}
+        {order.shipment && !order.shipment.trackingCode && <p>O código de rastreio será exibido assim que for disponibilizado pela transportadora.</p>}
+        {Boolean(order.shipment?.events.length) && <details><summary>Atualizações da entrega</summary><ol>{order.shipment?.events.slice().sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)).map(event => <li key={event.id}><div><strong>{event.description || customerStatusLabel(event.status)}</strong><small>{formatDate(event.occurredAt)}{event.location ? ` · ${event.location}` : ""}</small></div></li>)}</ol></details>}
       </article>
       <article className="customer-panel">
         <h3>Itens do pedido</h3>
@@ -828,6 +841,13 @@ function OrderDetails({
           <h3>Pagamento</h3>
           <p>{order.payment?.method || order.payment?.provider || "Não informado"}</p>
           <span className="customer-status">{customerStatusLabel(order.paymentStatus)}</span>
+          {order.invoice?.available ? <p>
+            Nota disponível{order.invoice.number ? ` · ${order.invoice.number}` : ""}<br />
+            <a className="secondary-button" href={`/api/orders/${encodeURIComponent(order.id)}/invoice`}>
+              Baixar nota fiscal
+            </a>
+          </p> : null}
+          {order.invoiceUnavailable ? <p role="status">Consulta da nota indisponível. Atualize a página para tentar novamente.</p> : null}
         </article>
         <article className="customer-panel customer-order-totals">
           <h3>Resumo</h3>
@@ -858,9 +878,15 @@ function OrderDetails({
           Preciso de ajuda
         </Link>
       </div>
-      <dialog ref={cancellationDialog} aria-labelledby={`cancel-order-${order.id}`} onClose={() => cancelButton.current?.focus()}>
+      <dialog
+        ref={cancellationDialog}
+        className="customer-cancel-dialog"
+        aria-labelledby={`cancel-order-${order.id}`}
+        aria-describedby={`cancel-order-description-${order.id}`}
+        onClose={() => cancelButton.current?.focus()}
+      >
         <h2 id={`cancel-order-${order.id}`}>Cancelar este pedido?</h2>
-        <p>{order.paymentStatus === "approved"
+        <p id={`cancel-order-description-${order.id}`}>{order.paymentStatus === "approved"
           ? "O pedido ainda não foi despachado. O pagamento será reembolsado pelo mesmo meio utilizado."
           : "Este pedido ainda não foi pago e será cancelado."}</p>
         <div className="customer-form-actions">
@@ -1168,12 +1194,6 @@ function Security({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
           <p>Último acesso: <strong>{formatDate(snapshot.profile.lastSignInAt)}</strong></p>
           <small>A listagem completa de dispositivos aparecerá quando o provedor disponibilizar sessões por usuário.</small>
         </article>
-        <article className="customer-panel">
-          <UserRoundCheck aria-hidden="true" />
-          <h3>Autenticação adicional</h3>
-          <p>O MFA para clientes está planejado e será oferecido quando estiver disponível.</p>
-          <span className="customer-status">Futuro</span>
-        </article>
       </div>
       <article className="customer-panel customer-data-protection">
         <div><h3>Proteção dos seus dados</h3><p>Dados sensíveis são mascarados e operações usam sua sessão autenticada.</p></div>
@@ -1184,56 +1204,6 @@ function Security({ snapshot }: { snapshot: CustomerAccountSnapshot }) {
   );
 }
 
-function Returns({
-  returns,
-  orders,
-  runAction,
-  pending
-}: {
-  returns: CustomerAccountSnapshot["returns"];
-  orders: CustomerOrder[];
-  runAction: RunAction;
-  pending: boolean;
-}) {
-  const deliveredItems = orders.filter((order) => order.status === "delivered").flatMap((order) => order.items.map((item) => ({ ...item, orderCode: order.publicCode })));
-  const [open, setOpen] = useState(false);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    void runAction({ action: "return_request", orderItemId: form.get("orderItemId"), quantity: Number(form.get("quantity")), reason: form.get("reason"), description: form.get("description"), resolution: form.get("resolution") }, "Solicitação enviada para análise.").then((result) => { if (result) setOpen(false); });
-  };
-  return (
-    <div className="customer-section-stack">
-      <SectionTitle eyebrow="Pós-venda" title="Trocas e devoluções" description="Solicite a análise de itens entregues e acompanhe cada etapa." action={deliveredItems.length ? <button className="primary-button compact-button" type="button" onClick={() => setOpen(true)}>Nova solicitação</button> : undefined} />
-      {open && (
-        <form className="customer-panel customer-form" onSubmit={submit}>
-          <h3>Solicitar troca ou devolução</h3>
-          <div className="customer-form-grid">
-            <label className="customer-field customer-field-full"><span>Produto entregue</span><select name="orderItemId" required>{deliveredItems.map((item) => <option value={item.id} key={item.id}>#{item.orderCode} · {item.productName} · {item.color}/{item.size}</option>)}</select></label>
-            <label className="customer-field"><span>Quantidade</span><input name="quantity" type="number" inputMode="numeric" min={1} max={20} defaultValue={1} required /></label>
-            <label className="customer-field"><span>Solução desejada</span><select name="resolution"><option value="exchange">Troca</option><option value="refund">Reembolso</option><option value="store_credit">Crédito na loja</option></select></label>
-            <label className="customer-field customer-field-full"><span>Motivo</span><input name="reason" minLength={3} maxLength={120} required /></label>
-            <label className="customer-field customer-field-full"><span>Descreva o ocorrido</span><textarea name="description" minLength={10} maxLength={2000} rows={4} required /></label>
-          </div>
-          <div className="customer-form-actions"><button className="primary-button" type="submit" disabled={pending}>Enviar solicitação</button><button className="secondary-button" type="button" onClick={() => setOpen(false)}>Cancelar</button></div>
-        </form>
-      )}
-      {returns.length ? (
-        <div className="customer-return-list">
-          {returns.map((item) => (
-            <article className="customer-panel customer-return-card" key={item.id}>
-              <div><small>Solicitação</small><strong>#{item.publicCode}</strong><span>Pedido #{item.orderCode}</span></div>
-              <div><span className={`customer-status status-${item.status}`}>{customerStatusLabel(item.status)}</span><small>{formatDate(item.requestedAt)}</small></div>
-              <p><strong>{item.reason}</strong><br />{item.description}</p>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon={<RotateCcw />} title="Nenhuma solicitação em andamento" text={deliveredItems.length ? "Use “Nova solicitação” se precisar de ajuda com um item entregue." : "Itens elegíveis aparecerão após a entrega."} />
-      )}
-    </div>
-  );
-}
 
 function Representative({ representative }: { representative: CustomerAccountSnapshot["representative"] }) {
   const hasApplication = Boolean(representative.applicationStatus);

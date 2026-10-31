@@ -38,7 +38,7 @@ describe("cookies compartilhados entre aplicações", () => {
     expect(
       sharedCookieOptions(
         { httpOnly: true },
-        "curtiz-panel.sistemas-curtiz.workers.dev",
+        "curtiz-painel.sistemas-curtiz.workers.dev",
         domains
       )
     ).toEqual({

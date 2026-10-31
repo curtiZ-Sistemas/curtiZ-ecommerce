@@ -1,5 +1,7 @@
 "use client";
 
+import { RepresentativeKitCatalog } from "./representative-kit-catalog";
+
 import { configuredPublicAppUrls } from "@curtiz/config";
 
 import { formatBRL } from "@curtiz/domain";
@@ -533,9 +535,7 @@ function PortalSection({
     return (
       <Kits
         orders={snapshot.kitOrders ?? []}
-        available={snapshot.availableKits ?? []}
         purchasing={section === "comprar-kit"}
-        onRefresh={onRefresh}
       />
     );
   if (section === "treinamentos")
@@ -1435,64 +1435,20 @@ function Referral({ referralCode }: { referralCode: string }) {
 
 function Kits({
   orders,
-  available,
-  purchasing,
-  onRefresh
+  purchasing
 }: {
   orders: NonNullable<Snapshot["kitOrders"]>;
-  available: NonNullable<Snapshot["availableKits"]>;
   purchasing: boolean;
-  onRefresh: () => void;
 }) {
-  const [loadingId, setLoadingId] = useState("");
-  const [message, setMessage] = useState("");
-  const buy = async (kitId: string) => {
-    if (loadingId) return;
-    setLoadingId(kitId);
-    setMessage("");
-    try {
-      await postRepresentativeAction({
-        action: "buy_kit",
-        kitId,
-        idempotencyKey: crypto.randomUUID()
-      });
-      setMessage("Pedido criado. O pagamento permanece pendente até um provedor ser disponibilizado.");
-      onRefresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível criar o pedido.");
-    } finally {
-      setLoadingId("");
-    }
-  };
+  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kits para revenda"
+    description="Escolha os kits do catálogo. Preços e estoque são os cadastrados na loja. As compras para revenda continuam em homologação." />} />;
   return (
     <section>
       <PageTitle
-        title={purchasing ? "Comprar kit" : "Meus kits"}
-        description={
-          purchasing
-            ? "Somente kits ativos e permitidos para seu nível aparecem aqui."
-            : "Acompanhe pagamento, separação e entrega."
-        }
+        title="Meus kits"
+        description="Acompanhe pagamento, separação e entrega."
       />
-      {message && <p className="form-message" role="status">{message}</p>}
-      {purchasing && available.length ? (
-        <div className="representative-record-grid">
-          {available.map((kit) => (
-            <article className="representative-card representative-kit-card" key={kit.id}>
-              <PackageCheck />
-              <small>{kit.requiredForActivation ? "Kit de ativação" : "Kit disponível"}</small>
-              <h2>{kit.name}</h2>
-              <p>{kit.description}</p>
-              <strong>{formatBRL(kit.priceInCents)}</strong>
-              <button className="primary-button" disabled={loadingId === kit.id} onClick={() => void buy(kit.id)}>
-                {loadingId === kit.id ? <LoaderCircle className="spin" /> : <ShoppingBag />} Solicitar kit
-              </button>
-            </article>
-          ))}
-        </div>
-      ) : purchasing ? (
-        <EmptyState icon={ShoppingBag} title="Nenhum kit disponível" description="A Gerência ainda não publicou uma oferta compatível com seu perfil." />
-      ) : orders.length ? (
+      {orders.length ? (
         <div className="representative-record-grid">
           {orders.map((order) => (
             <article className="representative-card representative-kit-card" key={order.id}>

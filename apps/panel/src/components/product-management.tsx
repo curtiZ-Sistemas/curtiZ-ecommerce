@@ -1,4 +1,5 @@
 "use client";
+import { BlingCatalogStatus } from "./bling-catalog-status";
 
 import { normalizeProductColorName } from "@curtiz/domain";
 import {
@@ -2971,6 +2972,7 @@ export function ProductManagement({
                       }}
                     />
                   ) : null}
+                  {editing !== "new" ? <BlingCatalogStatus productId={editing.id} /> : null}
                   <button className="secondary-button" type="button" onClick={generateVariants}>
                     Gerar combinações
                   </button>

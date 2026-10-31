@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { connection } from "next/server";
+// A ordem dos imports é a ordem da cascata: fundação depois do legado, e cada painel depois da fundação.
 import "./globals.css";
+import "./styles/foundation.css";
+import "./styles/painel-administrativo.css";
+import "./styles/painel-operacional.css";
+import "./styles/painel-gerencial.css";
+import "./styles/painel-tecnico.css";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
 

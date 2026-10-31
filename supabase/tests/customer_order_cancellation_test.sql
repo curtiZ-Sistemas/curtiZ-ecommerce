@@ -25,7 +25,11 @@ values('ca100000-0000-4000-8000-000000000007','test','test','dispatched',now());
 
 insert into public.categories(id,name,slug) values('ca200000-0000-4000-8000-000000000001','Cancellation test','cancellation-test');
 insert into public.products(id,name,slug,category_id,status,base_price,description,weight_grams,height_cm,width_cm,length_cm)
-values('ca200000-0000-4000-8000-000000000002','Cancellation test','cancellation-test','ca200000-0000-4000-8000-000000000001','active',50,'Test',100,5,10,20);
+values('ca200000-0000-4000-8000-000000000002','Cancellation test','cancellation-test','ca200000-0000-4000-8000-000000000001','draft',50,'Test',100,5,10,20);
+-- A guarda de publicação exige imagem real concluída: o produto nasce rascunho e é publicado depois.
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+select id,'test/'||slug||'.webp',name,720,720,true from public.products where id in ('ca200000-0000-4000-8000-000000000002');
+update public.products set status='active' where id in ('ca200000-0000-4000-8000-000000000002');
 insert into public.product_variants(id,product_id,sku,color_name,size)
 values('ca200000-0000-4000-8000-000000000003','ca200000-0000-4000-8000-000000000002','CANCELLATION-TEST','Black','37');
 insert into public.carts(id,customer_id) values('ca200000-0000-4000-8000-000000000004','ca000000-0000-4000-8000-000000000001');

@@ -20,18 +20,28 @@ criptografia nos dois Workers para que ambos leiam os tokens OAuth cifrados no S
 OAuth é copiado para variáveis ou navegador.
 
 O workflow do GitHub Actions é o único caminho de produção; desconecte **Workers Builds** nativos nos
-dois Workers e não publique builds manuais pelo Cloudflare. Configure as demais opções
-`MELHOR_ENVIO_*` sem prefixo `NEXT_PUBLIC_` nas variables do GitHub Actions. O build usa
+dois Workers e não publique builds manuais pelo Cloudflare. Configure todas as opções
+`MELHOR_ENVIO_*` sem prefixo `NEXT_PUBLIC_` somente no Runtime dos dois Workers. O build usa
 `SHIPPING_PROVIDER=disabled` e `MELHOR_ENVIO_ENABLED=false`, sem Client Secret, chave de criptografia,
-CPF/CNPJ ou endereço de origem. Só a etapa final passa as variáveis operacionais como bindings de
-runtime ao Wrangler; os secrets continuam cadastrados separadamente em cada Worker e são preservados
+CPF/CNPJ ou endereço de origem. A etapa final envia somente metadados e configuração de plataforma;
+as variáveis de integração e os secrets continuam cadastrados separadamente em cada Worker e são preservados
 com `--keep-vars`.
 
 `getCloudflareContext().env` é a fonte explícita da loja durante `/api/shipping/quote`. Assim o valor
 de runtime do Worker controla o provider mesmo que o build tenha sido feito com frete desativado.
-Mantenha variáveis não secretas no GitHub Actions e secrets nos dois Workers; depois de alterá-los,
+Mantenha as configurações de integração e secrets nos dois Workers; depois de alterar o código,
 dispare o workflow por `workflow_dispatch`. Não use **Build Variables** como substitutas de
 configurações de runtime.
+
+`MELHOR_ENVIO_CLIENT_ID`, `MELHOR_ENVIO_CLIENT_SECRET` e `MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY`
+precisam corresponder ao mesmo aplicativo/ambiente nos dois Workers. Não gere uma nova chave para
+corrigir uma falha de leitura: os tokens existentes foram cifrados com a chave usada pelo painel.
+Confira `shipping-calculate` na autorização OAuth. Rejeições do endpoint OAuth são problemas da
+integração, mesmo quando ele responde HTTP 400/422; não indicam CEP ou carrinho inválidos.
+
+O painel mostra separadamente OAuth do painel e o último resultado de `/api/shipping/quote` da loja.
+Os eventos e logs do Worker registram motivo categórico, HTTP do provedor e código seguro do banco,
+quando disponíveis, sem tokens, valores de ambiente, endereço ou mensagens privadas do provedor.
 
 Referências de runtime: [bindings do OpenNext](https://opennext.js.org/cloudflare/bindings),
 [separação build/runtime do OpenNext](https://opennext.js.org/cloudflare/howtos/env-vars) e
@@ -67,6 +77,16 @@ da migration. O ciclo remoto só pode ser homologado com conta, aplicativo e sal
 - conta e aplicativo Sandbox; posteriormente, conta/aplicativo de produção separados;
 - decisão fiscal documentada com o contador. Em produção comercial, a logística aguarda NF-e
   autorizada e sua chave real; CNPJ e Inscrição Estadual são obrigatórios nesse modo.
+
+## Homologação restrita a uma remessa
+
+Para uma janela autorizada de teste, `MELHOR_ENVIO_HOMOLOGATION_SHIPMENT_ID` limita o worker à remessa indicada.
+O filtro exige UUID válido, `MELHOR_ENVIO_ENVIRONMENT=sandbox` e nenhuma autorização de compra real.
+Valor vazio ou configuração incompatível bloqueia o processamento; quando inativo, omita a variável.
+
+A fila restrita mantém as permissões de compra/geração, a liberação fiscal, o bloqueio por operação incerta
+e a exclusão mútua da conta. Não assume nem altera leases de outras remessas e não executa cancelamentos.
+Ao terminar, restaure as flags temporárias e remova somente o filtro adicionado pela própria janela.
 
 ## Referências oficiais
 
