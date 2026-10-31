@@ -4,6 +4,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 describe("headers de imagens de hero", () => {
+  it("applies recovery no-referrer overrides after the general policy", async () => {
+    const routes = await nextConfig.headers?.() ?? [];
+    const generalIndex = routes.findIndex((route) => route.source === "/(.*)");
+    for (const source of ["/auth/recovery", "/api/auth/recovery/verify", "/api/auth/password"]) {
+      const index = routes.findIndex((route) => route.source === source);
+      expect(index).toBeGreaterThan(generalIndex);
+      expect(routes[index]?.headers).toContainEqual({ key: "Referrer-Policy", value: "no-referrer" });
+    }
+  });
+
   it("preserva URLs comerciais antigas com redirecionamento permanente ao catálogo atual", async () => {
     const redirects = await nextConfig.redirects?.();
     expect(redirects).toContainEqual({ source: "/slides", destination: "/produtos", permanent: true });

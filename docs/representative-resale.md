@@ -6,7 +6,7 @@ Enquanto a revenda não estiver homologada:
 
 - O portal mantém consulta de ofertas/histórico e informa que a compra está indisponível.
 - `buy_kit` responde409/`RESALE_NOT_HOMOLOGATED`, sem criar pedido, pagamento ou reserva.
-- O trigger `representative_resale_homologation_gate` bloqueia novas `kit_orders`, inclusive via RPC/Data API/service_role, e avanço de pagamento/expedição/entrega em pedidos antigos. Cancelamento e reembolso continuam possíveis. Não existe flag para contornar esse bloqueio.
+- O trigger `representative_resale_homologation_gate` bloqueia criacao e avancos comerciais/fiscais no fluxo legado. A excecao isolada TEST exige ledger privado validado e mantem expedicao bloqueada; esta descrita abaixo. Cancelamento e reembolso continuam possiveis.
 
 ## Conferência técnica sem efeitos comerciais
 
@@ -32,9 +32,23 @@ Usar os SKUs, preços, estoques e composições que já estão cadastrados, sem 
 
 Teste atual comprova preparação técnica e bloqueios, não uma compra de revenda concluída. Não alterar flags compartilhadas para realizar essa conferência.
 
-## Contrato transacional mínimo proposto
+## Transacao isolada TEST (implementacao de 23/10/2026)
 
-Este contrato descreve a integração que ainda precisa ser implementada e homologada. Não libera `buy_kit`, pagamento de produção, NF-e ou expedição.
+A transacao separada usa kit_orders, ledger privado com RLS forcada e referencia KITTEST-UUID no Mercado Pago. Nao cria orders/payments B2C. O SKU comercial reserva seu proprio estoque; os componentes fiscais reais e atuais ficam no snapshot e nao baixam avulsos. O preco e recalculado do cadastro e o frete vem de cotacao sandbox vinculada ao ator, composicao de transporte, endereco e prazo.
+
+As migrations 20261023160000 a 20261023164000 sao incrementais. Aplicar e testar primeiro no projeto isolado. Nao modificar arquivos ja aplicados. A API permanece fechada para criar/pagar sem REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED=true e REPRESENTATIVE_TEST_ACTOR_ID igual a conta de representante explicitamente autorizada; modo de pagamento deve ser test e cotacao sandbox. Essas variaveis nao autorizam fiscalizacao nem vendas produtivas. Consulta, cancelamento e reembolso continuam vinculados ao titular.
+
+POST /api/representatives/kits/quote recebe {variantId,quantity,postalCode}, quantidade de 1 a 99. Retorna cotacoes reais sandbox persistidas. POST /api/representatives/kits/transactions aceita create {variantId,quantity,quoteId,addressId,idempotencyKey}; read, pay_pix, reconcile e cancel recebem orderId. pay_card recebe orderId e card {paymentMethodId,token,issuerId?,installments}; o token deve vir do SDK do provedor. PAN e codigo de seguranca nao sao aceitos. pay_pix/pay_card podem receber payerDocument TEST: o resolvedor existente valida o documento sandbox sem salva-lo como identidade pessoal; ausente reutiliza identidade ja validada. refund recebe tambem idempotencyKey e amountInCents. Valores, ator e modo enviados pelo cliente sao rejeitados. Cartao usa o mesmo ledger, lease e chave estavel do Pix; fingerprint HMAC impede trocar o metodo/token de uma tentativa incerta e o token nao e armazenado no banco.
+
+Tentativas usam lease, identidade estavel e limite de 23 horas para replay incerto. A consulta autenticada do provedor verifica referencia, identidade, moeda, valor e ambiente. Webhook mantem assinatura, frescor, hash e deduplicacao existentes, com conciliacao separada para KITTEST. Reembolso parcial conserva estoque; cancelamento do saldo integral devolve o SKU uma vez. Aprovacao tardia apos liberacao exige reconciliacao, sem reabrir reserva. XML, etiqueta e e-mails nao sao disparados: os contratos downstream ficam em blocked_validation, preservando parecer fiscal e comprovacao de entrega.
+
+O portal comercial e a acao antiga buy_kit permanecem bloqueados. O endpoint tecnico permite homologacao controlada sem apresentar uma compra produtiva antes das aprovacoes. Testes SQL em transacao com rollback e testes de adaptador/API nao equivalem a homologacao externa de kit pago.
+
+A rotina agendada de expiracao recebe os bindings e o fetch nativo do Worker, limita cada lote a quatro pedidos TEST e isola falhas por pedido. So cancela uma tentativa conhecida depois de consultar e validar o provedor e conferir sua expiracao; uma aprovacao concorrente segue para conciliacao. Escrita desconhecida por mais de 23 horas vai para reconciliacao obrigatoria, preservando a reserva.
+
+## Proposta de contrato para futura operação produtiva
+
+Este contrato é uma proposta para revisão da operação produtiva; não descreve a transação TEST acima e não libera `buy_kit`, pagamento de produção, NF-e ou expedição.
 
 - **Identidade e valor:** o recurso continua sendo `kit_orders`, separado de `orders`. Use `kit_orders.id` como chave interna e `kit_orders.public_code` como `external_reference` estável do Mercado Pago; não use CPF, e-mail ou outro dado pessoal na referência. O servidor recompõe SKU/variante, quantidade, preço e total a partir do catálogo vigente. Frete, tributos e composição ausentes permanecem bloqueados; o cliente não os fornece.
 - **Criação e reserva:** uma chave de idempotência estável identifica a intenção de compra do representante. A transação do banco valida sessão, perfil e estado do representante, trava estoque do SKU de kit e cria o `kit_order`, itens de snapshot, tentativa de pagamento e reserva com expiração de forma atômica. Repetir a mesma chave e os mesmos dados devolve o mesmo recurso; reutilizá-la com dados diferentes é conflito. A chamada ao provedor ocorre depois do commit. Timeout incerto exige consulta pela referência estável antes de qualquer nova criação.
@@ -43,4 +57,5 @@ Este contrato descreve a integração que ainda precisa ser implementada e homol
 - **Cancelamento e estoque:** pagamento ainda pendente só libera reserva após cancelamento/expiração confirmados no provedor; reserva vencida não apaga nem invalida um pagamento que possa ter sido aprovado. Cancelamento de kit já pago precisa conciliar primeiro o saldo e o estado de separação/expedição. A reposição de estoque da loja e a reversão do inventário do representante são movimentos distintos e exigem evento operacional confirmado; reembolso, sozinho, não simula devolução física.
 - **Eventos para Bling, logística e e-mail:** emitir evento por outbox somente depois do commit da transição. A chave do evento é estável por `kit_order` e transição. O envelope mínimo inclui `kit_order_id`, `public_code`, tipo e versão do evento, status, total/moeda, `payment_reference`, identificador do pagamento, instante de confirmação e saldo reembolsado. Não inclui token, cartão, CPF, corpo bruto do provedor ou payload pessoal. Bling recebe finalidade `resale` explicitamente e não herda aprovação fiscal B2C; logística aguarda autorização fiscal de revenda e pagamento confirmado; e-mail consome o mesmo evento idempotente sem decidir o estado comercial.
 
-**Estado de implementação:** somente a prévia e o gate estão no código publicado. Este contrato é proposta de revisão; ainda faltam migration incremental, ligação ao serviço de pagamento/conciliação existente, reserva/liberação transacional, testes de concorrência/replay/refund e homologação TEST separada. A tabela `payments` atual exige `order_id` de B2C e a reserva atual exige `cart_id`; não associar `kit_orders` a essas tabelas por escrita direta nem contornar o gate existente.
+A implementação TEST descrita acima já existe, com limites próprios. Antes de qualquer operação produtiva, revisar este contrato contra o código vigente e concluir os testes de concorrência, replay e reembolso, além da homologação e aprovação fiscal separadas. Não associar pedidos de kit às estruturas B2C por escrita direta nem contornar os bloqueios existentes.
+

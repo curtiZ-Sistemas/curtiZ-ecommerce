@@ -175,6 +175,32 @@ describe("Bling HTTP reliability", () => {
     await expect(new BlingClient(config, storage(), vi.fn<typeof fetch>().mockResolvedValue(new Response("not json", { status: 422 })))
       .request("/nfe/1")).rejects.toMatchObject({ code: "validation_error", validationCodes: [] });
   });
+  it.each([
+    { msg: "Data de operação inválida", hints: ["operation_date"] },
+    { msg: "Total das parcelas difere do total da nota", hints: ["amount_totals", "payment_terms"] },
+    { msg: "Certificado digital não informado", hints: ["certificate", "required_data"] },
+    { msg: "CFOP inválido para o destinatário", hints: ["contact_reference", "tax_rules"] },
+    { msg: "Não é permitido alterar itens vinculados a pedido de venda", hints: ["integration_origin", "operation_not_permitted", "product_reference"] }
+  ])("classifies bounded validation topics without retaining provider prose", async ({ msg, hints }) => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { fields: [
+      { code: 0, msg: `${msg}. Contato private-customer, CPF 12345678909, private@example.invalid, token private-token` }
+    ] } }, 400));
+    const error: unknown = await new BlingClient(config, storage(), transport)
+      .request("/nfe/1", { method: "PUT", body: {} }).catch((issue: unknown) => issue);
+    expect(error).toMatchObject({ code: "validation_error", retryable: false, uncertainWrite: false,
+      validationHints: [...new Set([...hints, "contact_reference"])].sort() });
+    expect(JSON.stringify(error)).not.toContain("private");
+    expect(JSON.stringify(error)).not.toContain("12345678909");
+    expect(JSON.stringify(error)).not.toContain(msg);
+    expect(transport).toHaveBeenCalledOnce();
+  });
+  it("ignores non-text validation messages and bounds inspected prose", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(json({ error: { description: "x".repeat(2048) + " certificado",
+      fields: [{ code: 0, msg: { private: "CFOP" } }] } }, 422));
+    await expect(new BlingClient(config, storage(), transport).request("/nfe/1", { method: "PUT", body: {} }))
+      .rejects.toMatchObject({ code: "validation_error", validationHints: [] });
+    expect(transport).toHaveBeenCalledOnce();
+  });
   it("keeps only exact schema field identifiers, including nested validation failures", async () => {
     const fields = [{ code: 0, element: "itens", msg: "private customer", collection: [
       { code: 0, element: "classificacaoFiscal", msg: "private document" },

@@ -321,6 +321,15 @@ describe("environment validation", () => {
       EMAIL_FROM: "invalid" }).errors).toContain("EMAIL_FROM_INVALID na configuração de e-mail");
   });
 
+  it("compila a chave pública Turnstile sem copiar o segredo de runtime para o build", () => {
+    const build = { ...disabledProduction, TURNSTILE_ENABLED: "false", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "0x-public-test-key" };
+    expect(validateEnvironment("production", build).valid).toBe(true);
+    expect(validateEnvironment("production", { ...build, TURNSTILE_ENABLED: "true" }).errors)
+      .toContain("TURNSTILE_SECRET_KEY não está configurada");
+    expect(requiredDeploymentSecrets(build)).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(requiredDeploymentSecrets({ ...build, TURNSTILE_ENABLED: "true" })).toContain("TURNSTILE_SECRET_KEY");
+  });
+
   it("rejeita false como provider e aceita somente em flags", () => {
     const result = validateEnvironment("production", {
       ...disabledProduction,

@@ -59,8 +59,7 @@ export async function googleCallback(request: NextRequest) {
           client,
           current.data.user.id,
           intent.next,
-          request.url,
-          environment
+          request.url
         )
       );
     const result = await client.auth.exchangeCodeForSession(code);
@@ -72,8 +71,7 @@ export async function googleCallback(request: NextRequest) {
       client,
       result.data.user.id,
       intent.next,
-      request.url,
-      environment
+      request.url
     );
     await recordGoogleConsents(client, result.data.user.id, intent);
     const referral = verifyReferralAttribution(

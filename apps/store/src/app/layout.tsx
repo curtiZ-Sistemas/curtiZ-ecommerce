@@ -7,6 +7,9 @@ import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
 import { RouteFeedback } from "@/components/route-feedback";
 import { CookiePreferences } from "@/components/cookie-preferences";
+import { DevtoolsGuard } from "@/components/devtools-guard";
+import { getCompanyIdentification } from "@/lib/company-identification-data";
+import { getDevtoolsBlockEnabled } from "@/lib/devtools-block-data";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
@@ -49,10 +52,12 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // A CSP usa um nonce exclusivo por requisição; o HTML não pode ser pré-renderizado sem ele.
-  const [, promotionMessages, navigation] = await Promise.all([
+  const [, promotionMessages, navigation, devtoolsBlocked, company] = await Promise.all([
     connection(),
     getPromotionBarMessages(),
-    getStoreNavigation()
+    getStoreNavigation(),
+    getDevtoolsBlockEnabled(),
+    getCompanyIdentification()
   ]);
   const csp = (await headers()).get("content-security-policy") ?? "";
   const mercadoPagoAllowed = csp.includes("https://sdk.mercadopago.com");
@@ -69,6 +74,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </a>
             <RouteFeedback />
             <IntelligenceBootstrap />
+            <DevtoolsGuard enabled={devtoolsBlocked} />
             <PromotionBar messages={promotionMessages} />
             <SiteHeader navigation={navigation} />
             <main id="main-content">
@@ -76,7 +82,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 {children}
               </PaymentDocumentBoundary>
             </main>
-            <SiteFooter navigation={navigation} />
+            <SiteFooter navigation={navigation} company={company} />
             {/* Chat temporariamente desativado. */}
             <CookiePreferences />
           </FavoritesProvider>

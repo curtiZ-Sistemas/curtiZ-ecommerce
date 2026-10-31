@@ -62,6 +62,7 @@ export function SignupForm({
   const [confirmationRequired, setConfirmationRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
@@ -172,6 +173,8 @@ export function SignupForm({
       setErrors({ form: errorMessage });
       setFields((current) => ({ ...current, password: "", confirmPassword: "" }));
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       submitLock.current = false;
       setIsSubmitting(false);
     }
@@ -186,6 +189,7 @@ export function SignupForm({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           email: normalizeEmail(fields.email),
+          ...(turnstileEnabled ? { turnstileToken } : {}),
           ...(returnTo ? { next: returnTo } : {})
         })
       });
@@ -194,6 +198,8 @@ export function SignupForm({
     } catch {
       setMessage("Não foi possível reenviar agora. Aguarde e tente novamente.");
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       setIsResending(false);
     }
   };
@@ -208,11 +214,12 @@ export function SignupForm({
           você seguirá automaticamente para {returnTo === "/checkout" ? "o checkout" : "seu perfil"}.
         </p>
         {message && <p className="form-message success" role="status">{message}</p>}
+        <TurnstileField action="signup" resetKey={challengeVersion} enabled={turnstileEnabled} onToken={setTurnstileToken} />
         <button
           className="secondary-button full-button"
           type="button"
           onClick={() => void resendConfirmation()}
-          disabled={isResending}
+          disabled={isResending || (turnstileEnabled && !turnstileToken)}
         >
           {isResending && <LoaderCircle className="spin" aria-hidden="true" />}
           {isResending ? "Reenviando…" : "Reenviar e-mail"}
@@ -225,7 +232,7 @@ export function SignupForm({
   }
 
   const passwordRequirements = [
-    ["minimumLength", "Mínimo de 6 caracteres"],
+    ["minimumLength", "Mínimo de 8 caracteres"],
     ["hasLetter", "Pelo menos uma letra"],
     ["hasNumber", "Pelo menos um número"],
     ["noObviousSequence", "Sem sequência ou senha comum"],
@@ -406,7 +413,7 @@ export function SignupForm({
       {errors.form && <p className="form-message error" role="alert">{errors.form}</p>}
       {message && !errors.form && <p className="form-message" role="status">{message}</p>}
 
-      <TurnstileField enabled={turnstileEnabled} onToken={setTurnstileToken} />
+      <TurnstileField action={"signup"} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={setTurnstileToken} />
 
       <button
         className="primary-button full-button auth-submit"

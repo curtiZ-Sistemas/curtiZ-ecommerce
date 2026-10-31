@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Integrations from "@curtiz/integrations";
-const state = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), request: vi.fn(),
+const state = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), request: vi.fn<(path: string, options?: { method?: string; body?: unknown }) => Promise<{ data: unknown }>>(),
   status: "processing", payment: "approved", approved: true, changed: false, situation: 1,
-  jobType: "bling.invoice.send", writable: true, uncertain: false }));
+  jobType: "bling.invoice.send", writable: true, uncertain: false, commercialDraft: false, missingInvoiceTerms: false,
+  sourcePaymentMethodId: 100, savedDraft: null as Record<string, unknown> | null }));
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ rpc: state.rpc, from: state.from }) }));
 vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
@@ -18,23 +19,27 @@ const orderId = "ba200000-0000-4000-8000-000000000010";
 const environment = { SUPABASE_URL: "https://test.supabase.co", SUPABASE_SECRET_KEY: "test-only-service",
   BLING_CLIENT_ID: "test-only-client", BLING_CLIENT_SECRET: "test-only-secret", BLING_TOKEN_ENCRYPTION_KEY: "test-only-key",
   BLING_FISCAL_READY: "true", BLING_INVOICE_SYNC_ENABLED: "true", BLING_INVOICE_SEND_ENABLED: "true",
-  BLING_INVOICE_TRANSMISSION_MODE: "homologation", BLING_INVOICE_STOCK_AUTOMATION_DISABLED: "true" };
+  BLING_INVOICE_TRANSMISSION_MODE: "homologation", BLING_INVOICE_STOCK_AUTOMATION_DISABLED: "true", BLING_PAYMENT_METHOD_ID: "100" };
 const rules = [{ scenario: "sale_in_state", issuer_state: "MG", cfop: "5102", csosn: "102", icms_rate: 0,
   document_model: 55, series: 2, pis_cst: "49", cofins_cst: "49", ipi_cst: "99", pis_rate: 0,
   cofins_rate: 0, ipi_rate: 0, ipi_cenq: "999", natures: [{ final_consumer: true, external_nature_id: 10 }] }];
 const item = { variant_id: "variant-test", sku_snapshot: "KIT-TEST", product_name_snapshot: "Test kit", quantity: 1, unit_price: 43.45 };
+const shippingAddress = { street: "Rua Teste", number: "1", complement: "", district: "Centro", city: "Belo Horizonte", state: "MG", postal_code: "30000000" };
 const snapshot = { variant: { id: item.variant_id, sku: item.sku_snapshot }, metadata: { commercial_unit: "UN",
   pairs_per_sku: 2, fiscal_unit_approved: true, ncm: "64022000", origin: 0, cest: "" },
   kit_components: [1, 2].map(i => ({ sku: `TEST-PAIR-${i}`, description: `Test pair ${i}`, unit: "PR", quantity_pairs: 1,
     allocation_weight: 1, ncm: "64022000", origin: 0, cest: "", source_current: true })) };
-const invoice = () => ({ situacao: state.situation, numeroPedidoLoja: "CZ-TEST", naturezaOperacao: { id: 10 }, serie: 2,
-  valorNota: 43.45, valorFrete: 0, numero: "1", contato: { numeroDocumento: "12345678909", endereco: { uf: "MG", cep: "30000000" } },
-  itens: [21.73, 21.72].map((valor, i) => ({ codigo: `TEST-PAIR-${i + 1}`, unidade: "PR", quantidade: 1, valor,
+const invoice = () => ({ tipo: 1, dataOperacao: "2026-10-17 12:00:00", situacao: state.situation, numeroPedidoLoja: "CZ-TEST", naturezaOperacao: { id: 10 }, serie: 2,
+  valorNota: 43.45, valorFrete: 0, numero: "1", transporte: { fretePorConta: 0 }, contato: { nome: "Test", numeroDocumento: "12345678909",
+    endereco: { endereco: "Rua Teste", numero: "1", complemento: "", bairro: "Centro", municipio: "Belo Horizonte", uf: "MG", cep: "30000000" } },
+  parcelas: state.commercialDraft || state.missingInvoiceTerms ? [] : [{ data: "2026-10-17", valor: 43.45, formaPagamento: { id: 100 } }],
+  itens: state.commercialDraft ? [{ codigo: "KIT-TEST", unidade: "UN", quantidade: 1, valor: 43.45 }] : [21.73, 21.72].map((valor, i) => ({ codigo: `TEST-PAIR-${i + 1}`, unidade: "PR", quantidade: 1, valor,
     classificacaoFiscal: "64022000", origem: 0, cest: "", cfop: "5102" })) });
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(state, { status: "processing", payment: "approved", approved: true, changed: false, situation: 1,
-    jobType: "bling.invoice.send", writable: true, uncertain: false });
+    jobType: "bling.invoice.send", writable: true, uncertain: false, commercialDraft: false, missingInvoiceTerms: false,
+    sourcePaymentMethodId: 100, savedDraft: null });
   let claimed = false;
   state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
     name === "read_integration_credential" ? { status: "connected" }
@@ -51,26 +56,55 @@ beforeEach(() => {
                         : name === "assert_bling_order_writable" ? state.writable : true }));
   state.from.mockImplementation((table: string) => ({ select: () => ({ eq: () => ({
     data: table === "order_items" ? [item] : null, error: null,
-    maybeSingle: async () => ({ error: null, data: { id: orderId, payment_status: state.payment, status: state.status,
-      cpf_ciphertext: "test-only-encrypted-document", shipping_address_snapshot: { state: "MG", postal_code: "30000000" },
+    maybeSingle: async () => ({ error: null, data: { id: orderId, public_code: "CZ-TEST", payment_status: state.payment, status: state.status,
+      cpf_ciphertext: "test-only-encrypted-document", shipping_address_snapshot: shippingAddress,
       grand_total: 43.45, shipping_total: 0, discount_total: 0, fee_total: 0 } })
   }) }) }));
-  state.request.mockImplementation(async (path: string) => {
+  state.request.mockImplementation(async (path: string, options?: { method?: string; body?: unknown }) => {
+    if (path === "/nfe/99" && options?.method === "PUT") {
+      if (options.body === null || typeof options.body !== "object" || Array.isArray(options.body)) throw new Error("invalid_test_payload");
+      state.savedDraft = options.body as Record<string, unknown>;
+      state.commercialDraft = false;
+      return { data: {} };
+    }
     if (path.endsWith("/enviar?enviarEmail=false")) {
       if (state.uncertain) throw new BlingError("uncertain_write", 503, false, true);
       state.situation = 3; // HTTP 200 is only acceptance; authorization comes later.
       return { data: {} };
     }
-    return { data: path === "/empresas/me/dados-basicos" ? { id: "company-test", cnpj: "12345678000199" }
+    return { data: path === "/pedidos/vendas/88" ? { id: 88, numeroLoja: "CZ-TEST", total: 43.45,
+      itens: [{ codigo: "KIT-TEST", quantidade: 1, valor: 43.45 }], notaFiscal: { id: 99 },
+      parcelas: [{ dataVencimento: "2026-10-17", valor: 43.45, formaPagamento: { id: state.sourcePaymentMethodId } }] }
+      : path === "/empresas/me/dados-basicos" ? { id: "company-test", cnpj: "12345678000199" }
       : path.startsWith("/naturezas-operacoes") ? [{ id: 10 }]
         : path === "/produtos/101" ? { situacao: "A", codigo: "KIT-TEST", unidade: "UN", tributacao: { ncm: "64022000", origem: 0, cest: "" } }
-          : invoice() };
+          : { ...invoice(), ...state.savedDraft } };
   });
 });
 const run = (flags: Record<string, string | undefined> = {}) => runBlingJobs({ ...environment, ...flags }, "test-only", 1);
 const sent = () => state.request.mock.calls.filter(([path]) => String(path).includes("/enviar"));
 
 describe("kit invoice job safety at generation and transmission", () => {
+  it("prepares the same commercial draft using the original order payment condition exactly once", async () => {
+    state.jobType = "bling.invoice.generate"; state.commercialDraft = true;
+    expect(await run()).toMatchObject({ processed: 1, failed: 0 });
+    expect(state.savedDraft).toMatchObject({ parcelas: [{ data: "2026-10-17", valor: 43.45, formaPagamento: { id: 100 } }] });
+    expect(state.request.mock.calls.filter(([path]) => path === "/pedidos/vendas/88")).toHaveLength(1);
+    expect(state.request.mock.calls.filter(([, options]) => options?.method === "PUT")).toHaveLength(1);
+    expect(state.rpc).toHaveBeenCalledWith("observe_bling_invoice", expect.objectContaining({ p_invoice_id: 99, p_situation: 1 }));
+    expect(sent()).toHaveLength(0);
+  });
+  it("blocks transmission when the invoice omits the verified payment condition", async () => {
+    state.missingInvoiceTerms = true;
+    expect(await run()).toMatchObject({ failed: 1 });
+    expect(sent()).toHaveLength(0);
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_error_code: "invoice_payment_terms_mismatch" }));
+  });
+  it("blocks a different original order payment mapping before transmission", async () => {
+    state.sourcePaymentMethodId = 101;
+    expect(await run()).toMatchObject({ failed: 1 });
+    expect(sent()).toHaveLength(0);
+  });
   it.each(["bling.invoice.generate", "bling.invoice.send"])("blocks %s without stock automation confirmation, including existing drafts", async jobType => {
     state.jobType = jobType;
     expect(await run({ BLING_INVOICE_STOCK_AUTOMATION_DISABLED: "false" })).toMatchObject({ failed: 1 });

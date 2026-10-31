@@ -30,6 +30,13 @@ describe("Cloudflare secret validation", () => {
       .toEqual(["AUDIT_HASH_KEY", "PII_ENCRYPTION_KEY", "SUPABASE_SECRET_KEY"]);
   });
 
+  it("does not require a runtime Turnstile secret for a public key compiled with protection disabled", () => {
+    const entries = ["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY"].map(name => ({ name }));
+    const environment = { DEPLOY_TARGET: "panel", TURNSTILE_ENABLED: "false", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "public-test-key" };
+    expect(missingCloudflareSecrets(entries, environment)).toEqual([]);
+    expect(missingCloudflareSecrets(entries, { ...environment, TURNSTILE_ENABLED: "true" })).toEqual(["TURNSTILE_SECRET_KEY"]);
+  });
+
   it("requires enabled integration secrets without inspecting their contents", () => {
     const environment = {
       PAYMENT_PROVIDER: "mercadopago", MERCADO_PAGO_ENABLED: "true",

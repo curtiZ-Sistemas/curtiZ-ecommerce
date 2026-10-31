@@ -20,3 +20,6 @@ Thumbs.db
 *.tsbuildinfo
 backups/
 .cache/
+
+# Mapa do código gerado localmente pelo Graphify
+graphify-out/

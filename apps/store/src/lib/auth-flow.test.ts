@@ -88,6 +88,25 @@ async function login(remember = false, origin = `https://${state.host}`, next?: 
 }
 
 describe("login e sessão entre loja e painel", () => {
+  it("does not expose the removed authenticator enrollment API", async () => {
+    const response = await POST(new NextRequest("https://curtiz.com.br/api/auth/mfa", {
+      method: "POST", headers: { origin: "https://curtiz.com.br", "content-type": "application/json" },
+      body: JSON.stringify({ action: "enroll" })
+    }), { params: Promise.resolve({ mode: "mfa" }) });
+    expect(response.status).toBe(404);
+    expect(state.writes).toEqual([]);
+    expect(state.turnstile).not.toHaveBeenCalled();
+  });
+  it("requires the signup challenge on confirmation resend before contacting the provider", async () => {
+    state.turnstile.mockResolvedValue(false);
+    const response = await POST(new NextRequest("https://curtiz.com.br/api/auth/resend", {
+      method: "POST", headers: { origin: "https://curtiz.com.br", "content-type": "application/json" },
+      body: JSON.stringify({ email: "test@example.invalid", turnstileToken: "fresh-token" })
+    }), { params: Promise.resolve({ mode: "resend" }) });
+    expect(response.status).toBe(403);
+    expect(state.turnstile).toHaveBeenCalledWith(expect.any(Request), "fresh-token", "signup");
+    expect(state.writes).toEqual([]);
+  });
   it.each([
     [["admin"], "/administracao"], [["manager"], "/gerencia"],
     [["technical"], "/tecnico"], [["operational"], "/operacional"],

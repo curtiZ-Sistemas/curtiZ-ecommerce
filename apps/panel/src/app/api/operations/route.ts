@@ -53,6 +53,9 @@ const returnStatuses = [
 ] as const;
 
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("review_return"), returnId: z.string().uuid(),
+    decision: z.enum(["review", "photos", "approve", "reject", "posting", "transit", "receive", "exchange", "complete", "refund", "reconcile"]),
+    message: z.string().trim().min(5).max(2000), instructions: z.string().trim().max(2000).default(""), code: z.string().trim().max(120).default("") }),
   z.object({ action: z.literal("start_separation"), orderId: z.string().uuid() }),
   z.object({ action: z.literal("cancel_order"), orderId: z.string().uuid(), reason: z.string().trim().min(5).max(500) }),
   z.object({
@@ -134,8 +137,8 @@ const safeOrigin = (request: NextRequest) => {
 async function access(request: NextRequest) {
   const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (session) {
-    return session?.role === "operational"
-      ? { demo: true as const, supabase: null, userId: session.email }
+    return ["operational", "admin", "manager"].includes(session.role)
+      ? { demo: true as const, supabase: null, userId: session.email, returnsOnly: session.role !== "operational" }
       : null;
   }
   const supabase = await createServerSupabaseClient();
@@ -147,10 +150,10 @@ async function access(request: NextRequest) {
     supabase.from("user_roles").select("role").eq("user_id", user.id)
   ]);
   const roles = rows(rolesData).map((item) => text(item.role));
-  if (profile?.status !== "active" || !roles.includes("operational")) return null;
+  if (profile?.status !== "active" || !roles.some(role => ["operational", "admin", "manager"].includes(role))) return null;
   if (!(await hasRequiredInternalMfa(supabase))) return null;
   if (!(await consumePanelMutationBudget(request, supabase))) return null;
-  return { demo: false as const, supabase, userId: user.id };
+  return { demo: false as const, supabase, userId: user.id, returnsOnly: !roles.includes("operational") };
 }
 
 const demoSnapshot = (section: string, page: number, pageSize: number) => ({
@@ -209,6 +212,7 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+  if (authorized.returnsOnly && !["trocas", "devolucoes"].includes(section)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   if (authorized.demo) {
     return NextResponse.json(demoSnapshot(section, page, pageSize), { headers: noStore });
   }
@@ -286,7 +290,7 @@ export async function GET(request: NextRequest) {
     .range(from, to);
   let returnQuery = supabase
     .from("returns")
-    .select("id,public_code,reason,description,requested_resolution,status,requested_at,orders(public_code),return_items(id,quantity,inspection_result,condition,restock_destination,resolution,order_items(product_name_snapshot,sku_snapshot))", { count: "exact" })
+    .select("id,public_code,reason,description,requested_resolution,status,requested_at,request_kind,customer_message,return_instructions,reverse_logistics_code,reverse_tracking_code,exchange_tracking_code,refund_amount,refund_error,eligibility_snapshot,return_media(id),return_history(id,status,message,created_at),orders(public_code),return_items(id,quantity,inspection_result,condition,restock_destination,resolution,order_items(product_name_snapshot,sku_snapshot))", { count: "exact" })
     .order("requested_at", { ascending: false })
     .range(from, to);
   if (status && (returnStatuses as readonly string[]).includes(status)) returnQuery = returnQuery.eq("status", status);
@@ -319,7 +323,7 @@ export async function GET(request: NextRequest) {
     ...(section === "pedidos" ? ["orders.update_operational_status"] : []),
     ...(needsKits ? ["representatives.kits.fulfill"] : []),
     ...(needsInventory ? ["operations.inventory.request_adjustment"] : []),
-    ...(needsReturns ? ["returns.inspect"] : []),
+    ...(needsReturns ? ["returns.inspect", "returns.approve", "returns.refund"] : []),
     ...(section === "ocorrencias"
       ? ["operations.occurrences.create", "operations.occurrences.resolve"]
       : [])
@@ -520,6 +524,17 @@ export async function GET(request: NextRequest) {
     requestedResolution: text(returnRecord.requested_resolution),
     status: text(returnRecord.status),
     requestedAt: text(returnRecord.requested_at),
+    kind: text(returnRecord.request_kind),
+    customerMessage: text(returnRecord.customer_message),
+    instructions: text(returnRecord.return_instructions),
+    postingCode: text(returnRecord.reverse_logistics_code),
+    trackingCode: text(returnRecord.reverse_tracking_code),
+    exchangeTrackingCode: text(returnRecord.exchange_tracking_code),
+    refundAmount: Number(returnRecord.refund_amount ?? 0),
+    refundNeedsReview: Boolean(text(returnRecord.refund_error)),
+    withinWithdrawalPeriod: record(returnRecord.eligibility_snapshot)?.withinWithdrawalPeriod,
+    photos: rows(returnRecord.return_media).map(photo => ({ id: text(photo.id) })),
+    history: rows(returnRecord.return_history).map(event => ({ id: text(event.id), status: text(event.status), message: text(event.message), createdAt: text(event.created_at) })).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     items: rows(returnRecord.return_items).map((item) => ({
       id: text(item.id),
       productName: text(record(item.order_items)?.product_name_snapshot, "Produto"),
@@ -592,6 +607,8 @@ export async function GET(request: NextRequest) {
     resolveOccurrences: permission("operations.occurrences.resolve"),
     requestAdjustments: permission("operations.inventory.request_adjustment"),
     inspectReturns: permission("returns.inspect"),
+    reviewReturns: permission("returns.approve"),
+    refundReturns: permission("returns.refund"),
     addOrderNotes: permission("orders.update_operational_status")
   };
   const metrics = record(metricsResult.data);
@@ -686,8 +703,14 @@ export async function POST(request: NextRequest) {
   }
   const supabase = authorized.supabase;
   const input = parsed.data;
+  if (authorized.returnsOnly && !["review_return", "inspect_return"].includes(input.action)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   let response: unknown;
-  if (input.action === "cancel_order") {
+  if (input.action === "review_return") {
+    response = input.decision === "reconcile"
+      ? await supabase.rpc("request_return_refund_reconciliation", { p_return_id: input.returnId, p_provider_id: input.code, p_message: input.message })
+      : await supabase.rpc("review_customer_return", { p_return_id: input.returnId, p_action: input.decision,
+        p_message: input.message, p_instructions: input.instructions, p_code: input.code });
+  } else if (input.action === "cancel_order") {
     response = await supabase.rpc("request_operational_order_cancellation", { p_order_id: input.orderId, p_reason: input.reason });
   } else if (input.action === "start_separation") {
     response = await supabase.rpc("start_order_separation", { p_order_id: input.orderId });

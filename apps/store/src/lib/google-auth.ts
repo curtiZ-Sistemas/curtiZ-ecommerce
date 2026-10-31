@@ -103,8 +103,7 @@ export async function googleLoginDestination(
   client: AuthClient,
   userId: string,
   requested: string | undefined,
-  requestUrl: string,
-  environment: RuntimeEnvironment
+  requestUrl: string
 ): Promise<string> {
   const [profile, assigned] = await Promise.all([
     client.from("profiles").select("status").eq("id", userId).maybeSingle(),
@@ -122,18 +121,12 @@ export async function googleLoginDestination(
   const fallback = resolveLoginDestination(roles);
   if (!fallback) throw new Error("Roles unavailable");
   const { storeUrl, panelUrl } = resolvePublicAppUrls(requestUrl);
-  let destination = resolveLoginReturn(safeInternalPath(requested, fallback), panelUrl);
+  const destination = resolveLoginReturn(safeInternalPath(requested, fallback), panelUrl);
   if (
     new URL(destination, storeUrl).origin === new URL(panelUrl).origin &&
     !hasInternalPanelRole(roles)
   )
-    destination = "/minha-conta";
-  if (hasInternalPanelRole(roles) && environment.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await client.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error) throw new Error("MFA unavailable");
-    if (assurance.data.currentLevel !== "aal2")
-      destination = `/mfa?next=${encodeURIComponent(destination)}`;
-  }
+    return new URL("/minha-conta", storeUrl).toString();
   if (hasInternalPanelRole(roles))
     await client.rpc("log_internal_auth_event", { p_event: "LOGIN" });
   return new URL(destination, storeUrl).toString();

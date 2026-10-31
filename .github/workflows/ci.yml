@@ -43,7 +43,6 @@ env:
   EMAIL_PROVIDER: disabled
   EMAIL_ENABLED: "false"
   TURNSTILE_ENABLED: "false"
-  REQUIRE_INTERNAL_MFA: "false"
   AUTH_RATE_LIMIT_ENABLED: "true"
 
 jobs:
@@ -170,6 +169,10 @@ jobs:
           mapfile -t sql_tests < <(find supabase/tests -type f \( -name '*.sql' -o -name '*.pg' \) ! -name singleton_runtime_safeupdate_test.sql | sort)
           test "${#sql_tests[@]}" -gt 0
           supabase test db "${sql_tests[@]}"
+      - name: Testar concorrência do saldo de devoluções
+        run: bash scripts/test-return-balance-concurrency.sh
+      - name: Testar concorrência da fila de remessas
+        run: bash scripts/test-shipping-claim-concurrency.sh
       - name: Testar runtime com safeupdate ativo
         # Only the ephemeral CI database is changed. The test still runs as
         # postgres; that role cannot LOAD native libraries directly.
@@ -285,6 +288,15 @@ jobs:
         run: pnpm build:worker
       - name: Validar empacotamento de produção da loja
         run: pnpm deploy:dry-run
+      - name: Validar inicialização do Worker da loja
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/store/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/store-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/store-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "store") process.exit(1)' "$RUNNER_TEMP/store-version.json"
       - name: Publicar curtiz-ecommerce
         if: github.event_name != 'pull_request'
         env:
@@ -301,7 +313,7 @@ jobs:
           GIT_COMMIT_SHA="${GITHUB_SHA}"
           BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           BUILD_TIMESTAMP="${build_timestamp}"
-          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
           # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
           deploy_vars=()
           add_var() {
@@ -369,6 +381,15 @@ jobs:
         run: pnpm build:worker:panel
       - name: Validar empacotamento de produção do painel
         run: pnpm deploy:dry-run:panel
+      - name: Validar inicialização do Worker do painel
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/panel/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/panel-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/panel-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "panel") process.exit(1)' "$RUNNER_TEMP/panel-version.json"
       - name: Publicar curtiz-painel
         if: github.event_name != 'pull_request'
         env:
@@ -385,7 +406,7 @@ jobs:
           GIT_COMMIT_SHA="${GITHUB_SHA}"
           BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           BUILD_TIMESTAMP="${build_timestamp}"
-          # Integrações, credenciais, MFA e rate limit ficam somente no Runtime do Cloudflare.
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
           # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
           deploy_vars=()
           add_var() {
