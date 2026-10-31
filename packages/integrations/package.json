@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@curtiz/domain": "workspace:*",
-    "saxes": "5.0.1"
+    "saxes": "6.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
