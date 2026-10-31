@@ -14,6 +14,7 @@ const dependencies = {
   bling: vi.fn(),
   email: vi.fn(),
   afterSale: vi.fn(),
+  returns: vi.fn(),
   context: vi.fn<(request: Request, environment: Environment, context: Context, task: () => Promise<void>) => Promise<void>>(),
   log: vi.fn()
 };
@@ -57,6 +58,7 @@ const workerGlobal = {
     if (specifier === "./src/lib/bling-jobs") return { runBlingJobs: dependencies.bling };
     if (specifier === "./src/lib/transactional-email-jobs") return { runTransactionalEmailJobs: dependencies.email };
     if (specifier === "./src/lib/after-sale-jobs") return { runAfterSaleJobs: dependencies.afterSale };
+    if (specifier === "./src/lib/return-jobs") return { runReturnJobs: dependencies.returns };
     if (specifier === "@curtiz/security") return { logServerEvent: dependencies.log };
     throw new Error(`Unexpected Worker dependency: ${specifier}`);
   }
@@ -105,6 +107,7 @@ describe("custom Worker handlers", () => {
     expect(dependencies.housekeeping).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.representativeTest).toHaveBeenCalledWith(environment, expect.any(Function));
     expect(dependencies.afterSale).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
+    expect(dependencies.returns).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     for (const job of [dependencies.bling, dependencies.shipping, dependencies.email]) {
       expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id", undefined, expect.any(Function));
     }
@@ -123,6 +126,7 @@ describe("custom Worker handlers", () => {
     for (const job of [dependencies.bling, dependencies.shipping, dependencies.email])
       expect(job.mock.calls[0]?.[3]).toBe(transport);
     expect(dependencies.afterSale.mock.calls[0]?.[2]).toBe(transport);
+    expect(dependencies.returns.mock.calls[0]?.[2]).toBe(transport);
     expect(dependencies.representativeTest.mock.calls[0]?.[1]).toBe(transport);
     expect(patchedFetch).not.toHaveBeenCalled();
     workerGlobal.fetch = dependencies.nativeFetch;
@@ -167,24 +171,24 @@ describe("custom Worker handlers", () => {
       return Promise.resolve();
     });
     worker.scheduled({}, {}, { waitUntil: vi.fn() });
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).not.toHaveBeenCalled();
     expect(task).toBeTypeOf("function");
     await task?.();
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).toHaveBeenCalledOnce();
   });
 
   it.each([
-    ["expiration", "housekeeping"], ["representative_test", "representativeTest"], ["bling", "bling"], ["after_sale", "afterSale"], ["shipping", "shipping"], ["transactional_email", "email"]
+    ["expiration", "housekeeping"], ["representative_test", "representativeTest"], ["bling", "bling"], ["after_sale", "afterSale"], ["returns", "returns"], ["shipping", "shipping"], ["transactional_email", "email"]
   ] as const)("isolates a failure in %s while running the remaining queues", async (queue, dependency) => {
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       job.mockResolvedValue({ ok: true });
     dependencies[dependency].mockRejectedValue(new Error("test-only provider failure"));
     const context = { waitUntil: vi.fn() };
     worker.scheduled({}, {}, context);
     await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).toHaveBeenCalledOnce();
     expect(dependencies.log).toHaveBeenCalledWith("error", "scheduled_queue_failed", {
       executionId: "scheduled-execution-id", queue, errorType: "other"

@@ -64,12 +64,20 @@ export function HomepageHero({ banners, priority = true }: { banners: PublicBann
   const [failedBannerIds, setFailedBannerIds] = useState<Set<string>>(
     () => new Set()
   );
+  const imageRef = useRef<HTMLImageElement>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const swiped = useRef(false);
 
   useEffect(() => {
     setActive((current) => slides.length ? current % slides.length : 0);
   }, [slides.length]);
+
+  // A imagem pode terminar de carregar antes da hidratação; nesse caso o onLoad do React não
+  // dispara e o autoplay ficaria esperando para sempre.
+  useEffect(() => {
+    const image = imageRef.current;
+    if (image?.complete) setInitialImageLoaded(true);
+  }, []);
 
   useEffect(() => {
     if (!pageVisible || !initialImageLoaded) return;
@@ -118,6 +126,7 @@ export function HomepageHero({ banners, priority = true }: { banners: PublicBann
         width={2172}
         height={724}
         sizes="(max-width: 1280px) calc(100vw - 32px), 1200px"
+        ref={imageRef}
         className="hero-media"
         alt={banner.altText}
         fetchPriority={active === 0 && priority ? "high" : "low"}
@@ -127,6 +136,7 @@ export function HomepageHero({ banners, priority = true }: { banners: PublicBann
           if (active === 0) setInitialImageLoaded(true);
         }}
         onError={() => {
+          if (active === 0) setInitialImageLoaded(true);
           if (useFallbackImage) return;
           setFailedBannerIds((current) => new Set(current).add(banner.id));
         }}

@@ -171,6 +171,8 @@ jobs:
           supabase test db "${sql_tests[@]}"
       - name: Testar concorrência do saldo de devoluções
         run: bash scripts/test-return-balance-concurrency.sh
+      - name: Testar concorrência da fila de remessas
+        run: bash scripts/test-shipping-claim-concurrency.sh
       - name: Testar runtime com safeupdate ativo
         # Only the ephemeral CI database is changed. The test still runs as
         # postgres; that role cannot LOAD native libraries directly.

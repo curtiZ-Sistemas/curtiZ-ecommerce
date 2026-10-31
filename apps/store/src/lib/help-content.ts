@@ -201,7 +201,7 @@ export const builtInHelpContents: HelpContent[] = [
     type: "step_by_step",
     title: "Como solicitar troca ou devolução?",
     summary: "Inicie e acompanhe a solicitação pela sua conta.",
-    body: "Entre na sua conta, abra Trocas e selecione a ação disponível. Informe o pedido e os dados solicitados. Depois do envio, acompanhe o status na mesma área. Consulte a política aplicável antes de iniciar.",
+    body: "Entre na sua conta e abra Trocas. Selecione o produto entregue, a quantidade e a solução desejada. Você pode enviar até 3 fotos JPG, PNG ou WebP de até 5 MB cada; fotos e justificativa não são obrigatórias para arrependimento. Acompanhe a avaliação, a resposta da equipe e as instruções de postagem na mesma área. Nas compras online, comunique o arrependimento em até 7 dias corridos após o recebimento: a devolução é gratuita e o reembolso integral inclui o frete pago. Defeitos aparentes em calçados podem ser reclamados em até 90 dias; defeitos ocultos contam da descoberta. Não poste por conta própria: aguarde a autorização ou etiqueta de retorno fornecida pela loja. Reembolso em processamento é diferente de reembolso confirmado pelo provedor. Consulte a política aplicável e fale com o atendimento se precisar de ajuda.",
     categoryName: "Trocas e devoluções",
     categorySlug: "trocas-devolucoes",
     keywords: ["troca", "devolução", "pedido", "solicitação", "acompanhar"],

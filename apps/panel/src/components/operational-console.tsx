@@ -1,4 +1,6 @@
 "use client";
+import { returnKindLabels, returnStatusLabels, type ReturnKind } from "@curtiz/domain";
+import { ReturnReviewActions } from "./return-review-actions";
 
 import {
   AlertTriangle,
@@ -49,6 +51,8 @@ type OperationCapabilities = {
   resolveOccurrences: boolean;
   requestAdjustments: boolean;
   inspectReturns: boolean;
+  reviewReturns?: boolean;
+  refundReturns?: boolean;
   addOrderNotes: boolean;
 };
 type OperationItem = {
@@ -139,6 +143,17 @@ type ReturnRecord = {
   requestedResolution: string;
   status: string;
   requestedAt: string;
+  kind: string;
+  customerMessage: string;
+  instructions: string;
+  postingCode: string;
+  trackingCode: string;
+  exchangeTrackingCode: string;
+  refundAmount: number;
+  refundNeedsReview: boolean;
+  withinWithdrawalPeriod?: boolean | null;
+  photos: Array<{ id: string }>;
+  history: Array<{ id: string; status: string; message: string; createdAt: string }>;
   items: Array<{
     id: string;
     productName: string;
@@ -529,7 +544,7 @@ function Section({
       section === "trocas"
         ? data.returns.filter((item) => item.requestedResolution === "exchange")
         : data.returns;
-    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} />;
+    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} canReview={capabilities.reviewReturns === true} canRefund={capabilities.refundReturns === true} />;
   }
   if (section === "ocorrencias") {
     return <Occurrences occurrences={data.occurrences} run={run} processing={processing} canCreate={capabilities.createOccurrences} canResolve={capabilities.resolveOccurrences} />;
@@ -1218,12 +1233,16 @@ function Returns({
   records,
   run,
   processing,
-  canInspect
+  canInspect,
+  canReview,
+  canRefund
 }: {
   records: ReturnRecord[];
   run: Run;
   processing: string;
   canInspect: boolean;
+  canReview: boolean;
+  canRefund: boolean;
 }) {
   const [inspectionTarget, setInspectionTarget] = useState<ReturnRecord["items"][number] | null>(null);
   const inspect = async (event: FormEvent<HTMLFormElement>) => {
@@ -1250,13 +1269,23 @@ function Returns({
                   <Code>{record.publicCode}</Code>
                   <small>Pedido <Code>{record.orderCode}</Code> · {formatDate(record.requestedAt)}</small>
                 </div>
-                <StatusLabel tone={statusTone(record.status)}>{label(record.status)}</StatusLabel>
+                <StatusLabel tone={statusTone(record.status)}>{returnStatusLabels[record.status] ?? label(record.status)}</StatusLabel>
               </header>
               <dl className="operational-return-facts">
                 <div><dt>Solicitação</dt><dd>{label(record.requestedResolution)}</dd></div>
                 <div><dt>Motivo</dt><dd>{record.reason}</dd></div>
               </dl>
               {record.description ? <p className="operational-return-description">{record.description}</p> : null}
+              <p>{returnKindLabels[record.kind as ReturnKind] ?? "Solicitação anterior"}{record.kind === "withdrawal" ? record.withinWithdrawalPeriod === true ? " · Comunicada em até 7 dias" : " · Conferir data de recebimento e preservar os direitos do cliente" : ""}</p>
+              {record.customerMessage && <p><strong>Resposta ao cliente:</strong> {record.customerMessage}</p>}
+              {record.instructions && <p style={{ whiteSpace: "pre-wrap" }}>Postagem: {record.postingCode}<br />{record.instructions}</p>}
+              {record.trackingCode && <p>Rastreio do retorno: <Code>{record.trackingCode}</Code></p>}
+              {record.exchangeTrackingCode && <p>Rastreio da troca: <Code>{record.exchangeTrackingCode}</Code></p>}
+              {record.refundAmount > 0 && <p>Reembolso: {formatCurrency(record.refundAmount)}</p>}
+              {record.refundNeedsReview && <p role="status">Reembolso exige conciliação com o provedor. A devolução do valor ainda não foi confirmada. Não faça outro estorno sem verificar a operação anterior.</p>}
+              {record.photos?.length > 0 && <div className="return-photo-grid">{record.photos.map((photo, index) => <a href={`/api/operations/return-media?id=${photo.id}`} key={photo.id} target="_blank" rel="noopener noreferrer"><img src={`/api/operations/return-media?id=${photo.id}`} alt={`Foto ${index + 1} do produto, solicitação ${record.publicCode}`} width={96} height={96} loading="lazy" /></a>)}</div>}
+              <ReturnReviewActions id={record.id} status={record.status} kind={record.kind} resolution={record.requestedResolution} canReview={canReview} canInspect={canInspect} canRefund={canRefund} needsReconciliation={record.refundNeedsReview} busy={Boolean(processing)} run={run} />
+              {Boolean(record.history?.length) && <details><summary>Histórico da solicitação</summary><ol>{record.history.map(event => <li key={event.id}><strong>{returnStatusLabels[event.status] ?? event.status}</strong> · {formatDate(event.createdAt)}<p>{event.message}</p></li>)}</ol></details>}
               <ul className="operational-return-items">
                 {record.items.map((item) => (
                   <li key={item.id}>

@@ -11,6 +11,7 @@ import { runBlingJobs } from "./src/lib/bling-jobs";
 import { runTransactionalEmailJobs } from "./src/lib/transactional-email-jobs";
 import { runRepresentativeTestJobs } from "./src/lib/representative-test-jobs";
 import { runAfterSaleJobs } from "./src/lib/after-sale-jobs";
+import { runReturnJobs } from "./src/lib/return-jobs";
 import { logServerEvent } from "@curtiz/security";
 import { optimizeStorefrontImageRequest, type StorefrontImageEnvironment } from "./src/lib/storefront-image-worker";
 
@@ -59,6 +60,7 @@ export default {
       await runQueue("representative_test", () => runRepresentativeTestJobs(environment, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("after_sale", () => runAfterSaleJobs(environment, executionId, scheduledFetch));
+      await runQueue("returns", () => runReturnJobs(environment, executionId, scheduledFetch));
       await runQueue("shipping", () => runMelhorEnvioShippingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("transactional_email", () => runTransactionalEmailJobs(environment, executionId, undefined, scheduledFetch));
     }));

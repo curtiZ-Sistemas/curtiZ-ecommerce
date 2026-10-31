@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import type * as Security from "@curtiz/security";
 
 const mocks = vi.hoisted(() => ({ client: vi.fn(), assurance: vi.fn(), roles: ["admin"], status: "active" }));
+vi.mock("@/lib/internal-mfa", () => import("./internal-mfa"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: mocks.client }));
 vi.mock("./supabase/server", () => ({ createServerSupabaseClient: mocks.client }));
 vi.mock("@/lib/technical-sanitizer", () => import("./technical-sanitizer"));
@@ -21,6 +22,7 @@ import { GET as readProducts, PATCH as changeProducts, DELETE as deleteProducts 
 import { GET as readNavigation, PATCH as changeNavigation } from "../app/api/admin/store-navigation/route";
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.stubEnv("REQUIRE_INTERNAL_MFA", "true");
   mocks.status = "active";
   mocks.assurance.mockResolvedValue({ data: { currentLevel: "aal1" }, error: null });
@@ -33,6 +35,12 @@ beforeEach(() => {
 });
 
 describe("API operacional", () => {
+  it.each(["admin", "manager"])("requires configured MFA when reviewing returns as %s", async role => {
+    mocks.roles = [role];
+    mocks.assurance.mockClear();
+    expect((await readOperations(new NextRequest("http://localhost:3001/api/operations?section=devolucoes"))).status).toBe(403);
+    expect(mocks.assurance).toHaveBeenCalledTimes(1);
+  });
   it("nega leitura e escrita com perfil suspenso", async () => {
     mocks.roles = ["operational"];
     mocks.status = "suspended";
