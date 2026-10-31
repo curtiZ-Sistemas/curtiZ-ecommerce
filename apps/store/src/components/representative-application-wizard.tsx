@@ -296,7 +296,7 @@ export function RepresentativeApplicationWizard() {
                 Leia os termos vigentes antes de aceitar. A versão e o horário do aceite serão
                 registrados.
               </p>
-              <a href="/termos-de-uso" target="_blank">
+              <a href="/politicas/termos-de-uso" target="_blank">
                 Ler termos completos
               </a>
             </div>

@@ -13,7 +13,6 @@ const state = vi.hoisted(() => ({
   remove: vi.fn<(paths: string[]) => Promise<{ error: null }>>()
 }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: state.client }));
-vi.mock("@/lib/internal-mfa", () => ({ hasRequiredInternalMfa: async () => true }));
 vi.mock("@curtiz/security", async (importOriginal) => ({
   ...await importOriginal<typeof Security>(),
   verifyDemoSession: () => null
@@ -81,8 +80,23 @@ describe("catalog GET essentials", () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
     const body: unknown = await response.json();
-    expect(body).toMatchObject({ products: [{ images: [{ primary: true, url: "http://localhost:3000/test.webp" }], variants: [{ sku: "TEST", available: 2 }] }] });
+    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000";
+    expect(body).toMatchObject({ products: [{ images: [{ primary: true, url: new URL("/test.webp", storeUrl).toString() }], variants: [{ sku: "TEST", available: 2 }] }] });
     expect(state.query.mock.calls.find(([table]) => table === "products")?.[1]).toContain("categories!products_category_id_fkey(name)");
+  });
+  it("deduplicates recently used two-tone colors", async () => {
+    const normal = state.query.getMockImplementation()!;
+    state.query.mockImplementation((table, select, values) => table === "product_variants" && select.includes("color_hex")
+      ? { data: [
+          { color_name: "Preto e Branco", color_hex: "#000000", color_hex_secondary: "#FFFFFF" },
+          { color_name: " preto   e branco ", color_hex: "#000000", color_hex_secondary: "#FFFFFF" }
+        ], error: null }
+      : normal(table, select, values));
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      colorOptions: [{ name: "Preto e Branco", primaryColor: "#000000", secondaryColor: "#FFFFFF" }]
+    });
   });
   it("keeps essential data in the older-schema fallback and logs the selected fallback", async () => {
     const normal = state.query.getMockImplementation()!;
@@ -129,16 +143,17 @@ describe("product DELETE", () => {
   it("keeps a legitimate conflict and returns its readable blockers", async () => {
     state.rpc.mockImplementation(async (name: string) => name === "admin_delete_product"
       ? { data: null, error: { code: "23503", message: "product has related records" } }
-      : { data: name === "consume_private_api_rate_limit" ? true : { [id]: { canDelete: false, blockers: ["pedidos"] } }, error: null });
+      : { data: name === "consume_private_api_rate_limit" ? true : { [id]: { canDelete: false, blockers: ["order_items"] } }, error: null });
     const response = await DELETE(request("DELETE", { productId: id }));
     expect(response.status).toBe(409);
-    expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("pedidos. Use Arquivar") as unknown });
+    expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("histórico de vendas") as unknown });
     expect(state.remove).not.toHaveBeenCalled();
   });
 });
 
 describe("product save", () => {
-  const savePayload = (status: "draft" | "active", variants = [{ sku: "", color: "Padrão", colorHex: "", size: "Único", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" }]) => ({
+  const createProductRpc = "admin_save_product_authorized_and_clear_draft";
+  const savePayload = (status: "draft" | "active", variants = [{ sku: "", color: "Padrão", colorHex: "", colorHexSecondary: "", size: "Único", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" }]) => ({
     action: "save", name: "Produto teste", slug: "", shortDescription: "", description: "Descrição",
     categoryId: status === "active" ? id : null, categoryIds: status === "active" ? [id] : [], modelId: null,
     collectionId: null, status, featured: false, priceInCents: status === "active" ? 1000 : null,
@@ -152,7 +167,7 @@ describe("product save", () => {
       data: table === "profiles" ? { status: "active" } : table === "user_roles" ? [{ role: "admin" }] : table === "categories" ? { name: "Slides" } : null,
       error: null
     }));
-    state.rpc.mockImplementation(async (name) => ({ data: name === "admin_save_product_authorized" ? id : true, error: null }));
+    state.rpc.mockImplementation(async (name) => ({ data: name === createProductRpc ? id : true, error: null }));
   });
 
   it("creates draft, published and variation products through PATCH", async () => {
@@ -160,19 +175,113 @@ describe("product save", () => {
       savePayload("draft"),
       savePayload("active"),
       savePayload("active", [
-        { sku: "SKU-36", color: "Azul", colorHex: "#0000ff", size: "36", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-36" },
-        { sku: "SKU-37", color: "Azul", colorHex: "#0000ff", size: "37", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-37" }
+        { sku: "SKU-36", color: "Azul e Branco", colorHex: "#0000ff", colorHexSecondary: "#ffffff", size: "36", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-36" },
+        { sku: "SKU-37", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "37", priceInCents: null, costInCents: null, stock: 1, active: true, gtin: "", mpn: "MPN-37" }
       ])
     ]) {
       const response = await PATCH(request("PATCH", payload));
       expect(response.status).toBe(200);
       expect(await response.json() as unknown).toMatchObject({ ok: true, productId: id });
     }
-    const saveCall = state.rpc.mock.calls.find(([name]) => name === "admin_save_product_authorized");
+    const saveCall = state.rpc.mock.calls.find(([name]) => name === createProductRpc);
     expect(saveCall?.[1]).toMatchObject({
       p_payload: { sizeGuide: [{ size: "36", measurementCm: 24.5 }] }
     });
+    const twoToneSaveCall = state.rpc.mock.calls.find(([, parameters]) =>
+      JSON.stringify(parameters).includes('"colorHexSecondary":"#ffffff"'));
+    expect(JSON.stringify(twoToneSaveCall?.[1])).toContain('"colorHexSecondary":"#ffffff"');
   });
+
+  it("preserves partial and absent draft dimensions, optional cost, variants and size guide", async () => {
+    const partial = {
+      ...savePayload("draft", [
+        { sku: "SKU-39", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "39", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" },
+        { sku: "SKU-40", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "40", priceInCents: null, costInCents: null, stock: 0, active: true, gtin: "", mpn: "" }
+      ]),
+      lengthCm: 40,
+      stockReason: "Estoque definido no cadastro do produto",
+      sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }]
+    };
+    const first = await PATCH(request("PATCH", partial));
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, productId: id });
+    const firstSave = state.rpc.mock.calls.find(([name]) => name === createProductRpc);
+    expect(firstSave?.[1]).toMatchObject({ p_payload: {
+      status: "draft", priceInCents: null, costInCents: null, weightGrams: null,
+      heightCm: null, widthCm: null, lengthCm: 40,
+      stockReason: "Estoque definido no cadastro do produto",
+      sizeGuide: [{ size: "39", measurementCm: 27 }, { size: "40", measurementCm: 27 }],
+      variants: [{ size: "39" }, { size: "40" }]
+    } });
+
+    state.rpc.mockClear();
+    const allAbsent = await PATCH(request("PATCH", savePayload("draft")));
+    expect(allAbsent.status).toBe(200);
+    expect(await allAbsent.json()).toMatchObject({ ok: true, productId: id });
+    expect(state.rpc.mock.calls.find(([name]) => name === createProductRpc)?.[1]).toMatchObject({
+      p_payload: { weightGrams: null, heightCm: null, widthCm: null, lengthCm: null, costInCents: null }
+    });
+  });
+
+  it("passes ordered product details to the authorized save and returns them on load", async () => {
+    const specifications = [
+      { label: "Marca", value: "Coleção de teste" },
+      { label: "Material", value: "Borracha" }
+    ];
+    const save = await PATCH(request("PATCH", { ...savePayload("draft"), specifications }));
+    expect(save.status).toBe(200);
+    expect(state.rpc.mock.calls.find(([name]) => name === createProductRpc)?.[1])
+      .toMatchObject({ p_payload: { specifications } });
+
+    const prior = state.query.getMockImplementation()!;
+    state.query.mockImplementation((table, selection, mutation) => table === "products"
+      ? { data: [{ ...product, product_specifications: specifications.map((entry, position) => ({ ...entry, position })) }], error: null }
+      : prior(table, selection, mutation));
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ products: [{ specifications }] });
+  });
+
+  it("keeps publication requirements without requiring draft dimensions", async () => {
+    const invalid = await PATCH(request("PATCH", { ...savePayload("active"), priceInCents: null }));
+    expect(invalid.status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalledWith(createProductRpc, expect.anything());
+    const valid = await PATCH(request("PATCH", savePayload("active")));
+    expect(valid.status).toBe(200);
+    expect(await valid.json()).toMatchObject({ ok: true, productId: id });
+  });
+
+  it("saves through the compatible RPC when atomic draft cleanup is not available yet", async () => {
+    state.rpc.mockImplementation(async (name) => name === createProductRpc
+      ? { data: null, error: { code: "PGRST202", message: "function missing from schema cache" } }
+      : { data: name === "admin_save_product_authorized" ? id : true, error: null });
+
+    const response = await PATCH(request("PATCH", savePayload("draft")));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, productId: id });
+    expect(state.rpc).toHaveBeenCalledWith("admin_save_product_authorized", expect.anything());
+    expect(state.query.mock.calls.some(([table]) => table === "product_editor_drafts")).toBe(true);
+  });
+
+  it.each(["23502", "42703", "42P01", "PGRST204", "PGRST205"])(
+    "classifies schema mismatch %s without leaking database details and correlates the server log",
+    async (code) => {
+      state.rpc.mockImplementation(async (name) => name === createProductRpc
+        ? { data: null, error: { code, message: "internal SQL products.weight_grams", details: "secret details" } }
+        : { data: true, error: null });
+      const response = await PATCH(request("PATCH", savePayload("draft")));
+      expect(response.status).toBe(503);
+      const body = await response.json() as { message: string; requestId: string };
+      expect(body.message).toContain("atualização de banco pendente");
+      expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(JSON.stringify(body)).not.toMatch(/internal SQL|secret details|weight_grams/);
+      expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        requestId: body.requestId, operation: createProductRpc, code,
+        message: "[REDACTED]", details: "[REDACTED]"
+      }));
+    }
+  );
 
   it("converts a slug lookup failure into useful JSON instead of a raw 500", async () => {
     state.query.mockImplementation((table) => table === "products"
@@ -182,6 +291,23 @@ describe("product save", () => {
     expect(response.status).toBe(503);
     expect(await response.json() as unknown).toMatchObject({ message: expect.stringContaining("Seus dados foram mantidos") as unknown });
     expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ operation: "generate_slug", code: "57014" }));
+  });
+
+  it("correlates a rate-limit RPC failure before invoking the product save", async () => {
+    state.rpc.mockImplementation(async (name) => name === "consume_private_api_rate_limit"
+      ? { data: null, error: { code: "PGRST202", message: "internal RPC detail" } }
+      : { data: true, error: null });
+    const response = await PATCH(request("PATCH", savePayload("draft")));
+    expect(response.status).toBe(503);
+    const body = await response.json() as { requestId: string; message: string };
+    expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.stringify(body)).not.toContain("internal RPC detail");
+    expect(state.rpc).not.toHaveBeenCalledWith(createProductRpc, expect.anything());
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      requestId: body.requestId,
+      operation: "consume_private_api_rate_limit",
+      code: "PGRST202"
+    }));
   });
 });
 

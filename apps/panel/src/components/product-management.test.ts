@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildNewProductDraft,
+  isProductDraftStoredLocally,
+  newProductDraftSchema,
+  productDraftSyncFailureAction,
+  storeProductDraftLocally
+} from "../lib/product-draft";
+import {
   automaticProductSeo,
   filterManagedProducts,
   generateVariantCombinations,
   groupEditableVariantsByColor,
+  stableVariantColorGroups,
+  withVariantClientKeys,
   isManagedProduct,
   partitionProductMediaFiles,
   parseNewProductDraft,
@@ -47,6 +56,92 @@ const products = [
 ];
 
 describe("product management", () => {
+  it("mantém a identidade da variação enquanto SKU, tamanho e cor mudam", () => {
+    const base = { sku: "", color: "Branco", colorHex: "", colorHexSecondary: "", size: "", priceInCents: null, costInCents: null, stock: 0, active: true, gtin: "", mpn: "" };
+    const [first, second] = withVariantClientKeys([{ ...base }, { ...base, id: "saved-id", color: "Preto" }]);
+    expect(first?.clientKey).toBeTruthy();
+    expect(second?.clientKey).toBe("saved-id");
+    const edited = [{ ...first!, sku: "PALAVRA", size: "39", color: "Lilás" }, second!];
+    expect(edited[0]?.clientKey).toBe(first?.clientKey);
+    expect(withVariantClientKeys([...edited].reverse()).map((item) => item.clientKey)).toEqual(["saved-id", first?.clientKey]);
+    const [duplicate] = withVariantClientKeys([{ ...edited[0]!, id: undefined, clientKey: undefined }]);
+    expect(duplicate?.clientKey).not.toBe(first?.clientKey);
+    const groupKeys = new Map<string, string>();
+    const originalGroup = stableVariantColorGroups([first!, { ...first!, clientKey: "second-new", size: "40" }], groupKeys)[0]?.uiKey;
+    const editedGroup = stableVariantColorGroups([
+      { ...first!, clientKey: "second-new", size: "40", color: "Lilás" },
+      { ...first!, color: "Lilás", sku: "PALAVRA" }
+    ], groupKeys)[0]?.uiKey;
+    expect(editedGroup).toBe(originalGroup);
+    expect(stableVariantColorGroups([
+      { ...first!, clientKey: "duplicate", color: "Lilás" },
+      { ...first!, color: "Lilás" }
+    ], groupKeys)[0]?.uiKey).toBe(originalGroup);
+  });
+  it("monta o snapshot real do editor e ignora controles não persistíveis", () => {
+    const draft = buildNewProductDraft({
+      savedAt: "2026-09-20T12:00:00.000Z",
+      fields: {
+        name: "Slide teste",
+        slug: "slide-teste",
+        description: "Descrição do produto",
+        modelId: "",
+        collectionId: "",
+        statusReason: "",
+        price: "59.90",
+        compareAtPrice: "",
+        cost: "",
+        stockReason: "Estoque definido no cadastro do produto",
+        weightGrams: "",
+        heightCm: "",
+        widthCm: "",
+        lengthCm: "40",
+        shortDescription: "",
+        productKind: "variations",
+        futureEditorControl: "ignorar"
+      },
+      categoryIds: ["20000000-0000-4000-8000-000000000001"],
+      primaryCategoryId: "20000000-0000-4000-8000-000000000001",
+      variants: [
+        { sku: "SLIDE-39", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "39", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" },
+        { sku: "SLIDE-40", color: "Azul", colorHex: "#0000ff", colorHexSecondary: "", size: "40", priceInCents: null, costInCents: null, stock: 2, active: true, gtin: "", mpn: "" }
+      ],
+      hasVariations: true,
+      simpleStock: 0,
+      productActive: false,
+      variantColors: "Azul",
+      variantSizes: "39, 40",
+      variantSkuPrefix: "SLIDE",
+      sizeGuide: [
+        { clientRowId: "row-39", size: "39", measurementCm: 27 },
+        { clientRowId: "row-40", size: "40", measurementCm: 27 }
+      ],
+      specifications: [{ clientRowId: "spec-1", label: "Material", value: "Borracha" }]
+    });
+
+    expect(draft).not.toBeNull();
+    expect(newProductDraftSchema.safeParse(draft).success).toBe(true);
+    expect(draft?.fields).toMatchObject({
+      weightGrams: "", heightCm: "", widthCm: "", lengthCm: "40",
+      stockReason: "Estoque definido no cadastro do produto"
+    });
+    expect(draft?.fields).not.toHaveProperty("productKind");
+    expect(draft?.fields).not.toHaveProperty("futureEditorControl");
+    expect(draft?.sizeGuide).toEqual([
+      { size: "39", measurementCm: 27 },
+      { size: "40", measurementCm: 27 }
+    ]);
+  });
+
+  it("não repete payload rejeitado e reserva retry para rate limit ou indisponibilidade", () => {
+    expect(productDraftSyncFailureAction(400)).toBe("drop");
+    expect(productDraftSyncFailureAction(401)).toBe("drop");
+    expect(productDraftSyncFailureAction(403)).toBe("drop");
+    expect(productDraftSyncFailureAction(409)).toBe("drop");
+    expect(productDraftSyncFailureAction(429)).toBe("wait");
+    expect(productDraftSyncFailureAction(503)).toBe("retry");
+  });
+
   it("mantém produtos sem estoque visíveis no filtro interno", () => {
     expect(filterManagedProducts(products, "out", "")).toEqual([products[1]]);
   });
@@ -104,7 +199,8 @@ describe("product management", () => {
   });
 
   it("explica bloqueios sem confundir falha de consulta com histórico comercial", () => {
-    expect(productDeletionMessage(["cart items", "pedidos"])).toContain("itens em carrinhos, pedidos. Use Arquivar");
+    expect(productDeletionMessage(["order_items"])).toContain("histórico de vendas");
+    expect(productDeletionMessage(["purchase_order_items"])).toContain("registros comerciais ou de auditoria");
     expect(productDeletionMessage()).toContain("Não foi possível confirmar");
   });
 
@@ -116,6 +212,39 @@ describe("product management", () => {
       variantColors: "", variantSizes: "", variantSkuPrefix: ""
     }))).toMatchObject({ fields: { name: "Slide" }, simpleStock: 3 });
     expect(parseNewProductDraft("invalid")).toBeNull();
+  });
+
+  it("confirma a gravação local antes de permitir fechar o cadastro", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); }
+    };
+    const draft = buildNewProductDraft({
+      savedAt: "2026-09-21T12:00:00.000Z",
+      fields: { name: "Produto recuperável" },
+      categoryIds: [], primaryCategoryId: "", variants: [], hasVariations: false,
+      simpleStock: 0, productActive: false, variantColors: "", variantSizes: "",
+      variantSkuPrefix: "", sizeGuide: [], specifications: []
+    });
+    expect(draft).not.toBeNull();
+    expect(storeProductDraftLocally(storage, "draft", draft!)).toBe(true);
+    expect(isProductDraftStoredLocally(storage, "draft", draft!)).toBe(true);
+    expect(storeProductDraftLocally({
+      getItem: () => null,
+      setItem: () => { throw new Error("storage unavailable"); }
+    }, "draft", draft!)).toBe(false);
+  });
+
+  it("recupera rascunho local com campos extras de uma versão anterior", () => {
+    expect(parseNewProductDraft(JSON.stringify({
+      schemaVersion: 1,
+      savedAt: "2026-09-21T12:00:00.000Z",
+      fields: { name: "Produto anterior", futureField: "ignorar" },
+      categoryIds: [], primaryCategoryId: "", variants: [], hasVariations: false,
+      simpleStock: 0, productActive: false, variantColors: "", variantSizes: "",
+      variantSkuPrefix: "", sizeGuide: [], specifications: [], futureTopLevel: true
+    }))).toMatchObject({ fields: { name: "Produto anterior" } });
   });
 
   it("usa imagem principal, depois a primeira imagem e só então nenhum resultado", () => {
@@ -139,6 +268,20 @@ describe("product management", () => {
       ["Azul", ["35", "36"]],
       ["Preto", ["39"]]
     ]);
+  });
+
+  it("preserva as duas tonalidades ao agrupar tamanhos da mesma cor", () => {
+    const variants = generateVariantCombinations("Preto e Branco", "35, 36", "Slide")
+      .map((variant) => ({
+        ...variant,
+        colorHex: "#000000",
+        colorHexSecondary: "#FFFFFF"
+      }));
+    expect(groupEditableVariantsByColor(variants)[0]).toMatchObject({
+      color: "Preto e Branco",
+      colorHex: "#000000",
+      colorHexSecondary: "#FFFFFF"
+    });
   });
 
   it("rejeita produto incompleto antes de abrir o editor", () => {

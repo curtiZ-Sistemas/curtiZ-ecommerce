@@ -25,7 +25,7 @@ describe("feminino catalog", () => {
     );
 
     expect(dynamicConfiguration.ssr).toBe(false);
-    expect(html).toContain("<h1>Chinelos e sandálias femininas</h1>");
+    expect(html).toContain("<h1>Chinelos e kits de chinelos femininos</h1>");
     expect(html).toContain("curti Z");
     expect(html).toContain('aria-label="Carregando produtos"');
     expect(html).not.toContain("Filtros");

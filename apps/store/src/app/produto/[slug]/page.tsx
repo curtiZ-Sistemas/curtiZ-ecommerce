@@ -33,13 +33,13 @@ export default async function ProductPage({
   searchParams
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ variant?: string }>;
+  searchParams: Promise<{ variant?: string; color?: string }>;
 }) {
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const detail = await getPublicProduct(slug);
   if (!detail) notFound();
   const { product } = detail;
-  const categoryPath = productCategoryPath(product.category);
+  const categoryPath = productCategoryPath(product.category, product.categorySlug);
 
   return (
     <div className="container page-shell product-page">
@@ -50,12 +50,21 @@ export default async function ProductPage({
         <span>{product.name}</span>
       </nav>
 
-      <ProductPurchase detail={detail} initialVariantId={query.variant} />
+      <ProductPurchase detail={detail} initialVariantId={query.variant} initialColor={query.color} />
 
-      <section className="product-information">
-        <p className="eyebrow">Sobre o Produto</p>
-        {detail.sizeGuide.length ? (
-          <div className="product-size-guide" aria-labelledby="product-size-guide-title">
+      <section className="product-information" aria-labelledby="product-information-title">
+        <h2 id="product-information-title" className="sr-only">Informações do produto</h2>
+        {detail.specifications.length || detail.sizeGuide.length ? (
+          <div className="product-facts-grid">
+          {detail.specifications.length ? <section className="product-detail-specifications" aria-labelledby="product-specifications-title">
+            <h2 id="product-specifications-title">Detalhes do Produto</h2>
+            <dl className="product-specification-list">
+                {detail.specifications.map((entry, index) => (
+                  <div key={`${entry.label}-${index}`}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>
+                ))}
+            </dl>
+          </section> : null}
+          {detail.sizeGuide.length ? <section className="product-size-guide" aria-labelledby="product-size-guide-title">
             <h2 id="product-size-guide-title">Guia de tamanhos</h2>
             <div>
               <table>
@@ -65,15 +74,17 @@ export default async function ProductPage({
                 ))}</tbody>
               </table>
             </div>
+          </section> : null}
           </div>
         ) : null}
         <div className="product-description-section">
-          <h2>Detalhes de {product.name}</h2>
+          <h2>Descrição</h2>
           <div className="product-description-content">
             {parseProductDescription(product.description).map((block, index) =>
               block.type === "list" ? (
                 <ul key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{item}</li>)}</ul>
-              ) : <p key={`paragraph-${index}`}>{block.text}</p>
+              ) : block.type === "heading" ? <h3 key={`heading-${index}`}>{block.text}</h3>
+                : <p key={`paragraph-${index}`}>{block.text}</p>
             )}
           </div>
         </div>
@@ -116,7 +127,11 @@ export default async function ProductPage({
         title="Você Também Pode Gostar"
         limit={8}
         category={product.category}
+        priceInCents={product.priceInCents}
+        productContext={product}
+        diversity="product_detail"
         excludeProductIds={[product.id]}
+        trackingSource="product_detail"
         className="product-recommendations"
       />
     </div>

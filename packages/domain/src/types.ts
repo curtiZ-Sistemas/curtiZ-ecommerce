@@ -5,13 +5,19 @@ export type Product = {
   id: string;
   /** Identidade virtual do card; `id` continua sendo sempre o produto real. */
   storefrontKey?: string;
+  /** Dados auxiliares para deduplicar produtos em recomendações. */
+  modelSlug?: string;
+  recommendationIdentity?: string;
+  imagePath?: string;
   variantId?: string;
   sku?: string;
   variantColor?: string;
   variantSize?: string;
   slug: string;
   name: string;
-  category: "Masculino" | "Feminino" | "Infantil" | "Slides" | "Sandálias";
+  variantTitle?: string;
+  category: string;
+  categorySlug?: string;
   description: string;
   priceInCents: number;
   compareAtPriceInCents?: number;
@@ -76,6 +82,7 @@ export type HomepageSectionType =
   | "newsletter"
   | "institutional"
   | "quick_links"
+  | "faq"
   | "safe_component";
 
 export type HomepageSectionItem = {

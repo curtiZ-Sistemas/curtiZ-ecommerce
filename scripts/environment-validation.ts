@@ -1,4 +1,6 @@
 import { publicEnvironmentErrors } from "./public-environment";
+import { getResendReadiness } from "../packages/config/src/email";
+import { getMelhorEnvioReadiness } from "../packages/config/src/integrations";
 
 export type DeploymentEnvironment = "development" | "staging" | "production";
 
@@ -39,7 +41,6 @@ const productionRequired = [
   "SHIPPING_PROVIDER",
   "MELHOR_ENVIO_ENABLED",
   "TURNSTILE_ENABLED",
-  "REQUIRE_INTERNAL_MFA",
   "AUTH_RATE_LIMIT_ENABLED"
 ] as const;
 
@@ -208,6 +209,10 @@ const validateAllowedOrigins = (
       const configuredOrigin = new URL(configuredUrl).origin;
       if (!originSet.has(configuredOrigin)) {
         errors.push(`ALLOWED_ORIGINS deve incluir ${key}`);
+        errors.push(
+          `Origem ausente em ALLOWED_ORIGINS: ${configuredOrigin}. ` +
+          "Confira as variáveis de Build; as variáveis de Runtime não alimentam este validador."
+        );
       }
     } catch {
       // validateUrl já informa o erro de URL.
@@ -327,11 +332,16 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
     required.add("MERCADO_PAGO_ACCESS_TOKEN");
     required.add("MERCADO_PAGO_WEBHOOK_SECRET");
   }
-  if (normalize(environment.EMAIL_PROVIDER) === "resend" || enabledBoolean(environment.EMAIL_ENABLED)) {
+  if (enabledBoolean(environment.EMAIL_ENABLED)) {
     required.add("RESEND_API_KEY");
   }
   if (normalize(environment.SHIPPING_PROVIDER) === "correios") required.add("CORREIOS_API_TOKEN");
-  if (enabledBoolean(environment.TURNSTILE_ENABLED) || hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY")) {
+  if (["melhorenvio", "melhor_envio"].includes(normalize(environment.SHIPPING_PROVIDER))
+    || enabledBoolean(environment.MELHOR_ENVIO_ENABLED)) {
+    required.add("MELHOR_ENVIO_CLIENT_SECRET");
+    required.add("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY");
+  }
+  if (enabledBoolean(environment.TURNSTILE_ENABLED)) {
     required.add("TURNSTILE_SECRET_KEY");
   }
   return [...required].sort();
@@ -339,7 +349,7 @@ export function requiredDeploymentSecrets(environment: EnvironmentValues): strin
 
 const validateProviderCredentials = (environment: EnvironmentValues, errors: string[]): void => {
   const paymentProvider = normalize(environment.PAYMENT_PROVIDER);
-  const emailProvider = normalize(environment.EMAIL_PROVIDER);
+  const shippingProvider = normalize(environment.SHIPPING_PROVIDER);
 
   const mercadoPagoEnabled =
     ["mercadopago", "mercado_pago"].includes(paymentProvider) ||
@@ -359,28 +369,81 @@ const validateProviderCredentials = (environment: EnvironmentValues, errors: str
       ],
       errors
     );
-    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT")
-      && normalize(environment.MERCADO_PAGO_ENVIRONMENT) !== "test") {
-      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test enquanto o adapter live não estiver habilitado");
+    const mode = normalize(environment.MERCADO_PAGO_ENVIRONMENT);
+    if (hasValue(environment, "MERCADO_PAGO_ENVIRONMENT") && !["test", "production"].includes(mode)) {
+      errors.push("MERCADO_PAGO_ENVIRONMENT deve ser test ou production");
     }
+    if (mode === "production" && environment.MERCADO_PAGO_PRODUCTION_READY !== "true")
+      errors.push("MERCADO_PAGO_PRODUCTION_READY deve ser true após homologação documentada");
+    const credentialPrefix = mode === "production" ? "APP_USR-" : "TEST-";
     if (
       hasValue(environment, "MERCADO_PAGO_ACCESS_TOKEN") &&
-      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-")
+      !environment.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de produção" : "MERCADO_PAGO_ACCESS_TOKEN deve ser uma credencial de teste");
     }
     if (
       hasValue(environment, "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY") &&
-      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-")
+      !environment.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith(credentialPrefix)
     ) {
-      errors.push("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
+      errors.push(mode === "production" ? "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de produção" : "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY deve ser uma credencial de teste");
     }
   }
 
-  const emailEnabled = emailProvider === "resend" || enabledBoolean(environment.EMAIL_ENABLED);
+  if (["melhorenvio", "melhor_envio"].includes(shippingProvider)) {
+    addRequiredErrors(environment, ["MELHOR_ENVIO_ENVIRONMENT", "MELHOR_ENVIO_REDIRECT_URI",
+      "MELHOR_ENVIO_CLIENT_ID", "MELHOR_ENVIO_CLIENT_SECRET", "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY",
+      "MELHOR_ENVIO_APP_NAME", "MELHOR_ENVIO_TECHNICAL_CONTACT", "MELHOR_ENVIO_WEBHOOK_CONFIGURED",
+      "MELHOR_ENVIO_ORIGIN_NAME", "MELHOR_ENVIO_ORIGIN_EMAIL", "MELHOR_ENVIO_ORIGIN_PHONE",
+      "MELHOR_ENVIO_ORIGIN_ADDRESS", "MELHOR_ENVIO_ORIGIN_NUMBER", "MELHOR_ENVIO_ORIGIN_DISTRICT",
+      "MELHOR_ENVIO_ORIGIN_CITY", "MELHOR_ENVIO_ORIGIN_STATE", "MELHOR_ENVIO_ORIGIN_POSTAL_CODE"], errors);
+    if (!hasValue(environment, "MELHOR_ENVIO_ORIGIN_DOCUMENT")
+      && !hasValue(environment, "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_DOCUMENT ou MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT deve ser configurada");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ENVIRONMENT")
+      && !["sandbox", "production"].includes(normalize(environment.MELHOR_ENVIO_ENVIRONMENT))) {
+      errors.push("MELHOR_ENVIO_ENVIRONMENT deve ser sandbox ou production");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_POSTAL_CODE")
+      && !/^\d{8}$/u.test(environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_POSTAL_CODE deve conter 8 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_PHONE")
+      && !/^\d{10,11}$/u.test(environment.MELHOR_ENVIO_ORIGIN_PHONE?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_PHONE deve conter 10 ou 11 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY")
+      && !/^[A-Za-z0-9+/]{43}=$/u.test(environment.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "")) {
+      errors.push("MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY deve codificar exatamente 32 bytes em base64");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_STATE")
+      && !/^[A-Za-z]{2}$/u.test(environment.MELHOR_ENVIO_ORIGIN_STATE?.trim() ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_STATE deve conter a sigla com 2 letras");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_DOCUMENT")
+      && !/^\d{11}$/u.test(environment.MELHOR_ENVIO_ORIGIN_DOCUMENT?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_DOCUMENT deve conter 11 dígitos");
+    }
+    if (hasValue(environment, "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT")
+      && !/^\d{14}$/u.test(environment.MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT?.replace(/\D/gu, "") ?? "")) {
+      errors.push("MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT deve conter 14 dígitos");
+    }
+    if (normalize(environment.MELHOR_ENVIO_ENVIRONMENT) === "production") {
+      addRequiredErrors(environment, ["MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT", "MELHOR_ENVIO_ORIGIN_STATE_REGISTER"], errors);
+    }
+    // Use the same host/contact/key validation as the actual quote runtime.
+    const readiness = getMelhorEnvioReadiness(environment);
+    addRequiredErrors(environment, readiness.missing, errors);
+    for (const code of readiness.invalid) errors.push(`${code} na configuração de frete`);
+  }
+
+  const emailEnabled = enabledBoolean(environment.EMAIL_ENABLED);
 
   if (emailEnabled) {
-    addRequiredErrors(environment, ["EMAIL_FROM"], errors);
+    const readiness = getResendReadiness(environment);
+    for (const key of readiness.missing) errors.push(`${key} não está configurada`);
+    for (const key of readiness.invalid) errors.push(`${key} na configuração de e-mail`);
   }
 };
 
@@ -395,15 +458,8 @@ const validateTurnstile = (environment: EnvironmentValues, errors: string[]): vo
     return;
   }
 
-  const hasSiteKey = hasValue(environment, "NEXT_PUBLIC_TURNSTILE_SITE_KEY");
-
-  const hasSecret = hasValue(environment, "TURNSTILE_SECRET_KEY");
-
-  if (hasSiteKey !== hasSecret) {
-    errors.push(
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY devem ser configuradas em conjunto"
-    );
-  }
+  // The public key is compiled into the browser bundle while the integration is
+  // disabled for builds. Its secret stays in the Worker's runtime, never in CI.
 };
 
 const validateCheckoutFlags = (environment: EnvironmentValues, errors: string[]): void => {
@@ -434,12 +490,11 @@ const validateCommonValues = (
   validateEnum(environment, "WHATSAPP_PROVIDER", errors);
 
   validateBoolean(environment, "DEMO_MODE", errors);
-  validateBoolean(environment, "REQUIRE_INTERNAL_MFA", errors);
   validateBoolean(environment, "AUTH_RATE_LIMIT_ENABLED", errors);
   validateBoolean(environment, "CHECKOUT_ENABLED", errors);
   validateBoolean(environment, "MERCADO_PAGO_ENABLED", errors);
   validateBoolean(environment, "MELHOR_ENVIO_ENABLED", errors);
-  validateBoolean(environment, "MELHOR_ENVIO_OAUTH_VALIDATED", errors);
+  validateBoolean(environment, "MELHOR_ENVIO_WEBHOOK_CONFIGURED", errors);
   validateBoolean(environment, "EMAIL_ENABLED", errors);
   validateBoolean(environment, "TURNSTILE_ENABLED", errors);
 
@@ -474,6 +529,16 @@ const validateCommonValues = (
 };
 
 const validateProductionRules = (environment: EnvironmentValues, errors: string[]): void => {
+  for (const key of ["NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL"] as const) {
+    try {
+      if (new URL(environment[key] ?? "").hostname.endsWith(".workers.dev")) {
+        errors.push(`${key} deve usar o domínio oficial em produção; configure workers.dev somente em NEXT_PUBLIC_*_TEST_URL`);
+      }
+    } catch {
+      // validateUrl reports missing or invalid URLs.
+    }
+  }
+
   if (enabledBoolean(environment.DEMO_MODE)) {
     errors.push("DEMO_MODE deve ser false em produção");
   }
@@ -512,6 +577,15 @@ const validateProductionRules = (environment: EnvironmentValues, errors: string[
 
   if (enabledBoolean(environment.EMAIL_ENABLED) && emailProvider !== "resend") {
     errors.push("EMAIL_ENABLED=true requer EMAIL_PROVIDER=resend");
+  }
+
+  if (["melhorenvio", "melhor_envio"].includes(shippingProvider)) {
+    if (!enabledBoolean(environment.MELHOR_ENVIO_ENABLED)) {
+      errors.push("SHIPPING_PROVIDER=melhorenvio requer MELHOR_ENVIO_ENABLED=true");
+    }
+    if (!enabledBoolean(environment.MELHOR_ENVIO_WEBHOOK_CONFIGURED)) {
+      errors.push("Melhor Envio em produção requer MELHOR_ENVIO_WEBHOOK_CONFIGURED=true");
+    }
   }
 
   if (

@@ -18,7 +18,9 @@ export type MercadoPagoBrickSession = {
 };
 
 export type CheckoutConfirmationPayload = {
+  fiscalRecipient?: { icmsTaxpayer: boolean; finalConsumer: boolean };
   couponCode?: string;
+  shippingQuoteId?: string;
   customer: { name: string; email: string; phone: string; cpf: string };
   address: {
     postalCode: string; street: string; number: string; complement: string;
@@ -31,22 +33,25 @@ export type CheckoutConfirmationPayload = {
 
 const positiveSafeInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const nonNegativeSafeInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 export function readMercadoPagoBrickSession(
   value: unknown,
   identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "checkout">,
-  expectedShippingInCents: number
+  expectedShippingInCents?: number
 ): MercadoPagoBrickSession | null {
-  if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
+  if (!isUnknownRecord(value) || value.ok !== true || !["test", "production"].includes(String(value.paymentMode))) return null;
+  const paymentMode = value.paymentMode === "production" ? "production" : "test";
   const { subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
   if (
-    typeof publicKey !== "string" || !publicKey.startsWith("TEST-") ||
+    typeof publicKey !== "string" || !publicKey.startsWith(paymentMode === "test" ? "TEST-" : "APP_USR-") ||
     !positiveSafeInteger(subtotalInCents) ||
     typeof discountInCents !== "number" || !Number.isSafeInteger(discountInCents) || discountInCents < 0 ||
     typeof couponName !== "string" ||
-    !positiveSafeInteger(shippingInCents) ||
+    !nonNegativeSafeInteger(shippingInCents) ||
     !positiveSafeInteger(amountInCents) ||
-    shippingInCents !== expectedShippingInCents ||
+    (expectedShippingInCents !== undefined && shippingInCents !== expectedShippingInCents) ||
     amountInCents !== subtotalInCents - discountInCents + shippingInCents
   ) return null;
 
@@ -59,8 +64,10 @@ export function readMercadoPagoBrickSession(
     shippingInCents,
     amountInCents,
     publicKey,
-    paymentMode: "test",
-    ...identity
+    paymentMode,
+    idempotencyKey: identity.idempotencyKey,
+    email: identity.email,
+    checkout: identity.checkout
   };
 }
 

@@ -1,6 +1,6 @@
-import { logServerEvent } from "@curtiz/security";
-import { getIntegrationConfig } from "@curtiz/config";
-import { isMercadoPagoTestCredential, MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
+import { redact } from "@curtiz/security";
+import { getIntegrationConfig, getMercadoPagoCredentials } from "@curtiz/config";
+import { MercadoPagoProviderError, MercadoPagoPaymentProvider } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
@@ -15,9 +15,13 @@ import { validateSavedCardCustomer, validateSavedCardPayer, SavedCardsError } fr
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
+import { resolveShippingProducts } from "../../../../lib/melhor-envio-server";
+import { readBlingFiscalRecipient } from "../../../../lib/bling-fiscal-scope";
 
 const checkoutSchema = z.object({
+  fiscalRecipient: z.object({ icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict().optional(),
   couponCode: z.string().trim().max(40).optional(),
+  shippingQuoteId: z.string().uuid().optional(),
   customer: z.object({
     name: z.string().trim().min(3).max(120), email: z.string().trim().email().max(CUSTOMER_EMAIL_MAX_LENGTH),
     phone: z.string().trim().max(20).refine(isValidBrazilianPhone).transform(phoneDigits),
@@ -37,7 +41,9 @@ const schema = z.object({
   orderId: z.string().uuid().optional(), idempotencyKey: z.string().uuid(),
   checkoutIdempotencyKey: z.string().uuid().optional(), checkout: checkoutSchema.optional(),
   payment: z.object({
-    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
+    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(),
+    issuer_id: z.union([z.string().trim().regex(/^[1-9]\d{0,9}$/u), z.number().int().positive().max(Number.MAX_SAFE_INTEGER)])
+      .transform(Number).optional(),
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u), installments: z.coerce.number().int().min(1).max(48).default(1),
     payer: z.object({ entity_type: z.enum(["individual", "association"]), type: z.literal("customer").optional(),
       id: z.string().regex(/^[a-zA-Z0-9_+-]{1,100}$/u).optional(), identification: z.object({
@@ -110,10 +116,12 @@ const checkoutConflict = (error: unknown) => {
 };
 const logFailure = (code: string, status?: number, requestId?: string, error?: unknown) => {
   const database = safeDatabaseError(error);
-  logServerEvent("error", "mercadopago_bricks_payment_not_completed", {
+  console.error(redact({ event: "mercadopago_bricks_payment_not_completed",
     code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
-    message: database.message || null, details: database.details || null, hint: database.hint || null
-  });
+    providerRejectionCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : [],
+    providerRejectionFields: error instanceof MercadoPagoProviderError ? error.providerRejectionFields : [],
+    providerRequestId: error instanceof MercadoPagoProviderError ? error.providerRequestId : null
+  }));
 };
 const isPersistedPendingPix = (payment: Record<string, unknown>) => {
   const method = readString(payment, "payment_method_summary");
@@ -170,22 +178,25 @@ async function handlePost(request: NextRequest, requestId: string) {
       message: invalidCustomerCpf ? "Revise o CPF do cliente no checkout." : "Revise os dados do pagamento." }, 400);
   }
 
-  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
-  const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
-  const paymentMode = isMercadoPagoTestCredential(accessToken) && isMercadoPagoTestCredential(publicKey)
-    ? "test" : "production";
-  if (!isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
-    reportFailure("TEST_CREDENTIALS_REQUIRED");
-    return response({ ok: false, message: "O pagamento de teste está indisponível." }, 503);
+  const requestedRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (requestedRecipient && (requestedRecipient.icmsTaxpayer || !requestedRecipient.finalConsumer))
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este checkout atende consumidores finais não contribuintes do ICMS. Esta operação ainda não está disponível." }, 409);
+
+  const credentials = getMercadoPagoCredentials();
+  if (!credentials) {
+    reportFailure("PAYMENT_CREDENTIALS_INVALID");
+    return response({ ok: false, message: "O pagamento está indisponível." }, 503);
   }
+  const { mode: paymentMode, accessToken } = credentials;
   const methodValidation = validatePaymentMethod(parsed.data.payment);
   if (methodValidation) return response({ ok: false, ...methodValidation, recovery: "new_attempt" }, 400);
-  // This mode is established by server credentials, never by the submitted payload.
+  // This mode is established by server configuration, never by the submitted payload.
   const savedPayer = parsed.data.payment.payer.type === "customer";
   const suppliedDocument = parsed.data.payment.payer.identification?.number?.trim() ?? "";
   let customerDocument = readMercadoPagoPayerDocument(suppliedDocument, paymentMode) ?? "";
   if (suppliedDocument && !customerDocument) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
-    message: "Revise o CPF de teste informado no pagamento." }, 400);
+    message: "Revise o CPF informado no pagamento." }, 400);
   const db = createServiceSupabaseClient();
   if (!db) {
     reportFailure("PAYMENT_SERVER_CONFIGURATION_MISSING");
@@ -194,7 +205,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       message: "Não foi possível confirmar o pagamento agora."
     }, 503);
   }
-  const provider = new MercadoPagoTestPaymentProvider(accessToken);
+  const provider = new MercadoPagoPaymentProvider(accessToken, paymentMode);
   let providerCustomerId: string | undefined;
   if (savedPayer) {
     try {
@@ -208,6 +219,11 @@ async function handlePost(request: NextRequest, requestId: string) {
   let orderId = parsed.data.orderId ?? "";
   if (!orderId && parsed.data.checkout) {
     const checkout = parsed.data.checkout;
+    const shippingConfig = getIntegrationConfig().shipping;
+    if (shippingConfig.provider === "melhorenvio" && !checkout.shippingQuoteId) {
+      return response({ ok: false, code: "SHIPPING_QUOTE_REQUIRED", recovery: "review_checkout",
+        message: "Calcule e selecione uma opção de frete antes de pagar." }, 409);
+    }
     let cpfCiphertext = "";
     let cpfLastFour = "";
     try {
@@ -220,7 +236,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       return response({ ok: false, code: "CUSTOMER_IDENTITY_UNAVAILABLE", recovery: "retry_attempt",
         message: "Não foi possível proteger a identificação do cliente agora." }, 503);
     }
-    const creation = readQueryResult(await db.rpc("confirm_professional_checkout_order", {
+    const commonCheckoutArgs = {
       p_idempotency_key: parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey,
       p_customer_id: user.id,
       p_payment_method_id: parsed.data.payment.payment_method_id,
@@ -230,7 +246,17 @@ async function handlePost(request: NextRequest, requestId: string) {
       p_lines: checkout.lines.map((line) => ({ product_id: line.productId, variant_id: line.variantId, quantity: line.quantity })),
       p_coupon_code: normalizeOptionalCouponCode(checkout.couponCode) ?? null,
       p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
-    }));
+    };
+    let creation: { data: unknown; error: unknown };
+    if (shippingConfig.provider === "melhorenvio" && checkout.shippingQuoteId) {
+      const resolved = await resolveShippingProducts(checkout.lines);
+      creation = readQueryResult(await db.rpc(paymentMode === "production" ? "confirm_shipping_production_checkout_order" : "confirm_shipping_checkout_order", {
+        ...commonCheckoutArgs, p_shipping_quote_id: checkout.shippingQuoteId,
+        p_cart_fingerprint: resolved.fingerprint
+      }));
+    } else {
+      creation = readQueryResult(await db.rpc(paymentMode === "production" ? "confirm_professional_production_checkout_order" : "confirm_professional_checkout_order", commonCheckoutArgs));
+    }
     const created = isUnknownRecord(creation.data) ? creation.data : null;
     orderId = created ? readString(created, "orderId") : "";
     if (creation.error || !orderId) {
@@ -241,7 +267,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       const conflict = checkoutConflict(creation.error);
       if (conflict.code === "CHECKOUT_IDEMPOTENCY_CONFLICT") {
         const keyResult = readQueryResult(await db.from("idempotency_keys").select("resource_id")
-          .eq("scope", "mercadopago.checkout.test").eq("key", parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey).maybeSingle());
+          .eq("scope", `mercadopago.checkout.${paymentMode}`).eq("key", parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey).maybeSingle());
         if (isUnknownRecord(keyResult.data)) {
           const existing = readQueryResult(await db.from("orders").select("id,public_code")
             .eq("id", readString(keyResult.data, "resource_id")).eq("customer_id", user.id).maybeSingle());
@@ -253,8 +279,15 @@ async function handlePost(request: NextRequest, requestId: string) {
     }
   }
 
+  const fiscalRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (fiscalRecipient) {
+    const recipient = readQueryResult(await db.rpc("set_bling_checkout_recipient", { p_order_id: orderId,
+      p_user_id: user.id, p_icms_taxpayer: fiscalRecipient.icmsTaxpayer, p_final_consumer: fiscalRecipient.finalConsumer }));
+    if (recipient.error || recipient.data !== true) return response({ ok: false, code: "FISCAL_RECIPIENT_CONFLICT",
+      recovery: "review_checkout", message: "Não foi possível confirmar os dados fiscais deste pedido. Revise o checkout." }, 409);
+  }
   const orderResult = readQueryResult(await db.from("orders")
-    .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency")
+    .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency,commercial_rules_snapshot")
     .eq("id", orderId).eq("customer_id", user.id).maybeSingle());
   if (orderResult.error) {
     reportFailure("ORDER_QUERY_FAILED", undefined, orderResult.error);
@@ -262,6 +295,18 @@ async function handlePost(request: NextRequest, requestId: string) {
   }
   if (!isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
   const order = orderResult.data;
+  // Re-read the persisted declaration: omitting or changing the request cannot bypass it.
+  let persistedRecipient: Record<string, unknown>;
+  try { persistedRecipient = await readBlingFiscalRecipient(db, orderId); }
+  catch { return response({ ok: false, code: "FISCAL_RECIPIENT_UNAVAILABLE", recovery: "retry_attempt",
+    message: "Não foi possível conferir os dados fiscais do pedido agora." }, 503); }
+  if (persistedRecipient.icms_taxpayer === true || persistedRecipient.final_consumer === false)
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este pedido depende de uma operação fiscal ainda não disponível." }, 409);
+  if (!isUnknownRecord(order.commercial_rules_snapshot) || order.commercial_rules_snapshot.paymentMode !== paymentMode) {
+    return response({ ok: false, code: "ORDER_PAYMENT_MODE_MISMATCH", recovery: "view_order",
+      message: "Este pedido precisa ser verificado antes de receber um pagamento." }, 409);
+  }
   const orderCode = readString(order, "public_code");
   const orderContext = { orderId, orderCode };
   const orderFailure = (body: Record<string, unknown>, status: number) => response({ ok: false, ...orderContext, ...body }, status);
@@ -369,7 +414,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       customerDocument, entityType: parsed.data.payment.payer.entity_type, paymentMethodId: method,
       ...(providerCustomerId ? { providerCustomerId } : {}),
       ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
-      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: String(parsed.data.payment.issuer_id) } : {}),
+      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: parsed.data.payment.issuer_id } : {}),
       installments: parsed.data.payment.installments
     });
     if (created.amountInCents !== amountInCents || created.currency !== "BRL" || created.externalReference !== orderCode) {
@@ -407,7 +452,7 @@ async function handlePost(request: NextRequest, requestId: string) {
     }
 
     const finalizeResult = readQueryResult(await db.rpc("finalize_mercadopago_payment", {
-      p_provider_event_id: `test-check-${created.id}-${created.status}`, p_provider_payment_id: created.id,
+      p_provider_event_id: `${paymentMode}-check-${created.id}-${created.status}`, p_provider_payment_id: created.id,
       p_external_reference: created.externalReference, p_amount: created.amountInCents / 100,
       p_currency: created.currency, p_status: normalizedStatus, p_paid_at: created.dateApproved,
       p_provider_fee: created.providerFeeInCents === null ? null : created.providerFeeInCents / 100,
@@ -439,7 +484,7 @@ async function handlePost(request: NextRequest, requestId: string) {
       if (rejection.error) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
         message: "Não foi possível confirmar a recusa. Verifique a mesma tentativa." }, 503);
     }
-    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus);
+    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus, error);
     return orderFailure({ code: definitelyRejected ? "PROVIDER_PAYMENT_REJECTED" : "PAYMENT_RESULT_UNCERTAIN",
       recovery: definitelyRejected ? "new_attempt" : "retry_attempt", message: definitelyRejected
         ? "Pagamento recusado. Revise os dados e tente novamente."

@@ -25,7 +25,18 @@ export async function GET(request: Request) {
       || Array.from(path).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
       || path.split("/").some((segment) => !segment || segment === "." || segment === "..")) return fail(400);
     const source = new URL(prefix + path.split("/").map(encodeURIComponent).join("/"), origin);
-    const media = await fetch(source, { redirect: "error" });
+    let media: Response;
+    try {
+      media = await fetch(source, { redirect: "error" });
+    } catch {
+      // Public banner images can load from Storage in the browser even if the Worker cannot reach it.
+      if (bucket === "catalog-public" && /^banners\/.+\.(?:jpe?g|png|webp|avif|gif)$/iu.test(path)) {
+        return NextResponse.redirect(source, { status: 307, headers: {
+          "cache-control": "no-store", "referrer-policy": "no-referrer"
+        } });
+      }
+      return fail(503);
+    }
     const contentType = media.headers.get("content-type")?.split(";")[0] ?? "";
     if (!media.ok || !/^(image\/(jpeg|png|webp|avif|gif)|video\/(mp4|webm))$/u.test(contentType)) {
       await media.body?.cancel();

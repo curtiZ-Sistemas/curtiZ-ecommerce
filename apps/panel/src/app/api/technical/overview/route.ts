@@ -1,5 +1,8 @@
 import { getIntegrationConfig } from "@curtiz/config";
 import { backupStatus, httpServiceState } from "@/lib/service-health";
+import { melhorEnvioConfigurationIssues, melhorEnvioOriginMissingFields } from "@/lib/melhor-envio-server";
+import { getStoreShippingService } from "@/lib/store-shipping-health";
+import { getStoreEmailService } from "@/lib/store-email-health";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   authorizeTechnicalRequest,
@@ -144,22 +147,21 @@ export async function GET(request: NextRequest) {
   ]);
 
   const databaseAvailable = !integrations.error && !recentErrors.error && !pendingJobs.error;
-  const persistedServices: Service[] = technicalRows(integrations.data).map((item) => ({
-    name: typeof item.provider === "string" ? item.provider : "Integração",
+  const integrationRows = technicalRows(integrations.data);
+  const persistedServices: Service[] = integrationRows.filter((item) => !["melhorenvio_store", "resend_store", "resend"].includes(String(item.provider))).map((item) => ({
+    name: item.provider === "melhorenvio" ? "OAuth do painel · Melhor Envio"
+      : typeof item.provider === "string" ? item.provider : "Integração",
     state: ["online", "degraded", "offline", "not_configured", "maintenance", "awaiting_credentials"].includes(String(item.state))
       ? (item.state === "maintenance" ? "degraded" : item.state === "awaiting_credentials" ? "not_configured" : item.state) as ServiceState
       : "unavailable",
-    detail: typeof item.error_summary === "string" ? item.error_summary : "Estado persistido pelo serviço",
+    detail: typeof item.error_summary === "string" ? item.error_summary : "Estado persistido pelo painel técnico",
     checkedAt: typeof item.checked_at === "string" ? item.checked_at : null,
     latencyMs: typeof item.latency_ms === "number" ? item.latency_ms : null
   }));
 
   const whatsappProvider = process.env.WHATSAPP_PROVIDER?.toLowerCase() ?? "disabled";
-  const requestedShippingProvider = process.env.SHIPPING_PROVIDER?.toLowerCase() ?? "disabled";
   const shippingConfig = getIntegrationConfig().shipping;
   const shippingProvider = shippingConfig.provider;
-  const fixedShippingFallback = ["melhorenvio", "melhor_envio"].includes(requestedShippingProvider)
-    && shippingProvider === "fixed";
   const marketingProvider = process.env.MARKETING_PROVIDER?.toLowerCase() ?? "disabled";
   const environmentServices: Service[] = [
     { name: "Painel", state: "online", detail: "Esta API respondeu com sessão técnica válida", checkedAt: new Date().toISOString() },
@@ -168,8 +170,12 @@ export async function GET(request: NextRequest) {
     { name: "Auth", state: "online", detail: "Sessão validada pelo Supabase Auth", checkedAt: new Date().toISOString() },
     { name: "Cloudflare", state: configured(Boolean(process.env.NEXT_PUBLIC_PANEL_URL)), detail: "Origem pública configurada; disponibilidade é verificada pelo deploy" },
     { name: "Mercado Pago", state: configured(enabled(process.env.MERCADO_PAGO_ENABLED) && process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim().startsWith("TEST-") === true && process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim().startsWith("TEST-") === true), detail: enabled(process.env.MERCADO_PAGO_ENABLED) ? "Provider habilitado; credenciais não são exibidas" : "Provider desabilitado" },
-    { name: "Resend", state: configured(enabled(process.env.EMAIL_ENABLED) && Boolean(process.env.RESEND_API_KEY)), detail: enabled(process.env.EMAIL_ENABLED) ? "E-mail habilitado; credencial não é exibida" : "E-mail desabilitado" },
-    { name: "Frete", state: shippingProvider === "mock" ? "mock" : configured(shippingProvider === "fixed" || (shippingProvider !== "disabled" && (Boolean(process.env.MELHOR_ENVIO_ACCESS_TOKEN) || Boolean(process.env.CORREIOS_API_TOKEN)))), detail: fixedShippingFallback ? "Sandbox indisponível; fallback fixo de R$ 16,90" : shippingProvider === "fixed" ? "Entrega padrão fixa em R$ 16,90" : shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },
+    getStoreEmailService(integrationRows.find((item) => item.provider === "resend_store")),
+    { name: "Frete no painel", state: shippingProvider === "mock" ? "mock" : configured(shippingConfig.enabled),
+      detail: shippingProvider === "melhorenvio"
+        ? `Configuração do Worker do painel · Melhor Envio · ${process.env.MELHOR_ENVIO_ENVIRONMENT === "production" ? "Produção" : "Sandbox"} · origem ${melhorEnvioOriginMissingFields().length === 0 ? "configurada" : "incompleta"} · webhook ${process.env.MELHOR_ENVIO_WEBHOOK_CONFIGURED === "true" ? "configurado" : "pendente"}${shippingConfig.enabled || !melhorEnvioConfigurationIssues() ? "" : ` · ${melhorEnvioConfigurationIssues()}`}`
+        : shippingProvider === "fixed" ? "Entrega padrão fixa escolhida explicitamente" : shippingProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${shippingProvider}` },
+    getStoreShippingService(integrationRows.find((item) => item.provider === "melhorenvio_store"), Boolean(integrations.error)),
     { name: "WhatsApp", state: whatsappProvider === "mock" ? "mock" : configured(whatsappProvider === "meta" && Boolean(process.env.WHATSAPP_ACCESS_TOKEN)), detail: whatsappProvider === "mock" ? "Modo mock explicitamente configurado" : `Provider: ${whatsappProvider}` },
     { name: "Turnstile", state: configured(enabled(process.env.TURNSTILE_ENABLED) && Boolean(process.env.TURNSTILE_SECRET_KEY)), detail: enabled(process.env.TURNSTILE_ENABLED) ? "Proteção habilitada; segredo não é exibido" : "Proteção desabilitada" },
     { name: "Marketing", state: marketingProvider === "mock" ? "mock" : configured(marketingProvider !== "disabled"), detail: `Provider: ${marketingProvider}` }

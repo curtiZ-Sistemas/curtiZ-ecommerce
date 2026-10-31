@@ -3,6 +3,10 @@
 import type { CartLine, Product } from "@curtiz/domain";
 import { applyCartAvailability, parseCartAvailability, retainCartLines } from "@/lib/cart-availability";
 import {
+  changeCartVariantState,
+  type CartVariantSelection
+} from "@/lib/cart-variant";
+import {
   createContext,
   useCallback,
   useContext,
@@ -41,11 +45,13 @@ type CartContextValue = {
       unitPriceInCents?: number;
       stock?: number;
       image?: string;
+      quantity?: number;
     }
   ) => void;
   remove: (variantId: string) => void;
   removeMany: (variantIds: string[]) => void;
   changeQuantity: (variantId: string, quantity: number) => void;
+  changeVariant: (oldVariantId: string, nextVariant: CartVariantSelection) => void;
   setSelected: (variantId: string, selected: boolean) => void;
   setAllSelected: (selected: boolean) => void;
   clear: () => void;
@@ -344,6 +350,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const variantId = options?.variantId ?? `${product.id}:${color}:${size}`;
         const stock = Math.max(0, options?.stock ?? product.stock);
         if (stock < 1) return;
+        const requested = Math.min(Math.max(1, Math.trunc(options?.quantity ?? 1)), 10);
         trackIntelligence({ type: "cart_add", productId: product.id, variantId });
         setSelectedVariantIds((current) => {
           const next = new Set(current).add(variantId);
@@ -355,7 +362,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           if (found && !found.unavailableAt) {
             return current.map((line) =>
               line.variantId === variantId
-                ? { ...line, quantity: Math.min(line.quantity + 1, stock) }
+                ? { ...line, quantity: Math.min(line.quantity + requested, stock, 10) }
                 : line
             );
           }
@@ -370,7 +377,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               image: options?.image ?? product.image,
               color,
               size,
-              quantity: 1,
+              quantity: Math.min(requested, stock),
               maxQuantity: Math.min(stock, 10),
               unitPriceInCents: options?.unitPriceInCents ?? product.priceInCents
             }
@@ -422,6 +429,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               : line
           )
         );
+      },
+      changeVariant(oldVariantId, nextVariant) {
+        const next = changeCartVariantState(lines, selectedVariantIds, oldVariantId, nextVariant);
+        setLines(next.lines);
+        persistSelection(next.selectedVariantIds);
+        setSelectedVariantIds(next.selectedVariantIds);
       },
       setSelected(variantId, selected) {
         if (!lines.some((line) => line.variantId === variantId && !line.unavailableAt)) return;

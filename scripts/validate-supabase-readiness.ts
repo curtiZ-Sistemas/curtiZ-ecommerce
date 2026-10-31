@@ -44,6 +44,24 @@ async function main() {
   if (rateLimitVersion !== 2) {
     throw new Error("A RPC de rate limit retornou uma vers\u00e3o de contrato inesperada.");
   }
+
+  // Somente leitura: inspeciona o cat\u00e1logo e confirma constraint, fun\u00e7\u00e3o e grants de shipping_quote
+  // (migrations 202609300001 e 202609300002) sem consumir or\u00e7amento nem gravar dados.
+  const shippingEndpoint = new URL("/rest/v1/rpc/shipping_quote_rate_limit_ready", rawUrl);
+  const shippingResponse = await fetch(shippingEndpoint, {
+    method: "POST",
+    headers: rpcHeaders(publishableKey),
+    body: "{}",
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000)
+  });
+  if (!shippingResponse.ok) {
+    throw new Error(`As migrations 202609300001/202609300002 do or\u00e7amento de frete n\u00e3o est\u00e3o aplicadas (HTTP ${shippingResponse.status}).`);
+  }
+  const shippingReady: unknown = await shippingResponse.json().catch(() => null);
+  if (shippingReady !== true) {
+    throw new Error("O contrato shipping_quote do rate limit est\u00e1 incompleto no Supabase remoto.");
+  }
   console.log("Supabase remoto e RPCs obrigat\u00f3rias validados.");
 }
 

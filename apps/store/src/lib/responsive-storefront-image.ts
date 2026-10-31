@@ -1,11 +1,21 @@
-import optimizedCatalogImages from "./optimized-catalog-images.json";
-const bundledProductPattern = /^\/images\/products\/([a-z0-9-]+)\.webp$/u;
+const categoryStoragePathPattern = /^categories\/(?:[a-z0-9][a-z0-9._-]{0,199}\/){0,6}[a-z0-9][a-z0-9._-]{0,199}\.(?:avif|jpe?g|png|webp)$/iu;
+const productStoragePathPattern = /^products\/(?:[a-z0-9][a-z0-9._-]{0,199}\/){1,6}[a-z0-9][a-z0-9._-]{0,199}\.(?:avif|jpe?g|png|webp)$/iu;
 
-export function bundledProductSrcSet(source: string) {
-  const optimized = (optimizedCatalogImages as Record<string, string>)[source];
-  if (optimized) return `${optimized}.360.webp 360w, ${optimized}.540.webp 540w, ${optimized}.720.webp 720w`;
-  const match = source.match(bundledProductPattern);
-  if (!match) return null;
-  const base = `/images/products/${match[1]}`;
-  return `${base}.360.webp 360w, ${base}.540.webp 540w, ${base}.webp 720w`;
+export function categoryImageSrcSet(source: string) {
+  try {
+    const url = new URL(source);
+    const prefix = "/storage/v1/object/public/catalog-public/";
+    if (url.protocol !== "https:" || url.username || url.password || !url.pathname.startsWith(prefix)) return null;
+    const path = decodeURIComponent(url.pathname.slice(prefix.length));
+    const mediaType = categoryStoragePathPattern.test(path)
+      ? "category"
+      : productStoragePathPattern.test(path)
+        ? "product"
+        : null;
+    if (!mediaType || path.split("/").some((segment) => segment.includes(".."))) return null;
+    const endpoint = `/media/${mediaType}/${path.split("/").map(encodeURIComponent).join("/")}`;
+    return [180, 360, 540].map((width) => `${endpoint}?w=${width} ${width}w`).join(", ");
+  } catch {
+    return null;
+  }
 }

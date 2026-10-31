@@ -49,7 +49,7 @@ export function AdminPermissions() {
   const [data, setData] = useState<PermissionData>({});
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
@@ -98,17 +98,17 @@ export function AdminPermissions() {
     const expiresAtDate = new Date(expiresAtInput);
 
     if (!userId || !permissionCode || !expiresAtInput || !reason) {
-      setMessage("Preencha todos os campos obrigatórios.");
+      setMessage({ kind: "error", text: "Preencha todos os campos obrigatórios." });
       return;
     }
 
     if (Number.isNaN(expiresAtDate.getTime())) {
-      setMessage("Informe uma data de validade válida.");
+      setMessage({ kind: "error", text: "Informe uma data de validade válida." });
       return;
     }
 
     setPending(true);
-    setMessage("");
+    setMessage(null);
 
     try {
       const response = await fetch("/api/admin/permissions", {
@@ -130,15 +130,15 @@ export function AdminPermissions() {
         throw new Error(result.message || "Não foi possível registrar a permissão.");
       }
 
-      setMessage(result.message ?? "Permissão registrada.");
+      setMessage({ kind: "success", text: result.message ?? "Permissão registrada." });
       formElement.reset();
       await load();
     } catch (error) {
-      setMessage(
+      setMessage({ kind: "error", text:
         error instanceof Error && error.message
           ? error.message
           : "Não foi possível registrar."
-      );
+      });
     } finally {
       setPending(false);
     }
@@ -155,8 +155,8 @@ export function AdminPermissions() {
         </header>
 
         {message ? (
-          <p className="admin-feedback" role="status">
-            {message}
+          <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>
+            {message.text}
           </p>
         ) : null}
 

@@ -1,18 +1,24 @@
 import { diversifyStorefrontItems, type Product } from "@curtiz/domain";
 import { z } from "zod";
 import { demoProducts } from "./catalog";
+import { isPresentationCatalogEnabled } from "./presentation-catalog";
 import type { CatalogResult } from "./catalog-query";
 
 export const rpcProductSchema = z.object({
   id: z.string(),
   storefrontKey: z.string().optional(),
+  modelSlug: z.string().nullable().optional(),
+  recommendationIdentity: z.string().nullable().optional(),
+  imagePath: z.string().nullable().optional(),
   variantId: z.string().nullable().optional(),
   sku: z.string().nullable().optional(),
   variantColor: z.string().nullable().optional(),
   variantSize: z.string().nullable().optional(),
   slug: z.string(),
   name: z.string(),
+  variantTitle: z.string().nullable().optional(),
   category: z.string(),
+  categorySlug: z.string().optional(),
   description: z.string(),
   priceInCents: z.coerce.number().int().nonnegative(),
   compareAtPriceInCents: z.coerce.number().int().positive().nullable().optional(),
@@ -20,7 +26,6 @@ export const rpcProductSchema = z.object({
   reviews: z.coerce.number().int().nonnegative(),
   colors: z.array(z.string()),
   sizes: z.array(z.string()),
-  imagePath: z.string().nullable().optional(),
   featured: z.boolean(),
   stock: z.coerce.number().int().nonnegative()
 });
@@ -35,7 +40,8 @@ export const facetSchema = z.object({
       value: z.string(),
       label: z.string(),
       count: z.coerce.number(),
-      hex: z.string().optional()
+      hex: z.string().optional(),
+      secondaryHex: z.string().optional()
     })
   ),
   sizes: z.array(z.object({ value: z.string(), label: z.string(), count: z.coerce.number() })),
@@ -52,26 +58,23 @@ export const rpcResultSchema = z.object({
 });
 
 export const rpcProductListSchema = z.array(rpcProductSchema);
+const rpcProductPageSchema = z.object({ products: z.array(rpcProductSchema), total: z.coerce.number().int().nonnegative() });
 
 export const productCategory = (value: string): Product["category"] => {
-  const allowed: Product["category"][] = [
-    "Masculino",
-    "Feminino",
-    "Infantil",
-    "Slides",
-    "Sandálias"
-  ];
-  return allowed.includes(value as Product["category"]) ? (value as Product["category"]) : "Slides";
+  const category = value.normalize("NFKC").trim().replace(/\s+/gu, " ").slice(0, 120);
+  return category || "Produtos";
 };
 
 export const publicCatalogImage = (path: string | null | undefined, slug?: string) => {
-  if (!path) return demoProducts.find((product) => product.slug === slug)?.image ?? "/icon.svg";
-  if (path.startsWith("/images/")) return path.replace(/\.png$/iu, ".webp");
-  if (path.startsWith("/") || path.startsWith("https://")) return path;
+  if (!path) return isPresentationCatalogEnabled()
+    ? demoProducts.find((product) => product.slug === slug)?.image ?? ""
+    : "";
+  if (path.startsWith("/images/")) return isPresentationCatalogEnabled() ? path.replace(/\.png$/iu, ".webp") : "";
+  if (path.startsWith("/") || path.startsWith("https://")) return "";
   const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "/icon.svg";
+    : "";
 };
 
 export function commercialProductName(product: {
@@ -93,13 +96,20 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
   return {
     id: product.id,
     ...(product.storefrontKey ? { storefrontKey: product.storefrontKey } : {}),
+    ...(product.modelSlug ? { modelSlug: product.modelSlug } : {}),
+    ...(product.recommendationIdentity
+      ? { recommendationIdentity: product.recommendationIdentity }
+      : {}),
+    ...(product.imagePath ? { imagePath: product.imagePath } : {}),
     ...(product.variantId ? { variantId: product.variantId } : {}),
     ...(product.sku ? { sku: product.sku } : {}),
     ...(product.variantColor ? { variantColor: product.variantColor } : {}),
     ...(product.variantSize ? { variantSize: product.variantSize } : {}),
     slug: product.slug,
-    name: commercialProductName(product),
+    name: product.name,
+    ...(product.variantTitle ? { variantTitle: product.variantTitle } : {}),
     category: productCategory(product.category),
+    ...(product.categorySlug ? { categorySlug: product.categorySlug } : {}),
     description: product.description,
     priceInCents: product.priceInCents,
     ...(product.compareAtPriceInCents
@@ -117,17 +127,26 @@ export function mapRpcProduct(product: z.infer<typeof rpcProductSchema>): Produc
 
 export function parseRpcProductList(data: unknown): Product[] | null {
   const parsed = rpcProductListSchema.safeParse(data);
-  return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct)) : null;
+  return parsed.success ? diversifyStorefrontItems(parsed.data.map(mapRpcProduct).filter((product) => Boolean(product.image))) : null;
+}
+
+export function parseCatalogRpcPage(data: unknown, sort?: string) {
+  const parsed = rpcProductPageSchema.safeParse(data);
+  if (!parsed.success) return null;
+  const products = parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image));
+  return { products: sort === "best_sellers" ? products : diversifyStorefrontItems(products), total: parsed.data.total };
 }
 
 export function parseCatalogRpcResult(
   data: unknown,
-  options: { page: number; pageSize: number }
+  options: { page: number; pageSize: number; sort?: string }
 ): CatalogResult | null {
   const parsed = rpcResultSchema.safeParse(data);
   if (!parsed.success) return null;
   return {
-    products: diversifyStorefrontItems(parsed.data.products.map(mapRpcProduct)),
+    products: options.sort === "best_sellers"
+      ? parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image))
+      : diversifyStorefrontItems(parsed.data.products.map(mapRpcProduct).filter((product) => Boolean(product.image))),
     facets: parsed.data.facets,
     total: parsed.data.total,
     page: options.page,

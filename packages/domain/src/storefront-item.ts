@@ -5,12 +5,17 @@ export function storefrontItemKey(product: Pick<Product, "id" | "storefrontKey" 
 }
 
 export function storefrontProductHref(
-  product: Pick<Product, "slug" | "variantId">
+  product: Pick<Product, "slug" | "variantId"> & Partial<Pick<Product, "variantColor">>
 ): string {
   const base = `/produto/${encodeURIComponent(product.slug)}`;
-  return product.variantId
-    ? `${base}?variant=${encodeURIComponent(product.variantId)}`
-    : base;
+  const params = new URLSearchParams();
+  if (product.variantId) params.set("variant", product.variantId);
+  if (product.variantColor) params.set("color", product.variantColor);
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function canQuickAddProduct(product: Pick<Product, "variantId" | "colors" | "sizes" | "stock">) {
+  return Boolean(product.variantId) && product.colors.length === 1 && product.sizes.length === 1 && product.stock > 0;
 }
 
 /**
@@ -20,8 +25,8 @@ export function storefrontProductHref(
  */
 export function diversifyStorefrontItems<T extends Pick<Product, "id">>(
   items: readonly T[],
-  minimumGap = 3,
-  lookahead = 12
+  minimumGap = 5,
+  lookahead = 18
 ): T[] {
   const result = [...items];
   const gap = Math.max(1, Math.min(8, Math.floor(minimumGap)));

@@ -9,7 +9,7 @@ const statusCheck = readFileSync("supabase/functions/mercadopago-status-check/in
 const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "utf8");
 const preference = readFileSync("supabase/functions/mercadopago-create-preference/index.ts", "utf8");
 const webhook = readFileSync("apps/store/src/app/api/webhooks/mercadopago/route.ts", "utf8");
-const lease = readFileSync("supabase/migrations/202609140004_payment_webhook_leases.sql", "utf8");
+const lease = readFileSync("supabase/migrations/202609140009_payment_webhook_leases.sql", "utf8");
 const relay = readFileSync("supabase/functions/mercadopago-webhook/index.ts", "utf8");
 
 describe("Mercado Pago hardening", () => {

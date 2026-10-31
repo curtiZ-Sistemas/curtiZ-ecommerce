@@ -65,7 +65,9 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
+        requestHeaders.set("cookie", request.headers.get("cookie") ?? "");
         response = createNextResponse();
+        response.headers.set("Cache-Control", "private, no-store");
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(
             name,

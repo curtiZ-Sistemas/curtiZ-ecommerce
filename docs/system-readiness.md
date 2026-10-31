@@ -6,7 +6,6 @@ Esta revisão corrige problemas específicos; não certifica todos os fluxos nem
 
 - **Anexos do atendimento:** só são disponibilizados quando marcados como limpos. É necessário configurar/validar um processador de análise. Não liberar arquivos pendentes para contornar a ausência desse serviço.
 - **Filas técnicas:** recolocar um registro em `pending` não executa a tarefa. É necessário consumidor real com concorrência controlada, tentativas limitadas, idempotência e observabilidade. Pagamentos continuam no trabalho separado.
-- **MFA interno:** há validação condicionada a `REQUIRE_INTERNAL_MFA`. Preparar cadastro e recuperação dos fatores, testar cada papel e então habilitar. Não ativar cegamente e bloquear a equipe.
 - **Backup:** seguir [o procedimento de backup](backup-and-recovery.md). Cópias manuais não exigem servidor próprio; automação e teste de recuperação precisam de armazenamento e ambiente reais.
 - **Catálogo:** a migration `202609100001_catalog_available_variants.sql` precisa passar pelos testes reais do banco antes de aplicação. Não foi aplicada automaticamente.
 

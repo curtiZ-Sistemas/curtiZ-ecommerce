@@ -8,7 +8,7 @@ const migration = readFileSync(
 const compactMigration = migration.replace(/\s+/gu, " ");
 const webhook = readFileSync("apps/store/src/app/api/webhooks/mercadopago/route.ts", "utf8");
 const provider = readFileSync("packages/integrations/src/index.ts", "utf8");
-const lease = readFileSync("supabase/migrations/202609140004_payment_webhook_leases.sql", "utf8");
+const lease = readFileSync("supabase/migrations/202609140009_payment_webhook_leases.sql", "utf8");
 const refund = readFileSync("supabase/functions/mercadopago-refund/index.ts", "utf8");
 
 describe("integração financeira Mercado Pago", () => {

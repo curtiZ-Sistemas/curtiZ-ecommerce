@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { processProductImageMessage, type Env } from "./index";
+
+const message = {
+  jobId: "20000000-0000-4000-8000-000000000001",
+  runId: "20000000-0000-4000-8000-000000000002",
+  productId: "20000000-0000-4000-8000-000000000003"
+};
+
+function responseJson(value: unknown) {
+  return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+function requestUrl(input: string | URL | Request) {
+  return typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+}
+
+function environment(): Env {
+  const output = async (stream: ReadableStream<Uint8Array>) => {
+    await new Response(stream).arrayBuffer();
+    return { response: () => new Response(new Uint8Array([8, 9, 10]), { status: 200, headers: { "content-type": "image/webp" } }) };
+  };
+  return {
+    SUPABASE_URL: "https://project.supabase.co/",
+    SUPABASE_SECRET_KEY: "service-secret",
+    IMAGES: {
+      info: vi.fn(async (stream: ReadableStream<Uint8Array>) => {
+        await new Response(stream).arrayBuffer();
+        return { width: 800, height: 800, format: "image/jpeg" };
+      }),
+      input: vi.fn((stream: ReadableStream<Uint8Array>) => ({
+        transform: vi.fn(() => ({ output: async () => output(stream) })),
+        output: async () => output(stream)
+      }))
+    }
+  };
+}
+
+describe("product import image queue consumer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("acknowledges an already completed idempotent job without touching storage or CDN", async () => {
+    const fetchMock = vi.fn(async () => responseJson({ state: "completed" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: false, state: "completed" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["service-secret", "completed"], ["sb_secret_test_only", "completed"],
+    ["sb_secret_test_only", "stale"], ["sb_secret_test_only", "missing"]
+  ])("processes one image with safe Supabase authentication: %s, completion: %s", async (secret, completionState) => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = requestUrl(input); calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.startsWith("https://project.supabase.co/")) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("apikey")).toBe(secret);
+        expect(headers.get("authorization")).toBe(secret.startsWith("sb_secret_") ? null : `Bearer ${secret}`);
+        expect(init?.redirect).toBe("error");
+      }
+      if (url.endsWith("/claim_product_import_image_job")) return responseJson({
+        state: "claimed", productId: message.productId, sourceUrl: "https://down-sg.img.susercontent.com/file/a",
+        storagePath: `products/imports/${message.productId}/${"a".repeat(64)}.webp`, attempt: 1
+      });
+      if (url.includes("/object/authenticated/")) return new Response(null, { status: 404 });
+      if (url.startsWith("https://down-sg.img.susercontent.com/")) {
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { "content-type": "image/jpeg", "content-length": "4" } });
+      }
+      if (url.includes("/storage/v1/object/")) {
+        await new Response(init?.body as BodyInit).arrayBuffer();
+        return responseJson({ Key: "stored" });
+      }
+      if (url.endsWith("/complete_product_import_image_job")) return responseJson({ state: completionState });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    await expect(processProductImageMessage(message, { ...environment(), SUPABASE_SECRET_KEY: secret }))
+      .resolves.toEqual({ retry: completionState === "stale", state: completionState });
+    expect(calls.filter((call) => call.includes("down-sg.img.susercontent.com"))).toHaveLength(1);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.180.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.360.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.540.webp`))).toBe(true);
+    expect(calls.some((call) => call.includes(`${"a".repeat(64)}.720.webp`))).toBe(true);
+    expect(calls.some((call) => call.endsWith("/complete_product_import_image_job"))).toBe(true);
+  });
+
+  it.each([
+    "https://project.supabase.co/?query=value", "https://project.supabase.co/#fragment",
+    "https://user:pass@project.supabase.co/", "https://project.supabase.co/rest/v1"
+  ])("rejects a non-origin database URL before sending credentials: %s", async (url) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(processProductImageMessage(message, { ...environment(), SUPABASE_URL: url }))
+      .rejects.toMatchObject({ code: "INVALID_WORKER_CONFIG" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "stale"])("retries a transient CDN failure when the failure RPC reports %s", async (failureState) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/claim_product_import_image_job")) return responseJson({
+        state: "claimed", productId: message.productId, sourceUrl: "https://down-sg.img.susercontent.com/file/a",
+        storagePath: `products/imports/${message.productId}/${"a".repeat(64)}.webp`, attempt: 1
+      });
+      if (url.includes("/object/authenticated/")) return new Response(null, { status: 404 });
+      if (url.startsWith("https://down-sg.img.susercontent.com/")) return new Response(null, { status: 503 });
+      if (url.endsWith("/fail_product_import_image_job")) return responseJson({ retry: failureState === "queued", state: failureState });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: true, state: failureState });
+  });
+
+  it("acknowledges a permanently failed job even when the retry limit was exhausted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/claim_product_import_image_job")) return responseJson({
+        state: "claimed", productId: message.productId, sourceUrl: "https://down-sg.img.susercontent.com/file/a",
+        storagePath: `products/imports/${message.productId}/${"a".repeat(64)}.webp`, attempt: 5
+      });
+      if (url.includes("/object/authenticated/")) return new Response(null, { status: 404 });
+      if (url.startsWith("https://down-sg.img.susercontent.com/")) return new Response(null, { status: 503 });
+      if (url.endsWith("/fail_product_import_image_job")) return responseJson({ retry: false, exhausted: true, state: "failed" });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    await expect(processProductImageMessage(message, environment())).resolves.toEqual({ retry: false, state: "failed" });
+  });
+});

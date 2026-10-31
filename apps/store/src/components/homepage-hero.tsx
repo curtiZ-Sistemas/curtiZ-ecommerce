@@ -7,17 +7,39 @@ import { useEffect, useRef, useState } from "react";
 import type { PublicBanner } from "@/lib/storefront-data";
 
 const bundledHero = (path: string, viewport: "desktop" | "mobile") => {
-  if (!path.startsWith(`/images/hero-curtiz-${viewport}`)) return null;
+  const basePath = `/images/hero-curtiz-${viewport}`;
+  if (![`${basePath}.png`, `${basePath}.webp`, `${basePath}.avif`].includes(path)) return null;
   return {
     avif: `/images/hero-curtiz-${viewport}.avif`,
     webp: `/images/hero-curtiz-${viewport}.webp`
   };
 };
 
-export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
+const responsiveBannerSrcSet = (path: string, widths: number[]) =>
+  path.startsWith("/media/banner/")
+    ? widths.map((width) => `${path}?w=${width} ${width}w`).join(", ")
+    : null;
+
+export const nextHeroSlide = (current: number, slideCount: number, direction = 1) =>
+  slideCount > 0 ? (current + direction + slideCount) % slideCount : 0;
+
+export function startHeroAutoplay(
+  slideCount: number,
+  reducedMotion: boolean,
+  advance: () => void
+) {
+  if (slideCount < 2 || reducedMotion) return () => undefined;
+  const timer = globalThis.setInterval(advance, 3000);
+  return () => globalThis.clearInterval(timer);
+}
+
+export function HomepageHero({ banners, priority = true }: { banners: PublicBanner[]; priority?: boolean }) {
   const slides = banners.slice(0, 4);
   const [active, setActive] = useState(0);
+  const [initialImageLoaded, setInitialImageLoaded] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [autoplayCycle, setAutoplayCycle] = useState(0);
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReducedMotion(preference.matches);
@@ -25,8 +47,13 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     preference.addEventListener("change", update);
     return () => preference.removeEventListener("change", update);
   }, []);
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState === "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
   const [mobileViewport, setMobileViewport] = useState(false);
-  const [mobilePressing, setMobilePressing] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 700px)");
     const update = () => setMobileViewport(query.matches);
@@ -37,6 +64,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
   const [failedBannerIds, setFailedBannerIds] = useState<Set<string>>(
     () => new Set()
   );
+  const imageRef = useRef<HTMLImageElement>(null);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const swiped = useRef(false);
 
@@ -44,21 +72,19 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     setActive((current) => slides.length ? current % slides.length : 0);
   }, [slides.length]);
 
+  // A imagem pode terminar de carregar antes da hidratação; nesse caso o onLoad do React não
+  // dispara e o autoplay ficaria esperando para sempre.
   useEffect(() => {
-    if (
-      slides.length < 2 ||
-      reducedMotion ||
-      mobilePressing
-    ) {
-      return;
-    }
+    const image = imageRef.current;
+    if (image?.complete) setInitialImageLoaded(true);
+  }, []);
 
-    const timer = window.setInterval(() => {
-      setActive((current) => (current + 1) % slides.length);
-    }, 3000);
-
-    return () => window.clearInterval(timer);
-  }, [slides.length, reducedMotion, mobilePressing]);
+  useEffect(() => {
+    if (!pageVisible || !initialImageLoaded) return;
+    return startHeroAutoplay(slides.length, reducedMotion, () => {
+      setActive((current) => nextHeroSlide(current, slides.length));
+    });
+  }, [slides.length, reducedMotion, pageVisible, autoplayCycle, initialImageLoaded]);
 
   if (!slides.length) {
     return null;
@@ -75,12 +101,12 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
     : banner.mobileImage;
   const bundledDesktop = bundledHero(desktopImage, "desktop");
   const bundledMobile = bundledHero(mobileImage, "mobile");
+  const mobileSrcSet = responsiveBannerSrcSet(mobileImage, [360, 540, 720, 941]);
+  const desktopSrcSet = responsiveBannerSrcSet(desktopImage, [720, 1080, 1200, 1600]);
 
   const go = (direction: number) => {
-    setActive(
-      (current) =>
-        (current + direction + slides.length) % slides.length
-    );
+    setActive((current) => nextHeroSlide(current, slides.length, direction));
+    setAutoplayCycle((current) => current + 1);
   };
 
   const picture = (
@@ -88,25 +114,29 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       {bundledMobile ? (
         <source media="(max-width: 700px)" type="image/avif" srcSet={`/images/optimized/hero-mobile.430.avif 430w, /images/optimized/hero-mobile.640.avif 640w, ${bundledMobile.avif} 941w`} sizes="calc(100vw - 24px)" />
       ) : null}
-      <source
-        media="(max-width: 700px)"
-        srcSet={bundledMobile?.webp ?? mobileImage}
-        sizes="calc(100vw - 24px)"
-        width={941}
-        height={1672}
-      />
+      {mobileSrcSet ? (
+        <source media="(max-width: 700px)" type="image/webp" srcSet={mobileSrcSet} sizes="calc(100vw - 24px)" width={941} height={1672} />
+      ) : (
+        <source media="(max-width: 700px)" srcSet={bundledMobile?.webp ?? mobileImage} sizes="calc(100vw - 24px)" width={941} height={1672} />
+      )}
       {bundledDesktop ? <source type="image/avif" srcSet={bundledDesktop.avif} /> : null}
       <img
-        src={bundledDesktop?.webp ?? desktopImage}
+        src={bundledDesktop?.webp ?? (desktopSrcSet ? `${desktopImage}?w=1200` : desktopImage)}
+        srcSet={desktopSrcSet ?? undefined}
         width={2172}
         height={724}
         sizes="(max-width: 1280px) calc(100vw - 32px), 1200px"
+        ref={imageRef}
         className="hero-media"
         alt={banner.altText}
-        fetchPriority={active === 0 ? "high" : "auto"}
-        loading={active === 0 ? "eager" : "lazy"}
+        fetchPriority={active === 0 && priority ? "high" : "low"}
+        loading={active === 0 && priority ? "eager" : "lazy"}
         decoding="async"
+        onLoad={() => {
+          if (active === 0) setInitialImageLoaded(true);
+        }}
         onError={() => {
+          if (active === 0) setInitialImageLoaded(true);
           if (useFallbackImage) return;
           setFailedBannerIds((current) => new Set(current).add(banner.id));
         }}
@@ -122,16 +152,13 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
       aria-roledescription="carrossel"
       onPointerCancel={() => {
         pointerStart.current = null;
-        setMobilePressing(false);
       }}
       onPointerDown={(event) => {
         if (!mobileViewport || (event.target as HTMLElement).closest("button")) return;
         pointerStart.current = { x: event.clientX, y: event.clientY };
-        setMobilePressing(true);
       }}
       onPointerUp={(event) => {
         const start = pointerStart.current;
-        setMobilePressing(false);
         if (!start) return;
         const distance = event.clientX - start.x;
         const verticalDistance = event.clientY - start.y;
@@ -173,7 +200,7 @@ export function HomepageHero({ banners }: { banners: PublicBanner[] }) {
                 className="hero-dot"
                 aria-pressed={active === index}
                 aria-label={`Exibir banner ${index + 1}: ${slide.title}`}
-                onClick={() => setActive(index)}
+                onClick={() => { setActive(index); setAutoplayCycle((current) => current + 1); }}
                 key={slide.id}
               />
             ))}

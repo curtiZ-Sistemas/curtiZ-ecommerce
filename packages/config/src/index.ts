@@ -3,13 +3,17 @@ import { z } from "zod";
 const booleanString = z
   .enum(["true", "false", "1", "0", "yes", "no"])
   .transform((value) => ["true", "1", "yes"].includes(value));
+const optionalEmailValue = (schema: z.ZodType<string>) => z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  schema.optional()
+);
 
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_STORE_URL: z.string().url(),
   NEXT_PUBLIC_PANEL_URL: z.string().url(),
   NEXT_PUBLIC_STORE_TEST_URL: z.string().url().optional(),
   NEXT_PUBLIC_PANEL_TEST_URL: z.string().url().optional(),
-  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().startsWith("TEST-").optional()
+  NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: z.string().regex(/^(TEST-|APP_USR-).+/u).optional()
 });
 
 export const serverEnvSchema = z.object({
@@ -34,14 +38,40 @@ export const serverEnvSchema = z.object({
   STAGING_DEMO_HOSTS: z.string().optional(),
   DEMO_MODE: booleanString.default(false),
   ALLOW_GUEST_CHECKOUT: booleanString.default(false),
-  REQUIRE_INTERNAL_MFA: booleanString.default(false),
   AUTH_RATE_LIMIT_ENABLED: booleanString.default(true),
   CHECKOUT_ENABLED: booleanString.default(false),
   MERCADO_PAGO_ENABLED: booleanString.default(false),
+  MERCADO_PAGO_ENVIRONMENT: z.enum(["test", "production"]).default("test"),
+  MERCADO_PAGO_PRODUCTION_READY: booleanString.default(false),
   MELHOR_ENVIO_ENABLED: booleanString.default(false),
-  MELHOR_ENVIO_OAUTH_VALIDATED: booleanString.default(false),
-  MELHOR_ENVIO_ACCESS_TOKEN_EXPIRES_AT: z.string().datetime().optional(),
+  MELHOR_ENVIO_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
+  MELHOR_ENVIO_BASE_URL: z.string().url().optional(),
+  MELHOR_ENVIO_REDIRECT_URI: z.string().url().optional(),
+  MELHOR_ENVIO_CLIENT_ID: z.string().min(1).optional(),
+  MELHOR_ENVIO_CLIENT_SECRET: z.string().min(1).optional(),
+  MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+  MELHOR_ENVIO_APP_NAME: z.string().min(1).optional(),
+  MELHOR_ENVIO_TECHNICAL_CONTACT: z.string().email().optional(),
+  MELHOR_ENVIO_ORIGIN_POSTAL_CODE: z.string().regex(/^\d{8}$/).optional(),
+  MELHOR_ENVIO_ORIGIN_NAME: z.string().min(1).optional(),
+  MELHOR_ENVIO_ORIGIN_EMAIL: z.string().email().optional(),
+  MELHOR_ENVIO_ORIGIN_PHONE: z.string().min(10).optional(),
+  MELHOR_ENVIO_ORIGIN_DOCUMENT: z.string().optional(),
+  MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT: z.string().optional(),
+  MELHOR_ENVIO_ORIGIN_STATE_REGISTER: z.string().optional(),
+  MELHOR_ENVIO_ORIGIN_CNAE: z.string().optional(),
+  MELHOR_ENVIO_ORIGIN_ADDRESS: z.string().min(1).optional(),
+  MELHOR_ENVIO_ORIGIN_NUMBER: z.string().min(1).optional(),
+  MELHOR_ENVIO_ORIGIN_COMPLEMENT: z.string().optional(),
+  MELHOR_ENVIO_ORIGIN_DISTRICT: z.string().min(1).optional(),
+  MELHOR_ENVIO_ORIGIN_CITY: z.string().min(1).optional(),
+  MELHOR_ENVIO_ORIGIN_STATE: z.string().length(2).optional(),
+  MELHOR_ENVIO_WEBHOOK_CONFIGURED: booleanString.default(false),
   EMAIL_ENABLED: booleanString.default(false),
+  RESEND_API_KEY: optionalEmailValue(z.string().min(1)),
+  EMAIL_FROM: optionalEmailValue(z.string().min(1)),
+  RESEND_FROM_EMAIL: optionalEmailValue(z.string().email()),
+  EMAIL_REPLY_TO: optionalEmailValue(z.string().email()),
   TURNSTILE_ENABLED: booleanString.default(false),
   GOOGLE_MERCHANT_ENABLED: booleanString.default(false),
   INVENTORY_RESERVATION_MINUTES: z.coerce.number().int().min(5).max(120).default(30)
@@ -49,3 +79,5 @@ export const serverEnvSchema = z.object({
 
 export * from "./integrations";
 export * from "./public-urls";
+export * from "./email";
+export * from "./mercadopago";

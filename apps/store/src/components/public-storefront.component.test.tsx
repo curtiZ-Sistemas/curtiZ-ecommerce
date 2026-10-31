@@ -1,18 +1,24 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { CategoryCarousel } from "./category-carousel";
 import { HomepageHero } from "./homepage-hero";
 import { ProductCard } from "./product-card";
+import { ProductPurchase } from "./product-purchase";
 import { SearchAutocomplete } from "./search-autocomplete";
 import ErrorPage from "../app/error";
 import GlobalError from "../app/global-error";
 import type { PublicBanner } from "@/lib/storefront-data";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() })
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams("q=teste-inicial")
 }));
 vi.mock("./favorites-provider", () => ({
   useFavorites: () => ({ hydrated: true, has: () => false, toggle: vi.fn() })
+}));
+vi.mock("./cart-provider", () => ({
+  useCart: () => ({ add: vi.fn() })
 }));
 vi.stubGlobal("React", React);
 
@@ -67,6 +73,7 @@ describe("public storefront components", () => {
 
     expect(html).toContain('role="search"');
     expect(html).toContain('role="combobox"');
+    expect(html).toContain('value="teste-inicial"');
     expect(html).toContain('aria-autocomplete="list"');
     expect(html).toContain('action="/busca"');
     expect(html).toContain('placeholder="Qual pegada você vai curti?"');
@@ -98,6 +105,10 @@ describe("public storefront components", () => {
     expect(html).toContain('title="Produto disponível"');
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("em estoque");
     expect(html.toLocaleLowerCase("pt-BR")).not.toContain("unidade");
+    expect(html).toContain("product-card-cart-button");
+    expect(html).toContain("Escolher cor e tamanho");
+    expect(html).toContain("R$\u00a059,90");
+    expect(html).not.toContain("Consulte as condições no produto");
   });
 
   it("renderiza um card virtual com imagem, preço e link da variação", () => {
@@ -125,6 +136,100 @@ describe("public storefront components", () => {
     expect(html).toContain("/produto/chinelo-essential?variant=azul");
     expect(html).not.toContain('class="rating"');
     expect(html).not.toContain("0 de 5");
+  });
+
+  it("liga cada apresentação visual à variante e à imagem da sua cor", () => {
+    for (const color of ["Branco", "Preto"]) {
+      const slug = color.toLocaleLowerCase("pt-BR");
+      const image = `/images/products/essential-${slug}.webp`;
+      const html = renderToStaticMarkup(<ProductCard product={{
+        id: "produto-1", storefrontKey: `produto-1:${slug}`, variantId: `variante-${slug}`,
+        variantColor: color, variantSize: "37", slug: "chinelo-essential", name: "Chinelo Essential",
+        variantTitle: `Chinelo Essential ${color} — Leve e Confortável`,
+        category: "Chinelos", description: "Produto", priceInCents: 6490,
+        rating: 0, reviews: 0, colors: [color], sizes: ["37"], image, stock: 2
+      }} />);
+      expect(html).toContain(image);
+      expect(html).toContain(`Chinelo Essential ${color} — Leve e Confortável`);
+      expect(html).toContain(`/produto/chinelo-essential?variant=variante-${slug}&amp;color=${color}`);
+    }
+  });
+
+  it.each([
+    ["produto importado antigo", `https://catalog.example.test/storage/v1/object/public/catalog-public/products/imports/20000000-0000-4000-8000-000000000001/${"a".repeat(64)}.webp`],
+    ["produto novo", "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp"]
+  ])("renderiza %s com a URL original do Supabase", (_name, image) => {
+    const html = renderToStaticMarkup(<ProductCard product={{
+      id: "produto-imagem",
+      slug: "produto-imagem",
+      name: "Produto com imagem",
+      category: "Chinelos",
+      description: "Produto",
+      priceInCents: 5990,
+      rating: 0,
+      reviews: 0,
+      colors: ["Preto"],
+      sizes: ["37"],
+      image,
+      stock: 2
+    }} />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).not.toContain("/media/product/");
+    expect(html).not.toContain("/_next/image");
+    expect(html).not.toContain("srcSet=");
+    expect(html).toContain('width="720" height="720"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('decoding="async"');
+  });
+
+  it("mantém imagem direta quando uma categoria aponta para um produto", () => {
+    const image = "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp";
+    const html = renderToStaticMarkup(<CategoryCarousel categories={[{
+      name: "Categoria",
+      href: "/categorias/teste",
+      image
+    }]} />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).toContain("/media/product/products/user/product/imagem.webp?w=360 360w");
+    expect(html).toContain("srcSet=");
+  });
+
+  it("mantém a imagem original direta na página do produto", () => {
+    const image = "https://catalog.example.test/storage/v1/object/public/catalog-public/products/user/product/imagem.webp";
+    const product = {
+      id: "produto-detalhe",
+      slug: "produto-detalhe",
+      name: "Produto detalhe",
+      category: "Chinelos",
+      description: "Produto",
+      priceInCents: 5990,
+      rating: 0,
+      reviews: 0,
+      colors: ["Preto"],
+      sizes: ["37"],
+      image,
+      stock: 2
+    };
+    const html = renderToStaticMarkup(<ProductPurchase detail={{
+      product,
+      gallery: [{ id: "imagem", src: image, alt: product.name }],
+      media: [],
+      variants: [{ id: "variante", color: "Preto", size: "37", priceInCents: 5990, stock: 2, image }],
+      specifications: [],
+      sizeGuide: [],
+      reviews: [],
+      source: "supabase"
+    }} initialVariantId="variante" />);
+
+    expect(html).toContain(`src="${image}"`);
+    expect(html).toContain('width="760" height="620"');
+    expect(html).toContain('loading="eager"');
+    expect(html).toContain('fetchPriority="high"');
+    expect(html).toContain('decoding="async"');
+    expect(html).not.toContain("/media/product/");
+    expect(html).not.toContain("/_next/image");
   });
 
   it("renderiza erros inesperados sem detalhes técnicos ou dados internos", () => {

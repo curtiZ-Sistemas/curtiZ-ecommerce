@@ -1,7 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { navigationHref, serializeStoreNavigation } from "./store-navigation-core";
+import { activeNavigationItemId, isNavigationItemActive, navigationHref, serializeStoreNavigation, type StoreNavigationItem } from "./store-navigation-core";
+
+const navigation: StoreNavigationItem[] = [
+  { id: "home", label: "Início", href: "/", placement: "main" },
+  { id: "products", label: "Produtos", href: "/produtos", placement: "main" },
+  { id: "female", label: "Feminino", href: "/produtos?categoria=feminino", placement: "main" },
+  { id: "kits", label: "Kits", href: "/produtos?categoria=kits", placement: "main" },
+  { id: "sandals", label: "Chinelos", href: "/produtos?categoria=chinelos", placement: "main" },
+  { id: "help", label: "Atendimento", href: "/ajuda", placement: "utility" }
+];
 
 describe("navegação configurável da loja", () => {
+  it("exclui categorias comerciais obsoletas sem afetar destinos atuais", () => {
+    expect(serializeStoreNavigation([
+      { id: "old-page", label: "Slides", destination_type: "page", destination_value: "/slides" },
+      { id: "old-category", label: "Sandálias", destination_type: "category", destination_value: "sandalias" },
+      { id: "kits", label: "Kits", destination_type: "category", destination_value: "kits" }
+    ])).toEqual([{ id: "kits", label: "Kits", href: "/produtos?categoria=kits", placement: "main" }]);
+  });
+  it.each([
+    ["/", "", "home"],
+    ["/produtos", "", "products"],
+    ["/produtos", "categoria=feminino", "female"],
+    ["/produtos", "categoria=kits", "kits"],
+    ["/produtos", "categoria=chinelos&cor=preto", "sandals"],
+    ["/ajuda", "", "help"]
+  ])("marca só o item correto em %s?%s", (pathname, query, expected) => {
+    const params = new URLSearchParams(query);
+    expect(activeNavigationItemId(navigation, pathname, params)).toBe(expected);
+    expect(navigation.filter((item) => isNavigationItemActive(item.href, pathname, params)).map((item) => item.id)).toEqual([expected]);
+  });
+
+  it("reconhece categorias futuras sem código específico", () => {
+    const newCategory = { id: "future", label: "Nova categoria", href: "/produtos?categoria=nova-categoria", placement: "main" as const };
+    expect(activeNavigationItemId([...navigation, newCategory], "/produtos", new URLSearchParams("categoria=nova-categoria&cor=azul"))).toBe("future");
+    expect(activeNavigationItemId(navigation, "/produtos", new URLSearchParams("categoria=nova-categoria"))).toBeUndefined();
+  });
   it("monta destinos de categoria e coleção", () => {
     expect(navigationHref({ destination_type: "category", destination_value: "sandalias" }))
       .toBe("/produtos?categoria=sandalias");

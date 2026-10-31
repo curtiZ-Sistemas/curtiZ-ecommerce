@@ -1,15 +1,21 @@
 "use client";
+import { BlingCatalogStatus } from "./bling-catalog-status";
 
+import { normalizeProductColorName } from "@curtiz/domain";
 import {
   Archive,
+  AlertCircle,
   Boxes,
+  CheckCircle2,
   ChevronDown,
+  ChevronUp,
   ChevronLeft,
   ChevronRight,
   Copy,
   Eye,
   EyeOff,
   ImageIcon,
+  Info,
   PlayCircle,
   LoaderCircle,
   MoreHorizontal,
@@ -22,15 +28,27 @@ import {
   Star,
   Trash2,
   Upload,
+  TriangleAlert,
   X
 } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ColorSwatch } from "@/components/color-swatch";
 import { PanelDrawer } from "@/components/panel-drawer";
+import { ProductImportDrawer } from "@/components/product-import-drawer";
+import {
+  buildNewProductDraft,
+  isProductDraftStoredLocally,
+  newestProductDraft,
+  productDraftContentFingerprint,
+  productDraftSyncFailureAction,
+  storeProductDraftLocally
+} from "@/lib/product-draft";
 import {
   type EditableVariant,
   generateVariantCombinations,
-  groupEditableVariantsByColor,
+  stableVariantColorGroups,
+  withVariantClientKeys,
   isManagedProduct,
   partitionProductMediaFiles,
   parseNewProductDraft,
@@ -42,6 +60,7 @@ import {
   type ManagedProduct,
   type ManagedProductMedia,
   type NewProductDraft,
+  type ProductSpecification,
   type ProductSizeGuideEntry
 } from "@/lib/product-management";
 
@@ -53,6 +72,7 @@ type CatalogResponse = {
   total?: number;
   pageSize?: number;
   message?: string;
+  requestId?: string;
   productId?: string;
   capabilities?: {
     create?: boolean;
@@ -62,10 +82,114 @@ type CatalogResponse = {
     delete?: boolean;
   };
   capabilityMessage?: string;
+  colorOptions?: ProductColorOption[];
 };
 
+type ProductFeedbackKind = "success" | "error" | "warning" | "info";
+type ProductFeedback = { kind: ProductFeedbackKind; text: string };
+
+function ProductFeedbackMessage({ feedback, className = "" }: { feedback: ProductFeedback; className?: string }) {
+  const Icon = feedback.kind === "success" ? CheckCircle2
+    : feedback.kind === "error" ? AlertCircle
+      : feedback.kind === "warning" ? TriangleAlert : Info;
+  return (
+    <p className={`product-feedback ${feedback.kind} ${className}`.trim()}
+      role={feedback.kind === "error" ? "alert" : "status"}
+      aria-live={feedback.kind === "error" ? "assertive" : "polite"}>
+      <Icon aria-hidden="true" /> <span>{feedback.text}</span>
+    </p>
+  );
+}
+
+async function readCatalogResponse(response: Response): Promise<CatalogResponse> {
+  const body = await response.text();
+  try {
+    const value: unknown = JSON.parse(body);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {
+      message: response.ok
+        ? "O catálogo retornou uma resposta inválida."
+        : `O serviço do catálogo está temporariamente indisponível (HTTP ${response.status}).`
+    };
+  }
+}
+
+type ProductDraftResponse = {
+  ok?: boolean;
+  draft?: unknown;
+  message?: string;
+  requestId?: string;
+};
+
+type ProductColorOption = {
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+};
+
+type ProductSizeGuideRow = ProductSizeGuideEntry & { clientRowId: string };
+type ProductSpecificationRow = ProductSpecification & { clientRowId: string };
+const withSizeGuideRowIds = (entries: ProductSizeGuideEntry[]): ProductSizeGuideRow[] =>
+  entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
+const withSpecificationRowIds = (entries: ProductSpecification[]): ProductSpecificationRow[] =>
+  entries.map((entry) => ({ ...entry, clientRowId: crypto.randomUUID() }));
+
+function ExistingColorPicker({
+  options,
+  onSelect
+}: {
+  options: ProductColorOption[];
+  onSelect: (option: ProductColorOption) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const filtered = options
+    .filter((option) => normalizeProductColorName(option.name).includes(normalizeProductColorName(query)))
+    .slice(0, query ? 30 : 8);
+
+  return (
+    <details className="existing-color-picker" ref={detailsRef}>
+      <summary>Usar cor existente</summary>
+      <div className="existing-color-popover">
+        <label>
+          <span className="sr-only">Buscar cor existente</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar cor..."
+          />
+        </label>
+        <div className="existing-color-options" aria-label="Cores usadas recentemente">
+          {filtered.map((option) => (
+            <button
+              type="button"
+              key={normalizeProductColorName(option.name)}
+              onClick={() => {
+                onSelect(option);
+                detailsRef.current?.removeAttribute("open");
+                setQuery("");
+              }}
+            >
+              <ColorSwatch
+                name={option.name}
+                primaryColor={option.primaryColor}
+                secondaryColor={option.secondaryColor}
+              />
+              <span>{option.name}</span>
+            </button>
+          ))}
+          {!filtered.length ? <p>Nenhuma cor encontrada.</p> : null}
+        </div>
+        <small>Ou edite os campos de cor abaixo para criar uma nova.</small>
+      </div>
+    </details>
+  );
+}
+
 const includeSizeGuideRows = (
-  current: ProductSizeGuideEntry[],
+  current: ProductSizeGuideRow[],
   sizes: string[]
 ) => {
   const known = new Set(current.map((entry) => entry.size.trim().toLocaleLowerCase("pt-BR")));
@@ -75,7 +199,7 @@ const includeSizeGuideRows = (
     const normalized = size.toLocaleLowerCase("pt-BR");
     if (!size || known.has(normalized)) continue;
     known.add(normalized);
-    next.push({ size, measurementCm: null });
+    next.push({ clientRowId: crypto.randomUUID(), size, measurementCm: null });
   }
   return next;
 };
@@ -274,7 +398,10 @@ export function ProductManagement({
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setFeedback] = useState<ProductFeedback | null>(null);
+  const setMessage = useCallback((text: string, kind: ProductFeedbackKind = "info") => {
+    setFeedback(text ? { text, kind } : null);
+  }, []);
   const [capabilityNotice, setCapabilityNotice] = useState("");
   const [loadError, setLoadError] = useState("");
   const [openingProductId, setOpeningProductId] = useState("");
@@ -285,8 +412,11 @@ export function ProductManagement({
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<"archive" | "restore" | "delete" | null>(null);
   const [editing, setEditing] = useState<ManagedProduct | "new" | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
   const [draftOffer, setDraftOffer] = useState<NewProductDraft | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftClosing, setDraftClosing] = useState(false);
   const [duplicateTarget, setDuplicateTarget] = useState<ManagedProduct | null>(null);
   const [statusTarget, setStatusTarget] = useState<{
     product: ManagedProduct;
@@ -298,6 +428,7 @@ export function ProductManagement({
   const [primaryCategoryId, setPrimaryCategoryId] = useState("");
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
+  const [colorOptions, setColorOptions] = useState<ProductColorOption[]>([]);
   const [capabilities, setCapabilities] = useState({
     create: false,
     update: false,
@@ -306,13 +437,15 @@ export function ProductManagement({
     delete: false
   });
   const [editableVariants, setEditableVariants] = useState<EditableVariant[]>([]);
+  const variantGroupKeysRef = useRef(new Map<string, string>());
   const [variantColors, setVariantColors] = useState("");
   const [variantSizes, setVariantSizes] = useState("");
   const [variantSkuPrefix, setVariantSkuPrefix] = useState("");
   const [hasVariations, setHasVariations] = useState(true);
   const [simpleStock, setSimpleStock] = useState(0);
   const [productActive, setProductActive] = useState(false);
-  const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideEntry[]>([]);
+  const [sizeGuide, setSizeGuide] = useState<ProductSizeGuideRow[]>([]);
+  const [specifications, setSpecifications] = useState<ProductSpecificationRow[]>([]);
   const [bulkVariantPrice, setBulkVariantPrice] = useState("");
   const [newVariantSizes, setNewVariantSizes] = useState<Record<string, string>>({});
   const [colorImageSelections, setColorImageSelections] = useState<Record<string, string>>({});
@@ -329,27 +462,66 @@ export function ProductManagement({
   const quantities = useRef<Record<string, HTMLInputElement | null>>({});
   const reasons = useRef<Record<string, HTMLInputElement | null>>({});
   const editorFormRef = useRef<HTMLFormElement | null>(null);
+  const editorBaselineRef = useRef<string | null>(null);
+  const [initializedEditorKey, setInitializedEditorKey] = useState("");
+  const [editorRevision, setEditorRevision] = useState(0);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRetryUntilRef = useRef(0);
+  const queuedServerDraftRef = useRef<NewProductDraft | null>(null);
+  const draftSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const syncServerDraftRef = useRef<(draft: NewProductDraft) => Promise<void>>(async () => undefined);
+  const lastSyncedFingerprintRef = useRef("");
+  const lastRejectedFingerprintRef = useRef("");
+  const draftSaveLockedRef = useRef(false);
   const draftKey = productDraftStorageKey(draftOwnerKey);
+
+  const editorSnapshot = () => {
+    const form = editorFormRef.current;
+    if (!form) return null;
+    const fields = [...new FormData(form).entries()]
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+        leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue));
+    return JSON.stringify({
+      fields,
+      categoryIds: [...selectedCategoryIds].sort(),
+      primaryCategoryId,
+      variants: [...editableVariants].sort((left, right) =>
+        (left.id ?? left.sku).localeCompare(right.id ?? right.sku)),
+      sizeGuide: sizeGuide.map(({ size, measurementCm }) => ({ size, measurementCm }))
+        .sort((left, right) => left.size.localeCompare(right.size, "pt-BR")),
+      specifications: specifications.map(({ label, value }) => ({ label, value })),
+      hasVariations, simpleStock, productActive, variantColors, variantSizes,
+      variantSkuPrefix, colorImageSelections,
+      queuedMediaFiles: queuedMediaFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`).sort()
+    });
+  };
+  const editorSnapshotRef = useRef(editorSnapshot);
+  editorSnapshotRef.current = editorSnapshot;
 
   const clearLocalDraft = useCallback(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = null;
     try { localStorage.removeItem(draftKey); } catch { /* Storage pode estar indisponível. */ }
+    queuedServerDraftRef.current = null;
+    lastSyncedFingerprintRef.current = "";
+    lastRejectedFingerprintRef.current = "";
+    draftRetryUntilRef.current = 0;
+    if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
+    draftRetryTimerRef.current = null;
     setDraftOffer(null);
   }, [draftKey]);
 
-  const persistLocalDraft = useCallback(() => {
-    if (editing !== "new" || !editorDirty) return;
+  const createCurrentDraft = useCallback((): NewProductDraft | null => {
+    if (editing !== "new" || !editorDirty || draftSaveLockedRef.current) return null;
     const form = editorFormRef.current;
-    if (!form) return;
+    if (!form) return null;
     const fields: Record<string, string> = {};
     new FormData(form).forEach((value, key) => {
-      if (typeof value === "string") fields[key] = value;
+      if (typeof value === "string" && key !== "productKind") fields[key] = value;
     });
-    const draft: NewProductDraft = {
-      version: 1,
-      savedAt: new Date().toISOString(),
+    return buildNewProductDraft({
       fields,
       categoryIds: selectedCategoryIds,
       primaryCategoryId,
@@ -360,15 +532,123 @@ export function ProductManagement({
       variantColors,
       variantSizes,
       variantSkuPrefix,
-      sizeGuide
-    };
-    try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Mantém o formulário em memória. */ }
-  }, [draftKey, editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
+      sizeGuide,
+      specifications
+    });
+  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
-  const scheduleLocalDraft = useCallback(() => {
+  const syncServerDraft = useCallback((draft: NewProductDraft): Promise<void> => {
+    const fingerprint = productDraftContentFingerprint(draft);
+    if (fingerprint === lastSyncedFingerprintRef.current && !queuedServerDraftRef.current) {
+      return Promise.resolve();
+    }
+    if (fingerprint === lastRejectedFingerprintRef.current && !queuedServerDraftRef.current) {
+      return Promise.resolve();
+    }
+    queuedServerDraftRef.current = draft;
+    if (draftSyncPromiseRef.current) return draftSyncPromiseRef.current;
+    const retryDelay = draftRetryUntilRef.current - Date.now();
+    if (retryDelay > 0) {
+      if (!draftRetryTimerRef.current) {
+        draftRetryTimerRef.current = setTimeout(() => {
+          draftRetryTimerRef.current = null;
+          draftRetryUntilRef.current = 0;
+          const pendingDraft = queuedServerDraftRef.current;
+          if (pendingDraft) void syncServerDraftRef.current(pendingDraft).catch(() => undefined);
+        }, retryDelay);
+      }
+      return Promise.resolve();
+    }
+
+    const run = async () => {
+      while (queuedServerDraftRef.current) {
+        const current = queuedServerDraftRef.current;
+        queuedServerDraftRef.current = null;
+        const currentFingerprint = productDraftContentFingerprint(current);
+        if (currentFingerprint === lastSyncedFingerprintRef.current) continue;
+        let response: Response;
+        try {
+          response = await fetch("/api/catalog/product-draft", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(current)
+          });
+        } catch (error) {
+          if (!queuedServerDraftRef.current) queuedServerDraftRef.current = current;
+          throw error;
+        }
+        if (response.ok) {
+          lastSyncedFingerprintRef.current = currentFingerprint;
+          if (lastRejectedFingerprintRef.current === currentFingerprint) {
+            lastRejectedFingerprintRef.current = "";
+          }
+          continue;
+        }
+        const failureAction = productDraftSyncFailureAction(response.status);
+        if (failureAction === "drop") {
+          lastRejectedFingerprintRef.current = currentFingerprint;
+          continue;
+        }
+        if (!queuedServerDraftRef.current) queuedServerDraftRef.current = current;
+        if (failureAction === "wait") {
+          const retryAfter = Number(response.headers.get("retry-after"));
+          const delay = Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1_000
+            : 60_000;
+          draftRetryUntilRef.current = Date.now() + delay;
+          if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
+          draftRetryTimerRef.current = setTimeout(() => {
+            draftRetryTimerRef.current = null;
+            draftRetryUntilRef.current = 0;
+            const pendingDraft = queuedServerDraftRef.current;
+            if (pendingDraft) void syncServerDraftRef.current(pendingDraft).catch(() => undefined);
+          }, delay);
+          return;
+        }
+        throw new Error("draft_sync_unavailable");
+      }
+    };
+    const promise = run().finally(() => {
+      if (draftSyncPromiseRef.current === promise) draftSyncPromiseRef.current = null;
+    });
+    draftSyncPromiseRef.current = promise;
+    return promise;
+  }, []);
+  syncServerDraftRef.current = syncServerDraft;
+
+  const persistLocalSnapshot = useCallback(() => {
+    const draft = createCurrentDraft();
+    if (!draft) return null;
+    storeProductDraftLocally(localStorage, draftKey, draft);
+    return draft;
+  }, [createCurrentDraft, draftKey]);
+
+  const persistDraft = useCallback(() => {
+    const latest = persistLocalSnapshot();
+    if (latest) void syncServerDraft(latest).catch(() => undefined);
+    return latest;
+  }, [persistLocalSnapshot, syncServerDraft]);
+
+  const scheduleDraft = useCallback(() => {
+    if (draftSaveLockedRef.current) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    draftTimerRef.current = setTimeout(persistLocalDraft, 700);
-  }, [persistLocalDraft]);
+    draftTimerRef.current = setTimeout(persistDraft, 1_000);
+  }, [persistDraft]);
+
+  const flushDraft = useCallback(async (): Promise<"server" | "local" | null> => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = null;
+    const draft = persistLocalSnapshot();
+    if (!draft) return null;
+    try {
+      await syncServerDraft(draft);
+    } catch {
+      // O fallback local permanece íntegro e será sincronizado na próxima oportunidade.
+    }
+    const fingerprint = productDraftContentFingerprint(draft);
+    if (lastSyncedFingerprintRef.current === fingerprint) return "server";
+    return isProductDraftStoredLocally(localStorage, draftKey, draft) ? "local" : null;
+  }, [draftKey, persistLocalSnapshot, syncServerDraft]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -379,7 +659,7 @@ export function ProductManagement({
       params.set("status", catalogMode === "archived" ? "archived" : status || "current");
       if (filter === "out") params.set("stock", "out");
       const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       setCapabilities({
         create: result.capabilities?.create === true,
         update: result.capabilities?.update === true,
@@ -397,6 +677,7 @@ export function ProductManagement({
       setCategories(result.categories ?? []);
       setModels(result.models ?? []);
       setCollections(result.collections ?? []);
+      setColorOptions(result.colorOptions ?? []);
       setTotal(result.total ?? 0);
       setPageSize(result.pageSize ?? 20);
     } catch (error) {
@@ -445,6 +726,7 @@ export function ProductManagement({
 
   useEffect(() => {
     if (!editing || !editingKey) return;
+    editorBaselineRef.current = null;
     if (editing === "new") {
       setEditableVariants([]);
       setVariantColors("");
@@ -456,34 +738,39 @@ export function ProductManagement({
       setSimpleStock(0);
       setProductActive(false);
       setSizeGuide([]);
+      setSpecifications([]);
       setNewVariantSizes({});
       setColorImageSelections({});
       setQueuedMediaFiles([]);
       setActiveEditorSection("information");
       setEditorDirty(false);
+      setInitializedEditorKey(editingKey);
       return;
     }
     setEditableVariants(
-      editing.variants.map((variant) => ({
+      withVariantClientKeys(editing.variants.map((variant) => ({
         id: variant.id,
         sku: variant.sku,
         color: variant.color,
         colorHex: variant.colorHex ?? "",
+        colorHexSecondary: variant.colorHexSecondary ?? "",
         size: variant.size,
         priceInCents: variant.priceInCents ?? null,
         costInCents: variant.costInCents ?? null,
         stock: variant.available,
         active: variant.active,
         gtin: variant.gtin ?? "",
-        mpn: variant.mpn ?? ""
-      }))
+        mpn: variant.mpn ?? "",
+        displayTitle: variant.displayTitle ?? null
+      })))
     );
     setSelectedCategoryIds(editing.categoryIds?.length ? editing.categoryIds : editing.categoryId ? [editing.categoryId] : []);
     setPrimaryCategoryId(editing.categoryId ?? editing.categoryIds?.[0] ?? "");
     setHasVariations(editing.variants.length > 1 || editing.variants.some((variant) => variant.color !== "Padrão" || variant.size !== "Único"));
     setSimpleStock(editing.variants[0]?.available ?? 0);
     setProductActive(editing.status === "active");
-    setSizeGuide(includeSizeGuideRows(editing.sizeGuide ?? [], editing.variants.map((variant) => variant.size)));
+    setSizeGuide(includeSizeGuideRows(withSizeGuideRowIds(editing.sizeGuide ?? []), editing.variants.map((variant) => variant.size)));
+    setSpecifications(withSpecificationRowIds(editing.specifications ?? []));
     setColorImageSelections({});
     setVariantSkuPrefix(editing.slug);
     setVariantColors("");
@@ -493,37 +780,107 @@ export function ProductManagement({
       Object.fromEntries((editing.images ?? []).map((image) => [image.id, image.alt]))
     );
     setEditorDirty(false);
+    setInitializedEditorKey(editingKey);
   }, [editingKey]);
 
+  useEffect(() => {
+    if (!editingKey || initializedEditorKey !== editingKey) return;
+    editorBaselineRef.current = editorSnapshotRef.current();
+    setEditorDirty((current) => editingKey === "new" ? current : false);
+  }, [editingKey, initializedEditorKey]);
+
+  useEffect(() => {
+    if (!editingKey || initializedEditorKey !== editingKey || editorBaselineRef.current === null) return;
+    const changed = editorSnapshotRef.current() !== editorBaselineRef.current;
+    setEditorDirty((current) => editingKey === "new" ? current || changed : changed);
+  }, [editingKey, initializedEditorKey, editorRevision, selectedCategoryIds, primaryCategoryId,
+    editableVariants, sizeGuide, specifications, hasVariations, simpleStock, productActive, variantColors,
+    variantSizes, variantSkuPrefix, colorImageSelections, queuedMediaFiles]);
+
   const closeEditor = useCallback(() => {
+    draftSaveLockedRef.current = false;
     setEditing(null);
+    editorBaselineRef.current = null;
+    setInitializedEditorKey("");
     setEditorDirty(false);
     setNewVariantSizes({});
     setQueuedMediaFiles([]);
     setActiveEditorSection("information");
   }, []);
 
-  const openNewProduct = () => {
+  const closeEditorWithDraft = useCallback(async () => {
+    if (editing === "new" && editorDirty) {
+      setDraftClosing(true);
+      const persistence = await flushDraft();
+      if (!persistence) {
+        setMessage("Não foi possível salvar o rascunho. O cadastro continua aberto para você tentar novamente.", "error");
+        setDraftClosing(false);
+        return;
+      }
+      const onlyLocal = persistence === "local";
+      const hadFiles = queuedMediaFiles.length > 0;
+      closeEditor();
+      setMessage(onlyLocal
+        ? "O cadastro foi mantido neste dispositivo e será sincronizado quando a conexão voltar."
+        : hadFiles
+          ? "O cadastro ficou salvo como rascunho. Se continuar depois, selecione os arquivos de mídia novamente."
+          : "O cadastro ficou salvo como rascunho para você continuar depois.", onlyLocal || hadFiles ? "warning" : "success");
+      setDraftClosing(false);
+      return;
+    }
+    closeEditor();
+  }, [closeEditor, editing, editorDirty, flushDraft, queuedMediaFiles.length, setMessage]);
+
+  const openNewProduct = async () => {
+    draftSaveLockedRef.current = false;
     setMessage("");
     setQueuedMediaFiles([]);
     setActiveEditorSection("information");
     setEditing("new");
+    setDraftOffer(null);
+    setDraftLoading(true);
+    let localDraft: NewProductDraft | null = null;
     try {
-      setDraftOffer(parseNewProductDraft(localStorage.getItem(draftKey)));
+      localDraft = parseNewProductDraft(localStorage.getItem(draftKey));
     } catch {
-      setDraftOffer(null);
+      localDraft = null;
+    }
+    let serverDraft: NewProductDraft | null = null;
+    try {
+      const response = await fetch("/api/catalog/product-draft", { cache: "no-store" });
+      const result = (await response.json()) as ProductDraftResponse;
+      if (response.ok) serverDraft = parseNewProductDraft(result.draft);
+      else setMessage(`${result.message ?? "Não foi possível consultar o rascunho no servidor."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`, "warning");
+    } catch {
+      setMessage("Não foi possível consultar o rascunho no servidor. O cadastro continua disponível.", "warning");
+    }
+    try {
+      const latest = newestProductDraft(serverDraft, localDraft);
+      if (latest) {
+        const fingerprint = productDraftContentFingerprint(latest);
+        storeProductDraftLocally(localStorage, draftKey, latest);
+        setDraftOffer(latest);
+        if (serverDraft && serverDraft.savedAt === latest.savedAt) {
+          lastSyncedFingerprintRef.current = fingerprint;
+        } else {
+          void syncServerDraft(latest).catch(() => undefined);
+        }
+      }
+    } finally {
+      setDraftLoading(false);
     }
   };
 
-  const restoreLocalDraft = () => {
+  const restoreDraft = () => {
     if (!draftOffer) return;
     setSelectedCategoryIds(draftOffer.categoryIds);
     setPrimaryCategoryId(draftOffer.primaryCategoryId);
-    setEditableVariants(draftOffer.variants);
+    setEditableVariants(withVariantClientKeys(draftOffer.variants));
     setHasVariations(draftOffer.hasVariations);
     setSimpleStock(draftOffer.simpleStock);
     setProductActive(draftOffer.productActive === true);
-    setSizeGuide(draftOffer.sizeGuide ?? []);
+    setSizeGuide(withSizeGuideRowIds(draftOffer.sizeGuide ?? []));
+    setSpecifications(withSpecificationRowIds(draftOffer.specifications ?? []));
     setVariantColors(draftOffer.variantColors ?? "");
     setVariantSizes(draftOffer.variantSizes ?? "");
     setVariantSkuPrefix(draftOffer.variantSkuPrefix ?? "");
@@ -541,16 +898,60 @@ export function ProductManagement({
           field.value = value;
         }
       }
+      setEditorRevision((current) => current + 1);
     });
   };
 
-  useEffect(() => () => {
+  const discardDraft = async () => {
+    draftSaveLockedRef.current = true;
+    setDraftClosing(true);
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-  }, []);
+    draftTimerRef.current = null;
+    try { await draftSyncPromiseRef.current; } catch { /* O DELETE ainda deve remover a versão remota. */ }
+    queuedServerDraftRef.current = null;
+    try {
+      const response = await fetch("/api/catalog/product-draft", { method: "DELETE" });
+      const result = (await response.json()) as ProductDraftResponse;
+      if (!response.ok) {
+        setMessage(`${result.message ?? "Não foi possível descartar o rascunho."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`, "error");
+        return;
+      }
+      clearLocalDraft();
+      setEditorDirty(false);
+      editorBaselineRef.current = editorSnapshotRef.current();
+      setMessage("Rascunho descartado definitivamente.", "success");
+    } catch {
+      setMessage("Não foi possível descartar o rascunho no servidor. Tente novamente.", "error");
+    } finally {
+      draftSaveLockedRef.current = false;
+      setDraftClosing(false);
+    }
+  };
 
   useEffect(() => {
-    if (editing === "new" && editorDirty) scheduleLocalDraft();
-  }, [editableVariants, editing, editorDirty, hasVariations, primaryCategoryId, productActive, scheduleLocalDraft, selectedCategoryIds, simpleStock, sizeGuide, variantColors, variantSizes, variantSkuPrefix]);
+    const retryPendingDraft = () => {
+      const pendingDraft = queuedServerDraftRef.current;
+      if (pendingDraft) void syncServerDraft(pendingDraft).catch(() => undefined);
+    };
+    window.addEventListener("online", retryPendingDraft);
+    const retryWhenVisible = () => {
+      if (document.visibilityState === "visible") retryPendingDraft();
+    };
+    document.addEventListener("visibilitychange", retryWhenVisible);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      if (draftRetryTimerRef.current) clearTimeout(draftRetryTimerRef.current);
+      window.removeEventListener("online", retryPendingDraft);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
+    };
+  }, [syncServerDraft]);
+
+  useEffect(() => {
+    if (editing === "new" && editorDirty) {
+      persistLocalSnapshot();
+      scheduleDraft();
+    }
+  }, [editableVariants, editing, editorDirty, editorRevision, hasVariations, primaryCategoryId, productActive, persistLocalSnapshot, scheduleDraft, selectedCategoryIds, simpleStock, sizeGuide, specifications, variantColors, variantSizes, variantSkuPrefix]);
 
   useEffect(() => {
     if (!editingKey) return;
@@ -575,8 +976,9 @@ export function ProductManagement({
   const canCreateProduct = view === "produtos" && catalogMode === "current" && capabilities.create;
   const canUpdateProduct = capabilities.update;
   const canAdjustStock = capabilities.adjustStock;
+  const canImportProducts = canCreateProduct && canUpdateProduct && canAdjustStock;
   const groupedEditableVariants = useMemo(
-    () => groupEditableVariantsByColor(editableVariants),
+    () => stableVariantColorGroups(editableVariants, variantGroupKeysRef.current),
     [editableVariants]
   );
   const editorImages = editing === "new" || !editing ? [] : (editing.images ?? []);
@@ -606,7 +1008,7 @@ export function ProductManagement({
   const readProduct = async (productId: string) => {
     const params = new URLSearchParams({ productId });
     const response = await fetch(`/api/catalog/products?${params}`, { cache: "no-store" });
-    const result = (await response.json()) as CatalogResponse;
+    const result = await readCatalogResponse(response);
     const selected = result.products?.[0];
     if (!response.ok || !isManagedProduct(selected)) {
       throw new Error(result.message ?? "Produto não encontrado.");
@@ -634,7 +1036,7 @@ export function ProductManagement({
       setMessage(
         error instanceof Error && error.message
           ? error.message
-          : "Não foi possível abrir o produto agora."
+          : "Não foi possível abrir o produto agora.", "error"
       );
     } finally {
       setOpeningProductId("");
@@ -652,8 +1054,9 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const result = (await response.json()) as CatalogResponse;
-      setMessage(result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou."));
+      const result = await readCatalogResponse(response);
+      const requestReference = result.requestId ? ` Referência: ${result.requestId}.` : "";
+      setMessage(`${result.message ?? (response.ok ? "Alteração concluída." : "A alteração falhou.")}${requestReference}`, response.ok ? "success" : "error");
       if (response.ok) {
         await load();
         return result;
@@ -662,8 +1065,8 @@ export function ProductManagement({
     } catch {
       setMessage(
         key === "new-product"
-          ? "Não foi possível salvar o produto agora. Seus dados continuam salvos localmente. Tente novamente."
-          : "Não foi possível concluir a alteração agora."
+          ? "Não foi possível salvar o produto agora. O cadastro continua salvo como rascunho. Tente novamente."
+          : "Não foi possível concluir a alteração agora.", "error"
       );
       return null;
     } finally {
@@ -688,7 +1091,7 @@ export function ProductManagement({
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
     };
-    const variants = hasVariations
+    const variantsWithKeys = hasVariations
       ? editableVariants
       : [
           {
@@ -696,6 +1099,7 @@ export function ProductManagement({
             sku: editableVariants.length === 1 ? editableVariants[0]!.sku : "",
             color: "Padrão",
             colorHex: "",
+            colorHexSecondary: "",
             size: "Único",
             priceInCents: null,
             costInCents: null,
@@ -705,6 +1109,11 @@ export function ProductManagement({
             mpn: editableVariants.length === 1 ? editableVariants[0]!.mpn : ""
           }
         ];
+    const variants = variantsWithKeys.map((item) => {
+      const variant = { ...item };
+      delete variant.clientKey;
+      return variant;
+    });
     const requestedStatus = editing !== "new" && editing.status === "archived"
       ? "archived"
       : productActive ? "active" : "draft";
@@ -719,9 +1128,13 @@ export function ProductManagement({
         variants
       });
       if (publicationMessage) {
-        setMessage(publicationMessage);
+        setMessage(publicationMessage, "error");
         return;
       }
+    }
+    if (wasNew) {
+      await flushDraft();
+      draftSaveLockedRef.current = true;
     }
     const result = await execute(
       {
@@ -751,16 +1164,26 @@ export function ProductManagement({
         stockReason: form.get("stockReason"),
         variants,
         sizeGuide: sizeGuide.filter(
-          (entry): entry is { size: string; measurementCm: number } =>
+          (entry): entry is ProductSizeGuideRow & { measurementCm: number } =>
             Boolean(entry.size.trim()) && entry.measurementCm !== null && entry.measurementCm > 0
-        )
+        ).map(({ size, measurementCm }) => ({ size, measurementCm })),
+        specifications: specifications
+          .map(({ label, value }) => ({ label: label.trim(), value: value.trim() }))
+          .filter((entry) => entry.label && entry.value)
       },
       wasNew ? "new-product" : editing.id
     );
-    if (!result) return;
+    if (!result) {
+      draftSaveLockedRef.current = false;
+      scheduleDraft();
+      return;
+    }
 
     const productId = result.productId ?? (wasNew ? "" : editing.id);
-    if (!productId) return;
+    if (!productId) {
+      draftSaveLockedRef.current = false;
+      return;
+    }
     if (wasNew) clearLocalDraft();
     pendingActionRef.current = true;
     setPending(`save-${productId}`);
@@ -803,25 +1226,26 @@ export function ProductManagement({
             imageId: resolvedImageId || null
           })
         });
-        const association = (await response.json()) as CatalogResponse;
+        const association = await readCatalogResponse(response);
         if (!response.ok)
           throw new Error(association.message ?? "Falha ao associar a imagem à cor.");
       }
       if (Object.keys(colorImageSelections).length) savedProduct = await readProduct(productId);
+      await load();
       setEditing(savedProduct);
       setQueuedMediaFiles([]);
       setColorImageSelections({});
       setEditorDirty(false);
-      setMessage(
+      const successMessage =
         wasNew && requestedStatus === "active"
           ? "Produto ativado com sucesso."
           : wasNew
           ? queuedMediaFiles.length
             ? "Produto criado e imagens enviadas. Continue com as cores e tamanhos quando necessário."
             : "Produto criado como rascunho."
-          : "Produto atualizado."
-      );
-      if (wasNew) closeEditor();
+          : "Produto atualizado com sucesso.";
+      closeEditor();
+      setMessage(successMessage, "success");
     } catch (error) {
       try {
         setEditing(await readProduct(productId));
@@ -835,7 +1259,7 @@ export function ProductManagement({
           ? hadQueuedMedia
             ? `O produto foi salvo, mas as imagens não foram concluídas: ${error.message}`
             : `O produto foi salvo, mas uma configuração complementar falhou: ${error.message}`
-          : "Produto salvo, mas a galeria não pôde ser atualizada."
+          : "Produto salvo, mas a galeria não pôde ser atualizada.", "warning"
       );
     } finally {
       pendingActionRef.current = false;
@@ -858,7 +1282,7 @@ export function ProductManagement({
           variants: product.variants
         })
       : null;
-    if (publicationMessage) { setMessage(publicationMessage); return; }
+    if (publicationMessage) { setMessage(publicationMessage, "error"); return; }
 
     const needsReason = nextStatus === "archived";
 
@@ -917,9 +1341,21 @@ export function ProductManagement({
     const productName = editorFormRef.current?.elements.namedItem("name");
     const prefix = variantSkuPrefix || (productName instanceof HTMLInputElement ? productName.value : "") || "PRODUTO";
     setVariantSkuPrefix(prefix);
-    const generated = generateVariantCombinations(variantColors || "Padrão", variantSizes, prefix);
+    const generated = generateVariantCombinations(variantColors || "Padrão", variantSizes, prefix)
+      .map((variant) => {
+        const reusable = colorOptions.find(
+          (option) => normalizeProductColorName(option.name) === normalizeProductColorName(variant.color)
+        );
+        return reusable
+          ? {
+              ...variant,
+              colorHex: reusable.primaryColor,
+              colorHexSecondary: reusable.secondaryColor
+            }
+          : variant;
+      });
     if (!generated.length) {
-      setMessage("Informe pelo menos um tamanho.");
+      setMessage("Informe pelo menos um tamanho.", "error");
       return;
     }
     setEditableVariants((current) => {
@@ -935,18 +1371,23 @@ export function ProductManagement({
             `${variant.color.toLocaleLowerCase("pt-BR")}::${variant.size.toLocaleLowerCase("pt-BR")}`
           )
       );
-      return [...current, ...additions];
+      return [...current, ...withVariantClientKeys(additions)];
     });
     setSizeGuide((current) => includeSizeGuideRows(current, generated.map((variant) => variant.size)));
     setEditorDirty(true);
-    setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.");
+    setMessage("Combinações novas adicionadas. As variações já cadastradas foram preservadas.", "success");
   };
 
-  const addSizeToColor = (groupKey: string, color: string, colorHex: string) => {
+  const addSizeToColor = (
+    groupKey: string,
+    color: string,
+    colorHex: string,
+    colorHexSecondary: string
+  ) => {
     const size = newVariantSizes[groupKey]?.trim() ?? "";
     const generated = generateVariantCombinations(color, size, variantSkuPrefix);
     if (!generated.length) {
-      setMessage("Informe o tamanho e um prefixo de SKU para adicionar a variação.");
+      setMessage("Informe o tamanho e um prefixo de SKU para adicionar a variação.", "error");
       return;
     }
     const duplicate = editableVariants.some(
@@ -956,12 +1397,15 @@ export function ProductManagement({
         variant.size.trim().toLocaleLowerCase("pt-BR") === size.toLocaleLowerCase("pt-BR")
     );
     if (duplicate) {
-      setMessage(`O tamanho ${size} já existe para a cor ${color}.`);
+      setMessage(`O tamanho ${size} já existe para a cor ${color}.`, "warning");
       return;
     }
     const candidate = generated[0];
     if (!candidate) return;
-    setEditableVariants((current) => [...current, { ...candidate, colorHex }]);
+    setEditableVariants((current) => [
+      ...current,
+      { ...candidate, clientKey: crypto.randomUUID(), colorHex, colorHexSecondary }
+    ]);
     setSizeGuide((current) => includeSizeGuideRows(current, [candidate.size]));
     setNewVariantSizes((current) => ({ ...current, [groupKey]: "" }));
     setEditorDirty(true);
@@ -980,6 +1424,7 @@ export function ProductManagement({
       {
         ...variant,
         id: undefined,
+        clientKey: crypto.randomUUID(),
         sku,
         size: `${variant.size} cópia`,
         stock: 0,
@@ -988,7 +1433,7 @@ export function ProductManagement({
       }
     ]);
     setEditorDirty(true);
-    setMessage("Variação duplicada. Revise tamanho, SKU, preço e estoque antes de salvar.");
+    setMessage("Variação duplicada. Revise tamanho, SKU, preço e estoque antes de salvar.", "warning");
   };
 
   const sendMediaFiles = async (
@@ -1005,7 +1450,7 @@ export function ProductManagement({
       form.set("alt", product.name);
       form.set("primary", String((product.images?.length ?? 0) === 0 && index === 0));
       const response = await fetch("/api/catalog/products/media", { method: "POST", body: form });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       if (!response.ok) throw new Error(result.message ?? "Falha no upload.");
       uploaded += 1;
       onUploaded?.(file);
@@ -1071,14 +1516,14 @@ export function ProductManagement({
     setMessage(
       rejectedCount
         ? `${rejectedCount} arquivo(s) ignorado(s). Use JPG, PNG ou WebP de até 10 MB.`
-        : `${accepted.length} imagem(ns) pronta(s) para envio.`
+        : `${accepted.length} imagem(ns) pronta(s) para envio.`, rejectedCount ? "warning" : "info"
     );
   };
 
   const uploadMedia = async (product: ManagedProduct, files: readonly File[]) => {
     const { accepted, rejected } = partitionProductMediaFiles(files);
     if (!accepted.length || pending) {
-      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB e vídeos MP4/WebM de até 80 MB.");
+      if (rejected.length) setMessage("Use imagens JPG, PNG ou WebP de até 10 MB e vídeos MP4/WebM de até 80 MB.", "error");
       return;
     }
     setPending(`media-${product.id}`);
@@ -1096,11 +1541,12 @@ export function ProductManagement({
         uploaded += 1;
         currentProduct = await readProduct(product.id);
       }
-      setMessage(
-        `${uploaded} mídia(s) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`
-      );
       await load();
       await refreshEditingProduct(product.id);
+      setMessage(
+        `${uploaded} mídia(s) adicionada(s) ao produto.${rejected.length ? ` ${rejected.length} arquivo(s) ignorado(s).` : ""}`,
+        rejected.length ? "warning" : "success"
+      );
     } catch (error) {
       if (uploaded) {
         try {
@@ -1110,7 +1556,10 @@ export function ProductManagement({
           // Keep the upload failure as the actionable message.
         }
       }
-      setMessage(error instanceof Error ? error.message : "Não foi possível enviar as mídias.");
+      setMessage(uploaded
+        ? `${uploaded} mídia(s) enviada(s), mas o restante não foi concluído: ${error instanceof Error ? error.message : "falha no envio"}. Confira a galeria antes de tentar novamente.`
+        : error instanceof Error ? error.message : "Não foi possível enviar as mídias.",
+      uploaded ? "warning" : "error");
     } finally {
       setMediaUploadProgress(0);
       setPending("");
@@ -1129,11 +1578,11 @@ export function ProductManagement({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ productId: deleteTarget.id })
       });
-      const result = (await response.json()) as CatalogResponse;
+      const result = await readCatalogResponse(response);
       if (response.ok) {
         setDeleteTarget(null);
         await load();
-        setMessage(result.message ?? "Produto excluído permanentemente.");
+        setMessage(result.message ?? "Produto excluído permanentemente.", "success");
       } else {
         setDeleteError(result.message ?? "A exclusão falhou.");
         if (response.status === 409) {
@@ -1152,21 +1601,28 @@ export function ProductManagement({
   const deleteMedia = async (imageId: string) => {
     if (pending) return;
     setPending(`image-${imageId}`);
+    let removed = false;
     try {
       const response = await fetch("/api/catalog/products/media", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ imageId })
       });
-      const result = (await response.json()) as CatalogResponse;
-      setMessage(result.message ?? (response.ok ? "Imagem removida." : "Falha ao remover imagem."));
+      const result = await readCatalogResponse(response);
       if (response.ok) {
+        removed = true;
         await load();
         if (editing !== "new" && editing?.id) await refreshEditingProduct(editing.id);
         setMediaDeleteTarget(null);
+        setMessage(result.message ?? "Imagem removida.", "success");
+      } else {
+        setMessage(result.message ?? "Falha ao remover imagem.", "error");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível remover a imagem.");
+      setMessage(removed
+        ? "Imagem removida, mas não foi possível atualizar a visualização. Reabra o produto para conferir a galeria."
+        : error instanceof Error ? error.message : "Não foi possível remover a imagem.",
+      removed ? "warning" : "error");
     } finally {
       setPending("");
     }
@@ -1176,22 +1632,27 @@ export function ProductManagement({
     if (pending) return;
     const imageId = typeof body.imageId === "string" ? body.imageId : "";
     setPending(`image-${imageId}`);
+    let updated = false;
     try {
       const response = await fetch("/api/catalog/products/media", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const result = (await response.json()) as CatalogResponse;
-      setMessage(
-        result.message ?? (response.ok ? "Mídia atualizada." : "Falha ao atualizar mídia.")
-      );
+      const result = await readCatalogResponse(response);
       if (response.ok) {
+        updated = true;
         await load();
         if (editing !== "new" && editing?.id) await refreshEditingProduct(editing.id);
+        setMessage(result.message ?? "Mídia atualizada.", "success");
+      } else {
+        setMessage(result.message ?? "Falha ao atualizar mídia.", "error");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar a mídia.");
+      setMessage(updated
+        ? "Mídia atualizada, mas não foi possível atualizar a visualização. Reabra o produto para conferir a galeria."
+        : error instanceof Error ? error.message : "Não foi possível atualizar a mídia.",
+      updated ? "warning" : "error");
     } finally {
       setPending("");
     }
@@ -1201,7 +1662,7 @@ export function ProductManagement({
   const runBulkAction = async () => {
     if (!bulkAction || pendingActionRef.current || !selectedProducts.length) return;
     if (bulkAction === "delete" && selectedProducts.some((product) => !product.canDelete)) {
-      setMessage("A seleção possui produto com histórico. Arquive-o para preservar os registros.");
+      setMessage("A seleção possui produto com histórico. Arquive-o para preservar os registros.", "warning");
       return;
     }
     pendingActionRef.current = true;
@@ -1219,8 +1680,8 @@ export function ProductManagement({
               ? { action: "status", productId: product.id, status: "draft", reason: "Restauração em lote no painel de produtos" }
               : { action: "archive", productId: product.id, reason: "Arquivamento em lote no painel de produtos" })
         });
-        const result = (await response.json()) as CatalogResponse;
-        if (!response.ok) throw new Error(result.message);
+        const result = await readCatalogResponse(response);
+        if (!response.ok) throw new Error(`${result.message ?? "A ação falhou."}${result.requestId ? ` Referência: ${result.requestId}.` : ""}`);
         completed += 1;
       }
       setBulkAction(null);
@@ -1229,12 +1690,12 @@ export function ProductManagement({
         ? `${completed} produto(s) excluído(s) permanentemente.`
         : bulkAction === "restore"
           ? `${completed} produto(s) restaurado(s) como não ativo(s).`
-          : `${completed} produto(s) arquivado(s).`);
+          : `${completed} produto(s) arquivado(s).`, "success");
     } catch (error) {
       await load();
       setMessage(error instanceof Error && error.message
-        ? `${completed} concluído(s). ${error.message}`
-        : "Não foi possível concluir a ação em lote.");
+        ? `${completed} concluído(s). ${error.message} Confira os produtos restantes antes de tentar novamente.`
+        : "Não foi possível concluir a ação em lote.", completed ? "warning" : "error");
     } finally {
       pendingActionRef.current = false;
       setPending("");
@@ -1249,9 +1710,14 @@ export function ProductManagement({
         </div>
         <div className="product-header-actions">
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={openNewProduct}>
-              <Plus /> Cadastrar produto
-            </button>
+            <>
+              {canImportProducts ? <button className="secondary-button" type="button" onClick={() => setImportOpen(true)}>
+                <Upload /> Importar produtos
+              </button> : null}
+              <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
+                <Plus /> Cadastrar produto
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -1357,11 +1823,7 @@ export function ProductManagement({
         ) : null}
       </div>
 
-      {message && (
-        <p className="form-message" role="status">
-          {message}
-        </p>
-      )}
+      {message && !editing ? <ProductFeedbackMessage feedback={message} /> : null}
       {selectedProducts.length ? (
         <div className="product-bulk-actions" role="toolbar" aria-label="Ações para produtos selecionados">
           <strong>{selectedProducts.length} selecionado(s)</strong>
@@ -1396,7 +1858,7 @@ export function ProductManagement({
               : "Ajuste os filtros ou cadastre primeiro o produto relacionado."}
           </span>
           {canCreateProduct ? (
-            <button className="primary-button" type="button" onClick={openNewProduct}>
+            <button className="primary-button" type="button" onClick={() => void openNewProduct()}>
               <Plus /> Cadastrar produto
             </button>
           ) : null}
@@ -1645,13 +2107,13 @@ export function ProductManagement({
                                 onClick={() => {
                                   const quantity = Number(quantities.current[variant.id]?.value);
                                   if (!Number.isInteger(quantity) || quantity < 1) {
-                                    setMessage("Informe uma quantidade inteira maior que zero.");
+                                    setMessage("Informe uma quantidade inteira maior que zero.", "error");
                                     return;
                                   }
                                   const reason = reasons.current[variant.id]?.value.trim() ?? "";
                                   if (reason.length < 10) {
                                     setMessage(
-                                      "Informe um motivo de reposição com pelo menos 10 caracteres."
+                                      "Informe um motivo de reposição com pelo menos 10 caracteres.", "error"
                                     );
                                     reasons.current[variant.id]?.focus();
                                     return;
@@ -1889,11 +2351,12 @@ export function ProductManagement({
             aria-modal="true"
             aria-labelledby="delete-product-title"
           >
-            <h2 id="delete-product-title">Excluir produto?</h2>
+            <h2 id="delete-product-title">Excluir definitivamente?</h2>
             <p>
               Esta ação não poderá ser desfeita. <strong>{deleteTarget.name}</strong>, suas
-              variações e imagens serão removidos.
+              variantes, estoque, mídias e eventos auxiliares serão removidos.
             </p>
+            <p>Este produto possui dados operacionais que serão removidos junto com ele. Nenhum pedido está vinculado.</p>
             {deleteError ? <p className="form-message error" role="alert">{deleteError}</p> : null}
             <div>
               <button
@@ -1911,7 +2374,7 @@ export function ProductManagement({
                 disabled={Boolean(pending) || !deleteTarget.canDelete}
               >
                 {pending === `delete-${deleteTarget.id}` && <LoaderCircle className="spin" />}
-                Excluir produto
+                Excluir definitivamente
               </button>
             </div>
           </section>
@@ -1925,10 +2388,16 @@ export function ProductManagement({
           eyebrow={editing === "new" ? "Novo cadastro" : "Edição de produto"}
           title={editing === "new" ? "Cadastrar produto" : editing.name}
           dirty={editorDirty && !pendingActionRef.current}
-          busy={Boolean(pending)}
-          onClose={closeEditor}
+          busy={Boolean(pending) || draftClosing}
+          onClose={() => void closeEditorWithDraft()}
+          closeConfirmation={editing === "new" ? {
+            title: "Salvar rascunho e fechar?",
+            description: "Os dados do cadastro ficarão salvos na sua conta para continuar depois. Arquivos de mídia ainda não enviados precisarão ser selecionados novamente.",
+            confirmLabel: "Salvar rascunho e fechar",
+            confirmClassName: "primary-button"
+          } : undefined}
         >
-          {({ requestClose }) => <div className={`product-editor-drawer${editing === "new" ? " product-editor-new" : ""}`}>
+          {({ requestClose }) => <div className="product-editor-drawer">
                 <nav className="product-editor-nav" aria-label="Seções do produto">
               {productEditorSections.map((section) => (
                 <button
@@ -1946,15 +2415,24 @@ export function ProductManagement({
                 </nav>
             <form
               ref={editorFormRef}
-              onChangeCapture={() => { setEditorDirty(true); scheduleLocalDraft(); }}
+              onChangeCapture={() => {
+                if (editing === "new") setEditorDirty(true);
+                setEditorRevision((current) => current + 1);
+                scheduleDraft();
+              }}
               onSubmit={(event) => void saveProduct(event)}
             >
               <div className="admin-form-grid">
-                {editing === "new" && draftOffer ? (
+                {editing === "new" && draftLoading ? (
+                  <aside className="wide product-draft-recovery" role="status">
+                    <LoaderCircle className="spin" aria-hidden="true" />
+                    <span>Procurando o último cadastro não concluído…</span>
+                  </aside>
+                ) : editing === "new" && draftOffer ? (
                   <aside className="wide product-draft-recovery" role="status">
                     <span>Encontramos um cadastro não concluído.</span>
-                    <button className="secondary-button" type="button" onClick={restoreLocalDraft}>Continuar cadastro</button>
-                    <button className="secondary-button" type="button" onClick={clearLocalDraft}>Descartar</button>
+                    <button className="secondary-button" type="button" disabled={draftClosing} onClick={restoreDraft}>Continuar cadastro</button>
+                    <button className="secondary-button" type="button" disabled={draftClosing} onClick={() => void discardDraft()}>Descartar rascunho</button>
                   </aside>
                 ) : null}
                 <h3 className="wide product-form-section" id="product-step-1">
@@ -1997,6 +2475,46 @@ export function ProductManagement({
                     placeholder="Conte o essencial sobre o produto"
                   />
                 </label>
+                <section className="wide product-specifications-editor" aria-labelledby="product-specifications-editor-title">
+                  <div className="product-specifications-heading">
+                    <div>
+                      <h3 id="product-specifications-editor-title">Detalhes do Produto</h3>
+                      <p>Informações como marca, material e origem. Aparecem nesta ordem na loja.</p>
+                    </div>
+                    <button className="secondary-button" type="button" disabled={specifications.length >= 50} onClick={() =>
+                      setSpecifications((current) => [...current, { clientRowId: crypto.randomUUID(), label: "", value: "" }])
+                    }><Plus aria-hidden="true" /> Adicionar detalhe</button>
+                  </div>
+                  <div className="product-specifications-rows">
+                    {specifications.map((entry, index) => (
+                      <div className="product-specification-row" key={entry.clientRowId}>
+                        <label><span>Nome do detalhe</span><input value={entry.label} maxLength={80} placeholder="Ex.: Material" onChange={(event) => {
+                          const label = event.target.value;
+                          setSpecifications((current) => current.map((item) => item.clientRowId === entry.clientRowId ? { ...item, label } : item));
+                        }} /></label>
+                        <label><span>Valor</span><input value={entry.value} maxLength={500} placeholder="Informe o valor" onChange={(event) => {
+                          const value = event.target.value;
+                          setSpecifications((current) => current.map((item) => item.clientRowId === entry.clientRowId ? { ...item, value } : item));
+                        }} /></label>
+                        <div className="product-specification-actions">
+                          <button className="icon-button" type="button" disabled={index === 0} aria-label={`Mover detalhe ${index + 1} para cima`} onClick={() => setSpecifications((current) => {
+                            const next = [...current];
+                            [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                            return next;
+                          })}><ChevronUp aria-hidden="true" /></button>
+                          <button className="icon-button" type="button" disabled={index === specifications.length - 1} aria-label={`Mover detalhe ${index + 1} para baixo`} onClick={() => setSpecifications((current) => {
+                            const next = [...current];
+                            [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+                            return next;
+                          })}><ChevronDown aria-hidden="true" /></button>
+                          <button className="icon-button danger-button" type="button" aria-label={`Remover detalhe ${entry.label || index + 1}`} onClick={() =>
+                            setSpecifications((current) => current.filter((item) => item.clientRowId !== entry.clientRowId))
+                          }><Trash2 aria-hidden="true" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
                 <p className="wide product-form-subsection">Organização no catálogo</p>
                 <fieldset className="wide product-category-picker">
                   <legend>Categorias</legend>
@@ -2135,7 +2653,7 @@ export function ProductManagement({
                 </h3>
                 <p className="wide product-media-note">
                   {editing === "new"
-                    ? "Escolha as imagens agora. Elas serão enviadas automaticamente quando o produto for criado."
+                    ? "Escolha as imagens agora. Elas serão enviadas quando o produto for criado e não fazem parte do rascunho persistente; se fechar o cadastro, precisarão ser selecionadas novamente."
                     : "Envie as fotos aqui e depois associe a imagem correta a cada cor."}
                 </p>
                 {editing === "new" ? (
@@ -2443,6 +2961,18 @@ export function ProductManagement({
                       placeholder="Preto, Branco, Bege"
                     />
                   </label>
+                  {colorOptions.length ? (
+                    <ExistingColorPicker
+                      options={colorOptions}
+                      onSelect={(option) => {
+                        const existing = variantColors.split(",").map((item) => item.trim()).filter(Boolean);
+                        if (!existing.some((item) => normalizeProductColorName(item) === normalizeProductColorName(option.name))) {
+                          setVariantColors([...existing, option.name].join(", "));
+                        }
+                      }}
+                    />
+                  ) : null}
+                  {editing !== "new" ? <BlingCatalogStatus productId={editing.id} /> : null}
                   <button className="secondary-button" type="button" onClick={generateVariants}>
                     Gerar combinações
                   </button>
@@ -2492,25 +3022,14 @@ export function ProductManagement({
                         (image) => image.id === selectedImageId
                       );
                       return (
-                        <section className="variant-color-group" key={group.key}>
+                        <section className="variant-color-group" key={group.uiKey}>
                           <header>
-                            <label
+                            <ColorSwatch
                               className="variant-color-swatch"
-                              style={{ backgroundColor: group.colorHex || "#f3f4f6" }}
-                              title={`Escolher cor visual de ${group.color}`}
-                            >
-                              <span className="sr-only">Cor visual de {group.color}</span>
-                              <input
-                                type="color"
-                                aria-label={`Cor visual de ${group.color}`}
-                                value={group.colorHex || "#f3f4f6"}
-                                onChange={(event) =>
-                                  group.variants.forEach(({ index }) =>
-                                    updateEditableVariant(index, { colorHex: event.target.value })
-                                  )
-                                }
-                              />
-                            </label>
+                              name={group.color}
+                              primaryColor={group.colorHex || "#f3f4f6"}
+                              secondaryColor={group.colorHexSecondary}
+                            />
                             <div>
                               <strong>{group.color}</strong>
                               <span>{group.variants.length} tamanho(s)</span>
@@ -2544,10 +3063,65 @@ export function ProductManagement({
                               <Trash2 />
                             </button>
                           </header>
+                          <div className="variant-color-editor">
+                            {colorOptions.length ? (
+                              <ExistingColorPicker
+                                options={colorOptions}
+                                onSelect={(option) => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, {
+                                    color: option.name,
+                                    colorHex: option.primaryColor,
+                                    colorHexSecondary: option.secondaryColor
+                                  })
+                                )}
+                              />
+                            ) : null}
+                            <label className="variant-color-value">
+                              <span>Cor 1</span>
+                              <input
+                                type="color"
+                                aria-label={`Cor principal de ${group.color}`}
+                                value={group.colorHex || "#f3f4f6"}
+                                onChange={(event) => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, { colorHex: event.target.value })
+                                )}
+                              />
+                              <code>{group.colorHex || "#F3F4F6"}</code>
+                            </label>
+                            {group.colorHexSecondary ? (
+                              <label className="variant-color-value">
+                                <span>Cor 2</span>
+                                <input
+                                  type="color"
+                                  aria-label={`Cor secundária de ${group.color}`}
+                                  value={group.colorHexSecondary}
+                                  onChange={(event) => group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { colorHexSecondary: event.target.value })
+                                  )}
+                                />
+                                <code>{group.colorHexSecondary}</code>
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  onClick={() => group.variants.forEach(({ index }) =>
+                                    updateEditableVariant(index, { colorHexSecondary: "" })
+                                  )}
+                                >Remover</button>
+                              </label>
+                            ) : (
+                              <button
+                                type="button"
+                                className="secondary-button add-secondary-color"
+                                onClick={() => group.variants.forEach(({ index }) =>
+                                  updateEditableVariant(index, { colorHexSecondary: "#FFFFFF" })
+                                )}
+                              ><Plus aria-hidden="true" /> Segunda cor</button>
+                            )}
+                          </div>
                           <div className="variant-size-list">
                             {group.variants.map(({ variant, index }) => (
                               <article
-                                key={variant.id ?? `${variant.color}-${variant.size}-${index}`}
+                                key={variant.id ?? variant.clientKey}
                               >
                                 <label>
                                   <span>Tamanho *</span>
@@ -2663,7 +3237,12 @@ export function ProductManagement({
                             <button
                               className="secondary-button"
                               type="button"
-                              onClick={() => addSizeToColor(group.key, group.color, group.colorHex)}
+                              onClick={() => addSizeToColor(
+                                group.key,
+                                group.color,
+                                group.colorHex,
+                                group.colorHexSecondary
+                              )}
                             >
                               <Plus /> Adicionar tamanho
                             </button>
@@ -2739,7 +3318,7 @@ export function ProductManagement({
                       className="secondary-button"
                       type="button"
                       onClick={() => {
-                        setSizeGuide((current) => [...current, { size: "", measurementCm: null }]);
+                        setSizeGuide((current) => [...current, { clientRowId: crypto.randomUUID(), size: "", measurementCm: null }]);
                         setEditorDirty(true);
                       }}
                     >
@@ -2750,7 +3329,7 @@ export function ProductManagement({
                   {sizeGuide.length ? (
                     <div className="product-size-guide-rows">
                       {sizeGuide.map((entry, index) => (
-                        <div key={`${entry.size}-${index}`}>
+                        <div key={entry.clientRowId} className="product-size-guide-row">
                           <label>
                             <span>Tamanho</span>
                             <input
@@ -2780,7 +3359,7 @@ export function ProductManagement({
                             />
                           </label>
                           <button
-                            className="icon-button danger-button"
+                            className="icon-button danger-button product-size-guide-remove"
                             type="button"
                             aria-label={`Remover tamanho ${entry.size || index + 1} da tabela`}
                             onClick={() => { setSizeGuide((current) => current.filter((_, itemIndex) => itemIndex !== index)); setEditorDirty(true); }}
@@ -2880,14 +3459,16 @@ export function ProductManagement({
                 </aside>
               ) : null}
               <footer className="product-editor-footer">
-                {message ? <p className="form-message product-editor-message" role="status">{message}</p> : null}
-                <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending)}>Cancelar</button>
-                <button className="primary-button" type="submit" disabled={Boolean(pending)}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
+                {message ? <ProductFeedbackMessage feedback={message} className="product-editor-message" /> : null}
+                <button className="secondary-button" type="button" onClick={requestClose} disabled={Boolean(pending) || draftClosing}>Cancelar</button>
+                <button className="primary-button" type="submit" disabled={Boolean(pending) || draftClosing}>{pending && <LoaderCircle className="spin" />} {pending ? "Salvando..." : editing === "new" ? "Salvar produto" : "Salvar alterações"}</button>
               </footer>
             </form>
           </div>}
         </PanelDrawer>
       )}
+
+      <ProductImportDrawer open={importOpen} onClose={() => setImportOpen(false)} onImported={load} />
 
       {mediaDeleteTarget && (
         <div className="admin-modal-backdrop" role="presentation">
@@ -2929,7 +3510,7 @@ export function ProductManagement({
         <div className="admin-modal-backdrop">
           <section className="admin-confirm" role="alertdialog" aria-modal="true" aria-labelledby="bulk-product-title">
             <h2 id="bulk-product-title">{bulkAction === "delete" ? "Excluir produtos?" : bulkAction === "restore" ? "Restaurar produtos?" : "Arquivar produtos?"}</h2>
-            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
+            <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita. Produtos, variantes, estoque, mídias e eventos auxiliares serão removidos." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
             <div><button className="secondary-button" type="button" disabled={Boolean(pending)} onClick={() => setBulkAction(null)}>Cancelar</button><button className={`primary-button ${bulkAction === "restore" ? "" : "danger-button"}`} type="button" disabled={Boolean(pending)} onClick={() => void runBulkAction()}>{pending === `bulk-${bulkAction}` ? <LoaderCircle className="spin" /> : null}{bulkAction === "delete" ? "Excluir produtos" : bulkAction === "restore" ? "Restaurar produtos" : "Arquivar produtos"}</button></div>
           </section>
         </div>

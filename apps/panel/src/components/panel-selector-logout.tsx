@@ -38,9 +38,9 @@ export function PanelSelectorLogout({
   };
 
   return (
-    <div className="panel-selector-logout">
+    <div className="panel-picker-footer">
       <button
-        className="panel-selector-back"
+        className="ghost-button"
         type="button"
         onClick={() => {
           const referrer = document.referrer ? new URL(document.referrer) : null;
@@ -56,7 +56,7 @@ export function PanelSelectorLogout({
       >
         <ArrowLeft aria-hidden="true" /> Voltar
       </button>
-      <button type="button" onClick={() => void logout()} disabled={loading}>
+      <button className="secondary-button" type="button" onClick={() => void logout()} disabled={loading}>
         {loading ? (
           <LoaderCircle className="spin" aria-hidden="true" />
         ) : (

@@ -24,7 +24,7 @@ const sectionTypes = [
   ["reviews_carousel", "Avaliações de clientes"], ["editorial", "Conteúdo editorial"],
   ["video", "Vídeo"], ["image_text", "Texto com imagem"], ["countdown", "Contagem regressiva"],
   ["newsletter", "Newsletter"], ["institutional", "Institucional"],
-  ["quick_links", "Links rápidos"], ["safe_component", "Componente seguro"]
+  ["quick_links", "Links rápidos"], ["safe_component", "Componente seguro"], ["faq", "Perguntas frequentes"]
 ] as const;
 
 const layouts = [
@@ -193,7 +193,9 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     try {
       const response = await fetch("/api/homepage-builder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json() as { message?: string };
-      if (!response.ok) throw new Error(result.message);
+      if (!response.ok) {
+        throw new Error(result.message);
+      }
       setMessage(result.message ?? success); await load(); return true;
     } catch (actionError) {
       setError(actionError instanceof Error && actionError.message ? actionError.message : "Não foi possível concluir a operação."); return false;
@@ -206,7 +208,6 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     const periodMatches = !periodFilter || periodFilter === "current" && (!starts || starts <= now) && (!ends || ends > now) || periodFilter === "future" && Boolean(starts && starts > now) || periodFilter === "expired" && Boolean(ends && ends <= now);
     return (!query || text.includes(query.toLocaleLowerCase("pt-BR"))) && (!typeFilter || section.section_type === typeFilter) && (!statusFilter || section.status === statusFilter) && periodMatches;
   }), [data, periodFilter, query, typeFilter, statusFilter]);
-
   const reorder = async (sectionId: string, destination: number) => {
     if (!data?.capabilities["homepage.edit"]) return;
     const ordered = [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
@@ -268,7 +269,6 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
     }
     await act({ action: "publish", reason, ...(scheduledAt ? { scheduledAt } : {}) }, scheduled ? "Publicação agendada." : "Página publicada.");
   };
-
   const restoreVersion = async (version: Version) => {
     const reason = await requestPrompt({
       title: "Restaurar versão",
@@ -322,7 +322,6 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
           {data?.capabilities["homepage.create"] && <button className="primary-button" type="button" onClick={() => setEditor(emptyEditor(data.sections.length + 1))}><Plus /> Nova seção</button>}
         </div>
       </header>
-
       <nav className="homepage-tabs" aria-label="Áreas do construtor">
         <button className={tab === "builder" ? "active" : ""} onClick={() => setTab("builder")}><GripVertical /> Estrutura</button>
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}><History /> Versões</button>

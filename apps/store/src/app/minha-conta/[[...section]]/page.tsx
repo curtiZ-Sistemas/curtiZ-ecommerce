@@ -1,6 +1,5 @@
 import { LockKeyhole, UserRound } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { CustomerAccount } from "@/components/customer-account";
 import { loadCustomerAccount } from "@/lib/customer-account-data";
 import { requestPublicAppUrls } from "@/lib/request-public-urls";
@@ -23,12 +22,7 @@ export default async function AccountPage({
   const section = route.section?.[0] ?? "visao-geral";
   const snapshot = await loadCustomerAccount();
 
-  if (snapshot.panelDestination) {
-    const { panelUrl } = await requestPublicAppUrls();
-    redirect(
-      new URL(snapshot.panelDestination, panelUrl).toString()
-    );
-  }
+  const { panelUrl } = await requestPublicAppUrls();
 
   if (!snapshot.authenticated) {
     const returnTo = `/minha-conta${section === "visao-geral" ? "" : `/${section}`}`;
@@ -66,6 +60,7 @@ export default async function AccountPage({
   return (
     <CustomerAccount
       snapshot={snapshot}
+      panelUrl={panelUrl}
       section={section}
       selectedOrderCode={query.pedido ?? ""}
       startNewSupport={query.new === "1"}

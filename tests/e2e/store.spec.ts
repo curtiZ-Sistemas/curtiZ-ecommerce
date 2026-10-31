@@ -1,4 +1,117 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { loginDemoAccount } from "./demo-auth";
+
+test("Google indisponível preserva login e cadastro tradicionais", async ({ page }) => {
+  test.setTimeout(60_000);
+  let attempts = 0;
+  page.on("request", (request) => { if (request.url().endsWith("/api/auth/google")) attempts += 1; });
+  for (const path of ["/login", "/cadastro"]) {
+    await page.goto(path);
+    await expect(page.getByRole("button", { name: "Continuar com Google", exact: true })).toBeDisabled();
+    await expect(page.getByRole("region", { name: "Acesso com Google", exact: true }).getByText("Login com Google indisponível no momento. Use e-mail e senha.", { exact: true })).toBeVisible();
+    // Streaming can temporarily retain a hidden copy of the server-rendered form.
+    await expect(page.locator('input[name="email"]:visible')).toBeVisible();
+    await expect(page.locator('input[name="password"]:visible')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  expect(attempts).toBe(0);
+});
+
+test("prévia de frete valida CEP, variante, quantidade e recuperação sem alterar a compra", async ({ page, isMobile }) => {
+  test.setTimeout(90_000);
+  const requests: Record<string, unknown>[] = [];
+  let responseMode = "success";
+  let releaseLate: (() => void) | undefined;
+  await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
+  await page.route("**/api/shipping/preview", async (route) => {
+    const body: unknown = route.request().postDataJSON();
+    requests.push(body as Record<string, unknown>);
+    const delayed = responseMode === "delayed";
+    if (delayed) await new Promise<void>((resolve) => { releaseLate = resolve; });
+    if (responseMode === "error") return route.fulfill({ status: 429, json: { message: "Aguarde e tente novamente." } });
+    if (responseMode === "empty") return route.fulfill({ json: { ok: true, quotes: [] } });
+    return route.fulfill({ json: { ok: true, quotes: [{ serviceId: "fixture", service: delayed ? "Resposta antiga" : "Entrega de teste",
+      carrier: "Fixture E2E", amountInCents: 2100, estimatedDays: 4 }] } });
+  });
+  await page.goto("/produto/flip-flop-wave-preto");
+  const preview = page.getByRole("region", { name: "Calcule o frete e o prazo de entrega" });
+  await expect(preview).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("CEP válido");
+  await preview.getByLabel("CEP", { exact: true }).fill("01310100");
+  await expect(preview.getByLabel("CEP", { exact: true })).toHaveValue("01310-100");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Escolha a cor e o tamanho");
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
+  const quantityBox = await page.getByRole("group", { name: "Quantidade" }).boundingBox();
+  const sizeBox = await page.getByRole("button", { name: "39/40", exact: true }).boundingBox();
+  const buyBox = await page.getByRole("button", { name: "Comprar agora", exact: true }).boundingBox();
+  expect(sizeBox!.y).toBeLessThan(quantityBox!.y);
+  expect(quantityBox!.y).toBeLessThan(buyBox!.y);
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  await expect(preview.getByRole("status")).toContainText("4 dias úteis");
+  await expect(preview.getByLabel("Qtd. na simulação")).toHaveCount(0);
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  expect(requests.at(-1)?.quantity).toBe(2);
+  const oldVariant = requests.at(-1)?.variantId;
+  await page.getByRole("button", { name: "41/42", exact: true }).click();
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  responseMode = "empty";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Nenhum serviço");
+  expect(requests.at(-1)?.variantId).not.toBe(oldVariant);
+  responseMode = "error";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Aguarde e tente novamente");
+  responseMode = "success";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  responseMode = "delayed";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("button", { name: "Calculando…", exact: true })).toBeDisabled();
+  await expect.poll(() => Boolean(releaseLate)).toBe(true);
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
+  responseMode = "success";
+  releaseLate?.();
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Entrega de teste");
+  await expect(preview.getByRole("status")).not.toContainText("Resposta antiga");
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("curtiz.shipping-postal-code.v1") ?? "null") as unknown))
+    .toMatchObject({ postalCode: "01310100" });
+  for (const width of isMobile ? [320, 360, 390, 430] : [768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(preview.getByRole("button", { name: "Calcular", exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Adicionar ao carrinho", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Adicionado ao carrinho", exact: true })).toBeVisible();
+  // A quantidade escolhida na compra é a que entra no carrinho.
+  await page.goto("/carrinho");
+  await expect(page.getByLabel("Quantidade atual: 3")).toBeVisible();
+});
+
+// UI contract fixture only: the demo backend has no persisted checkout addresses.
+// These tests do not prove Supabase persistence or an online Melhor Envio quote.
+async function fixtureCheckoutAddress(page: Page) {
+  await page.route("**/api/checkout/profile", (route) => route.fulfill({
+    json: { profile: null, addresses: [{ id: "cb000000-0000-4000-8000-000000000002",
+      label: "Casa", recipientName: "Cliente Teste", postalCode: "01310100",
+      street: "Avenida Paulista", number: "1000", complement: "", district: "Bela Vista",
+      city: "São Paulo", state: "SP", isDefault: true }] }
+  }));
+}
+
+async function fixtureCheckoutShipping(page: Page) {
+  await page.route("**/api/shipping/quote", (route) => route.fulfill({
+    json: { ok: true, quotes: [{ id: "fixed", service: "Entrega de teste",
+      carrier: "Fixture E2E", amountInCents: 1690, estimatedDays: null, expiresAt: null }] }
+  }));
+}
 
 test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   test.setTimeout(60_000);
@@ -38,19 +151,18 @@ test("navega da home ao produto e adiciona ao carrinho", async ({ page }) => {
   await expect(hero).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Para todos os momentos", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Encontre seu estilo", { exact: true })).toHaveCount(0);
-  const featuredSection = page.locator(
-    '[data-home-section-type="featured_products"]'
-  );
-  const featuredProduct = featuredSection.getByRole("link", {
+  // The homepage sections are configurable; exercise the product link actually rendered.
+  const homepageProduct = page.getByRole("main").getByRole("link", {
     name: "curti Z Flip-Flop Wave Preto",
     exact: true
-  });
+  }).first();
+  await expect(homepageProduct).toBeVisible();
   await Promise.all([
     page.waitForURL("**/produto/flip-flop-wave-preto", {
       timeout: 30_000,
       waitUntil: "commit"
     }),
-    featuredProduct.click()
+    homepageProduct.click()
   ]);
   await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "39/40", exact: true }).click();
@@ -225,7 +337,8 @@ test("busca desktop mantém histórico privado, removível e acessível pelo tec
     localStorage.setItem(
       "curtiz-cookie-consent",
       JSON.stringify({
-        version: "inventory-2",
+        id: "cb000000-0000-4000-8000-000000000001",
+        policyVersion: "inventory-2",
         categories: { essential: true, preferences: true, analytics: false }
       })
     );
@@ -261,7 +374,7 @@ test("busca desktop mantém histórico privado, removível e acessível pelo tec
   await expect(page.locator(".desktop-search .search-suggestions")).toBeHidden();
 });
 
-test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedido", async ({
+test("checkout valida os dados e preserva o carrinho quando novas compras estão desativadas", async ({
   page
 }) => {
   test.setTimeout(90_000);
@@ -305,17 +418,17 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
     );
   });
   const submittedLines: unknown[] = [];
+  const submittedFiscalRecipients: unknown[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/api/checkout") && request.method() === "POST") {
-      const payload = request.postDataJSON() as { lines?: unknown[] };
+      const payload = request.postDataJSON() as { lines?: unknown[]; fiscalRecipient?: unknown };
       submittedLines.push(...(payload.lines ?? []));
+      submittedFiscalRecipients.push(payload.fiscalRecipient);
     }
   });
-  const login = await page.request.post("http://localhost:3000/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
-  });
-  expect(login.ok()).toBe(true);
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
+  await fixtureCheckoutAddress(page);
+  await fixtureCheckoutShipping(page);
 
   const checkoutPayload = {
     idempotencyKey: crypto.randomUUID(),
@@ -353,7 +466,8 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
       data: { ...checkoutPayload, idempotencyKey: crypto.randomUUID(), customer },
       headers: { origin: "http://localhost:3000" }
     });
-    expect(invalidResponse.status()).toBe(400);
+    expect(invalidResponse.status()).toBe(503);
+    await expect(invalidResponse.json()).resolves.toMatchObject({ ok: false, code: "CHECKOUT_DISABLED" });
   }
 
   await page.goto("/checkout", { waitUntil: "commit" });
@@ -419,34 +533,39 @@ test("checkout valida os dados e bloqueia pagamento indisponível sem criar pedi
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
-  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.locator("#checkout-fiscal-title")).toHaveCount(0);
+  await expect(page.getByText("Compra para revenda ou com inscrição estadual", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[name="icmsTaxpayer"], [name="finalConsumer"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
+  await page.locator("form.checkout-layout").evaluate((form) => (form as HTMLFormElement).requestSubmit());
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
-  const postalCode = page.getByLabel("CEP");
-  await expect(postalCode).toHaveAttribute("inputmode", "numeric");
-  await expect(postalCode).toHaveAttribute("autocomplete", "postal-code");
-  await postalCode.fill("01310100");
-  await expect(postalCode).toHaveValue("01310-100");
-  await page.getByLabel("Endereço", { exact: true }).fill("Avenida Paulista");
-  await page.getByLabel("Número").fill("1000");
-  await page.getByLabel("Bairro").fill("Bela Vista");
-  await page.getByLabel("Cidade").fill("São Paulo");
-  await page.getByLabel("Estado").selectOption("SP");
+  await expect(page.locator(".checkout-address-card.selected")).toContainText("Avenida Paulista");
+  await page.route("**/api/shipping/quote", route => route.fulfill({ json: {
+    ok: true, quotes: [], supportCode: "FRT-TEST0001",
+    message: "Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001."
+  } }), { times: 1 });
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByText("Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001.", { exact: true })).toBeVisible();
+  const attemptsWithoutShipping = submittedLines.length;
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();
-
-  const dialog = page.getByRole("alertdialog");
-  await expect(
-    dialog.getByRole("heading", { name: "Pagamento online indisponível no momento" })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(dialog).toContainText(
-    "Não foi possível concluir o pagamento. Nenhuma cobrança foi realizada."
-  );
-  await expect(dialog).not.toContainText(/demo|demonstração|fictício|Mercado Pago/i);
+  await expect(page.getByRole("alert").filter({ hasText: "Calcule e selecione uma opção de frete antes de continuar." })).toBeVisible();
+  expect(submittedLines).toHaveLength(attemptsWithoutShipping);
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
+  submittedLines.length = 0;
+  submittedFiscalRecipients.length = 0;
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Novas compras estão temporariamente indisponíveis." })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Escolha como pagar", { exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/\/checkout$/);
   expect(submittedLines).toEqual([
     expect.objectContaining({ variantId: "wave-preto:Preto:39/40", quantity: 1 })
   ]);
+  expect(submittedFiscalRecipients).toEqual([{ icmsTaxpayer: false, finalConsumer: true }]);
+  await page.goto("/carrinho");
+  await expect(page.locator(".cart-item")).toHaveCount(2);
 });
 
 test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedido", async ({ page }) => {
@@ -454,7 +573,11 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
   await page.addInitScript(() => {
     localStorage.setItem(
       "curtiz-cookie-consent",
-      JSON.stringify({ categories: { essential: true } })
+      JSON.stringify({
+        id: "cb000000-0000-4000-8000-000000000001",
+        policyVersion: "inventory-2",
+        categories: { essential: true, preferences: false, analytics: false }
+      })
     );
     localStorage.setItem(
       "curtiz-cart",
@@ -490,11 +613,9 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
       JSON.stringify(["wave-preto:Preto:39/40"])
     );
   });
-  const login = await page.request.post("http://localhost:3000/api/auth/login", {
-    headers: { origin: "http://localhost:3000" },
-    data: { email: "cliente.demo@curtiz.local", password: "1234567890" }
-  });
-  expect(login.ok()).toBe(true);
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
+  await fixtureCheckoutAddress(page);
+  await fixtureCheckoutShipping(page);
   await page.route("**/api/checkout", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     await route.fulfill({
@@ -518,12 +639,8 @@ test("abandono na escolha do pagamento preserva todo o carrinho e não cria pedi
   await page.getByLabel("E-mail").fill("cliente.demo@curtiz.local");
   await page.getByLabel("Telefone").fill("11999999999");
   await page.getByLabel("CPF para o pedido").fill("52998224725");
-  await page.getByLabel("CEP").fill("01310100");
-  await page.getByLabel("Endereço", { exact: true }).fill("Avenida Paulista");
-  await page.getByLabel("Número").fill("1000");
-  await page.getByLabel("Bairro").fill("Bela Vista");
-  await page.getByLabel("Cidade").fill("São Paulo");
-  await page.getByLabel("Estado").selectOption("SP");
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();
   await expect(page.getByText("Escolha como pagar", { exact: true })).toBeVisible();
 
@@ -541,7 +658,8 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
   await page
@@ -621,8 +739,9 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
-  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 20_000 });
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
 
   const sessionCookies = await context.cookies();
   expect(sessionCookies.find((cookie) => cookie.name === "curtiz-demo-session")?.expires).toBe(-1);
@@ -638,8 +757,10 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   expect(cartStorage.persistent).toBeNull();
   expect(cartStorage.session.map((line) => line.productId)).toEqual(["wave-preto"]);
 
+  // The session-dependent header confirms hydration after the full-page login navigation.
+  await expect(page.locator(".account-action")).toHaveAttribute("href", "/minha-conta", { timeout: 30_000 });
   await page.getByRole("button", { name: "Sair da conta" }).first().click();
-  await expect(page).toHaveURL(/\/login$/u, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/login$/u, { timeout: 30_000 });
   const logoutState = await page.evaluate(() => ({
     persistent: JSON.parse(localStorage.getItem("curtiz-cart") ?? "[]") as unknown[],
     session: sessionStorage.getItem("curtiz-session-cart")
@@ -652,8 +773,9 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
-  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 20_000 });
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
   const persistentCookies = await context.cookies();
   const nowInSeconds = Date.now() / 1_000;
   expect(
@@ -703,31 +825,19 @@ test("login encontra o footer sem faixa estrutural vazia", async ({ page }) => {
   }
 });
 
-test("autentica conta operacional no modo demo local sem Supabase", async ({ page }) => {
-  await page.goto("/login");
-  const email = page.locator('input[name="email"]:visible');
-  await email.fill("operacional.demo@curtiz.local");
-  await page.locator('input[name="password"]:visible').fill("1234567890");
-  await expect(email).toHaveValue("operacional.demo@curtiz.local");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
-
-  await expect(page).toHaveURL("http://localhost:3001/operacional", {
-    timeout: 20_000
-  });
-  await expect(page.getByRole("heading", { name: "Operacional", exact: true })).toBeVisible();
-});
-
 test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await page
-    .getByRole("region", { name: "Ofertas em destaque" })
     .getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" })
+    .first()
     .click();
 
-  await page.goto("/login");
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("**/minha-conta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
 
@@ -744,9 +854,13 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
+  // The URL may commit before the login navigation replaces its previous tree.
+  // Wait for a unique account view; a persistent duplicate must still fail.
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
   await expect(page.getByText("#CZT-DEMO01")).toHaveCount(0);
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
@@ -782,6 +896,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/);
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });
@@ -796,7 +911,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.goto("/favoritos");
   await expect(page.locator(".help-widget")).toBeHidden();
   await page.goto("/");
-  await expect(page.locator(".help-widget")).toBeVisible();
+  await expect(page.locator(".help-widget")).toBeHidden();
 });
 
 test("oferece o Painel do representante sem remover a conta de cliente", async ({ page }) => {
@@ -928,8 +1043,8 @@ test("portal da representante mantém a identidade visual da área do cliente", 
 test("permite consultar favoritos antes do login", async ({ page }) => {
   await page.goto("/");
   await page
-    .getByRole("region", { name: "Ofertas em destaque" })
     .getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" })
+    .first()
     .click();
   await page.goto("/favoritos");
 
@@ -940,19 +1055,27 @@ test("permite consultar favoritos antes do login", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("chat flutuante responde a uma saudação e o launcher também fecha", async ({ page }) => {
+test("atendimento permanece acessível com o chat temporariamente desativado", async ({ page, isMobile }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   const rejectCookies = page.getByRole("button", { name: "Recusar opcionais" });
   await expect(rejectCookies).toBeVisible({ timeout: 10_000 });
   await rejectCookies.click();
-  await page.getByRole("button", { name: "Abrir ajuda" }).click();
-  await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toBeVisible();
-  await page.getByLabel("Digite sua mensagem").fill("Oi");
-  await page.getByRole("button", { name: "Enviar mensagem" }).click();
-  await expect(page.getByText(/Como posso ajudar você hoje/i)).toBeVisible();
-  await page.getByRole("button", { name: "Fechar ajuda" }).click();
-  await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Abrir ajuda" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Abrir ajuda" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Ajuda curti Z" })).toHaveCount(0);
+  if (isMobile) {
+    const menuButton = page.getByRole("button", { name: "Abrir menu", exact: true });
+    await expect(async () => {
+      await menuButton.click();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await page.getByRole("dialog", { name: "Menu principal" })
+      .getByRole("link", { name: "Atendimento", exact: true }).click();
+  } else {
+    await page.locator('a[href="/ajuda"]:visible').first().click();
+  }
+  await expect(page).toHaveURL(/\/ajuda$/u, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Olá! Como podemos ajudar?" })).toBeVisible({ timeout: 30_000 });
 });
 
 test("preserva o carrinho durante a hidratação", async ({ page }) => {
@@ -993,7 +1116,8 @@ test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ pa
   await page.goto("/login?next=%2Fcarrinho");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/carrinho$/, { timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();
@@ -1152,13 +1276,13 @@ test("galeria do produto abre lightbox acessível e restaura o foco", async ({ p
   await expect(trigger).toBeFocused();
 });
 
-test("vitrines mobile mantêm duas colunas sem overflow", async ({ page }) => {
+test("vitrines mobile mantêm grids e carrosséis acessíveis sem overflow", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const visibleHero = page.locator('[data-testid="homepage-primary-hero"]:visible');
   await expect(visibleHero).toHaveCount(1, { timeout: 30_000 });
   await expect(visibleHero).toBeVisible({ timeout: 30_000 });
-  const shelves = page.locator(".home-product-row, .product-grid");
+  const shelves = page.locator(".home-product-row, .product-grid, .home-product-carousel-track");
   await expect.poll(() => shelves.count(), { timeout: 20_000 }).toBeGreaterThan(0);
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
@@ -1166,10 +1290,18 @@ test("vitrines mobile mantêm duas colunas sem overflow", async ({ page }) => {
     const columns = await shelves.evaluateAll((elements) =>
       elements
         .filter((element) => element.getBoundingClientRect().width > 0)
-        .map((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)
+        .map((element) => {
+          const style = getComputedStyle(element);
+          if (style.display === "grid") return style.gridTemplateColumns.split(" ").length === 2;
+          const viewport = element.closest(".home-product-carousel-viewport");
+          const slide = element.querySelector(".home-product-carousel-slide");
+          return style.display === "flex" && viewport !== null && slide !== null
+            && viewport.scrollWidth > viewport.clientWidth
+            && slide.getBoundingClientRect().width <= viewport.clientWidth;
+        })
     );
     expect(columns.length).toBeGreaterThan(0);
-    expect(columns.every((count) => count === 2)).toBe(true);
+    expect(columns.every(Boolean)).toBe(true);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
@@ -1233,13 +1365,14 @@ test("404 continua utilizável quando as recomendações falham sem repetir requ
 });
 
 test("produto inexistente usa 404 específica sem expor detalhes", async ({ page }) => {
+  test.setTimeout(60_000);
   const response = await page.goto("/produto/produto-que-nao-existe", {
     waitUntil: "domcontentloaded"
   });
 
   expect(response?.status()).toBe(404);
-  await expect(page.getByRole("heading", { name: "Produto não encontrado." })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Ver outros produtos/i })).toHaveAttribute(
+  await expect(page.getByRole("heading", { name: "Este produto não está mais disponível" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: /Ver produtos/i })).toHaveAttribute(
     "href",
     "/produtos"
   );

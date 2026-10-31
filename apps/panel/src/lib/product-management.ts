@@ -1,56 +1,19 @@
 export function productDeletionMessage(blockers: readonly string[] = []): string {
-  const labels: Record<string, string> = {
-    "cart items": "itens em carrinhos",
-    "marketing events": "eventos de marketing",
-    "inventory reservations": "reservas de estoque",
-    "coupon scopes": "cupons vinculados",
-    "product questions": "perguntas de clientes",
-    "inventory count items": "contagens de estoque"
-  };
+  if (blockers.some((blocker) => ["order_items", "pedidos", "representative_sale_items", "kit_order_items"].includes(blocker))) {
+    return "Este produto possui histórico de vendas e não pode ser excluído permanentemente. Arquive-o para removê-lo da loja mantendo o histórico.";
+  }
   return blockers.length
-    ? `Não é possível excluir: ${blockers.map((blocker) => labels[blocker] ?? blocker).join(", ")}. Use Arquivar para preservar os vínculos.`
+    ? "Este produto possui registros comerciais ou de auditoria que precisam ser preservados. Arquive-o para removê-lo da loja mantendo o histórico."
     : "Não foi possível confirmar se o produto pode ser excluído. Atualize a listagem.";
 }
 
-export type NewProductDraft = {
-  version: 1;
-  savedAt: string;
-  fields: Record<string, string>;
-  categoryIds: string[];
-  primaryCategoryId: string;
-  variants: EditableVariant[];
-  sizeGuide?: ProductSizeGuideEntry[];
-  hasVariations: boolean;
-  simpleStock: number;
-  productActive?: boolean;
-  variantColors: string;
-  variantSizes: string;
-  variantSkuPrefix: string;
-};
-
-export const productDraftStorageKey = (ownerKey: string) =>
-  `curtiz:product-draft:v1:${ownerKey}`;
-
-export function parseNewProductDraft(value: string | null): NewProductDraft | null {
-  if (!value) return null;
-  try {
-    const draft: unknown = JSON.parse(value);
-    if (!draft || typeof draft !== "object") return null;
-    const candidate = draft as Partial<NewProductDraft>;
-    if (
-      candidate.version !== 1 ||
-      !candidate.fields || typeof candidate.fields !== "object" ||
-      !Array.isArray(candidate.categoryIds) ||
-      !Array.isArray(candidate.variants) ||
-      typeof candidate.primaryCategoryId !== "string" ||
-      typeof candidate.hasVariations !== "boolean" ||
-      typeof candidate.simpleStock !== "number"
-    ) return null;
-    return candidate as NewProductDraft;
-  } catch {
-    return null;
-  }
-}
+export {
+  newestProductDraft,
+  parseNewProductDraft,
+  productDraftContentFingerprint,
+  productDraftStorageKey
+} from "./product-draft";
+export type { NewProductDraft } from "./product-draft";
 
 export type ManagedVariant = {
   id: string;
@@ -62,10 +25,12 @@ export type ManagedVariant = {
   reserved: number;
   sellable: number;
   colorHex?: string;
+  colorHexSecondary?: string;
   priceInCents?: number | null;
   costInCents?: number | null;
   gtin?: string;
   mpn?: string;
+  displayTitle?: string | null;
 };
 
 export type ManagedProduct = {
@@ -94,6 +59,7 @@ export type ManagedProduct = {
   categoryName?: string;
   categoryNames?: string[];
   deleteBlockers?: string[];
+  deleteRemovableDependencies?: string[];
   merchantCondition?: "new" | "refurbished" | "used";
   merchantGender?: "male" | "female" | "unisex";
   merchantAgeGroup?: "newborn" | "infant" | "toddler" | "kids" | "adult";
@@ -121,7 +87,10 @@ export type ManagedProduct = {
   media?: ManagedProductMedia[];
   variants: ManagedVariant[];
   sizeGuide?: ProductSizeGuideEntry[];
+  specifications?: ProductSpecification[];
 };
+
+export type ProductSpecification = { label: string; value: string };
 
 export type ProductSizeGuideEntry = {
   size: string;
@@ -146,14 +115,17 @@ export type EditableVariantColorGroup = {
   key: string;
   color: string;
   colorHex: string;
+  colorHexSecondary: string;
   variants: Array<{ index: number; variant: EditableVariant }>;
 };
 
 export type EditableVariant = {
   id?: string;
+  clientKey?: string;
   sku: string;
   color: string;
   colorHex: string;
+  colorHexSecondary: string;
   size: string;
   priceInCents: number | null;
   costInCents: number | null;
@@ -161,7 +133,15 @@ export type EditableVariant = {
   active: boolean;
   gtin: string;
   mpn: string;
+  displayTitle?: string | null;
 };
+
+export function withVariantClientKeys(variants: EditableVariant[]): EditableVariant[] {
+  return variants.map((variant) => ({
+    ...variant,
+    clientKey: variant.id ?? variant.clientKey ?? crypto.randomUUID()
+  }));
+}
 
 export type ProductPublicationInput = {
   name?: string;
@@ -307,6 +287,7 @@ export function generateVariantCombinations(
       sku: `${prefix}-${skuPart(color)}-${skuPart(size)}`,
       color,
       colorHex: "",
+      colorHexSecondary: "",
       size,
       priceInCents: null,
       costInCents: null,
@@ -329,6 +310,9 @@ export function groupEditableVariantsByColor(
     if (existing) {
       existing.variants.push({ index, variant });
       if (!existing.colorHex && variant.colorHex) existing.colorHex = variant.colorHex;
+      if (!existing.colorHexSecondary && variant.colorHexSecondary) {
+        existing.colorHexSecondary = variant.colorHexSecondary;
+      }
       return;
     }
 
@@ -336,11 +320,29 @@ export function groupEditableVariantsByColor(
       key: normalizedColor,
       color: variant.color.trim() || "Sem cor",
       colorHex: variant.colorHex,
+      colorHexSecondary: variant.colorHexSecondary,
       variants: [{ index, variant }]
     });
   });
 
   return [...groups.values()];
+}
+
+export function stableVariantColorGroups(
+  variants: EditableVariant[], previousKeys: Map<string, string>
+): Array<EditableVariantColorGroup & { uiKey: string }> {
+  const used = new Set<string>();
+  return groupEditableVariantsByColor(variants).map((group) => {
+    const uiKey = group.variants
+      .map(({ variant }) => previousKeys.get(variant.id ?? variant.clientKey ?? ""))
+      .find((key) => key && !used.has(key)) ?? crypto.randomUUID();
+    used.add(uiKey);
+    group.variants.forEach(({ variant }) => {
+      const key = variant.id ?? variant.clientKey;
+      if (key) previousKeys.set(key, uiKey);
+    });
+    return { ...group, uiKey };
+  });
 }
 
 export function productPublishRequirements(product: {

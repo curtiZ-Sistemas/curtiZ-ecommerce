@@ -2,18 +2,19 @@
 
 import {
   formatBRL,
+  canQuickAddProduct,
   storefrontItemKey,
   storefrontProductHref,
   type Product
 } from "@curtiz/domain";
-import { Heart, Star } from "lucide-react";
-import Image from "next/image";
+import { Check, Heart, ShoppingCart, Star } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCart } from "./cart-provider";
 import { useFavorites } from "./favorites-provider";
 import { trackIntelligence } from "../lib/intelligence-client";
 import { useQualifiedImpression } from "../lib/use-qualified-impression";
-import { bundledProductSrcSet } from "../lib/responsive-storefront-image";
 
 export function ProductCard({
   product,
@@ -37,64 +38,94 @@ export function ProductCard({
     purchase?: boolean;
   };
 }) {
+  const { add } = useCart();
+  const router = useRouter();
   const { hydrated, has, toggle } = useFavorites();
+  const [added, setAdded] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
   const itemKey = storefrontItemKey(product);
   const href = storefrontProductHref(product);
-  const responsiveImage = bundledProductSrcSet(product.image);
-  const responsiveSizes = imageSizes ?? "(max-width: 520px) 50vw, (max-width: 900px) 33vw, 25vw";
+  const displayName = product.variantTitle?.trim() || product.name;
+  const responsiveSizes = imageSizes ??
+    "(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1100px) calc((100vw - 78px) / 3), calc((min(1200px, 100vw - 48px) - 45px) / 4)";
   const impression = useMemo(() => ({ type: recommendationSource ? "recommendation_impression" as const : "product_impression" as const, productId: product.id, variantId: product.variantId, source: recommendationSource }), [product.id, product.variantId, recommendationSource]);
   useQualifiedImpression(cardRef, `${recommendationSource ?? "catalog"}:${itemKey}`, impression);
   const favorite = hydrated && has(product);
   const discount = product.compareAtPriceInCents
     ? Math.round((1 - product.priceInCents / product.compareAtPriceInCents) * 100)
     : null;
+  const needsSelection = !canQuickAddProduct(product);
+
+  useEffect(() => () => {
+    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
+  }, []);
+
+  const handleQuickAdd = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (product.stock < 1 || added) return;
+
+    if (needsSelection) {
+      router.push(href);
+      return;
+    }
+
+    const color = product.variantColor ?? product.colors[0] ?? "";
+    const size = product.variantSize ?? product.sizes[0] ?? "";
+    add(product, color, size, product.variantId ? { variantId: product.variantId } : undefined);
+    setAdded(true);
+    feedbackTimerRef.current = window.setTimeout(() => setAdded(false), 1800);
+  };
 
   return (
     <article className="product-card" ref={cardRef}>
       <Link href={href} prefetch={priority ? null : false} className="product-image" onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>
         {display?.discount !== false && display?.badge !== false && discount && <span className="discount-badge">-{discount}%</span>}
-        {responsiveImage ? (
-          <picture>
-            <source type="image/webp" srcSet={responsiveImage} sizes={responsiveSizes} />
-            <img
-              src={product.image}
-              srcSet={responsiveImage}
-              sizes={responsiveSizes}
-              alt={`${product.name} da curti Z`}
-              width={720}
-              height={720}
-              loading={priority ? "eager" : "lazy"}
-              fetchPriority={priority ? "high" : "auto"}
-              decoding="async"
-            />
-          </picture>
-        ) : (
-          <Image
-            src={product.image}
-            alt={`${product.name} da curti Z`}
-            width={360}
-            height={280}
-            sizes={responsiveSizes}
-            priority={priority}
-          />
-        )}
+        <img
+          src={product.image}
+          sizes={responsiveSizes}
+          alt={`${displayName} da curti Z`}
+          width={720}
+          height={720}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+        />
       </Link>
       {display?.favorite !== false && <button
         className={favorite ? "favorite-button active" : "favorite-button"}
         type="button"
         onClick={() => toggle(product)}
         aria-label={
-          favorite ? `Remover ${product.name} dos favoritos` : `Favoritar ${product.name}`
+          favorite ? `Remover ${displayName} dos favoritos` : `Favoritar ${displayName}`
         }
         aria-pressed={favorite}
       >
         <Heart fill={favorite ? "currentColor" : "none"} />
       </button>}
+      <button
+        className={`favorite-button product-card-cart-button${display?.favorite === false ? " standalone" : ""}${added ? " added" : ""}`}
+        type="button"
+        onClick={handleQuickAdd}
+        disabled={product.stock < 1 || added}
+        aria-label={
+          product.stock < 1
+            ? `${displayName} sem estoque`
+            : added
+              ? `${displayName} adicionado ao carrinho`
+              : needsSelection ? `Escolher cor e tamanho de ${displayName}` : `Adicionar ${displayName} ao carrinho`
+        }
+      >
+        {added ? <Check aria-hidden="true" /> : <ShoppingCart aria-hidden="true" />}
+      </button>
+      <span className="sr-only" role="status" aria-live="polite">
+        {added ? `${displayName} adicionado ao carrinho.` : ""}
+      </span>
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>
-          <Link href={href} title={product.name} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{product.name}</Link>
+          <Link href={href} title={displayName} prefetch={priority ? null : false} onClick={() => { if (recommendationSource) trackIntelligence({ type: "recommendation_click", productId: product.id, variantId: product.variantId, source: recommendationSource }); }}>{displayName}</Link>
         </h3>
         {display?.rating !== false && product.reviews > 0 && <div
           className="rating"
@@ -108,7 +139,6 @@ export function ProductCard({
           <strong>{formatBRL(product.priceInCents)}</strong>
           {display?.discount !== false && product.compareAtPriceInCents && <s>{formatBRL(product.compareAtPriceInCents)}</s>}
         </div>}
-        {display?.installments !== false && <span className="installments">Consulte as condições no produto</span>}
         {display?.stock && <span className="product-card-stock">{product.stock.toLocaleString("pt-BR")} unidade(s) disponível(is)</span>}
         {display?.purchase && <Link className="secondary-button compact-button" href={href} prefetch={priority ? null : false}>Ver opções</Link>}
       </div>

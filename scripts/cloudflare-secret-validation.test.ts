@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missingCloudflareSecrets, requiredCloudflareSecrets } from "./cloudflare-secret-validation";
+import { buildValidationSecrets, missingCloudflareSecrets, requiredCloudflareSecrets } from "./cloudflare-secret-validation";
 
 describe("Cloudflare secret validation", () => {
   it("requires only baseline server secrets while integrations are disabled", () => {
@@ -10,9 +10,31 @@ describe("Cloudflare secret validation", () => {
       "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY", "SUPABASE_SECRET_KEY"]);
   });
 
+  it("separates runtime secrets from the integration-disabled build environment", () => {
+    const runtimeEnvironment = {
+      DEPLOY_TARGET: "store",
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true",
+      TURNSTILE_ENABLED: "true"
+    };
+    expect(buildValidationSecrets(runtimeEnvironment)).toEqual([
+      "ACCOUNT_DELETION_HMAC_KEY", "AUDIT_HASH_KEY", "PII_ENCRYPTION_KEY",
+      "RATE_LIMIT_HMAC_KEY", "REFERRAL_ATTRIBUTION_HMAC_KEY", "SUPABASE_SECRET_KEY"
+    ]);
+  });
+
   it("não exige secrets exclusivos da loja no Worker do painel", () => {
     expect(requiredCloudflareSecrets({ DEPLOY_TARGET: "panel", PAYMENT_PROVIDER: "disabled" }))
       .toEqual(["AUDIT_HASH_KEY", "PII_ENCRYPTION_KEY", "SUPABASE_SECRET_KEY"]);
+  });
+
+  it("does not require a runtime Turnstile secret for a public key compiled with protection disabled", () => {
+    const entries = ["SUPABASE_SECRET_KEY", "PII_ENCRYPTION_KEY", "AUDIT_HASH_KEY"].map(name => ({ name }));
+    const environment = { DEPLOY_TARGET: "panel", TURNSTILE_ENABLED: "false", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "public-test-key" };
+    expect(missingCloudflareSecrets(entries, environment)).toEqual([]);
+    expect(missingCloudflareSecrets(entries, { ...environment, TURNSTILE_ENABLED: "true" })).toEqual(["TURNSTILE_SECRET_KEY"]);
   });
 
   it("requires enabled integration secrets without inspecting their contents", () => {
@@ -25,5 +47,14 @@ describe("Cloudflare secret validation", () => {
       { name: "PII_ENCRYPTION_KEY" }, { name: "AUDIT_HASH_KEY" },
       { name: "RATE_LIMIT_HMAC_KEY" }, { name: "REFERRAL_ATTRIBUTION_HMAC_KEY" }
     ], environment)).toEqual(["MERCADO_PAGO_ACCESS_TOKEN", "MERCADO_PAGO_WEBHOOK_SECRET", "TURNSTILE_SECRET_KEY"]);
+  });
+
+  it("exige OAuth, criptografia e um documento de origem quando o Melhor Envio está ativo", () => {
+    const environment = { DEPLOY_TARGET: "panel", SHIPPING_PROVIDER: "melhorenvio", MELHOR_ENVIO_ENABLED: "true" };
+    expect(missingCloudflareSecrets([
+      { name: "SUPABASE_SECRET_KEY" }, { name: "PII_ENCRYPTION_KEY" }, { name: "AUDIT_HASH_KEY" },
+      { name: "MELHOR_ENVIO_CLIENT_SECRET" }, { name: "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY" },
+      { name: "MELHOR_ENVIO_ORIGIN_COMPANY_DOCUMENT" }
+    ], environment)).toEqual([]);
   });
 });

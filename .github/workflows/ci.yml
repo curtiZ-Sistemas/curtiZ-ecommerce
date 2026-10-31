@@ -26,6 +26,13 @@ concurrency:
 env:
   APP_ENV: production
   PANEL_DEPLOYMENT_MODE: separate
+  # URLs públicas e origens versionadas em conjunto; não dependem de listas remotas divergentes.
+  NEXT_PUBLIC_STORE_URL: https://curtiz.com.br
+  NEXT_PUBLIC_PANEL_URL: https://painel.curtiz.com.br
+  NEXT_PUBLIC_STORE_TEST_URL: https://curtiz-ecommerce.sistemas-curtiz.workers.dev
+  NEXT_PUBLIC_PANEL_TEST_URL: https://curtiz-painel.sistemas-curtiz.workers.dev
+  ALLOWED_ORIGINS: https://curtiz.com.br,https://painel.curtiz.com.br,https://curtiz-ecommerce.sistemas-curtiz.workers.dev,https://curtiz-painel.sistemas-curtiz.workers.dev
+  AUTH_COOKIE_DOMAINS: curtiz.com.br,sistemas-curtiz.workers.dev
   DEMO_MODE: "false"
   CHECKOUT_ENABLED: "false"
   PAYMENT_PROVIDER: disabled
@@ -36,7 +43,6 @@ env:
   EMAIL_PROVIDER: disabled
   EMAIL_ENABLED: "false"
   TURNSTILE_ENABLED: "false"
-  REQUIRE_INTERNAL_MFA: "false"
   AUTH_RATE_LIMIT_ENABLED: "true"
 
 jobs:
@@ -144,13 +150,44 @@ jobs:
       - uses: supabase/setup-cli@v2
         with:
           version: 2.110.0
-      - run: supabase start
+      - name: Iniciar Supabase local (migrations + seed)
+        # Startup prints local credentials. Keep them out of public CI logs.
+        run: |
+          if ! supabase start > /dev/null 2>&1; then
+            echo "::error::Supabase local não iniciou; consulte o estado dos containers."
+            exit 1
+          fi
+      - name: Diagnóstico do Supabase local
+        if: failure()
+        shell: bash
+        run: |
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
       - run: supabase db lint --local --fail-on error
-      - run: supabase test db
+      - name: Testar contratos SQL
+        shell: bash
+        run: |
+          mapfile -t sql_tests < <(find supabase/tests -type f \( -name '*.sql' -o -name '*.pg' \) ! -name singleton_runtime_safeupdate_test.sql | sort)
+          test "${#sql_tests[@]}" -gt 0
+          supabase test db "${sql_tests[@]}"
+      - name: Testar concorrência do saldo de devoluções
+        run: bash scripts/test-return-balance-concurrency.sh
+      - name: Testar concorrência da fila de remessas
+        run: bash scripts/test-shipping-claim-concurrency.sh
+      - name: Testar runtime com safeupdate ativo
+        # Only the ephemeral CI database is changed. The test still runs as
+        # postgres; that role cannot LOAD native libraries directly.
+        run: |
+          docker exec -e PGPASSWORD=postgres supabase_db_curtiz-local psql -X -w -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER ROLE postgres SET session_preload_libraries = 'safeupdate'"
+          supabase test db supabase/tests/singleton_runtime_safeupdate_test.sql
 
   e2e:
-    name: E2E
+    name: E2E / ${{ matrix.project }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [store-desktop, store-mobile, store-responsive, panel-desktop]
     env:
       APP_ENV: development
       DEMO_MODE: "true"
@@ -158,6 +195,11 @@ jobs:
       DEMO_SESSION_SECRET: "ci-demo-session-secret-with-at-least-32-characters"
       NEXT_PUBLIC_STORE_URL: http://localhost:3000
       NEXT_PUBLIC_PANEL_URL: http://localhost:3001
+      NEXT_PUBLIC_STORE_TEST_URL: ""
+      NEXT_PUBLIC_PANEL_TEST_URL: ""
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
+      AUTH_COOKIE_DOMAINS: ""
+      STOREFRONT_E2E_ONLY: ${{ matrix.project != 'panel-desktop' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -168,45 +210,44 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Preparar rede do instalador do navegador
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-curtiz-ci-network >/dev/null
+          if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' \
+              | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+      - name: Instalar Chromium e dependências
+        timeout-minutes: 10
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "30000"
+        run: pnpm exec playwright install --with-deps chromium
       - name: Executar suíte E2E sem aceitar flaky
-        run: pnpm exec playwright test --fail-on-flaky-tests
+        run: pnpm exec playwright test --project=${{ matrix.project }} --workers=1 --fail-on-flaky-tests
       - name: Repetir fluxos críticos da loja
+        if: matrix.project == 'store-desktop' || matrix.project == 'store-mobile'
         run: >-
           pnpm exec playwright test
-          --project=store-desktop
-          --project=store-mobile
+          --project=${{ matrix.project }}
           --grep "normaliza o cadastro|navega da home|gerencia a remoção"
           --repeat-each=2
-          --workers=2
+          --workers=1
           --fail-on-flaky-tests
 
   store-worker:
     name: OpenNext / Loja
     needs: [changes, quality, database, e2e, security]
-    if: needs.changes.outputs.store == 'true'
+    if: >-
+      ${{ !cancelled() && needs.changes.outputs.store == 'true'
+          && needs.changes.result == 'success' && needs.quality.result == 'success' && needs.security.result == 'success'
+          && (github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success')) }}
     runs-on: ubuntu-latest
     env:
       DEPLOY_TARGET: store
       PANEL_DEPLOYMENT_MODE: separate
-      DEMO_MODE: ${{ github.event_name == 'pull_request' && 'false' || vars.DEMO_MODE }}
-      CHECKOUT_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.CHECKOUT_ENABLED }}
-      PAYMENT_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.PAYMENT_PROVIDER }}
-      MERCADO_PAGO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MERCADO_PAGO_ENABLED }}
-      SHIPPING_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.SHIPPING_PROVIDER }}
-      MELHOR_ENVIO_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.MELHOR_ENVIO_ENABLED }}
-      EMAIL_PROVIDER: ${{ github.event_name == 'pull_request' && 'disabled' || vars.EMAIL_PROVIDER }}
-      EMAIL_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.EMAIL_ENABLED }}
-      EMAIL_FROM: ${{ github.event_name != 'pull_request' && vars.EMAIL_FROM || '' }}
-      TURNSTILE_ENABLED: ${{ github.event_name == 'pull_request' && 'false' || vars.TURNSTILE_ENABLED }}
-      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
-      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
-      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
-      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
-      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
-      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
-      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
-      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
@@ -245,11 +286,23 @@ jobs:
         run: pnpm exec tsx scripts/validate-supabase-readiness.ts
       - name: Validar produção e compilar Worker da loja
         run: pnpm build:worker
+      - name: Validar empacotamento de produção da loja
+        run: pnpm deploy:dry-run
+      - name: Validar inicialização do Worker da loja
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/store/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/store-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/store-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "store") process.exit(1)' "$RUNNER_TEMP/store-version.json"
       - name: Publicar curtiz-ecommerce
         if: github.event_name != 'pull_request'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -257,35 +310,25 @@ jobs:
             exit 1
           fi
           build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars \
-            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
-            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}" \
-            --var "APP_ENV:${APP_ENV}" \
-            --var "MERCADO_PAGO_ENVIRONMENT:${MERCADO_PAGO_ENVIRONMENT}" \
-            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
-            --var "DEMO_MODE:${DEMO_MODE}" \
-            --var "CHECKOUT_ENABLED:${CHECKOUT_ENABLED}" \
-            --var "PAYMENT_PROVIDER:${PAYMENT_PROVIDER}" \
-            --var "MERCADO_PAGO_ENABLED:${MERCADO_PAGO_ENABLED}" \
-            --var "SHIPPING_PROVIDER:${SHIPPING_PROVIDER}" \
-            --var "MELHOR_ENVIO_ENABLED:${MELHOR_ENVIO_ENABLED}" \
-            --var "EMAIL_PROVIDER:${EMAIL_PROVIDER}" \
-            --var "EMAIL_ENABLED:${EMAIL_ENABLED}" \
-            --var "EMAIL_FROM:${EMAIL_FROM}" \
-            --var "TURNSTILE_ENABLED:${TURNSTILE_ENABLED}" \
-            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
-            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
-            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
-            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
-            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
-            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
-            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
-            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "SUPABASE_URL:${SUPABASE_URL}" \
-            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}" \
-            --var "NEXT_PUBLIC_TURNSTILE_SITE_KEY:${NEXT_PUBLIC_TURNSTILE_SITE_KEY}" \
-            --var "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY:${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}"
+          GIT_COMMIT_SHA="${GITHUB_SHA}"
+          BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          BUILD_TIMESTAMP="${build_timestamp}"
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
+          # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
+          deploy_vars=()
+          add_var() {
+            local value="${!1:-}"
+            [[ -n "$value" ]] && deploy_vars+=(--var "$1:${value}")
+            return 0
+          }
+          for name in GIT_COMMIT_SHA BUILD_ID BUILD_TIMESTAMP APP_ENV PANEL_DEPLOYMENT_MODE DEMO_MODE \
+            ALLOWED_ORIGINS AUTH_COOKIE_DOMAINS NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL \
+            NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY \
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY; do
+            add_var "$name"
+          done
+          pnpm exec wrangler deploy --config apps/store/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"
+          pnpm exec tsx scripts/cloudflare-observability.ts
       - name: Smoke test pós-deploy sem cobrança
         if: github.event_name != 'pull_request'
         run: pnpm smoke:storefront -- "$NEXT_PUBLIC_STORE_TEST_URL"
@@ -293,28 +336,14 @@ jobs:
   panel-worker:
     name: OpenNext / Painel
     needs: [changes, quality, database, e2e, security]
-    if: needs.changes.outputs.panel == 'true'
+    if: >-
+      ${{ !cancelled() && needs.changes.outputs.panel == 'true'
+          && needs.changes.result == 'success' && needs.quality.result == 'success' && needs.security.result == 'success'
+          && (github.event_name == 'pull_request' || (needs.database.result == 'success' && needs.e2e.result == 'success')) }}
     runs-on: ubuntu-latest
     env:
       DEPLOY_TARGET: panel
       PANEL_DEPLOYMENT_MODE: separate
-      DEMO_MODE: "false"
-      CHECKOUT_ENABLED: "false"
-      PAYMENT_PROVIDER: disabled
-      MERCADO_PAGO_ENABLED: "false"
-      SHIPPING_PROVIDER: disabled
-      MELHOR_ENVIO_ENABLED: "false"
-      EMAIL_PROVIDER: disabled
-      EMAIL_ENABLED: "false"
-      TURNSTILE_ENABLED: "false"
-      REQUIRE_INTERNAL_MFA: ${{ github.event_name == 'pull_request' && 'false' || vars.REQUIRE_INTERNAL_MFA }}
-      AUTH_RATE_LIMIT_ENABLED: ${{ github.event_name == 'pull_request' && 'true' || vars.AUTH_RATE_LIMIT_ENABLED }}
-      ALLOWED_ORIGINS: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid,https://panel.example.invalid,https://store-test.example.invalid,https://panel-test.example.invalid' || vars.ALLOWED_ORIGINS }}
-      AUTH_COOKIE_DOMAINS: ${{ github.event_name == 'pull_request' && 'example.invalid' || vars.AUTH_COOKIE_DOMAINS }}
-      NEXT_PUBLIC_STORE_URL: ${{ github.event_name == 'pull_request' && 'https://store.example.invalid' || vars.NEXT_PUBLIC_STORE_URL }}
-      NEXT_PUBLIC_PANEL_URL: ${{ github.event_name == 'pull_request' && 'https://panel.example.invalid' || vars.NEXT_PUBLIC_PANEL_URL }}
-      NEXT_PUBLIC_STORE_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://store-test.example.invalid' || vars.NEXT_PUBLIC_STORE_TEST_URL }}
-      NEXT_PUBLIC_PANEL_TEST_URL: ${{ github.event_name == 'pull_request' && 'https://panel-test.example.invalid' || vars.NEXT_PUBLIC_PANEL_TEST_URL }}
       SUPABASE_URL: ${{ github.event_name == 'pull_request' && 'https://project.supabase.co' || vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ github.event_name == 'pull_request' && 'ci-publishable-placeholder' || vars.SUPABASE_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ github.event_name != 'pull_request' && vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '' }}
@@ -350,11 +379,23 @@ jobs:
           pnpm exec tsx scripts/cloudflare-secret-validation.ts "$RUNNER_TEMP/panel-worker-secrets.json"
       - name: Validar produção e compilar Worker do painel
         run: pnpm build:worker:panel
-      - name: Publicar curtiz-panel
+      - name: Validar empacotamento de produção do painel
+        run: pnpm deploy:dry-run:panel
+      - name: Validar inicialização do Worker do painel
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pnpm exec wrangler dev --config apps/panel/wrangler.jsonc --env production --local --port 8787 > "$RUNNER_TEMP/panel-runtime.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/version > "$RUNNER_TEMP/panel-version.json"
+          node -e 'const fs = require("node:fs"); const v = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (v.app !== "panel") process.exit(1)' "$RUNNER_TEMP/panel-version.json"
+      - name: Publicar curtiz-painel
         if: github.event_name != 'pull_request'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEMO_MODE: ${{ vars.DEMO_MODE || 'false' }}
         shell: bash
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
@@ -362,20 +403,21 @@ jobs:
             exit 1
           fi
           build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars \
-            --var "GIT_COMMIT_SHA:${GITHUB_SHA}" \
-            --var "BUILD_ID:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --var "BUILD_TIMESTAMP:${build_timestamp}" \
-            --var "APP_ENV:${APP_ENV}" \
-            --var "PANEL_DEPLOYMENT_MODE:${PANEL_DEPLOYMENT_MODE}" \
-            --var "DEMO_MODE:${DEMO_MODE}" \
-            --var "REQUIRE_INTERNAL_MFA:${REQUIRE_INTERNAL_MFA}" \
-            --var "AUTH_RATE_LIMIT_ENABLED:${AUTH_RATE_LIMIT_ENABLED}" \
-            --var "ALLOWED_ORIGINS:${ALLOWED_ORIGINS}" \
-            --var "AUTH_COOKIE_DOMAINS:${AUTH_COOKIE_DOMAINS}" \
-            --var "NEXT_PUBLIC_STORE_URL:${NEXT_PUBLIC_STORE_URL}" \
-            --var "NEXT_PUBLIC_PANEL_URL:${NEXT_PUBLIC_PANEL_URL}" \
-            --var "NEXT_PUBLIC_STORE_TEST_URL:${NEXT_PUBLIC_STORE_TEST_URL}" \
-            --var "NEXT_PUBLIC_PANEL_TEST_URL:${NEXT_PUBLIC_PANEL_TEST_URL}" \
-            --var "SUPABASE_URL:${SUPABASE_URL}" \
-            --var "SUPABASE_PUBLISHABLE_KEY:${SUPABASE_PUBLISHABLE_KEY}"
+          GIT_COMMIT_SHA="${GITHUB_SHA}"
+          BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          BUILD_TIMESTAMP="${build_timestamp}"
+          # Integrações, credenciais, rate limit ficam somente no Runtime do Cloudflare.
+          # --keep-vars preserva esses bindings; valores vazios nunca são enviados.
+          deploy_vars=()
+          add_var() {
+            local value="${!1:-}"
+            [[ -n "$value" ]] && deploy_vars+=(--var "$1:${value}")
+            return 0
+          }
+          for name in GIT_COMMIT_SHA BUILD_ID BUILD_TIMESTAMP APP_ENV PANEL_DEPLOYMENT_MODE DEMO_MODE \
+            ALLOWED_ORIGINS AUTH_COOKIE_DOMAINS NEXT_PUBLIC_STORE_URL NEXT_PUBLIC_PANEL_URL \
+            NEXT_PUBLIC_STORE_TEST_URL NEXT_PUBLIC_PANEL_TEST_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
+            add_var "$name"
+          done
+          pnpm exec wrangler deploy --config apps/panel/wrangler.jsonc --env production --keep-vars "${deploy_vars[@]}"
+          pnpm exec tsx scripts/cloudflare-observability.ts

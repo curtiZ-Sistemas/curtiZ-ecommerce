@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { demoProducts } from "../../../../lib/catalog";
 import { parseRpcProductList } from "../../../../lib/catalog-result";
+import { isPresentationCatalogEnabled } from "../../../../lib/presentation-catalog";
 import { storefrontFreshnessHeaders } from "../../../../lib/storefront-cache";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
 import { hasServerConsent } from "../../../../lib/privacy/consent-server";
@@ -36,7 +37,7 @@ const inputSchema = z.object({
 });
 
 async function recommendationResponse(input: z.infer<typeof inputSchema>, personalized: boolean) {
-  if (process.env.DEMO_MODE === "true") {
+  if (isPresentationCatalogEnabled()) {
     const products = demoProducts
       .filter(
         (product) =>
@@ -77,7 +78,11 @@ async function recommendationResponse(input: z.infer<typeof inputSchema>, person
     p_price_max: input.priceMax ?? null,
     p_only: input.source === "recently_viewed" ? input.recent : []
   });
-  const products = result.error ? null : parseRpcProductList(result.data);
+  const products = result.error ? null : parseRpcProductList(result.data)?.filter((product) =>
+    product.stock > 0 && Boolean(product.image) && !input.seen.includes(product.id))
+    .filter((product, index, list) => list.findIndex((item) => item.id === product.id
+      || Boolean(product.recommendationIdentity
+        && item.recommendationIdentity === product.recommendationIdentity)) === index);
   if (!products)
     return NextResponse.json(
       { products: [], message: "Recomendações indisponíveis." },
@@ -108,7 +113,11 @@ export async function GET(request: NextRequest) {
     category: request.nextUrl.searchParams.get("category"),
     seed: request.nextUrl.searchParams.get("seed") ?? "curtiz",
     limit: Number(request.nextUrl.searchParams.get("limit") ?? 8),
-    seen: [],
+    priceMin: request.nextUrl.searchParams.has("priceMin")
+      ? Number(request.nextUrl.searchParams.get("priceMin")) : undefined,
+    priceMax: request.nextUrl.searchParams.has("priceMax")
+      ? Number(request.nextUrl.searchParams.get("priceMax")) : undefined,
+    seen: (request.nextUrl.searchParams.get("seen") ?? "").split(",").filter(Boolean).slice(0, 50),
     recent: []
   });
   if (!parsed.success) return NextResponse.json({ products: [] }, { status: 400 });

@@ -27,12 +27,12 @@ insert into public.payments(
 ) values
 ('ca200000-0000-4000-8000-000000000001','ca100000-0000-4000-8000-000000000001','mercadopago',null,'CZT-CANCEL-RECENT','cancelled',50,null,null),
 ('ca200000-0000-4000-8000-000000000002','ca100000-0000-4000-8000-000000000002','mercadopago',null,'CZT-CANCEL-BOUNDARY','cancelled',50,null,null),
-('ca200000-0000-4000-8000-000000000003','ca100000-0000-4000-8000-000000000003','mercadopago','refund-pending','CZT-REFUND-PENDING','approved',50,'credit_card','2026-01-01T12:00:00Z'),
-('ca200000-0000-4000-8000-000000000004','ca100000-0000-4000-8000-000000000004','mercadopago','refund-recent','CZT-REFUND-RECENT','refunded',50,'credit_card','2026-01-01T12:00:00Z'),
-('ca200000-0000-4000-8000-000000000005','ca100000-0000-4000-8000-000000000005','mercadopago','refund-boundary','CZT-REFUND-BOUNDARY','refunded',50,'credit_card','2026-01-01T12:00:00Z'),
-('ca200000-0000-4000-8000-000000000006','ca100000-0000-4000-8000-000000000006','mercadopago','refund-failed','CZT-REFUND-FAILED','approved',50,'credit_card','2026-01-01T12:00:00Z'),
-('ca200000-0000-4000-8000-000000000007','ca100000-0000-4000-8000-000000000007','mercadopago','refund-review','CZT-REFUND-REVIEW','approved',50,'credit_card','2026-01-01T12:00:00Z'),
-('ca200000-0000-4000-8000-000000000008','ca100000-0000-4000-8000-000000000008','mercadopago','refund-other','CZT-OTHER-CUSTOMER','approved',50,'credit_card','2026-01-01T12:00:00Z');
+('ca200000-0000-4000-8000-000000000003','ca100000-0000-4000-8000-000000000003','mercadopago','refund-pending','CZT-REFUND-PENDING','approved',50,'credit_card',now()-interval '29 days'),
+('ca200000-0000-4000-8000-000000000004','ca100000-0000-4000-8000-000000000004','mercadopago','refund-recent','CZT-REFUND-RECENT','refunded',50,'credit_card',now()-interval '29 days'),
+('ca200000-0000-4000-8000-000000000005','ca100000-0000-4000-8000-000000000005','mercadopago','refund-boundary','CZT-REFUND-BOUNDARY','refunded',50,'credit_card',now()-interval '29 days'),
+('ca200000-0000-4000-8000-000000000006','ca100000-0000-4000-8000-000000000006','mercadopago','refund-failed','CZT-REFUND-FAILED','approved',50,'credit_card',now()-interval '29 days'),
+('ca200000-0000-4000-8000-000000000007','ca100000-0000-4000-8000-000000000007','mercadopago','refund-review','CZT-REFUND-REVIEW','approved',50,'credit_card',now()-interval '29 days'),
+('ca200000-0000-4000-8000-000000000008','ca100000-0000-4000-8000-000000000008','mercadopago','refund-other','CZT-OTHER-CUSTOMER','approved',50,'credit_card',now()-interval '29 days');
 
 insert into public.order_status_history(order_id,previous_status,new_status,reason,created_at) values
 ('ca100000-0000-4000-8000-000000000001','cancellation_requested','cancelled','Retention test',now()-interval '71 hours 59 minutes'),

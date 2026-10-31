@@ -14,7 +14,20 @@ const securityHeaders = [
     : [])
 ];
 
+const noImageIndexHeader = { key: "X-Robots-Tag", value: "noindex, noimageindex" };
+const heroAssetPaths = [
+  "/images/hero-curtiz-desktop.png",
+  "/images/hero-curtiz-desktop.webp",
+  "/images/hero-curtiz-desktop.avif",
+  "/images/hero-curtiz-mobile.png",
+  "/images/hero-curtiz-mobile.webp",
+  "/images/hero-curtiz-mobile.avif",
+  "/images/optimized/hero-mobile.430.avif",
+  "/images/optimized/hero-mobile.640.avif"
+];
+
 const nextConfig: NextConfig = {
+  experimental: { cpus: 1 },
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
@@ -30,7 +43,21 @@ const nextConfig: NextConfig = {
     remotePatterns: [{ protocol: "https", hostname: "*.supabase.co" }]
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      ...["/auth/recovery", "/api/auth/recovery/verify", "/api/auth/password"].map((source) => ({
+        source,
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }]
+      })),
+      ...heroAssetPaths.map((source) => ({ source, headers: [noImageIndexHeader] }))
+    ];
+  },
+  async redirects() {
+    // These legacy category URLs are linked by older sitemaps. Keep a permanent path to the current catalog.
+    return [
+      { source: "/slides", destination: "/produtos", permanent: true },
+      { source: "/sandalias", destination: "/produtos", permanent: true }
+    ];
   }
 };
 

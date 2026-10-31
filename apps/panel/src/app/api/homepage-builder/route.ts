@@ -21,7 +21,7 @@ const sectionTypes = [
   "promotions", "flash_offers", "best_sellers", "launches", "featured_products",
   "recommended_products", "manual_products", "campaigns", "benefits", "reviews_carousel",
   "editorial", "video", "image_text", "countdown", "newsletter", "institutional",
-  "quick_links", "safe_component"
+  "quick_links", "safe_component", "faq"
 ] as const;
 
 const layouts = [
@@ -281,12 +281,29 @@ export async function POST(request: NextRequest) {
     result = await auth.supabase.rpc("save_homepage_section", { p_payload: payload, p_expected_revision: parsed.data.action === "duplicate" ? null : null });
   }
   if (result.error) {
+    if (parsed.data.action === "publish") {
+      const missingSections = result.error.message.includes("no publishable homepage sections");
+      const forbidden = result.error.code === "42501";
+      const validationFailed = result.error.code === "P4002";
+      return NextResponse.json({ stage: "publish",
+        code: forbidden ? "HOMEPAGE_PUBLISH_NOT_ALLOWED" : missingSections ? "HOMEPAGE_NO_SECTIONS"
+          : validationFailed ? "HOMEPAGE_SECTION_VALIDATION_FAILED" : "HOMEPAGE_PUBLICATION_FAILED",
+        message: forbidden ? "Você não tem permissão para publicar a página."
+          : missingSections ? "Não há seções disponíveis para publicar."
+            : validationFailed ? "Revise as seções, produtos, destinos, mídias e horários antes de publicar."
+              : "Não foi possível publicar a página. Nenhuma alteração desta publicação foi salva."
+      }, { status: forbidden ? 403 : 409, headers: privateNoStore });
+    }
+    const authorCannotApprove = result.error.message.includes("author cannot");
     const message = result.error.message.includes("revision conflict") ? "Outra pessoa alterou esta seção. Recarregue antes de continuar."
       : result.error.message.includes("author cannot") ? "O autor não pode aprovar a própria alteração."
       : result.error.message.includes("unavailable") ? "Um produto, destino ou arquivo não está mais disponível."
       : result.error.message.includes("not authorized") ? "O destino externo não está autorizado."
       : "Não foi possível concluir a operação.";
-    return NextResponse.json({ message }, { status: result.error.message.includes("revision conflict") ? 409 : 400, headers: privateNoStore });
+    return NextResponse.json({ stage: parsed.data.action === "transition" ? parsed.data.transition : "update", code: authorCannotApprove ? "HOMEPAGE_AUTHOR_CANNOT_APPROVE" : "HOMEPAGE_OPERATION_FAILED", message }, { status: authorCannotApprove || result.error.message.includes("revision conflict") ? 409 : 400, headers: privateNoStore });
   }
-  return NextResponse.json({ ok: true, message: parsed.data.action === "publish" ? "Publicação registrada com segurança." : "Alteração registrada." }, { headers: privateNoStore });
+  return NextResponse.json({ ok: true, message: parsed.data.action === "publish"
+    ? parsed.data.scheduledAt && Date.parse(parsed.data.scheduledAt) > Date.now()
+      ? "Publicação agendada." : "Página publicada com sucesso."
+    : "Alteração registrada." }, { headers: privateNoStore });
 }

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PanelPageHeading, PanelShell, type PanelRole } from "@/components/panel-shell";
 import { SupportConsole } from "@/components/support-console";
@@ -13,6 +12,7 @@ import { AdminUsers } from "@/components/admin-users";
 import { ManagerDashboard } from "@/components/manager-dashboard";
 import { ManagerStrategy } from "@/components/manager-strategy";
 import { ManagerAlerts } from "@/components/manager-alerts";
+import { ManagerApprovals } from "@/components/manager-approvals";
 import { FinancialControl } from "@/components/financial-control";
 import { ActivityLogs } from "@/components/activity-logs";
 import { ManagerResourceManager } from "@/components/manager-resource-manager";
@@ -78,6 +78,8 @@ export default async function RolePage({
         <HelpContentCenter />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
+      ) : section === "devolucoes" && ["administracao", "gerencia"].includes(role) ? (
+        <OperationalConsole section="devolucoes" initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : role === "administracao" ? (
         <Administration section={section} initialQuery={initialQuery} draftOwnerKey={access.userId} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
@@ -220,42 +222,14 @@ function Technical({ section, initialQuery }: { section: string; initialQuery: s
   if (section === "acessos-tecnicos") return <AdminUsers />;
   if (isTechnicalResource(section))
     return (
-      <TechnicalResourceManager
-        key={`${section}:${initialQuery}`}
-        resource={section}
-        initialQuery={initialQuery}
-      />
+      <>
+        <TechnicalResourceManager
+          key={`${section}:${initialQuery}`}
+          resource={section}
+          initialQuery={initialQuery}
+        />
+        {section === "integracoes" ? <TechnicalOverview section={section} /> : null}
+      </>
     );
   return <TechnicalOverview section={section} />;
-}
-
-function ManagerApprovals() {
-  return (
-    <section className="panel-card manager-approvals">
-      <h2>Central de aprovações</h2>
-      <p>As decisões permanecem nos fluxos de origem e são validadas no servidor.</p>
-      <div className="manager-approval-links">
-        <Link href="/gerencia/solicitacoes-representantes">
-          <strong>Solicitações de representantes</strong>
-          <small>Documentos, análise e decisão justificada</small>
-        </Link>
-        <Link href="/gerencia/conteudo-loja">
-          <strong>Conteúdo da loja</strong>
-          <small>Publicação, agenda e restauração de versões</small>
-        </Link>
-        <Link href="/gerencia/criativos">
-          <strong>Criativos</strong>
-          <small>Aprovação simples ou dupla conforme a campanha</small>
-        </Link>
-        <Link href="/gerencia/campanhas">
-          <strong>Campanhas</strong>
-          <small>Agenda e estados persistidos de publicação</small>
-        </Link>
-        <Link href="/gerencia/fechamentos">
-          <strong>Fechamentos de comissão</strong>
-          <small>Aprovar, bloquear ou reabrir com auditoria</small>
-        </Link>
-      </div>
-    </section>
-  );
 }

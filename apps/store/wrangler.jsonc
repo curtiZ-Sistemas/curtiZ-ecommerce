@@ -2,6 +2,10 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "curtiz-ecommerce",
   "main": "custom-worker.ts",
+  // Next.js enforces this marker before Wrangler bundles the server-only Worker.
+  "alias": {
+    "server-only": "./worker-server-only.ts"
+  },
   "keep_vars": true,
   "compatibility_date": "2026-07-31",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -12,14 +16,23 @@
   "images": {
     "binding": "IMAGES"
   },
+  "cache": {
+    "enabled": true
+  },
   "observability": {
     "enabled": true
   },
   "env": {
     "staging": {
       "name": "curtiz-ecommerce-staging",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
       "images": {
         "binding": "IMAGES"
+      },
+      "cache": {
+        "enabled": true
       }
     },
     "production": {
@@ -29,6 +42,9 @@
       },
       "images": {
         "binding": "IMAGES"
+      },
+      "cache": {
+        "enabled": true
       }
     }
   }
