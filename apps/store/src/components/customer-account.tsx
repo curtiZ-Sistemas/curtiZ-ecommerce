@@ -878,9 +878,15 @@ function OrderDetails({
           Preciso de ajuda
         </Link>
       </div>
-      <dialog ref={cancellationDialog} aria-labelledby={`cancel-order-${order.id}`} onClose={() => cancelButton.current?.focus()}>
+      <dialog
+        ref={cancellationDialog}
+        className="customer-cancel-dialog"
+        aria-labelledby={`cancel-order-${order.id}`}
+        aria-describedby={`cancel-order-description-${order.id}`}
+        onClose={() => cancelButton.current?.focus()}
+      >
         <h2 id={`cancel-order-${order.id}`}>Cancelar este pedido?</h2>
-        <p>{order.paymentStatus === "approved"
+        <p id={`cancel-order-description-${order.id}`}>{order.paymentStatus === "approved"
           ? "O pedido ainda não foi despachado. O pagamento será reembolsado pelo mesmo meio utilizado."
           : "Este pedido ainda não foi pago e será cancelado."}</p>
         <div className="customer-form-actions">
