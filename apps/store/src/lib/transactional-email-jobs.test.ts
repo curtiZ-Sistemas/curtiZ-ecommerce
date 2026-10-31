@@ -42,6 +42,7 @@ describe("single-checkout email TEST window", () => {
     expect(emailQueueTestScope(env)).toMatchObject({ actor: env.EMAIL_QUEUE_TEST_ACTOR_ID, key: env.EMAIL_QUEUE_TEST_CHECKOUT_KEY });
     expect(emailQueueTestScope({ ...env, EMAIL_ENABLED: "true" })).toBeNull();
     expect(emailQueueTestScope({ ...env, EMAIL_QUEUE_TEST_CHECKOUT_KEY: "invalid" })).toBeNull();
+    expect(emailQueueTestScope({ ...env, EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "invalid" })).toBeNull();
     expect(emailQueueTestScope(env, Date.parse(env.EMAIL_QUEUE_TEST_STARTED_AT) - 1)).toBeNull();
     expect(emailQueueTestScope(env, Date.parse(env.EMAIL_QUEUE_TEST_STARTED_AT) + 15 * 60_000)).toBeNull();
   });
@@ -62,6 +63,27 @@ describe("single-checkout email TEST window", () => {
     expect(state.rpc).toHaveBeenCalledWith("claim_test_transactional_email", expect.objectContaining({ p_checkout_key: testScope().EMAIL_QUEUE_TEST_CHECKOUT_KEY }));
     expect(state.rpc).not.toHaveBeenCalledWith("claim_transactional_email", expect.anything());
     expect(state.rpc).not.toHaveBeenCalledWith("sync_transactional_email_runtime", expect.objectContaining({ p_enabled: true }));
+  });
+  it("dispatches only the authorized review and labels it as a sandbox delivery", async () => {
+    kind = "review_requested";
+    const env = { ...testScope(), EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "58c273d0-f41e-4188-9c8c-3805b8a305aa" };
+    const transport = accepted();
+    expect(await runTransactionalEmailJobs(env, "test", 1, transport)).toMatchObject({ processed: 1, failed: 0 });
+    expect(state.rpc).toHaveBeenCalledWith("configure_transactional_review_test_scope", expect.objectContaining({ p_order_id: env.EMAIL_QUEUE_TEST_REVIEW_ORDER_ID }));
+    const body = transport.mock.calls[0]?.[1]?.body;
+    expect(typeof body).toBe("string");
+    expect(body).toContain("HOMOLOGAÇÃO");
+    expect(body).toContain("entrega simulada em sandbox");
+    expect(body).not.toContain("buyer@example.com");
+    expect(body).not.toContain("Pessoa Teste");
+    expect(state.rpc).not.toHaveBeenCalledWith("sync_transactional_email_runtime", expect.objectContaining({ p_enabled: true }));
+  });
+  it("refuses a non-review message in the review-only window", async () => {
+    savedPayload = { to: ["sistemas.curtiz@gmail.com"], subject: "TEST", text: "TEST", html: "TEST" };
+    const transport = accepted();
+    const env = { ...testScope(), EMAIL_QUEUE_TEST_REVIEW_ORDER_ID: "58c273d0-f41e-4188-9c8c-3805b8a305aa" };
+    expect(await runTransactionalEmailJobs(env, "test", 1, transport)).toMatchObject({ processed: 0, failed: 1 });
+    expect(transport).not.toHaveBeenCalled();
   });
 });
 describe("scheduled transactional email orchestration", () => {

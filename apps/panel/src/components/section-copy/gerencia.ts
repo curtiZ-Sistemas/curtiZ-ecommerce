@@ -5,6 +5,7 @@ import type { SectionCopy } from "./types";
 // Rotas com cabeçalho próprio (dashboard, financeiro, listas gerenciais, estratégia, inteligência,
 // alertas e logs) mostram a descrição do próprio componente; o texto daqui vale para as demais.
 export const gerenciaSectionCopy: SectionCopy = {
+  devolucoes: "Avalie trocas e devoluções, autorize reembolsos e acompanhe confirmações e conciliações.",
   "visao-estrategica": "Compare faturamento, lucro e pedidos com o período anterior e veja produtos, categorias, regiões e metas.",
   financeiro: "Acompanhe caixa, contas a receber e a pagar, lançamentos e aportes do período.",
   "pedidos-vendas": "Acompanhe pedidos, pagamentos e resultado disponível por período.",

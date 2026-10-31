@@ -13,15 +13,16 @@ describe("category circles", () => {
     ]
   }));
 
-  it("renders one link per category with the image circle and only the name", () => {
-    expect(html.match(/class="category-circles-item"/gu) ?? []).toHaveLength(2);
-    expect(html.match(/class="category-circles-link"/gu) ?? []).toHaveLength(2);
+  it("renders five copies for the endless loop, keeping only the middle one accessible", () => {
+    expect(html.match(/class="category-circles-item"/gu) ?? []).toHaveLength(10);
+    expect(html.match(/class="category-circles-item" aria-hidden="true"/gu) ?? []).toHaveLength(8);
+    expect(html.match(/tabindex="-1"/gu) ?? []).toHaveLength(8);
+  });
+
+  it("shows the image circle and only the category name in each link", () => {
     expect(html).toContain('href="/produtos?categoria=estampados"');
     expect(html).toContain('<span class="category-circles-name">Dia a Dia</span>');
     expect(html).not.toContain("Ver produtos");
-  });
-
-  it("keeps decorative images hidden from assistive tech since the name labels the link", () => {
-    expect(html.match(/alt=""/gu) ?? []).toHaveLength(2);
+    expect(html.match(/alt=""/gu) ?? []).toHaveLength(10);
   });
 });

@@ -1,0 +1,29 @@
+# Mapa do código (Graphify): só código-fonte; nada de dependências, builds, relatórios ou segredos.
+node_modules/
+.next/
+.open-next/
+.wrangler/
+.turbo/
+.cache/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+graphify-out/
+.agents/
+.claude/
+.codex/
+*.map
+*.lock
+pnpm-lock.yaml
+.env*
+supabase/.temp/
+# Cópias do repositório (worktrees, releases) e pastas temporárias: duplicam símbolos no mapa.
+.release-*/
+.tmp/
+.pnpm-store/
+.playwright-mcp/
+.wrangler/
+design-references/
+performance/

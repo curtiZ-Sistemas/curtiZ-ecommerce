@@ -78,6 +78,8 @@ export default async function RolePage({
         <HelpContentCenter />
       ) : section === "atendimentos" ? (
         <SupportConsole role={role} />
+      ) : section === "devolucoes" && ["administracao", "gerencia"].includes(role) ? (
+        <OperationalConsole section="devolucoes" initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : role === "administracao" ? (
         <Administration section={section} initialQuery={initialQuery} draftOwnerKey={access.userId} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
