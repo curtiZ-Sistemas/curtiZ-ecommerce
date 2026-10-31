@@ -1371,7 +1371,7 @@ test("produto inexistente usa 404 específica sem expor detalhes", async ({ page
   });
 
   expect(response?.status()).toBe(404);
-  await expect(page.getByRole("heading", { name: "Este produto não está mais disponível" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Este modelo não está mais disponível" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("link", { name: /Ver produtos/i })).toHaveAttribute(
     "href",
     "/produtos"
