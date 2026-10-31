@@ -16,33 +16,107 @@
   .bling-integration .admin-compact-list > div { flex-wrap: wrap; }
 }
 
+/* Tokens da linguagem "Etiqueta" — convergem com apps/store/src/app/globals.css.
+   Fonte da verdade para os quatro painéis; documentados em docs/design-system.md. */
 :root {
+  /* Marca: escala terrosa */
   --brand-950: #4a0c09;
   --brand-900: #62130f;
   --brand-800: #7c1d17;
   --brand-700: #982920;
   --brand-600: #b4372c;
   --brand-500: #c94336;
+  --brand-300: #e99b91;
+  --brand-200: #f3c5bf;
   --brand-100: #f9e3e0;
   --brand-50: #ffede8;
-  --ink: #201f1e;
-  --muted: #6e6b68;
-  --line: #dedede;
+
+  /* Neutros quentes */
+  --ink: #181716;
+  --neutral-900: #2b2927;
+  --neutral-700: #5f5b57;
+  --neutral-600: #736e69;
+  --neutral-500: #8e8984;
+  --neutral-400: #b3ada7;
+  --neutral-300: #d3ceca;
   --neutral-200: #e7e3df;
-  --surface: #ffffff;
-  --surface-soft: #faf9f7;
-  --canvas: #eeeeee;
-  --success: #15803d;
-  --warning: #b45309;
-  --danger: #b91c1c;
-  --info: #1d4ed8;
-  --radius: 8px;
-  --radius-sm: 5px;
-  --shadow: 0 1px 2px rgb(64 28 20 / 4%);
+  --neutral-150: #efedea;
+  --neutral-100: #f5f3f0;
+  --neutral-50: #faf9f7;
+  --white: #ffffff;
+
+  /* Estados: texto com contraste AA sobre o próprio fundo */
+  --success: #18733c;
+  --success-bg: #ecf6ef;
+  --success-line: #b9dcc5;
+  --warning: #8f520b;
+  --warning-bg: #fdf3e2;
+  --warning-line: #ebcf9f;
+  --danger: #b42318;
+  --danger-bg: #fdeeec;
+  --danger-line: #f0c2bd;
+  --info: #2458a6;
+  --info-bg: #edf2fa;
+  --info-line: #c3d3ec;
+
+  /* Papéis */
   --brand: var(--brand-700);
+  --surface: var(--white);
+  --surface-soft: var(--neutral-50);
+  --canvas: var(--neutral-100);
+  --muted: var(--neutral-600);
+  --line: var(--neutral-200);
+  --line-soft: var(--neutral-150);
+  --line-strong: var(--neutral-300);
   --panel-border: var(--line);
   --panel-muted: var(--muted);
-  --transition-fast: 180ms ease;
+
+  /* Raios */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* Elevação: somente sobreposições */
+  --shadow-xs: 0 1px 2px rgb(31 24 20 / 5%);
+  --shadow-sm: 0 8px 24px rgb(51 34 27 / 9%);
+  --shadow-md: 0 20px 55px rgb(51 34 27 / 18%);
+  --shadow: var(--shadow-xs);
+
+  /* Espaço: grade de 4px */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Tipografia */
+  --font-sans: var(--font-manrope), Manrope, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  /* Movimento */
+  --ease: cubic-bezier(0.2, 0.75, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration: 180ms;
+  --transition-fast: var(--duration) var(--ease);
+
+  /* Layout */
+  --sidebar-width: 248px;
+  --sidebar-collapsed-width: 76px;
+  --topbar-height: 60px;
+  --content-max: 1440px;
+  --gutter: clamp(16px, 2.6vw, 32px);
   --z-topbar: 50;
   --z-overlay: 80;
 }
@@ -7701,6 +7775,8 @@ button:not(:disabled):active,
 .legal-row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 540px; }
 .legal-policy-manager .legal-feedback { white-space: pre-line; }
 .legal-pending-markers { margin: 0; color: var(--muted); font-size: .875rem; }
+.legal-pending-markers ul { margin: 4px 0 0; padding-left: 1.2rem; }
+.legal-pending-markers p { margin: 0; }
 .legal-import-item { display: grid; gap: 10px; padding: 20px 0; border-top: 1px solid var(--line); }
 .legal-import-item label, .legal-simple-editor label { display: grid; gap: 6px; }
 .legal-import-item select, .legal-simple-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: inherit; background: var(--surface); color: inherit; }

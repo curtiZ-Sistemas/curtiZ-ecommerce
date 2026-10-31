@@ -60,12 +60,13 @@ async function enforceBudget(input: {
   email: string;
   scope: RateLimitScope;
   supabase: unknown;
+  budget?: { limit: number; windowSeconds: number };
 }): Promise<RateLimitResult> {
   const production = process.env.APP_ENV === "production" || process.env.NODE_ENV === "production";
   const secretReady = (process.env.RATE_LIMIT_HMAC_KEY?.length ?? 0) >= 32;
   if (production && (!input.supabase || !secretReady)) return { status: "error" };
-  const limit = input.scope === "login" ? 10 : input.scope === "signup" ? 5 : 3;
-  const windowSeconds = input.scope === "login" ? 15 * 60 : 60 * 60;
+  const limit = input.budget?.limit ?? (input.scope === "login" ? 10 : input.scope === "signup" ? 5 : 3);
+  const windowSeconds = input.budget?.windowSeconds ?? (input.scope === "login" ? 15 * 60 : 60 * 60);
   const hash = keyHash(`${input.scope}:account:${normalizeEmail(input.email)}`);
   if (!input.supabase) return localResult(hash, limit, windowSeconds);
   try {
@@ -89,6 +90,15 @@ export async function enforceAuthRateLimit(input: {
   supabase: unknown;
 }): Promise<RateLimitResult> {
   return enforceBudget(input);
+}
+
+export async function enforceRecoveryVerificationRateLimit(input: { request: Request; supabase: unknown }): Promise<RateLimitResult> {
+  // Cloudflare overwrites this header. Store only its HMAC, never the raw address.
+  const ip = input.request.headers.get("cf-connecting-ip") ?? "";
+  const production = process.env.APP_ENV === "production" || process.env.NODE_ENV === "production";
+  if (!/^[0-9a-f:.]{3,45}$/iu.test(ip) && production) return { status: "error" };
+  return enforceBudget({ scope: "password_reset", email: `recovery-verify:${ip || "development"}`,
+    supabase: input.supabase, budget: { limit: 10, windowSeconds: 15 * 60 } });
 }
 
 export async function enforcePrivacyRequestRateLimit(input: {

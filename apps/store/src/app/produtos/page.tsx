@@ -1,14 +1,18 @@
 import { CatalogPage } from "@/components/catalog-page";
 import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
+import { hasPublicCatalogItems } from "@/lib/seo-data";
 
 const description =
-  "Explore chinelos, slides e sandálias curti Z e encontre cores, tamanhos e estilos para cada momento.";
-export const metadata = catalogMetadata({
-  title: "Chinelos, slides e sandálias",
-  description,
-  path: "/produtos"
-});
+  "Explore chinelos e kits de chinelos curti Z. Consulte cores, tamanhos e disponibilidade dos produtos no catálogo.";
+export async function generateMetadata() {
+  return catalogMetadata({
+    title: "Chinelos e kits de chinelos",
+    description,
+    path: "/produtos",
+    indexable: await hasPublicCatalogItems()
+  });
+}
 
 export default function Page() {
   return (

@@ -1,10 +1,17 @@
 import { CatalogPage } from "@/components/catalog-page";
 import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
+import { hasPublicCatalogItems } from "@/lib/seo-data";
 
-const description =
-  "Confira os lançamentos curti Z e descubra os modelos mais recentes de chinelos, slides e sandálias.";
-export const metadata = catalogMetadata({ title: "Lançamentos", description, path: "/lancamentos" });
+const description = "Confira os chinelos e kits de chinelos mais recentes do catálogo curti Z.";
+export async function generateMetadata() {
+  return catalogMetadata({
+    title: "Lançamentos",
+    description,
+    path: "/lancamentos",
+    indexable: await hasPublicCatalogItems()
+  });
+}
 
 export default function Page() {
   return (

@@ -12,8 +12,9 @@ export const providerReference = (value: unknown): string => {
 
 // No raw provider object leaves this adapter. Card tokens live only in request memory.
 export class MercadoPagoCustomerCardsProvider {
-  constructor(private readonly accessToken: string) {
-    if (!isMercadoPagoTestCredential(accessToken)) throw new MercadoPagoProviderError("invalid_test_credential", 503);
+  constructor(private readonly accessToken: string, mode: "test" | "production" = "test") {
+    if (!(mode === "test" ? isMercadoPagoTestCredential(accessToken) : mode === "production" && accessToken.startsWith("APP_USR-")))
+      throw new MercadoPagoProviderError("invalid_payment_credential", 503);
   }
   private async request(path: string, method = "GET", body?: unknown, key?: string): Promise<unknown> {
     const headers = new Headers({ authorization: `Bearer ${this.accessToken}`, "content-type": "application/json" });

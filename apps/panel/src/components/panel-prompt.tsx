@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, type FormEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, type FormEvent, type ReactNode, type RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type PanelPromptOptions = {
   title: string;
@@ -13,39 +13,34 @@ type PanelPromptOptions = {
   confirmLabel?: string;
 };
 
+export type PanelConfirmOptions = {
+  title: string;
+  /** Consequência da ação, em uma ou duas frases. */
+  description?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: "danger" | "default";
+};
+
 type PendingPrompt = PanelPromptOptions & { resolve: (value: string | null) => void };
+type PendingConfirm = PanelConfirmOptions & { resolve: (value: boolean) => void };
 type PanelPromptRequest = (options: PanelPromptOptions) => Promise<string | null>;
+type PanelConfirmRequest = (options: PanelConfirmOptions) => Promise<boolean>;
 
 const PanelPromptContext = createContext<PanelPromptRequest | null>(null);
+const PanelConfirmContext = createContext<PanelConfirmRequest | null>(null);
 
-export function PanelPromptProvider({ children }: { children: ReactNode }) {
-  const [pending, setPending] = useState<PendingPrompt | null>(null);
-  const [value, setValue] = useState("");
-  const resolverRef = useRef<PendingPrompt["resolve"] | null>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-
-  const close = useCallback((result: string | null) => {
-    resolverRef.current?.(result);
-    resolverRef.current = null;
-    setPending(null);
-    setValue("");
-  }, []);
-
-  const requestPrompt = useCallback<PanelPromptRequest>((options) => {
-    resolverRef.current?.(null);
-    return new Promise((resolve) => {
-      resolverRef.current = resolve;
-      setValue(options.defaultValue ?? "");
-      setPending({ ...options, resolve });
-    });
-  }, []);
+// Escape fecha, Tab circula dentro do diálogo, a rolagem do fundo fica travada e o foco volta ao gatilho.
+function useDialogBehavior(open: boolean, dialogRef: RefObject<HTMLElement | null>, onEscape: () => void) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (!pending) return;
+    if (!open) return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close(null);
+      if (event.key === "Escape") onEscape();
       if (event.key !== "Tab") return;
       const controls = dialogRef.current?.querySelectorAll<HTMLElement>(
         "button:not(:disabled), input:not(:disabled), textarea:not(:disabled)"
@@ -65,8 +60,56 @@ export function PanelPromptProvider({ children }: { children: ReactNode }) {
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
+      const target = returnFocusRef.current;
+      if (target?.isConnected) window.setTimeout(() => target.focus(), 0);
     };
-  }, [close, pending]);
+  }, [dialogRef, onEscape, open]);
+}
+
+export function PanelPromptProvider({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState<PendingPrompt | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [value, setValue] = useState("");
+  const resolverRef = useRef<PendingPrompt["resolve"] | null>(null);
+  const confirmResolverRef = useRef<PendingConfirm["resolve"] | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const confirmRef = useRef<HTMLElement>(null);
+
+  const close = useCallback((result: string | null) => {
+    resolverRef.current?.(result);
+    resolverRef.current = null;
+    setPending(null);
+    setValue("");
+  }, []);
+
+  const closeConfirm = useCallback((result: boolean) => {
+    confirmResolverRef.current?.(result);
+    confirmResolverRef.current = null;
+    setPendingConfirm(null);
+  }, []);
+
+  const cancelPrompt = useCallback(() => close(null), [close]);
+  const cancelConfirm = useCallback(() => closeConfirm(false), [closeConfirm]);
+
+  const requestPrompt = useCallback<PanelPromptRequest>((options) => {
+    resolverRef.current?.(null);
+    return new Promise((resolve) => {
+      resolverRef.current = resolve;
+      setValue(options.defaultValue ?? "");
+      setPending({ ...options, resolve });
+    });
+  }, []);
+
+  const requestConfirm = useCallback<PanelConfirmRequest>((options) => {
+    confirmResolverRef.current?.(false);
+    return new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+      setPendingConfirm({ ...options, resolve });
+    });
+  }, []);
+
+  useDialogBehavior(Boolean(pending), dialogRef, cancelPrompt);
+  useDialogBehavior(Boolean(pendingConfirm), confirmRef, cancelConfirm);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -75,60 +118,93 @@ export function PanelPromptProvider({ children }: { children: ReactNode }) {
     close(normalized);
   };
 
+  const confirmTone = pendingConfirm?.tone ?? "default";
+
   return (
     <PanelPromptContext.Provider value={requestPrompt}>
-      {children}
-      {pending ? (
-        <div className="admin-modal-backdrop" role="presentation">
-          <section
-            ref={dialogRef}
-            className="admin-confirm panel-prompt-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="panel-prompt-title"
-          >
-            <h2 id="panel-prompt-title">{pending.title}</h2>
-            <form className="panel-prompt-form" onSubmit={submit}>
-              <label>
-                <span>{pending.label ?? "Informação"}</span>
-                {pending.multiline !== false ? (
-                  <textarea
-                    autoFocus
-                    rows={4}
-                    minLength={pending.minLength ?? 1}
-                    maxLength={1000}
-                    required
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                  />
-                ) : (
-                  <input
-                    autoFocus
-                    type={pending.inputType ?? "text"}
-                    inputMode={pending.inputMode}
-                    minLength={pending.inputType === "text" ? pending.minLength ?? 1 : undefined}
-                    required
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                  />
-                )}
-              </label>
-              <div>
-                <button className="secondary-button" type="button" onClick={() => close(null)}>
-                  Cancelar
+      <PanelConfirmContext.Provider value={requestConfirm}>
+        {children}
+        {pending ? (
+          <div className="admin-modal-backdrop" role="presentation">
+            <section
+              ref={dialogRef}
+              className="admin-confirm panel-prompt-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="panel-prompt-title"
+            >
+              <h2 id="panel-prompt-title">{pending.title}</h2>
+              <form className="panel-prompt-form" onSubmit={submit}>
+                <label>
+                  <span>{pending.label ?? "Informação"}</span>
+                  {pending.multiline !== false ? (
+                    <textarea
+                      autoFocus
+                      rows={4}
+                      minLength={pending.minLength ?? 1}
+                      maxLength={1000}
+                      required
+                      value={value}
+                      onChange={(event) => setValue(event.target.value)}
+                    />
+                  ) : (
+                    <input
+                      autoFocus
+                      type={pending.inputType ?? "text"}
+                      inputMode={pending.inputMode}
+                      minLength={pending.inputType === "text" ? pending.minLength ?? 1 : undefined}
+                      required
+                      value={value}
+                      onChange={(event) => setValue(event.target.value)}
+                    />
+                  )}
+                </label>
+                <div>
+                  <button className="secondary-button" type="button" onClick={() => close(null)}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={value.trim().length < (pending.minLength ?? 1)}
+                  >
+                    {pending.confirmLabel ?? "Confirmar"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        ) : null}
+        {pendingConfirm ? (
+          <div className="admin-modal-backdrop" role="presentation">
+            <section
+              ref={confirmRef}
+              className="admin-confirm panel-confirm-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="panel-confirm-title"
+              aria-describedby={pendingConfirm.description ? "panel-confirm-description" : undefined}
+              data-tone={confirmTone}
+            >
+              <h2 id="panel-confirm-title">{pendingConfirm.title}</h2>
+              {pendingConfirm.description ? <p id="panel-confirm-description">{pendingConfirm.description}</p> : null}
+              <div className="panel-confirm-actions">
+                {/* Foco inicial em Cancelar: a escolha segura é a mais fácil. */}
+                <button className="secondary-button" type="button" autoFocus onClick={() => closeConfirm(false)}>
+                  {pendingConfirm.cancelLabel ?? "Cancelar"}
                 </button>
                 <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={value.trim().length < (pending.minLength ?? 1)}
+                  className={confirmTone === "danger" ? "danger-button" : "primary-button"}
+                  type="button"
+                  onClick={() => closeConfirm(true)}
                 >
-                  {pending.confirmLabel ?? "Confirmar"}
+                  {pendingConfirm.confirmLabel ?? "Confirmar"}
                 </button>
               </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
+            </section>
+          </div>
+        ) : null}
+      </PanelConfirmContext.Provider>
     </PanelPromptContext.Provider>
   );
 }
@@ -137,4 +213,11 @@ export function usePanelPrompt(): PanelPromptRequest {
   const requestPrompt = useContext(PanelPromptContext);
   if (!requestPrompt) throw new Error("usePanelPrompt deve ser usado dentro de PanelPromptProvider.");
   return requestPrompt;
+}
+
+/** Substitui window.confirm: resolve true só quando a pessoa confirma; Escape e Cancelar resolvem false. */
+export function usePanelConfirm(): PanelConfirmRequest {
+  const requestConfirm = useContext(PanelConfirmContext);
+  if (!requestConfirm) throw new Error("usePanelConfirm deve ser usado dentro de PanelPromptProvider.");
+  return requestConfirm;
 }

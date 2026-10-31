@@ -12,7 +12,6 @@ import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import {
   automaticProductSeo,
   productDeletionMessage,
@@ -305,7 +304,6 @@ async function authorizedClient(request: NextRequest) {
   ) {
     return null;
   }
-  if (!(await hasRequiredInternalMfa(supabase))) return null;
   if (!(await consumePanelMutationBudget(request, supabase))) return null;
   return supabase;
 }

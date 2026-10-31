@@ -27,11 +27,11 @@ select throws_ok($$select public.import_legal_policy('politica-de-privacidade','
   'P0001','invalid legal destination','destino não canônico é rejeitado');
 select set_config('request.jwt.claims','{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
 select ok((public.publish_legal_policy((select id from public.legal_documents where slug='aviso-de-privacidade'),
-  (select updated_at from public.legal_documents where slug='aviso-de-privacidade'))->'problems') ? '[CNPJ]',
-  'placeholder bloqueia publicação');
+  (select updated_at from public.legal_documents where slug='aviso-de-privacidade'))->'pending') ? '[CNPJ]',
+  'placeholder não bloqueia a publicação e é devolvido como pendência');
 select ok((public.publish_legal_policy((select id from public.legal_documents where slug='aviso-de-privacidade'),
-  (select updated_at from public.legal_documents where slug='aviso-de-privacidade'))->'problems') ? 'Razão social',
-  'flag completa não substitui campos reais');
+  (select updated_at from public.legal_documents where slug='aviso-de-privacidade'))->'pending') ? 'Razão social',
+  'flag completa não substitui campos reais, que seguem como pendência');
 create temporary table legal_before as select id,requires_acceptance,display_locations,audience,updated_at
   from public.legal_documents where slug='aviso-de-privacidade';
 select is((public.import_legal_policy('aviso-de-privacidade','Política de Privacidade',
@@ -61,7 +61,7 @@ select ok(exists(select 1 from public.legal_document_reviews r join legal_publis
 select is((public.publish_legal_policy((select id from legal_before),(select updated_at from legal_published))->>'unchanged')::boolean,
   true,'retry da publicação é idempotente');
 select is((select count(*)::integer from public.legal_document_versions where document_id=(select id from legal_before)),
-  1,'retry não duplica versões');
+  2,'retry não duplica versões (uma publicada com pendências e uma completa)');
 with attempted as (
   update public.legal_document_versions set snapshot='{}' where id=(select id from legal_published) returning id
 )

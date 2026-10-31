@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(14);
 
 select matches(public.claim_payment_webhook('lease-event','lease-payment',repeat('a',64),'payment'),
   '^acquired:[0-9a-f-]{36}$','First event acquires the provider lease');
@@ -29,10 +29,31 @@ select is(has_function_privilege('authenticated','public.finish_payment_webhook(
   false,'Browser clients cannot finish financial events');
 select is(has_function_privilege('anon','public.finish_payment_webhook(text,uuid,boolean,text)','execute'),
   false,'Anonymous clients cannot acknowledge provider events');
-select public.claim_payment_webhook('budget-event-' || n,'lease-payment',repeat('a',64),'payment')
-from generate_series(1,8) n;
-select is(public.claim_payment_webhook('budget-over-limit','lease-payment',repeat('a',64),'payment'),
-  'limited','Distinct signed events share a bounded per-payment provider budget');
+-- Use a fresh payment and a complete fixed window. The earlier lease assertions
+-- may straddle a minute boundary; they must not supply part of this budget.
+create temporary table bounded_budget_result(first_ten_acquired boolean,over_limit text,payment_id text);
+do $$declare bucket timestamptz; payment text; result text; all_acquired boolean; attempt integer; n integer;
+begin
+  for attempt in 1..3 loop
+    payment:='budget-payment-'||gen_random_uuid()::text;
+    bucket:=date_trunc('minute',clock_timestamp());all_acquired:=true;
+    for n in 1..10 loop
+      result:=public.claim_payment_webhook('budget-'||payment||'-'||n,payment,repeat('a',64),'payment');
+      all_acquired:=all_acquired and result ~ '^acquired:[0-9a-f-]{36}$';
+    end loop;
+    result:=public.claim_payment_webhook('budget-over-'||payment,payment,repeat('a',64),'payment');
+    if date_trunc('minute',clock_timestamp())=bucket then
+      insert into bounded_budget_result values(all_acquired,result,payment);return;
+    end if;
+  end loop;
+  raise exception 'Could not observe one complete provider-budget window';
+end;$$;
+select ok((select first_ten_acquired from bounded_budget_result),'Ten distinct events within one window acquire leases');
+select is((select over_limit from bounded_budget_result),'limited','Eleventh distinct event in the same window is limited');
+update private.payment_webhook_budgets set window_started_at=clock_timestamp()-interval '2 minutes'
+where payment_hash=encode(sha256(convert_to((select payment_id from bounded_budget_result),'UTF8')),'hex');
+select matches(public.claim_payment_webhook('budget-next-window',(select payment_id from bounded_budget_result),repeat('a',64),'payment'),
+  '^acquired:[0-9a-f-]{36}$','A later window renews the bounded provider budget');
 
 select * from finish();
 rollback;

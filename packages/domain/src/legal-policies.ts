@@ -99,6 +99,32 @@ export const legalCompanyMarkers: Record<string, string> = {
   "[CANAL_PRIVACIDADE]": "privacy_channel",
   "[CONTATO_PRIVACIDADE]": "data_protection_contact"
 };
+export const legalCompanyFieldLabels: Record<string, string> = {
+  legal_name: "Razão social",
+  tax_id: "CNPJ",
+  address: "Endereço empresarial",
+  email: "E-mail de atendimento",
+  privacy_channel: "Canal de privacidade",
+  data_protection_contact: "Responsável pelo canal de privacidade"
+};
+/** Where each pending marker must be fixed: the shared company data or the policy text itself. */
+export function legalPendingLocations(
+  sections: Pick<LegalSection, "section_number" | "title" | "content">[]
+) {
+  return sections.flatMap((section) => {
+    const markers = legalPlaceholders(`${section.title}
+${section.content}`);
+    if (!markers.length) return [];
+    const where = (marker: string) => {
+      const field = legalCompanyMarkers[marker];
+      return field
+        ? `${marker} (Dados da empresa › ${legalCompanyFieldLabels[field] ?? field})`
+        : `${marker} (editar o texto)`;
+    };
+    const label = section.section_number === "0" ? section.title : `${section.section_number} ${section.title}`;
+    return [`${label}: ${markers.map(where).join(", ")}`];
+  });
+}
 export function legalCompanyReplacements(company: Record<string, unknown> | null) {
   if (company?.completeness_status !== "complete") return {};
   return Object.fromEntries(

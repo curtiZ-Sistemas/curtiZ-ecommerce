@@ -43,6 +43,18 @@ const deploySteps = {
 const runtimeOwned = /^(CHECKOUT_ENABLED|PAYMENT_PROVIDER|MERCADO_PAGO_(?!.*PUBLIC_KEY).*|SHIPPING_PROVIDER|MELHOR_ENVIO_.*|EMAIL_.*|TURNSTILE_ENABLED|REQUIRE_INTERNAL_MFA|AUTH_RATE_LIMIT_ENABLED)$/;
 
 describe("workflow de deploy (.github/workflows/ci.yml)", () => {
+  it("limits browser installation waits without disabling repository or TLS verification", () => {
+    const network = stepBlock("Preparar rede do instalador do navegador");
+    const browser = stepBlock("Instalar Chromium e dependências");
+    expect(network).toContain("https://archive.ubuntu.com/ubuntu");
+    expect(network).toContain('Acquire::http::Timeout "20"');
+    expect(network).toContain('Acquire::https::Timeout "20"');
+    expect(network).not.toMatch(/AllowInsecure|AllowUnauthenticated|Verify-Peer|Verify-Host|trusted=yes/iu);
+    expect(browser).toContain("timeout-minutes: 10");
+    expect(browser).toContain('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "30000"');
+    expect(browser).toContain("pnpm exec playwright install --with-deps chromium");
+    expect(browser).not.toMatch(/continue-on-error|\|\| true/iu);
+  });
   it("mantém o E2E local com cookies de host e sem herdar aliases de produção", () => {
     const job = workflow.split("  e2e:\n")[1]?.split("    steps:\n")[0] ?? "";
     const overrides = Object.fromEntries(

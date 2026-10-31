@@ -45,6 +45,10 @@ export const resolvePublicAppUrls = (currentUrl?: string | URL): PublicAppUrls =
   const configured = configuredPublicAppUrls();
   const currentOrigin = origin(currentUrl?.toString());
 
+  if (currentOrigin && new URL(currentOrigin).hostname.endsWith(".workers.dev")) {
+    return { ...PRODUCTION_URLS };
+  }
+
   if (currentOrigin) {
     // NEXT_PUBLIC_* is inlined by Next.js. Runtime bindings cannot repair a
     // stale build, so official requests must never select a workers.dev pair.
@@ -54,7 +58,7 @@ export const resolvePublicAppUrls = (currentUrl?: string | URL): PublicAppUrls =
 
     if (
       configured.storeTestUrl &&
-      configured.panelTestUrl &&
+        configured.panelTestUrl &&
       (currentOrigin === configured.storeTestUrl || currentOrigin === configured.panelTestUrl)
     ) {
       return {
@@ -77,7 +81,7 @@ export const resolvePublicAppUrls = (currentUrl?: string | URL): PublicAppUrls =
   }
 
   return {
-    storeUrl: configured.storeUrl,
-    panelUrl: configured.panelUrl
+    storeUrl: new URL(configured.storeUrl).hostname.endsWith(".workers.dev") ? PRODUCTION_URLS.storeUrl : configured.storeUrl,
+    panelUrl: new URL(configured.panelUrl).hostname.endsWith(".workers.dev") ? PRODUCTION_URLS.panelUrl : configured.panelUrl
   };
 };

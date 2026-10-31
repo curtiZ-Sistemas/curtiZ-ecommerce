@@ -19,13 +19,15 @@ export function PasswordRecoveryForm({
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
   const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (loading) return;
+    if (loading || done) return;
     setLoading(true);
     setMessage("");
     setError(false);
@@ -39,16 +41,22 @@ export function PasswordRecoveryForm({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const result = (await response.json()) as PasswordResult;
+      const result = (await response.json().catch(() => ({}))) as PasswordResult;
+      const redirectTo = typeof result.redirectTo === "string" && result.redirectTo.startsWith("/")
+        && !result.redirectTo.startsWith("//") ? result.redirectTo : undefined;
       setMessage(result.message ?? "Não foi possível concluir esta etapa.");
       setError(!response.ok);
-      if (response.ok && result.redirectTo) {
-        window.setTimeout(() => router.replace(result.redirectTo ?? "/minha-conta"), 700);
+      // A sent link or an updated password must not be submitted twice.
+      if (response.ok) setDone(true);
+      if (redirectTo && (response.ok || response.status === 403)) {
+        window.setTimeout(() => router.replace(redirectTo), 700);
       }
     } catch {
       setError(true);
       setMessage("Não foi possível conectar ao serviço. Tente novamente em instantes.");
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       setLoading(false);
     }
   };
@@ -82,8 +90,8 @@ export function PasswordRecoveryForm({
                 name="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
-                minLength={10}
-                placeholder="Crie uma senha com pelo menos 10 caracteres"
+                minLength={8}
+                placeholder="Crie uma senha com pelo menos 8 caracteres"
                 required
               />
               <button
@@ -106,7 +114,7 @@ export function PasswordRecoveryForm({
                 name="confirmPassword"
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
-                minLength={10}
+                minLength={8}
                 required
               />
             </div>
@@ -115,7 +123,7 @@ export function PasswordRecoveryForm({
       )}
 
       {mode === "request" && (
-        <TurnstileField enabled={turnstileEnabled} onToken={handleTurnstileToken} />
+        <TurnstileField action={"password_recovery"} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={handleTurnstileToken} />
       )}
 
       {message && (
@@ -126,7 +134,7 @@ export function PasswordRecoveryForm({
 
       <button
         className="primary-button full-button auth-submit"
-        disabled={loading || (mode === "request" && turnstileEnabled && !turnstileToken)}
+        disabled={loading || done || (mode === "request" && turnstileEnabled && !turnstileToken)}
       >
         {loading ? <LoaderCircle className="spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
         {loading

@@ -14,7 +14,7 @@ const DeferredCatalogPage = dynamic(
 export function FemininoCatalog({ description }: { description: string }) {
   return (
     <DeferredCatalogPage
-      title="Chinelos e sandálias femininas"
+      title="Chinelos e kits de chinelos femininos"
       description={description}
       category="Feminino"
     />
@@ -27,14 +27,14 @@ export function FemininoCatalogFallback() {
       <nav className="breadcrumbs" aria-label="Navegação estrutural">
         <Link href="/">curti Z</Link>
         <span>/</span>
-        <span>Chinelos e sandálias femininas</span>
+        <span>Chinelos e kits de chinelos femininos</span>
       </nav>
       <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">Catálogo curti Z</p>
-          <h1>Chinelos e sandálias femininas</h1>
+          <h1>Chinelos e kits de chinelos femininos</h1>
           <p>
-            Descubra chinelos e sandálias femininas curti Z com leveza, cores atuais e conforto
+            Conheça os chinelos e kits de chinelos femininos curti Z
             para acompanhar sua rotina.
           </p>
         </div>

@@ -1,6 +1,100 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginDemoAccount } from "./demo-auth";
 
+test("Google indisponível preserva login e cadastro tradicionais", async ({ page }) => {
+  test.setTimeout(60_000);
+  let attempts = 0;
+  page.on("request", (request) => { if (request.url().endsWith("/api/auth/google")) attempts += 1; });
+  for (const path of ["/login", "/cadastro"]) {
+    await page.goto(path);
+    await expect(page.getByRole("button", { name: "Continuar com Google", exact: true })).toBeDisabled();
+    await expect(page.getByRole("region", { name: "Acesso com Google", exact: true }).getByText("Login com Google indisponível no momento. Use e-mail e senha.", { exact: true })).toBeVisible();
+    // Streaming can temporarily retain a hidden copy of the server-rendered form.
+    await expect(page.locator('input[name="email"]:visible')).toBeVisible();
+    await expect(page.locator('input[name="password"]:visible')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  expect(attempts).toBe(0);
+});
+
+test("prévia de frete valida CEP, variante, quantidade e recuperação sem alterar a compra", async ({ page, isMobile }) => {
+  test.setTimeout(90_000);
+  const requests: Record<string, unknown>[] = [];
+  let responseMode = "success";
+  let releaseLate: (() => void) | undefined;
+  await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
+  await page.route("**/api/shipping/preview", async (route) => {
+    const body: unknown = route.request().postDataJSON();
+    requests.push(body as Record<string, unknown>);
+    const delayed = responseMode === "delayed";
+    if (delayed) await new Promise<void>((resolve) => { releaseLate = resolve; });
+    if (responseMode === "error") return route.fulfill({ status: 429, json: { message: "Aguarde e tente novamente." } });
+    if (responseMode === "empty") return route.fulfill({ json: { ok: true, quotes: [] } });
+    return route.fulfill({ json: { ok: true, quotes: [{ serviceId: "fixture", service: delayed ? "Resposta antiga" : "Entrega de teste",
+      carrier: "Fixture E2E", amountInCents: 2100, estimatedDays: 4 }] } });
+  });
+  await page.goto("/produto/flip-flop-wave-preto");
+  const preview = page.getByRole("region", { name: "Calcule o frete e o prazo de entrega" });
+  await expect(preview).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("CEP válido");
+  await preview.getByLabel("CEP", { exact: true }).fill("01310100");
+  await expect(preview.getByLabel("CEP", { exact: true })).toHaveValue("01310-100");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Escolha a cor e o tamanho");
+  await page.getByRole("button", { name: "39/40", exact: true }).click();
+  const quantityBox = await page.getByRole("group", { name: "Quantidade" }).boundingBox();
+  const sizeBox = await page.getByRole("button", { name: "39/40", exact: true }).boundingBox();
+  const buyBox = await page.getByRole("button", { name: "Comprar agora", exact: true }).boundingBox();
+  expect(sizeBox!.y).toBeLessThan(quantityBox!.y);
+  expect(quantityBox!.y).toBeLessThan(buyBox!.y);
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  await expect(preview.getByRole("status")).toContainText("4 dias úteis");
+  await expect(preview.getByLabel("Qtd. na simulação")).toHaveCount(0);
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  expect(requests.at(-1)?.quantity).toBe(2);
+  const oldVariant = requests.at(-1)?.variantId;
+  await page.getByRole("button", { name: "41/42", exact: true }).click();
+  await expect(preview.getByRole("status")).not.toContainText("Fixture E2E");
+  responseMode = "empty";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Nenhum serviço");
+  expect(requests.at(-1)?.variantId).not.toBe(oldVariant);
+  responseMode = "error";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Aguarde e tente novamente");
+  responseMode = "success";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Fixture E2E");
+  responseMode = "delayed";
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("button", { name: "Calculando…", exact: true })).toBeDisabled();
+  await expect.poll(() => Boolean(releaseLate)).toBe(true);
+  await page.getByRole("button", { name: "Aumentar quantidade", exact: true }).click();
+  responseMode = "success";
+  releaseLate?.();
+  await preview.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(preview.getByRole("status")).toContainText("Entrega de teste");
+  await expect(preview.getByRole("status")).not.toContainText("Resposta antiga");
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("curtiz.shipping-postal-code.v1") ?? "null") as unknown))
+    .toMatchObject({ postalCode: "01310100" });
+  for (const width of isMobile ? [320, 360, 390, 430] : [768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(preview.getByRole("button", { name: "Calcular", exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Adicionar ao carrinho", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Adicionado ao carrinho", exact: true })).toBeVisible();
+  // A quantidade escolhida na compra é a que entra no carrinho.
+  await page.goto("/carrinho");
+  await expect(page.getByLabel("Quantidade atual: 3")).toBeVisible();
+});
+
 // UI contract fixture only: the demo backend has no persisted checkout addresses.
 // These tests do not prove Supabase persistence or an online Melhor Envio quote.
 async function fixtureCheckoutAddress(page: Page) {
@@ -324,10 +418,12 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
     );
   });
   const submittedLines: unknown[] = [];
+  const submittedFiscalRecipients: unknown[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/api/checkout") && request.method() === "POST") {
-      const payload = request.postDataJSON() as { lines?: unknown[] };
+      const payload = request.postDataJSON() as { lines?: unknown[]; fiscalRecipient?: unknown };
       submittedLines.push(...(payload.lines ?? []));
+      submittedFiscalRecipients.push(payload.fiscalRecipient);
     }
   });
   await loginDemoAccount(page, "cliente.demo@curtiz.local");
@@ -437,15 +533,29 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   const cpf = page.getByLabel("CPF para o pedido");
   await expect(cpf).toHaveAttribute("inputmode", "numeric");
   await cpf.fill("11111111111");
+  await expect(page.locator("#checkout-fiscal-title")).toHaveCount(0);
+  await expect(page.getByText("Compra para revenda ou com inscrição estadual", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[name="icmsTaxpayer"], [name="finalConsumer"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Continuar para pagamento" })).toBeDisabled();
   await page.locator("form.checkout-layout").evaluate((form) => (form as HTMLFormElement).requestSubmit());
   await expect(page.locator("#checkout-cpf-error")).toHaveText("Informe um CPF válido.");
   await cpf.fill("5299822472512345");
   await expect(cpf).toHaveValue("529.982.247-25");
   await expect(page.locator(".checkout-address-card.selected")).toContainText("Avenida Paulista");
+  await page.route("**/api/shipping/quote", route => route.fulfill({ json: {
+    ok: true, quotes: [], supportCode: "FRT-TEST0001",
+    message: "Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001."
+  } }), { times: 1 });
+  await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
+  await expect(page.getByText("Nenhuma opção de entrega está disponível. Código de suporte: FRT-TEST0001.", { exact: true })).toBeVisible();
+  const attemptsWithoutShipping = submittedLines.length;
+  await page.getByRole("button", { name: "Continuar para pagamento" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Calcule e selecione uma opção de frete antes de continuar." })).toBeVisible();
+  expect(submittedLines).toHaveLength(attemptsWithoutShipping);
   await page.getByRole("button", { name: "Calcular frete", exact: true }).click();
   await expect(page.getByRole("radio", { name: /Entrega de teste/ })).toBeChecked();
   submittedLines.length = 0;
+  submittedFiscalRecipients.length = 0;
   await page.getByRole("button", { name: "Continuar para pagamento" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Novas compras estão temporariamente indisponíveis." })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Escolha como pagar", { exact: true })).toHaveCount(0);
@@ -453,6 +563,7 @@ test("checkout valida os dados e preserva o carrinho quando novas compras estão
   expect(submittedLines).toEqual([
     expect.objectContaining({ variantId: "wave-preto:Preto:39/40", quantity: 1 })
   ]);
+  expect(submittedFiscalRecipients).toEqual([{ icmsTaxpayer: false, finalConsumer: true }]);
   await page.goto("/carrinho");
   await expect(page.locator(".cart-item")).toHaveCount(2);
 });
@@ -547,7 +658,8 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
   await page
@@ -627,7 +739,8 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
 
   const sessionCookies = await context.cookies();
@@ -660,7 +773,8 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
   const persistentCookies = await context.cookies();
   const nowInSeconds = Date.now() / 1_000;
@@ -722,7 +836,8 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("**/minha-conta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
 
@@ -739,9 +854,13 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
+  // The URL may commit before the login navigation replaces its previous tree.
+  // Wait for a unique account view; a persistent duplicate must still fail.
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
   await expect(page.getByText("#CZT-DEMO01")).toHaveCount(0);
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
@@ -777,6 +896,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await expect(page.getByLabel("Nome completo")).toHaveValue("Cliente Demo");
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/);
+  await expect(page.locator(".customer-account-page")).toHaveCount(1);
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });
@@ -996,7 +1116,8 @@ test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ pa
   await page.goto("/login?next=%2Fcarrinho");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByRole("button", { name: "Entrar na minha conta" }).click();
+  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/carrinho$/, { timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "curti Z Flip-Flop Wave Preto" })).toBeVisible();

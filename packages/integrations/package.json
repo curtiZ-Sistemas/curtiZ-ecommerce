@@ -15,7 +15,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@curtiz/domain": "workspace:*"
+    "@curtiz/domain": "workspace:*",
+    "saxes": "5.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

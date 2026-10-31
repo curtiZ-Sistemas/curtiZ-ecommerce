@@ -1,6 +1,7 @@
 import "server-only";
 import type { User } from "@supabase/supabase-js";
-import { isMercadoPagoTestCredential, MercadoPagoCustomerCardsProvider, MercadoPagoProviderError } from "@curtiz/integrations";
+import { MercadoPagoCustomerCardsProvider, MercadoPagoProviderError } from "@curtiz/integrations";
+import { getMercadoPagoCredentials, getMercadoPagoEnvironment } from "@curtiz/config";
 import type { createServiceSupabaseClient } from "./supabase/server";
 import { isUnknownRecord, readQueryResult, readString } from "./unknown-data";
 
@@ -9,19 +10,18 @@ export class SavedCardsError extends Error {
   constructor(readonly code: string, readonly status = 503) { super(code); }
 }
 export const savedCardsEnabled = () => process.env.MERCADO_PAGO_SAVED_CARDS_ENABLED === "true"
-  && isMercadoPagoTestCredential(process.env.MERCADO_PAGO_ACCESS_TOKEN)
-  && isMercadoPagoTestCredential(process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY);
+  && getMercadoPagoCredentials() !== null;
 const cardsProvider = () => {
   if (!savedCardsEnabled()) throw new SavedCardsError("SAVED_CARDS_UNAVAILABLE");
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-  if (!token) throw new SavedCardsError("SAVED_CARDS_UNAVAILABLE");
-  return new MercadoPagoCustomerCardsProvider(token.trim());
+  const credentials = getMercadoPagoCredentials();
+  if (!credentials) throw new SavedCardsError("SAVED_CARDS_UNAVAILABLE");
+  return new MercadoPagoCustomerCardsProvider(credentials.accessToken, credentials.mode);
 };
 const eligibleUser = (user: User) => Boolean(user.email_confirmed_at && user.email
-  && /^test_payer_\d{1,10}@testuser\.com$/u.test(user.email));
+  && (getMercadoPagoEnvironment() === "production" || /^test_payer_\d{1,10}@testuser\.com$/u.test(user.email)));
 const customerReference = async (db: CardsDb, userId: string) => {
   const result = readQueryResult(await db.from("payment_provider_customers")
-    .select("id,provider_customer_id,state").eq("user_id", userId).eq("provider", "mercadopago").eq("payment_mode", "test").maybeSingle());
+    .select("id,provider_customer_id,state").eq("user_id", userId).eq("provider", "mercadopago").eq("payment_mode", getMercadoPagoEnvironment()).maybeSingle());
   if (result.error) throw new SavedCardsError("CUSTOMER_LOOKUP_UNAVAILABLE");
   return isUnknownRecord(result.data) ? result.data : null;
 };
@@ -36,13 +36,15 @@ export async function getOrCreateMercadoPagoCustomer(db: CardsDb, user: User) {
   const email = user.email;
   if (!email) throw new SavedCardsError("SAVED_CARDS_USER_UNSUPPORTED", 409);
   const provider = cardsProvider();
-  const claim = readQueryResult(await db.rpc("claim_mercadopago_customer", { p_user_id: user.id, p_mode: "test" }));
+  const mode = getMercadoPagoEnvironment();
+  if (!mode) throw new SavedCardsError("SAVED_CARDS_UNAVAILABLE");
+  const claim = readQueryResult(await db.rpc("claim_mercadopago_customer", { p_user_id: user.id, p_mode: mode }));
   if (claim.error || !isUnknownRecord(claim.data)) throw new SavedCardsError("CUSTOMER_CLAIM_UNAVAILABLE");
   const localId = readString(claim.data, "id"), key = readString(claim.data, "creationKey");
   let providerId = readString(claim.data, "providerCustomerId");
   if (!localId || !key) throw new SavedCardsError("CUSTOMER_CLAIM_UNAVAILABLE");
   if (providerId) return { localId, providerId };
-  const marker = `curtiz:test:${user.id}`;
+  const marker = `curtiz:${mode}:${user.id}`;
   providerId = await provider.findOwnedCustomer(email, marker) ?? "";
   if (!providerId) {
     // A lost response remains "creating": never issue a second create on lease expiry.
@@ -77,7 +79,8 @@ export async function validateSavedCardPayer(db: CardsDb, user: User, customerId
 export async function saveMyMercadoPagoCard(db: CardsDb, user: User, input: { orderId: string; key: string; token: string; consent: true }) {
   // Eligibility is checked before making any provider create request.
   const order = readQueryResult(await db.from("orders").select("id").eq("id", input.orderId)
-    .eq("customer_id", user.id).eq("payment_status", "approved").maybeSingle());
+    .eq("customer_id", user.id).eq("payment_status", "approved")
+    .eq("commercial_rules_snapshot->>paymentMode", getMercadoPagoEnvironment()).maybeSingle());
   if (order.error || !isUnknownRecord(order.data)) throw new SavedCardsError("APPROVED_ORDER_REQUIRED", 403);
   const customer = await getOrCreateMercadoPagoCustomer(db, user);
   const claim = readQueryResult(await db.rpc("claim_mercadopago_card_save", {
