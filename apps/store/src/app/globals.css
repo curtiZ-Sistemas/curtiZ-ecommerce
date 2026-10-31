@@ -6357,6 +6357,57 @@ select:disabled {
   width: 17px;
 }
 
+.customer-cancel-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(480px, calc(100% - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 28px;
+  overflow-y: auto;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #e3d9d6;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgb(33 16 14 / 22%);
+}
+
+.customer-cancel-dialog::backdrop {
+  background: rgb(24 12 11 / 58%);
+}
+
+.customer-cancel-dialog h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+
+.customer-cancel-dialog p {
+  margin: 12px 0 24px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.customer-cancel-dialog .customer-form-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 480px) {
+  .customer-cancel-dialog {
+    padding: 22px;
+  }
+
+  .customer-cancel-dialog .customer-form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .customer-cancel-dialog .customer-form-actions button {
+    width: 100%;
+  }
+}
+
 .customer-order-filters {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 220px;
