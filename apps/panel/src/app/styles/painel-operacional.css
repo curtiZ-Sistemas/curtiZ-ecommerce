@@ -1,0 +1,1630 @@
+/*
+  Painel Operacional — estilos próprios.
+  Dono: Agente 2. Somente este agente edita este arquivo.
+  Carregado depois de globals.css e foundation.css (ver app/layout.tsx).
+  Seletores permitidos: .operational-*, .support-*, .bling-console, .bling-order-*, .legal-operational (.support-* e .bling-* aparecem em outros painéis: não escopar por papel)
+  Ou primitivos compartilhados escopados com [data-panel-role="operacional"], apenas para densidade/disposição.
+  Use somente tokens (var(--...)); sem hex novo, sem !important, sem fonte nova.
+
+  Conteúdo:
+  1. Estrutura do console, blocos e avisos
+  2. Dashboard: faixa de prioridades e lista de filas
+  3. Listas de objetos (pedidos, tarefas, kits, ocorrências) e etapas do pedido
+  4. Barra de busca, contagem e paginação
+  5. Detalhe em painel lateral (pedido e conferência)
+  6. Tabelas (estoque, notas, relatório), linha do tempo e registros
+  7. Trocas e devoluções
+  8. Ocorrências e formulários
+  9. Carregando
+  10. Atendimento (os quatro painéis)
+  11. Bling (Operacional, Administração e Gerência)
+  12. Políticas oficiais
+  13. Responsivo e movimento reduzido
+*/
+
+/* 1. Estrutura ------------------------------------------------------------------------------------ */
+
+.operational-console {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.operational-block {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+.operational-block > .ui-section-header {
+  margin: 0;
+}
+
+.operational-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.operational-banner svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.operational-muted {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-required {
+  margin-left: 2px;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* 2. Dashboard ------------------------------------------------------------------------------------ */
+
+.operational-queue-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  list-style: none;
+}
+
+.operational-queue-list li {
+  min-width: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.operational-queue-list li:nth-child(odd) {
+  border-right: 1px solid var(--line-soft);
+}
+
+.operational-queue-list a {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  color: var(--ink);
+  font-size: var(--text-base);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease);
+}
+
+.operational-queue-list a:hover {
+  background: var(--neutral-50);
+}
+
+.operational-queue-list a:focus-visible {
+  outline-offset: -2px;
+}
+
+.operational-queue-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operational-queue-list strong {
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.operational-queue-list svg {
+  width: 16px;
+  height: 16px;
+  color: var(--neutral-500);
+}
+
+.operational-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-6);
+}
+
+/* 3. Listas de objetos ---------------------------------------------------------------------------- */
+
+.operational-list {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.operational-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.operational-item:last-child {
+  border-bottom: 0;
+}
+
+.operational-item-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.operational-item-title,
+.operational-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.operational-item-title > .ui-code {
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.operational-item-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.operational-item-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.operational-item-description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.operational-item-tags {
+  margin-top: var(--space-1);
+}
+
+.operational-item > .operational-actions {
+  grid-column: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.operational-actions .primary-button,
+.operational-actions .secondary-button {
+  min-height: 44px;
+  padding-inline: var(--space-4);
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+/* Etapas do pedido: derivadas do status existente. */
+.operational-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operational-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--neutral-500);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.operational-steps li + li::before {
+  width: 16px;
+  height: 1px;
+  margin: 0 6px;
+  background: var(--line-strong);
+  content: "";
+}
+
+.operational-steps li[data-state="done"] {
+  color: var(--success);
+}
+
+.operational-steps li[data-state="current"] {
+  color: var(--ink);
+}
+
+.operational-steps li[data-state="current"]::after {
+  width: 6px;
+  height: 6px;
+  order: -1;
+  border-radius: 50%;
+  background: var(--info);
+  content: "";
+}
+
+/* 4. Busca, contagem e paginação ------------------------------------------------------------------ */
+
+.operational-toolbar {
+  margin: 0;
+}
+
+.operational-toolbar select {
+  width: auto;
+  min-width: 180px;
+}
+
+.operational-search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+}
+
+.operational-search > svg {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.operational-search input {
+  width: 100%;
+  padding-left: 36px;
+}
+
+.operational-toolbar .operational-count {
+  margin-left: auto;
+}
+
+.operational-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-count .ui-num {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.operational-count-label {
+  min-width: 28px;
+  min-height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  color: var(--neutral-700);
+  background: var(--neutral-50);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.operational-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.operational-pagination > span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-pagination > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.operational-pagination .secondary-button {
+  min-height: 44px;
+}
+
+/* 5. Detalhe em painel lateral -------------------------------------------------------------------- */
+
+.operational-detail {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.operational-detail-section {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.operational-detail-section h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.operational-detail-section p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.operational-detail-items {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operational-detail-items li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.operational-detail-items small,
+.operational-check-product small,
+.operational-product-cell small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-shipment {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.operational-shipment + .operational-shipment {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.operational-shipping-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.operational-shipping-actions .operational-danger-action {
+  margin-left: auto;
+}
+
+.operational-note-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.operational-note-form .operational-field {
+  width: 100%;
+}
+
+.operational-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--neutral-50);
+  font-size: var(--text-base);
+}
+
+.operational-note time {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.operational-check-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.operational-check-list form.operational-check-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.operational-check-list .operational-check-item > div.operational-check-product {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+}
+
+.operational-check-list .operational-check-item > div.operational-check-expected {
+  grid-column: auto;
+  display: grid;
+  gap: 2px;
+}
+
+.operational-check-expected span {
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.operational-check-expected strong {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: var(--text-lg);
+}
+
+.operational-check-list form.operational-check-item > label {
+  grid-column: auto;
+}
+
+.operational-check-list form.operational-check-item > label.operational-check-reason,
+.operational-check-list form.operational-check-item > button {
+  grid-column: 1 / -1;
+}
+
+.operational-check-list form.operational-check-item > button {
+  justify-self: end;
+  min-height: 44px;
+}
+
+.operational-detail-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 calc(var(--space-6) * -1) calc(var(--space-6) * -1);
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* Campos com rótulo acima, ajuda abaixo. */
+.operational-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.operational-field small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.operational-check-list .operational-field input,
+.operational-dialog-fields .operational-field :is(input, select, textarea),
+.operational-occurrence-form .operational-field :is(input, select, textarea),
+.operational-note-form .operational-field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.operational-dialog-fields .operational-field textarea,
+.operational-occurrence-form .operational-field textarea,
+.operational-note-form .operational-field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.operational-dialog-fields .operational-field small {
+  font-size: var(--text-xs);
+}
+
+.operational-action-dialog form > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+/* 6. Tabelas, linha do tempo e registros ---------------------------------------------------------- */
+
+.operational-table-wrap {
+  margin: 0;
+}
+
+.operational-product-cell strong {
+  display: block;
+  font-weight: 600;
+}
+
+.operational-cell-actions {
+  text-align: right;
+}
+
+.operational-cell-actions .secondary-button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.operational-surface {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.operational-timeline,
+.operational-records {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operational-timeline li {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--text-sm);
+}
+
+.operational-timeline.operational-surface li {
+  padding-inline: var(--space-4);
+}
+
+.operational-timeline li:last-child,
+.operational-records li:last-child {
+  border-bottom: 0;
+}
+
+.operational-timeline time {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.operational-detail .operational-timeline li {
+  grid-template-columns: 116px minmax(0, 1fr);
+}
+
+.operational-movement {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.operational-movement strong {
+  font-weight: 700;
+}
+
+.operational-movement strong[data-tone="in"] {
+  color: var(--success);
+}
+
+.operational-movement strong[data-tone="out"] {
+  color: var(--neutral-900);
+}
+
+.operational-movement span {
+  color: var(--muted);
+}
+
+.operational-records li {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.operational-records strong {
+  text-align: right;
+}
+
+/* 7. Trocas e devoluções -------------------------------------------------------------------------- */
+
+.operational-return-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: var(--space-3);
+}
+
+.operational-return {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.operational-return > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.operational-return > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.operational-return > header > div > .ui-code {
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.operational-return > header small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-return-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.operational-return-facts > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.operational-return-facts dt {
+  color: var(--muted);
+}
+
+.operational-return-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.operational-return .operational-return-description {
+  margin: 0;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+}
+
+.operational-return-items {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operational-return-items li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.operational-return-items li > span {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.operational-return-items small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.operational-return-items .primary-button {
+  min-height: 44px;
+}
+
+/* 8. Ocorrências ---------------------------------------------------------------------------------- */
+
+.operational-occurrence-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+}
+
+.operational-occurrence-layout.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.operational-occurrence-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.operational-occurrence-form > .primary-button {
+  justify-self: start;
+  min-height: 44px;
+}
+
+/* 9. Carregando ----------------------------------------------------------------------------------- */
+
+.operational-loading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.operational-loading .operational-loading-kpis,
+.operational-loading .operational-loading-rows {
+  height: auto;
+  border-radius: 0;
+  background: none;
+  animation: none;
+}
+
+.operational-loading .operational-loading-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.operational-loading .operational-loading-kpis .ui-skeleton {
+  height: 96px;
+  border-radius: 0;
+}
+
+.operational-loading .operational-loading-kpis .ui-skeleton:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.operational-loading .operational-loading-kpis .ui-skeleton:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.operational-loading .operational-loading-rows {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.operational-loading .operational-loading-rows .ui-skeleton {
+  height: 64px;
+}
+
+.operational-loading .operational-loading-toolbar {
+  height: 40px;
+  max-width: 560px;
+}
+
+/* 10. Atendimento --------------------------------------------------------------------------------- */
+
+.support-console {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.support-console .support-queue,
+.support-console .support-workspace {
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.support-console .support-section-heading {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.support-console .support-section-heading h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.support-console .support-section-heading p {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.support-console .support-filters {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.support-console .support-filters label {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  padding: 0;
+  border: 0;
+}
+
+.support-console .support-filters label > svg {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.support-console .support-filters input {
+  width: 100%;
+  padding-left: 36px;
+}
+
+.support-count {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.support-count .ui-num {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.support-console .conversation-list {
+  display: grid;
+  margin: 0 calc(var(--space-4) * -1);
+  border-top: 1px solid var(--line-soft);
+}
+
+.support-console .conversation-list button {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease);
+}
+
+.support-console .conversation-list button:hover {
+  background: var(--neutral-50);
+}
+
+.support-console .conversation-list button.active {
+  border-left-color: var(--brand-700);
+  background: var(--neutral-50);
+}
+
+.support-console .conversation-list button:focus-visible {
+  outline: 2px solid var(--brand-700);
+  outline-offset: -2px;
+}
+
+.support-console .conversation-list button > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.support-console .conversation-list button strong {
+  overflow: hidden;
+  font-size: var(--text-base);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-console .conversation-list button small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.support-console .conversation-list .ui-label {
+  flex: 0 0 auto;
+}
+
+.support-console .support-back {
+  display: none;
+  margin: 0 0 var(--space-3);
+}
+
+.support-console .support-conversation-heading {
+  display: grid;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.support-conversation-title {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.support-conversation-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.support-conversation-tags > .ui-code {
+  font-weight: 700;
+}
+
+.support-console .support-conversation-heading h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.support-console .support-conversation-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.support-console .support-owner-row {
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: 0;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.support-console .support-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.support-console .support-actions > label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.support-console .support-actions > label select {
+  width: auto;
+}
+
+.support-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.support-console .support-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-base);
+}
+
+.support-console .support-feedback svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.support-console .message-thread {
+  min-height: 280px;
+  max-height: min(56dvh, 520px);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  gap: var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--neutral-50);
+}
+
+.support-console .message-thread:focus-visible {
+  outline: 2px solid var(--brand-700);
+  outline-offset: 2px;
+}
+
+.support-console .message {
+  max-width: min(78%, 640px);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.support-console .message.team {
+  align-self: flex-end;
+  border-color: var(--brand-100);
+  color: var(--ink);
+  background: var(--brand-50);
+}
+
+.support-console .message.internal {
+  max-width: 100%;
+  border: 1px dashed var(--line-strong);
+  color: var(--ink);
+  background: var(--neutral-100);
+}
+
+.support-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.support-message-meta strong {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.support-console .message .support-message-meta time {
+  display: inline;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.support-console .message p {
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+.support-console .message-thread .message a,
+.support-console .message-thread .message > span {
+  font-size: var(--text-sm);
+}
+
+.support-console .support-reply-form {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.support-reply-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.support-reply-heading label {
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.support-reply-heading select {
+  width: auto;
+  max-width: 100%;
+}
+
+.support-console .support-reply-form textarea {
+  min-height: 96px;
+}
+
+.support-reply-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.support-console .support-reply-form .support-file-field {
+  flex: 1 1 260px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.support-console .support-reply-form .support-file-field small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.support-console .support-internal-toggle {
+  min-height: 44px;
+  flex: 1 1 220px;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+}
+
+.support-console .support-reply-form .primary-button {
+  justify-self: end;
+}
+
+.support-console .support-transfer-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--neutral-50);
+}
+
+.support-console .support-transfer-form h3 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.support-console .support-transfer-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.support-console .support-transfer-form small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.support-console .support-transfer-form .support-actions {
+  justify-content: flex-end;
+}
+
+/* 11. Bling --------------------------------------------------------------------------------------- */
+
+.bling-console {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.bling-console > .ui-section-header {
+  margin: 0;
+}
+
+.bling-console-filter {
+  display: grid;
+  gap: 6px;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.bling-console .bling-console-filter select {
+  min-width: 200px;
+  min-height: 40px;
+}
+
+.bling-console-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.bling-console-feedback svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.bling-order-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+  list-style: none;
+}
+
+.bling-console .bling-order-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.bling-console .bling-order-row:last-child {
+  border-bottom: 0;
+}
+
+.bling-order-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.bling-order-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bling-order-title > .ui-code {
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.bling-order-main > small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.bling-order-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.bling-order-error svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.bling-order-history summary {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bling-order-history ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+  color: var(--neutral-700);
+  font-size: var(--text-sm);
+}
+
+.bling-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.bling-console .bling-order-actions .secondary-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+/* 12. Políticas oficiais -------------------------------------------------------------------------- */
+
+.legal-operational {
+  max-width: 720px;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.legal-operational h2 {
+  margin: 0;
+}
+
+.legal-operational p {
+  margin: 0;
+  color: var(--neutral-700);
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+.legal-operational .primary-button {
+  min-height: 44px;
+}
+
+/* 13. Responsivo e movimento reduzido ------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .operational-dashboard-grid,
+  .operational-occurrence-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Tablet e celular: atendimento mostra uma coisa por vez. */
+@media (max-width: 1023px) {
+  .support-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .support-console[data-view="list"] .support-workspace,
+  .support-console[data-view="conversation"] .support-queue {
+    display: none;
+  }
+
+  .support-console .support-back {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 768px) {
+  .operational-console {
+    gap: var(--space-5);
+  }
+
+  .operational-item {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .operational-item > .operational-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    justify-content: stretch;
+  }
+
+  .operational-actions .primary-button,
+  .operational-actions .secondary-button {
+    width: 100%;
+    white-space: normal;
+  }
+
+  /* A busca deixa de fixar no celular para não cobrir a lista. */
+  .operational-toolbar[data-sticky] {
+    position: static;
+    padding: 0;
+  }
+
+  .operational-toolbar select,
+  .operational-toolbar .secondary-button {
+    flex: 1 1 140px;
+  }
+
+  .operational-toolbar .operational-count {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .operational-queue-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operational-queue-list li:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .operational-pagination > div {
+    width: 100%;
+  }
+
+  .operational-pagination .secondary-button {
+    flex: 1 1 0;
+  }
+
+  .operational-cell-actions {
+    padding-top: var(--space-2);
+    text-align: left;
+  }
+
+  .operational-cell-actions .secondary-button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .operational-timeline li,
+  .operational-detail .operational-timeline li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .operational-timeline time {
+    grid-column: 1 / -1;
+  }
+
+  .operational-detail-footer .primary-button,
+  .operational-occurrence-form > .primary-button {
+    width: 100%;
+  }
+
+  .operational-shipping-actions > button {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+
+  .operational-shipping-actions .operational-danger-action {
+    margin-left: 0;
+  }
+
+  .operational-loading .operational-loading-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operational-loading .operational-loading-kpis .ui-skeleton,
+  .operational-loading .operational-loading-kpis .ui-skeleton:first-child,
+  .operational-loading .operational-loading-kpis .ui-skeleton:last-child {
+    border-radius: var(--radius-sm);
+  }
+
+  .support-console .support-queue,
+  .support-console .support-workspace {
+    padding: var(--space-4);
+  }
+
+  .support-console .message {
+    max-width: 92%;
+  }
+
+  .support-console .support-actions,
+  .support-console .support-actions > label {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .support-console .support-actions > label select {
+    width: 100%;
+  }
+
+  .support-action-buttons > button,
+  .support-console .support-reply-form .primary-button,
+  .support-console .support-transfer-form .support-actions > button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .support-console .support-reply-form .primary-button {
+    justify-self: stretch;
+  }
+
+  .bling-console .bling-order-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bling-order-actions {
+    justify-content: stretch;
+  }
+
+  .bling-console .bling-order-actions .secondary-button {
+    flex: 1 1 160px;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .bling-console-filter,
+  .bling-console .bling-console-filter select {
+    width: 100%;
+  }
+
+  .legal-operational .primary-button {
+    width: 100%;
+  }
+}
+
+/* Mesmo ponto em que a fundação reduz o respiro do painel lateral. */
+@media (max-width: 640px) {
+  .operational-detail-footer {
+    margin: 0 calc(var(--space-4) * -1) calc(var(--space-4) * -1);
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .operational-check-list form.operational-check-item {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .operational-check-list form.operational-check-item > button {
+    width: 100%;
+  }
+
+  .operational-return-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .operational-steps li + li::before {
+    width: 8px;
+    margin: 0 4px;
+  }
+}
+
+@media (pointer: coarse) {
+  .operational-actions .primary-button,
+  .operational-actions .secondary-button,
+  .operational-return-items .primary-button,
+  .operational-check-list form.operational-check-item > button {
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .operational-queue-list a,
+  .support-console .conversation-list button {
+    transition: none;
+  }
+}
+.return-photo-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-block: 16px; }
+.return-photo-grid img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 4px; }
+.return-review-actions { display: grid; gap: 16px; }
+.return-review-actions form { display: grid; gap: 16px; min-width: 0; }
+.operational-return { overflow-wrap: anywhere; min-width: 0; }

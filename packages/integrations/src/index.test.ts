@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import {
   FIXED_SHIPPING_IN_CENTS,
   FixedShippingProvider,
@@ -46,7 +47,7 @@ describe("Mercado Pago em teste", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        id: 123,
+        id: 123, live_mode: false,
         status: "approved",
         status_detail: "accredited",
         transaction_amount: 42.4,
@@ -118,7 +119,7 @@ describe("Mercado Pago em teste", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        id: 456,
+        id: 456, live_mode: false,
         status: "pending",
         status_detail: "pending_waiting_transfer",
         transaction_amount: 42.4,
@@ -137,12 +138,36 @@ describe("Mercado Pago em teste", () => {
       customerName: "Cliente Teste", customerDocument: "12345678909", entityType: "individual",
       paymentMethodId: "pix", installments: 1
     });
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.mercadopago.com/v1/payments");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("x-idempotency-key")).toBe("10000000-0000-4000-8000-000000000002");
     if (typeof init.body !== "string") throw new Error("request body ausente");
     const requestBody: unknown = JSON.parse(init.body);
-    expect(requestBody).toMatchObject({ date_of_expiration: "2026-09-10T12:30:00.000Z" });
+    expect(requestBody).toMatchObject({
+      payment_method_id: "pix", date_of_expiration: "2026-09-10T12:30:00.000Z"
+    });
     expect(payment).toMatchObject({ pixCopyPaste: "pix-copia-e-cola", pixQrCodeBase64: "base64-png" });
     vi.useRealTimers();
+  });
+
+  it.each([400, 422])("mapeia erro HTTP %s do pagamento sem expor a resposta", async httpStatus => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      headers: new Headers(),
+      status: httpStatus,
+      json: async () => ({ message: "token secreto e CPF 12345678909", cause: [{ code: 123 }] })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new MercadoPagoTestPaymentProvider("TEST-token");
+    const payment = provider.createPayment({
+      orderId: "order-id", orderCode: "CZT-REJECTED", amountInCents: 4_240, currency: "BRL",
+      idempotencyKey: "10000000-0000-4000-8000-000000000003", customerEmail: "cliente@example.com",
+      customerName: "Cliente Teste", customerDocument: "12345678909", entityType: "individual",
+      paymentMethodId: "visa", token: "card-token", installments: 1
+    });
+    await expect(payment).rejects.toMatchObject({ code: "payment_rejected", httpStatus });
+    await expect(payment).rejects.not.toThrow(/token secreto|12345678909/u);
   });
 });
 

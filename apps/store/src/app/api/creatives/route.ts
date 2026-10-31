@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -118,7 +119,9 @@ export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   }
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ message: "Dados inválidos." }, { status: 400, headers });
   }

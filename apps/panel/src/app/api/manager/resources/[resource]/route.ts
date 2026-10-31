@@ -68,7 +68,7 @@ export async function GET(
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const definition = managerResources[resource];
   const page = Math.max(

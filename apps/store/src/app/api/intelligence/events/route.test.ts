@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabase/server";
+import { publicBudgetResponse } from "@/lib/public-request";
 import { POST } from "./route";
 
 vi.mock("../../../../lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock("@/lib/public-request", () => ({ publicBudgetResponse: vi.fn(async () => null as Response | null) }));
 const client = vi.mocked(createServerSupabaseClient);
 const id = "11111111-1111-4111-8111-111111111111";
 const request = (events: unknown[], consent = true) =>
@@ -31,11 +33,20 @@ const event = (type: string) => ({
 describe("intelligence event batches", () => {
   beforeEach(() => {
     client.mockReset();
+    vi.mocked(publicBudgetResponse).mockReset().mockResolvedValue(null);
     delete process.env.DEMO_MODE;
   });
   it("requires persisted analytics consent", async () => {
     const response = await POST(request([event("page_view")], false));
     expect(response.status).toBe(403);
+    expect(client).not.toHaveBeenCalled();
+    expect(publicBudgetResponse).not.toHaveBeenCalled();
+  });
+  it.each([429, 503])("blocks event ingestion before reading the body for budget status %s", async (status) => {
+    vi.mocked(publicBudgetResponse).mockResolvedValue(Response.json({ message: "Unavailable" }, { status }));
+    const input = request([event("page_view")]);
+    expect((await POST(input)).status).toBe(status);
+    expect(input.bodyUsed).toBe(false);
     expect(client).not.toHaveBeenCalled();
   });
   it("rejects browser purchase events", async () => {

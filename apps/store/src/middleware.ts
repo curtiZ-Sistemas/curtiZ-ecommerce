@@ -247,7 +247,7 @@ async function hasValidDemoSession(value: string | undefined): Promise<boolean> 
 }
 
 function getSupabaseUrl(): URL | null {
-  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const configuredUrl = process.env.SUPABASE_URL?.trim();
 
   if (!configuredUrl) {
     return null;
@@ -410,7 +410,9 @@ function rewriteToNativeNotFound(
 
   response.headers.set(
     "Cache-Control",
-    "public, max-age=0, must-revalidate"
+    currentResponse.cookies.getAll().length > 0
+      ? "private, no-store"
+      : "public, max-age=0, must-revalidate"
   );
   response.headers.set("X-Robots-Tag", "noindex, follow");
 
@@ -462,10 +464,16 @@ function redirectToLogin(
 }
 
 export async function middleware(request: NextRequest) {
+  // The standalone recovery handler owns its stricter CSP and nonce. Do not
+  // overwrite them or refresh an unrelated session before verifying the link.
+  if (request.nextUrl.pathname === "/auth/recovery") {
+    return NextResponse.next();
+  }
+
   const supabaseUrl = getSupabaseUrl();
 
   const supabasePublishableKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+    process.env.SUPABASE_PUBLISHABLE_KEY?.trim();
 
   const hasValidSupabaseConfiguration = Boolean(
     supabaseUrl &&
@@ -493,16 +501,6 @@ export async function middleware(request: NextRequest) {
 
   const supabaseHttpOrigin = supabaseUrl?.origin;
 
-  const supabaseRealtimeOrigin = supabaseUrl
-    ? `${
-        supabaseUrl.protocol === "https:" ? "wss:" : "ws:"
-      }//${supabaseUrl.host}`
-    : undefined;
-
-  /*
-   * Permite somente o projeto Supabase realmente configurado,
-   * em vez de liberar todos os subdomínios *.supabase.co.
-   */
   const csp = buildNonceContentSecurityPolicy({
     nonce,
     allowUnsafeInlineStyleElements: mercadoPagoPage,
@@ -534,14 +532,6 @@ export async function middleware(request: NextRequest) {
     ],
 
     connectSources: [
-      ...(supabaseHttpOrigin
-        ? [supabaseHttpOrigin]
-        : []),
-
-      ...(supabaseRealtimeOrigin
-        ? [supabaseRealtimeOrigin]
-        : []),
-
       ...(mercadoPagoPage
         ? MERCADO_PAGO_CONNECT_SOURCES
         : []),
@@ -669,10 +659,13 @@ export async function middleware(request: NextRequest) {
    * Rotas públicas conhecidas precisam apenas
    * dos cabeçalhos de segurança.
    */
+  const hasSessionCookie = request.cookies.getAll()
+    .some(({ name }) => /^sb-.+-auth-token(?:\.\d+)?$/u.test(name));
   if (
     !checkoutRequest &&
     productSlug === null &&
-    !unknownRootSlug
+    !unknownRootSlug &&
+    !hasSessionCookie
   ) {
     return response;
   }
@@ -713,7 +706,9 @@ export async function middleware(request: NextRequest) {
            * requisição e reaplica todos os cabeçalhos
            * de segurança.
            */
+          requestHeaders.set("cookie", request.headers.get("cookie") ?? "");
           response = createNextResponse();
+          response.headers.set("Cache-Control", "private, no-store");
 
           for (const {
             name,
@@ -785,6 +780,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!checkoutRequest) {
+    if (hasSessionCookie) {
+      try {
+        // Somente renova cookies; a página/API verifica o usuário com getUser.
+        await supabase.auth.getSession();
+      } catch {
+        // A página valida seu acesso; uma falha transitória não derruba conteúdo público.
+      }
+    }
     return response;
   }
 

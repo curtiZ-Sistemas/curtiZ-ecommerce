@@ -10,6 +10,7 @@ export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnab
   const [protocol, setProtocol] = useState("");
   const [error, setError] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending) return;
@@ -48,6 +49,8 @@ export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnab
           : "Não foi possível registrar a solicitação."
       );
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       setPending(false);
     }
   };
@@ -114,7 +117,7 @@ export function PrivacyRequestForm({ turnstileEnabled = false }: { turnstileEnab
           {error}
         </p>
       )}
-      <TurnstileField enabled={turnstileEnabled} onToken={setTurnstileToken} />
+      <TurnstileField action={"privacy_request"} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={setTurnstileToken} />
       <button className="primary-button wide" disabled={pending || (turnstileEnabled && !turnstileToken)}>
         {pending ? <LoaderCircle className="spin" /> : <Send />} Enviar solicitação
       </button>

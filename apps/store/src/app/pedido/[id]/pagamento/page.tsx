@@ -1,5 +1,5 @@
-import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
-import { notFound, redirect } from "next/navigation";
+import { getMercadoPagoCredentials } from "@curtiz/config";
+import { notFound } from "next/navigation";
 import { OrderPayment } from "@/components/order-payment";
 import { canContinueOrderPayment } from "@/lib/customer-account-presentation";
 import type { MercadoPagoBrickSession } from "@/lib/mercadopago-brick-config";
@@ -14,7 +14,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   if (!supabase || !user) notFound();
   const [orderResponse, paymentResponse] = await Promise.all([
-    supabase.from("orders").select("id,public_code,customer_id,customer_email_snapshot,status,subtotal,discount_total,shipping_total,grand_total")
+    supabase.from("orders").select("id,public_code,customer_id,customer_email_snapshot,status,subtotal,discount_total,shipping_total,grand_total,commercial_rules_snapshot")
       .eq("id", id).eq("customer_id", user.id).maybeSingle(),
     supabase.from("payments").select("provider_payment_id,status,status_detail,payment_method_summary,expires_at").eq("order_id", id).eq("provider", "mercadopago").maybeSingle()
   ]);
@@ -22,21 +22,19 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const payment = readQueryResult(paymentResponse).data;
   if (!isUnknownRecord(order) || !isUnknownRecord(payment)) notFound();
   if (!readString(payment, "payment_method_summary")) notFound();
-  if (!canContinueOrderPayment(readString(order, "status"), readString(payment, "status"),
-    readString(payment, "payment_method_summary"), readString(payment, "status_detail"), readString(payment, "expires_at"))) {
-    redirect(`/minha-conta/pedidos?pedido=${encodeURIComponent(readString(order, "public_code"))}`);
-  }
-  const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim() ?? "";
+  const payable = canContinueOrderPayment(readString(order, "status"), readString(payment, "status"),
+    readString(payment, "payment_method_summary"), readString(payment, "status_detail"), readString(payment, "expires_at"));
+  const credentials = getMercadoPagoCredentials();
   const subtotalInCents = Math.round(readNumber(order, "subtotal") * 100);
   const discountInCents = Math.round(readNumber(order, "discount_total") * 100);
   const shippingInCents = Math.round(readNumber(order, "shipping_total") * 100);
   const amountInCents = Math.round(readNumber(order, "grand_total") * 100);
-  const canResume = readString(order, "status") === "pending_payment"
-    && (!readString(payment, "provider_payment_id") || readString(payment, "status") === "rejected")
-    && isMercadoPagoTestCredential(publicKey)
-    && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents === FIXED_SHIPPING_IN_CENTS
+  const canResume = payable && readString(order, "status") === "pending_payment"
+    && !readString(payment, "provider_payment_id")
+    && credentials && isUnknownRecord(order.commercial_rules_snapshot) && order.commercial_rules_snapshot.paymentMode === credentials.mode
+    && subtotalInCents > 0 && discountInCents >= 0 && shippingInCents >= 0
     && amountInCents === subtotalInCents - discountInCents + shippingInCents;
-  const session: MercadoPagoBrickSession | null = canResume ? {
+  const session: MercadoPagoBrickSession | null = canResume && credentials ? {
     orderId: id,
     orderCode: readString(order, "public_code"),
     subtotalInCents,
@@ -44,10 +42,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     couponName: "",
     shippingInCents,
     amountInCents,
-    publicKey,
+    publicKey: credentials.publicKey,
+    paymentMode: credentials.mode,
     idempotencyKey: crypto.randomUUID(),
     email: readString(order, "customer_email_snapshot"),
-    cpf: "",
     checkout: null
   } : null;
   return <OrderPayment orderId={id} session={session} />;

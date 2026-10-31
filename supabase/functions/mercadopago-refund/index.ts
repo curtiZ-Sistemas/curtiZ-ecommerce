@@ -1,4 +1,4 @@
-import { corsHeaders, json } from "../_shared/http.ts";
+import { corsHeaders, json, readJson } from "../_shared/http.ts";
 import { mercadoPagoRequest } from "../_shared/mercadopago.ts";
 import { serviceClient, userClient } from "../_shared/supabase.ts";
 import { integrationDisabledPayload, isMercadoPagoEnabled } from "../_shared/integrations.ts";
@@ -8,21 +8,27 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!isMercadoPagoEnabled()) return json(integrationDisabledPayload(), 503);
   const auth = userClient(request.headers.get("authorization") ?? "");
-  const { data: claims } = await auth.auth.getClaims();
-  const userId = claims?.claims?.sub;
+  const { data: session, error: sessionError } = await auth.auth.getUser();
+  const userId = sessionError ? null : session.user?.id;
   if (!userId) return json({ error: "unauthorized" }, 401);
-  const { data: allowed } = await auth.rpc("has_permission", { permission_code: "finance.reconcile" });
-  if (!allowed) return json({ error: "forbidden" }, 403);
-  const { payment_id, reason, amount_in_cents, idempotency_key } = (await request.json().catch(() => ({}))) as {
+  const { data: allowed, error: permissionError } = await auth.rpc("has_permission", { permission_code: "finance.reconcile" });
+  if (permissionError || allowed !== true) return json({ error: "forbidden" }, 403);
+  const budget = await auth.rpc("consume_private_api_rate_limit", { p_scope: "admin_mutation" });
+  if (budget.error || typeof budget.data !== "boolean") return json({ error: "refund_unavailable" },503);
+  if (!budget.data) return json({ error: "rate_limited" },429);
+  const body = await readJson(request,4096);
+  if (body instanceof Response) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "invalid_refund" },400);
+  const { payment_id, reason, amount_in_cents, idempotency_key } = body as {
     payment_id?: string;
     reason?: string;
     amount_in_cents?: number;
     idempotency_key?: string;
   };
   if (
-    !payment_id ||
+    typeof payment_id !== "string" ||
     !/^[A-Za-z0-9_-]{1,100}$/.test(payment_id) ||
-    !idempotency_key ||
+    typeof idempotency_key !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotency_key) ||
     (amount_in_cents !== undefined && (!Number.isSafeInteger(amount_in_cents) || amount_in_cents <= 0)) ||
     typeof reason !== "string" ||

@@ -1,3 +1,5 @@
+import { readJsonResponse } from "@curtiz/security";
+import { publicBudgetResponse } from "@/lib/public-request";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
@@ -50,7 +52,11 @@ export async function POST(request: NextRequest) {
     );
   const size = Number(request.headers.get("content-length") ?? 0);
   if (size > 32_768) return NextResponse.json({ accepted: 0 }, { status: 413 });
-  const parsed = batchSchema.safeParse(await request.json().catch(() => null));
+  const budget = await publicBudgetResponse(request, "intelligence");
+  if (budget) return budget;
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = batchSchema.safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json(
       { accepted: 0 },
@@ -85,9 +91,11 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   if (!isAllowedRequestOrigin(request))
     return NextResponse.json({ forgotten: false }, { status: 403 });
+  const boundedBody = await readJsonResponse(request, 65536);
+  if (boundedBody instanceof Response) return boundedBody;
   const parsed = z
     .object({ sessionId: z.string().uuid() })
-    .safeParse(await request.json().catch(() => null));
+    .safeParse(boundedBody);
   if (!parsed.success) return NextResponse.json({ forgotten: false }, { status: 400 });
   if (process.env.DEMO_MODE === "true")
     return NextResponse.json(

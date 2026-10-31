@@ -1,3 +1,5 @@
+import { readJsonResponse } from "@curtiz/security";
+import { logServerEvent } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -66,7 +68,7 @@ const authError = (error: "permission" | "forbidden") => NextResponse.json(
 
 export async function GET(request: NextRequest) {
   const auth = await authorized(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   if (auth.error) return authError(auth.error);
   const [items, categories, collections] = await Promise.all([
     auth.supabase
@@ -86,7 +88,7 @@ export async function GET(request: NextRequest) {
       ["collections", collections.error]
     ] as const) {
       if (error) {
-        console.error("[panel-store-navigation-api] query failed", {
+        logServerEvent("error", "panel_store_navigation_api_query_failed", {
           table,
           code: error.code,
           message: error.message.slice(0, 180),
@@ -110,9 +112,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   }
   const auth = await authorized(request);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   if (auth.error) return authError(auth.error);
-  const parsed = mutationSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = mutationSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ message: "Revise os dados informados." }, { status: 400, headers: privateNoStore });
   }

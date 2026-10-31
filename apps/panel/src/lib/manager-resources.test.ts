@@ -29,4 +29,13 @@ describe("manager resources", () => {
     expect(managerResources.clientes.exportAllowed).not.toBe(true);
     expect(managerResources["configuracoes-estrategicas"].exportAllowed).not.toBe(true);
   });
+
+  it("mantém o valor original e expõe o reembolso financeiro quando permitido", () => {
+    const orders = managerResources["pedidos-vendas"];
+    expect(orders.columns.map((column) => column.key)).toEqual(expect.arrayContaining([
+      "grand_total",
+      "accounts_receivable"
+    ]));
+    expect(orders.select).toContain("accounts_receivable(refunded_amount)");
+  });
 });

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getActiveProductSitemapEntries = vi.hoisted(() => vi.fn());
+const hasPublicCatalogItems = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/seo-data", () => ({ getActiveProductSitemapEntries }));
+vi.mock("@/lib/seo-data", () => ({ getActiveProductSitemapEntries, hasPublicCatalogItems }));
 
 import sitemap from "./sitemap";
 
 describe("sitemap público", () => {
   beforeEach(() => {
+    hasPublicCatalogItems.mockImplementation((category?: string) => Promise.resolve(!["Masculino", "Infantil"].includes(category ?? "")));
     getActiveProductSitemapEntries.mockResolvedValue([
       { slug: "slide-wave-preto", updatedAt: "2026-08-30T12:00:00.000Z" },
       { slug: "sandalia-luna" }
@@ -20,6 +22,9 @@ describe("sitemap público", () => {
 
     expect(urls).toContain("https://curtiz.com.br/");
     expect(urls).toContain("https://curtiz.com.br/feminino");
+    for (const route of ["slides", "sandalias", "masculino", "infantil"]) {
+      expect(urls).not.toContain(`https://curtiz.com.br/${route}`);
+    }
     expect(urls).toContain("https://curtiz.com.br/produto/slide-wave-preto");
     expect(urls).toContain("https://curtiz.com.br/produto/sandalia-luna");
     expect(urls.some((url) => url.includes("workers.dev"))).toBe(false);
@@ -31,5 +36,9 @@ describe("sitemap público", () => {
     expect(entries.find((entry) => entry.url.endsWith("slide-wave-preto"))?.lastModified).toEqual(
       new Date("2026-08-30T12:00:00.000Z")
     );
+  });
+  it("não publica um sitemap parcial quando a fonte comercial está indisponível", async () => {
+    getActiveProductSitemapEntries.mockRejectedValueOnce(new Error("unavailable"));
+    await expect(sitemap()).rejects.toThrow("unavailable");
   });
 });

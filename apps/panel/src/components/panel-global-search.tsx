@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Search } from "lucide-react";
+import { LoaderCircle, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { PanelRouteRole } from "@/lib/panel-roles";
@@ -25,7 +25,7 @@ function parseGroups(value: unknown): SearchGroup[] {
   });
 }
 
-export function PanelGlobalSearch({ role, onNavigate }: { role: PanelRouteRole; onNavigate: () => void }) {
+export function PanelGlobalSearch({ role, onNavigate, onClose }: { role: PanelRouteRole; onNavigate: () => void; onClose?: () => void }) {
   const [query, setQuery] = useState("");
   const [groups, setGroups] = useState<SearchGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,9 +77,9 @@ export function PanelGlobalSearch({ role, onNavigate }: { role: PanelRouteRole; 
   }, [query, role]);
 
   return (
-    <div className="panel-global-search">
+    <div className="panel-global-search" id="panel-global-search">
       <label className="sr-only" htmlFor="panel-search">Buscar no painel</label>
-      <Search aria-hidden="true" />
+      <Search className="panel-global-search-icon" aria-hidden="true" />
       <input
         id="panel-search"
         value={query}
@@ -99,6 +99,7 @@ export function PanelGlobalSearch({ role, onNavigate }: { role: PanelRouteRole; 
         aria-expanded={query.trim().length >= 2}
       />
       {loading ? <LoaderCircle className="spin panel-global-search-loader" aria-label="Buscando" /> : null}
+      {onClose ? <button className="panel-global-search-close" type="button" onClick={onClose} aria-label="Fechar busca"><X aria-hidden="true" /></button> : null}
       {query.trim().length >= 2 ? (
         <div className="panel-global-search-results" id="panel-search-results" role="region" aria-live="polite">
           {groups.map((group) => (

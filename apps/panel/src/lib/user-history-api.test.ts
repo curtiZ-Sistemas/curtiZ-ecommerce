@@ -15,6 +15,7 @@ vi.mock("@/lib/admin-api", () => ({
   } }),
   objectRows: (value: unknown): unknown[] => Array.isArray(value) ? value as unknown[] : [],
   privateNoStore: { "cache-control": "private, no-store" },
+  readPanelJson: (request: Request) => request.json(),
   safePanelOrigin: () => true,
   unauthorizedAdminResponse: vi.fn()
 }));

@@ -1,21 +1,15 @@
 "use client";
 
-import { storefrontItemKey, type Product } from "@curtiz/domain";
-import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { type Product } from "@curtiz/domain";
+import { ArrowRight, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { intelligenceSessionId, recentlyViewedProductIds } from "../lib/intelligence-client";
+import { diversifyRecommendations, type RecommendationDiversity } from "../lib/recommendation-diversity";
+import { loadSmartRecommendations, type IntelligenceSource } from "../lib/smart-recommendations";
 import { ProductCard } from "./product-card";
 
-export type IntelligenceSource =
-  | "personalized"
-  | "trending"
-  | "most_wanted"
-  | "most_viewed"
-  | "discovery"
-  | "newest"
-  | "price_range"
-  | "recently_viewed"
-  | "because_you_viewed";
+export type { IntelligenceSource } from "../lib/smart-recommendations";
 const sourceTitles: Record<IntelligenceSource, string> = {
   personalized: "Escolhas para você",
   trending: "Em alta agora",
@@ -27,33 +21,37 @@ const sourceTitles: Record<IntelligenceSource, string> = {
   recently_viewed: "Vistos recentemente",
   because_you_viewed: "Porque você viu estes estilos"
 };
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const emptyProductIds: string[] = [];
-const isProduct = (value: unknown): value is Product =>
-  Boolean(value) &&
-  typeof value === "object" &&
-  !Array.isArray(value) &&
-  typeof (value as Product).id === "string" &&
-  typeof (value as Product).slug === "string" &&
-  typeof (value as Product).name === "string";
 
 export function IntelligenceShelf({
   source = "personalized",
   title,
   subtitle,
+  minimalHomepageHeading = false,
+  viewAllHref,
   limit = 8,
   category,
   excludeProductIds = emptyProductIds,
+  priceInCents,
+  productContext,
+  diversity,
   infinite = false,
+  trackingSource,
   className = ""
 }: {
   source?: IntelligenceSource;
   title?: string;
   subtitle?: string;
+  minimalHomepageHeading?: boolean;
+  viewAllHref?: string;
   limit?: number;
   category?: string;
   excludeProductIds?: string[];
+  priceInCents?: number;
+  productContext?: Product;
+  diversity?: RecommendationDiversity;
   infinite?: boolean;
+  trackingSource?: string;
   className?: string;
 }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -63,6 +61,7 @@ export function IntelligenceShelf({
   const [hasMore, setHasMore] = useState(true);
   const [consentRevision, setConsentRevision] = useState(0);
   const [activated, setActivated] = useState(false);
+  const [supportsObserver, setSupportsObserver] = useState(true);
   const shelf = useRef<HTMLElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const page = useRef(0);
@@ -75,7 +74,10 @@ export function IntelligenceShelf({
   }, []);
   const load = useCallback(
     async (reset = false) => {
-      if (request.current) return;
+      if (request.current) {
+        if (!reset) return;
+        request.current.abort();
+      }
       const controller = new AbortController();
       request.current = controller;
       if (reset) setLoading(true);
@@ -83,72 +85,33 @@ export function IntelligenceShelf({
       setError("");
       try {
         void consentRevision;
-        const sessionId = intelligenceSessionId();
-        const publicSource: IntelligenceSource = [
-          "personalized",
-          "recently_viewed",
-          "because_you_viewed",
-          "price_range"
-        ].includes(source)
-          ? "trending"
-          : source;
-        const seen = [
-          ...excludeProductIds,
-          ...(reset ? [] : productsRef.current.map((item) => item.id))
-        ].filter((id) => uuidPattern.test(id)).slice(-50);
-        const seed = `${new Date().toISOString().slice(0, 10)}:${page.current}`;
-        const publicParams = new URLSearchParams({
-          source: publicSource,
-          seed,
-          limit: String(limit)
+        let sessionId: string | null = null;
+        try { sessionId = intelligenceSessionId(); } catch { /* Contextual recommendations remain available. */ }
+        const recommendation = await loadSmartRecommendations({
+          source, sessionId, recent: sessionId ? recentlyViewedProductIds() : [],
+          category, priceInCents, productId: productContext?.id, productName: productContext?.name,
+          currentProduct: productContext, diversity,
+          seen: [...excludeProductIds, ...(reset ? [] : productsRef.current.map((item) => item.id))],
+          limit, signal: controller.signal
         });
-        if (category) publicParams.set("category", category);
-        const response = await fetch(
-          sessionId
-            ? "/api/intelligence/recommendations"
-            : `/api/intelligence/recommendations?${publicParams}`,
-          sessionId
-            ? {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  source,
-                  sessionId,
-                  category: category || null,
-                  seen,
-                  recent: source === "recently_viewed" ? recentlyViewedProductIds() : [],
-                  seed,
-                  limit
-                }),
-                signal: controller.signal,
-                cache: "no-store"
-              }
-            : { signal: controller.signal }
-        );
-        const data: unknown = await response.json();
-        if (
-          !response.ok ||
-          !data ||
-          typeof data !== "object" ||
-          !Array.isArray((data as { products?: unknown }).products)
-        )
-          throw new Error("Não foi possível carregar esta seleção.");
-        const excluded = new Set(excludeProductIds);
-        const next = (data as { products: unknown[] }).products
-          .filter(isProduct)
-          .filter((product) => !excluded.has(product.id) && product.stock > 0)
-          .filter((product, index, list) => list.findIndex((item) => item.id === product.id) === index);
+        const next = recommendation.products;
+        if (controller.signal.aborted) return;
         setProducts((current) => {
-          const merged = reset
+          const mergedProducts = reset
             ? next
             : [
                 ...current,
                 ...next.filter((item) => !current.some((existing) => existing.id === item.id))
-              ];
+          ];
+          const merged = diversity === "product_detail"
+            ? diversifyRecommendations(mergedProducts, {
+                excludeProductIds, currentProduct: productContext, limit, mode: diversity
+              })
+            : mergedProducts;
           productsRef.current = merged;
           return merged;
         });
-        setHasMore(next.length === limit && Boolean((data as { nextCursor?: unknown }).nextCursor));
+        setHasMore(source === "discovery" && next.length === limit && recommendation.hasMore);
         page.current += 1;
       } catch (loadError) {
         if (!controller.signal.aborted)
@@ -158,16 +121,23 @@ export function IntelligenceShelf({
               : "Não foi possível carregar esta seleção."
           );
       } finally {
-        request.current = null;
-        setLoading(false);
-        setLoadingMore(false);
+        if (request.current === controller) {
+          request.current = null;
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [category, consentRevision, excludeProductIds, limit, source]
+    [category, consentRevision, diversity, excludeProductIds, limit, priceInCents, productContext, source]
   );
   useEffect(() => {
     const node = shelf.current;
     if (!node || activated) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setSupportsObserver(false);
+      setActivated(true);
+      return;
+    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) {
@@ -191,6 +161,7 @@ export function IntelligenceShelf({
   useEffect(() => {
     const node = sentinel.current;
     if (!infinite || !node || !hasMore || loading || loadingMore || error) return;
+    if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) void load(false);
@@ -200,11 +171,13 @@ export function IntelligenceShelf({
     observer.observe(node);
     return () => observer.disconnect();
   }, [error, hasMore, infinite, load, loading, loadingMore]);
+  const headingTitle = title ?? sourceTitles[source];
   if (!activated || loading)
     return (
       <section ref={shelf} className={`section container intelligence-shelf ${className}`} aria-busy="true">
         <div className="section-heading">
-          <h2>{title ?? sourceTitles[source]}</h2>
+          <h2>{headingTitle}</h2>
+          {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
         </div>
         <div className="intelligence-skeleton" aria-label="Carregando recomendações">
           {Array.from({ length: Math.min(limit, 4) }, (_, index) => (
@@ -218,7 +191,8 @@ export function IntelligenceShelf({
       <section className={`section container intelligence-shelf ${className}`}>
         <div className="intelligence-empty">
           <Sparkles aria-hidden="true" />
-          <h2>{title ?? sourceTitles[source]}</h2>
+          <h2>{headingTitle}</h2>
+          {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
           <p>{error}</p>
           <button className="secondary-button" onClick={() => void load(true)}>
             <RefreshCw />
@@ -228,6 +202,11 @@ export function IntelligenceShelf({
       </section>
     );
   if (!products.length) return null;
+  const visibleProducts = diversity === "product_detail"
+    ? diversifyRecommendations(products, {
+        excludeProductIds, currentProduct: productContext, limit, mode: diversity
+      })
+    : products;
   return (
     <section
       className={`section container intelligence-shelf ${className}`}
@@ -235,14 +214,15 @@ export function IntelligenceShelf({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Descoberta curti Z</p>
-          <h2 id={`intelligence-${source}-title`}>{title ?? sourceTitles[source]}</h2>
-          {subtitle && <p>{subtitle}</p>}
+          {!minimalHomepageHeading && <p className="eyebrow">Descoberta curti Z</p>}
+          <h2 id={`intelligence-${source}-title`}>{headingTitle}</h2>
+          {!minimalHomepageHeading && subtitle && <p>{subtitle}</p>}
         </div>
+        {viewAllHref && <Link className="text-link section-link" href={viewAllHref}>Ver todos <ArrowRight aria-hidden="true" /></Link>}
       </div>
       <div className="product-grid">
-        {products.map((product) => (
-          <ProductCard product={product} recommendationSource={source} key={storefrontItemKey(product)} />
+        {visibleProducts.map((product) => (
+          <ProductCard product={product} recommendationSource={trackingSource ?? source} key={product.id} />
         ))}
       </div>
       {infinite && (
@@ -254,6 +234,8 @@ export function IntelligenceShelf({
             </>
           )}
           {!hasMore && <span>Você chegou ao fim desta seleção.</span>}
+          {hasMore && !supportsObserver && !loadingMore && !error &&
+            <button className="secondary-button" onClick={() => void load(false)}>Carregar mais estilos</button>}
           {error && (
             <button className="secondary-button" onClick={() => void load(false)}>
               <RefreshCw />

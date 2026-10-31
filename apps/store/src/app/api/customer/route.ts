@@ -7,6 +7,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { isValidBrazilianPhone, normalizeBrazilianPhone } from "@/lib/personal-data";
 import { isUnknownRecord, readQueryResult, readString } from "@/lib/unknown-data";
+import { cancelCustomerOrder } from "@/lib/customer-order-cancellation";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,8 +78,9 @@ const schemas = {
     action: z.literal("return_request"),
     orderItemId: uuid,
     quantity: z.number().int().min(1).max(20),
-    reason: z.string().trim().min(3).max(120),
-    description: z.string().trim().min(10).max(2000),
+    reason: z.string().trim().max(120).default(""),
+    description: z.string().trim().max(2000).default(""),
+    kind: z.enum(["withdrawal", "defect", "preference"]).default("preference"),
     resolution: z.enum(["exchange", "refund", "store_credit"])
   }),
   data_request: base.extend({
@@ -114,7 +117,11 @@ const stringValue = (value: unknown) => (typeof value === "string" ? value : "")
 export async function POST(request: Request) {
   if (!isAllowedRequestOrigin(request)) return json({ message: "Origem não permitida." }, 403);
 
-  const body: unknown = await request.json().catch(() => null);
+  let body: unknown;
+  try { body = await readPrivateJson(request, 16 * 1024); }
+  catch (error) { return json({ message: error instanceof PrivateRequestError && error.status === 413
+    ? "Os dados excedem o limite permitido." : "Dados inválidos." },
+    error instanceof PrivateRequestError ? error.status : 400); }
   if (!isUnknownRecord(body) || typeof body.action !== "string") {
     return json({ message: "Dados inválidos." }, 400);
   }
@@ -139,6 +146,15 @@ export async function POST(request: Request) {
   const userResult = supabase ? await supabase.auth.getUser() : { data: { user: null } };
   const user = userResult.data.user;
   if (!supabase || !user) return json({ message: "Faça login para continuar." }, 401);
+
+  {
+    try { await requirePrivateRateLimit(supabase, action === "order_cancel" || action === "return_request" ? action : "customer_write"); }
+    catch (error) {
+      const status = error instanceof PrivateRequestError ? error.status : 503;
+      return json({ message: status === 429 ? "Muitas tentativas. Aguarde antes de tentar novamente."
+        : "A proteção da conta está temporariamente indisponível." }, status);
+    }
+  }
 
   let response: unknown;
   const data = parsed.data as Record<string, unknown>;
@@ -271,18 +287,19 @@ export async function POST(request: Request) {
             .eq("user_id", user.id)
             .is("read_at", null);
       break;
-    case "order_cancel":
-      response = await supabase.rpc("request_customer_order_cancellation", {
-        p_order_id: data.orderId
-      });
-      break;
+    case "order_cancel": {
+      const result = await cancelCustomerOrder(stringValue(data.orderId), user.id);
+      revalidatePath("/minha-conta", "layout");
+      return json(result.body, result.statusCode);
+    }
     case "return_request":
-      response = await supabase.rpc("request_customer_return", {
+      response = await supabase.rpc("request_customer_return_v2", {
         p_order_item_id: data.orderItemId,
         p_quantity: data.quantity,
         p_reason: data.reason,
         p_description: data.description,
-        p_resolution: data.resolution
+        p_resolution: data.resolution,
+        p_kind: data.kind
       });
       break;
     case "data_request":
@@ -295,6 +312,10 @@ export async function POST(request: Request) {
 
   const result = readQueryResult(response);
   if (result.error) return json({ message: friendlyError(result.error) }, 409);
+  if (action === "return_request" && typeof result.data === "string") {
+    revalidatePath("/minha-conta", "layout");
+    return json({ ok: true, data: { id: result.data } });
+  }
   if (action === "address_save" && typeof result.data === "string") {
     const saved = readQueryResult(await supabase.from("addresses")
       .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")

@@ -1,4 +1,6 @@
 "use client";
+import { returnKindLabels, returnStatusLabels, type ReturnKind } from "@curtiz/domain";
+import { ReturnReviewActions } from "./return-review-actions";
 
 import {
   AlertTriangle,
@@ -8,7 +10,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   FileText,
-  Headphones,
   Inbox,
   LoaderCircle,
   PackageCheck,
@@ -23,6 +24,10 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
+import { BlingOperational } from "./bling-operational";
+import { PanelDrawer } from "./panel-drawer";
+import { usePanelConfirm } from "./panel-prompt";
+import { Code, Kpi, KpiStrip, SectionHeader, StateMessage, StatusLabel, type UiTone } from "./panel-ui";
 import React from "react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -46,6 +51,8 @@ type OperationCapabilities = {
   resolveOccurrences: boolean;
   requestAdjustments: boolean;
   inspectReturns: boolean;
+  reviewReturns?: boolean;
+  refundReturns?: boolean;
   addOrderNotes: boolean;
 };
 type OperationItem = {
@@ -80,8 +87,13 @@ type OperationOrder = {
     status: string;
     provider: string;
     service: string;
+    carrier: string;
     trackingCode: string | null;
     labelReady: boolean;
+    operationState: string;
+    shippingAmount: number;
+    shippingCost: number;
+    estimatedDays: number | null;
   }>;
   history: Array<{ status: string; reason: string; createdAt: string }>;
   notes: Array<{ id: string; content: string; createdAt: string }>;
@@ -131,6 +143,17 @@ type ReturnRecord = {
   requestedResolution: string;
   status: string;
   requestedAt: string;
+  kind: string;
+  customerMessage: string;
+  instructions: string;
+  postingCode: string;
+  trackingCode: string;
+  exchangeTrackingCode: string;
+  refundAmount: number;
+  refundNeedsReview: boolean;
+  withinWithdrawalPeriod?: boolean | null;
+  photos: Array<{ id: string }>;
+  history: Array<{ id: string; status: string; message: string; createdAt: string }>;
   items: Array<{
     id: string;
     productName: string;
@@ -204,6 +227,7 @@ type OperationsResponse = {
   }>;
   pagination: { page: number; pageSize: number; total: number };
 };
+type Run = (body: Record<string, unknown>, success: string) => Promise<boolean>;
 
 const emptyMetrics: OperationMetrics = {
   newOrders: 0,
@@ -280,7 +304,7 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
     void load(1);
   }, [section]);
 
-  const run = async (body: Record<string, unknown>, success: string) => {
+  const run: Run = async (body, success) => {
     if (processing || data.demo) {
       if (data.demo) setError("Ações indisponíveis enquanto não houver dados conectados.");
       return false;
@@ -289,14 +313,19 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/operations", {
+      const action = String(body.action);
+      const shippingAction = action.startsWith("shipping_");
+      const response = await fetch(shippingAction ? "/api/operations/shipping" : "/api/operations", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(shippingAction ? { ...body, action: action.slice("shipping_".length) } : body)
       });
-      const result = (await response.json()) as { ok: boolean; message?: string };
+      const result = (await response.json()) as { ok: boolean; message?: string; data?: { url?: string } };
       if (!response.ok || !result.ok) throw new Error(result.message ?? "Ação não concluída.");
-      setNotice(success);
+      if (result.data?.url && /^https:\/\/(sandbox\.)?melhorenvio\.com\.br\//u.test(result.data.url)) {
+        window.open(result.data.url, "_blank", "noopener,noreferrer");
+      }
+      setNotice(result.message ?? success);
       await load();
       return true;
     } catch (reason) {
@@ -307,22 +336,35 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
     }
   };
 
-  if (loading) return <OperationalLoading />;
+  if (loading) return <OperationalLoading dashboard={!section} />;
   if (error && !data.ok) {
     return (
-      <HonestState icon={AlertTriangle} title="Operação indisponível" description={error}>
-        <button className="primary-button" onClick={() => void load()}>
-          <RefreshCw /> Tentar novamente
-        </button>
-      </HonestState>
+      <StateMessage
+        kind="error"
+        icon={AlertTriangle}
+        title="Operação indisponível"
+        description={error}
+        action={
+          <button className="primary-button" type="button" onClick={() => void load()}>
+            <RefreshCw aria-hidden="true" /> Tentar novamente
+          </button>
+        }
+      />
     );
   }
 
   return (
     <div className="operational-console">
+      {data.demo ? (
+        <p className="admin-feedback info operational-banner" role="status">
+          <Inbox aria-hidden="true" />
+          <span>Dados de demonstração. As ações ficam indisponíveis enquanto não houver dados conectados.</span>
+        </p>
+      ) : null}
       {(notice || error) && (
-        <p className={`operational-feedback ${error ? "error" : "success"}`} role={error ? "alert" : "status"}>
-          {error || notice}
+        <p className={`admin-feedback operational-banner ${error ? "error" : "success"}`} role={error ? "alert" : "status"}>
+          {error ? <AlertTriangle aria-hidden="true" /> : <Check aria-hidden="true" />}
+          <span>{error || notice}</span>
         </p>
       )}
       {section ? (
@@ -353,67 +395,65 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
 }
 
 function Dashboard({ metrics, data }: { metrics: OperationMetrics; data: OperationsResponse }) {
-  const cards: Array<[string, number, string, typeof PackageCheck]> = [
-    ["Pedidos novos", metrics.newOrders, "pedidos?status=payment_approved", Inbox],
-    ["Pedidos atrasados", metrics.overdueOrders, "pendencias", AlertTriangle],
-    ["Aguardando separação", metrics.waitingSeparation, "separacao", ClipboardCheck],
-    ["Aguardando envio", metrics.waitingShipping, "envio", Truck],
-    ["Kits pendentes", metrics.pendingKits, "montagem-kits", PackageCheck],
-    ["Estoque crítico", metrics.criticalStock, "reposicao", Boxes],
-    ["Trocas", metrics.exchanges, "trocas", RotateCcw],
-    ["Devoluções", metrics.returns, "devolucoes", RotateCcw],
-    ["Ocorrências", metrics.occurrences, "ocorrencias", ShieldAlert],
-    ["Atendimentos", metrics.support, "atendimentos", Headphones],
-    ["Pendências", metrics.pendingTasks, "pendencias", AlertTriangle]
+  const queues: Array<[string, number, string]> = [
+    ["Kits pendentes", metrics.pendingKits, "montagem-kits"],
+    ["Estoque crítico", metrics.criticalStock, "reposicao"],
+    ["Trocas", metrics.exchanges, "trocas"],
+    ["Devoluções", metrics.returns, "devolucoes"],
+    ["Ocorrências", metrics.occurrences, "ocorrencias"],
+    ["Atendimentos", metrics.support, "atendimentos"],
+    ["Pendências", metrics.pendingTasks, "pendencias"]
   ];
-  const priorityCards = cards.slice(0, 4);
-  const queueCards = cards.slice(4);
   return (
     <>
-      <section className="operational-priority" aria-labelledby="operational-priority-title">
-        <header className="dashboard-section-heading">
-          <div>
-            <span>Turno atual</span>
-            <h2 id="operational-priority-title">Prioridades da operação</h2>
-          </div>
-          <p>Comece pelos pedidos atrasados e pelas próximas etapas de expedição.</p>
-        </header>
-        <div className="operational-metric-grid operational-primary-metrics">
-          {priorityCards.map(([label, value, route, Icon]) => (
-            <Link href={`/operacional/${route}`} className="operational-metric" key={label}>
-              <Icon />
-              <span>{label}</span>
-              <strong>{value}</strong>
-              <small>Abrir fila <ChevronRight /></small>
-            </Link>
-          ))}
-        </div>
+      <section className="operational-block" aria-labelledby="operational-priority-title">
+        <SectionHeader
+          id="operational-priority-title"
+          title="Turno atual"
+          description="Comece pelos pedidos atrasados e pelas próximas etapas de expedição."
+        />
+        <KpiStrip label="Prioridades da operação">
+          <Kpi label="Pedidos novos" value={formatCount(metrics.newOrders)} detail="Pagamento aprovado" href="/operacional/pedidos?status=payment_approved" />
+          <Kpi
+            label="Pedidos atrasados"
+            value={formatCount(metrics.overdueOrders)}
+            tone={metrics.overdueOrders > 0 ? "danger" : "neutral"}
+            detail={
+              metrics.overdueOrders > 0 ? (
+                <StatusLabel tone="danger" icon={AlertTriangle}>Atrasados: resolver primeiro</StatusLabel>
+              ) : (
+                "Nenhum pedido atrasado"
+              )
+            }
+            href="/operacional/pendencias"
+          />
+          <Kpi label="Aguardando separação" value={formatCount(metrics.waitingSeparation)} detail="Fila de separação" href="/operacional/separacao" />
+          <Kpi label="Aguardando envio" value={formatCount(metrics.waitingShipping)} detail="Fila de envio" href="/operacional/envio" />
+        </KpiStrip>
       </section>
-      <section className="panel-card operational-queue-overview" aria-labelledby="operational-queues-title">
-        <header className="dashboard-section-heading compact">
-          <div>
-            <span>Fluxos relacionados</span>
-            <h2 id="operational-queues-title">Filas e pendências</h2>
-          </div>
-        </header>
-        <nav className="operational-queue-shortcuts" aria-label="Filas operacionais">
-          {queueCards.map(([label, value, route, Icon]) => (
-            <Link href={`/operacional/${route}`} key={label}>
-              <Icon aria-hidden="true" />
-              <span>{label}</span>
-              <strong>{value.toLocaleString("pt-BR")}</strong>
-              <ChevronRight aria-hidden="true" />
-            </Link>
-          ))}
+      <section className="operational-block" aria-labelledby="operational-queues-title">
+        <SectionHeader id="operational-queues-title" title="Filas e pendências" />
+        <nav aria-label="Filas operacionais">
+          <ul className="operational-queue-list">
+            {queues.map(([name, value, route]) => (
+              <li key={name}>
+                <Link href={`/operacional/${route}`}>
+                  <span>{name}</span>
+                  <strong className="ui-num">{formatCount(value)}</strong>
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </nav>
       </section>
       <div className="operational-dashboard-grid">
-        <section className="panel-card">
-          <SectionHeading title="Próximas tarefas" description="Fila ordenada por prioridade e prazo." />
+        <section className="operational-block" aria-labelledby="operational-next-tasks-title">
+          <SectionHeader id="operational-next-tasks-title" title="Próximas tarefas" description="Fila ordenada por prioridade e prazo." />
           <TaskList tasks={data.tasks.slice(0, 5)} compact />
         </section>
-        <section className="panel-card">
-          <SectionHeading title="Ocorrências abertas" description="Divergências que exigem acompanhamento." />
+        <section className="operational-block" aria-labelledby="operational-open-occurrences-title">
+          <SectionHeader id="operational-open-occurrences-title" title="Ocorrências abertas" description="Divergências que exigem acompanhamento." />
           <OccurrenceList occurrences={data.occurrences.slice(0, 5)} compact />
         </section>
       </div>
@@ -442,41 +482,37 @@ function Section({
   setQuery: (value: string) => void;
   setStatus: (value: string) => void;
   search: () => void;
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   changePage: (page: number) => void;
   capabilities: OperationCapabilities;
 }) {
   if (["pedidos"].includes(section)) {
     return (
-      <Orders
-        orders={data.orders}
-        query={query}
-        status={status}
-        processing={processing}
-        setQuery={setQuery}
-        setStatus={setStatus}
-        search={search}
-        run={run}
-        pagination={data.pagination}
-        changePage={changePage}
-        capabilities={capabilities}
-      />
+      <>
+        <Orders
+          orders={data.orders}
+          query={query}
+          status={status}
+          processing={processing}
+          setQuery={setQuery}
+          setStatus={setStatus}
+          search={search}
+          run={run}
+          pagination={data.pagination}
+          changePage={changePage}
+          capabilities={capabilities}
+        />
+        <BlingOperational />
+      </>
     );
   }
   if (["separacao", "expedicao", "envio"].includes(section)) {
     const taskType = section === "separacao" ? "separation" : section === "expedicao" ? "expedition" : "shipping";
+    const tasks = data.tasks.filter((task) => task.taskType === taskType);
     return (
       <>
-        <SectionHeading
-          title={section === "separacao" ? "Fila de separação" : section === "expedicao" ? "Expedição" : "Envios"}
-          description="Conferência, divergências, responsável e conclusão auditada."
-        />
-        <TaskList
-          tasks={data.tasks.filter((task) => task.taskType === taskType)}
-          run={run}
-          processing={processing}
-          canExecute={capabilities.executeTasks}
-        />
+        <ResultCount count={tasks.length} singular="tarefa" plural="tarefas" />
+        <TaskList tasks={tasks} run={run} processing={processing} canExecute={capabilities.executeTasks} />
         <Pagination pagination={data.pagination} changePage={changePage} />
       </>
     );
@@ -484,6 +520,7 @@ function Section({
   if (section === "estoque" || section === "reposicao" || section === "danificados") {
     return (
       <Inventory
+        section={section}
         items={
           section === "danificados"
             ? data.inventory.filter((item) => item.damaged > 0)
@@ -507,7 +544,7 @@ function Section({
       section === "trocas"
         ? data.returns.filter((item) => item.requestedResolution === "exchange")
         : data.returns;
-    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} />;
+    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} canReview={capabilities.reviewReturns === true} canRefund={capabilities.refundReturns === true} />;
   }
   if (section === "ocorrencias") {
     return <Occurrences occurrences={data.occurrences} run={run} processing={processing} canCreate={capabilities.createOccurrences} canResolve={capabilities.resolveOccurrences} />;
@@ -515,11 +552,44 @@ function Section({
   if (section === "notas-fiscais") return <Invoices invoices={data.invoices} />;
   if (section === "representantes") return <Representatives representatives={data.representatives} />;
   if (section === "pendencias") {
+    const openTasks = data.tasks.filter((task) => task.status !== "completed");
+    const openOccurrences = data.occurrences.filter((item) => !["resolved", "rejected"].includes(item.status));
     return (
       <>
-        <SectionHeading title="Pendências operacionais" description="Tarefas bloqueadas, atrasadas e ocorrências abertas." />
-        <TaskList tasks={data.tasks.filter((task) => task.status !== "completed")} run={run} processing={processing} canExecute={capabilities.executeTasks} />
-        <OccurrenceList occurrences={data.occurrences.filter((item) => !["resolved", "rejected"].includes(item.status))} />
+        <section className="operational-block" aria-labelledby="operational-blocked-title">
+          <SectionHeader
+            id="operational-blocked-title"
+            title="Pedidos bloqueados"
+            description="Bloqueados para separação e despacho até a confirmação do cancelamento ou reembolso."
+            actions={<CountLabel count={data.orders.length} />}
+          />
+          {data.orders.length ? (
+            <div className="operational-list">
+              {data.orders.map((order) => (
+                <article className="operational-item" key={order.id}>
+                  <div className="operational-item-main">
+                    <div className="operational-item-title">
+                      <Code>{order.publicCode}</Code>
+                      <StatusLabel tone="danger" icon={AlertTriangle}>{label(order.status)}</StatusLabel>
+                    </div>
+                    <p className="operational-item-meta">{order.customerName} · {formatDateTime(order.placedAt)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <StateMessage compact level={3} icon={Inbox} title="Nenhum pedido bloqueado" description="Pedidos com cancelamento ou reembolso em andamento aparecem aqui." />
+          )}
+        </section>
+        <section className="operational-block" aria-labelledby="operational-open-tasks-title">
+          <SectionHeader id="operational-open-tasks-title" title="Tarefas em aberto" actions={<CountLabel count={openTasks.length} />} />
+          <TaskList tasks={openTasks} run={run} processing={processing} canExecute={capabilities.executeTasks} />
+        </section>
+        <section className="operational-block" aria-labelledby="operational-pending-occurrences-title">
+          <SectionHeader id="operational-pending-occurrences-title" title="Ocorrências sem resolução" actions={<CountLabel count={openOccurrences.length} />} />
+          <OccurrenceList occurrences={openOccurrences} />
+        </section>
+        <BlingOperational />
       </>
     );
   }
@@ -527,7 +597,7 @@ function Section({
     return <OperationalReports metrics={data.metrics} />;
   }
   return (
-    <HonestState
+    <StateMessage
       icon={Wrench}
       title="Fluxo operacional"
       description="Nenhum registro disponível para esta fila no estado atual."
@@ -555,18 +625,22 @@ function Orders({
   setQuery: (value: string) => void;
   setStatus: (value: string) => void;
   search: () => void;
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   pagination: OperationsResponse["pagination"];
   changePage: (page: number) => void;
   capabilities: OperationCapabilities;
 }) {
   const [selected, setSelected] = useState("");
   const selectedOrder = orders.find((order) => order.id === selected) ?? null;
+  const filtered = Boolean(query.trim() || status);
   return (
-    <>
-      <SectionHeading title="Pedidos" description="Somente dados necessários para executar a operação." />
-      <form className="operational-filters" onSubmit={(event) => { event.preventDefault(); search(); }}>
-        <label><Search /><span className="sr-only">Buscar pedido</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código do pedido ou cliente" /></label>
+    <section className="operational-block" aria-label="Fila de pedidos">
+      <form className="ui-toolbar operational-toolbar" data-sticky="" role="search" onSubmit={(event) => { event.preventDefault(); search(); }}>
+        <label className="operational-search">
+          <Search aria-hidden="true" />
+          <span className="sr-only">Buscar pedido</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código do pedido ou cliente" />
+        </label>
         <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filtrar status">
           <option value="">Todos os status</option>
           <option value="payment_approved">Pagamento aprovado</option>
@@ -574,42 +648,99 @@ function Orders({
           <option value="ready_to_ship">Pronto para envio</option>
           <option value="shipped">Enviado</option>
           <option value="manual_review">Revisão manual</option>
+          <option value="cancelled">Cancelado</option>
+          <option value="refunded">Reembolsado</option>
         </select>
-        <button className="primary-button"><Search /> Buscar</button>
+        <button className="secondary-button" type="submit"><Search aria-hidden="true" /> Buscar</button>
+        <ResultCount count={pagination.total} singular="pedido" plural="pedidos" />
       </form>
       {orders.length ? (
         <div className="operational-list">
-          {orders.map((order) => (
-            <article className="operational-row" key={order.id}>
-              <div>
-                <strong>{order.publicCode}</strong>
-                <small>{order.customerName} · {formatDateTime(order.placedAt)}</small>
-              </div>
-              <span className={`status ${statusTone(order.status)}`}>{label(order.status)}</span>
-              <span>{order.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0)} itens</span>
-              <span className={order.paymentConfirmed ? "operation-ok" : "operation-warning"}>
-                {order.paymentConfirmed ? "Pagamento confirmado" : "Pagamento não confirmado"}
-              </span>
-              <div className="operational-actions">
-                <button className="secondary-button" onClick={() => setSelected(order.id)}>Detalhes</button>
-                {capabilities.executeTasks && order.paymentConfirmed && ["payment_approved", "processing", "picking"].includes(order.status) && (
-                  <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_separation", orderId: order.id }, "Separação iniciada.")}>
-                    <ClipboardCheck /> Separar
-                  </button>
-                )}
-                {capabilities.executeTasks && order.status === "ready_to_ship" && (
-                  <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_dispatch", orderId: order.id, taskType: "expedition" }, "Expedição iniciada.")}>
-                    <Truck /> Expedir
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
+          {orders.map((order) => {
+            const itemCount = order.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+            return (
+              <article className="operational-item" key={order.id}>
+                <div className="operational-item-main">
+                  <div className="operational-item-title">
+                    <Code>{order.publicCode}</Code>
+                    <StatusLabel tone={statusTone(order.status)}>{label(order.status)}</StatusLabel>
+                  </div>
+                  <p className="operational-item-meta">
+                    {order.customerName} · {formatDateTime(order.placedAt)} · <span className="ui-num">{itemCount}</span> {itemCount === 1 ? "item" : "itens"}
+                  </p>
+                  <div className="operational-item-tags">
+                    <StatusLabel tone={order.paymentConfirmed ? "success" : "warning"}>
+                      {order.paymentConfirmed ? "Pagamento confirmado" : "Pagamento não confirmado"}
+                    </StatusLabel>
+                    <OrderProgress order={order} />
+                  </div>
+                </div>
+                <div className="operational-actions">
+                  <button className="secondary-button" type="button" onClick={() => setSelected(order.id)}>Detalhes</button>
+                  {capabilities.executeTasks && ["pending_payment", "payment_approved", "processing", "picking", "ready_to_ship"].includes(order.status) && (
+                    <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => {
+                      const reason = window.prompt("Motivo do cancelamento (mínimo 5 caracteres). O pagamento e eventual reembolso serão verificados no provedor.");
+                      if (reason && reason.trim().length >= 5 && window.confirm("Confirmar a solicitação de cancelamento deste pedido?"))
+                        void run({ action: "cancel_order", orderId: order.id, reason: reason.trim() }, "Cancelamento solicitado. Acompanhe a confirmação e eventual reembolso.");
+                    }}>Solicitar cancelamento</button>
+                  )}
+                  {capabilities.executeTasks && order.paymentConfirmed && ["payment_approved", "processing", "picking"].includes(order.status) && (
+                    <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_separation", orderId: order.id }, "Separação iniciada.")}>
+                      {processing === "start_separation" ? <LoaderCircle className="spin" aria-hidden="true" /> : <ClipboardCheck aria-hidden="true" />} Separar
+                    </button>
+                  )}
+                  {capabilities.executeTasks && order.status === "ready_to_ship" && (
+                    <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_dispatch", orderId: order.id, taskType: "expedition" }, "Expedição iniciada.")}>
+                      {processing === "start_dispatch" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Truck aria-hidden="true" />} Expedir
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
-      ) : <Empty icon={Inbox} title="Nenhum pedido encontrado" />}
+      ) : (
+        <StateMessage
+          compact
+          icon={Inbox}
+          title={filtered ? "Nenhum pedido corresponde à busca" : "Nenhum pedido encontrado"}
+          description={filtered ? "Altere o termo ou o status e busque novamente." : "A fila será atualizada quando houver registros confirmados."}
+        />
+      )}
       <Pagination pagination={pagination} changePage={changePage} />
-      {selectedOrder && <OrderDetail order={selectedOrder} close={() => setSelected("")} run={run} canAddNote={capabilities.addOrderNotes} />}
-    </>
+      {selectedOrder && <OrderDetail order={selectedOrder} close={() => setSelected("")} run={run} processing={processing} canAddNote={capabilities.addOrderNotes} />}
+    </section>
+  );
+}
+
+const orderStages = ["Pago", "Separação", "Expedição", "Envio"] as const;
+const orderStageIndex: Record<string, number> = {
+  payment_approved: 0,
+  processing: 0,
+  picking: 1,
+  ready_to_ship: 2,
+  shipped: 3,
+  delivered: 3
+};
+const stageStateText = { done: "concluída", current: "em andamento", todo: "pendente" } as const;
+
+/** Etapas visuais derivadas apenas do status existente; status fora do fluxo não exibem etapas. */
+function OrderProgress({ order }: { order: OperationOrder }) {
+  const reached = orderStageIndex[order.status];
+  if (reached === undefined) return null;
+  return (
+    <ol className="operational-steps" aria-label="Etapas do pedido">
+      {orderStages.map((stage, index) => {
+        const finished = index < reached || (index === reached && (index === 0 ? order.paymentConfirmed : index === orderStages.length - 1));
+        const state = finished ? "done" : index === reached ? "current" : "todo";
+        return (
+          <li key={stage} data-state={state} aria-current={state === "current" ? "step" : undefined}>
+            <span className="sr-only">Etapa {stageStateText[state]}: </span>
+            {stage}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -617,37 +748,129 @@ function OrderDetail({
   order,
   close,
   run,
+  processing,
   canAddNote
 }: {
   order: OperationOrder;
   close: () => void;
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
+  processing: string;
   canAddNote: boolean;
 }) {
+  const confirm = usePanelConfirm();
+  const busy = Boolean(processing);
   const note = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const value = form.get("note");
     if (typeof value !== "string") return;
     if (await run({ action: "add_order_note", orderId: order.id, content: value }, "Observação registrada.")) {
-      event.currentTarget.reset();
+      formElement.reset();
     }
   };
+  const purchase = async (shipmentId: string) => {
+    const accepted = await confirm({
+      title: "Comprar etiqueta?",
+      description: "A compra da etiqueta desta remessa será solicitada ao Melhor Envio.",
+      confirmLabel: "Comprar etiqueta"
+    });
+    if (accepted) void run({ action: "shipping_purchase", shipmentId }, "Compra da etiqueta solicitada.");
+  };
+  const cancel = async (shipmentId: string) => {
+    const accepted = await confirm({
+      title: "Cancelar remessa?",
+      description: "O cancelamento desta remessa será solicitado ao Melhor Envio.",
+      confirmLabel: "Cancelar remessa",
+      cancelLabel: "Manter remessa",
+      tone: "danger"
+    });
+    if (accepted) void run({ action: "shipping_cancel", shipmentId, reason: "Cancelamento solicitado pela operação" }, "Cancelamento solicitado.");
+  };
   return (
-    <section className="operational-detail panel-card" aria-label={`Detalhes ${order.publicCode}`}>
-      <header><div><small>Pedido</small><h2>{order.publicCode}</h2></div><button className="secondary-button" onClick={close}>Fechar</button></header>
-      <div className="operational-detail-grid">
-        <div><h3>Entrega</h3><p>{order.customerName}</p><p>{order.address ? `${order.address.line} · ${order.address.district} · ${order.address.city}/${order.address.state} · ${order.address.postalCode}` : "Endereço não disponível"}</p></div>
-        <div><h3>Itens</h3>{order.items.map((item) => <p key={item.id}><strong>{item.quantity}×</strong> {item.productName} · {item.sku} · {[item.color, item.size].filter(Boolean).join(" · ")}</p>)}</div>
-        <div><h3>Envio</h3>{order.shipments.length ? order.shipments.map((shipment) => <p key={shipment.id}>{shipment.provider} · {shipment.service} · {label(shipment.status)} {shipment.trackingCode ? `· ${shipment.trackingCode}` : ""}</p>) : <p>Remessa ainda não criada.</p>}</div>
-        <div><h3>Histórico</h3>{order.history.length ? order.history.slice(0, 8).map((entry) => <p key={`${entry.createdAt}-${entry.status}`}>{formatDateTime(entry.createdAt)} · {label(entry.status)} · {entry.reason}</p>) : <p>Sem movimentações.</p>}</div>
+    <PanelDrawer open title={order.publicCode} eyebrow="Pedido" busy={busy} onClose={close}>
+      <div className="operational-detail">
+        <div className="operational-item-tags">
+          <StatusLabel tone={statusTone(order.status)}>{label(order.status)}</StatusLabel>
+          <OrderProgress order={order} />
+        </div>
+        <section className="operational-detail-section">
+          <h3>Entrega</h3>
+          <p>{order.customerName}</p>
+          <p className="operational-muted">{order.address ? `${order.address.line} · ${order.address.district} · ${order.address.city}/${order.address.state} · ${order.address.postalCode}` : "Endereço não disponível"}</p>
+        </section>
+        <section className="operational-detail-section">
+          <h3>Itens</h3>
+          <ul className="operational-detail-items">
+            {order.items.map((item) => (
+              <li key={item.id}>
+                <strong className="ui-num">{item.quantity}×</strong>
+                <span>
+                  {item.productName}
+                  <small><Code>{item.sku}</Code>{[item.color, item.size].filter(Boolean).length ? ` · ${[item.color, item.size].filter(Boolean).join(" · ")}` : ""}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section className="operational-detail-section">
+          <h3>Envio</h3>
+          {order.shipments.length ? order.shipments.map((shipment) => (
+            <div className="operational-shipment" key={shipment.id}>
+              <p>
+                {shipment.carrier || shipment.provider} · {shipment.service} · {label(shipment.status)}
+                {shipment.trackingCode ? <> · <Code>{shipment.trackingCode}</Code></> : null}
+              </p>
+              <p className="operational-muted">
+                Cobrado <span className="ui-num">{formatCurrency(shipment.shippingAmount)}</span> · custo <span className="ui-num">{formatCurrency(shipment.shippingCost)}</span>
+                {shipment.estimatedDays ? ` · ${shipment.estimatedDays} dias úteis` : ""}
+              </p>
+              {canAddNote && shipment.provider === "melhorenvio" ? (
+                <div className="operational-shipping-actions">
+                  {["pending", "awaiting_invoice", "failed"].includes(shipment.operationState) ? <button className="primary-button" type="button" disabled={busy} onClick={() => void run({ action: "shipping_create", shipmentId: shipment.id }, "Envio criado no Melhor Envio.")}>Criar</button> : null}
+                  {shipment.operationState === "created" ? <button className="primary-button" type="button" disabled={busy} onClick={() => void purchase(shipment.id)}>Comprar</button> : null}
+                  {shipment.operationState === "purchased" ? <button className="primary-button" type="button" disabled={busy} onClick={() => void run({ action: "shipping_generate", shipmentId: shipment.id }, "Etiqueta gerada.")}>Gerar</button> : null}
+                  {["generated", "posted", "delivered"].includes(shipment.operationState) ? <button className="primary-button" type="button" disabled={busy} onClick={() => void run({ action: "shipping_print", shipmentId: shipment.id }, "Impressão autorizada.")}>Imprimir</button> : null}
+                  {["purchased", "generated"].includes(shipment.operationState) ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void run({ action: "shipping_preview", shipmentId: shipment.id }, "Pré-visualização autorizada.")}>Visualizar</button> : null}
+                  {shipment.operationState !== "pending" ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void run({ action: "shipping_sync", shipmentId: shipment.id }, "Remessa sincronizada.")}>Sincronizar</button> : null}
+                  {["created", "purchased", "generated"].includes(shipment.operationState) ? <button className="danger-button operational-danger-action" type="button" disabled={busy} onClick={() => void cancel(shipment.id)}>Cancelar</button> : null}
+                </div>
+              ) : null}
+            </div>
+          )) : <p className="operational-muted">Remessa ainda não criada.</p>}
+        </section>
+        <section className="operational-detail-section">
+          <h3>Histórico</h3>
+          {order.history.length ? (
+            <ol className="operational-timeline">
+              {order.history.slice(0, 8).map((entry) => (
+                <li key={`${entry.createdAt}-${entry.status}`}>
+                  <time dateTime={entry.createdAt}>{formatDateTime(entry.createdAt)}</time>
+                  <span><strong>{label(entry.status)}</strong> · {entry.reason}</span>
+                </li>
+              ))}
+            </ol>
+          ) : <p className="operational-muted">Sem movimentações.</p>}
+        </section>
+        <section className="operational-detail-section">
+          <h3>Observações</h3>
+          {canAddNote ? (
+            <form className="operational-note-form" onSubmit={(event) => void note(event)}>
+              <label className="operational-field">
+                <span>Observação operacional</span>
+                <textarea name="note" minLength={3} maxLength={1000} required />
+              </label>
+              <button className="primary-button" type="submit" disabled={busy}>
+                {processing === "add_order_note" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />} Registrar
+              </button>
+            </form>
+          ) : null}
+          {order.notes.length ? (
+            order.notes.map((item) => <p className="operational-note" key={item.id}><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time> {item.content}</p>)
+          ) : <p className="operational-muted">Nenhuma observação registrada.</p>}
+        </section>
       </div>
-      {canAddNote ? <form className="operational-note-form" onSubmit={(event) => void note(event)}>
-        <label>Observação operacional<textarea name="note" minLength={3} maxLength={1000} required /></label>
-        <button className="primary-button"><Send /> Registrar</button>
-      </form> : null}
-      {order.notes.map((item) => <p className="operational-note" key={item.id}>{formatDateTime(item.createdAt)} · {item.content}</p>)}
-    </section>
+    </PanelDrawer>
   );
 }
 
@@ -659,31 +882,46 @@ function TaskList({
   canExecute = false
 }: {
   tasks: OperationTask[];
-  run?: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run?: Run;
   processing?: string;
   compact?: boolean;
   canExecute?: boolean;
 }) {
   const [selected, setSelected] = useState("");
   const selectedTask = tasks.find((task) => task.id === selected);
-  if (!tasks.length) return <Empty icon={ClipboardCheck} title="Nenhuma tarefa nesta fila" />;
+  if (!tasks.length) {
+    return <StateMessage compact level={3} icon={ClipboardCheck} title="Nenhuma tarefa nesta fila" description="A fila será atualizada quando houver registros confirmados." />;
+  }
+  const now = Date.now();
   return (
     <>
       <div className="operational-list">
-        {tasks.map((task) => (
-          <article className="operational-row task" key={task.id}>
-            <div><strong>{task.sourceCode || task.publicCode}</strong><small>{label(task.taskType)} · {task.dueAt ? `Prazo ${formatDateTime(task.dueAt)}` : "Sem prazo configurado"}</small></div>
-            <span className={`status ${statusTone(task.priority)}`}>{label(task.priority)}</span>
-            <span className={`status ${statusTone(task.status)}`}>{label(task.status)}</span>
-            {!compact && <span>{task.assignedToCurrentUser ? "Minha tarefa" : task.assigned ? "Atribuída" : "Sem responsável"}</span>}
-            {!compact && run && (
-              <div className="operational-actions">
-                {canExecute && !task.assigned && <button className="secondary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "claim_task", taskId: task.id }, "Tarefa assumida.")}>Assumir</button>}
-                <button className="secondary-button" onClick={() => setSelected(task.id)}>Conferir</button>
+        {tasks.map((task) => {
+          const overdue = Boolean(task.dueAt && task.status !== "completed" && new Date(task.dueAt).getTime() < now);
+          const canClaim = canExecute && !task.assigned;
+          return (
+            <article className="operational-item" key={task.id}>
+              <div className="operational-item-main">
+                <div className="operational-item-title">
+                  <Code>{task.sourceCode || task.publicCode}</Code>
+                  <StatusLabel tone={statusTone(task.status)}>{label(task.status)}</StatusLabel>
+                  <StatusLabel tone={priorityTone(task.priority)}>{label(task.priority)}</StatusLabel>
+                  {overdue ? <StatusLabel tone="danger" icon={AlertTriangle}>Atrasada</StatusLabel> : null}
+                </div>
+                <p className="operational-item-meta">
+                  {label(task.taskType)} · {task.dueAt ? `Prazo ${formatDateTime(task.dueAt)}` : "Sem prazo configurado"}
+                  {!compact ? ` · ${task.assignedToCurrentUser ? "Minha tarefa" : task.assigned ? "Atribuída" : "Sem responsável"}` : ""}
+                </p>
               </div>
-            )}
-          </article>
-        ))}
+              {!compact && run && (
+                <div className="operational-actions">
+                  {canClaim && <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void run({ action: "claim_task", taskId: task.id }, "Tarefa assumida.")}>Assumir</button>}
+                  <button className={canClaim ? "secondary-button" : "primary-button"} type="button" onClick={() => setSelected(task.id)}>Conferir</button>
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
       {selectedTask && run && <TaskDetail task={selectedTask} close={() => setSelected("")} run={run} processing={processing} canExecute={canExecute} />}
     </>
@@ -699,28 +937,44 @@ function TaskDetail({
 }: {
   task: OperationTask;
   close: () => void;
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
   canExecute: boolean;
 }) {
+  const confirm = usePanelConfirm();
+  const complete = async () => {
+    const accepted = await confirm({
+      title: "Concluir conferência?",
+      description: "A tarefa será concluída com as quantidades e divergências salvas em cada item.",
+      confirmLabel: "Concluir conferência"
+    });
+    if (accepted) void run({ action: "complete_task", taskId: task.id }, "Tarefa concluída.");
+  };
   return (
-    <section className="operational-detail panel-card">
-      <header><div><small>{label(task.taskType)}</small><h2>{task.sourceCode || task.publicCode}</h2></div><button className="secondary-button" onClick={close}>Fechar</button></header>
-      {!canExecute ? (
-        <p className="operational-feedback">Seu perfil possui acesso somente para consulta desta tarefa.</p>
-      ) : !task.assignedToCurrentUser ? (
-        <p className="operational-feedback">Assuma a tarefa antes de registrar a conferência.</p>
-      ) : (
-        <>
-          <div className="operational-check-list">
-            {task.items.map((item) => <TaskItem item={item} run={run} processing={processing} key={item.id} />)}
-          </div>
-          <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "complete_task", taskId: task.id }, "Tarefa concluída.")}>
-            <Check /> Concluir conferência
-          </button>
-        </>
-      )}
-    </section>
+    <PanelDrawer open title={task.sourceCode || task.publicCode} eyebrow={label(task.taskType)} busy={Boolean(processing)} onClose={close}>
+      <div className="operational-detail">
+        <div className="operational-item-tags">
+          <StatusLabel tone={statusTone(task.status)}>{label(task.status)}</StatusLabel>
+          <StatusLabel tone={priorityTone(task.priority)}>{label(task.priority)}</StatusLabel>
+        </div>
+        {!canExecute ? (
+          <p className="admin-feedback info">Seu perfil possui acesso somente para consulta desta tarefa.</p>
+        ) : !task.assignedToCurrentUser ? (
+          <p className="admin-feedback warning">Assuma a tarefa antes de registrar a conferência.</p>
+        ) : (
+          <>
+            <div className="operational-check-list">
+              {task.items.map((item) => <TaskItem item={item} run={run} processing={processing} key={item.id} />)}
+            </div>
+            <div className="operational-detail-footer">
+              <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void complete()}>
+                {processing === "complete_task" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Check aria-hidden="true" />} Concluir conferência
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </PanelDrawer>
   );
 }
 
@@ -730,7 +984,7 @@ function TaskItem({
   processing
 }: {
   item: OperationItem;
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
 }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -750,17 +1004,30 @@ function TaskItem({
     );
   };
   return (
-    <form onSubmit={submit}>
-      <div><strong>{item.productName}</strong><small>{item.sku} · {item.variant}</small></div>
-      <label>Esperado <input value={item.expectedQuantity} readOnly /></label>
-      <label>Conferido <input name="quantity" type="number" inputMode="numeric" min={0} max={999} defaultValue={item.checkedQuantity ?? item.expectedQuantity} required /></label>
-      <label>Divergência <input name="reason" maxLength={500} defaultValue={item.divergenceReason ?? ""} placeholder="Obrigatório se diferente" /></label>
-      <button className="secondary-button" disabled={Boolean(processing)}><Check /> Salvar</button>
+    <form className="operational-check-item" onSubmit={submit}>
+      <div className="operational-check-product">
+        <strong>{item.productName}</strong>
+        <small><Code>{item.sku}</Code>{item.variant ? ` · ${item.variant}` : ""}</small>
+      </div>
+      <div className="operational-check-expected">
+        <span>Esperado</span>
+        <strong className="ui-num">{item.expectedQuantity ?? "—"}</strong>
+      </div>
+      <label className="operational-field">
+        <span>Conferido</span>
+        <input name="quantity" type="number" inputMode="numeric" min={0} max={999} defaultValue={item.checkedQuantity ?? item.expectedQuantity} required />
+      </label>
+      <label className="operational-field operational-check-reason">
+        <span>Divergência</span>
+        <input name="reason" maxLength={500} defaultValue={item.divergenceReason ?? ""} placeholder="Obrigatório se diferente" />
+      </label>
+      <button className="secondary-button" type="submit" disabled={Boolean(processing)}><Check aria-hidden="true" /> Salvar</button>
     </form>
   );
 }
 
 function Inventory({
+  section,
   items,
   movements,
   adjustments,
@@ -768,10 +1035,11 @@ function Inventory({
   processing,
   canRequest
 }: {
+  section: string;
   items: InventoryItem[];
   movements: OperationsResponse["movements"];
   adjustments: OperationsResponse["adjustments"];
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
   canRequest: boolean;
 }) {
@@ -792,22 +1060,93 @@ function Inventory({
       setAdjustmentTarget(null);
     }
   };
+  const emptyTitle = section === "danificados" ? "Nenhum item danificado" : section === "reposicao" ? "Nenhum item abaixo do mínimo" : "Nenhum item encontrado";
   return (
     <>
-      <SectionHeading title="Estoque operacional" description="Saldo, reservas, danos, mínimo e solicitações auditáveis." />
-      {items.length ? <div className="operational-list">{items.map((item) => (
-        <article className={`operational-row inventory ${item.critical ? "critical" : ""}`} key={item.variantId}>
-          <div><strong>{item.productName}</strong><small>{item.sku} · {item.variant}</small></div>
-          <span>Disponível <strong>{item.available}</strong></span>
-          <span>Reservado <strong>{item.reserved}</strong></span>
-          <span>Danificado <strong>{item.damaged}</strong></span>
-          <span>Mínimo <strong>{item.minimum}</strong></span>
-          {canRequest ? <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => setAdjustmentTarget(item)}>Solicitar ajuste</button> : null}
-        </article>
-      ))}</div> : <Empty icon={Boxes} title="Nenhum item encontrado" />}
+      <section className="operational-block" aria-label="Itens de estoque">
+        <ResultCount count={items.length} singular="variação" plural="variações" />
+        {items.length ? (
+          <div className="admin-table-wrap operational-table-wrap">
+            <table className="data-table ui-table-stack operational-inventory-table">
+              <thead>
+                <tr>
+                  <th scope="col">Produto</th>
+                  <th scope="col" className="ui-num">Disponível</th>
+                  <th scope="col" className="ui-num">Reservado</th>
+                  <th scope="col" className="ui-num">Danificado</th>
+                  <th scope="col" className="ui-num">Mínimo</th>
+                  <th scope="col">Situação</th>
+                  {canRequest ? <th scope="col"><span className="sr-only">Ações</span></th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.variantId}>
+                    <td className="operational-product-cell">
+                      <strong>{item.productName}</strong>
+                      <small><Code>{item.sku}</Code>{item.variant ? ` · ${item.variant}` : ""}</small>
+                    </td>
+                    <td className="ui-num" data-label="Disponível">{item.available}</td>
+                    <td className="ui-num" data-label="Reservado">{item.reserved}</td>
+                    <td className="ui-num" data-label="Danificado">{item.damaged}</td>
+                    <td className="ui-num" data-label="Mínimo">{item.minimum}</td>
+                    <td data-label="Situação">
+                      <span className="operational-item-tags">
+                        {item.critical ? <StatusLabel tone="danger" icon={AlertTriangle}>Crítico</StatusLabel> : null}
+                        {item.damaged > 0 ? <StatusLabel tone="warning">Danificado</StatusLabel> : null}
+                        {!item.critical && item.damaged <= 0 ? <span className="operational-muted">Sem alerta</span> : null}
+                      </span>
+                    </td>
+                    {canRequest ? (
+                      <td className="operational-cell-actions">
+                        <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => setAdjustmentTarget(item)}>Solicitar ajuste</button>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <StateMessage compact icon={Boxes} title={emptyTitle} description="A lista será atualizada quando houver registros confirmados." />
+        )}
+      </section>
       <div className="operational-dashboard-grid">
-        <section className="panel-card"><SectionHeading title="Movimentações recentes" description="Trilha registrada pelo estoque." />{movements.slice(0, 10).map((item) => <p className="operational-record" key={item.id}>{formatDateTime(item.createdAt)} · {item.reason} · {item.quantity > 0 ? "+" : ""}{item.quantity} · {item.previous} → {item.current}</p>)}</section>
-        <section className="panel-card"><SectionHeading title="Ajustes solicitados" description="O Operacional não aprova o próprio ajuste." />{adjustments.length ? adjustments.map((item) => <p className="operational-record" key={item.id}>{item.publicCode} · {item.quantityDelta > 0 ? "+" : ""}{item.quantityDelta} · {label(item.status)}</p>) : <p className="operational-muted">Nenhuma solicitação.</p>}</section>
+        <section className="operational-block" aria-labelledby="operational-movements-title">
+          <SectionHeader id="operational-movements-title" title="Movimentações recentes" description="Trilha registrada pelo estoque." />
+          {movements.length ? (
+            <ol className="operational-timeline operational-surface">
+              {movements.slice(0, 10).map((item) => (
+                <li key={item.id}>
+                  <time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>
+                  <span>{item.reason}</span>
+                  <span className="operational-movement ui-num">
+                    <strong data-tone={item.quantity > 0 ? "in" : item.quantity < 0 ? "out" : undefined}>{item.quantity > 0 ? "+" : ""}{item.quantity}</strong>
+                    <span>{item.previous} → {item.current}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <StateMessage compact level={3} title="Nenhuma movimentação recente" description="Entradas, saídas e ajustes aplicados aparecem aqui." />
+          )}
+        </section>
+        <section className="operational-block" aria-labelledby="operational-adjustments-title">
+          <SectionHeader id="operational-adjustments-title" title="Ajustes solicitados" description="O Operacional não aprova o próprio ajuste." />
+          {adjustments.length ? (
+            <ul className="operational-records operational-surface">
+              {adjustments.map((item) => (
+                <li key={item.id}>
+                  <Code>{item.publicCode}</Code>
+                  <strong className="ui-num">{item.quantityDelta > 0 ? "+" : ""}{item.quantityDelta}</strong>
+                  <StatusLabel tone={statusTone(item.status)}>{label(item.status)}</StatusLabel>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <StateMessage compact level={3} title="Nenhuma solicitação" description={canRequest ? "Use “Solicitar ajuste” em um item para enviar uma diferença à aprovação." : "As solicitações de ajuste aparecem aqui."} />
+          )}
+        </section>
       </div>
       {adjustmentTarget ? (
         <OperationalActionDialog
@@ -818,8 +1157,8 @@ function Inventory({
           onClose={() => setAdjustmentTarget(null)}
           onSubmit={(event) => void request(event)}
         >
-          <label>
-            Diferença de quantidade
+          <label className="operational-field">
+            <span>Diferença de quantidade <RequiredMark /></span>
             <input
               name="quantityDelta"
               type="number"
@@ -828,12 +1167,13 @@ function Inventory({
               required
               autoFocus
               placeholder="Ex.: 3 ou -2"
+              aria-describedby="operational-adjustment-help"
               onInput={(event) => event.currentTarget.setCustomValidity(event.currentTarget.value === "0" ? "Informe uma diferença diferente de zero." : "")}
             />
-            <small>Use valor positivo para entrada e negativo para saída.</small>
+            <small id="operational-adjustment-help">Use valor positivo para entrada e negativo para saída.</small>
           </label>
-          <label>
-            Motivo detalhado
+          <label className="operational-field">
+            <span>Motivo detalhado <RequiredMark /></span>
             <textarea name="reason" minLength={5} maxLength={500} required placeholder="Explique a origem do ajuste solicitado." />
           </label>
         </OperationalActionDialog>
@@ -849,23 +1189,43 @@ function Kits({
   canExecute
 }: {
   kits: KitOrder[];
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
   canExecute: boolean;
 }) {
   return (
-    <>
-      <SectionHeading title="Kits de representantes" description="Montagem, conferência e expedição sem acesso a comissões." />
-      {kits.length ? <div className="operational-list">{kits.map((kit) => (
-        <article className="operational-row" key={kit.id}>
-          <div><strong>{kit.publicCode}</strong><small>{kit.kitName} · {kit.representativeCode}</small></div>
-          <span className={`status ${statusTone(kit.status)}`}>{label(kit.status)}</span>
-          <span>{kit.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0)} itens</span>
-          <span>{formatDateTime(kit.createdAt)}</span>
-          <div className="operational-actions">{canExecute && ["paid", "separating"].includes(kit.status) && <button className="primary-button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_kit", kitOrderId: kit.id }, "Montagem do kit iniciada.")}><PackageCheck /> Montar</button>}</div>
-        </article>
-      ))}</div> : <Empty icon={PackageCheck} title="Nenhum kit pendente" />}
-    </>
+    <section className="operational-block" aria-label="Kits de representantes">
+      <ResultCount count={kits.length} singular="kit" plural="kits" />
+      {kits.length ? (
+        <div className="operational-list">
+          {kits.map((kit) => {
+            const itemCount = kit.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+            return (
+              <article className="operational-item" key={kit.id}>
+                <div className="operational-item-main">
+                  <div className="operational-item-title">
+                    <Code>{kit.publicCode}</Code>
+                    <StatusLabel tone={statusTone(kit.status)}>{label(kit.status)}</StatusLabel>
+                  </div>
+                  <p className="operational-item-meta">
+                    {kit.kitName} · Representante <Code>{kit.representativeCode}</Code> · <span className="ui-num">{itemCount}</span> {itemCount === 1 ? "item" : "itens"} · {formatDateTime(kit.createdAt)}
+                  </p>
+                </div>
+                <div className="operational-actions">
+                  {canExecute && ["paid", "separating"].includes(kit.status) && (
+                    <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => void run({ action: "start_kit", kitOrderId: kit.id }, "Montagem do kit iniciada.")}>
+                      {processing === "start_kit" ? <LoaderCircle className="spin" aria-hidden="true" /> : <PackageCheck aria-hidden="true" />} Montar
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <StateMessage compact icon={PackageCheck} title="Nenhum kit pendente" description="Kits pagos de representantes aparecem aqui para montagem." />
+      )}
+    </section>
   );
 }
 
@@ -873,12 +1233,16 @@ function Returns({
   records,
   run,
   processing,
-  canInspect
+  canInspect,
+  canReview,
+  canRefund
 }: {
   records: ReturnRecord[];
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
   canInspect: boolean;
+  canReview: boolean;
+  canRefund: boolean;
 }) {
   const [inspectionTarget, setInspectionTarget] = useState<ReturnRecord["items"][number] | null>(null);
   const inspect = async (event: FormEvent<HTMLFormElement>) => {
@@ -894,16 +1258,54 @@ function Returns({
     }
   };
   return (
-    <>
-      <SectionHeading title="Trocas e devoluções" description="Recebimento e inspeção física separados do estorno financeiro." />
-      {records.length ? <div className="operational-return-grid">{records.map((record) => (
-        <article className="panel-card" key={record.id}>
-          <header><div><strong>{record.publicCode}</strong><small>Pedido {record.orderCode}</small></div><span className={`status ${statusTone(record.status)}`}>{label(record.status)}</span></header>
-          <p><strong>Solicitação:</strong> {label(record.requestedResolution)}</p>
-          <p>{record.reason} · {record.description}</p>
-          {record.items.map((item) => <div className="return-item" key={item.id}><span><strong>{item.quantity}× {item.productName}</strong><small>{item.sku} · {item.condition ?? "Aguardando inspeção"}</small></span>{canInspect && ["received", "inspection"].includes(record.status) && <button className="secondary-button" type="button" disabled={Boolean(processing)} onClick={() => setInspectionTarget(item)}>Inspecionar</button>}</div>)}
-        </article>
-      ))}</div> : <Empty icon={RotateCcw} title="Nenhuma solicitação nesta fila" />}
+    <section className="operational-block" aria-label="Solicitações de troca e devolução">
+      <ResultCount count={records.length} singular="solicitação" plural="solicitações" />
+      {records.length ? (
+        <div className="operational-return-grid">
+          {records.map((record) => (
+            <article className="operational-return" key={record.id}>
+              <header>
+                <div>
+                  <Code>{record.publicCode}</Code>
+                  <small>Pedido <Code>{record.orderCode}</Code> · {formatDate(record.requestedAt)}</small>
+                </div>
+                <StatusLabel tone={statusTone(record.status)}>{returnStatusLabels[record.status] ?? label(record.status)}</StatusLabel>
+              </header>
+              <dl className="operational-return-facts">
+                <div><dt>Solicitação</dt><dd>{label(record.requestedResolution)}</dd></div>
+                <div><dt>Motivo</dt><dd>{record.reason}</dd></div>
+              </dl>
+              {record.description ? <p className="operational-return-description">{record.description}</p> : null}
+              <p>{returnKindLabels[record.kind as ReturnKind] ?? "Solicitação anterior"}{record.kind === "withdrawal" ? record.withinWithdrawalPeriod === true ? " · Comunicada em até 7 dias" : " · Conferir data de recebimento e preservar os direitos do cliente" : ""}</p>
+              {record.customerMessage && <p><strong>Resposta ao cliente:</strong> {record.customerMessage}</p>}
+              {record.instructions && <p style={{ whiteSpace: "pre-wrap" }}>Postagem: {record.postingCode}<br />{record.instructions}</p>}
+              {record.trackingCode && <p>Rastreio do retorno: <Code>{record.trackingCode}</Code></p>}
+              {record.exchangeTrackingCode && <p>Rastreio da troca: <Code>{record.exchangeTrackingCode}</Code></p>}
+              {record.refundAmount > 0 && <p>Reembolso: {formatCurrency(record.refundAmount)}</p>}
+              {record.refundNeedsReview && <p role="status">Reembolso exige conciliação com o provedor. A devolução do valor ainda não foi confirmada. Não faça outro estorno sem verificar a operação anterior.</p>}
+              {record.photos?.length > 0 && <div className="return-photo-grid">{record.photos.map((photo, index) => <a href={`/api/operations/return-media?id=${photo.id}`} key={photo.id} target="_blank" rel="noopener noreferrer"><img src={`/api/operations/return-media?id=${photo.id}`} alt={`Foto ${index + 1} do produto, solicitação ${record.publicCode}`} width={96} height={96} loading="lazy" /></a>)}</div>}
+              <ReturnReviewActions id={record.id} status={record.status} kind={record.kind} resolution={record.requestedResolution} canReview={canReview} canInspect={canInspect} canRefund={canRefund} needsReconciliation={record.refundNeedsReview} busy={Boolean(processing)} run={run} />
+              {Boolean(record.history?.length) && <details><summary>Histórico da solicitação</summary><ol>{record.history.map(event => <li key={event.id}><strong>{returnStatusLabels[event.status] ?? event.status}</strong> · {formatDate(event.createdAt)}<p>{event.message}</p></li>)}</ol></details>}
+              <ul className="operational-return-items">
+                {record.items.map((item) => (
+                  <li key={item.id}>
+                    <span>
+                      <strong><span className="ui-num">{item.quantity}×</span> {item.productName}</strong>
+                      <small><Code>{item.sku}</Code>{item.condition ? ` · ${item.condition}` : ""}</small>
+                      {item.condition ? null : <StatusLabel tone="warning">Aguardando inspeção</StatusLabel>}
+                    </span>
+                    {canInspect && ["received", "inspection"].includes(record.status) && (
+                      <button className="primary-button" type="button" disabled={Boolean(processing)} onClick={() => setInspectionTarget(item)}>Inspecionar</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <StateMessage compact icon={RotateCcw} title="Nenhuma solicitação nesta fila" description="Solicitações recebidas para inspeção física aparecem aqui." />
+      )}
       {inspectionTarget ? (
         <OperationalActionDialog
           title="Registrar inspeção"
@@ -913,12 +1315,12 @@ function Returns({
           onClose={() => setInspectionTarget(null)}
           onSubmit={(event) => void inspect(event)}
         >
-          <label>
-            Condição física
+          <label className="operational-field">
+            <span>Condição física <RequiredMark /></span>
             <input name="condition" minLength={3} maxLength={300} required autoFocus placeholder="Descreva o estado recebido." />
           </label>
-          <label>
-            Destino do item
+          <label className="operational-field">
+            <span>Destino do item <RequiredMark /></span>
             <select name="destination" defaultValue="damaged" required>
               <option value="sellable">Retornar ao estoque disponível</option>
               <option value="damaged">Estoque danificado</option>
@@ -926,13 +1328,13 @@ function Returns({
               <option value="supplier">Devolver ao fornecedor</option>
             </select>
           </label>
-          <label>
-            Resultado da conferência
+          <label className="operational-field">
+            <span>Resultado da conferência <RequiredMark /></span>
             <textarea name="result" minLength={5} maxLength={1000} required placeholder="Registre o resultado e as evidências da inspeção." />
           </label>
         </OperationalActionDialog>
       ) : null}
-    </>
+    </section>
   );
 }
 
@@ -944,7 +1346,7 @@ function Occurrences({
   canResolve
 }: {
   occurrences: Occurrence[];
-  run: (body: Record<string, unknown>, success: string) => Promise<boolean>;
+  run: Run;
   processing: string;
   canCreate: boolean;
   canResolve: boolean;
@@ -952,10 +1354,11 @@ function Occurrences({
   const [resolutionTarget, setResolutionTarget] = useState<Occurrence | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const payload = Object.fromEntries(form);
     if (await run({ action: "create_occurrence", ...payload }, "Ocorrência registrada.")) {
-      event.currentTarget.reset();
+      formElement.reset();
     }
   };
   const resolve = async (event: FormEvent<HTMLFormElement>) => {
@@ -968,16 +1371,43 @@ function Occurrences({
     }
   };
   return (
-    <div className="operational-occurrence-layout">
-      {canCreate ? <form className="panel-card operational-occurrence-form" onSubmit={(event) => void submit(event)}>
-        <SectionHeading title="Nova ocorrência" description="Registre somente dados necessários à operação." />
-        <label>Categoria<select name="category" required defaultValue="divergence"><option value="divergence">Divergência</option><option value="damaged_product">Produto danificado</option><option value="missing_item">Item ausente</option><option value="shipping">Envio</option><option value="invoice">Nota fiscal</option><option value="return">Devolução</option><option value="exchange">Troca</option><option value="kit">Kit</option><option value="inventory">Estoque</option><option value="customer_service">Atendimento</option><option value="other">Outra</option></select></label>
-        <label>Prioridade<select name="priority" defaultValue="normal"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
-        <label>Título<input name="title" minLength={5} maxLength={120} required /></label>
-        <label>Descrição<textarea name="description" minLength={5} maxLength={2000} required /></label>
-        <button className="primary-button" disabled={Boolean(processing)}>{processing ? <LoaderCircle className="spin" /> : <ShieldAlert />} Registrar</button>
-      </form> : null}
-      <section className="panel-card"><SectionHeading title="Histórico de ocorrências" description="Fila por prioridade e status." /><OccurrenceList occurrences={occurrences} resolve={canResolve ? setResolutionTarget : undefined} /></section>
+    <div className={`operational-occurrence-layout${canCreate ? "" : " single"}`}>
+      {canCreate ? (
+        <section className="operational-block" aria-labelledby="operational-new-occurrence-title">
+          <SectionHeader id="operational-new-occurrence-title" title="Nova ocorrência" description="Registre somente dados necessários à operação." />
+          <form className="panel-card operational-occurrence-form" onSubmit={(event) => void submit(event)}>
+            <label className="operational-field">
+              <span>Categoria <RequiredMark /></span>
+              <select name="category" required defaultValue="divergence"><option value="divergence">Divergência</option><option value="damaged_product">Produto danificado</option><option value="missing_item">Item ausente</option><option value="shipping">Envio</option><option value="invoice">Nota fiscal</option><option value="return">Devolução</option><option value="exchange">Troca</option><option value="kit">Kit</option><option value="inventory">Estoque</option><option value="customer_service">Atendimento</option><option value="other">Outra</option></select>
+            </label>
+            <label className="operational-field">
+              <span>Prioridade</span>
+              <select name="priority" defaultValue="normal"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select>
+            </label>
+            <label className="operational-field">
+              <span>Título <RequiredMark /></span>
+              <input name="title" minLength={5} maxLength={120} required aria-describedby="operational-occurrence-title-help" />
+              <small id="operational-occurrence-title-help">De 5 a 120 caracteres.</small>
+            </label>
+            <label className="operational-field">
+              <span>Descrição <RequiredMark /></span>
+              <textarea name="description" minLength={5} maxLength={2000} required />
+            </label>
+            <button className="primary-button" type="submit" disabled={Boolean(processing)}>
+              {processing === "create_occurrence" ? <LoaderCircle className="spin" aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />} Registrar
+            </button>
+          </form>
+        </section>
+      ) : null}
+      <section className="operational-block" aria-labelledby="operational-occurrence-history-title">
+        <SectionHeader
+          id="operational-occurrence-history-title"
+          title="Histórico de ocorrências"
+          description="Fila por prioridade e status."
+          actions={<CountLabel count={occurrences.length} />}
+        />
+        <OccurrenceList occurrences={occurrences} resolve={canResolve ? setResolutionTarget : undefined} />
+      </section>
       {resolutionTarget ? (
         <OperationalActionDialog
           title="Resolver ocorrência"
@@ -987,8 +1417,8 @@ function Occurrences({
           onClose={() => setResolutionTarget(null)}
           onSubmit={(event) => void resolve(event)}
         >
-          <label>
-            Resolução aplicada
+          <label className="operational-field">
+            <span>Resolução aplicada <RequiredMark /></span>
             <textarea name="resolution" minLength={5} maxLength={2000} required autoFocus placeholder="Descreva o que foi feito e o resultado obtido." />
           </label>
         </OperationalActionDialog>
@@ -1006,25 +1436,97 @@ function OccurrenceList({
   compact?: boolean;
   resolve?: (item: Occurrence) => void;
 }) {
-  if (!occurrences.length) return <Empty icon={ShieldAlert} title="Nenhuma ocorrência aberta" />;
-  return <div className="operational-list">{occurrences.map((item) => <article className="operational-row" key={item.id}><div><strong>{item.publicCode} · {item.title}</strong><small>{label(item.category)} · {formatDateTime(item.createdAt)}</small></div><span className={`status ${statusTone(item.priority)}`}>{label(item.priority)}</span><span className={`status ${statusTone(item.status)}`}>{label(item.status)}</span>{!compact && <p>{item.description}</p>}{resolve && !["resolved", "rejected"].includes(item.status) && <button className="secondary-button" onClick={() => resolve(item)}>Resolver</button>}</article>)}</div>;
+  if (!occurrences.length) {
+    return <StateMessage compact level={3} icon={ShieldAlert} title="Nenhuma ocorrência aberta" description="Divergências registradas pela operação aparecem aqui." />;
+  }
+  return (
+    <div className="operational-list">
+      {occurrences.map((item) => (
+        <article className="operational-item" key={item.id}>
+          <div className="operational-item-main">
+            <div className="operational-item-title">
+              <Code>{item.publicCode}</Code>
+              <StatusLabel tone={priorityTone(item.priority)}>{label(item.priority)}</StatusLabel>
+              <StatusLabel tone={statusTone(item.status)}>{label(item.status)}</StatusLabel>
+            </div>
+            <strong className="operational-item-name">{item.title}</strong>
+            <p className="operational-item-meta">{label(item.category)} · {formatDateTime(item.createdAt)}</p>
+            {!compact && <p className="operational-item-description">{item.description}</p>}
+          </div>
+          {resolve && !["resolved", "rejected"].includes(item.status) && (
+            <div className="operational-actions">
+              <button className="secondary-button" type="button" onClick={() => resolve(item)}>Resolver</button>
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  );
 }
 
 function Invoices({ invoices }: { invoices: OperationsResponse["invoices"] }) {
   return (
-    <>
-      <SectionHeading title="Notas fiscais" description="Acompanhamento operacional sem chaves ou configurações do ERP." />
-      {invoices.length ? <div className="operational-list">{invoices.map((invoice) => <article className="operational-row" key={invoice.id}><div><strong>{invoice.orderCode || "Pedido"}</strong><small>{label(invoice.type)} · {formatDateTime(invoice.createdAt)}</small></div><span className={`status ${statusTone(invoice.status)}`}>{label(invoice.status)}</span><span>{invoice.reference ?? "Sem referência"}</span><span>{invoice.error ? "Exige atenção" : `${invoice.attempts} tentativa(s)`}</span></article>)}</div> : <Empty icon={FileText} title="Nenhum documento fiscal" />}
-    </>
+    <section className="operational-block" aria-label="Notas fiscais">
+      <ResultCount count={invoices.length} singular="documento" plural="documentos" />
+      {invoices.length ? (
+        <div className="admin-table-wrap operational-table-wrap">
+          <table className="data-table ui-table-stack">
+            <thead>
+              <tr>
+                <th scope="col">Pedido</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Status</th>
+                <th scope="col">Referência</th>
+                <th scope="col" className="ui-num">Tentativas</th>
+                <th scope="col">Atenção</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((invoice) => (
+                <tr key={invoice.id}>
+                  <td className="operational-product-cell">
+                    <strong>{invoice.orderCode ? <Code>{invoice.orderCode}</Code> : "Pedido"}</strong>
+                    <small>{formatDateTime(invoice.createdAt)}</small>
+                  </td>
+                  <td data-label="Tipo">{label(invoice.type)}</td>
+                  <td data-label="Status"><StatusLabel tone={statusTone(invoice.status)}>{label(invoice.status)}</StatusLabel></td>
+                  <td data-label="Referência">{invoice.reference ? <Code>{invoice.reference}</Code> : <span className="operational-muted">Sem referência</span>}</td>
+                  <td className="ui-num" data-label="Tentativas">{invoice.attempts}</td>
+                  <td data-label="Atenção">{invoice.error ? <StatusLabel tone="danger" icon={AlertTriangle}>Exige atenção</StatusLabel> : <span className="operational-muted">Nenhuma</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <StateMessage compact icon={FileText} title="Nenhum documento fiscal" description="Notas emitidas para os pedidos aparecem aqui." />
+      )}
+    </section>
   );
 }
 
 function Representatives({ representatives }: { representatives: OperationsResponse["representatives"] }) {
   return (
-    <>
-      <SectionHeading title="Representantes" description="Visão operacional mínima para kits e ocorrências; níveis e comissões não são expostos." />
-      {representatives.length ? <div className="operational-list">{representatives.map((item) => <article className="operational-row" key={item.id}><div><strong>{item.publicCode}</strong><small>Região {item.regionCode ?? "não informada"}</small></div><span className={`status ${statusTone(item.status)}`}>{label(item.status)}</span><span>Desde {formatDate(item.createdAt)}</span></article>)}</div> : <Empty icon={UserRound} title="Nenhum representante encontrado" />}
-    </>
+    <section className="operational-block" aria-label="Representantes">
+      <SectionHeader title="Representantes" description="Visão operacional mínima para kits e ocorrências; níveis e comissões não são expostos." />
+      {representatives.length ? (
+        <div className="operational-list">
+          {representatives.map((item) => (
+            <article className="operational-item" key={item.id}>
+              <div className="operational-item-main">
+                <div className="operational-item-title">
+                  <Code>{item.publicCode}</Code>
+                  <StatusLabel tone={statusTone(item.status)}>{label(item.status)}</StatusLabel>
+                </div>
+                <p className="operational-item-meta">Região {item.regionCode ?? "não informada"} · Desde {formatDate(item.createdAt)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <StateMessage compact icon={UserRound} title="Nenhum representante encontrado" description="A lista será atualizada quando houver registros confirmados." />
+      )}
+    </section>
   );
 }
 
@@ -1040,10 +1542,27 @@ function OperationalReports({ metrics }: { metrics: OperationMetrics }) {
     ["Ocorrências abertas", metrics.occurrences]
   ] as const;
   return (
-    <>
-      <SectionHeading title="Relatório operacional" description="Contagens atuais das filas; sem valores financeiros ou estratégia comercial." />
-      <section className="panel-card operational-report">{rows.map(([name, value]) => <div key={name}><span>{name}</span><strong>{value}</strong></div>)}</section>
-    </>
+    <section className="operational-block" aria-label="Relatório operacional">
+      <div className="admin-table-wrap operational-table-wrap">
+        <table className="data-table">
+          <caption className="sr-only">Contagens atuais das filas operacionais</caption>
+          <thead>
+            <tr>
+              <th scope="col">Fila</th>
+              <th scope="col" className="ui-num">Quantidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([name, value]) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td className="ui-num">{formatCount(value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1056,11 +1575,15 @@ function Pagination({
 }) {
   const pages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
   if (pages <= 1) return null;
+  const first = (pagination.page - 1) * pagination.pageSize + 1;
+  const last = Math.min(pagination.page * pagination.pageSize, pagination.total);
   return (
     <nav className="operational-pagination" aria-label="Paginação">
-      <button className="secondary-button" disabled={pagination.page <= 1} onClick={() => changePage(pagination.page - 1)}><ChevronLeft /> Anterior</button>
-      <span>Página {pagination.page} de {pages}</span>
-      <button className="secondary-button" disabled={pagination.page >= pages} onClick={() => changePage(pagination.page + 1)}>Próxima <ChevronRight /></button>
+      <span className="ui-num">{formatCount(first)}–{formatCount(last)} de {formatCount(pagination.total)} · Página {pagination.page} de {pages}</span>
+      <div>
+        <button className="secondary-button" type="button" disabled={pagination.page <= 1} onClick={() => changePage(pagination.page - 1)}><ChevronLeft aria-hidden="true" /> Anterior</button>
+        <button className="secondary-button" type="button" disabled={pagination.page >= pages} onClick={() => changePage(pagination.page + 1)}>Próxima <ChevronRight aria-hidden="true" /></button>
+      </div>
     </nav>
   );
 }
@@ -1143,7 +1666,7 @@ function OperationalActionDialog({
             <span>Ação operacional auditável</span>
             <h2 id="operational-dialog-title">{title}</h2>
           </div>
-          <button type="button" onClick={onClose} disabled={pending} aria-label="Fechar formulário">
+          <button type="button" onClick={onClose} disabled={pending} aria-label="Fechar formulário" title="Fechar formulário">
             <X aria-hidden="true" />
           </button>
         </header>
@@ -1165,30 +1688,36 @@ function OperationalActionDialog({
   );
 }
 
-function SectionHeading({ title, description }: { title: string; description: string }) {
-  return <header className="operational-section-heading"><div><h2>{title}</h2><p>{description}</p></div></header>;
+function RequiredMark() {
+  return <span className="operational-required" aria-hidden="true">*</span>;
 }
-function Empty({ icon: Icon, title }: { icon: typeof Inbox; title: string }) {
-  return <div className="operational-empty"><Icon /><strong>{title}</strong><small>A fila será atualizada quando houver registros confirmados.</small></div>;
+function CountLabel({ count }: { count: number }) {
+  return <span className="operational-count-label ui-num">{formatCount(count)}</span>;
 }
-function HonestState({
-  icon: Icon,
-  title,
-  description,
-  children
-}: {
-  icon: typeof Inbox;
-  title: string;
-  description: string;
-  children?: React.ReactNode;
-}) {
-  return <div className="operational-empty"><Icon /><h2>{title}</h2><p>{description}</p>{children}</div>;
+function ResultCount({ count, singular, plural }: { count: number; singular: string; plural: string }) {
+  return <p className="operational-count" aria-live="polite"><span className="ui-num">{formatCount(count)}</span> {count === 1 ? singular : plural}</p>;
 }
-function OperationalLoading() {
-  return <div className="operational-loading" aria-label="Carregando operação"><div /><div /><div /><div /></div>;
+function OperationalLoading({ dashboard }: { dashboard: boolean }) {
+  return (
+    <div className="operational-loading" role="status" aria-live="polite" aria-busy="true" aria-label="Carregando operação">
+      <span className="sr-only">Carregando operação</span>
+      {dashboard ? (
+        <div className="operational-loading-kpis" aria-hidden="true">
+          <span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" />
+        </div>
+      ) : (
+        <span className="ui-skeleton operational-loading-toolbar" aria-hidden="true" />
+      )}
+      <div className="operational-loading-rows" aria-hidden="true">
+        <span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" />
+      </div>
+    </div>
+  );
 }
 
 const formText = (value: FormDataEntryValue | null) => typeof value === "string" ? value.trim() : "";
+const formatCurrency = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+const formatCount = (value: number) => value.toLocaleString("pt-BR");
 
 const formatDateTime = (value: string) =>
   value
@@ -1211,6 +1740,8 @@ const label = (value: string) =>
     shipped: "Enviado",
     delivered: "Entregue",
     manual_review: "Revisão manual",
+    refund_pending: "Cancelamento: reembolso em processamento",
+    cancellation_requested: "Cancelamento: pagamento em verificação",
     separation: "Separação",
     expedition: "Expedição",
     shipping: "Envio",
@@ -1247,9 +1778,13 @@ const label = (value: string) =>
     divergence: "Divergência",
     customer_service: "Atendimento"
   })[value] ?? value.replaceAll("_", " ");
-const statusTone = (value: string) => {
-  if (["completed", "delivered", "resolved", "approved", "active", "paid"].includes(value)) return "green";
-  if (["high", "urgent", "blocked", "rejected", "suspended", "manual_review"].includes(value)) return "red";
-  if (["in_progress", "picking", "ready_to_ship", "shipped", "separating"].includes(value)) return "blue";
-  return "orange";
+/** Tom da etiqueta de status. O mesmo significado usa o mesmo tom em todo o painel. */
+const statusTone = (value: string): UiTone => {
+  if (["completed", "delivered", "resolved", "approved", "applied", "active", "paid"].includes(value)) return "success";
+  if (["blocked", "rejected", "suspended"].includes(value)) return "danger";
+  if (["manual_review", "refund_pending", "cancellation_requested", "pending_payment", "requested", "received", "open"].includes(value)) return "warning";
+  if (["in_progress", "processing", "picking", "ready_to_ship", "shipped", "separating", "inspection", "in_review"].includes(value)) return "info";
+  return "neutral";
 };
+/** Prioridade: vermelho só para o que é crítico (urgente). */
+const priorityTone = (value: string): UiTone => (value === "urgent" ? "danger" : value === "high" ? "warning" : "neutral");

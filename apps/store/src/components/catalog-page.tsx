@@ -1,9 +1,7 @@
 "use client";
 
-import { formatBRL, storefrontItemKey } from "@curtiz/domain";
+import { formatBRL, storefrontItemKey, type Product } from "@curtiz/domain";
 import {
-  ArrowLeft,
-  ArrowRight,
   ChevronDown,
   RotateCcw,
   SlidersHorizontal,
@@ -21,11 +19,17 @@ import {
 } from "react";
 import {
   parseCatalogFilters,
+  resolveColorSwatch,
   type CatalogFacets,
   type CatalogResult,
   type FacetOption
 } from "@/lib/catalog-query";
+import { appendCatalogPage, catalogFilterKey } from "@/lib/catalog-pagination";
+import { intelligenceSessionId, recentlyViewedProductIds, trackIntelligence } from "@/lib/intelligence-client";
+import { loadSmartRecommendations } from "@/lib/smart-recommendations";
 import { ProductCard } from "./product-card";
+import { ColorSwatch } from "./color-swatch";
+import { SearchNoResults, shouldHideEmptyCatalogFilters } from "./search-no-results";
 
 const emptyFacets: CatalogFacets = {
   categories: [],
@@ -50,114 +54,16 @@ const sortOptions = [
   ["name_desc", "Nome Z–A"]
 ] as const;
 
-/*
- * Fallback visual para produtos antigos ou situações em que
- * o catálogo não possuir um HEX válido salvo para a cor.
- *
- * A fonte principal de verdade continua podendo ser option.hex.
- */
-const colorSwatches: Record<string, string> = {
-  preto: "#171717",
-  branco: "#ffffff",
-  marinho: "#18294a",
-  coral: "#d96b55",
-  rosa: "#e994b3",
-  areia: "#d8c2a5",
-  caramelo: "#a96e45",
-  bege: "#d8c7ae",
-  azul: "#3c70ad",
-  lilas: "#c8a2c8",
-  roxo: "#7e57c2",
-  verde: "#4f8a5b",
-  vermelho: "#c93b3b",
-  amarelo: "#e8c547",
-  cinza: "#9b9b9b",
-  dourado: "#c9a646",
-  prata: "#b8b8b8",
-  nude: "#d7b8a3"
-};
-
-function normalizeColorSwatchKey(value: string): string {
-  return value
-    .toLocaleLowerCase("pt-BR")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\bstrass\b/gu, " ")
-    .replace(/\bcom\b/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-function isValidHexColor(value: string | null | undefined): value is string {
-  if (!value) return false;
-
-  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(
-    value.trim()
-  );
-}
-
-function resolveColorSwatch(option: FacetOption): string {
-  const normalizedValue = normalizeColorSwatchKey(option.value);
-  const normalizedLabel = normalizeColorSwatchKey(option.label);
-
-  /*
-   * Primeiro tentamos reconhecer a cor pelo nome.
-   *
-   * Isso corrige casos como:
-   *
-   * Bege Strass
-   * Branco Strass
-   * Lilás Strass
-   * Preto Strass
-   *
-   * que anteriormente podiam cair todos no mesmo cinza.
-   */
-  const knownColors = Object.keys(colorSwatches).sort(
-    (first, second) => second.length - first.length
-  );
-
-  const matchedColor = knownColors.find(
-    (color) =>
-      normalizedValue === color ||
-      normalizedLabel === color ||
-      normalizedValue.startsWith(`${color} `) ||
-      normalizedLabel.startsWith(`${color} `) ||
-      normalizedValue.includes(` ${color} `) ||
-      normalizedLabel.includes(` ${color} `)
-  );
-
-  if (matchedColor) {
-    return colorSwatches[matchedColor]!;
-  }
-
-  /*
-   * Para cores personalizadas que não conseguimos identificar
-   * pelo nome, usamos o HEX salvo pelo backend, desde que válido.
-   */
-  const optionWithHex = option as FacetOption & {
-    hex?: string | null;
-  };
-
-  if (isValidHexColor(optionWithHex.hex)) {
-    return optionWithHex.hex.trim();
-  }
-
-  /*
-   * Fallback apenas para registros antigos sem cor válida.
-   */
-  return "#dedbd5";
-}
-
 function isLightSwatch(color: string): boolean {
-  const normalized = color.trim().toLowerCase();
-
-  return [
-    "#fff",
-    "#ffffff",
-    "#f7f7f5",
-    "#f8f8f8",
-    "#fafafa"
-  ].includes(normalized);
+  const normalized = color.trim().replace(/^#/u, "").slice(0, 6);
+  const hex = normalized.length === 3
+    ? normalized.split("").map((character) => character.repeat(2)).join("")
+    : normalized;
+  if (!/^[0-9a-f]{6}$/iu.test(hex)) return false;
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  return (red * 299 + green * 587 + blue * 114) / 1000 >= 225;
 }
 
 export function CatalogPage({
@@ -181,10 +87,27 @@ export function CatalogPage({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const [page, setPage] = useState(1);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [supportsObserver, setSupportsObserver] = useState(true);
+  const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
+  const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
+  const [searchSuggestionsLoaded, setSearchSuggestionsLoaded] = useState(false);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const pageAdvancePending = useRef(false);
+  const trackedEmptySearch = useRef("");
+  const filterKey = useMemo(() => {
+    return catalogFilterKey(searchParams.toString());
+  }, [searchParams]);
+
+  useEffect(() => {
+    setResult(null);
+    setPage(1);
+    pageAdvancePending.current = false;
+  }, [category, filterKey, preset, query]);
 
   const filters = useMemo(() => {
     const parsed = parseCatalogFilters(searchParams, category);
@@ -228,9 +151,7 @@ export function CatalogPage({
   useEffect(() => {
     const controller = new AbortController();
 
-    const params = new URLSearchParams(
-      searchParams.toString()
-    );
+    const params = new URLSearchParams(filterKey);
 
     if (category) {
       params.set("categoria_fixa", category);
@@ -254,6 +175,7 @@ export function CatalogPage({
     ) {
       params.set("ordem", "best_sellers");
     }
+    params.set("pagina", String(page));
 
     setLoading(true);
     setError("");
@@ -271,7 +193,8 @@ export function CatalogPage({
       })
       .then((nextResult) => {
         if (!controller.signal.aborted) {
-          setResult(nextResult);
+          setResult((current) => appendCatalogPage(current, nextResult));
+          setError("");
         }
       })
       .catch(() => {
@@ -284,6 +207,7 @@ export function CatalogPage({
       .finally(() => {
         if (!controller.signal.aborted) {
           setLoading(false);
+          pageAdvancePending.current = false;
         }
       });
 
@@ -292,9 +216,27 @@ export function CatalogPage({
     category,
     preset,
     query,
-    searchParams,
+    filterKey,
+    page,
     retry
   ]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") {
+      setSupportsObserver(false);
+      return;
+    }
+    const target = loadMoreRef.current;
+    if (!target || !result || loading || error || page >= Math.ceil(result.total / result.pageSize)) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && !pageAdvancePending.current) {
+        pageAdvancePending.current = true;
+        setPage((current) => current + 1);
+      }
+    }, { rootMargin: "600px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [error, loading, page, result]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -498,6 +440,52 @@ export function CatalogPage({
       )
     : 1;
 
+  const searchTerm = (filters.query ?? query ?? "").trim();
+  const searchHasNoResults = Boolean(searchTerm) && result?.total === 0 && products.length === 0;
+  const showSearchDiscovery = searchHasNoResults && activeFilters === 0;
+  const shouldLoadSearchSuggestions = searchHasNoResults && activeFilters === 0 && !loading;
+  const hideEmptyFilters = shouldHideEmptyCatalogFilters(result?.total, activeFilters, loading);
+
+  useEffect(() => {
+    if (!searchHasNoResults || loading) return;
+    const key = `${searchTerm}:${filterKey}`;
+    if (trackedEmptySearch.current === key) return;
+    trackedEmptySearch.current = key;
+    trackIntelligence({ type: "search_no_results", query: searchTerm, resultCount: 0,
+      source: "search_no_results" });
+  }, [filterKey, loading, searchHasNoResults, searchTerm]);
+
+  useEffect(() => {
+    if (!shouldLoadSearchSuggestions) {
+      setSearchSuggestions([]);
+      setSearchSuggestionsLoading(false);
+      setSearchSuggestionsLoaded(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSearchSuggestions([]);
+    setSearchSuggestionsLoading(true);
+    setSearchSuggestionsLoaded(false);
+    void (async () => {
+      let sessionId: string | null = null;
+      try { sessionId = intelligenceSessionId(); } catch { /* suggestions remain available without session storage */ }
+      const suggestions = await loadSmartRecommendations({
+        source: "personalized", sessionId,
+        recent: sessionId ? recentlyViewedProductIds() : [],
+        query: searchTerm, limit: 6, signal: controller.signal
+      });
+      if (!controller.signal.aborted) setSearchSuggestions(suggestions.products);
+    })().catch(() => {
+      if (!controller.signal.aborted) setSearchSuggestions([]);
+    }).finally(() => {
+      if (!controller.signal.aborted) {
+        setSearchSuggestionsLoading(false);
+        setSearchSuggestionsLoaded(true);
+      }
+    });
+    return () => controller.abort();
+  }, [searchTerm, shouldLoadSearchSuggestions]);
+
   const filterContent = (
     mobile = false
   ) => (
@@ -587,22 +575,13 @@ export function CatalogPage({
                       }
                     />
 
-                    <i
-                      className="color-swatch"
-                      style={{
-                        backgroundColor:
-                          swatchColor,
-                        border:
-                          isLightSwatch(
-                            swatchColor
-                          )
-                            ? "1px solid #cfcfcf"
-                            : undefined
-                      }}
-                      title={
-                        option.label
-                      }
-                      aria-hidden="true"
+                    <ColorSwatch
+                      className="filter-color-preview"
+                      name={option.label}
+                      primaryColor={swatchColor}
+                      secondaryColor={option.secondaryHex}
+                      style={isLightSwatch(swatchColor) ? { borderColor: "#cfcfcf" } : undefined}
+                      decorative
                     />
 
                     <span>
@@ -839,10 +818,10 @@ export function CatalogPage({
 
         <span>/</span>
 
-        <span>{title}</span>
+        <span>{showSearchDiscovery ? "Busca" : title}</span>
       </nav>
 
-      <header className="section-heading catalog-heading">
+      {!showSearchDiscovery && <header className="section-heading catalog-heading">
         <div>
           <p className="eyebrow">
             Catálogo curti Z
@@ -852,9 +831,9 @@ export function CatalogPage({
 
           <p>{description}</p>
         </div>
-      </header>
+      </header>}
 
-      <div className="catalog-mobile-actions">
+      {!hideEmptyFilters && !showSearchDiscovery && <div className="catalog-mobile-actions">
         <button
           ref={triggerRef}
           className="secondary-button"
@@ -874,7 +853,6 @@ export function CatalogPage({
             </span>
           )}
         </button>
-
         <SortSelect
           value={filters.sort}
           promotionAvailable={
@@ -896,7 +874,7 @@ export function CatalogPage({
           {result?.total ?? 0}{" "}
           resultados
         </output>
-      </div>
+      </div>}
 
       {mobileOpen && (
         <div className="filter-drawer-layer">
@@ -971,8 +949,8 @@ export function CatalogPage({
         </div>
       )}
 
-      <div className="catalog-layout">
-        <aside
+      <div className={`catalog-layout${hideEmptyFilters ? " catalog-layout-wide" : ""}`}>
+        {!hideEmptyFilters && <aside
           className="filter-panel"
           aria-label="Filtros do catálogo"
         >
@@ -1000,14 +978,14 @@ export function CatalogPage({
           </div>
 
           {filterContent()}
-        </aside>
+        </aside>}
 
         <section
           className="catalog-results"
           aria-live="polite"
           aria-busy={loading}
         >
-          <div className="catalog-results-bar">
+          {!hideEmptyFilters && !showSearchDiscovery && <div className="catalog-results-bar">
             <span>
               <strong>
                 {result?.total ??
@@ -1035,7 +1013,7 @@ export function CatalogPage({
                 )
               }
             />
-          </div>
+          </div>}
 
           {activeFilters > 0 && (
             <div
@@ -1178,9 +1156,9 @@ export function CatalogPage({
             </div>
           )}
 
-          {loading ? (
+          {loading && !result ? (
             <CatalogSkeleton />
-          ) : error ? (
+          ) : error && !result ? (
             <div
               className="empty-state catalog-empty"
               role="alert"
@@ -1219,9 +1197,8 @@ export function CatalogPage({
                       product={
                         product
                       }
-                      priority={
-                        index < 2
-                      }
+                      priority={index === 0 && page === 1}
+                      imageSizes="(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1200px) calc((100vw - 63px) / 2), 570px"
                       key={storefrontItemKey(
                         product
                       )}
@@ -1230,110 +1207,31 @@ export function CatalogPage({
                 )}
               </div>
 
-              {totalPages > 1 && (
-                <nav
-                  className="catalog-pagination"
-                  aria-label="Paginação do catálogo"
-                >
-                  <button
-                    type="button"
-                    disabled={
-                      filters.page <=
-                      1
-                    }
-                    onClick={() =>
-                      updateUrl(
-                        (
-                          params
-                        ) =>
-                          params.set(
-                            "pagina",
-                            String(
-                              filters.page -
-                                1
-                            )
-                          ),
-                        true
-                      )
-                    }
-                  >
-                    <ArrowLeft />
-
-                    Anterior
-                  </button>
-
-                  <span>
-                    Página{" "}
-                    {filters.page}{" "}
-                    de{" "}
-                    {totalPages}
-                  </span>
-
-                  <button
-                    type="button"
-                    disabled={
-                      filters.page >=
-                      totalPages
-                    }
-                    onClick={() =>
-                      updateUrl(
-                        (
-                          params
-                        ) =>
-                          params.set(
-                            "pagina",
-                            String(
-                              filters.page +
-                                1
-                            )
-                          ),
-                        true
-                      )
-                    }
-                  >
-                    Próxima
-
-                    <ArrowRight />
-                  </button>
-                </nav>
-              )}
+              {error && <div className="catalog-load-status" role="alert">
+                <p>{error}</p>
+                <button type="button" className="secondary-button" onClick={() => setRetry((current) => current + 1)}>Tentar novamente</button>
+              </div>}
+              {loading && page > 1 && <p className="catalog-load-status" role="status">Carregando mais produtos…</p>}
+              {page < totalPages && <div ref={loadMoreRef} className="catalog-load-trigger" aria-hidden="true" />}
+              {page < totalPages && !supportsObserver ?
+                <button type="button" className="secondary-button" disabled={loading || Boolean(error)}
+                  onClick={() => setPage((current) => current + 1)}>
+                  Carregar mais produtos
+                </button> : null}
             </>
+          ) : searchHasNoResults && activeFilters === 0 ? (
+            <SearchNoResults searchTerm={searchTerm} suggestions={searchSuggestions}
+              loading={searchSuggestionsLoading} loaded={searchSuggestionsLoaded} />
           ) : (
             <div className="empty-state catalog-empty">
-              <SlidersHorizontal />
-
-              <h2>
-                Nenhum produto
-                encontrado com esses
-                filtros.
-              </h2>
-
-              <p>
-                Remova um filtro ou
-                limpe a seleção para
-                visualizar outras
-                opções.
-              </p>
-
-              <div className="empty-state-actions">
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={reset}
-                >
-                  Limpar filtros
-                </button>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() =>
-                    router.back()
-                  }
-                >
-                  Voltar
-                </button>
-              </div>
+              <SlidersHorizontal aria-hidden="true" />
+              <h2>{searchHasNoResults
+                ? `Não encontramos resultados para “${searchTerm}” com estes filtros.`
+                : "Nenhum produto encontrado com esses filtros."}</h2>
+              <p>Remova um filtro ou ajuste sua busca para ver mais opções.</p>
+              {activeFilters > 0 && <button className="secondary-button" type="button" onClick={reset}>
+                Limpar filtros
+              </button>}
             </div>
           )}
         </section>

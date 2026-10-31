@@ -21,13 +21,6 @@ import { TestimonialCarousel, type TestimonialCardData } from "./testimonial-car
 import { IntelligenceShelf, type IntelligenceSource } from "./intelligence-shelf";
 import type { HomepageData, PublicBanner } from "@/lib/storefront-data";
 
-const categoryRoutes = new Map([
-  ["Masculino", "/masculino"],
-  ["Feminino", "/feminino"],
-  ["Infantil", "/infantil"],
-  ["Slides", "/slides"],
-  ["Sandálias", "/sandalias"]
-]);
 const productTypes = new Set([
   "product_carousel",
   "product_grid",
@@ -204,18 +197,12 @@ export function HomepageSectionRenderer({
     if (!banners.length) return null;
     return (
       <HomepageMetric versionId={section.versionId}>
-        <HomepageHero banners={banners} />
+        <HomepageHero banners={banners} priority={priority} />
       </HomepageMetric>
     );
   }
   if (section.sectionType === "categories_grid" && section.items.length === 0) {
-    const categories = [...categoryRoutes.entries()]
-      .map(([name, href]) => ({
-        name,
-        href,
-        product: data.products.find((product) => product.category === name)
-      }))
-      .filter((category) => category.product);
+    const categories = data.categories;
     if (!categories.length) return null;
     return (
       <HomepageMetric versionId={section.versionId}>
@@ -227,15 +214,39 @@ export function HomepageSectionRenderer({
             Compre por categoria
           </h2>
           <CategoryCarousel
-            categories={categories.map(({ name, href, product }) => ({
+            categories={categories.map(({ name, slug, image }) => ({
               name,
-              href,
-              image: product!.image
+              href: `/produtos?categoria=${encodeURIComponent(slug)}`,
+              image
             }))}
           />
         </section>
       </HomepageMetric>
     );
+  }
+  if (section.sectionType === "faq") {
+    const questions = section.items.filter((item) => item.title?.trim() && item.description?.trim());
+    if (!questions.length) return null;
+    return <HomepageMetric versionId={section.versionId}>
+      <section className={`${sectionClass(section)} home-faq`} aria-labelledby={`${section.id}-title`}>
+        <div className="home-faq-inner">
+          <div className="home-faq-intro">
+            <p className="home-faq-eyebrow">Ajuda rápida</p>
+            <h2 className="home-faq-title" id={`${section.id}-title`}>{section.title ?? "Dúvidas frequentes"}</h2>
+            {section.subtitle?.trim() ? <p className="home-faq-support">{section.subtitle}</p> : null}
+          </div>
+          <div className="home-faq-list">
+            {questions.map((item) => <details key={item.id} data-home-item={item.id}>
+              <summary>
+                <span>{item.title}</span>
+                <span className="home-faq-toggle" aria-hidden="true" />
+              </summary>
+              <div className="home-faq-answer"><p>{item.description}</p></div>
+            </details>)}
+          </div>
+        </div>
+      </section>
+    </HomepageMetric>;
   }
   if (section.sectionType === "recommended_products") {
     const allowed: IntelligenceSource[] = [
@@ -256,8 +267,9 @@ export function HomepageSectionRenderer({
         <div className={sectionClass(section)}>
           <IntelligenceShelf
             source={source}
-            title={section.title}
-            subtitle={section.subtitle}
+            title={source === "personalized" ? "Escolhas para você" : source === "newest" ? "Novidades" : section.title}
+            minimalHomepageHeading
+            viewAllHref={source === "newest" ? settingString(section, "href", "/lancamentos") : undefined}
             limit={Math.min(24, Math.max(1, settingNumber(section, "limit", 8)))}
             category={settingString(section, "category") || undefined}
             infinite={source === "discovery"}
@@ -268,7 +280,7 @@ export function HomepageSectionRenderer({
   }
   if (productTypes.has(section.sectionType)) {
     const products =
-      section.sectionType === "best_sellers"
+      ["best_sellers", "launches", "featured_products"].includes(section.sectionType)
         ? (data.productsBySection[section.id] ?? [])
         : productsFor(section, data.products);
     if (!products.length) return null;
@@ -290,7 +302,10 @@ export function HomepageSectionRenderer({
       <ProductCard
         product={product}
         display={display}
-        priority={priority && index < 2}
+        priority={priority && index === 0}
+        imageSizes={carousel
+          ? "(max-width: 700px) min(78vw, 270px), 26vw"
+          : "(max-width: 700px) calc((100vw - 42px) / 2), (max-width: 1100px) calc((100vw - 78px) / 3), calc((min(1200px, 100vw - 48px) - 45px) / 4)"}
         key={storefrontItemKey(product)}
       />
     ));
@@ -303,7 +318,6 @@ export function HomepageSectionRenderer({
         >
           <SectionHeading
             id={`${section.id}-title`}
-            eyebrow={section.subtitle ?? "Seleção curti Z"}
             title={section.title ?? "Produtos selecionados"}
             href={settingString(section, "href", "/produtos")}
           />
@@ -336,9 +350,9 @@ export function HomepageSectionRenderer({
             title={section.title ?? "Descubra a curti Z"}
           />
           <div className="home-taxonomy-grid">
-            {validItems.map((item) => (
+            {validItems.map((item, index) => (
               <SafeItemLink item={item} key={item.id}>
-                <ItemImage item={item} priority={priority} />
+                <ItemImage item={item} priority={priority && index === 0} />
                 <strong>{item.title ?? item.internalName}</strong>
                 {item.description && <span>{item.description}</span>}
               </SafeItemLink>
@@ -363,9 +377,9 @@ export function HomepageSectionRenderer({
             title={section.title ?? "Escolhas curti Z"}
           />
           <div className={`home-image-layout home-image-${section.layout}`}>
-            {items.map((item) => (
+            {items.map((item, index) => (
               <SafeItemLink item={item} key={item.id}>
-                <ItemImage item={item} priority={priority} />
+                <ItemImage item={item} priority={priority && index === 0} />
                 <span className="home-image-copy">
                   {item.title && <strong>{item.title}</strong>}
                   {item.subtitle && <small>{item.subtitle}</small>}
@@ -565,7 +579,7 @@ export function HomepageSectionRenderer({
                   : "Conteúdo curti Z")}
             </h2>
             {section.description && <p>{section.description}</p>}
-            <Link
+            {(section.sectionType === "newsletter" || (section.items[0]?.targetRoute && section.items[0]?.title)) && <Link
               className="primary-button"
               href={
                 section.items[0]?.targetRoute ??
@@ -576,7 +590,7 @@ export function HomepageSectionRenderer({
               {section.items[0]?.title ??
                 (section.sectionType === "newsletter" ? "Criar conta" : "Conhecer produtos")}{" "}
               <ArrowRight />
-            </Link>
+            </Link>}
           </div>
           {section.items[0]?.media.length ? (
             <ItemImage item={section.items[0]} priority={priority} />
@@ -592,17 +606,40 @@ function ItemImage({ item, priority }: { item: HomepageSectionItem; priority: bo
   const desktop = mediaFor(item, "desktop");
   const mobile = mediaFor(item, "mobile") ?? desktop;
   if (!desktop) return null;
+  const desktopSrcSet = desktop.path.startsWith("/media/homepage/")
+    ? [360, 540, 720, 1080].map((width) => `${desktop.path}?w=${width} ${width}w`).join(", ")
+    : null;
+  const mobileSrcSet = mobile?.path.startsWith("/media/homepage/")
+    ? [360, 540, 720].map((width) => `${mobile.path}?w=${width} ${width}w`).join(", ")
+    : null;
+  const imageAlt = desktop.decorative ? "" : (desktop.altText ?? item.altText ?? "");
   return (
     <picture>
-      <source media="(max-width: 700px)" srcSet={mobile?.path} />
-      <Image
-        src={desktop.path}
-        alt={desktop.decorative ? "" : (desktop.altText ?? item.altText ?? "")}
-        width={desktop.width ?? 900}
-        height={desktop.height ?? 600}
-        sizes="(max-width: 700px) 100vw, 50vw"
-        priority={priority}
-      />
+      {mobileSrcSet ? (
+        <source media="(max-width: 700px)" type="image/webp" srcSet={mobileSrcSet} sizes="calc(100vw - 32px)" />
+      ) : mobile ? <source media="(max-width: 700px)" srcSet={mobile.path} /> : null}
+      {desktopSrcSet ? (
+        <img
+          src={`${desktop.path}?w=720`}
+          srcSet={desktopSrcSet}
+          sizes="(max-width: 700px) calc(100vw - 32px), 50vw"
+          alt={imageAlt}
+          width={desktop.width ?? 900}
+          height={desktop.height ?? 600}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+        />
+      ) : (
+        <Image
+          src={desktop.path}
+          alt={imageAlt}
+          width={desktop.width ?? 900}
+          height={desktop.height ?? 600}
+          sizes="(max-width: 700px) 100vw, 50vw"
+          priority={priority}
+        />
+      )}
     </picture>
   );
 }
@@ -643,14 +680,14 @@ function SectionHeading({
   href
 }: {
   id: string;
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   href?: string;
 }) {
   return (
     <div className="section-heading">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h2 id={id}>{title}</h2>
       </div>
       {href && (

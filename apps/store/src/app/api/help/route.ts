@@ -1,3 +1,6 @@
+import { readJsonResponse } from "@curtiz/security";
+import { publicBudgetResponse } from "../../../lib/public-request";
+import { logServerEvent } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -117,6 +120,8 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "help_read");
+  if (budget) return budget;
   const query = request.nextUrl.searchParams.get("q")?.trim().slice(0, 160) ?? "";
   const category = request.nextUrl.searchParams.get("category")?.trim().slice(0, 100) ?? "";
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page")) || 1);
@@ -128,7 +133,7 @@ export async function GET(request: NextRequest) {
 
   const actor = await audienceFor(request);
   if (typeof actor === "string" || !actor.supabase) {
-    console.error("[help-api] public search unavailable", {
+    logServerEvent("error", "help_api_public_search_unavailable", {
       requestId: crypto.randomUUID(),
       reason: "supabase_client_unavailable"
     });
@@ -150,7 +155,7 @@ export async function GET(request: NextRequest) {
   ]);
   const result = readQueryResult(response as unknown);
   if (result.error || categoryResponse.error) {
-    console.error("[help-api] published search failed", {
+    logServerEvent("error", "help_api_published_search_failed", {
       requestId: crypto.randomUUID(),
       searchCode: safeErrorCode(result.error),
       categoryCode: safeErrorCode(categoryResponse.error)
@@ -187,8 +192,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const budget = await publicBudgetResponse(request, "help_write");
+  if (budget) return budget;
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false }, { status: 403 });
-  const parsed = writeSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = writeSchema.safeParse(boundedBody);
   if (!parsed.success)
     return NextResponse.json({ ok: false, message: "Feedback inválido." }, { status: 400 });
   if (process.env.DEMO_MODE === "true") return NextResponse.json({ ok: true });

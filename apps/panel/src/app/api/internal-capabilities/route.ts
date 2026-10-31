@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const results = await Promise.all(
     permissions.map((permissionCode) =>
       auth.supabase.rpc("has_permission", { permission_code: permissionCode })

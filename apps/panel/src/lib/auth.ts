@@ -10,8 +10,33 @@ import {
 } from "./panel-roles";
 import { requestPublicAppUrls } from "./request-public-urls";
 
+async function requirePanelUser(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  storeUrl: string,
+  currentPath: string
+) {
+  const login = new URL("/login", storeUrl);
+  login.searchParams.set("next", safeInternalPath(currentPath, "/selecionar-painel"));
+  login.searchParams.set("reason", "session_unavailable");
+  if (!supabase) redirect(login.toString());
+
+  let result: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try {
+    result = await supabase.auth.getUser();
+  } catch {
+    redirect(login.toString());
+  }
+  if (!result.data.user || result.error) {
+    if (!result.error || result.error.name === "AuthSessionMissingError" || result.error.status === 401) {
+      login.searchParams.set("reason", "session_expired");
+    }
+    redirect(login.toString());
+  }
+  return { supabase, user: result.data.user };
+}
+
 export async function requirePanelAccess(role: PanelRouteRole, currentPath: string) {
-  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const { storeUrl } = await requestPublicAppUrls();
   const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const cookieStore = await cookies();
   const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
@@ -30,13 +55,9 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     } as const;
   }
 
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) redirect(storeDestination("/login"));
-  const userResult = await supabase.auth.getUser();
-  const user = userResult.data.user;
-  if (!user || userResult.error) {
-    redirect(storeDestination(`/login?next=${encodeURIComponent(currentPath)}`));
-  }
+  const { supabase, user } = await requirePanelUser(
+    await createServerSupabaseClient(), storeUrl, currentPath
+  );
 
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("full_name,status,avatar_path").eq("id", user.id).maybeSingle(),
@@ -55,14 +76,6 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     redirect(storeDestination("/403"));
   }
 
-  if (process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error || assurance.data.currentLevel !== "aal2") {
-      const safePath = safeInternalPath(currentPath, `/${role}`);
-      const destination = new URL(safePath, panelUrl).toString();
-      redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
-    }
-  }
 
   const profile = profileResult.data as { full_name?: unknown; avatar_path?: unknown } | null;
   let avatarUrl = "";
@@ -85,7 +98,7 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
 }
 
 export async function requirePanelSelectionAccess() {
-  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const { storeUrl } = await requestPublicAppUrls();
   const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const currentPath = "/selecionar-painel";
   const cookieStore = await cookies();
@@ -96,11 +109,9 @@ export async function requirePanelSelectionAccess() {
     redirect(storeDestination("/403"));
   }
 
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) redirect(storeDestination("/login"));
-  const userResult = await supabase.auth.getUser();
-  const user = userResult.data.user;
-  if (!user || userResult.error) redirect(storeDestination("/login"));
+  const { supabase, user } = await requirePanelUser(
+    await createServerSupabaseClient(), storeUrl, currentPath
+  );
 
   const [profileResult, roleResult] = await Promise.all([
     supabase.from("profiles").select("full_name,status").eq("id", user.id).maybeSingle(),
@@ -121,13 +132,6 @@ export async function requirePanelSelectionAccess() {
   }
   if (panels.length === 1 && panels[0]) redirect(panels[0].href);
 
-  if (process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error || assurance.data.currentLevel !== "aal2") {
-      const destination = new URL(currentPath, panelUrl).toString();
-      redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
-    }
-  }
 
   return {
     userId: user.id,

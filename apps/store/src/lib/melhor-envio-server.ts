@@ -1,0 +1,149 @@
+import "server-only";
+
+import {
+  createEncryptedMelhorEnvioTokenStore,
+  MelhorEnvioError,
+  MelhorEnvioProvider,
+  parseMelhorEnvioPreviousKeys,
+  type EncryptedMelhorEnvioTokenRecord,
+  type MelhorEnvioEnvironment,
+  type MelhorEnvioQuoteProduct,
+  type MelhorEnvioTokenKeyring
+} from "@curtiz/integrations";
+import { createHash } from "node:crypto";
+import { getMelhorEnvioEnvironment } from "@curtiz/config";
+import { logServerEvent } from "@curtiz/security";
+import { createServiceSupabaseClient } from "@/lib/supabase/server";
+import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
+
+type CheckoutLine = { productId: string; variantId: string; quantity: number };
+export type MelhorEnvioRuntimeEnvironment = Readonly<Record<string, string | undefined>>;
+type ServiceDatabase = NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
+
+const environment = (values: MelhorEnvioRuntimeEnvironment = process.env): MelhorEnvioEnvironment => {
+  const selected = getMelhorEnvioEnvironment(values);
+  if (!selected) throw new MelhorEnvioError("configuration", 503, false);
+  return selected;
+};
+
+/** Chave ativa + anteriores (somente leitura, durante migração controlada), ambas de secrets do Worker. */
+export function melhorEnvioTokenKeyring(values: MelhorEnvioRuntimeEnvironment): MelhorEnvioTokenKeyring {
+  const activeKey = values.MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY?.trim() ?? "";
+  if (!activeKey) throw new MelhorEnvioError("configuration", 503, false);
+  return { activeKey, previousKeys: parseMelhorEnvioPreviousKeys(values.MELHOR_ENVIO_TOKEN_ENCRYPTION_PREVIOUS_KEYS) };
+}
+
+export function createMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase, transport: typeof fetch = fetch) {
+  const tokenStore = createEncryptedMelhorEnvioTokenStore({
+    encryptionKey: melhorEnvioTokenKeyring(values),
+    async load() {
+      const result = readQueryResult(await db.rpc("read_integration_credential", {
+        p_provider: "melhorenvio", p_environment: environment(values)
+      }));
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_read_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+      if (!isUnknownRecord(result.data) || readString(result.data, "status") === "disconnected") return null;
+      return {
+        accessTokenCiphertext: readString(result.data, "access_token_ciphertext"),
+        refreshTokenCiphertext: readString(result.data, "refresh_token_ciphertext"),
+        accessTokenExpiresAt: readString(result.data, "access_token_expires_at"),
+        refreshTokenExpiresAt: readString(result.data, "refresh_token_expires_at") || null
+      } satisfies EncryptedMelhorEnvioTokenRecord;
+    },
+    async save(record) {
+      const result = readQueryResult(await db.rpc("save_integration_credential", {
+        p_provider: "melhorenvio", p_environment: environment(values),
+        p_access_token_ciphertext: record.accessTokenCiphertext,
+        p_refresh_token_ciphertext: record.refreshTokenCiphertext,
+        p_access_token_expires_at: record.accessTokenExpiresAt,
+        p_refresh_token_expires_at: record.refreshTokenExpiresAt
+      }));
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_write_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+    },
+    async replaceCiphertexts(expected, next) {
+      const result = readQueryResult(await db.rpc("replace_integration_credential_ciphertext", {
+        p_provider: "melhorenvio", p_environment: environment(values),
+        p_expected_access_token_ciphertext: expected.accessTokenCiphertext,
+        p_expected_refresh_token_ciphertext: expected.refreshTokenCiphertext,
+        p_access_token_ciphertext: next.accessTokenCiphertext,
+        p_refresh_token_ciphertext: next.refreshTokenCiphertext
+      }));
+      if (result.error) throw new MelhorEnvioError("provider_unavailable", 503, true, {
+        reason: "credentials_write_failed",
+        databaseCode: isUnknownRecord(result.error) ? readString(result.error, "code") : undefined
+      });
+      return result.data === true;
+    },
+    onReencryptionFailure(error) {
+      const details = error instanceof MelhorEnvioError ? error.diagnostic : {};
+      logServerEvent("warn", "melhor_envio_token_reencryption_failed", {
+        environment: environment(values), reason: details.reason, databaseCode: details.databaseCode
+      });
+    },
+    async claimRefreshLock(lockId) {
+      const result = readQueryResult(await db.rpc("claim_integration_refresh", {
+        p_provider: "melhorenvio", p_environment: environment(values), p_lock_id: lockId
+      }));
+      if (result.error || typeof result.data !== "boolean") throw new MelhorEnvioError("provider_unavailable", 503, true, { reason: "refresh_lock_failed" });
+      return result.data;
+    },
+    async releaseRefreshLock(lockId) {
+      await db.rpc("release_integration_refresh", {
+        p_provider: "melhorenvio", p_environment: environment(values), p_lock_id: lockId
+      });
+    }
+  });
+  return new MelhorEnvioProvider({
+    environment: environment(values),
+    clientId: values.MELHOR_ENVIO_CLIENT_ID?.trim() ?? "",
+    clientSecret: values.MELHOR_ENVIO_CLIENT_SECRET?.trim() ?? "",
+    redirectUri: values.MELHOR_ENVIO_REDIRECT_URI?.trim() ?? "",
+    applicationName: values.MELHOR_ENVIO_APP_NAME?.trim() ?? "curti Z",
+    technicalContact: values.MELHOR_ENVIO_TECHNICAL_CONTACT?.trim() ?? "",
+    legacyBaseUrl: values.MELHOR_ENVIO_BASE_URL?.trim()
+  }, tokenStore, transport);
+}
+
+export function configuredMelhorEnvioProvider(values: MelhorEnvioRuntimeEnvironment, db: ServiceDatabase) {
+  return createMelhorEnvioProvider(values, db);
+}
+
+export async function resolveShippingProducts(lines: CheckoutLine[], database?: ServiceDatabase): Promise<{
+  products: MelhorEnvioQuoteProduct[];
+  fingerprint: string;
+}> {
+  const db = database ?? createServiceSupabaseClient();
+  if (!db) throw new MelhorEnvioError("configuration", 503, false);
+  const ids = [...new Set(lines.map((line) => line.variantId))];
+  if (ids.length !== lines.length) throw new MelhorEnvioError("validation", 400, false);
+  const result = readQueryResult(await db.from("product_variants")
+    .select("id,product_id,price_override,active,products!inner(id,status,base_price,weight_grams,height_cm,width_cm,length_cm)")
+    .in("id", ids));
+  if (result.error || !Array.isArray(result.data)) throw new MelhorEnvioError("provider_unavailable", 503, true);
+  const rows = result.data.filter(isUnknownRecord);
+  const products = lines.map((line) => {
+    const variant = rows.find((row) => readString(row, "id") === line.variantId);
+    const productValue = variant?.products;
+    const product = Array.isArray(productValue) ? productValue.find(isUnknownRecord) : isUnknownRecord(productValue) ? productValue : null;
+    const weightGrams = product ? readNumber(product, "weight_grams") : Number.NaN;
+    const price = variant && readNumber(variant, "price_override") > 0
+      ? readNumber(variant, "price_override") : product ? readNumber(product, "base_price") : Number.NaN;
+    const widthCm = product ? readNumber(product, "width_cm") : Number.NaN;
+    const heightCm = product ? readNumber(product, "height_cm") : Number.NaN;
+    const lengthCm = product ? readNumber(product, "length_cm") : Number.NaN;
+    if (!variant || !product || variant.active !== true || readString(product, "status") !== "active"
+      || readString(variant, "product_id") !== line.productId || !Number.isInteger(line.quantity) || line.quantity <= 0
+      || [weightGrams, price, widthCm, heightCm, lengthCm].some((value) => !Number.isFinite(value) || value <= 0)) {
+      throw new MelhorEnvioError("validation", 409, false);
+    }
+    return { id: line.variantId, quantity: line.quantity, weightKg: weightGrams / 1000,
+      widthCm, heightCm, lengthCm, insuranceValue: price };
+  });
+  const canonical = products.map((product) => ({ ...product })).sort((a, b) => a.id.localeCompare(b.id));
+  return { products, fingerprint: createHash("sha256").update(JSON.stringify(canonical)).digest("hex") };
+}

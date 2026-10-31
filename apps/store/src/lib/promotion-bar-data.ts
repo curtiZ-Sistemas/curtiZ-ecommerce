@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import "server-only";
 
 import {
@@ -6,6 +7,7 @@ import {
 } from "@curtiz/domain";
 import { unstable_cache } from "next/cache";
 import { z } from "zod";
+import { cachePublicStorefrontData } from "./public-storefront-cache";
 import { createPublicSupabaseClient } from "./supabase/server";
 
 const promotionMessageRowsSchema = z.array(
@@ -52,12 +54,14 @@ const loadPromotionBarMessages = unstable_cache(
 
 export async function getPromotionBarMessages(): Promise<PromotionBarMessage[]> {
   try {
-    return selectCurrentPromotionBarMessages(await loadPromotionBarMessages());
+    const messages = await cachePublicStorefrontData({
+      key: "promotion-bar-v1",
+      ttlSeconds: 60,
+      load: loadPromotionBarMessages
+    });
+    return selectCurrentPromotionBarMessages(messages);
   } catch (error) {
-    console.error(
-      "[promotion-bar] Não foi possível carregar as mensagens.",
-      error instanceof Error ? error.message : "Erro desconhecido."
-    );
+    logServerEvent("error", "promotion_bar_n_o_foi_poss_vel_carregar_as_mensagens", { error });
     return [];
   }
 }

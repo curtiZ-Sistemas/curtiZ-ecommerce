@@ -33,6 +33,14 @@ export const sharedCookieOptions = <T>(
   host: string | null | undefined,
   configuredDomains = process.env.AUTH_COOKIE_DOMAINS ?? process.env.AUTH_COOKIE_DOMAIN
 ): T & { domain?: string } => {
+  // Session refresh, login and MFA now happen exclusively on the server.
+  options = {
+    ...options,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production" || (options as { secure?: boolean }).secure === true,
+    sameSite: "lax",
+    path: "/"
+  };
   const domain = configuredCookieDomains(configuredDomains).find((candidate) =>
     host ? cookieDomainMatchesHost(candidate, host) : false
   );

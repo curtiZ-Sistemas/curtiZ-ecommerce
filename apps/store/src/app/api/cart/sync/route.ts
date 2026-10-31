@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import type { CartLine } from "@curtiz/domain";
 import { postgresUuidSchema } from "@curtiz/security";
 import { NextResponse } from "next/server";
@@ -63,12 +64,12 @@ const responseSchema = z.object({
 });
 
 function publicCatalogImage(path: string | null | undefined) {
-  if (!path) return "/icon.svg";
-  if (path.startsWith("/") || path.startsWith("https://")) return path;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!path) return "/images/product-unavailable.svg";
+  if (path.startsWith("/") || path.startsWith("https://")) return path === "/icon.svg" ? "/images/product-unavailable.svg" : path;
+  const url = process.env.SUPABASE_URL;
   return url
     ? `${url}/storage/v1/object/public/catalog-public/${path.replace(/^catalog-public\//u, "")}`
-    : "/icon.svg";
+    : "/images/product-unavailable.svg";
 }
 
 const responseHeaders = (requestId: string) => ({
@@ -114,7 +115,9 @@ export async function POST(request: Request) {
       { status: 403, headers: responseHeaders(requestId) }
     );
   }
-  const payload: unknown = await request.json().catch(() => null);
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const payload: unknown = boundedBody;
   const parsed = requestSchema.safeParse(payload);
   if (!parsed.success) {
     return NextResponse.json(

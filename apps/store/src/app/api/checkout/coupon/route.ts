@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 
 const schema = z.object({
   code: z.string().trim().min(1).max(40),
@@ -23,7 +24,14 @@ export async function POST(request: NextRequest) {
   if (!supabase || !user) {
     return NextResponse.json({ ok: false, message: "Entre na sua conta para aplicar o cupom." }, { status: 401 });
   }
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  try { await requirePrivateRateLimit(supabase, "checkout_quote"); }
+  catch (error) { return NextResponse.json({ ok: false, message: "Aguarde antes de recalcular o cupom." },
+    { status: error instanceof PrivateRequestError ? error.status : 503 }); }
+  let body: unknown;
+  try { body = await readPrivateJson(request, 16 * 1024); }
+  catch (error) { return NextResponse.json({ ok: false, message: "Informe um cupom válido." },
+    { status: error instanceof PrivateRequestError ? error.status : 400 }); }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "Informe um cupom válido." }, { status: 400 });
   }

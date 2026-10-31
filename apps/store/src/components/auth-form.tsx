@@ -11,12 +11,13 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useCallback, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   CUSTOMER_EMAIL_MAX_LENGTH,
   formatBrazilianPhone,
   PHONE_FORMATTED_MAX_LENGTH
 } from "@/lib/personal-data";
+import { GOOGLE_TERMS_REQUIRED_MESSAGE, GoogleMark, startGoogleSignIn } from "./google-sign-in";
 import { TurnstileField } from "./turnstile-field";
 import { setClientAuthPersistence } from "@/lib/session-persistence-client";
 
@@ -28,18 +29,28 @@ type AuthResult = {
 export function AuthForm({
   mode,
   returnTo,
-  turnstileEnabled = false
+  turnstileEnabled = false,
+  googleAvailable = false
 }: {
   mode: "login" | "signup";
   returnTo?: string;
   turnstileEnabled?: boolean;
+  googleAvailable?: boolean;
 }) {
   const [message, setMessage] = useState("");
+  const [googleMessage, setGoogleMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeVersion, setChallengeVersion] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  // One lock for both sign-in methods: only a single request may be in flight.
   const isSubmittingRef = useRef(false);
   const handleTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
+  useEffect(() => setHydrated(true), []);
+  const busy = loading || googleBusy;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,6 +59,7 @@ export function AuthForm({
     isSubmittingRef.current = true;
     setLoading(true);
     setMessage("");
+    setGoogleMessage("");
 
     try {
       const form = new FormData(event.currentTarget);
@@ -56,6 +68,8 @@ export function AuthForm({
       if (typeof payload.email === "string") {
         payload.email = payload.email.trim().toLocaleLowerCase("pt-BR");
       }
+      // Login only needs the checkbox in the browser; the credentials API has no use for it.
+      if (mode === "login") delete payload.terms;
       if (turnstileEnabled) payload.turnstileToken = turnstileToken;
       if (mode === "login" && returnTo) payload.next = returnTo;
       const response = await fetch(`/api/auth/${mode}`, {
@@ -72,14 +86,48 @@ export function AuthForm({
     } catch {
       setMessage("Não foi possível acessar o serviço agora. Tente novamente em alguns instantes.");
     } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
       isSubmittingRef.current = false;
       setLoading(false);
     }
   };
 
+  const continueWithGoogle = async () => {
+    const form = formRef.current;
+    if (!form || isSubmittingRef.current || !googleAvailable) return;
+    const terms = form.elements.namedItem("terms") as HTMLInputElement | null;
+    const remember = (form.elements.namedItem("remember") as HTMLInputElement | null)?.checked === true;
+    setMessage("");
+    if (!terms?.checked) {
+      setGoogleMessage(GOOGLE_TERMS_REQUIRED_MESSAGE);
+      terms?.focus();
+      return;
+    }
+    isSubmittingRef.current = true;
+    setGoogleBusy(true);
+    setGoogleMessage("");
+    try {
+      const result = await startGoogleSignIn({ terms: true, remember, returnTo });
+      if (!result.ok) {
+        setGoogleMessage(result.message);
+        return;
+      }
+      if (!result.alreadyAuthenticated) setClientAuthPersistence(remember);
+      window.location.assign(result.redirectTo);
+    } finally {
+      setTurnstileToken("");
+      setChallengeVersion(value => value + 1);
+      isSubmittingRef.current = false;
+      setGoogleBusy(false);
+    }
+  };
+
   return (
     <form
+      ref={formRef}
       className="form-stack auth-form"
+      method="post"
       onSubmit={(event) => {
         void submit(event);
       }}
@@ -155,7 +203,7 @@ export function AuthForm({
             type={showPassword ? "text" : "password"}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             placeholder="Digite sua senha"
-            minLength={6}
+            minLength={mode === "signup" ? 8 : 6}
             required
           />
           <button
@@ -171,10 +219,19 @@ export function AuthForm({
       </div>
 
       {mode === "login" && (
-        <label className="check-row">
-          <input name="remember" type="checkbox" />
-          <span>Lembrar meu acesso neste dispositivo</span>
-        </label>
+        <>
+          <label className="check-row">
+            <input name="remember" type="checkbox" />
+            <span>Lembrar meu acesso neste dispositivo</span>
+          </label>
+          <label className="check-row">
+            <input name="terms" type="checkbox" required />
+            <span>
+              Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+              <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link>.
+            </span>
+          </label>
+        </>
       )}
 
       {mode === "signup" && (
@@ -189,7 +246,7 @@ export function AuthForm({
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 placeholder="Repita a senha"
-                minLength={6}
+                minLength={mode === "signup" ? 8 : 6}
                 required
               />
             </div>
@@ -197,8 +254,8 @@ export function AuthForm({
           <label className="check-row">
             <input name="terms" type="checkbox" required />
             <span>
-              Li e aceito os <Link href="/termos-de-uso">Termos de Uso</Link> e a{" "}
-              <Link href="/politica-de-privacidade">Política de Privacidade</Link>.
+              Li e aceito os <Link href="/politicas/termos-de-uso">Termos de Uso</Link> e a{" "}
+              <Link href="/politicas/aviso-de-privacidade">Política de Privacidade</Link>.
             </span>
           </label>
           <label className="check-row">
@@ -214,12 +271,12 @@ export function AuthForm({
         </p>
       )}
 
-      <TurnstileField enabled={turnstileEnabled} onToken={handleTurnstileToken} />
+      <TurnstileField action={mode} resetKey={challengeVersion} enabled={turnstileEnabled} onToken={handleTurnstileToken} />
 
       <button
         className="primary-button full-button auth-submit"
         type="submit"
-        disabled={loading || (turnstileEnabled && !turnstileToken)}
+        disabled={!hydrated || busy || (turnstileEnabled && !turnstileToken)}
         aria-busy={loading}
       >
         {loading ? (
@@ -228,11 +285,41 @@ export function AuthForm({
           </>
         ) : (
           <>
-            {mode === "login" ? "Entrar na minha conta" : "Criar minha conta"}
+            {mode === "login" ? "Entrar" : "Criar minha conta"}
             <ArrowRight aria-hidden="true" />
           </>
         )}
       </button>
+
+      {mode === "login" && (
+        <section className="google-sign-in auth-google" aria-label="Acesso com Google">
+          <div className="auth-divider">
+            <span>ou</span>
+          </div>
+          <button
+            className="google-sign-in-button"
+            type="button"
+            onClick={() => {
+              void continueWithGoogle();
+            }}
+            disabled={!googleAvailable || !hydrated || busy}
+            aria-describedby={!googleAvailable ? "google-sign-in-unavailable" : undefined}
+          >
+            <GoogleMark />
+            <span>{googleBusy ? "Conectando…" : "Continuar com Google"}</span>
+          </button>
+          {!googleAvailable ? (
+            <p id="google-sign-in-unavailable" className="form-message">
+              Login com Google indisponível no momento. Use e-mail e senha.
+            </p>
+          ) : null}
+          {googleMessage ? (
+            <p className="form-message" role="alert">
+              {googleMessage}
+            </p>
+          ) : null}
+        </section>
+      )}
     </form>
   );
 }

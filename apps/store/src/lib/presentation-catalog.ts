@@ -3,4 +3,4 @@ import { parseEnvironmentBoolean, type IntegrationEnvironment } from "@curtiz/co
 /** Allows local presentation data only when demo mode is explicit. */
 export const isPresentationCatalogEnabled = (
   environment: IntegrationEnvironment = process.env
-) => parseEnvironmentBoolean(environment.DEMO_MODE);
+) => environment.NODE_ENV !== "production" && parseEnvironmentBoolean(environment.DEMO_MODE);

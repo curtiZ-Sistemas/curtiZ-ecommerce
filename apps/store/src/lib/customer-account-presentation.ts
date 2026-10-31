@@ -11,7 +11,7 @@ const statusLabels: Record<string, string> = {
   cancelled: "Cancelado",
   return_requested: "Devolução solicitada",
   returned: "Devolvido",
-  refund_pending: "Reembolso pendente",
+  refund_pending: "Reembolso em processamento",
   refunded: "Reembolsado",
   manual_review: "Em análise",
   pending: "Pendente",
@@ -29,6 +29,10 @@ const statusLabels: Record<string, string> = {
 
 export const customerStatusLabel = (status: string) =>
   statusLabels[status] ?? status.replaceAll("_", " ");
+
+export const canCancelCustomerOrder = (status: string, shipmentStatus = "", dispatchedAt = "") =>
+  ["pending_payment", "payment_approved", "processing", "picking", "ready_to_ship"].includes(status)
+  && !dispatchedAt && !["dispatched", "in_transit", "delivered", "returned"].includes(shipmentStatus);
 
 export const canContinueOrderPayment = (
   orderStatus: string,

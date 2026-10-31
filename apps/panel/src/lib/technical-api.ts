@@ -1,7 +1,7 @@
-import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
+import { DEMO_SESSION_COOKIE, isAllowedBrowserRequest, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { hasRequiredInternalMfa } from "./internal-mfa";
+import { consumePanelMutationBudget, panelRateLimitStatus } from "./api-rate-limit";
 import { type TechnicalRecord } from "@/lib/technical-sanitizer";
 
 export { sanitizeTechnicalValue } from "@/lib/technical-sanitizer";
@@ -24,16 +24,14 @@ export function technicalRows(value: unknown): TechnicalRecord[] {
 }
 
 export function safeTechnicalOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  return new Set([
-    new URL(request.url).origin,
+  const configured = new Set([
     process.env.NEXT_PUBLIC_PANEL_URL,
     ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
-  ]).has(origin);
+  ].filter((value): value is string => Boolean(value)));
+  return isAllowedBrowserRequest(request, configured);
 }
 
-export async function authorizeTechnicalRequest(request: NextRequest) {
+export async function authorizeTechnicalRequest(request: NextRequest, options: { mutation?: boolean } = {}) {
   const demo = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (demo) return null;
   const supabase = await createServerSupabaseClient();
@@ -56,13 +54,13 @@ export async function authorizeTechnicalRequest(request: NextRequest) {
   ) {
     return null;
   }
-  if (!(await hasRequiredInternalMfa(supabase))) return null;
+  if (options.mutation !== false && !(await consumePanelMutationBudget(request, supabase))) return null;
   return { supabase, userId: user.id };
 }
 
-export function unauthorizedTechnicalResponse() {
+export function unauthorizedTechnicalResponse(request?: NextRequest) {
   return NextResponse.json(
     { message: "Sua sessão não permite acessar dados técnicos." },
-    { status: 401, headers: technicalNoStore }
+    { status: panelRateLimitStatus(request), headers: technicalNoStore }
   );
 }

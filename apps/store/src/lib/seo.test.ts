@@ -27,13 +27,13 @@ const product: Product = {
   reviews: 0,
   colors: ["Preto"],
   sizes: ["37", "38"],
-  image: "https://images.example/slide-wave-preto.webp",
+  image: "https://images.example/products/slide-wave-preto.webp",
   stock: 4
 };
 
 const detail = {
   product,
-  gallery: [{ src: product.image }],
+  gallery: [{ src: product.image, alt: "Slide Wave Preto preto em uso" }],
   variants: [
     { priceInCents: 7990, stock: 0 },
     { priceInCents: 7490, stock: 4 }
@@ -59,7 +59,14 @@ describe("SEO da loja", () => {
     expect(organizationStructuredData.name).toBe(BRAND_NAME);
     expect(websiteStructuredData.alternateName).toEqual([...BRAND_ALTERNATE_NAMES]);
     expect(organizationStructuredData.url).toBe("https://curtiz.com.br/");
-    expect(catalogNavigationStructuredData.itemListElement).toHaveLength(9);
+    const navigation = catalogNavigationStructuredData([
+      { label: "Produtos", href: "/produtos", placement: "main" },
+      { label: "Kits", href: "/produtos?categoria=kits", placement: "main" },
+      { label: "Slides", href: "/slides", placement: "main" }
+    ]);
+    expect(navigation.itemListElement.map((item) => item.name)).toEqual(["Produtos", "Kits"]);
+    expect(organizationStructuredData["@type"]).toBe("OnlineStore");
+    expect(JSON.stringify(homeMetadata)).not.toMatch(/slides|sandálias/iu);
   });
 
   it("impede indexação de URLs arbitrárias da busca interna", () => {
@@ -73,6 +80,9 @@ describe("SEO da loja", () => {
 
     expect(metadata.title).toEqual({ absolute: "Slide Wave Preto | curti Z" });
     expect(metadata.robots).toEqual({ index: true, follow: true });
+    expect(metadata.openGraph).toMatchObject({
+      images: [{ url: product.image, alt: "Slide Wave Preto preto em uso" }]
+    });
     expect(metadata.alternates).toEqual({
       canonical: "https://curtiz.com.br/produto/slide-wave-preto"
     });
@@ -91,9 +101,15 @@ describe("SEO da loja", () => {
     expect(schema).not.toHaveProperty("aggregateRating");
     expect(breadcrumb.itemListElement.map((item) => item.item)).toEqual([
       "https://curtiz.com.br/",
-      "https://curtiz.com.br/slides",
+      "https://curtiz.com.br/produtos",
       "https://curtiz.com.br/produto/slide-wave-preto"
     ]);
+  });
+
+  it("não indexa categoria sem conteúdo e vincula a oferta à loja real", () => {
+    expect(catalogMetadata({ title: "Infantil", description: "Seleção infantil", path: "/infantil", indexable: false }).robots)
+      .toEqual({ index: false, follow: true });
+    expect(productStructuredData(detail).offers.seller).toEqual({ "@id": "https://curtiz.com.br/#organization" });
   });
 
   it("escapa conteúdo perigoso ao serializar JSON-LD", () => {
@@ -126,6 +142,24 @@ describe("SEO da loja", () => {
     });
 
     expect(schema.image).toEqual(["https://curtiz.com.br/images/products/slide.webp"]);
+  });
+
+  it("mantém imagens únicas de produtos no Product e exclui banners e imagens institucionais", () => {
+    const schema = productStructuredData({
+      ...detail,
+      gallery: [
+        { src: product.image, alt: "Slide principal" },
+        { src: "https://catalog.example.test/storage/catalog-public/products/slide-side.webp", alt: "Vista lateral" },
+        { src: "https://catalog.example.test/storage/catalog-public/banners/hero.webp" },
+        { src: "https://curtiz.com.br/images/hero-curtiz-desktop.webp" },
+        { src: product.image, alt: "Duplicada" }
+      ]
+    });
+
+    expect(schema.image).toEqual([
+      product.image,
+      "https://catalog.example.test/storage/catalog-public/products/slide-side.webp"
+    ]);
   });
 
   it("inclui identificadores e condição reais da variação no Product e Offer", () => {

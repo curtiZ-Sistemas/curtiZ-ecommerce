@@ -1,7 +1,7 @@
 export type ManagerColumn = {
   key: string;
   label: string;
-  format?: "money" | "cents" | "date" | "datetime" | "status" | "json";
+  format?: "money" | "cents" | "date" | "datetime" | "status" | "json" | "refunds";
 };
 
 export type ManagerResourceDefinition = {
@@ -44,12 +44,13 @@ export const managerResources: Record<ManagerResourceKey, ManagerResourceDefinit
     label: "Pedidos e vendas",
     description: "Acompanhe pedidos, pagamentos e resultado disponível por período.",
     table: "orders",
-    select: "id,public_code,status,payment_status,grand_total,estimated_profit,created_at",
+    select: "id,public_code,status,payment_status,grand_total,estimated_profit,accounts_receivable(refunded_amount),created_at",
     columns: [
       { key: "public_code", label: "Pedido" },
       { key: "status", label: "Status", format: "status" },
       { key: "payment_status", label: "Pagamento", format: "status" },
       { key: "grand_total", label: "Total", format: "money" },
+      { key: "accounts_receivable", label: "Valor reembolsado", format: "refunds" },
       { key: "estimated_profit", label: "Resultado estimado", format: "money" },
       { key: "created_at", label: "Criado em", format: "datetime" }
     ],

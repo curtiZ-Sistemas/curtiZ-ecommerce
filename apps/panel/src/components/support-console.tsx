@@ -8,8 +8,9 @@ import {
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
-import { createBrowserClient } from "@supabase/ssr";
 import {
+  AlertTriangle,
+  ArrowLeft,
   ArrowUpRight,
   CircleCheck,
   FileText,
@@ -21,8 +22,9 @@ import {
   Send,
   UserRoundCheck
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { usePanelPrompt } from "./panel-prompt";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePanelConfirm, usePanelPrompt } from "./panel-prompt";
+import { Code, StateMessage, StatusLabel, type UiTone } from "./panel-ui";
 
 type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -56,6 +58,24 @@ const roleLabels = {
   technical: "Técnico"
 } as const;
 
+// O mesmo significado usa o mesmo tom nos quatro painéis.
+const statusTones: Record<SupportStatus, UiTone> = {
+  open: "neutral",
+  queued: "neutral",
+  assigned: "info",
+  in_progress: "info",
+  waiting_customer: "warning",
+  waiting_internal: "warning",
+  escalated: "danger",
+  resolved: "success",
+  closed: "neutral",
+  reopened: "warning",
+  spam: "neutral",
+  cancelled: "neutral"
+};
+
+const priorityLabels: Record<string, string> = { low: "Baixa", normal: "Normal", high: "Alta", urgent: "Urgente" };
+
 const formatDateTime = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
@@ -65,6 +85,9 @@ const formatDateTime = (value: string) =>
 
 export function SupportConsole({ role }: { role: PanelRole }) {
   const requestPrompt = usePanelPrompt();
+  const requestConfirm = usePanelConfirm();
+  // Só apresentação: no celular mostra a fila ou a conversa, uma de cada vez.
+  const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
   const [conversations, setConversations] = useState<SupportConversationView[]>([]);
   const [team, setTeam] = useState<SupportTeamMember[]>([]);
   const [quickReplies, setQuickReplies] = useState<NonNullable<SupportResponse["quickReplies"]>>(
@@ -80,14 +103,26 @@ export function SupportConsole({ role }: { role: PanelRole }) {
   const [transferOpen, setTransferOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
 
+  const etagRef = useRef<string | null>(null);
+  const loadingRef = useRef(false);
+
   const load = useCallback(async (silent = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!silent) setLoading(true);
     try {
       const response = await fetch(`${storeUrl()}/api/support`, {
+        signal: AbortSignal.timeout(10_000),
         cache: "no-store",
-        credentials: "include"
+        credentials: "include",
+        headers: silent && etagRef.current ? { "if-none-match": etagRef.current } : {}
       });
+      if (response.status === 304) return;
       const result = (await response.json()) as SupportResponse;
+      etagRef.current = response.ok ? response.headers.get("etag") : null;
+      if (response.status === 401 || response.status === 403) {
+        setConversations([]); setTeam([]); setQuickReplies([]);
+      }
       if (!response.ok || !result.ok) throw new Error(result.message ?? "support_load_failed");
       setConversations(result.conversations ?? []);
       setTeam(result.team ?? []);
@@ -100,6 +135,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
     } catch {
       setError("Não foi possível carregar a fila. Verifique sua sessão e tente novamente.");
     } finally {
+      loadingRef.current = false;
       if (!silent) setLoading(false);
     }
   }, []);
@@ -109,29 +145,17 @@ export function SupportConsole({ role }: { role: PanelRole }) {
   }, [load]);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (url && key) {
-      const supabase = createBrowserClient(url, key);
-      const channel = supabase
-        .channel("panel-support-updates")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "support_conversations" },
-          () => void load(true)
-        )
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "support_messages" },
-          () => void load(true)
-        )
-        .subscribe();
-      return () => {
-        void supabase.removeChannel(channel);
-      };
-    }
-    const timer = window.setInterval(() => void load(true), 30_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) void load(true);
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
+    };
   }, [load]);
 
   const filtered = useMemo(() => {
@@ -260,12 +284,30 @@ export function SupportConsole({ role }: { role: PanelRole }) {
     if (done) setTransferOpen(false);
   };
 
+  const closeConversation = async (conversationId: string) => {
+    const accepted = await requestConfirm({
+      title: "Encerrar atendimento?",
+      description: "A conversa sai da fila ativa. Depois de encerrada, só a Gerência pode reabrir.",
+      confirmLabel: "Encerrar atendimento"
+    });
+    if (!accepted) return;
+    await update(
+      {
+        action: "status",
+        conversationId,
+        status: "closed",
+        reason: "Atendimento encerrado após resolução"
+      },
+      "Atendimento encerrado."
+    );
+  };
+
   return (
-    <div className="support-console">
-      <section className="panel-card support-queue">
+    <div className="support-console" data-view={mobileView}>
+      <section className="panel-card support-queue" aria-labelledby="support-queue-title">
         <header className="support-section-heading">
           <div>
-            <h2>Fila de atendimentos</h2>
+            <h2 id="support-queue-title">Fila de atendimentos</h2>
             <p>
               {role === "operacional"
                 ? "Somente chamados transferidos para você."
@@ -277,15 +319,16 @@ export function SupportConsole({ role }: { role: PanelRole }) {
             type="button"
             onClick={() => void load()}
             aria-label="Atualizar fila"
+            title="Atualizar fila"
             disabled={loading}
           >
-            <RefreshCw className={loading ? "spin" : ""} />
+            <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />
           </button>
         </header>
-        <div className="support-filters">
+        <div className="support-filters" role="search">
           <label>
             <span className="sr-only">Buscar chamado</span>
-            <Search />
+            <Search aria-hidden="true" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -304,278 +347,232 @@ export function SupportConsole({ role }: { role: PanelRole }) {
             ))}
           </select>
         </div>
+        {!loading && conversations.length > 0 ? (
+          <p className="support-count" aria-live="polite">
+            <span className="ui-num">{filtered.length.toLocaleString("pt-BR")}</span>{" "}
+            {filtered.length === 1 ? "atendimento" : "atendimentos"}
+          </p>
+        ) : null}
         {loading ? (
-          <div className="support-state">
-            <LoaderCircle className="spin" /> Carregando fila…
+          <div className="ui-loading support-loading" role="status" aria-live="polite">
+            <span className="sr-only">Carregando fila…</span>
+            <span className="ui-skeleton" aria-hidden="true" />
+            <span className="ui-skeleton" aria-hidden="true" />
+            <span className="ui-skeleton" aria-hidden="true" />
           </div>
         ) : error && conversations.length === 0 ? (
-          <div className="support-state support-error">
-            <p>{error}</p>
-            <button className="secondary-button" onClick={() => void load()}>
-              Tentar novamente
-            </button>
-          </div>
+          <StateMessage
+            kind="error"
+            compact
+            level={3}
+            icon={AlertTriangle}
+            title="Fila indisponível"
+            description={error}
+            action={
+              <button className="secondary-button" type="button" onClick={() => void load()}>
+                <RefreshCw aria-hidden="true" /> Tentar novamente
+              </button>
+            }
+          />
         ) : filtered.length === 0 ? (
-          <div className="support-state">
-            <Inbox />
-            <strong>Nenhum atendimento encontrado</strong>
-            <span>A fila será atualizada automaticamente.</span>
-          </div>
+          <StateMessage
+            compact
+            level={3}
+            icon={Inbox}
+            title="Nenhum atendimento encontrado"
+            description={
+              conversations.length
+                ? "Nenhuma conversa corresponde à busca ou ao status escolhido."
+                : "A fila será atualizada automaticamente."
+            }
+          />
         ) : (
           <nav className="conversation-list" aria-label="Atendimentos">
             {filtered.map((conversation) => (
               <button
                 className={conversation.id === selectedId ? "active" : ""}
                 key={conversation.id}
-                onClick={() => setSelectedId(conversation.id)}
+                type="button"
+                aria-current={conversation.id === selectedId ? "true" : undefined}
+                onClick={() => {
+                  setSelectedId(conversation.id);
+                  setMobileView("conversation");
+                }}
               >
                 <span>
                   <strong>{conversation.subject}</strong>
                   <small>
-                    {conversation.publicCode} · {conversation.customerName}
+                    <Code>{conversation.publicCode}</Code> · {conversation.customerName}
                   </small>
                 </span>
-                <span className={`status ${conversation.status}`}>
+                <StatusLabel tone={statusTones[conversation.status] ?? "neutral"}>
                   {supportStatusLabels[conversation.status]}
-                </span>
+                </StatusLabel>
               </button>
             ))}
           </nav>
         )}
       </section>
 
-      <section className="panel-card support-workspace">
+      <section className="panel-card support-workspace" aria-label="Conversa selecionada">
+        <button className="ghost-button support-back" type="button" onClick={() => setMobileView("list")}>
+          <ArrowLeft aria-hidden="true" /> Voltar à fila
+        </button>
         {!selected ? (
-          <div className="support-state">
-            <Inbox />
-            <strong>Selecione um atendimento</strong>
-            <span>As mensagens e ações aparecerão aqui.</span>
-          </div>
+          <StateMessage
+            compact
+            level={3}
+            icon={Inbox}
+            title="Selecione um atendimento"
+            description="As mensagens e ações aparecerão aqui."
+          />
         ) : (
           <>
             <header className="support-conversation-heading">
-              <div>
-                <p className="eyebrow">{selected.publicCode}</p>
+              <div className="support-conversation-title">
+                <div className="support-conversation-tags">
+                  <Code>{selected.publicCode}</Code>
+                  <StatusLabel tone={statusTones[selected.status] ?? "neutral"}>
+                    {supportStatusLabels[selected.status]}
+                  </StatusLabel>
+                  {selected.priority === "high" || selected.priority === "urgent" ? (
+                    <StatusLabel tone={selected.priority === "urgent" ? "danger" : "warning"}>
+                      Prioridade {priorityLabels[selected.priority]?.toLowerCase()}
+                    </StatusLabel>
+                  ) : null}
+                </div>
                 <h2>{selected.subject}</h2>
                 <p>
                   {selected.customerName}
-                  {selected.relatedOrderCode ? ` · ${selected.relatedOrderCode}` : ""}
+                  {selected.relatedOrderCode ? (
+                    <>
+                      {" · Pedido "}
+                      <Code>{selected.relatedOrderCode}</Code>
+                    </>
+                  ) : null}
                 </p>
               </div>
-              <span className={`status ${selected.status}`}>
-                {supportStatusLabels[selected.status]}
-              </span>
-            </header>
-            {error && (
-              <p className="support-feedback error" role="alert">
-                {error}
-              </p>
-            )}
-            {notice && (
-              <p className="support-feedback success" role="status">
-                <CircleCheck /> {notice}
-              </p>
-            )}
-            <div className="support-owner-row">
-              <span>
-                {selected.assignedName
-                  ? `Responsável: ${selected.assignedName}`
-                  : "Aguardando responsável"}
-              </span>
-              {canClaim && (
-                <button
-                  className="secondary-button"
-                  disabled={Boolean(processing)}
-                  onClick={() =>
-                    void update(
-                      { action: "claim", conversationId: selected.id },
-                      "Atendimento assumido com sucesso."
-                    )
-                  }
-                >
-                  {processing === "claim" ? <LoaderCircle className="spin" /> : <UserRoundCheck />}{" "}
-                  Assumir
-                </button>
-              )}
-            </div>
-            <div className="message-thread" aria-live="polite">
-              {selected.messages.map((message) => (
-                <article className={`message ${message.author}`} key={message.id}>
-                  <p>{message.content}</p>
-                  {message.attachments?.map((attachment) =>
-                    attachment.available && attachment.url ? (
-                      <a href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
-                        <FileText />
-                        {attachment.name}
-                      </a>
-                    ) : (
-                      <span key={attachment.id}>
-                        <FileText />
-                        {attachment.name} · em verificação
-                      </span>
-                    )
-                  )}
-                  <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
-                </article>
-              ))}
-            </div>
-            {canReply ? (
-              <form className="support-reply-form" onSubmit={(event) => void sendMessage(event)}>
-                <label htmlFor="support-reply">Responder</label>
-                {quickReplies.length > 0 && (
-                  <select
-                    aria-label="Inserir resposta rápida"
-                    defaultValue=""
-                    onChange={(event) => {
-                      const selectedReply = quickReplies.find(
-                        (item) => item.id === event.target.value
-                      );
-                      if (selectedReply) setReplyText(selectedReply.content);
-                      event.target.value = "";
-                    }}
-                  >
-                    <option value="">Usar resposta rápida…</option>
-                    {quickReplies.map((item) => (
-                      <option value={item.id} key={item.id}>
-                        {item.shortcut} · {item.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <textarea
-                  id="support-reply"
-                  name="message"
-                  required
-                  maxLength={4000}
-                  value={replyText}
-                  onChange={(event) => setReplyText(event.target.value)}
-                  placeholder="Escreva uma resposta objetiva e segura."
-                />
-                <label className="support-file-field">
-                  <Paperclip /> Anexo opcional
-                  <input
-                    name="file"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
-                  />
-                  <small>JPG, PNG, WebP ou PDF de até 10 MB.</small>
-                </label>
-                {canAddInternal && (
-                  <label className="support-internal-toggle">
-                    <input type="checkbox" name="internal" /> Registrar como nota interna (invisível
-                    ao cliente)
-                  </label>
-                )}
-                <button className="primary-button" disabled={Boolean(processing)}>
-                  {processing === "message" ? <LoaderCircle className="spin" /> : <Send />}{" "}
-                  {processing === "message" ? "Enviando…" : "Enviar"}
-                </button>
-              </form>
-            ) : (
-              <p className="support-feedback">
-                Assuma o atendimento ou aguarde uma transferência para responder.
-              </p>
-            )}
-            {canManage && (
-              <div className="support-actions">
-                <label>
-                  Prioridade
-                  <select
-                    value={selected.priority}
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      void (async () => {
-                        const reason = await requestPrompt({
-                          title: "Alterar prioridade",
-                          label: "Motivo da alteração",
-                          minLength: 3
-                        });
-                        if (reason)
-                          await update(
-                            {
-                              action: "priority",
-                              conversationId: selected.id,
-                              priority: next,
-                              reason
-                            },
-                            "Prioridade atualizada."
-                          );
-                      })();
-                    }}
-                  >
-                    <option value="low">Baixa</option>
-                    <option value="normal">Normal</option>
-                    <option value="high">Alta</option>
-                    <option value="urgent">Urgente</option>
-                  </select>
-                </label>
-                {(isAdmin || isManager) && team.length > 0 && (
+              <div className="support-owner-row">
+                <span>
+                  {selected.assignedName
+                    ? `Responsável: ${selected.assignedName}`
+                    : "Aguardando responsável"}
+                </span>
+                {canClaim && (
                   <button
-                    className="secondary-button"
-                    onClick={() => setTransferOpen((current) => !current)}
-                  >
-                    <ArrowUpRight /> Transferir
-                  </button>
-                )}
-                {!(["resolved", "closed"] as SupportStatus[]).includes(selected.status) && (
-                  <button
-                    className="secondary-button"
+                    className="primary-button"
+                    type="button"
                     disabled={Boolean(processing)}
                     onClick={() =>
                       void update(
-                        {
-                          action: "status",
-                          conversationId: selected.id,
-                          status: "resolved",
-                          reason: "Solicitação concluída pela equipe"
-                        },
-                        "Atendimento marcado como resolvido."
+                        { action: "claim", conversationId: selected.id },
+                        "Atendimento assumido com sucesso."
                       )
                     }
                   >
-                    <CircleCheck /> Resolver
-                  </button>
-                )}
-                {selected.status === "resolved" && (
-                  <button
-                    className="secondary-button"
-                    disabled={Boolean(processing)}
-                    onClick={() =>
-                      void update(
-                        {
-                          action: "status",
-                          conversationId: selected.id,
-                          status: "closed",
-                          reason: "Atendimento encerrado após resolução"
-                        },
-                        "Atendimento encerrado."
-                      )
-                    }
-                  >
-                    Encerrar
-                  </button>
-                )}
-                {selected.status === "closed" && isManager && (
-                  <button
-                    className="secondary-button"
-                    disabled={Boolean(processing)}
-                    onClick={() =>
-                      void update(
-                        {
-                          action: "status",
-                          conversationId: selected.id,
-                          status: "reopened",
-                          reason: "Atendimento reaberto pela Gerência"
-                        },
-                        "Atendimento reaberto."
-                      )
-                    }
-                  >
-                    Reabrir
+                    {processing === "claim" ? <LoaderCircle className="spin" aria-hidden="true" /> : <UserRoundCheck aria-hidden="true" />}{" "}
+                    Assumir
                   </button>
                 )}
               </div>
-            )}
+              {canManage && (
+                <div className="support-actions">
+                  <label>
+                    Prioridade
+                    <select
+                      value={selected.priority}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        void (async () => {
+                          const reason = await requestPrompt({
+                            title: "Alterar prioridade",
+                            label: "Motivo da alteração",
+                            minLength: 3
+                          });
+                          if (reason)
+                            await update(
+                              {
+                                action: "priority",
+                                conversationId: selected.id,
+                                priority: next,
+                                reason
+                              },
+                              "Prioridade atualizada."
+                            );
+                        })();
+                      }}
+                    >
+                      <option value="low">Baixa</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">Alta</option>
+                      <option value="urgent">Urgente</option>
+                    </select>
+                  </label>
+                  <div className="support-action-buttons">
+                    {(isAdmin || isManager) && team.length > 0 && (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        aria-expanded={transferOpen}
+                        onClick={() => setTransferOpen((current) => !current)}
+                      >
+                        <ArrowUpRight aria-hidden="true" /> Transferir
+                      </button>
+                    )}
+                    {!(["resolved", "closed"] as SupportStatus[]).includes(selected.status) && (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={Boolean(processing)}
+                        onClick={() =>
+                          void update(
+                            {
+                              action: "status",
+                              conversationId: selected.id,
+                              status: "resolved",
+                              reason: "Solicitação concluída pela equipe"
+                            },
+                            "Atendimento marcado como resolvido."
+                          )
+                        }
+                      >
+                        <CircleCheck aria-hidden="true" /> Resolver
+                      </button>
+                    )}
+                    {selected.status === "resolved" && (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={Boolean(processing)}
+                        onClick={() => void closeConversation(selected.id)}
+                      >
+                        Encerrar
+                      </button>
+                    )}
+                    {selected.status === "closed" && isManager && (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={Boolean(processing)}
+                        onClick={() =>
+                          void update(
+                            {
+                              action: "status",
+                              conversationId: selected.id,
+                              status: "reopened",
+                              reason: "Atendimento reaberto pela Gerência"
+                            },
+                            "Atendimento reaberto."
+                          )
+                        }
+                      >
+                        Reabrir
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </header>
             {transferOpen && (
               <form className="support-transfer-form" onSubmit={(event) => void transfer(event)}>
                 <h3>Transferir atendimento</h3>
@@ -595,6 +592,7 @@ export function SupportConsole({ role }: { role: PanelRole }) {
                 <label>
                   Motivo
                   <textarea name="reason" required minLength={10} maxLength={500} />
+                  <small>Mínimo de 10 caracteres.</small>
                 </label>
                 <div className="support-actions">
                   <button
@@ -604,16 +602,115 @@ export function SupportConsole({ role }: { role: PanelRole }) {
                   >
                     Cancelar
                   </button>
-                  <button className="primary-button" disabled={Boolean(processing)}>
+                  <button className="primary-button" type="submit" disabled={Boolean(processing)}>
                     {processing === "transfer" ? (
-                      <LoaderCircle className="spin" />
+                      <LoaderCircle className="spin" aria-hidden="true" />
                     ) : (
-                      <ArrowUpRight />
+                      <ArrowUpRight aria-hidden="true" />
                     )}{" "}
                     Confirmar transferência
                   </button>
                 </div>
               </form>
+            )}
+            {error && (
+              <p className="admin-feedback error support-feedback" role="alert">
+                <AlertTriangle aria-hidden="true" /> <span>{error}</span>
+              </p>
+            )}
+            {notice && (
+              <p className="admin-feedback success support-feedback" role="status">
+                <CircleCheck aria-hidden="true" /> <span>{notice}</span>
+              </p>
+            )}
+            <div className="message-thread" aria-live="polite" tabIndex={0} aria-label="Mensagens do atendimento">
+              {selected.messages.map((message) => (
+                <article className={`message ${message.author}`} key={message.id}>
+                  <header className="support-message-meta">
+                    {message.author === "internal" ? (
+                      <StatusLabel tone="neutral">Nota interna</StatusLabel>
+                    ) : (
+                      <strong>{message.author === "customer" ? selected.customerName : "Equipe"}</strong>
+                    )}
+                    <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
+                  </header>
+                  <p>{message.content}</p>
+                  {message.attachments?.map((attachment) =>
+                    attachment.available && attachment.url ? (
+                      <a href={attachment.url?.startsWith("/") ? `${storeUrl()}${attachment.url}` : attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
+                        <FileText aria-hidden="true" />
+                        {attachment.name}
+                      </a>
+                    ) : (
+                      <span key={attachment.id}>
+                        <FileText aria-hidden="true" />
+                        {attachment.name} · em verificação
+                      </span>
+                    )
+                  )}
+                </article>
+              ))}
+            </div>
+            {canReply ? (
+              <form className="support-reply-form" onSubmit={(event) => void sendMessage(event)}>
+                <div className="support-reply-heading">
+                  <label htmlFor="support-reply">Responder</label>
+                  {quickReplies.length > 0 && (
+                    <select
+                      aria-label="Inserir resposta rápida"
+                      defaultValue=""
+                      onChange={(event) => {
+                        const selectedReply = quickReplies.find(
+                          (item) => item.id === event.target.value
+                        );
+                        if (selectedReply) setReplyText(selectedReply.content);
+                        event.target.value = "";
+                      }}
+                    >
+                      <option value="">Usar resposta rápida…</option>
+                      {quickReplies.map((item) => (
+                        <option value={item.id} key={item.id}>
+                          {item.shortcut} · {item.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <textarea
+                  id="support-reply"
+                  name="message"
+                  required
+                  maxLength={4000}
+                  value={replyText}
+                  onChange={(event) => setReplyText(event.target.value)}
+                  placeholder="Escreva uma resposta objetiva e segura."
+                />
+                <div className="support-reply-options">
+                  <label className="support-file-field">
+                    <Paperclip aria-hidden="true" /> Anexo opcional
+                    <input
+                      name="file"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                    />
+                    <small>JPG, PNG, WebP ou PDF de até 10 MB.</small>
+                  </label>
+                  {canAddInternal && (
+                    <label className="support-internal-toggle">
+                      <input type="checkbox" name="internal" /> Registrar como nota interna (invisível
+                      ao cliente)
+                    </label>
+                  )}
+                </div>
+                <button className="primary-button" type="submit" disabled={Boolean(processing)}>
+                  {processing === "message" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />}{" "}
+                  {processing === "message" ? "Enviando…" : "Enviar"}
+                </button>
+              </form>
+            ) : (
+              <p className="admin-feedback info support-feedback">
+                Assuma o atendimento ou aguarde uma transferência para responder.
+              </p>
             )}
           </>
         )}

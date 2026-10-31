@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, RotateCcw, X } from "lucide-react";
-import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -66,6 +65,7 @@ export function ProductImageViewer({
   const dialogRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const returnFocusTimer = useRef<number | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const gestureRef = useRef<Gesture>(null);
   const transformRef = useRef(INITIAL_TRANSFORM);
@@ -100,6 +100,10 @@ export function ProductImageViewer({
   }, [resetTransform, src]);
 
   useEffect(() => {
+    if (returnFocusTimer.current !== null) {
+      window.clearTimeout(returnFocusTimer.current);
+      returnFocusTimer.current = null;
+    }
     const previousOverflow = document.body.style.overflow;
     const previousPaddingRight = document.body.style.paddingRight;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
@@ -132,7 +136,10 @@ export function ProductImageViewer({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
       document.body.style.paddingRight = previousPaddingRight;
-      window.setTimeout(() => returnFocusRef.current?.focus(), 0);
+      returnFocusTimer.current = window.setTimeout(() => {
+        returnFocusTimer.current = null;
+        returnFocusRef.current?.focus();
+      }, 0);
     };
   }, [changeImage, imageCount, onClose, returnFocusRef]);
 
@@ -298,13 +305,14 @@ export function ProductImageViewer({
             transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`
           }}
         >
-          <Image
+          <img
             src={src}
             alt={`${alt}, imagem ${imageIndex + 1} de ${imageCount}`}
-            fill
-            sizes="96vw"
             draggable={false}
-            priority
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
           />
         </div>
       </div>

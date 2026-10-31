@@ -1,3 +1,6 @@
+import { readJsonResponse, readFormResponse, RequestBodyError } from "@curtiz/security";
+import { prepareUploadImage } from "@/lib/image-upload";
+import { logServerEvent } from "@curtiz/security";
 import { randomUUID } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -30,14 +33,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   }
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
   if (permission.error || permission.data !== true) return NextResponse.json({ message: "Sua permissão não permite enviar imagens de banners." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > maxSize + 65_536)
     return NextResponse.json({ message: "Envie uma imagem de até 10 MB." }, { status: 413, headers: privateNoStore });
 
-  const form = await request.formData().catch(() => null);
+  const form = await readFormResponse(request, maxSize + 65_536);
+  if (form instanceof Response) return form;
   const file = form?.get("file");
   const deviceValue = form?.get("device");
   const device = typeof deviceValue === "string" ? deviceValue : "";
@@ -45,10 +49,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Envie uma imagem JPG, PNG ou WebP de até 10 MB." }, { status: 400, headers: privateNoStore });
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const inspected = inspectImage(bytes);
-  if (!inspected) {
+  let bytes: Uint8Array = new Uint8Array(await file.arrayBuffer());
+  let inspected = inspectImage(bytes);
+  if (!inspected || inspected.mime !== file.type) {
     return NextResponse.json({ message: "O conteúdo do arquivo não corresponde a uma imagem permitida." }, { status: 415, headers: privateNoStore });
+  }
+  try {
+    bytes = await prepareUploadImage(bytes, maxSize);
+    inspected = { mime: "image/webp", extension: "webp" };
+  } catch (error) {
+    return NextResponse.json({ message: "Não foi possível validar a imagem." },
+      { status: error instanceof RequestBodyError ? error.status : 422, headers: privateNoStore });
   }
 
   const path = `banners/${auth.userId}/${device}-${randomUUID()}.${inspected.extension}`;
@@ -58,7 +69,7 @@ export async function POST(request: NextRequest) {
     upsert: false
   });
   if (uploaded.error) {
-    console.error("[banner-media] upload failed", { device, status: uploaded.error.statusCode });
+    logServerEvent("error", "banner_media_upload_failed", { device, status: uploaded.error.statusCode });
     return NextResponse.json({ message: "Não foi possível armazenar a imagem do banner." }, { status: 409, headers: privateNoStore });
   }
   const publicUrl = auth.supabase.storage.from("catalog-public").getPublicUrl(path).data.publicUrl;
@@ -70,10 +81,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: privateNoStore });
   }
   const auth = await authorizeAdminRequest(request, ["admin", "manager"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const permission = await auth.supabase.rpc("has_permission", { permission_code: "banners.update" });
   if (permission.error || permission.data !== true) return NextResponse.json({ message: "Sua permissão não permite remover imagens de banners." }, { status: permission.error ? 503 : 403, headers: privateNoStore });
-  const parsed = z.object({ path: z.string().max(500).regex(/^banners\/[0-9a-f-]+\/(desktop|mobile)-[0-9a-f-]+\.(jpg|png|webp)$/iu) }).safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = z.object({ path: z.string().max(500).regex(/^banners\/[0-9a-f-]+\/(desktop|mobile)-[0-9a-f-]+\.(jpg|png|webp)$/iu) }).safeParse(boundedBody);
   const expectedPrefix = `banners/${auth.userId}/`;
   if (!parsed.success || !parsed.data.path.startsWith(expectedPrefix) || parsed.data.path.includes("..")) {
     return NextResponse.json({ message: "Arquivo inválido." }, { status: 400, headers: privateNoStore });
@@ -82,6 +95,7 @@ export async function DELETE(request: NextRequest) {
   if (references.error || references.data?.length) return NextResponse.json({ message: "A imagem está em uso ou não foi possível confirmar sua remoção." }, { status: 409, headers: privateNoStore });
   const removed = await auth.supabase.storage.from("catalog-public").remove([parsed.data.path]);
   if (removed.error) {
+    logServerEvent("warn", "banner_media_cleanup_failed", { code: "STORAGE_REMOVE_FAILED" });
     return NextResponse.json({ message: "Não foi possível remover o upload temporário." }, { status: 409, headers: privateNoStore });
   }
   return NextResponse.json({ message: "Upload temporário removido." }, { headers: privateNoStore });

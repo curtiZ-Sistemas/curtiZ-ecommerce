@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const nextConfig: NextConfig = {
+  experimental: { cpus: 1 },
   poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },
   transpilePackages: ["@curtiz/config", "@curtiz/domain", "@curtiz/integrations", "@curtiz/security"],
   async headers() {

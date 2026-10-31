@@ -1,3 +1,6 @@
+import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
+import { logServerEvent } from "@curtiz/security";
 import {
   DEMO_SESSION_COOKIE,
   AUTH_PERSISTENCE_COOKIE,
@@ -12,16 +15,16 @@ import {
   verifyReferralAttribution,
   verifyDemoSession
 } from "@curtiz/security";
-import { configuredPublicOrigins, resolvePublicAppUrls } from "@curtiz/config";
+import { resolvePublicAppUrls } from "@curtiz/config";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import {
   resolveLoginDestination,
   resolveLoginRole,
-  resolvePostLoginDestination
+  resolveLoginReturn
 } from "@/lib/auth-routing";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readQueryResult } from "@/lib/unknown-data";
 import { parseSignupInput, type NormalizedSignupInput } from "@/lib/signup-validation";
@@ -46,7 +49,8 @@ const resendSchema = z.object({
     .email()
     .max(120)
     .transform((value) => value.toLocaleLowerCase("pt-BR")),
-  next: z.string().max(300).optional()
+  next: z.string().max(300).optional(),
+  turnstileToken: z.string().max(2048).optional()
 });
 
 const profileSchema = z.object({ status: z.string() }).nullable();
@@ -94,7 +98,7 @@ function readSupabaseAuthError(error: unknown): SupabaseAuthErrorDetails {
 }
 
 function logSupabaseAuthError(error: SupabaseAuthErrorDetails) {
-  console.error("Supabase Auth login error", {
+  logServerEvent("error", "supabase_auth_login_error", {
     code: error.code,
     status: error.status,
     message: error.message
@@ -239,10 +243,7 @@ function demoLoginResponse(
   }
 
   const destination = demoDestination(account.role);
-  const redirectTo =
-    account.role === "customer" || account.role === "representative"
-      ? resolvePostLoginDestination(safeInternalPath(login.next, destination))
-      : new URL(destination, panelBaseUrl(request)).toString();
+  const redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelBaseUrl(request));
   const response = NextResponse.json(
     { message: "Acesso confirmado. Redirecionando…", redirectTo },
     { headers: { "cache-control": "no-store" } }
@@ -263,44 +264,10 @@ function demoLoginResponse(
   return response;
 }
 
-function isAllowedRequest(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  const requestOrigin = new URL(request.url).origin;
-  const configuredOrigins = new Set([
-    ...configuredPublicOrigins(),
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()),
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001"
-  ]);
-  if (origin === requestOrigin || configuredOrigins.has(origin)) return true;
-  if (process.env.DEMO_MODE !== "true") return false;
-  try {
-    const requestUrl = new URL(request.url);
-    const originUrl = new URL(origin);
-    return (
-      requestUrl.hostname === originUrl.hostname &&
-      (originUrl.port === "3000" || originUrl.port === "3001")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function corsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get("origin");
-  if (!origin || !isAllowedRequest(request)) return { "cache-control": "no-store" };
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-credentials": "true",
-    "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
-    "cache-control": "no-store",
-    vary: "Origin"
-  };
-}
+const isAllowedRequest = isAllowedRequestOrigin;
+const corsHeaders = (request: Request): Record<string, string> => ({
+  ...corsHeadersFor(request), "cache-control": "private, no-store"
+});
 
 export function OPTIONS(request: Request) {
   if (!isAllowedRequest(request)) {
@@ -314,12 +281,12 @@ export async function POST(
   { params }: { params: Promise<{ mode: string }> }
 ) {
   if (!isAllowedRequest(request)) {
-    return NextResponse.json({ message: "Origem não permitida." }, { status: 403 });
+    return NextResponse.json({ message: "Origem não permitida." }, { status: 403, headers: corsHeaders(request) });
   }
 
   const mode = (await params).mode;
   if (mode !== "login" && mode !== "signup" && mode !== "resend" && mode !== "logout") {
-    return NextResponse.json({ message: "Operação inválida." }, { status: 404 });
+    return NextResponse.json({ message: "Operação inválida." }, { status: 404, headers: corsHeaders(request) });
   }
 
   if (mode === "logout") {
@@ -368,11 +335,11 @@ export async function POST(
 
   let payload: unknown;
   try {
-    payload = await request.json();
-  } catch {
+    payload = await readPrivateJson(request);
+  } catch (error) {
     return NextResponse.json(
       { message: "Dados de acesso inválidos." },
-      { status: 400, headers: corsHeaders(request) }
+      { status: error instanceof PrivateRequestError ? error.status : 400, headers: corsHeaders(request) }
     );
   }
   const parsed =
@@ -400,15 +367,15 @@ export async function POST(
     process.env.APP_ENV === "production" ||
     process.env.AUTH_RATE_LIMIT_ENABLED?.trim().toLowerCase() === "true";
 
-  if (
-    authRateLimitEnabled &&
-    !(await enforceAuthRateLimit({
+  const rateLimit = authRateLimitEnabled
+    ? await enforceAuthRateLimit({
       request,
       email: authInput.email,
       scope: mode === "resend" ? "signup" : mode,
-      supabase
-    }))
-  ) {
+      supabase: createServiceSupabaseClient()
+    })
+    : { status: "allowed" as const };
+  if (rateLimit.status === "blocked") {
     return NextResponse.json(
       {
         message: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."
@@ -417,16 +384,22 @@ export async function POST(
         status: 429,
         headers: {
           ...corsHeaders(request),
-          "retry-after": "900"
+          "retry-after": String(rateLimit.retryAfterSeconds)
         }
       }
     );
   }
+  if (rateLimit.status === "error") {
+    return NextResponse.json(
+      { message: "A prote\u00e7\u00e3o de acesso est\u00e1 temporariamente indispon\u00edvel." },
+      { status: 503, headers: corsHeaders(request) }
+    );
+  }
   if (
-    mode !== "resend" &&
     !(await verifyTurnstile(
       request,
-      "turnstileToken" in authInput ? authInput.turnstileToken : undefined
+      "turnstileToken" in authInput ? authInput.turnstileToken : undefined,
+      mode === "resend" ? "signup" : mode
     ))
   ) {
     return NextResponse.json(
@@ -478,6 +451,19 @@ export async function POST(
 
   if (mode === "signup") {
     const signup = parsed.data as NormalizedSignupInput;
+    const legalVersions = await supabase
+      .from("published_legal_documents")
+      .select("version_id")
+      .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
+    const legalVersionIds =
+      z
+        .array(z.object({ version_id: z.string().uuid() }))
+        .safeParse(legalVersions.data)
+        .data?.map((item) => item.version_id) ?? [];
+    if (legalVersions.error) {
+      return NextResponse.json({ message: "N?o foi poss?vel consultar os termos do cadastro. Tente novamente." },
+        { status: 503, headers: corsHeaders(request) });
+    }
     const { data, error } = await supabase.auth.signUp({
       email: signup.email,
       password: signup.password,
@@ -487,6 +473,7 @@ export async function POST(
           full_name: signup.name,
           phone: signup.phone,
           terms_accepted_at: new Date().toISOString(),
+          signup_legal_version_ids: legalVersionIds,
           marketing_consent: signup.marketing === "on"
         }
       }
@@ -515,15 +502,6 @@ export async function POST(
       );
     }
 
-    const legalVersions = await supabase
-      .from("published_legal_documents")
-      .select("version_id")
-      .in("slug", ["termos-de-uso", "aviso-de-privacidade"]);
-    const legalVersionIds =
-      z
-        .array(z.object({ version_id: z.string().uuid() }))
-        .safeParse(legalVersions.data)
-        .data?.map((item) => item.version_id) ?? [];
     const [profileUpdate, consentInsert] = await Promise.all([
       supabase
         .from("profiles")
@@ -637,7 +615,7 @@ export async function POST(
   let referralClaimed = false;
   const referral = verifyReferralAttribution(
     request.cookies.get(REFERRAL_ATTRIBUTION_COOKIE)?.value,
-    process.env.AUDIT_HASH_KEY ?? ""
+    process.env.REFERRAL_ATTRIBUTION_HMAC_KEY ?? ""
   );
   if (referral) {
     const referralResult: unknown = await supabase.rpc("claim_referral_attribution", {
@@ -716,26 +694,8 @@ export async function POST(
     );
   }
   const panelUrl = panelBaseUrl(request);
-  let redirectTo =
-    role === "customer" || role === "representative"
-      ? resolvePostLoginDestination(
-          safeInternalPath(login.next, safeInternalPath(destination, "/minha-conta"))
-        )
-      : new URL(destination, panelUrl).toString();
+  const redirectTo = resolveLoginReturn(safeInternalPath(login.next, destination), panelUrl);
 
-  if (internalRole && process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error) {
-      await supabase.auth.signOut();
-      return NextResponse.json(
-        { message: "Não foi possível verificar a segurança desta conta." },
-        { status: 503, headers: { "cache-control": "no-store" } }
-      );
-    }
-    if (assurance.data.currentLevel !== "aal2") {
-      redirectTo = `/mfa?next=${encodeURIComponent(redirectTo)}`;
-    }
-  }
 
   if (internalRole) {
     await supabase.rpc("log_internal_auth_event", { p_event: "LOGIN" });

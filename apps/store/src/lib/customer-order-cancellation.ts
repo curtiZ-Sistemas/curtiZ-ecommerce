@@ -1,0 +1,96 @@
+import "server-only";
+import { MercadoPagoPaymentProvider } from "@curtiz/integrations";
+import { getMercadoPagoCredentials, getMercadoPagoEnvironment } from "@curtiz/config";
+import { createServiceSupabaseClient } from "./supabase/server";
+import { isUnknownRecord, readNumber, readQueryResult, readString } from "./unknown-data";
+
+const pending = { ok: true, status: "refund_pending", message: "Seu cancelamento foi recebido. O reembolso está sendo processado." };
+
+export async function cancelCustomerOrder(orderId: string, customerId: string, runtime?: {
+  db: NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
+  environment: Readonly<Record<string, string | undefined>>;
+  transport: typeof fetch;
+}) {
+  const db = runtime?.db ?? createServiceSupabaseClient();
+  if (!db) return { statusCode: 503, body: { message: "Não foi possível iniciar o cancelamento." } };
+  const mode = getMercadoPagoEnvironment(runtime?.environment);
+  const modeCheck = mode ? readQueryResult(await db.rpc("check_mercadopago_order_mode", {
+    p_mode: mode, p_order_id: orderId, p_customer_id: customerId
+  })) : null;
+  if (!modeCheck || modeCheck.error || modeCheck.data !== true) return { statusCode: 409, body: {
+    code: "ORDER_PAYMENT_MODE_MISMATCH", message: "Este pedido precisa de verificação para ser cancelado."
+  } };
+  const claim = readQueryResult(await db.rpc("begin_customer_order_cancellation", { p_order_id: orderId, p_customer_id: customerId }));
+  if (claim.error || !isUnknownRecord(claim.data)) return { statusCode: 409, body: {
+    message: "Este pedido não está disponível para cancelamento.", code: "CANCELLATION_NOT_ALLOWED"
+  } };
+  const data = claim.data;
+  const done = readString(data, "status");
+  if (["cancelled", "refunded"].includes(done)) return { statusCode: 200, body: { ok: true, status: done,
+    message: done === "cancelled" ? "Pedido cancelado." : "Pedido cancelado e reembolso concluído." } };
+  const pendingResult = () => ({ statusCode: 202, body: readString(data, "status") === "cancellation_requested"
+    ? { ok: true, status: "cancellation_requested", message: "Seu cancelamento foi recebido. Estamos verificando o pagamento." } : pending });
+  if (data.busy === true) return pendingResult();
+  const finish = async (paid: boolean) => {
+    const result = readQueryResult(await db.rpc("prepare_customer_order_cancellation", {
+      p_order_id: orderId, p_customer_id: customerId, p_paid: paid
+    }));
+    if (result.error) throw new Error("cancellation_not_confirmed");
+    return result;
+  };
+  try {
+    const providerId = readString(data, "providerPaymentId");
+    if (!providerId) {
+      if (data.paymentInFlight === true || data.paid === true) throw new Error("payment_in_flight");
+      await finish(false);
+      return { statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } };
+    }
+    const credentials = getMercadoPagoCredentials(runtime?.environment);
+    if (!credentials) throw new Error("payment_configuration_invalid");
+    const provider = new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode, runtime?.transport);
+    let payment = await provider.getPayment(providerId);
+    const matches = () => payment.id === providerId && payment.externalReference === readString(data, "orderCode")
+      && payment.amountInCents === readNumber(data, "amountInCents") && payment.currency === "BRL";
+    if (!matches()) throw new Error("payment_mismatch");
+    if (["pending", "in_process", "authorized", "in_review"].includes(payment.status)) {
+      payment = await provider.cancelPayment(providerId);
+      if (!matches()) throw new Error("payment_mismatch");
+    }
+    if (["cancelled", "rejected", "expired"].includes(payment.status) && data.paid !== true) {
+      await finish(false);
+      return { statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } };
+    }
+    if (!["approved", "refunded"].includes(payment.status)) throw new Error("payment_verification_required");
+    data.status = "refund_pending";
+    const prepared = await finish(true);
+    if (!isUnknownRecord(prepared.data)) throw new Error("refund_not_prepared");
+    const key = readString(prepared.data, "idempotencyKey");
+    const refundAmount = readNumber(prepared.data, "refundAmountInCents");
+    if (!key || !Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > payment.amountInCents
+      || !Array.isArray(prepared.data.completedRefundIds) || prepared.data.completedRefundIds.some(id => typeof id !== "string"))
+      throw new Error("refund_balance_not_confirmed");
+    const completedIds = new Set(prepared.data.completedRefundIds as string[]);
+    const confirmedRefund = payment.refunds.find(refund => !completedIds.has(refund.id) && refund.amountInCents === refundAmount
+      && ["approved", "completed"].includes(refund.status));
+    if (payment.status === "refunded" && !confirmedRefund) throw new Error("refund_requires_review");
+    const observed = new Map<string, number>();
+    for (const refund of payment.refunds) {
+      if (["rejected", "failed"].includes(refund.status)) continue;
+      if (!["approved", "completed"].includes(refund.status) || !refund.id || !Number.isSafeInteger(refund.amountInCents)
+        || refund.amountInCents <= 0 || observed.has(refund.id) && observed.get(refund.id) !== refund.amountInCents)
+        throw new Error("refund_requires_review");
+      observed.set(refund.id, refund.amountInCents);
+    }
+    if (payment.amountInCents - [...observed.values()].reduce((total, amount) => total + amount, 0) !== (confirmedRefund ? 0 : refundAmount))
+      throw new Error("refund_balance_not_confirmed");
+    const refund = confirmedRefund ?? await provider.refundPayment(providerId, refundAmount, key);
+    const final = readQueryResult(await db.rpc("finalize_mercadopago_refund", {
+      p_payment_id: readString(prepared.data, "paymentId"), p_provider_refund_id: refund.id,
+      p_requested_by: customerId, p_refund_amount: refundAmount / 100, p_idempotency_key: key
+    }));
+    if (final.error || final.data !== true) throw new Error("refund_not_finalized");
+    return { statusCode: 200, body: { ok: true, status: "refunded", message: "Pedido cancelado e reembolso concluído." } };
+  } catch {
+    return pendingResult();
+  }
+}

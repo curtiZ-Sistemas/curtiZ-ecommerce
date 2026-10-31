@@ -5,6 +5,28 @@ export type StoreNavigationItem = {
   placement: "main" | "utility";
 };
 
+export function isNavigationItemActive(
+  href: string,
+  pathname: string,
+  searchParams: Pick<URLSearchParams, "get">
+): boolean {
+  const url = new URL(href, "https://curtiz.com.br");
+  if (url.origin !== "https://curtiz.com.br" || url.pathname !== pathname) return false;
+  if (url.pathname === "/produtos" && !url.searchParams.has("categoria") && searchParams.get("categoria")) return false;
+  return [...url.searchParams].every(([key, value]) => searchParams.get(key) === value);
+}
+
+export function activeNavigationItemId(
+  navigation: readonly StoreNavigationItem[],
+  pathname: string,
+  searchParams: Pick<URLSearchParams, "get">
+): string | undefined {
+  return navigation
+    .filter((item) => isNavigationItemActive(item.href, pathname, searchParams))
+    .sort((left, right) => new URL(right.href, "https://curtiz.com.br").searchParams.size
+      - new URL(left.href, "https://curtiz.com.br").searchParams.size)[0]?.id;
+}
+
 type NavigationRow = Record<string, unknown>;
 
 export const fallbackStoreNavigation: StoreNavigationItem[] = [
@@ -40,6 +62,11 @@ export function serializeStoreNavigation(value: unknown): StoreNavigationItem[] 
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
     const row = candidate as NavigationRow;
     const href = navigationHref(row);
+    if (href) {
+      const url = new URL(href, "https://curtiz.com.br");
+      if (["/slides", "/sandalias"].includes(url.pathname)
+        || ["slides", "sandalias"].includes(url.searchParams.get("categoria") ?? "")) return [];
+    }
     const id = typeof row.id === "string" ? row.id : "";
     const label = typeof row.label === "string" ? row.label.trim() : "";
     const placement = row.placement === "utility" ? "utility" : "main";

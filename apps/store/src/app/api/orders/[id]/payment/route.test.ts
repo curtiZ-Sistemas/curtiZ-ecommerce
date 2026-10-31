@@ -3,7 +3,9 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 import { GET } from "./route";
 
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
-vi.mock("@curtiz/integrations", () => ({ isMercadoPagoTestCredential: () => false }));
+const provider = vi.hoisted(() => ({ enabled: false, getPayment: vi.fn(), createPayment: vi.fn() }));
+vi.mock("@curtiz/integrations", () => ({ isMercadoPagoTestCredential: () => provider.enabled,
+  MercadoPagoTestPaymentProvider: class { getPayment = provider.getPayment; createPayment = provider.createPayment; } }));
 vi.mock("@/lib/customer-account-presentation", () => import("../../../../../lib/customer-account-presentation"));
 vi.mock("@/lib/mercadopago-payment", () => import("../../../../../lib/mercadopago-payment"));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
@@ -21,7 +23,9 @@ function setup(status = "pending_payment", paymentStatus = "pending", expiresAt 
       eq: vi.fn(() => query),
       maybeSingle: vi.fn(async () => ({ data: table === "orders"
         ? { id: "order-id", customer_id: "customer-id", public_code: "ORDER", status, payment_status: paymentStatus }
-        : { id: "payment-id", status: paymentStatus, status_detail: detail, expires_at: expiresAt, payment_method_summary: "pix" }, error: null }))
+        : { id: "payment-id", provider_payment_id: "provider-pix", status: paymentStatus, status_detail: detail,
+          expires_at: expiresAt, payment_method_summary: "pix", pix_copy_paste: "pix-salvo",
+          pix_qr_code_base64: "qr-salvo", amount: 67.9, currency: "BRL" }, error: null }))
     };
     return query;
   });
@@ -31,7 +35,17 @@ function setup(status = "pending_payment", paymentStatus = "pending", expiresAt 
 }
 
 describe("payment endpoint resumption guard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); provider.enabled = false; });
+  it("refresh retorna estado local sem consultar nem criar cobrança no provedor", async () => {
+    setup(); provider.enabled = true; provider.getPayment.mockRejectedValue(new Error("offline"));
+    for (let refresh = 0; refresh < 2; refresh++) {
+      const response = await GET(request, context);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ status: "pending", pixCopyPaste: "pix-salvo", pixQrCodeBase64: "qr-salvo" });
+    }
+    expect(provider.getPayment).not.toHaveBeenCalled();
+    expect(provider.createPayment).not.toHaveBeenCalled();
+  });
   it.each(["cancellation_requested", "cancelled", "expired", "payment_approved", "processing", "preparing", "shipped", "delivered", "refunded"])("blocks %s without returning payment instructions", async (status) => {
     const from = setup(status);
     const response = await GET(request, context);
@@ -53,7 +67,9 @@ describe("payment endpoint resumption guard", () => {
     const from = setup();
     const response = await GET(request, context);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expect.objectContaining({ status: "pending" }));
+    expect(await response.json()).toEqual(expect.objectContaining({
+      status: "pending", pixCopyPaste: "pix-salvo", pixQrCodeBase64: "qr-salvo"
+    }));
     expect(from).toHaveBeenCalledWith("orders");
   });
   it("requires authentication", async () => {

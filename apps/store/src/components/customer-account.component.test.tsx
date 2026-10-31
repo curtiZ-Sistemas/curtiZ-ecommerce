@@ -11,6 +11,8 @@ describe("customer account presentation", () => {
   it("uses clear pt-BR labels for commerce states", () => {
     expect(customerStatusLabel("pending_payment")).toBe("Aguardando pagamento");
     expect(customerStatusLabel("ready_to_ship")).toBe("Pronto para envio");
+    expect(customerStatusLabel("refund_pending")).toBe("Reembolso em processamento");
+    expect(customerStatusLabel("refunded")).toBe("Reembolsado");
     expect(customerStatusLabel("return_requested")).toBe("Devolução solicitada");
     expect(customerStatusLabel("approved_waiting_kit")).toBe("Aprovado · kit pendente");
     expect(customerStatusLabel("suspended")).toBe("Suspenso");

@@ -1,19 +1,25 @@
 # curti Z
 
-> Loja online oficial da curti Z, com chinelos, slides e sandálias.
+> Loja online oficial da curti Z, com chinelos e kits de chinelos.
 
 ## Páginas públicas
 
 - [Página inicial](https://curtiz.com.br/)
 - [Todos os produtos](https://curtiz.com.br/produtos)
+- [Chinelos](https://curtiz.com.br/produtos?categoria=chinelos)
+- [Kits de chinelos](https://curtiz.com.br/produtos?categoria=kits)
+- [Feminino](https://curtiz.com.br/feminino)
 - [Lançamentos](https://curtiz.com.br/lancamentos)
 - [Mais vendidos](https://curtiz.com.br/mais-vendidos)
 - [Ofertas](https://curtiz.com.br/ofertas)
 - [Ajuda](https://curtiz.com.br/ajuda)
 - [Políticas](https://curtiz.com.br/politicas)
+- [Sobre a curti Z](https://curtiz.com.br/sobre)
 
 ## Orientações
 
 - Use somente páginas públicas e indexáveis da loja.
 - Preços, disponibilidade, variações, frete e condições comerciais devem ser confirmados na página atual do produto e no checkout.
 - Não trate áreas autenticadas, APIs, painel interno ou endereços workers.dev como fontes públicas de catálogo.
+- Os nomes e as descrições dos produtos refletem o catálogo publicado. Não deduza novas categorias a partir de um nome de produto.
+- As antigas URLs /slides e /sandalias redirecionam ao catálogo atual; não representam categorias disponíveis.

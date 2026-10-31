@@ -4,6 +4,7 @@ import {
   authorizeAdminRequest,
   objectRows,
   privateNoStore,
+  readPanelJson,
   safePanelOrigin,
   unauthorizedAdminResponse
 } from "@/lib/admin-api";
@@ -36,7 +37,7 @@ async function hasPermission(
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeAdminRequest(request, ["manager", "technical"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const [readPermission, clientPermission, adminPermission, operatorPermission, technicalPermission, createPermission] = await Promise.all([
     hasPermission(auth.supabase, "users.read"),
     hasPermission(auth.supabase, "users.access.manage_client"),
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
     );
   }
   const auth = await authorizeAdminRequest(request, ["manager"]);
-  if (!auth) return unauthorizedAdminResponse();
+  if (!auth) return unauthorizedAdminResponse(request);
   const [createPermission, clientPermission, adminPermission, operatorPermission] = await Promise.all([
     hasPermission(auth.supabase, "users.create_internal"),
     hasPermission(auth.supabase, "users.access.manage_client"),
@@ -146,7 +147,9 @@ export async function POST(request: NextRequest) {
       { status: 403, headers: privateNoStore }
     );
   }
-  const parsed = inviteSchema.safeParse(await request.json().catch(() => null));
+  const body = await readPanelJson(request, 8 * 1024);
+  if (body instanceof NextResponse) return body;
+  const parsed = inviteSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Informe nome, e-mail, papel e justificativa válidos." },
@@ -213,8 +216,10 @@ export async function PATCH(request: NextRequest) {
     );
   }
   const auth = await authorizeAdminRequest(request, ["manager", "technical"]);
-  if (!auth) return unauthorizedAdminResponse();
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  if (!auth) return unauthorizedAdminResponse(request);
+  const body = await readPanelJson(request, 8 * 1024);
+  if (body instanceof NextResponse) return body;
+  const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Informe status, acessos e justificativa válidos." },

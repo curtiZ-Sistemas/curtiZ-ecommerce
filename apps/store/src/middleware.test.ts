@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server";
+import type { CookieOptions } from "@supabase/ssr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
 
-const { getUser, rpc } = vi.hoisted(() => ({ getUser: vi.fn(), rpc: vi.fn() }));
+type CookieHooks = { setAll(cookies: Array<{ name: string; value: string; options: CookieOptions }>): void };
+const { getUser, getSession, rpc, hooks } = vi.hoisted(() => ({
+  getUser: vi.fn(), getSession: vi.fn(), rpc: vi.fn(), hooks: { current: null as CookieHooks | null }
+}));
 vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({ auth: { getUser }, rpc })
+  createServerClient: (_url: string, _key: string, options: { cookies: CookieHooks }) => {
+    hooks.current = options.cookies;
+    return { auth: { getUser, getSession }, rpc };
+  }
 }));
 
 function readCspDirective(csp: string, name: string): string {
@@ -12,15 +19,26 @@ function readCspDirective(csp: string, name: string): string {
 }
 
 describe("store security headers", () => {
+  it("preserves the standalone recovery handler security policy without refreshing a session", async () => {
+    const response = await middleware(new NextRequest("https://curtiz.com.br/auth/recovery", {
+      headers: { cookie: "sb-project-auth-token=existing" }
+    }));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.has("content-security-policy")).toBe(false);
+    expect(response.headers.has("referrer-policy")).toBe(false);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("retorna 404 HTTP real para produto removido e não o entrega como página indexável", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
     rpc.mockResolvedValue({ data: false, error: null });
 
     const response = await middleware(
@@ -37,8 +55,8 @@ describe("store security headers", () => {
 
   it("mantém produto comercialmente visível com resposta normal", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
     rpc.mockResolvedValue({ data: true, error: null });
 
     const response = await middleware(
@@ -51,8 +69,8 @@ describe("store security headers", () => {
 
   it("protege conteúdo, recursos do navegador e enquadramento em produção", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
 
     const response = await middleware(new NextRequest("https://loja.example/ajuda"));
 
@@ -65,18 +83,100 @@ describe("store security headers", () => {
 
   it("não consulta autenticação em páginas públicas conhecidas", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
 
     await middleware(new NextRequest("https://loja.example/produtos"));
 
     expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it.each(["session", "persistent"])("renova sessão %s na conta e a encaminha ao render atual", async persistence => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("AUTH_COOKIE_DOMAINS", "curtiz.com.br");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getSession.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "renewed", options: { maxAge: 3600 } }]);
+      return { data: { session: null }, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/minha-conta", {
+      headers: { cookie: `sb-project-auth-token=expired; curtiz-auth-persistence=${persistence}` }
+    }));
+    expect(getSession).toHaveBeenCalledOnce();
+    expect(getUser).not.toHaveBeenCalled();
+    expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-project-auth-token=renewed");
+    const cookie = response.cookies.get("sb-project-auth-token");
+    expect(cookie).toMatchObject({ value: "renewed", domain: ".curtiz.com.br", secure: true });
+    expect(cookie?.maxAge).toBe(persistence === "persistent" ? 3600 : undefined);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("mantém os cookies renovados no redirect de checkout sem sessão válida", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getUser.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "", options: { maxAge: 0 } }]);
+      return { data: { user: null }, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/checkout", {
+      headers: { cookie: "sb-project-auth-token=expired" }
+    }));
+    expect(getUser).toHaveBeenCalledOnce();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://curtiz.com.br/login?next=%2Fcheckout");
+    expect(response.cookies.get("sb-project-auth-token")).toMatchObject({ value: "", maxAge: 0 });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("mantém página pública disponível se a renovação de sessão falhar", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    getSession.mockRejectedValueOnce(new Error("auth unavailable"));
+    const response = await middleware(new NextRequest("https://curtiz.com.br/produtos", {
+      headers: { cookie: "sb-project-auth-token=expired" }
+    }));
+    expect(response.status).toBe(200);
+    expect(getSession).toHaveBeenCalledOnce();
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("não torna pública uma resposta 404 que renovou cookies durante a consulta", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "publishable-key-with-safe-length");
+    rpc.mockImplementationOnce(async () => {
+      hooks.current?.setAll([{ name: "sb-project-auth-token", value: "renewed", options: {} }]);
+      return { data: false, error: null };
+    });
+    const response = await middleware(new NextRequest("https://curtiz.com.br/produto/removido"));
+    expect(response.status).toBe(404);
+    expect(response.cookies.get("sb-project-auth-token")?.value).toBe("renewed");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("mantém mídia pública mas não permite Data API ou Realtime no navegador", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    const response = await middleware(new NextRequest("https://loja.example/ajuda"));
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(readCspDirective(csp, "connect-src")).not.toContain("supabase");
+    expect(readCspDirective(csp, "connect-src")).not.toContain("wss:");
+    expect(readCspDirective(csp, "img-src")).toContain("https://example.supabase.co");
   });
 
   it("libera somente as origens usadas pelo Checkout Bricks na rota de checkout", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
     vi.stubEnv("MERCADO_PAGO_ENABLED", "");
     vi.stubEnv("CHECKOUT_ENABLED", "");
 
@@ -107,8 +207,8 @@ describe("store security headers", () => {
 
   it("não libera origens do Mercado Pago fora do checkout", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
 
     const response = await middleware(new NextRequest("https://loja.example/produtos"));
     const csp = response.headers.get("content-security-policy") ?? "";
@@ -120,8 +220,8 @@ describe("store security headers", () => {
 
   it("libera o Brick somente na rota estrita de pagamento do pedido", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
 
     const orderId = "11111111-1111-4111-8111-111111111111";
     const paymentResponse = await middleware(
@@ -147,8 +247,8 @@ describe("store security headers", () => {
 
   it("impede indexação do alias workers.dev sem redirecionar o ambiente", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
 
     const response = await middleware(
       new NextRequest("https://curtiz-ecommerce.sistemas-curtiz.workers.dev/produtos")

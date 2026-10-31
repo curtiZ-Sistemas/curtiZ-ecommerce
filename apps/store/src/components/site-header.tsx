@@ -2,19 +2,39 @@
 
 import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { fetchPublicAuthSession } from "@/lib/auth-session-client";
 import { BrandLogo } from "./brand-logo";
 import { useCart } from "./cart-provider";
 import { SearchAutocomplete } from "./search-autocomplete";
-import type { StoreNavigationItem } from "@/lib/store-navigation-core";
+import { activeNavigationItemId, type StoreNavigationItem } from "../lib/store-navigation-core";
+
+export function HeaderNavigationLinks({ navigation, activeId }: {
+  navigation: StoreNavigationItem[];
+  activeId?: string;
+}) {
+  return navigation.map(({ id, label, href }) => (
+    <Link
+      className={id === activeId ? "active" : ""}
+      href={href}
+      prefetch={false}
+      aria-current={id === activeId ? "page" : undefined}
+      key={id}
+    >
+      {label}
+    </Link>
+  ));
+}
 
 export function SiteHeader({ navigation }: { navigation: StoreNavigationItem[] }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [accountName, setAccountName] = useState<string>();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const activeId = activeNavigationItemId(navigation, pathname, searchParams);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -35,7 +55,7 @@ export function SiteHeader({ navigation }: { navigation: StoreNavigationItem[] }
   useEffect(() => {
     setMenuOpen(false);
     setSearchOpen(false);
-  }, [pathname]);
+  }, [pathname, currentQuery]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -149,17 +169,7 @@ export function SiteHeader({ navigation }: { navigation: StoreNavigationItem[] }
         )}
 
         <nav className="desktop-nav container" aria-label="Categorias principais">
-          {navigation.map(({ id, label, href }) => (
-            <Link
-              className={pathname === href ? "active" : ""}
-              href={href}
-              prefetch={false}
-              aria-current={pathname === href ? "page" : undefined}
-              key={id}
-            >
-              {label}
-            </Link>
-          ))}
+          <HeaderNavigationLinks navigation={navigation} activeId={activeId} />
         </nav>
       </header>
 
@@ -192,11 +202,7 @@ export function SiteHeader({ navigation }: { navigation: StoreNavigationItem[] }
               </button>
             </div>
             <nav>
-              {navigation.map(({ id, label, href }) => (
-                <Link href={href} prefetch={false} key={id}>
-                  {label}
-                </Link>
-              ))}
+              <HeaderNavigationLinks navigation={navigation} activeId={activeId} />
               <Link href="/favoritos" prefetch={false}>Favoritos</Link>
             </nav>
             <div className="mobile-drawer-actions">

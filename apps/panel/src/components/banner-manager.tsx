@@ -4,7 +4,7 @@ import { optimizeBannerUpload } from "@/lib/banner-image-client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
-import { publicCatalogMediaUrl } from "@/lib/public-media";
+import { panelMediaUrl } from "@/lib/public-media";
 import { normalizeBannerValues } from "@/lib/banner-management";
 
 type Row = Record<string, unknown>;
@@ -15,11 +15,7 @@ const none: Destination = { type: "none", id: "", route: "/", label: "Nenhum des
 const string = (row: Row, key: string) => (typeof row[key] === "string" ? row[key] : "");
 const record = (value: unknown): value is Row =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-const mediaUrl = (path: string) =>
-  publicCatalogMediaUrl(path, {
-    storeUrl: process.env.NEXT_PUBLIC_STORE_URL ?? "http://localhost:3000",
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
-  });
+const mediaUrl = (path: string) => panelMediaUrl(path, "catalog-public", process.env.NEXT_PUBLIC_STORE_URL);
 const endpoint = "/api/admin/resources/banners";
 
 async function request(url: string, init?: RequestInit): Promise<Row> {
@@ -57,7 +53,7 @@ export function BannerManager() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [editable, setEditable] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
@@ -82,17 +78,17 @@ export function BannerManager() {
   const toggle = async (row: Row) => {
     if (pending) return;
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const active = ["published", "scheduled"].includes(string(row, "status"));
       await request(
         endpoint,
         json("PATCH", { action: active ? "archive" : "restore", ids: [row.id] })
       );
-      setMessage(active ? "Banner desativado." : "Banner ativado.");
+      setMessage({ kind: "success", text: active ? "Banner desativado." : "Banner ativado." });
       await load();
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "Não foi possível alterar o banner.");
+      setMessage({ kind: "error", text: reason instanceof Error ? reason.message : "Não foi possível alterar o banner." });
     } finally {
       setPending(false);
     }
@@ -110,7 +106,7 @@ export function BannerManager() {
           </button>
         )}
       </header>
-      {message && <p role="status">{message}</p>}
+      {message && <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p>}
       {error ? (
         <div role="alert">
           <p>{error}</p>
@@ -220,7 +216,7 @@ export function BannerManager() {
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
-            setMessage("Banner salvo com sucesso.");
+            setMessage({ kind: "success", text: "Banner salvo com sucesso." });
             await load();
           }}
         />
@@ -231,7 +227,7 @@ export function BannerManager() {
           onClose={() => setDeleting(null)}
           onDeleted={async () => {
             setDeleting(null);
-            setMessage("Banner excluído.");
+            setMessage({ kind: "success", text: "Banner excluído." });
             if (items.length === 1 && page > 1) setPage(page - 1);
             else await load();
           }}
@@ -324,9 +320,7 @@ function BannerEditor({
         void request("/api/admin/banner-media", {
           ...json("DELETE", { path }),
           keepalive: true
-        }).catch(() => {
-          console.warn("[banner-editor] temporary upload cleanup could not be confirmed");
-        });
+        }).catch(() => undefined);
       }
     };
   }, []);

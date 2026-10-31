@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type EnvironmentValues, validateEnvironment } from "./environment-validation";
+import { requiredDeploymentSecrets, type EnvironmentValues, validateEnvironment } from "./environment-validation";
 
 const stagingEnvironment: EnvironmentValues = {
   APP_ENV: "staging",
@@ -8,11 +8,14 @@ const stagingEnvironment: EnvironmentValues = {
   NEXT_PUBLIC_PANEL_URL: "https://panel-staging.example.com",
   NEXT_PUBLIC_STORE_TEST_URL: "https://store-test.example.net",
   NEXT_PUBLIC_PANEL_TEST_URL: "https://panel-test.example.net",
-  NEXT_PUBLIC_SUPABASE_URL: "https://staging.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
+  SUPABASE_URL: "https://staging.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "staging-publishable-key",
   SUPABASE_SECRET_KEY: "staging-secret-key",
+  ACCOUNT_DELETION_HMAC_KEY: "staging-account-deletion-key-with-32-characters",
   PII_ENCRYPTION_KEY: "staging-pii-key",
   AUDIT_HASH_KEY: "staging-audit-key",
+  RATE_LIMIT_HMAC_KEY: "staging-rate-limit-key-with-32-characters",
+  REFERRAL_ATTRIBUTION_HMAC_KEY: "staging-referral-key-with-32-characters",
   ALLOWED_ORIGINS:
     "https://store-staging.example.com,https://panel-staging.example.com,https://store-test.example.net,https://panel-test.example.net",
   AUTH_COOKIE_DOMAINS: "example.com,example.net",
@@ -44,6 +47,76 @@ const disabledProduction: EnvironmentValues = {
 };
 
 describe("environment validation", () => {
+  const realPublicUrls = {
+    NEXT_PUBLIC_STORE_URL: "https://curtiz.com.br",
+    NEXT_PUBLIC_PANEL_URL: "https://painel.curtiz.com.br",
+    NEXT_PUBLIC_STORE_TEST_URL: "https://curtiz-ecommerce.sistemas-curtiz.workers.dev",
+    NEXT_PUBLIC_PANEL_TEST_URL: "https://curtiz-painel.sistemas-curtiz.workers.dev",
+    AUTH_COOKIE_DOMAINS: "curtiz.com.br,sistemas-curtiz.workers.dev"
+  };
+  const realOrigins = [
+    realPublicUrls.NEXT_PUBLIC_STORE_URL, realPublicUrls.NEXT_PUBLIC_PANEL_URL,
+    realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL, realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL
+  ];
+
+  it.each(["NEXT_PUBLIC_STORE_URL", "NEXT_PUBLIC_PANEL_URL"])(
+    "rejeita %s canônica em workers.dev mesmo com origens e cookies válidos", key => {
+      const result = validateEnvironment("production", {
+        ...disabledProduction, ...realPublicUrls,
+        [key]: key === "NEXT_PUBLIC_STORE_URL" ? realPublicUrls.NEXT_PUBLIC_STORE_TEST_URL : realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL,
+        ALLOWED_ORIGINS: realOrigins.join(",")
+      });
+      expect(result.errors).toContain(`${key} deve usar o domínio oficial em produção; configure workers.dev somente em NEXT_PUBLIC_*_TEST_URL`);
+    }
+  );
+
+  it("reproduz os três erros do build do painel sem aceitar o alias legado", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: "panel",
+      NEXT_PUBLIC_STORE_TEST_URL: undefined,
+      NEXT_PUBLIC_PANEL_URL: realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL,
+      NEXT_PUBLIC_PANEL_TEST_URL: "https://curtiz-panel.sistemas-curtiz.workers.dev",
+      ALLOWED_ORIGINS: [...realOrigins.slice(0, 3), "https://curtiz-panel.sistemas-curtiz.workers.dev"].join(",")
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      "NEXT_PUBLIC_STORE_TEST_URL não está configurada",
+      "ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_URL",
+      "NEXT_PUBLIC_STORE_TEST_URL e NEXT_PUBLIC_PANEL_TEST_URL devem ser configuradas em conjunto"
+    ]));
+  });
+
+  it.each(["store", "panel"])("reproduz a origem de teste ausente no build de %s", (target) => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: target,
+      ALLOWED_ORIGINS: realOrigins.slice(0, 3).join(",")
+    });
+    expect(result.errors).toEqual([
+      "ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL",
+      "Origem ausente em ALLOWED_ORIGINS: https://curtiz-painel.sistemas-curtiz.workers.dev. " +
+        "Confira as variáveis de Build; as variáveis de Runtime não alimentam este validador."
+    ]);
+  });
+
+  it.each(["store", "panel"])("aceita os quatro domínios reais no build de %s", (target) => {
+    expect(validateEnvironment("production", {
+      ...disabledProduction, ...realPublicUrls, DEPLOY_TARGET: target,
+      ALLOWED_ORIGINS: realOrigins.join(",")
+    })).toMatchObject({ valid: true, errors: [] });
+  });
+
+  it("não confunde os aliases panel e painel nem permite wildcard ou caminhos", () => {
+    for (const alias of [
+      "https://curtiz-panel.sistemas-curtiz.workers.dev",
+      "https://*.sistemas-curtiz.workers.dev",
+      `${realPublicUrls.NEXT_PUBLIC_PANEL_TEST_URL}/login`
+    ]) {
+      expect(validateEnvironment("production", {
+        ...disabledProduction, ...realPublicUrls,
+        ALLOWED_ORIGINS: [...realOrigins.slice(0, 3), alias].join(",")
+      }).errors).toContain("ALLOWED_ORIGINS deve incluir NEXT_PUBLIC_PANEL_TEST_URL");
+    }
+  });
+
   it("permite mocks, demo, MFA desativado e integrações ausentes em staging", () => {
     expect(validateEnvironment("staging", stagingEnvironment)).toMatchObject({
       environment: "staging",
@@ -56,13 +129,19 @@ describe("environment validation", () => {
     const result = validateEnvironment("staging", {
       ...stagingEnvironment,
       SUPABASE_SECRET_KEY: "",
+      ACCOUNT_DELETION_HMAC_KEY: "",
       PII_ENCRYPTION_KEY: undefined,
+      RATE_LIMIT_HMAC_KEY: undefined,
+      REFERRAL_ATTRIBUTION_HMAC_KEY: undefined,
       ALLOWED_ORIGINS: ""
     });
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "SUPABASE_SECRET_KEY não está configurada",
+        "ACCOUNT_DELETION_HMAC_KEY não está configurada",
         "PII_ENCRYPTION_KEY não está configurada",
+        "RATE_LIMIT_HMAC_KEY não está configurada",
+        "REFERRAL_ATTRIBUTION_HMAC_KEY não está configurada",
         "ALLOWED_ORIGINS não está configurada"
       ])
     );
@@ -76,19 +155,22 @@ describe("environment validation", () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
+        "MERCADO_PAGO_WEBHOOK_SECRET não está configurada",
         "NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY não está configurada"
       ])
     );
   });
 
-  it("aceita somente credenciais de teste do Mercado Pago", () => {
+  it("rejeita chaves de produção quando o ambiente continua em teste", () => {
     const result = validateEnvironment("production", {
       ...disabledProduction,
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       SHIPPING_PROVIDER: "custom",
       MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-live",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "APP_USR-live"
     });
     expect(result.errors).toEqual(expect.arrayContaining([
@@ -97,30 +179,57 @@ describe("environment validation", () => {
     ]));
   });
 
+  it("requires documented release before accepting matching production credentials", () => {
+    const live = { ...disabledProduction, CHECKOUT_ENABLED: "true", PAYMENT_PROVIDER: "mercadopago",
+      MERCADO_PAGO_ENABLED: "true", MERCADO_PAGO_ENVIRONMENT: "production", SHIPPING_PROVIDER: "fixed",
+      MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-fixture", MERCADO_PAGO_WEBHOOK_SECRET: "fixture-webhook",
+      NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "APP_USR-public" };
+    expect(validateEnvironment("production", live).errors).toContain("MERCADO_PAGO_PRODUCTION_READY deve ser true após homologação documentada");
+    expect(validateEnvironment("production", { ...live, MERCADO_PAGO_PRODUCTION_READY: "true" }).valid).toBe(true);
+    expect(validateEnvironment("production", { ...live, MERCADO_PAGO_PRODUCTION_READY: "true", MERCADO_PAGO_ACCESS_TOKEN: "TEST-fixture" }).valid).toBe(false);
+  });
+
   it("aceita checkout de produção com Mercado Pago de teste e frete fixo", () => {
     expect(validateEnvironment("production", {
       ...disabledProduction,
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       SHIPPING_PROVIDER: "fixed",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key"
     })).toMatchObject({ valid: true, errors: [] });
   });
 
-  it("não exige credenciais do Melhor Envio enquanto o Sandbox estiver incompleto", () => {
+  it("rejeita o Melhor Envio enquanto a configuração estiver incompleta", () => {
     expect(validateEnvironment("production", {
       ...disabledProduction,
       CHECKOUT_ENABLED: "true",
       PAYMENT_PROVIDER: "mercadopago",
       MERCADO_PAGO_ENABLED: "true",
+      MERCADO_PAGO_ENVIRONMENT: "test",
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-access-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "configured-webhook-secret",
       NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY: "TEST-public-key",
       SHIPPING_PROVIDER: "melhorenvio",
       MELHOR_ENVIO_ENABLED: "true",
-      MELHOR_ENVIO_OAUTH_VALIDATED: "false"
-    })).toMatchObject({ valid: true, errors: [] });
+      MELHOR_ENVIO_ENVIRONMENT: "sandbox"
+    })).toMatchObject({ valid: false });
+  });
+
+  it("rejeita chave de tokens do Melhor Envio que não seja AES-256 em base64", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      SHIPPING_PROVIDER: "melhorenvio",
+      MELHOR_ENVIO_ENABLED: "true",
+      MELHOR_ENVIO_ENVIRONMENT: "sandbox",
+      MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY: "chave-invalida"
+    });
+    expect(result.errors).toContain(
+      "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY deve codificar exatamente 32 bytes em base64"
+    );
   });
 
   it("não aceita mocks nem modo demo em produção", () => {
@@ -136,14 +245,26 @@ describe("environment validation", () => {
   });
 
   it("aprova produção inicial com integrações e MFA explicitamente desativados", () => {
-    expect(validateEnvironment("production", disabledProduction)).toMatchObject({
+    const buildEnvironment = {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: "false",
+      PAYMENT_PROVIDER: "disabled",
+      MERCADO_PAGO_ENABLED: "false",
+      SHIPPING_PROVIDER: "disabled",
+      MELHOR_ENVIO_ENABLED: "false"
+    };
+    expect(validateEnvironment("production", buildEnvironment)).toMatchObject({
       environment: "production",
       valid: true,
       errors: []
     });
+    expect(requiredDeploymentSecrets(buildEnvironment)).not.toEqual(expect.arrayContaining([
+      "MELHOR_ENVIO_CLIENT_SECRET",
+      "MELHOR_ENVIO_TOKEN_ENCRYPTION_KEY"
+    ]));
     expect(
-      validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).valid
-    ).toBe(true);
+      validateEnvironment("production", { ...disabledProduction, DEMO_MODE: undefined }).errors
+    ).toContain("DEMO_MODE não está configurada");
   });
 
   it("exige rate limit de autenticação em produção", () => {
@@ -155,13 +276,30 @@ describe("environment validation", () => {
     ).toContain("AUTH_RATE_LIMIT_ENABLED deve ser true em produção");
   });
 
+  it("exige estado explícito das flags críticas no deploy de produção", () => {
+    const result = validateEnvironment("production", {
+      ...disabledProduction,
+      CHECKOUT_ENABLED: undefined,
+      MERCADO_PAGO_ENABLED: undefined,
+      TURNSTILE_ENABLED: undefined
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      "CHECKOUT_ENABLED não está configurada",
+      "MERCADO_PAGO_ENABLED não está configurada",
+      "TURNSTILE_ENABLED não está configurada"
+    ]));
+  });
+
   it("exige segredos somente quando a integração é habilitada", () => {
     expect(
       validateEnvironment("production", {
         ...disabledProduction,
         MERCADO_PAGO_ENABLED: "true"
       }).errors
-    ).toEqual(expect.arrayContaining(["MERCADO_PAGO_ACCESS_TOKEN não está configurada"]));
+    ).toEqual(expect.arrayContaining([
+      "MERCADO_PAGO_ACCESS_TOKEN não está configurada",
+      "MERCADO_PAGO_WEBHOOK_SECRET não está configurada"
+    ]));
     expect(
       validateEnvironment("production", { ...disabledProduction, EMAIL_ENABLED: "true" }).errors
     ).toEqual(expect.arrayContaining(["RESEND_API_KEY não está configurada"]));
@@ -171,6 +309,25 @@ describe("environment validation", () => {
         TURNSTILE_ENABLED: "true"
       }).errors
     ).toEqual(expect.arrayContaining(["TURNSTILE_SECRET_KEY não está configurada"]));
+  });
+
+  it("permite selecionar Resend desligado sem segredos no build e valida o remetente ao ativar", () => {
+    const disabled = { ...disabledProduction, EMAIL_PROVIDER: "resend", EMAIL_ENABLED: "false" };
+    expect(validateEnvironment("production", disabled).valid).toBe(true);
+    expect(requiredDeploymentSecrets(disabled)).not.toContain("RESEND_API_KEY");
+    expect(validateEnvironment("production", { ...disabled, EMAIL_ENABLED: "true", RESEND_API_KEY: "test-only-key",
+      EMAIL_FROM: "curti Z <pedidos@example.com>" }).valid).toBe(true);
+    expect(validateEnvironment("production", { ...disabled, EMAIL_ENABLED: "true", RESEND_API_KEY: "test-only-key",
+      EMAIL_FROM: "invalid" }).errors).toContain("EMAIL_FROM_INVALID na configuração de e-mail");
+  });
+
+  it("compila a chave pública Turnstile sem copiar o segredo de runtime para o build", () => {
+    const build = { ...disabledProduction, TURNSTILE_ENABLED: "false", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "0x-public-test-key" };
+    expect(validateEnvironment("production", build).valid).toBe(true);
+    expect(validateEnvironment("production", { ...build, TURNSTILE_ENABLED: "true" }).errors)
+      .toContain("TURNSTILE_SECRET_KEY não está configurada");
+    expect(requiredDeploymentSecrets(build)).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(requiredDeploymentSecrets({ ...build, TURNSTILE_ENABLED: "true" })).toContain("TURNSTILE_SECRET_KEY");
   });
 
   it("rejeita false como provider e aceita somente em flags", () => {
@@ -213,10 +370,10 @@ describe("environment validation", () => {
     expect(
       validateEnvironment("production", {
         ...disabledProduction,
-        NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co/rest/v1/"
+        SUPABASE_URL: "https://project.supabase.co/rest/v1/"
       }).errors
     ).toContain(
-      "NEXT_PUBLIC_SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
+      "SUPABASE_URL deve conter somente a origem do projeto, sem /rest/v1 ou outros caminhos"
     );
   });
 

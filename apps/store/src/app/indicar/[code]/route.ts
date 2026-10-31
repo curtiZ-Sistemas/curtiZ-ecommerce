@@ -29,7 +29,8 @@ export async function GET(
     const { data, error } = readQueryResult(result);
     valid = !error && data === true;
   }
-  const secret = process.env.AUDIT_HASH_KEY ?? process.env.DEMO_SESSION_SECRET ?? "";
+  const secret = process.env.REFERRAL_ATTRIBUTION_HMAC_KEY
+    ?? (process.env.APP_ENV === "production" ? "" : process.env.DEMO_SESSION_SECRET ?? "");
   const token = valid ? createReferralAttribution(code, secret) : null;
   if (!token) {
     cadastro.searchParams.set("indicacao", valid ? "indisponivel" : "invalida");

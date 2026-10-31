@@ -4,20 +4,23 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client-types": "./src/client-types.ts",
+    "./client": "./src/client.ts"
   },
   "scripts": {
     "build": "tsc --outDir dist --declaration --noEmit false --incremental false",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@curtiz/domain": "workspace:*"
+    "@curtiz/domain": "workspace:*",
+    "saxes": "5.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "4.1.11"
   }
 }

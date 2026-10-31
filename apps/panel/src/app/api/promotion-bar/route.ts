@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   privateNoStore,
@@ -43,7 +44,7 @@ function databaseFailure(error: { message?: string } | null) {
 
 export async function GET(request: NextRequest) {
   const authorization = await authorize(request);
-  if (!authorization) return unauthorizedAdminResponse();
+  if (!authorization) return unauthorizedAdminResponse(request);
 
   const result = await authorization.supabase
     .from("store_campaign_messages")
@@ -71,9 +72,11 @@ export async function POST(request: NextRequest) {
   const originResponse = invalidOrigin(request);
   if (originResponse) return originResponse;
   const authorization = await authorize(request);
-  if (!authorization) return unauthorizedAdminResponse();
+  if (!authorization) return unauthorizedAdminResponse(request);
 
-  const parsed = promotionBarMutationSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = promotionBarMutationSchema.safeParse(boundedBody);
   if (!parsed.success || parsed.data.id) {
     return NextResponse.json(
       { message: "Revise os dados da mensagem promocional." },
@@ -119,8 +122,10 @@ export async function PATCH(request: NextRequest) {
   const originResponse = invalidOrigin(request);
   if (originResponse) return originResponse;
   const authorization = await authorize(request);
-  if (!authorization) return unauthorizedAdminResponse();
-  const body: unknown = await request.json().catch(() => null);
+  if (!authorization) return unauthorizedAdminResponse(request);
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const body: unknown = boundedBody;
 
   const reorder = promotionBarReorderSchema.safeParse(body);
   if (reorder.success) {

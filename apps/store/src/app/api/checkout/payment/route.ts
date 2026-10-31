@@ -1,16 +1,27 @@
-import { isMercadoPagoTestCredential, MercadoPagoProviderError, MercadoPagoTestPaymentProvider } from "@curtiz/integrations";
+import { redact } from "@curtiz/security";
+import { getIntegrationConfig, getMercadoPagoCredentials } from "@curtiz/config";
+import { MercadoPagoProviderError, MercadoPagoPaymentProvider } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeOptionalCouponCode } from "@/lib/checkout-flow";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { CUSTOMER_EMAIL_MAX_LENGTH, isValidBrazilianPhone, isValidCpf, phoneDigits, sanitizeCpf } from "@/lib/personal-data";
 import { encryptPII } from "@/lib/pii";
+import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "../../../../lib/checkout-identity";
 import { normalizeMercadoPagoStatus, publicPaymentState } from "@/lib/mercadopago-payment";
+import { readMercadoPagoPayerDocument } from "@/lib/mercadopago-payer-identity";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
+import { validateSavedCardCustomer, validateSavedCardPayer, SavedCardsError } from "@/lib/mercadopago-saved-cards";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
+import { isCheckoutBusinessError, isMissingAuthentication, safeDatabaseError } from "../../../../lib/checkout-diagnostics";
+import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
+import { resolveShippingProducts } from "../../../../lib/melhor-envio-server";
+import { readBlingFiscalRecipient } from "../../../../lib/bling-fiscal-scope";
 
 const checkoutSchema = z.object({
+  fiscalRecipient: z.object({ icmsTaxpayer: z.boolean(), finalConsumer: z.boolean() }).strict().optional(),
   couponCode: z.string().trim().max(40).optional(),
+  shippingQuoteId: z.string().uuid().optional(),
   customer: z.object({
     name: z.string().trim().min(3).max(120), email: z.string().trim().email().max(CUSTOMER_EMAIL_MAX_LENGTH),
     phone: z.string().trim().max(20).refine(isValidBrazilianPhone).transform(phoneDigits),
@@ -27,78 +38,206 @@ const checkoutSchema = z.object({
   })).min(1).max(50)
 });
 const schema = z.object({
-  orderId: z.string().uuid().optional(), idempotencyKey: z.string().uuid(), checkout: checkoutSchema.optional(),
+  orderId: z.string().uuid().optional(), idempotencyKey: z.string().uuid(),
+  checkoutIdempotencyKey: z.string().uuid().optional(), checkout: checkoutSchema.optional(),
   payment: z.object({
-    token: z.string().trim().min(1).max(500).optional(), issuer_id: z.union([z.string(), z.number()]).optional(),
+    token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u).optional(),
+    issuer_id: z.union([z.string().trim().regex(/^[1-9]\d{0,9}$/u), z.number().int().positive().max(Number.MAX_SAFE_INTEGER)])
+      .transform(Number).optional(),
     payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u), installments: z.coerce.number().int().min(1).max(48).default(1),
-    payer: z.object({ entity_type: z.enum(["individual", "association"]), identification: z.object({ number: z.string().max(20) }) })
+    payer: z.object({ entity_type: z.enum(["individual", "association"]), type: z.literal("customer").optional(),
+      id: z.string().regex(/^[a-zA-Z0-9_+-]{1,100}$/u).optional(), identification: z.object({
+      type: z.literal("CPF").default("CPF"), number: z.string().max(20)
+    }).optional() })
   })
 }).refine((value) => Boolean(value.orderId || value.checkout), "Pedido ou checkout obrigatório.");
 
+const mercadoPagoCardMethodIds = new Set([
+  "amex", "debcabal", "debmaster", "debvisa", "diners", "elo", "hipercard", "master", "visa"
+]);
+const validatePaymentMethod = (payment: z.infer<typeof schema>["payment"]) => {
+  if (payment.payment_method_id === "pix" || payment.payment_method_id === "bolbradesco") return null;
+  if (!mercadoPagoCardMethodIds.has(payment.payment_method_id)) return {
+    code: "INVALID_PAYMENT_METHOD", message: "O meio de pagamento selecionado é inválido."
+  };
+  if (!payment.token) return {
+    code: "INVALID_CARD_TOKEN", message: "Revise os dados do cartão e gere uma nova tentativa."
+  };
+  return null;
+};
+
 const noStore = { "cache-control": "private, no-store" };
 const response = (body: Record<string, unknown>, status: number) => NextResponse.json(body, { status, headers: noStore });
-const logFailure = (code: string, status?: number) => console.error("[mercadopago-bricks] payment not completed", {
-  code, ...(status ? { providerStatus: status } : {})
-});
+const checkoutConflict = (error: unknown) => {
+  const reason = safeDatabaseError(error).message;
+  if (reason === "idempotency_conflict") return {
+    code: "CHECKOUT_IDEMPOTENCY_CONFLICT", recovery: "view_order",
+    message: "Este checkout já está vinculado a um pedido com outros dados. Continue o pagamento desse pedido."
+  };
+  if (reason.includes("coupon")) return {
+    code: reason === "coupon_limit_reached" ? "COUPON_LIMIT_REACHED" : "INVALID_COUPON",
+    recovery: "review_checkout", message: reason === "coupon_limit_reached"
+      ? "O limite de uso desse cupom foi atingido. Revise o checkout."
+      : reason === "invalid_coupon_lines"
+        ? "O cupom não se aplica aos itens escolhidos. Revise o checkout."
+        : "O cupom não está mais disponível. Revise o checkout."
+  };
+  if (reason === "customer_identity_required") return {
+    code: "CUSTOMER_IDENTITY_REQUIRED", recovery: "review_checkout", message: "Informe e salve o CPF do cliente no checkout."
+  };
+  if (reason === "order_not_eligible") return {
+    code: "ORDER_NOT_PAYABLE", recovery: "view_order", message: "Este pedido não aceita um novo pagamento. Acompanhe seu status."
+  };
+  if (reason === "invalid_payment_method") return {
+    code: "INVALID_PAYMENT_METHOD", recovery: "new_attempt", message: "Selecione outro meio de pagamento."
+  };
+  if (reason === "checkout_line_unavailable") return {
+    code: "CHECKOUT_LINE_UNAVAILABLE", recovery: "review_checkout",
+    message: "Um produto ou variante não está mais disponível. Revise os itens do checkout."
+  };
+  if (reason === "invalid quantity") return {
+    code: "CHECKOUT_INVALID_QUANTITY", recovery: "review_checkout",
+    message: "Uma quantidade não é permitida. Revise os itens do checkout."
+  };
+  if (["invalid_checkout_lines", "duplicate_checkout_line"].includes(reason)) return {
+    code: "CHECKOUT_INVALID_ITEMS", recovery: "review_checkout",
+    message: "Há itens inválidos ou repetidos. Revise os itens do checkout."
+  };
+  if (reason === "invalid_checkout_payload") return {
+    code: "CHECKOUT_INVALID_DATA", recovery: "review_checkout",
+    message: "Os dados do cliente ou endereço estão incompletos. Revise o checkout."
+  };
+  return {
+    code: reason === "insufficient stock" ? "CHECKOUT_STOCK_CHANGED" : "CHECKOUT_CHANGED",
+    recovery: "review_checkout", message: reason === "insufficient stock"
+      ? "A quantidade disponível mudou. Revise os itens do checkout."
+      : "Os itens ou dados do checkout mudaram. Revise o checkout antes de pagar."
+  };
+};
+const logFailure = (code: string, status?: number, requestId?: string, error?: unknown) => {
+  const database = safeDatabaseError(error);
+  console.error(redact({ event: "mercadopago_bricks_payment_not_completed",
+    code, requestId, providerStatus: status ?? null, databaseCode: database.code || null,
+    providerRejectionCodes: error instanceof MercadoPagoProviderError ? error.providerCauseCodes : [],
+    providerRejectionFields: error instanceof MercadoPagoProviderError ? error.providerRejectionFields : [],
+    providerRequestId: error instanceof MercadoPagoProviderError ? error.providerRequestId : null
+  }));
+};
+const isPersistedPendingPix = (payment: Record<string, unknown>) => {
+  const method = readString(payment, "payment_method_summary");
+  return Boolean(
+    readString(payment, "provider_payment_id")
+    && readString(payment, "status") === "pending"
+    && readString(payment, "status_detail") !== "expired"
+    && (!readString(payment, "expires_at") || Date.parse(readString(payment, "expires_at")) > Date.now())
+    && (method === "pix" || method.endsWith(":pix"))
+    && (readString(payment, "pix_copy_paste") || readString(payment, "pix_qr_code_base64"))
+  );
+};
 
-export async function POST(request: NextRequest) {
-  if (!isAllowedRequestOrigin(request)) return response({ ok: false, message: "Origem não permitida." }, 403);
+async function handlePost(request: NextRequest, requestId: string) {
+  const reportFailure = (code: string, status?: number, error?: unknown) => logFailure(code, status, requestId, error);
   const auth = await createServerSupabaseClient();
-  const authData = auth ? await auth.auth.getUser() : null;
+  if (!auth) {
+    reportFailure("PAYMENT_CONFIGURATION_MISSING");
+    return response({
+      ok: false, code: "PAYMENT_CONFIGURATION_MISSING",
+      message: "O pagamento está temporariamente indisponível."
+    }, 503);
+  }
+  const authData = await auth.auth.getUser();
   const user = authData?.data.user;
-  if (!auth || !user) return response({ ok: false, message: "Entre na sua conta para pagar." }, 401);
-  const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return response({ ok: false, message: "Revise os dados do pagamento." }, 400);
-  const customerDocument = sanitizeCpf(parsed.data.payment.payer.identification.number);
-  if (!isValidCpf(customerDocument)) return response({ ok: false, message: "Revise o CPF informado no pagamento." }, 400);
-
-  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
-  const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
-  if (!isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
-    logFailure("TEST_CREDENTIALS_REQUIRED");
-    return response({ ok: false, message: "O pagamento de teste está indisponível." }, 503);
+  if (authData.error && !isMissingAuthentication(authData.error)) {
+    reportFailure("AUTHENTICATION_UNAVAILABLE", undefined, authData.error);
+    return response({
+      ok: false, code: "AUTHENTICATION_UNAVAILABLE",
+      message: "Não foi possível validar sua sessão agora."
+    }, 503);
   }
-  const db = createServiceSupabaseClient();
-  if (!db) return response({ ok: false, message: "Não foi possível confirmar o pagamento agora." }, 503);
-  const provider = new MercadoPagoTestPaymentProvider(accessToken);
+  if (!user) return response({ ok: false, code: "AUTHENTICATION_REQUIRED", message: "Entre na sua conta para pagar." }, 401);
   try {
-    const availableMethods = await provider.getPaymentMethodIds();
-    if (!availableMethods.includes(parsed.data.payment.payment_method_id)) {
-      return response({ ok: false, message: "O meio de pagamento selecionado não está disponível." }, 400);
-    }
+    await requirePrivateRateLimit(auth, "payment_attempt");
   } catch (error) {
-    const providerStatus = error instanceof MercadoPagoProviderError ? error.httpStatus : undefined;
-    logFailure("PAYMENT_METHOD_VALIDATION_FAILED", providerStatus);
-    return response({ ok: false, message: "Não foi possível validar os meios de pagamento agora." }, 502);
+    const status = error instanceof PrivateRequestError ? error.status : 503;
+    return response({ ok: false, code: status === 429 ? "RATE_LIMITED" : "ABUSE_PROTECTION_UNAVAILABLE",
+      message: status === 429 ? "Muitas tentativas de pagamento. Aguarde antes de tentar novamente."
+        : "O pagamento está temporariamente indisponível." }, status);
+  }
+  let body: unknown;
+  try { body = await readPrivateJson(request, 48 * 1024); }
+  catch (error) {
+    const status = error instanceof PrivateRequestError ? error.status : 400;
+    return response({ ok: false, code: status === 413 ? "REQUEST_TOO_LARGE" : "INVALID_PAYMENT_REQUEST",
+      message: status === 413 ? "Os dados do pagamento excedem o limite permitido." : "Revise os dados do pagamento." }, status);
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const invalidCustomerCpf = parsed.error.issues.some((issue) => issue.path.join(".") === "checkout.customer.cpf");
+    return response({ ok: false, code: invalidCustomerCpf ? "INVALID_CUSTOMER_CPF" : "INVALID_PAYMENT_REQUEST",
+      recovery: invalidCustomerCpf ? "review_checkout" : "new_attempt",
+      message: invalidCustomerCpf ? "Revise o CPF do cliente no checkout." : "Revise os dados do pagamento." }, 400);
   }
 
+  const requestedRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (requestedRecipient && (requestedRecipient.icmsTaxpayer || !requestedRecipient.finalConsumer))
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este checkout atende consumidores finais não contribuintes do ICMS. Esta operação ainda não está disponível." }, 409);
+
+  const credentials = getMercadoPagoCredentials();
+  if (!credentials) {
+    reportFailure("PAYMENT_CREDENTIALS_INVALID");
+    return response({ ok: false, message: "O pagamento está indisponível." }, 503);
+  }
+  const { mode: paymentMode, accessToken } = credentials;
+  const methodValidation = validatePaymentMethod(parsed.data.payment);
+  if (methodValidation) return response({ ok: false, ...methodValidation, recovery: "new_attempt" }, 400);
+  // This mode is established by server configuration, never by the submitted payload.
+  const savedPayer = parsed.data.payment.payer.type === "customer";
+  const suppliedDocument = parsed.data.payment.payer.identification?.number?.trim() ?? "";
+  let customerDocument = readMercadoPagoPayerDocument(suppliedDocument, paymentMode) ?? "";
+  if (suppliedDocument && !customerDocument) return response({ ok: false, code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
+    message: "Revise o CPF informado no pagamento." }, 400);
+  const db = createServiceSupabaseClient();
+  if (!db) {
+    reportFailure("PAYMENT_SERVER_CONFIGURATION_MISSING");
+    return response({
+      ok: false, code: "PAYMENT_SERVER_CONFIGURATION_MISSING",
+      message: "Não foi possível confirmar o pagamento agora."
+    }, 503);
+  }
+  const provider = new MercadoPagoPaymentProvider(accessToken, paymentMode);
+  let providerCustomerId: string | undefined;
+  if (savedPayer) {
+    try {
+      providerCustomerId = await validateSavedCardCustomer(db, user, parsed.data.payment.payer.id ?? "");
+    } catch (error) {
+      return response({ ok: false, code: "SAVED_CARD_UNAVAILABLE", recovery: "new_attempt",
+        message: "Este cartão não está disponível. Selecione outro cartão ou meio de pagamento." }, error instanceof SavedCardsError ? error.status : 503);
+    }
+  } else if (parsed.data.payment.payer.id) return response({ ok: false, code: "INVALID_PAYMENT_REQUEST", recovery: "new_attempt",
+    message: "Revise os dados do pagamento." }, 400);
   let orderId = parsed.data.orderId ?? "";
   if (!orderId && parsed.data.checkout) {
     const checkout = parsed.data.checkout;
+    const shippingConfig = getIntegrationConfig().shipping;
+    if (shippingConfig.provider === "melhorenvio" && !checkout.shippingQuoteId) {
+      return response({ ok: false, code: "SHIPPING_QUOTE_REQUIRED", recovery: "review_checkout",
+        message: "Calcule e selecione uma opção de frete antes de pagar." }, 409);
+    }
     let cpfCiphertext = "";
     let cpfLastFour = "";
     try {
       if (checkout.customer.cpf) {
         cpfCiphertext = encryptPII(checkout.customer.cpf);
         cpfLastFour = checkout.customer.cpf.slice(-4);
-      } else {
-        const profile = readQueryResult(await auth.from("profiles").select("cpf_last_four")
-          .eq("id", user.id).maybeSingle());
-        if (isUnknownRecord(profile.data)) cpfLastFour = readString(profile.data, "cpf_last_four");
-        const previous = readQueryResult(await auth.from("orders").select("cpf_ciphertext,cpf_last_four")
-          .eq("customer_id", user.id).not("cpf_ciphertext", "is", null)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle());
-        if (isUnknownRecord(previous.data)) {
-          cpfCiphertext = readString(previous.data, "cpf_ciphertext");
-          cpfLastFour ||= readString(previous.data, "cpf_last_four");
-        }
       }
-      if (!cpfLastFour || !customerDocument.endsWith(cpfLastFour)) throw new Error("cpf_mismatch");
+      // An empty customer CPF lets the RPC reuse the private, previously validated identity.
     } catch {
-      return response({ ok: false, message: "Revise o CPF informado no pagamento." }, 400);
+      return response({ ok: false, code: "CUSTOMER_IDENTITY_UNAVAILABLE", recovery: "retry_attempt",
+        message: "Não foi possível proteger a identificação do cliente agora." }, 503);
     }
-    const creation = readQueryResult(await db.rpc("confirm_professional_checkout_order", {
-      p_idempotency_key: parsed.data.idempotencyKey,
+    const commonCheckoutArgs = {
+      p_idempotency_key: parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey,
       p_customer_id: user.id,
       p_payment_method_id: parsed.data.payment.payment_method_id,
       p_customer_name: checkout.customer.name, p_customer_email: checkout.customer.email,
@@ -107,41 +246,103 @@ export async function POST(request: NextRequest) {
       p_lines: checkout.lines.map((line) => ({ product_id: line.productId, variant_id: line.variantId, quantity: line.quantity })),
       p_coupon_code: normalizeOptionalCouponCode(checkout.couponCode) ?? null,
       p_reservation_minutes: Number(process.env.INVENTORY_RESERVATION_MINUTES) || 30
-    }));
+    };
+    let creation: { data: unknown; error: unknown };
+    if (shippingConfig.provider === "melhorenvio" && checkout.shippingQuoteId) {
+      const resolved = await resolveShippingProducts(checkout.lines);
+      creation = readQueryResult(await db.rpc(paymentMode === "production" ? "confirm_shipping_production_checkout_order" : "confirm_shipping_checkout_order", {
+        ...commonCheckoutArgs, p_shipping_quote_id: checkout.shippingQuoteId,
+        p_cart_fingerprint: resolved.fingerprint
+      }));
+    } else {
+      creation = readQueryResult(await db.rpc(paymentMode === "production" ? "confirm_professional_production_checkout_order" : "confirm_professional_checkout_order", commonCheckoutArgs));
+    }
     const created = isUnknownRecord(creation.data) ? creation.data : null;
     orderId = created ? readString(created, "orderId") : "";
     if (creation.error || !orderId) {
-      const message = isUnknownRecord(creation.error) ? readString(creation.error, "message") : "";
-      const invalidCoupon = message.includes("coupon");
-      return response({
-        ok: false, code: invalidCoupon ? "INVALID_COUPON" : "CHECKOUT_CHANGED",
-        message: invalidCoupon ? "Este cupom não é válido." : "Preço, estoque ou frete mudaram. Revise o checkout."
-      }, 409);
+      if (!isCheckoutBusinessError(creation.error)) {
+        reportFailure("CHECKOUT_ORDER_CREATION_UNAVAILABLE", undefined, creation.error);
+        return response({ ok: false, code: "CHECKOUT_SERVICE_UNAVAILABLE", message: "O checkout está temporariamente indisponível." }, 503);
+      }
+      const conflict = checkoutConflict(creation.error);
+      if (conflict.code === "CHECKOUT_IDEMPOTENCY_CONFLICT") {
+        const keyResult = readQueryResult(await db.from("idempotency_keys").select("resource_id")
+          .eq("scope", `mercadopago.checkout.${paymentMode}`).eq("key", parsed.data.checkoutIdempotencyKey ?? parsed.data.idempotencyKey).maybeSingle());
+        if (isUnknownRecord(keyResult.data)) {
+          const existing = readQueryResult(await db.from("orders").select("id,public_code")
+            .eq("id", readString(keyResult.data, "resource_id")).eq("customer_id", user.id).maybeSingle());
+          if (isUnknownRecord(existing.data)) return response({ ok: false, ...conflict,
+            orderId: readString(existing.data, "id"), orderCode: readString(existing.data, "public_code") }, 409);
+        }
+      }
+      return response({ ok: false, ...conflict }, 409);
     }
   }
 
-  const orderResult = readQueryResult(await db.from("orders")
-    .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency")
-    .eq("id", orderId).eq("customer_id", user.id).maybeSingle());
-  if (orderResult.error || !isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
-  const order = orderResult.data;
-  const orderCode = readString(order, "public_code");
-  if (!orderCode || readString(order, "status") !== "pending_payment") {
-    return response({ ok: false, message: "Este pedido não aceita um novo pagamento." }, 409);
+  const fiscalRecipient = parsed.data.checkout?.fiscalRecipient;
+  if (fiscalRecipient) {
+    const recipient = readQueryResult(await db.rpc("set_bling_checkout_recipient", { p_order_id: orderId,
+      p_user_id: user.id, p_icms_taxpayer: fiscalRecipient.icmsTaxpayer, p_final_consumer: fiscalRecipient.finalConsumer }));
+    if (recipient.error || recipient.data !== true) return response({ ok: false, code: "FISCAL_RECIPIENT_CONFLICT",
+      recovery: "review_checkout", message: "Não foi possível confirmar os dados fiscais deste pedido. Revise o checkout." }, 409);
   }
-  const orderCpfLastFour = readString(order, "cpf_last_four");
-  if (orderCpfLastFour && !customerDocument.endsWith(orderCpfLastFour)) return response({ ok: false, message: "Revise o CPF informado no pagamento." }, 400);
+  const orderResult = readQueryResult(await db.from("orders")
+    .select("id,public_code,customer_id,customer_email_snapshot,customer_name_snapshot,cpf_last_four,status,grand_total,currency,commercial_rules_snapshot")
+    .eq("id", orderId).eq("customer_id", user.id).maybeSingle());
+  if (orderResult.error) {
+    reportFailure("ORDER_QUERY_FAILED", undefined, orderResult.error);
+    return response({ ok: false, code: "ORDER_QUERY_FAILED", message: "Não foi possível consultar o pedido agora." }, 503);
+  }
+  if (!isUnknownRecord(orderResult.data)) return response({ ok: false, message: "Pedido não encontrado." }, 404);
+  const order = orderResult.data;
+  // Re-read the persisted declaration: omitting or changing the request cannot bypass it.
+  let persistedRecipient: Record<string, unknown>;
+  try { persistedRecipient = await readBlingFiscalRecipient(db, orderId); }
+  catch { return response({ ok: false, code: "FISCAL_RECIPIENT_UNAVAILABLE", recovery: "retry_attempt",
+    message: "Não foi possível conferir os dados fiscais do pedido agora." }, 503); }
+  if (persistedRecipient.icms_taxpayer === true || persistedRecipient.final_consumer === false)
+    return response({ ok: false, code: "FISCAL_SCENARIO_NOT_HOMOLOGATED", recovery: "review_checkout",
+      message: "Este pedido depende de uma operação fiscal ainda não disponível." }, 409);
+  if (!isUnknownRecord(order.commercial_rules_snapshot) || order.commercial_rules_snapshot.paymentMode !== paymentMode) {
+    return response({ ok: false, code: "ORDER_PAYMENT_MODE_MISMATCH", recovery: "view_order",
+      message: "Este pedido precisa ser verificado antes de receber um pagamento." }, 409);
+  }
+  const orderCode = readString(order, "public_code");
+  const orderContext = { orderId, orderCode };
+  const orderFailure = (body: Record<string, unknown>, status: number) => response({ ok: false, ...orderContext, ...body }, status);
+  if (!providerCustomerId || suppliedDocument) {
+    try {
+      customerDocument = await resolveCheckoutPayerDocument(db, user.id, suppliedDocument, paymentMode);
+    } catch (error) {
+      const code = error instanceof CheckoutIdentityError ? error.code : "CUSTOMER_IDENTITY_UNAVAILABLE";
+      return orderFailure({ code, recovery: code === "CUSTOMER_IDENTITY_REQUIRED" ? "review_checkout" : "retry_attempt",
+        message: code === "CUSTOMER_IDENTITY_REQUIRED" ? "Informe e salve o CPF do cliente no checkout."
+          : "Não foi possível validar a identificação do cliente agora." },
+      error instanceof CheckoutIdentityError ? error.status : 503);
+    }
+  }
+  if (!providerCustomerId && !readMercadoPagoPayerDocument(customerDocument, paymentMode, readString(order, "cpf_last_four"))) {
+    return orderFailure({ code: "INVALID_PAYER_DOCUMENT", recovery: "new_attempt",
+      message: "Revise o CPF informado no pagamento." }, 400);
+  }
 
   const paymentResult = readQueryResult(await db.from("payments")
-    .select("id,status,provider_payment_id,amount,currency").eq("order_id", orderId).eq("provider", "mercadopago").maybeSingle());
+    .select("id,status,status_detail,expires_at,provider_payment_id,payment_method_summary,pix_copy_paste,pix_qr_code_base64,amount,currency")
+    .eq("order_id", orderId).eq("provider", "mercadopago").maybeSingle());
   if (paymentResult.error || !isUnknownRecord(paymentResult.data)) return response({ ok: false, message: "Não foi possível localizar o pagamento." }, 503);
   const localPayment = paymentResult.data;
   const paymentId = readString(localPayment, "id");
   const existingStatus = normalizeMercadoPagoStatus(readString(localPayment, "status"));
   const existingProviderPaymentId = readString(localPayment, "provider_payment_id");
+  let recoverablePendingPix = isPersistedPendingPix(localPayment);
+  const recoverPendingPix = () => response({ ok: true, status: "pending", recovery: "view_order", ...orderContext }, 200);
   if (!paymentId) return response({ ok: false, message: "Não foi possível localizar o pagamento." }, 503);
   if (["approved", "cancelled", "refunded", "charged_back"].includes(existingStatus)) {
     return response({ ok: true, status: publicPaymentState(existingStatus), orderCode, orderId }, 200);
+  }
+  if (!orderCode || readString(order, "status") !== "pending_payment") {
+    return orderFailure({ code: "ORDER_NOT_PAYABLE", recovery: "view_order",
+      message: "Este pedido não aceita um novo pagamento. Acompanhe seu status." }, 409);
   }
 
   const amountInCents = Math.round(readNumber(order, "grand_total") * 100);
@@ -150,46 +351,108 @@ export async function POST(request: NextRequest) {
   }
 
   const method = parsed.data.payment.payment_method_id;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({
+    orderId, amountInCents, currency: "BRL", payment: { ...parsed.data.payment,
+      payer: { ...parsed.data.payment.payer, identification: { type: "CPF", number: customerDocument } } }
+  })));
+  const requestFingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (providerCustomerId) {
+    const findAttempt = async () => readQueryResult(await db.from("payment_attempts").select("id,request_fingerprint")
+      .eq("provider", "mercadopago").eq("order_id", orderId).eq("idempotency_key", parsed.data.idempotencyKey).maybeSingle());
+    const previousAttempt = await findAttempt();
+    if (previousAttempt.error) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
+      message: "Verifique o resultado da mesma tentativa." }, 503);
+    // A saved-card attempt is registered only after ownership/token validation. Its immutable
+    // fingerprint then permits exact HTTP replay, including a lost provider response.
+    if (!isUnknownRecord(previousAttempt.data) || !readString(previousAttempt.data, "request_fingerprint")) {
+      try { await validateSavedCardPayer(db, user, providerCustomerId, parsed.data.payment.token ?? ""); }
+      catch {
+        const concurrentAttempt = await findAttempt();
+        if (concurrentAttempt.error || isUnknownRecord(concurrentAttempt.data)) return orderFailure({ code: "PAYMENT_RESULT_UNCERTAIN",
+          recovery: "retry_attempt", message: "Verifique o resultado da mesma tentativa." }, 502);
+        return orderFailure({ code: "SAVED_CARD_UNAVAILABLE", recovery: "new_attempt",
+          message: "Este cartão não está disponível. Selecione outro cartão ou meio de pagamento." }, 503);
+      }
+    }
+  }
   const attemptResult = readQueryResult(await db.rpc("begin_mercadopago_payment_attempt", {
-    p_order_id: orderId, p_idempotency_key: parsed.data.idempotencyKey, p_payment_method: method
+    p_order_id: orderId, p_idempotency_key: parsed.data.idempotencyKey, p_payment_method: method,
+    p_request_fingerprint: requestFingerprint
   }));
   if (attemptResult.error || !isUnknownRecord(attemptResult.data)) {
-    logFailure("PAYMENT_ATTEMPT_PERSISTENCE_FAILED");
-    return response({ ok: false, message: "Não foi possível registrar a tentativa de pagamento." }, 503);
+    const reason = safeDatabaseError(attemptResult.error).message;
+    if (["payment_in_progress", "idempotency_conflict", "payment_not_eligible"].includes(reason)) {
+      if (recoverablePendingPix) return recoverPendingPix();
+      return orderFailure({ code: reason === "payment_in_progress" ? "PAYMENT_IN_PROGRESS"
+        : reason === "idempotency_conflict" ? "PAYMENT_ATTEMPT_CONFLICT" : "ORDER_NOT_PAYABLE",
+      recovery: reason === "payment_in_progress" ? "retry_attempt" : "view_order",
+      message: reason === "payment_in_progress"
+        ? "Já existe uma tentativa em processamento. Verifique o mesmo pagamento antes de tentar outro."
+        : reason === "idempotency_conflict"
+          ? "Esta tentativa já está vinculada a outros dados. Acompanhe o pedido antes de pagar novamente."
+          : "Este pedido não aceita um novo pagamento. Acompanhe seu status." }, 409);
+    }
+    reportFailure("PAYMENT_ATTEMPT_PERSISTENCE_FAILED", undefined, attemptResult.error);
+    return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
+      message: "Não foi possível registrar a tentativa de pagamento." }, 503);
   }
   const attemptId = readString(attemptResult.data, "id");
   const attemptProviderId = readString(attemptResult.data, "providerPaymentId");
+  if (!attemptId) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
+    message: "Não foi possível registrar a tentativa de pagamento." }, 503);
+  if (readString(attemptResult.data, "status") === "rejected") {
+    return response({ ok: true, status: "rejected", recovery: "new_attempt", ...orderContext,
+      message: "Pagamento recusado. Revise os dados e tente novamente." }, 200);
+  }
 
+  const providerId = attemptProviderId || existingProviderPaymentId;
+  let knownProviderId = providerId;
   try {
-    const providerId = attemptProviderId || (existingStatus !== "rejected" ? existingProviderPaymentId : "");
     const created = providerId ? await provider.getPayment(providerId) : await provider.createPayment({
       orderId, orderCode, amountInCents, currency: "BRL", idempotencyKey: parsed.data.idempotencyKey,
       customerEmail: readString(order, "customer_email_snapshot"), customerName: readString(order, "customer_name_snapshot"),
       customerDocument, entityType: parsed.data.payment.payer.entity_type, paymentMethodId: method,
+      ...(providerCustomerId ? { providerCustomerId } : {}),
       ...(parsed.data.payment.token ? { token: parsed.data.payment.token } : {}),
-      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: String(parsed.data.payment.issuer_id) } : {}),
+      ...(parsed.data.payment.issuer_id !== undefined ? { issuerId: parsed.data.payment.issuer_id } : {}),
       installments: parsed.data.payment.installments
     });
     if (created.amountInCents !== amountInCents || created.currency !== "BRL" || created.externalReference !== orderCode) {
-      return response({ ok: false, message: "O pagamento precisa de verificação." }, 409);
+      return orderFailure({ code: "PAYMENT_PROVIDER_MISMATCH", recovery: "view_order",
+        message: "Os dados retornados pelo pagamento não correspondem ao pedido. O pagamento precisa de verificação." }, 409);
     }
+    knownProviderId = created.id;
     const normalizedStatus = normalizeMercadoPagoStatus(created.status);
+    recoverablePendingPix = recoverablePendingPix && created.status === "pending"
+      && (!created.expiresAt || Date.parse(created.expiresAt) > Date.now());
     const statusDetail = created.status === "expired" ? "expired" : created.statusDetail;
     const methodSummary = [created.paymentTypeId, created.paymentMethodId || method].filter(Boolean).join(":");
+    const pixCopyPaste = created.pixCopyPaste || (created.id === existingProviderPaymentId ? readString(localPayment, "pix_copy_paste") : "");
+    const pixQrCodeBase64 = created.pixQrCodeBase64 || (created.id === existingProviderPaymentId ? readString(localPayment, "pix_qr_code_base64") : "");
+    const expiresAt = created.expiresAt || readString(localPayment, "expires_at") || null;
     const persistence = readQueryResult(await db.from("payments").update({
       provider_payment_id: created.id, payment_method_summary: methodSummary, status_detail: statusDetail || null,
-      expires_at: created.expiresAt, pix_copy_paste: created.pixCopyPaste || null,
-      pix_qr_code_base64: created.pixQrCodeBase64 || null, boleto_url: created.boletoUrl || null,
+      expires_at: expiresAt, pix_copy_paste: pixCopyPaste || null,
+      pix_qr_code_base64: pixQrCodeBase64 || null, boleto_url: created.boletoUrl || null,
       digitable_line: created.digitableLine || null, updated_at: new Date().toISOString()
     }).eq("id", paymentId));
     const attemptPersistence = readQueryResult(await db.from("payment_attempts").update({
-      provider_payment_id: created.id, payment_method: methodSummary || method, status: normalizedStatus,
+      provider_payment_id: created.id,
       status_detail: statusDetail || null, updated_at: new Date().toISOString()
     }).eq("id", attemptId));
-    if (persistence.error || attemptPersistence.error) return response({ ok: false, message: "Não foi possível salvar o pagamento agora." }, 503);
+    recoverablePendingPix = recoverablePendingPix || (!persistence.error && isPersistedPendingPix({
+      provider_payment_id: created.id, status: created.status, status_detail: statusDetail,
+      payment_method_summary: methodSummary, expires_at: expiresAt,
+      pix_copy_paste: pixCopyPaste, pix_qr_code_base64: pixQrCodeBase64
+    }));
+    if (persistence.error || attemptPersistence.error) {
+      if (recoverablePendingPix) return recoverPendingPix();
+      return orderFailure({ code: "PAYMENT_SAVE_UNAVAILABLE", recovery: "retry_attempt",
+        message: "Não foi possível salvar o pagamento agora. Verifique a mesma tentativa." }, 503);
+    }
 
     const finalizeResult = readQueryResult(await db.rpc("finalize_mercadopago_payment", {
-      p_provider_event_id: `test-check-${created.id}-${created.status}`, p_provider_payment_id: created.id,
+      p_provider_event_id: `${paymentMode}-check-${created.id}-${created.status}`, p_provider_payment_id: created.id,
       p_external_reference: created.externalReference, p_amount: created.amountInCents / 100,
       p_currency: created.currency, p_status: normalizedStatus, p_paid_at: created.dateApproved,
       p_provider_fee: created.providerFeeInCents === null ? null : created.providerFeeInCents / 100,
@@ -198,16 +461,62 @@ export async function POST(request: NextRequest) {
       p_installments: created.installments,
       p_status_detail: statusDetail || null
     }) as unknown);
-    if (finalizeResult.error || finalizeResult.data === "manual_review") return response({ ok: false, message: "O pagamento precisa de verificação." }, 503);
-    return response({ ok: true, status: publicPaymentState(normalizedStatus), orderCode, orderId, providerPaymentId: created.id }, 200);
+    if (finalizeResult.error || finalizeResult.data === "manual_review") {
+      if (finalizeResult.data !== "manual_review" && recoverablePendingPix) return recoverPendingPix();
+      return orderFailure({ code: "PAYMENT_VERIFICATION_REQUIRED",
+        recovery: "view_order", message: "O pagamento precisa de verificação." }, 503);
+    }
+    return response({ ok: true, status: publicPaymentState(normalizedStatus), orderCode, orderId, providerPaymentId: created.id,
+      ...(normalizedStatus === "rejected" ? { recovery: "new_attempt", message: "Pagamento recusado. Revise os dados e tente novamente." } : {}) }, 200);
   } catch (error) {
     const providerStatus = error instanceof MercadoPagoProviderError ? error.httpStatus : undefined;
-    await db.from("payment_attempts").update({
-      status: "rejected", status_detail: "provider_request_failed", updated_at: new Date().toISOString()
-    }).eq("id", attemptId);
-    logFailure("PROVIDER_REQUEST_FAILED", providerStatus);
-    return response({ ok: false, orderId, orderCode, message: providerStatus && providerStatus < 500
-      ? "Pagamento recusado. Revise os dados e tente novamente." : "Não foi possível processar o pagamento agora." },
-    providerStatus && providerStatus < 500 ? 422 : 502);
+    if (recoverablePendingPix) {
+      reportFailure("PROVIDER_RECONCILIATION_DEFERRED", providerStatus);
+      return recoverPendingPix();
+    }
+    if (knownProviderId) return orderFailure({ code: "PAYMENT_VERIFICATION_REQUIRED", recovery: "view_order",
+      message: "O pagamento já foi registrado. Acompanhe seu status no pedido." }, 503);
+    const definitelyRejected = providerStatus === 400 || providerStatus === 422;
+    if (definitelyRejected) {
+      const rejection = readQueryResult(await db.from("payment_attempts").update({
+        status: "rejected", status_detail: "provider_request_rejected", updated_at: new Date().toISOString()
+      }).eq("id", attemptId).eq("status", "pending").is("provider_payment_id", null));
+      if (rejection.error) return orderFailure({ code: "PAYMENT_ATTEMPT_UNAVAILABLE", recovery: "retry_attempt",
+        message: "Não foi possível confirmar a recusa. Verifique a mesma tentativa." }, 503);
+    }
+    reportFailure("PROVIDER_REQUEST_FAILED", providerStatus, error);
+    return orderFailure({ code: definitelyRejected ? "PROVIDER_PAYMENT_REJECTED" : "PAYMENT_RESULT_UNCERTAIN",
+      recovery: definitelyRejected ? "new_attempt" : "retry_attempt", message: definitelyRejected
+        ? "Pagamento recusado. Revise os dados e tente novamente."
+        : "O resultado da tentativa ainda não foi confirmado. Tente novamente para verificar o mesmo pagamento." },
+    definitelyRejected ? 422 : 502);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID();
+  try {
+    if (!isAllowedRequestOrigin(request)) {
+      return NextResponse.json({ ok: false, code: "ORIGIN_NOT_ALLOWED", message: "Origem não permitida." },
+        { status: 403, headers: { ...noStore, "x-request-id": requestId } });
+    }
+    if (!getIntegrationConfig().checkoutEnabled) {
+      logFailure("CHECKOUT_DISABLED", undefined, requestId);
+      return NextResponse.json({
+        ok: false,
+        code: "CHECKOUT_DISABLED",
+        message: "Novos pagamentos estão temporariamente indisponíveis."
+      }, { status: 503, headers: { ...noStore, "x-request-id": requestId } });
+    }
+    const result = await handlePost(request, requestId);
+    result.headers.set("x-request-id", requestId);
+    return result;
+  } catch {
+    logFailure("PAYMENT_RUNTIME_FAILURE", undefined, requestId);
+    return NextResponse.json({
+      ok: false,
+      code: "PAYMENT_SERVICE_UNAVAILABLE",
+      message: "Não foi possível processar o pagamento agora."
+    }, { status: 503, headers: { ...noStore, "x-request-id": requestId } });
   }
 }

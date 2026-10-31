@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const result = await auth.supabase.rpc("manager_strategic_metrics", {
     p_date_from: parsed.data.from,

@@ -1,3 +1,4 @@
+import { logServerEvent } from "@curtiz/security";
 import { NextResponse } from "next/server";
 import { isGoogleMerchantEnabled } from "@curtiz/config";
 import { buildGoogleMerchantFeed } from "@/lib/google-merchant";
@@ -23,7 +24,7 @@ export async function GET() {
   const requestId = crypto.randomUUID();
   const supabase = createPublicSupabaseClient();
   if (!supabase) {
-    console.error("[google-merchant-feed] unavailable", { requestId, code: "missing_public_client" });
+    logServerEvent("error", "google_merchant_feed_unavailable", { requestId, code: "missing_public_client" });
     return new NextResponse("Feed temporariamente indisponível.", {
       status: 503,
       headers: { "cache-control": "private, no-store", "x-request-id": requestId }
@@ -32,7 +33,7 @@ export async function GET() {
 
   const response = await supabase.rpc("get_google_merchant_feed");
   if (response.error) {
-    console.error("[google-merchant-feed] query failed", {
+    logServerEvent("error", "google_merchant_feed_query_failed", {
       requestId,
       code: response.error.code ?? "unknown"
     });
@@ -43,7 +44,7 @@ export async function GET() {
   }
 
   const result = buildGoogleMerchantFeed(response.data);
-  console.info("[google-merchant-feed] generated", {
+  logServerEvent("info", "google_merchant_feed_generated", {
     requestId,
     eligible: result.eligible,
     rejected: result.rejected,

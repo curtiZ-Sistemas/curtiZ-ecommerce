@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@curtiz/security";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -190,7 +191,7 @@ export async function GET(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
   const fallback = defaultPeriod();
   const period = z.object({ from: dateValue, to: dateValue }).safeParse({
@@ -246,14 +247,10 @@ export async function POST(request: NextRequest) {
   }
 
   const auth = await authorizeManagerRequest(request);
-  if (!auth) return unauthorizedManagerResponse();
+  if (!auth) return unauthorizedManagerResponse(request);
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    body = null;
-  }
+  const body = await readJsonResponse(request, 32_768);
+  if (body instanceof Response) return body;
   const envelope = z.object({ action: z.string(), payload: z.unknown() }).safeParse(body);
   if (!envelope.success || !isFinancialAction(envelope.data.action)) {
     return NextResponse.json(

@@ -1,24 +1,23 @@
 import { CatalogPage } from "@/components/catalog-page";
 import { CatalogSeo } from "@/components/catalog-seo";
 import { catalogMetadata } from "@/lib/catalog-metadata";
+import { hasPublicCatalogItems } from "@/lib/seo-data";
 
-const description =
-  "Veja chinelos e sandálias infantis curti Z com conforto e praticidade para acompanhar cada descoberta.";
-export const metadata = catalogMetadata({
-  title: "Chinelos e sandálias infantis",
-  description,
-  path: "/infantil"
-});
+const description = "Consulte a disponibilidade da seleção infantil no catálogo curti Z.";
+export async function generateMetadata() {
+  return catalogMetadata({
+    title: "Infantil",
+    description,
+    path: "/infantil",
+    indexable: await hasPublicCatalogItems("Infantil")
+  });
+}
 
 export default function Page() {
   return (
     <>
       <CatalogSeo name="Infantil" path="/infantil" />
-      <CatalogPage
-        title="Chinelos e sandálias infantis"
-        description={description}
-        category="Infantil"
-      />
+      <CatalogPage title="Infantil" description={description} category="Infantil" />
     </>
   );
 }

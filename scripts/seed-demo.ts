@@ -95,7 +95,7 @@ async function main() {
   readLocalEnvironment();
   const localStatus = readSupabaseStatus();
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? localStatus.API_URL ?? "http://127.0.0.1:54321";
+    process.env.SUPABASE_URL ?? localStatus.API_URL ?? "http://127.0.0.1:54321";
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_SECRET_KEY ??

@@ -56,6 +56,7 @@ const demoAccounts: readonly DemoAccount[] = [
 ];
 
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+const demoModeEnabled = () => process.env.DEMO_MODE === "true" && process.env.APP_ENV !== "production";
 
 const configuredStagingHosts = (): Set<string> => {
   const configured = [
@@ -94,8 +95,7 @@ const signatureFor = (payload: string, secret: string): string =>
   createHmac("sha256", secret).update(payload).digest("base64url");
 
 export const isLocalDemoRequest = (request: Request): boolean => {
-  const explicitDemo = process.env.DEMO_MODE === "true";
-  if (!explicitDemo) return false;
+  if (!demoModeEnabled()) return false;
 
   try {
     const url = new URL(request.url);
@@ -111,6 +111,7 @@ export const isLocalDemoRequest = (request: Request): boolean => {
 };
 
 export const authenticateDemoAccount = (email: string, password: string): DemoAccount | null => {
+  if (!demoModeEnabled()) return null;
   const configuredPassword = process.env.DEMO_USERS_PASSWORD;
   if (!configuredPassword || !safeEqual(password, configuredPassword)) return null;
 
@@ -122,6 +123,7 @@ export const createDemoSession = (
   remember: boolean,
   now = Date.now()
 ): { value: string; maxAge?: number } | null => {
+  if (!demoModeEnabled()) return null;
   const secret = sessionSecret();
   if (!secret) return null;
 
@@ -139,6 +141,7 @@ export const verifyDemoSession = (
   value: string | null | undefined,
   now = Date.now()
 ): DemoSession | null => {
+  if (!demoModeEnabled()) return null;
   const secret = sessionSecret();
   if (!value || !secret) return null;
 

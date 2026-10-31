@@ -17,6 +17,7 @@ import {
   X
 } from "lucide-react";
 import { BannerManager } from "./banner-manager";
+import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -275,7 +276,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [loadError, setLoadError] = useState("");
   const [capabilities, setCapabilities] = useState<ResourceCapabilities>(noCapabilities);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
@@ -371,7 +372,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     if (pending || !editing) return;
 
     setPending(true);
-    setMessage("");
+    setMessage(null);
     setDeleteError("");
     setFieldErrors({});
 
@@ -387,7 +388,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         values.slug = categorySlug || resourceSlug(categoryName);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Revise os valores informados.");
+      setMessage({ kind: "error", text: error instanceof Error ? error.message : "Revise os valores informados." });
       setPending(false);
       return;
     }
@@ -426,11 +427,11 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
       setEditing(null);
       await load();
-      setMessage(successMessage);
+      setMessage({ kind: "success", text: successMessage });
     } catch (error) {
-      setMessage(
+      setMessage({ kind: "error", text:
         error instanceof Error && error.message ? error.message : "Não foi possível salvar."
-      );
+      });
     } finally {
       setPending(false);
     }
@@ -473,7 +474,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     if (resource === "avaliacoes" && stateTarget.action === "archive" && !moderationReason) return;
 
     setPending(true);
-    setMessage("");
+    setMessage(null);
 
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
@@ -496,13 +497,13 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       const successMessage = result.message ?? "Registros atualizados.";
       setStateTarget(null);
       await load();
-      setMessage(successMessage);
+      setMessage({ kind: "success", text: successMessage });
     } catch (error) {
-      setMessage(
+      setMessage({ kind: "error", text:
         error instanceof Error && error.message
           ? error.message
           : "Não foi possível atualizar os registros."
-      );
+      });
     } finally {
       setPending(false);
     }
@@ -513,7 +514,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     const dependencyMessage = categoryDeletionMessage(Number(deleteTarget.product_count) || 0, Number(deleteTarget.subcategory_count) || 0);
     if (dependencyMessage) { setDeleteError(dependencyMessage); return; }
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
         method: "DELETE",
@@ -524,7 +525,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       if (!response.ok) throw new Error(result.message || "Não foi possível excluir a categoria.");
       setDeleteTarget(null);
       await load();
-      setMessage(result.message ?? "Categoria excluída.");
+      setMessage({ kind: "success", text: result.message ?? "Categoria excluída." });
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Não foi possível excluir a categoria.");
     } finally {
@@ -544,6 +545,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
   return (
     <section className="panel-card admin-resource">
+      {resource === "pedidos" ? <BlingOperational /> : null}
       <header className="admin-resource-header">
         <div>
           <h1>{definition.label}</h1>
@@ -659,8 +661,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       ) : null}
 
       {message ? (
-        <p className="admin-feedback" role="status">
-          {message}
+        <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>
+          {message.text}
         </p>
       ) : null}
 

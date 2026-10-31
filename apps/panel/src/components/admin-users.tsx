@@ -33,7 +33,7 @@ export function AdminUsers() {
   const [reviewing, setReviewing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [loadError, setLoadError] = useState("");
   const [capabilities, setCapabilities] = useState<Capabilities>(defaultCapabilities);
 
@@ -58,7 +58,7 @@ export function AdminUsers() {
   const openEditor = (user: User) => {
     setEditing(user);
     setDraft({ status: user.status, roles: editableRoles.filter((role) => user.roles.includes(role)), reason: "" });
-    setReviewing(false); setMessage("");
+    setReviewing(false); setMessage(null);
   };
   const closeEditor = () => { setEditing(null); setDraft(null); setReviewing(false); };
 
@@ -66,22 +66,22 @@ export function AdminUsers() {
     event.preventDefault();
     if (!editing || !draft || pending) return;
     if (draft.status === "active" && draft.roles.length === 0 && !editing.roles.some((role) => ["manager", "representative"].includes(role))) {
-      setMessage("Mantenha pelo menos um acesso ou desative a conta de forma explícita."); return;
+      setMessage({ kind: "error", text: "Mantenha pelo menos um acesso ou desative a conta de forma explícita." }); return;
     }
-    if (draft.reason.trim().length < 10) { setMessage("Explique a alteração em pelo menos 10 caracteres."); return; }
+    if (draft.reason.trim().length < 10) { setMessage({ kind: "error", text: "Explique a alteração em pelo menos 10 caracteres." }); return; }
     setReviewing(true);
   };
 
   const save = async () => {
     if (!editing || !draft || pending) return;
-    setPending(true); setMessage("");
+    setPending(true); setMessage(null);
     try {
       const response = await fetch("/api/admin/users", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: editing.id, status: draft.status, roles: draft.roles, updatedAt: editing.updated_at, reason: draft.reason }) });
       const result = (await response.json()) as UsersResponse;
       if (!response.ok) throw new Error(result.message);
-      closeEditor(); await load(); setMessage(result.message ?? "Acessos atualizados e auditados.");
+      closeEditor(); await load(); setMessage({ kind: "success", text: result.message ?? "Acessos atualizados e auditados." });
     } catch (error) {
-      setReviewing(false); setMessage(error instanceof Error && error.message ? error.message : "Não foi possível atualizar os acessos.");
+      setReviewing(false); setMessage({ kind: "error", text: error instanceof Error && error.message ? error.message : "Não foi possível atualizar os acessos." });
     } finally { setPending(false); }
   };
 
@@ -102,7 +102,7 @@ export function AdminUsers() {
         <button className="secondary-button" type="submit">Buscar</button>
         {query || submitted ? <button className="secondary-button filter-clear-button" type="button" onClick={() => { setQuery(""); setSubmitted(""); setPage(1); }}><X aria-hidden="true" /> Limpar</button> : null}
       </form>
-      {message ? <p className="admin-feedback" role="status">{message}</p> : null}
+      {message ? <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p> : null}
       {loading ? <div className="admin-loading"><LoaderCircle className="spin" /> Carregando usuários</div> : loadError ? (
         <div className="admin-empty-state" role="alert"><h3>Não foi possível carregar os usuários</h3><p>{loadError}</p><button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button></div>
       ) : users.length === 0 ? <div className="admin-empty-state"><h3>Nenhum usuário encontrado</h3><p>Ajuste o nome ou e-mail informado.</p></div> : (

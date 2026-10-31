@@ -7,8 +7,8 @@ import {
   type SupportStatus,
   type SupportTeamMember
 } from "@curtiz/domain";
-import { configuredPublicOrigins } from "@curtiz/config";
-import { DEMO_SESSION_COOKIE, sanitizePlainText, verifyDemoSession } from "@curtiz/security";
+import { createHash } from "node:crypto";
+import { sanitizePlainText } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -23,8 +23,10 @@ import {
   setDemoSupportStatus,
   transferDemoSupport
 } from "@/lib/demo-support-store";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readQueryResult, readRows, readString } from "@/lib/unknown-data";
+import { getSupportActor, type SupportActor } from "@/lib/support-actor";
+import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
+import { PrivateRequestError, readPrivateJson } from "@/lib/private-request";
+import { readRows, readString } from "@/lib/unknown-data";
 
 const createSchema = z.object({
   action: z.literal("create"),
@@ -93,17 +95,6 @@ const updateSchema = z.discriminatedUnion("action", [
   prioritySchema
 ]);
 
-type AppRole = "customer" | "operational" | "admin" | "manager" | "technical";
-
-type SupportActor = {
-  kind: "demo" | "supabase";
-  email: string;
-  fullName: string;
-  role: AppRole;
-  userId: string | null;
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
-};
-
 const categoryByDatabaseSlug: Record<string, SupportCategory> = {
   pedido: "order",
   pagamento: "payment",
@@ -115,51 +106,9 @@ const categoryByDatabaseSlug: Record<string, SupportCategory> = {
   outro: "other"
 };
 
-const allowedOrigins = () =>
-  new Set(
-    [
-      ...configuredPublicOrigins(),
-      ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()),
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://localhost:3001",
-      "http://127.0.0.1:3001"
-    ].filter((origin): origin is string => Boolean(origin))
-  );
-
-const originIsAllowed = (request: Request, origin: string) => {
-  if (origin === new URL(request.url).origin) return true;
-  if (allowedOrigins().has(origin)) return true;
-  if (process.env.DEMO_MODE !== "true") return false;
-  try {
-    const requestUrl = new URL(request.url);
-    const originUrl = new URL(origin);
-    return (
-      requestUrl.hostname === originUrl.hostname &&
-      (originUrl.port === "3000" || originUrl.port === "3001")
-    );
-  } catch {
-    return false;
-  }
-};
-
-const isAllowedOrigin = (request: Request) => {
-  const origin = request.headers.get("origin");
-  return !origin || originIsAllowed(request, origin);
-};
-
-const responseHeaders = (request: Request) => {
-  const headers: Record<string, string> = { "cache-control": "private, no-store" };
-  const origin = request.headers.get("origin");
-  if (origin && originIsAllowed(request, origin)) {
-    headers["access-control-allow-origin"] = origin;
-    headers["access-control-allow-credentials"] = "true";
-    headers["access-control-allow-methods"] = "GET, POST, PATCH, OPTIONS";
-    headers["access-control-allow-headers"] = "content-type";
-    headers.vary = "Origin";
-  }
-  return headers;
-};
+const responseHeaders = (request: Request) => ({
+  "cache-control": "private, no-store", ...corsHeadersFor(request)
+});
 
 const json = (request: Request, body: unknown, status = 200) =>
   NextResponse.json(body, { status, headers: responseHeaders(request) });
@@ -173,48 +122,6 @@ const nestedString = (value: unknown, key: string): string | null => {
   const record = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
   return typeof record?.[key] === "string" ? record[key] : null;
 };
-
-async function getActor(request: NextRequest): Promise<SupportActor | null> {
-  const demoSession = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
-  if (demoSession) {
-    return {
-      kind: "demo",
-      email: demoSession.email,
-      fullName: demoSession.fullName,
-      role: demoSession.role === "representative" ? "customer" : demoSession.role,
-      userId: null,
-      supabase: null
-    };
-  }
-
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) return null;
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return null;
-  const roleResponse: unknown = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", data.user.id);
-  const roleValue = readRows(readQueryResult(roleResponse).data)
-    .map((item) => readString(item, "role"))
-    .find((role) => ["operational", "admin", "manager", "technical"].includes(role));
-  const role: AppRole =
-    roleValue === "operational" ||
-    roleValue === "admin" ||
-    roleValue === "manager" ||
-    roleValue === "technical"
-      ? roleValue
-      : "customer";
-  const metadataName: unknown = data.user.user_metadata.full_name;
-  return {
-    kind: "supabase",
-    email: data.user.email ?? "",
-    fullName: typeof metadataName === "string" ? metadataName : "Cliente curti Z",
-    role,
-    userId: data.user.id,
-    supabase
-  };
-}
 
 const demoActor = (actor: SupportActor): DemoSupportActor => ({
   email: actor.email,
@@ -273,11 +180,6 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
         if (!attachment || typeof attachment.message_id !== "string") continue;
         const clean =
           attachment.scan_status === "clean" && typeof attachment.storage_path === "string";
-        const signed = clean
-          ? await actor.supabase.storage
-              .from("customer-private")
-              .createSignedUrl(String(attachment.storage_path), 300)
-          : null;
         const current = attachmentsByMessage.get(attachment.message_id) ?? [];
         current.push({
           id: typeof attachment.id === "string" ? attachment.id : "",
@@ -290,9 +192,9 @@ async function listSupabaseSupport(actor: SupportActor): Promise<SupportConversa
               ? attachment.mime_type
               : "application/octet-stream",
           sizeBytes: typeof attachment.size_bytes === "number" ? attachment.size_bytes : 0,
-          available: Boolean(clean && !signed?.error && signed?.data.signedUrl),
-          ...(clean && !signed?.error && signed?.data.signedUrl
-            ? { url: signed.data.signedUrl }
+          available: clean,
+          ...(clean && typeof attachment.id === "string"
+            ? { url: `/api/support/attachments?id=${encodeURIComponent(attachment.id)}` }
             : {})
         });
         attachmentsByMessage.set(attachment.message_id, current);
@@ -403,6 +305,7 @@ async function listSavedReplies(actor: SupportActor) {
 }
 
 function publicError(request: Request, error: unknown) {
+  if (error instanceof PrivateRequestError) return json(request, { ok: false, message: "Não foi possível concluir a operação. Aguarde e tente novamente." }, error.status);
   if (error instanceof DemoSupportError) {
     return json(request, { ok: false, message: error.message }, error.status);
   }
@@ -414,14 +317,14 @@ function publicError(request: Request, error: unknown) {
 }
 
 export function OPTIONS(request: Request) {
-  return isAllowedOrigin(request)
+  return isAllowedRequestOrigin(request)
     ? new NextResponse(null, { status: 204, headers: responseHeaders(request) })
     : new NextResponse(null, { status: 403 });
 }
 
-export async function GET(request: NextRequest) {
-  if (!isAllowedOrigin(request)) return json(request, { ok: false }, 403);
-  const actor = await getActor(request);
+async function handleGET(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) return json(request, { ok: false }, 403);
+  const actor = await getSupportActor(request);
   if (!actor) {
     return json(
       request,
@@ -435,15 +338,20 @@ export async function GET(request: NextRequest) {
       listSupportTeam(actor),
       listSavedReplies(actor)
     ]);
-    return json(request, { ok: true, conversations, team, quickReplies });
+    const body = { ok: true, conversations, team, quickReplies };
+    // Include the authenticated identity so a prior account's tag cannot validate this response.
+    const etag = '"' + createHash("sha256").update(JSON.stringify([actor.userId ?? actor.email, actor.role, body])).digest("hex") + '"';
+    const headers = { ...responseHeaders(request), etag };
+    if (request.headers.get("if-none-match") === etag) return new NextResponse(null, { status: 304, headers });
+    return NextResponse.json(body, { headers });
   } catch (error) {
     return publicError(request, error);
   }
 }
 
-export async function POST(request: NextRequest) {
-  if (!isAllowedOrigin(request)) return json(request, { ok: false }, 403);
-  const actor = await getActor(request);
+async function handlePOST(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) return json(request, { ok: false }, 403);
+  const actor = await getSupportActor(request);
   if (!actor) {
     return json(
       request,
@@ -451,7 +359,7 @@ export async function POST(request: NextRequest) {
       401
     );
   }
-  const parsed = writeSchema.safeParse(await request.json().catch(() => null));
+  const parsed = writeSchema.safeParse(await readPrivateJson(request));
   if (!parsed.success)
     return json(request, { ok: false, message: "Revise os dados informados." }, 400);
 
@@ -521,6 +429,7 @@ export async function POST(request: NextRequest) {
         : json(request, { ok: true }, 201);
     }
 
+    if (actor.role === "customer" && parsed.data.internal) return json(request, { ok: false }, 403);
     const content = sanitizePlainText(parsed.data.message);
     if (!content) return json(request, { ok: false, message: "A mensagem está vazia." }, 400);
     if (actor.kind === "demo") {
@@ -546,13 +455,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
-  if (!isAllowedOrigin(request)) return json(request, { ok: false }, 403);
-  const actor = await getActor(request);
+async function handlePATCH(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) return json(request, { ok: false }, 403);
+  const actor = await getSupportActor(request);
   if (!actor) {
     return json(request, { ok: false, message: "Operação não permitida." }, 403);
   }
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const parsed = updateSchema.safeParse(await readPrivateJson(request));
   if (!parsed.success) return json(request, { ok: false, message: "Revise a operação." }, 400);
 
   try {
@@ -641,4 +550,16 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     return publicError(request, error);
   }
+}
+
+export async function GET(request: NextRequest) {
+  try { return await handleGET(request); } catch (error) { return publicError(request, error); }
+}
+
+export async function POST(request: NextRequest) {
+  try { return await handlePOST(request); } catch (error) { return publicError(request, error); }
+}
+
+export async function PATCH(request: NextRequest) {
+  try { return await handlePATCH(request); } catch (error) { return publicError(request, error); }
 }

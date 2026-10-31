@@ -32,11 +32,17 @@ export type CustomerOrder = {
   publicCode: string;
   status: string;
   paymentStatus: string;
+  invoice?: { available: boolean; number: string | null } | null;
+  invoiceUnavailable?: boolean;
   subtotalInCents: number;
   discountInCents: number;
   shippingInCents: number;
   totalInCents: number;
   placedAt: string;
+  cancellationCompletedAt: string;
+  refundStatus: string;
+  refundCompletedAt: string;
+  customerVisibleUntil: string;
   address: Record<string, unknown>;
   items: CustomerOrderItem[];
   payment: {
@@ -113,6 +119,17 @@ export type CustomerReturn = {
   resolution: string;
   status: string;
   requestedAt: string;
+  kind?: string;
+  message?: string;
+  instructions?: string;
+  postingCode?: string;
+  trackingCode?: string;
+  exchangeTrackingCode?: string;
+  refundAmountInCents?: number;
+  refundNeedsReview?: boolean;
+  media?: Array<{ id: string }>;
+  items?: Array<{ orderItemId: string; quantity: number }>;
+  history?: Array<{ id: string; status: string; message: string; createdAt: string }>;
 };
 
 export type CustomerNotification = {

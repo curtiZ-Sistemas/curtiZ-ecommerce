@@ -1,27 +1,20 @@
 "use client";
 
 import {
-  ArrowDownCircle,
   ArrowRightLeft,
-  ArrowUpCircle,
   BadgeDollarSign,
-  CalendarDays,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Download,
-  FileClock,
   FolderTree,
-  Landmark,
   LoaderCircle,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
-  Settings,
   Trash2,
-  Users,
-  WalletCards,
   X
 } from "lucide-react";
 import {
@@ -30,6 +23,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState
@@ -65,11 +59,18 @@ import {
 import { exportFinancialWorkbook } from "@/lib/financial-export";
 import {
   managementPeriodFor,
-  managementPeriodOptions,
   managementToday,
   type ManagementPeriodPreset
 } from "@/lib/management-period";
-import { usePanelPrompt } from "./panel-prompt";
+import { usePanelConfirm, usePanelPrompt } from "./panel-prompt";
+import { KpiStrip, LoadingBlock, StateMessage, StatusLabel } from "./panel-ui";
+import {
+  chartAxisTick,
+  chartLegendStyle,
+  chartTooltipProps,
+  ManagementPageHeader,
+  ManagementPeriodSelect
+} from "./management-ui";
 
 type Tab =
   | "dashboard"
@@ -106,7 +107,9 @@ const compactMoney = new Intl.NumberFormat("pt-BR", {
   notation: "compact",
   maximumFractionDigits: 1
 });
-const chartColors = ["#982920", "#d36a43", "#2d9c78", "#c94336", "#5271c4"];
+const chartColors = ["var(--brand-700)", "var(--neutral-500)", "var(--brand-300)", "var(--neutral-300)", "var(--brand-900)"];
+const chartMargin = { left: 0, right: 8, top: 8, bottom: 0 };
+const barCursor = { fill: "var(--neutral-100)" };
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "dashboard", label: "Visão geral" },
@@ -166,12 +169,24 @@ function statusLabel(status: string, ledger?: Ledger) {
   return labels[status] ?? (ledger === "receivable" ? "A receber" : "A pagar");
 }
 
+function statusTone(status: string): "neutral" | "success" | "warning" | "danger" {
+  if (status === "received" || status === "paid") return "success";
+  if (status === "overdue") return "danger";
+  if (status === "pending") return "warning";
+  return "neutral";
+}
+
+function negativeBalance(value: number): { detail?: string; tone?: "danger" } {
+  return value < 0 ? { detail: "Saldo negativo", tone: "danger" } : {};
+}
+
 function chartMoney(value: unknown) {
   return currency.format(numberValue(value));
 }
 
 export function FinancialControl() {
   const requestPrompt = usePanelPrompt();
+  const requestConfirm = usePanelConfirm();
   const initial = managementPeriodFor("month");
   const [tab, setTab] = useState<Tab>("dashboard");
   const [preset, setPreset] = useState<ManagementPeriodPreset>("month");
@@ -181,12 +196,13 @@ export function FinancialControl() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [canExport, setCanExport] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [demo, setDemo] = useState(false);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const closeModal = useCallback(() => setModal(null), []);
 
   const load = useCallback(
@@ -242,7 +258,7 @@ export function FinancialControl() {
 
   const mutate = async (action: string, payload: Record<string, unknown>, success: string) => {
     setPending(true);
-    setMessage("");
+    setMessage(null);
     try {
       const response = await fetch("/api/manager/finance", {
         method: "POST",
@@ -257,15 +273,15 @@ export function FinancialControl() {
       if (!response.ok)
         throw new Error(scalar(record.message) || "Não foi possível concluir a operação.");
       setModal(null);
-      setMessage(success);
+      setMessage({ kind: "success", text: success });
       await load(true);
       return true;
     } catch (mutationError) {
-      setMessage(
+      setMessage({ kind: "error", text:
         mutationError instanceof Error
           ? mutationError.message
           : "Não foi possível concluir a operação."
-      );
+      });
       return false;
     } finally {
       setPending(false);
@@ -293,7 +309,7 @@ export function FinancialControl() {
     try {
       await exportFinancialWorkbook(data, scope, { from, to });
     } catch {
-      setMessage("Não foi possível montar o arquivo Excel neste dispositivo.");
+      setMessage({ kind: "error", text: "Não foi possível montar o arquivo Excel neste dispositivo." });
     } finally {
       setPending(false);
     }
@@ -301,13 +317,10 @@ export function FinancialControl() {
 
   return (
     <section className="financial-control" aria-busy={loading || pending}>
-      <header className="financial-header">
-        <div>
-          <span className="page-heading-eyebrow">Gerência</span>
-          <h1>Controle financeiro</h1>
-          <p>Caixa, compromissos e aportes conectados em uma única fonte de verdade.</p>
-        </div>
-        <div className="financial-header-actions">
+      <ManagementPageHeader
+        title="Controle financeiro"
+        description="Caixa, compromissos e aportes conectados em uma única fonte de verdade."
+        actions={<>
           <button
             className="secondary-button"
             type="button"
@@ -316,18 +329,30 @@ export function FinancialControl() {
           >
             <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" /> Sincronizar
           </button>
-          <div className="financial-export">
+          <div
+            className="financial-export"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && exportOpen) {
+                event.stopPropagation();
+                setExportOpen(false);
+                exportButtonRef.current?.focus();
+              }
+            }}
+          >
             <button
+              ref={exportButtonRef}
               className="primary-button"
               type="button"
               onClick={() => setExportOpen((open) => !open)}
               disabled={!canExport || pending || demo}
               aria-expanded={exportOpen}
+              aria-controls={exportOpen ? "financial-export-menu" : undefined}
             >
               <Download aria-hidden="true" /> Exportar para Excel
+              <ChevronDown aria-hidden="true" />
             </button>
             {exportOpen ? (
-              <div className="financial-export-menu">
+              <div className="financial-export-menu" id="financial-export-menu" role="group" aria-label="Escolha o conteúdo do arquivo">
                 {(["all", "receivables", "payables", "transactions", "contributions"] as const).map(
                   (scope) => (
                     <button key={scope} type="button" onClick={() => void exportWorkbook(scope)}>
@@ -346,86 +371,83 @@ export function FinancialControl() {
               </div>
             ) : null}
           </div>
-        </div>
-      </header>
+        </>}
+      />
 
-      <div className="financial-period panel-card">
-        <label>
-          <span>Período</span>
-          <select
-            value={preset}
-            onChange={(event) => changePreset(event.target.value as ManagementPeriodPreset)}
-          >
-            {managementPeriodOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {preset === "custom" ? (
-          <>
-            <label>
-              <span>De</span>
-              <input
-                type="date"
-                value={from}
-                max={to}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>Até</span>
-              <input
-                type="date"
-                value={to}
-                min={from}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </label>
-          </>
-        ) : null}
-        <small>
-          {updatedAt
-            ? `Sincronizado às ${updatedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
-            : "Aguardando sincronização"}
-        </small>
+      <div className="financial-sticky">
+        <div className="management-period-bar financial-period">
+          <ManagementPeriodSelect value={preset} onChange={changePreset} />
+          {preset === "custom" ? (
+            <>
+              <label className="management-field">
+                <span>De</span>
+                <input
+                  type="date"
+                  value={from}
+                  max={to}
+                  onChange={(event) => setFrom(event.target.value)}
+                />
+              </label>
+              <label className="management-field">
+                <span>Até</span>
+                <input
+                  type="date"
+                  value={to}
+                  min={from}
+                  onChange={(event) => setTo(event.target.value)}
+                />
+              </label>
+            </>
+          ) : null}
+          <small className="financial-sync" role="status">
+            {updatedAt
+              ? `Sincronizado às ${updatedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+              : "Aguardando sincronização"}
+          </small>
+        </div>
+
+        <nav className="financial-tabs" aria-label="Áreas do financeiro">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={tab === item.id ? "active" : ""}
+              aria-current={tab === item.id ? "true" : undefined}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <nav className="financial-tabs" aria-label="Áreas do financeiro">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={tab === item.id ? "active" : ""}
-            onClick={() => setTab(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-
       {message ? (
-        <p className="financial-feedback" role="status">
-          {message}
+        <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>
+          {message.text}
         </p>
       ) : null}
       {error ? (
-        <div className="admin-empty-state" role="alert">
-          <h2>Financeiro indisponível</h2>
-          <p>{error}</p>
-          <button className="secondary-button" type="button" onClick={() => void load()}>
-            Tentar novamente
-          </button>
+        <div className="management-empty-state">
+          <StateMessage
+            kind="error"
+            title="Financeiro indisponível"
+            description={error}
+            action={<button className="secondary-button" type="button" onClick={() => void load()}>
+              <RefreshCw aria-hidden="true" /> Tentar novamente
+            </button>}
+          />
         </div>
       ) : loading ? (
         <div className="financial-loading">
-          <LoaderCircle className="spin" aria-hidden="true" /> Consolidando dados financeiros…
+          <LoadingBlock label="Consolidando dados financeiros…" rows={6} />
         </div>
       ) : demo ? (
-        <div className="admin-empty-state">
-          <h2>Visualização financeira desativada no modo demonstração</h2>
-          <p>Entre com um sócio autorizado para consultar ou alterar dados reais.</p>
+        <div className="management-empty-state">
+          <StateMessage
+            kind="unavailable"
+            title="Visualização financeira desativada no modo demonstração"
+            description="Entre com um sócio autorizado para consultar ou alterar dados reais."
+          />
         </div>
       ) : (
         <>
@@ -456,9 +478,12 @@ export function FinancialControl() {
               onDelete={(item) => {
                 void (async () => {
                   if (
-                    window.confirm(
-                      "Excluir esta conta pendente? Esta ação ficará registrada no histórico."
-                    )
+                    await requestConfirm({
+                      title: "Excluir esta conta pendente?",
+                      description: "Esta ação ficará registrada no histórico.",
+                      confirmLabel: "Excluir conta",
+                      tone: "danger"
+                    })
                   )
                     await mutate("receivable.delete", { id: item.id }, "Conta a receber excluída.");
                 })();
@@ -491,9 +516,12 @@ export function FinancialControl() {
               onDelete={(item) => {
                 void (async () => {
                   if (
-                    window.confirm(
-                      "Excluir esta conta pendente? Esta ação ficará registrada no histórico."
-                    )
+                    await requestConfirm({
+                      title: "Excluir esta conta pendente?",
+                      description: "Esta ação ficará registrada no histórico.",
+                      confirmLabel: "Excluir conta",
+                      tone: "danger"
+                    })
                   )
                     await mutate("payable.delete", { id: item.id }, "Conta a pagar excluída.");
                 })();
@@ -508,7 +536,14 @@ export function FinancialControl() {
               onEdit={(item) => setModal({ kind: "transaction", item })}
               onDelete={(item) => {
                 void (async () => {
-                  if (window.confirm("Estornar este lançamento manual?"))
+                  if (
+                    await requestConfirm({
+                      title: "Estornar este lançamento manual?",
+                      description: "O lançamento deixa de compor o saldo e o estorno fica registrado no histórico.",
+                      confirmLabel: "Estornar lançamento",
+                      tone: "danger"
+                    })
+                  )
                     await mutate(
                       "transaction.delete",
                       { id: item.id, reason: "Exclusão confirmada pelo usuário" },
@@ -548,37 +583,45 @@ export function FinancialControl() {
 
 function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
   const summary = data.summary;
-  const cards = [
-    ["Saldo atual", summary.balance, WalletCards],
-    ["Entradas realizadas", summary.income, ArrowUpCircle],
-    ["Saídas realizadas", summary.expense, ArrowDownCircle],
-    ["Total a receber", summary.receivable, BadgeDollarSign],
-    ["Total a pagar", summary.payable, FileClock],
-    ["Saldo projetado", summary.projected_balance, Landmark],
-    ["Vencido a receber", summary.overdue_receivable, CalendarDays],
-    ["Vencido a pagar", summary.overdue_payable, CalendarDays],
-    ["Entradas do mês", summary.month_income, ArrowUpCircle],
-    ["Saídas do mês", summary.month_expense, ArrowDownCircle]
-  ] as const;
+  const cards: Array<{ label: string; value: number; detail?: string; tone?: "warning" | "danger" }> = [
+    { label: "Saldo atual", value: summary.balance, ...negativeBalance(summary.balance) },
+    { label: "Entradas realizadas", value: summary.income },
+    { label: "Saídas realizadas", value: summary.expense },
+    { label: "Total a receber", value: summary.receivable },
+    { label: "Total a pagar", value: summary.payable },
+    { label: "Saldo projetado", value: summary.projected_balance, ...negativeBalance(summary.projected_balance) },
+    {
+      label: "Vencido a receber",
+      value: summary.overdue_receivable,
+      ...(summary.overdue_receivable > 0 ? { detail: "Há recebimentos atrasados", tone: "warning" as const } : {})
+    },
+    {
+      label: "Vencido a pagar",
+      value: summary.overdue_payable,
+      ...(summary.overdue_payable > 0 ? { detail: "Há pagamentos atrasados", tone: "danger" as const } : {})
+    },
+    { label: "Entradas do mês", value: summary.month_income },
+    { label: "Saídas do mês", value: summary.month_expense }
+  ];
   return (
     <div className="financial-dashboard">
-      <div className="financial-metrics">
-        {cards.map(([label, value, Icon], index) => (
-          <article key={label} className={index === 0 || index === 5 ? "primary" : ""}>
-            <Icon aria-hidden="true" />
-            <span>{label}</span>
-            <strong>{currency.format(value)}</strong>
-          </article>
+      <KpiStrip label="Resumo financeiro do período">
+        {cards.map((card) => (
+          <div key={card.label} className="ui-kpi" data-tone={card.tone}>
+            <dt>{card.label}</dt>
+            <dd className="ui-kpi-value ui-num">{currency.format(card.value)}</dd>
+            {card.detail ? <dd className="ui-kpi-detail">{card.detail}</dd> : null}
+          </div>
         ))}
-      </div>
-      <section className="panel-card financial-list-section">
+      </KpiStrip>
+      <section className="financial-online-sales" aria-labelledby="financial-online-title">
         <div className="financial-section-heading">
           <div>
-            <h2>Vendas automáticas do site</h2>
+            <h2 id="financial-online-title">Vendas automáticas do site</h2>
             <p>{data.online_sales_summary.sales_count} pagamento(s) recebido(s) no período.</p>
           </div>
         </div>
-        <div className="financial-metrics">
+        <KpiStrip label="Vendas automáticas do site">
           {[
             ["Venda bruta", data.online_sales_summary.gross],
             ["Taxas Mercado Pago", data.online_sales_summary.fees],
@@ -586,33 +629,32 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
             ["Receita líquida", data.online_sales_summary.net],
             ["Valores pendentes", data.online_sales_summary.pending]
           ].map(([label, value]) => (
-            <article key={String(label)}>
-              <span>{label}</span>
-              <strong>{currency.format(Number(value))}</strong>
-            </article>
+            <div key={String(label)} className="ui-kpi">
+              <dt>{label}</dt>
+              <dd className="ui-kpi-value ui-num">{currency.format(Number(value))}</dd>
+            </div>
           ))}
-        </div>
+        </KpiStrip>
         {data.online_sales_by_method.length ? (
           <ChartCard title="Vendas por meio de pagamento" empty={false}>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.online_sales_by_method} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickFormatter={(value) => compactMoney.format(numberValue(value))} />
-                <YAxis type="category" dataKey="name" width={120} />
-                <Tooltip formatter={chartMoney} />
-                <Bar dataKey="value" name="Vendas brutas" fill="#982920" radius={[0, 4, 4, 0]} />
+              <BarChart data={data.online_sales_by_method} layout="vertical" margin={chartMargin}>
+                <CartesianGrid stroke="var(--line)" horizontal={false} />
+                <XAxis type="number" tick={chartAxisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} tickFormatter={(value) => compactMoney.format(numberValue(value))} />
+                <YAxis type="category" dataKey="name" width={120} tick={chartAxisTick} tickLine={false} axisLine={false} />
+                <Tooltip {...chartTooltipProps} cursor={barCursor} formatter={chartMoney} />
+                <Bar dataKey="value" name="Vendas brutas" fill="var(--brand-700)" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
         ) : null}
       </section>
       {data.series.length === 0 ? (
-        <div className="admin-empty-state">
-          <h2>Sem movimentação no período</h2>
-          <p>
-            Cadastre contas, lançamentos ou aportes. Os indicadores serão atualizados
-            automaticamente.
-          </p>
+        <div className="management-empty-state">
+          <StateMessage
+            title="Sem movimentação no período"
+            description="Cadastre contas, lançamentos ou aportes. Os indicadores serão atualizados automaticamente."
+          />
         </div>
       ) : (
         <div className="financial-charts">
@@ -621,17 +663,20 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
             empty={!data.series.some((point) => point.income !== 0 || point.expense !== 0)}
           >
             <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={data.series}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={(value) => scalar(value).slice(5)} />
+              <BarChart data={data.series} margin={chartMargin}>
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="date" tick={chartAxisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} minTickGap={12} tickFormatter={(value) => scalar(value).slice(5)} />
                 <YAxis
                   width={72}
+                  tick={chartAxisTick}
+                  tickLine={false}
+                  axisLine={false}
                   tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
-                <Tooltip formatter={chartMoney} />
-                <Legend />
-                <Bar dataKey="income" name="Entradas" fill="#2d9c78" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expense" name="Saídas" fill="#d94c68" radius={[4, 4, 0, 0]} />
+                <Tooltip {...chartTooltipProps} cursor={barCursor} formatter={chartMoney} />
+                <Legend wrapperStyle={chartLegendStyle} />
+                <Bar dataKey="income" name="Entradas" fill="var(--brand-700)" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="expense" name="Saídas" fill="var(--neutral-400)" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -640,38 +685,36 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
             empty={!data.series.some((point) => point.balance !== 0)}
           >
             <ResponsiveContainer width="100%" height={270}>
-              <AreaChart data={data.series}>
-                <defs>
-                  <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#982920" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#982920" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={(value) => scalar(value).slice(5)} />
+              <AreaChart data={data.series} margin={chartMargin}>
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis dataKey="date" tick={chartAxisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} minTickGap={12} tickFormatter={(value) => scalar(value).slice(5)} />
                 <YAxis
                   width={72}
+                  tick={chartAxisTick}
+                  tickLine={false}
+                  axisLine={false}
                   tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
-                <Tooltip formatter={chartMoney} />
+                <Tooltip {...chartTooltipProps} formatter={chartMoney} />
                 <Area
                   type="monotone"
                   dataKey="balance"
                   name="Saldo"
-                  stroke="#982920"
-                  fill="url(#balanceFill)"
+                  stroke="var(--brand-700)"
+                  fill="var(--brand-50)"
+                  fillOpacity={0.7}
                   strokeWidth={2}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </ChartCard>
-          <SimpleBarChart title="Despesas por grupo" data={data.expense_by_group} color="#d94c68" />
-          <SimpleBarChart title="Receitas por grupo" data={data.income_by_group} color="#2d9c78" />
-          <SimpleBarChart title="Maiores despesas" data={data.largest_expenses} color="#ff6b35" />
+          <SimpleBarChart title="Despesas por grupo" data={data.expense_by_group} color="var(--neutral-500)" />
+          <SimpleBarChart title="Receitas por grupo" data={data.income_by_group} color="var(--brand-700)" />
+          <SimpleBarChart title="Maiores despesas" data={data.largest_expenses} color="var(--neutral-500)" />
           <SimpleBarChart
             title="Maiores clientes / valores"
             data={data.largest_receivables}
-            color="#5271c4"
+            color="var(--brand-700)"
           />
           <ChartCard
             title="Situação das contas"
@@ -686,13 +729,14 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
                   innerRadius={55}
                   outerRadius={90}
                   paddingAngle={2}
+                  stroke="var(--surface)"
                 >
                   {data.account_status.map((item, index) => (
                     <Cell key={item.name} fill={chartColors[index % chartColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
-                <Legend />
+                <Tooltip {...chartTooltipProps} />
+                <Legend wrapperStyle={chartLegendStyle} />
               </PieChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -703,17 +747,20 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
             }
           >
             <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={data.contribution_groups} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <BarChart data={data.contribution_groups} layout="vertical" margin={chartMargin}>
+                <CartesianGrid stroke="var(--line)" horizontal={false} />
                 <XAxis
                   type="number"
+                  tick={chartAxisTick}
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--line)" }}
                   tickFormatter={(value) => compactMoney.format(numberValue(value))}
                 />
-                <YAxis type="category" dataKey="name" width={100} />
-                <Tooltip formatter={chartMoney} />
-                <Legend />
-                <Bar dataKey="ideal" name="Ideal" fill="#dfc3c0" />
-                <Bar dataKey="realized" name="Realizado" fill="#982920" />
+                <YAxis type="category" dataKey="name" width={100} tick={chartAxisTick} tickLine={false} axisLine={false} />
+                <Tooltip {...chartTooltipProps} cursor={barCursor} formatter={chartMoney} />
+                <Legend wrapperStyle={chartLegendStyle} />
+                <Bar dataKey="ideal" name="Ideal" fill="var(--neutral-300)" radius={[0, 3, 3, 0]} />
+                <Bar dataKey="realized" name="Realizado" fill="var(--brand-700)" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -726,16 +773,25 @@ function FinancialDashboard({ data }: { data: FinancialSnapshot }) {
 function ChartCard({
   title,
   children,
-  empty = false
+  empty = false,
+  emptyText = "Sem movimentação neste recorte."
 }: {
   title: string;
   children: ReactNode;
   empty?: boolean;
+  emptyText?: string;
 }) {
+  const titleId = useId();
   return (
-    <article className="panel-card financial-chart">
-      <h2>{title}</h2>
-      {empty ? <p className="financial-chart-empty">Sem movimentação neste recorte.</p> : children}
+    <article className="panel-card financial-chart" aria-labelledby={titleId}>
+      <h2 id={titleId}>{title}</h2>
+      {empty ? (
+        <p className="financial-chart-empty">{emptyText}</p>
+      ) : (
+        <div className="financial-chart-canvas" role="img" aria-label={`Gráfico: ${title}`}>
+          {children}
+        </div>
+      )}
     </article>
   );
 }
@@ -749,23 +805,22 @@ function SimpleBarChart({
   color: string;
 }) {
   return (
-    <ChartCard title={title}>
-      {data.some((item) => item.value !== 0) ? (
-        <ResponsiveContainer width="100%" height={270}>
-          <BarChart data={data} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis
-              type="number"
-              tickFormatter={(value) => compactMoney.format(numberValue(value))}
-            />
-            <YAxis type="category" dataKey="name" width={110} />
-            <Tooltip formatter={chartMoney} />
-            <Bar dataKey="value" name="Valor" fill={color} radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      ) : (
-        <p className="financial-chart-empty">Sem dados neste recorte.</p>
-      )}
+    <ChartCard title={title} empty={!data.some((item) => item.value !== 0)} emptyText="Sem dados neste recorte.">
+      <ResponsiveContainer width="100%" height={270}>
+        <BarChart data={data} layout="vertical" margin={chartMargin}>
+          <CartesianGrid stroke="var(--line)" horizontal={false} />
+          <XAxis
+            type="number"
+            tick={chartAxisTick}
+            tickLine={false}
+            axisLine={{ stroke: "var(--line)" }}
+            tickFormatter={(value) => compactMoney.format(numberValue(value))}
+          />
+          <YAxis type="category" dataKey="name" width={110} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip {...chartTooltipProps} cursor={barCursor} formatter={chartMoney} />
+          <Bar dataKey="value" name="Valor" fill={color} radius={[0, 3, 3, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </ChartCard>
   );
 }
@@ -905,6 +960,7 @@ function CategoryReportSection({
           <button
             type="button"
             className={ledger === "payable" ? "active" : ""}
+            aria-pressed={ledger === "payable"}
             onClick={() => {
               setLedger("payable");
               setGroupFilter("");
@@ -917,6 +973,7 @@ function CategoryReportSection({
           <button
             type="button"
             className={ledger === "receivable" ? "active" : ""}
+            aria-pressed={ledger === "receivable"}
             onClick={() => {
               setLedger("receivable");
               setGroupFilter("");
@@ -935,6 +992,7 @@ function CategoryReportSection({
               key={item}
               type="button"
               className={mode === item ? "active" : ""}
+            aria-pressed={mode === item}
               onClick={() => {
                 setMode(item);
                 setSelected(null);
@@ -944,7 +1002,7 @@ function CategoryReportSection({
             </button>
           ))}
         </div>
-        <strong>Total: {currency.format(reportTotal)}</strong>
+        <strong className="ui-num">Total: {currency.format(reportTotal)}</strong>
       </div>
       <div className="financial-list-filters">
         <select
@@ -1079,8 +1137,8 @@ function CategoryReportSection({
               <h3>{selected.category_name}</h3>
               <p>Lançamentos que formam o valor selecionado.</p>
             </div>
-            <button type="button" onClick={() => setSelected(null)}>
-              <X /> Fechar
+            <button className="ghost-button" type="button" onClick={() => setSelected(null)}>
+              <X aria-hidden="true" /> Fechar
             </button>
           </div>
           {details.length === 0 ? (
@@ -1289,6 +1347,7 @@ function LedgerSection({
           <button
             type="button"
             className={view === "list" ? "active" : ""}
+            aria-pressed={view === "list"}
             onClick={() => setView("list")}
           >
             Lista
@@ -1296,6 +1355,7 @@ function LedgerSection({
           <button
             type="button"
             className={view === "grouped" ? "active" : ""}
+            aria-pressed={view === "grouped"}
             onClick={() => setView("grouped")}
           >
             Por categoria
@@ -1346,13 +1406,26 @@ function LedgerSection({
                 <th>Descrição</th>
                 <th>Vencimento</th>
                 <th>Parcela</th>
-                <th>Valor</th>
+                <th className="financial-num">Valor</th>
                 <th>Status</th>
                 <th>
                   <span className="sr-only">Ações</span>
                 </th>
               </tr>
             </thead>
+            <tfoot>
+              <tr className="financial-total-row">
+                <th scope="row" colSpan={4}>
+                  Total filtrado · {filtered.length} conta(s)
+                </th>
+                <td className="financial-num" data-label="Total filtrado">
+                  <strong>
+                    {currency.format(filtered.reduce((sum, item) => sum + numberValue(item.amount), 0))}
+                  </strong>
+                </td>
+                <td colSpan={2} aria-hidden="true" />
+              </tr>
+            </tfoot>
             <tbody>
               {visible.map((item) => {
                 const itemStatus = scalar(item.display_status);
@@ -1373,7 +1446,7 @@ function LedgerSection({
                     <td data-label="Parcela">
                       {scalar(item.installment_number)}/{scalar(item.installment_count)}
                     </td>
-                    <td data-label="Valor">
+                    <td className="financial-num" data-label="Valor">
                       <strong>{currency.format(numberValue(item.amount))}</strong>
                       {automatic && ledger === "receivable" ? (
                         <small>
@@ -1383,9 +1456,9 @@ function LedgerSection({
                       ) : null}
                     </td>
                     <td data-label="Status">
-                      <span className={`financial-status ${itemStatus}`}>
+                      <StatusLabel tone={statusTone(itemStatus)}>
                         {statusLabel(itemStatus, ledger)}
-                      </span>
+                      </StatusLabel>
                     </td>
                     <td className="financial-row-actions">
                       {!automatic && (itemStatus === "pending" || itemStatus === "overdue") ? (
@@ -1393,21 +1466,20 @@ function LedgerSection({
                           <button
                             type="button"
                             onClick={() => onSettle(item)}
-                            title={
-                              ledger === "receivable" ? "Marcar como recebido" : "Marcar como pago"
-                            }
+                            title={ledger === "receivable" ? "Marcar como recebido" : "Marcar como pago"}
+                            aria-label={ledger === "receivable" ? "Marcar como recebido" : "Marcar como pago"}
                           >
                             <BadgeDollarSign />
                           </button>
-                          <button type="button" onClick={() => onEdit(item)} title="Editar">
+                          <button type="button" onClick={() => onEdit(item)} title="Editar" aria-label="Editar">
                             <Pencil />
                           </button>
-                          <button type="button" onClick={() => onDelete(item)} title="Excluir">
+                          <button type="button" onClick={() => onDelete(item)} title="Excluir" aria-label="Excluir">
                             <Trash2 />
                           </button>
                         </>
                       ) : !automatic && settled ? (
-                        <button type="button" onClick={() => onReverse(item)} title="Estornar">
+                        <button type="button" onClick={() => onReverse(item)} title="Estornar" aria-label="Estornar">
                           <RotateCcw />
                         </button>
                       ) : null}
@@ -1420,21 +1492,32 @@ function LedgerSection({
         </div>
       )}
       {view === "list" && pages > 1 ? (
-        <div className="financial-pagination">
-          <button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)}>
-            Anterior
-          </button>
-          <span>
-            Página {page} de {pages}
+        <nav className="financial-pagination" aria-label="Paginação das contas">
+          <span className="ui-num">
+            {(page - 1) * 20 + 1}–{Math.min(page * 20, filtered.length)} de {filtered.length}
           </span>
-          <button
-            type="button"
-            disabled={page === pages}
-            onClick={() => setPage((value) => value + 1)}
-          >
-            Próxima
-          </button>
-        </div>
+          <div>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={page === 1}
+              onClick={() => setPage((value) => value - 1)}
+            >
+              <ChevronLeft aria-hidden="true" /> Anterior
+            </button>
+            <span className="sr-only">
+              Página {page} de {pages}
+            </span>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={page === pages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Próxima <ChevronRight aria-hidden="true" />
+            </button>
+          </div>
+        </nav>
       ) : null}
     </section>
   );
@@ -1534,9 +1617,11 @@ function TransactionsSection({
                 <th>Descrição</th>
                 <th>Origem</th>
                 <th>Conta</th>
-                <th>Valor</th>
-                <th>Saldo acumulado</th>
-                <th></th>
+                <th className="financial-num">Valor</th>
+                <th className="financial-num">Saldo acumulado</th>
+                <th>
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1544,9 +1629,9 @@ function TransactionsSection({
                 <tr key={item.id} className={item.reversed_at ? "reversed" : ""}>
                   <td data-label="Data">{formattedDate(item.occurred_on)}</td>
                   <td data-label="Tipo">
-                    <span className={`financial-kind ${scalar(item.type)}`}>
+                    <StatusLabel tone={scalar(item.type) === "income" ? "success" : "neutral"}>
                       {scalar(item.type) === "income" ? "Entrada" : "Saída"}
-                    </span>
+                    </StatusLabel>
                   </td>
                   <td data-label="Descrição">
                     <strong>{recordLabel(item, "description")}</strong>
@@ -1567,10 +1652,13 @@ function TransactionsSection({
                     {recordLabel(item, "account_name")}
                     <small>{recordLabel(item, "responsible_name")}</small>
                   </td>
-                  <td data-label="Valor">
+                  <td className="financial-num" data-label="Valor">
                     <strong>{currency.format(numberValue(item.amount))}</strong>
                   </td>
-                  <td data-label="Saldo">
+                  <td
+                    className={`financial-num${!item.reversed_at && numberValue(item.running_balance) < 0 ? " financial-negative" : ""}`}
+                    data-label="Saldo"
+                  >
                     {item.reversed_at
                       ? "Estornado"
                       : currency.format(numberValue(item.running_balance))}
@@ -1578,10 +1666,10 @@ function TransactionsSection({
                   <td className="financial-row-actions">
                     {scalar(item.origin) === "manual" && !item.reversed_at ? (
                       <>
-                        <button type="button" title="Editar" onClick={() => onEdit(item)}>
+                        <button type="button" title="Editar" aria-label="Editar" onClick={() => onEdit(item)}>
                           <Pencil />
                         </button>
-                        <button type="button" title="Estornar" onClick={() => onDelete(item)}>
+                        <button type="button" title="Estornar" aria-label="Estornar" onClick={() => onDelete(item)}>
                           <Trash2 />
                         </button>
                       </>
@@ -1673,10 +1761,27 @@ function ContributionsSection({
                   <th>Sócio / grupo</th>
                   <th>Descrição</th>
                   <th>Conta</th>
-                  <th>Valor</th>
-                  <th></th>
+                  <th className="financial-num">Valor</th>
+                  <th>
+                    <span className="sr-only">Ações</span>
+                  </th>
                 </tr>
               </thead>
+              <tfoot>
+                <tr className="financial-total-row">
+                  <th scope="row" colSpan={4}>
+                    Total · {data.contributions.length} aporte(s)
+                  </th>
+                  <td className="financial-num" data-label="Total">
+                    <strong>
+                      {currency.format(
+                        data.contributions.reduce((sum, item) => sum + numberValue(item.amount), 0)
+                      )}
+                    </strong>
+                  </td>
+                  <td aria-hidden="true" />
+                </tr>
+              </tfoot>
               <tbody>
                 {data.contributions.map((item) => (
                   <tr key={item.id}>
@@ -1689,11 +1794,11 @@ function ContributionsSection({
                     </td>
                     <td data-label="Descrição">{recordLabel(item, "description")}</td>
                     <td data-label="Conta">{recordLabel(item, "account_name")}</td>
-                    <td data-label="Valor">
+                    <td className="financial-num" data-label="Valor">
                       <strong>{currency.format(numberValue(item.amount))}</strong>
                     </td>
                     <td className="financial-row-actions">
-                      <button type="button" title="Editar" onClick={() => onEdit(item)}>
+                      <button type="button" title="Editar" aria-label="Editar" onClick={() => onEdit(item)}>
                         <Pencil />
                       </button>
                     </td>
@@ -1744,8 +1849,7 @@ function SettingsSection({
   ];
   return (
     <div className="financial-settings">
-      <div className="financial-settings-intro panel-card">
-        <Settings />
+      <div className="financial-settings-intro">
         <div>
           <h2>Configurações financeiras</h2>
           <p>
@@ -1779,14 +1883,14 @@ function SettingsSection({
                     <div>
                       <button
                         type="button"
-                        title="Editar"
+                        title="Editar" aria-label="Editar"
                         onClick={() => open({ kind: block.kind, item })}
                       >
                         <Pencil />
                       </button>
                       <button
                         type="button"
-                        title={booleanValue(item.active) ? "Desativar" : "Ativar"}
+                        title={booleanValue(item.active) ? "Desativar" : "Ativar"} aria-label={booleanValue(item.active) ? "Desativar" : "Ativar"}
                         onClick={() =>
                           void mutate(
                             `${block.kind}.save`,
@@ -1916,12 +2020,12 @@ function FinancialCategorySettings({
         <strong>{recordLabel(item, "name")}</strong>
       </span>
       <div>
-        <button type="button" title="Editar" onClick={() => open({ kind: "category", item })}>
+        <button type="button" title="Editar" aria-label="Editar" onClick={() => open({ kind: "category", item })}>
           <Pencil />
         </button>
         <button
           type="button"
-          title={booleanValue(item.active) ? "Desativar" : "Ativar"}
+          title={booleanValue(item.active) ? "Desativar" : "Ativar"} aria-label={booleanValue(item.active) ? "Desativar" : "Ativar"}
           onClick={() => void toggleActive(item)}
         >
           {booleanValue(item.active) ? <X /> : <RefreshCw />}
@@ -1944,6 +2048,7 @@ function FinancialCategorySettings({
         <button
           type="button"
           className={ledger === "payable" ? "active" : ""}
+            aria-pressed={ledger === "payable"}
           onClick={() => setLedger("payable")}
         >
           Contas a pagar
@@ -1951,6 +2056,7 @@ function FinancialCategorySettings({
         <button
           type="button"
           className={ledger === "receivable" ? "active" : ""}
+            aria-pressed={ledger === "receivable"}
           onClick={() => setLedger("receivable")}
         >
           Contas a receber
@@ -2008,14 +2114,14 @@ function FinancialCategorySettings({
                     <div>
                       <button
                         type="button"
-                        title="Editar"
+                        title="Editar" aria-label="Editar"
                         onClick={() => open({ kind: "category", item: group })}
                       >
                         <Pencil />
                       </button>
                       <button
                         type="button"
-                        title={booleanValue(group.active) ? "Desativar" : "Ativar"}
+                        title={booleanValue(group.active) ? "Desativar" : "Ativar"} aria-label={booleanValue(group.active) ? "Desativar" : "Ativar"}
                         onClick={() => void toggleActive(group)}
                       >
                         {booleanValue(group.active) ? <X /> : <RefreshCw />}
@@ -2076,7 +2182,6 @@ function AuditSection({ items }: { items: FinancialRecord[] }) {
         ) : (
           filtered.map((item) => (
             <article key={item.id}>
-              <FileClock />
               <div>
                 <strong>{auditActionLabel(scalar(item.action))}</strong>
                 <span>
@@ -2318,7 +2423,6 @@ function LedgerForm({
   return (
     <>
       <div className="financial-modal-title">
-        <BadgeDollarSign />
         <div>
           <span>{ledger === "receivable" ? "Contas a receber" : "Contas a pagar"}</span>
           <h2 id="financial-modal-title">{item ? "Editar conta" : "Nova conta"}</h2>
@@ -2520,7 +2624,6 @@ function SettleForm({
   return (
     <>
       <div className="financial-modal-title">
-        <BadgeDollarSign />
         <div>
           <span>Liquidação</span>
           <h2 id="financial-modal-title">
@@ -2604,7 +2707,6 @@ function TransactionForm({
   return (
     <>
       <div className="financial-modal-title">
-        <WalletCards />
         <div>
           <span>Extrato</span>
           <h2 id="financial-modal-title">
@@ -2720,7 +2822,6 @@ function TransferForm({
   return (
     <>
       <div className="financial-modal-title">
-        <ArrowRightLeft />
         <div>
           <span>Movimentação interna</span>
           <h2 id="financial-modal-title">Transferir entre contas</h2>
@@ -2806,7 +2907,6 @@ function ContributionForm({
   return (
     <>
       <div className="financial-modal-title">
-        <Users />
         <div>
           <span>Sócios</span>
           <h2 id="financial-modal-title">{item ? "Editar aporte" : "Novo aporte"}</h2>
@@ -2953,7 +3053,6 @@ function ConfigForm({
   return (
     <>
       <div className="financial-modal-title">
-        <Settings />
         <div>
           <span>Configuração</span>
           <h2 id="financial-modal-title">

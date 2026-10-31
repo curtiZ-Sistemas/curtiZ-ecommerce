@@ -1,4 +1,5 @@
 import { isUnknownRecord } from "./unknown-data";
+import { readMercadoPagoPayerDocument, type MercadoPagoPaymentMode } from "./mercadopago-payer-identity";
 
 export type MercadoPagoBrickSession = {
   orderId: string;
@@ -9,14 +10,17 @@ export type MercadoPagoBrickSession = {
   shippingInCents: number;
   amountInCents: number;
   publicKey: string;
+  paymentMode: MercadoPagoPaymentMode;
   idempotencyKey: string;
   email: string;
-  cpf: string;
   checkout: CheckoutConfirmationPayload | null;
+  savedCards?: { customerId: string; cardIds: string[] };
 };
 
 export type CheckoutConfirmationPayload = {
+  fiscalRecipient?: { icmsTaxpayer: boolean; finalConsumer: boolean };
   couponCode?: string;
+  shippingQuoteId?: string;
   customer: { name: string; email: string; phone: string; cpf: string };
   address: {
     postalCode: string; street: string; number: string; complement: string;
@@ -29,22 +33,25 @@ export type CheckoutConfirmationPayload = {
 
 const positiveSafeInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const nonNegativeSafeInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 export function readMercadoPagoBrickSession(
   value: unknown,
-  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "cpf" | "checkout">,
-  expectedShippingInCents: number
+  identity: Pick<MercadoPagoBrickSession, "idempotencyKey" | "email" | "checkout">,
+  expectedShippingInCents?: number
 ): MercadoPagoBrickSession | null {
-  if (!isUnknownRecord(value) || value.ok !== true || value.paymentMode !== "test") return null;
+  if (!isUnknownRecord(value) || value.ok !== true || !["test", "production"].includes(String(value.paymentMode))) return null;
+  const paymentMode = value.paymentMode === "production" ? "production" : "test";
   const { subtotalInCents, discountInCents, couponName, shippingInCents, amountInCents, publicKey } = value;
   if (
-    typeof publicKey !== "string" || !publicKey.startsWith("TEST-") ||
+    typeof publicKey !== "string" || !publicKey.startsWith(paymentMode === "test" ? "TEST-" : "APP_USR-") ||
     !positiveSafeInteger(subtotalInCents) ||
     typeof discountInCents !== "number" || !Number.isSafeInteger(discountInCents) || discountInCents < 0 ||
     typeof couponName !== "string" ||
-    !positiveSafeInteger(shippingInCents) ||
+    !nonNegativeSafeInteger(shippingInCents) ||
     !positiveSafeInteger(amountInCents) ||
-    shippingInCents !== expectedShippingInCents ||
+    (expectedShippingInCents !== undefined && shippingInCents !== expectedShippingInCents) ||
     amountInCents !== subtotalInCents - discountInCents + shippingInCents
   ) return null;
 
@@ -57,7 +64,10 @@ export function readMercadoPagoBrickSession(
     shippingInCents,
     amountInCents,
     publicKey,
-    ...identity
+    paymentMode,
+    idempotencyKey: identity.idempotencyKey,
+    email: identity.email,
+    checkout: identity.checkout
   };
 }
 
@@ -68,14 +78,15 @@ export function createMercadoPagoInitialization(session: MercadoPagoBrickSession
     payer: {
       email: session.email,
       entityType: "individual" as const,
-      ...(session.cpf ? { identification: { type: "CPF", number: session.cpf } } : {})
+      ...(session.savedCards?.customerId && session.savedCards.cardIds.length
+        ? { customerId: session.savedCards.customerId, cardsIds: session.savedCards.cardIds } : {}),
     }
   };
 }
 
 export function createCheckoutPaymentPayload(
   formData: unknown,
-  session: Pick<MercadoPagoBrickSession, "cpf">
+  session: Pick<MercadoPagoBrickSession, "paymentMode">
 ) {
   if (!isUnknownRecord(formData)) return null;
   const paymentMethodId = formData.payment_method_id;
@@ -91,16 +102,24 @@ export function createCheckoutPaymentPayload(
     ? formData.issuer_id
     : undefined;
   const payer = isUnknownRecord(formData.payer) ? formData.payer : {};
+  const savedCustomerId = payer.type === "customer" && typeof payer.id === "string"
+    && /^[a-zA-Z0-9_+-]{1,100}$/u.test(payer.id) ? payer.id : "";
+  if (payer.type === "customer" && (!savedCustomerId || !token)) return null;
   const identification = isUnknownRecord(payer.identification) ? payer.identification : {};
-  const document = typeof identification.number === "string" && identification.number.trim()
-    ? identification.number.trim() : session.cpf;
+  if (identification.type !== undefined && identification.type !== "CPF") return null;
+  const suppliedDocument = typeof identification.number === "string" && identification.number.trim()
+    ? identification.number.trim() : null;
+  // Missing identification is resolved from private customer identity by the backend.
+  const document = suppliedDocument ? readMercadoPagoPayerDocument(suppliedDocument, session.paymentMode) : null;
+  if (suppliedDocument && !document) return null;
 
   return {
     payment_method_id: paymentMethodId.trim(),
     installments,
     payer: {
       entity_type: "individual" as const,
-      identification: { type: "CPF" as const, number: document }
+      ...(savedCustomerId ? { type: "customer" as const, id: savedCustomerId } : {}),
+      ...(document ? { identification: { type: "CPF" as const, number: document } } : {})
     },
     ...(token ? { token } : {}),
     ...(issuerId !== undefined ? { issuer_id: issuerId } : {})

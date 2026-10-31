@@ -1,8 +1,11 @@
+import { readJsonResponse, isAllowedBrowserRequest } from "@curtiz/security";
+import { consumePanelMutationBudget, panelRateLimitStatus } from "../../../lib/api-rate-limit";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
+import { isOperationallyActiveOrder } from "@/lib/operational-order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +31,12 @@ const orderStatuses = [
   "shipped",
   "delivered",
   "manual_review",
+  "refund_pending",
+  "cancellation_requested",
   "return_requested",
-  "returned"
+  "returned",
+  "cancelled",
+  "refunded"
 ] as const;
 const taskStatuses = ["queued", "in_progress", "blocked", "completed"] as const;
 const returnStatuses = [
@@ -46,7 +53,11 @@ const returnStatuses = [
 ] as const;
 
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("review_return"), returnId: z.string().uuid(),
+    decision: z.enum(["review", "photos", "approve", "reject", "posting", "transit", "receive", "exchange", "complete", "refund", "reconcile"]),
+    message: z.string().trim().min(5).max(2000), instructions: z.string().trim().max(2000).default(""), code: z.string().trim().max(120).default("") }),
   z.object({ action: z.literal("start_separation"), orderId: z.string().uuid() }),
+  z.object({ action: z.literal("cancel_order"), orderId: z.string().uuid(), reason: z.string().trim().min(5).max(500) }),
   z.object({
     action: z.literal("start_dispatch"),
     orderId: z.string().uuid(),
@@ -116,21 +127,18 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 
 const safeOrigin = (request: NextRequest) => {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  const requestOrigin = new URL(request.url).origin;
-  const configured = [
+  const configured = new Set([
     process.env.NEXT_PUBLIC_PANEL_URL,
-    ...(process.env.ALLOWED_ORIGINS ?? "").split(",")
-  ].filter(Boolean);
-  return origin === requestOrigin || configured.includes(origin);
+    ...(process.env.ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim())
+  ].filter((value): value is string => Boolean(value)));
+  return isAllowedBrowserRequest(request, configured);
 };
 
 async function access(request: NextRequest) {
   const session = verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
   if (session) {
-    return session?.role === "operational"
-      ? { demo: true as const, supabase: null, userId: session.email }
+    return ["operational", "admin", "manager"].includes(session.role)
+      ? { demo: true as const, supabase: null, userId: session.email, returnsOnly: session.role !== "operational" }
       : null;
   }
   const supabase = await createServerSupabaseClient();
@@ -142,9 +150,10 @@ async function access(request: NextRequest) {
     supabase.from("user_roles").select("role").eq("user_id", user.id)
   ]);
   const roles = rows(rolesData).map((item) => text(item.role));
-  if (profile?.status !== "active" || !roles.includes("operational")) return null;
+  if (profile?.status !== "active" || !roles.some(role => ["operational", "admin", "manager"].includes(role))) return null;
   if (!(await hasRequiredInternalMfa(supabase))) return null;
-  return { demo: false as const, supabase, userId: user.id };
+  if (!(await consumePanelMutationBudget(request, supabase))) return null;
+  return { demo: false as const, supabase, userId: user.id, returnsOnly: !roles.includes("operational") };
 }
 
 const demoSnapshot = (section: string, page: number, pageSize: number) => ({
@@ -189,7 +198,7 @@ const demoSnapshot = (section: string, page: number, pageSize: number) => ({
 export async function GET(request: NextRequest) {
   const authorized = await access(request);
   if (!authorized) {
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
+    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: panelRateLimitStatus(request) === 401 ? 403 : panelRateLimitStatus(request), headers: noStore });
   }
   const section = request.nextUrl.searchParams.get("section")?.slice(0, 40) ?? "";
   const search =
@@ -203,13 +212,14 @@ export async function GET(request: NextRequest) {
   const pageSize = 20;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+  if (authorized.returnsOnly && !["trocas", "devolucoes"].includes(section)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   if (authorized.demo) {
     return NextResponse.json(demoSnapshot(section, page, pageSize), { headers: noStore });
   }
   const supabase = authorized.supabase;
   const dashboard = section === "";
   const needsMetrics = dashboard || section === "relatorios-operacionais";
-  const needsOrders = section === "pedidos";
+  const needsOrders = section === "pedidos" || section === "pendencias";
   const needsTasks =
     dashboard || ["separacao", "expedicao", "envio", "pendencias"].includes(section);
   const needsInventory = ["estoque", "reposicao", "danificados"].includes(section);
@@ -226,7 +236,7 @@ export async function GET(request: NextRequest) {
   let orderQuery = supabase
     .from("orders")
     .select(
-      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,tracking_code,label_path,dispatched_at),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
+      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,carrier,tracking_code,label_path,dispatched_at,operation_state,shipping_amount,shipping_cost,estimated_days),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
       { count: "exact" }
     )
     .in("status", [...orderStatuses])
@@ -234,6 +244,8 @@ export async function GET(request: NextRequest) {
     .range(from, to);
   if (search) orderQuery = orderQuery.or(`public_code.ilike.%${search}%,customer_name_snapshot.ilike.%${search}%`);
   if (status && (orderStatuses as readonly string[]).includes(status)) orderQuery = orderQuery.eq("status", status);
+  if (section === "pendencias") orderQuery = orderQuery.in("status", ["manual_review", "refund_pending", "cancellation_requested"]);
+  else orderQuery = orderQuery.neq("status", "cancellation_requested");
 
   let taskQuery = supabase
     .from("operational_tasks")
@@ -243,6 +255,7 @@ export async function GET(request: NextRequest) {
     )
     .order("created_at", { ascending: false })
     .range(from, to);
+  taskQuery = taskQuery.neq("status", "cancelled");
   if (status && (taskStatuses as readonly string[]).includes(status)) taskQuery = taskQuery.eq("status", status);
   const taskTypeForSection: Record<string, string> = {
     separacao: "separation",
@@ -277,7 +290,7 @@ export async function GET(request: NextRequest) {
     .range(from, to);
   let returnQuery = supabase
     .from("returns")
-    .select("id,public_code,reason,description,requested_resolution,status,requested_at,orders(public_code),return_items(id,quantity,inspection_result,condition,restock_destination,resolution,order_items(product_name_snapshot,sku_snapshot))", { count: "exact" })
+    .select("id,public_code,reason,description,requested_resolution,status,requested_at,request_kind,customer_message,return_instructions,reverse_logistics_code,reverse_tracking_code,exchange_tracking_code,refund_amount,refund_error,eligibility_snapshot,return_media(id),return_history(id,status,message,created_at),orders(public_code),return_items(id,quantity,inspection_result,condition,restock_destination,resolution,order_items(product_name_snapshot,sku_snapshot))", { count: "exact" })
     .order("requested_at", { ascending: false })
     .range(from, to);
   if (status && (returnStatuses as readonly string[]).includes(status)) returnQuery = returnQuery.eq("status", status);
@@ -310,7 +323,7 @@ export async function GET(request: NextRequest) {
     ...(section === "pedidos" ? ["orders.update_operational_status"] : []),
     ...(needsKits ? ["representatives.kits.fulfill"] : []),
     ...(needsInventory ? ["operations.inventory.request_adjustment"] : []),
-    ...(needsReturns ? ["returns.inspect"] : []),
+    ...(needsReturns ? ["returns.inspect", "returns.approve", "returns.refund"] : []),
     ...(section === "ocorrencias"
       ? ["operations.occurrences.create", "operations.occurrences.resolve"]
       : [])
@@ -416,8 +429,13 @@ export async function GET(request: NextRequest) {
         status: text(shipment.status),
         provider: text(shipment.provider),
         service: text(shipment.service),
+        carrier: text(shipment.carrier),
         trackingCode: text(shipment.tracking_code) || null,
-        labelReady: Boolean(text(shipment.label_path))
+        labelReady: Boolean(text(shipment.label_path)),
+        operationState: text(shipment.operation_state),
+        shippingAmount: Number(shipment.shipping_amount ?? 0),
+        shippingCost: Number(shipment.shipping_cost ?? 0),
+        estimatedDays: number(shipment.estimated_days) || null
       })),
       history: rows(order.order_status_history).map((history) => ({
         status: text(history.new_status),
@@ -431,7 +449,10 @@ export async function GET(request: NextRequest) {
       }))
     };
   });
-  const tasks = rows(tasksResult.data).map((task) => {
+  const tasks = rows(tasksResult.data).filter((task) => {
+    const sourceOrder = record(task.orders);
+    return !sourceOrder || isOperationallyActiveOrder(text(sourceOrder.status));
+  }).map((task) => {
     const sourceOrder = record(task.orders);
     const sourceKit = record(task.kit_orders);
     const sourceReturn = record(task.returns);
@@ -503,6 +524,17 @@ export async function GET(request: NextRequest) {
     requestedResolution: text(returnRecord.requested_resolution),
     status: text(returnRecord.status),
     requestedAt: text(returnRecord.requested_at),
+    kind: text(returnRecord.request_kind),
+    customerMessage: text(returnRecord.customer_message),
+    instructions: text(returnRecord.return_instructions),
+    postingCode: text(returnRecord.reverse_logistics_code),
+    trackingCode: text(returnRecord.reverse_tracking_code),
+    exchangeTrackingCode: text(returnRecord.exchange_tracking_code),
+    refundAmount: Number(returnRecord.refund_amount ?? 0),
+    refundNeedsReview: Boolean(text(returnRecord.refund_error)),
+    withinWithdrawalPeriod: record(returnRecord.eligibility_snapshot)?.withinWithdrawalPeriod,
+    photos: rows(returnRecord.return_media).map(photo => ({ id: text(photo.id) })),
+    history: rows(returnRecord.return_history).map(event => ({ id: text(event.id), status: text(event.status), message: text(event.message), createdAt: text(event.created_at) })).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     items: rows(returnRecord.return_items).map((item) => ({
       id: text(item.id),
       productName: text(record(item.order_items)?.product_name_snapshot, "Produto"),
@@ -575,6 +607,8 @@ export async function GET(request: NextRequest) {
     resolveOccurrences: permission("operations.occurrences.resolve"),
     requestAdjustments: permission("operations.inventory.request_adjustment"),
     inspectReturns: permission("returns.inspect"),
+    reviewReturns: permission("returns.approve"),
+    refundReturns: permission("returns.refund"),
     addOrderNotes: permission("orders.update_operational_status")
   };
   const metrics = record(metricsResult.data);
@@ -653,9 +687,11 @@ export async function POST(request: NextRequest) {
   }
   const authorized = await access(request);
   if (!authorized) {
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
+    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: panelRateLimitStatus(request) === 401 ? 403 : panelRateLimitStatus(request), headers: noStore });
   }
-  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  const boundedBody = await readJsonResponse(request, 32768);
+  if (boundedBody instanceof Response) return boundedBody;
+  const parsed = actionSchema.safeParse(boundedBody);
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "Dados inválidos." }, { status: 400, headers: noStore });
   }
@@ -667,8 +703,16 @@ export async function POST(request: NextRequest) {
   }
   const supabase = authorized.supabase;
   const input = parsed.data;
+  if (authorized.returnsOnly && !["review_return", "inspect_return"].includes(input.action)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403, headers: noStore });
   let response: unknown;
-  if (input.action === "start_separation") {
+  if (input.action === "review_return") {
+    response = input.decision === "reconcile"
+      ? await supabase.rpc("request_return_refund_reconciliation", { p_return_id: input.returnId, p_provider_id: input.code, p_message: input.message })
+      : await supabase.rpc("review_customer_return", { p_return_id: input.returnId, p_action: input.decision,
+        p_message: input.message, p_instructions: input.instructions, p_code: input.code });
+  } else if (input.action === "cancel_order") {
+    response = await supabase.rpc("request_operational_order_cancellation", { p_order_id: input.orderId, p_reason: input.reason });
+  } else if (input.action === "start_separation") {
     response = await supabase.rpc("start_order_separation", { p_order_id: input.orderId });
   } else if (input.action === "start_dispatch") {
     response = await supabase.rpc("start_order_dispatch", {

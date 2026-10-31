@@ -10,7 +10,8 @@ const routes = [
 describe("admin upload request limits", () => {
   it.each(routes)("rejects an oversized declared body before parsing multipart", (route) => {
     expect(route.indexOf('headers.get("content-length")')).toBeGreaterThan(-1);
-    expect(route.indexOf('headers.get("content-length")')).toBeLessThan(route.indexOf("request.formData()"));
+    expect(route.indexOf('headers.get("content-length")')).toBeLessThan(route.indexOf("await readFormResponse("));
+    expect(route).not.toContain("request.formData()");
     expect(route).toContain("status: 413");
   });
 });

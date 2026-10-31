@@ -3,10 +3,21 @@ import {
   loginDestinations,
   resolveLoginDestination,
   resolveLoginRole,
+  resolveLoginReturn,
+  hasInternalPanelRole,
   resolvePostLoginDestination
 } from "./auth-routing";
 
 describe("login routing", () => {
+  it.each(["admin", "manager", "technical", "operational"])("preserva cliente com papel %s", role => {
+    expect(resolveLoginDestination(["customer", role])).toBe("/minha-conta");
+    expect(hasInternalPanelRole(["customer", role])).toBe(true);
+  });
+  it("preserva o destino explícito e escolhe a origem do painel", () => {
+    expect(resolveLoginReturn("/minha-conta/pedidos", "https://painel.curtiz.com.br")).toBe("/minha-conta/pedidos");
+    expect(resolveLoginReturn("/operacional/pedidos", "https://painel.curtiz.com.br")).toBe("https://painel.curtiz.com.br/operacional/pedidos");
+    expect(hasInternalPanelRole(["customer", "representative"])).toBe(false);
+  });
   it.each([
     ["customer", "/minha-conta"],
     ["representative", "/minha-conta"],
@@ -28,6 +39,8 @@ describe("login routing", () => {
   it("direciona múltiplos painéis selecionáveis para a Central", () => {
     expect(resolveLoginDestination(["admin", "manager", "operational"])).toBe("/selecionar-painel");
     expect(resolveLoginDestination(["admin", "manager"])).toBe("/selecionar-painel");
+    expect(resolveLoginDestination(["admin", "technical"])).toBe("/selecionar-painel");
+    expect(resolveLoginDestination(["operational", "technical"])).toBe("/selecionar-painel");
   });
 
   it.each([

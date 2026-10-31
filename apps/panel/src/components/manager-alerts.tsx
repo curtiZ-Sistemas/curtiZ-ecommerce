@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  BadgeAlert,
-  Boxes,
-  CircleDollarSign,
-  RefreshCw,
-  RotateCcw,
-  TriangleAlert
-} from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -15,6 +8,7 @@ import {
   ManagementPageHeader,
   ManagementSectionHeader
 } from "@/components/management-ui";
+import { LoadingBlock, StatusLabel } from "@/components/panel-ui";
 import { managementPeriodFor } from "@/lib/management-period";
 
 type AlertKey =
@@ -29,7 +23,8 @@ type AlertDefinition = {
   description: string;
   href: string;
   action: string;
-  icon: typeof TriangleAlert;
+  /** Falha de processamento é crítica; as demais pedem acompanhamento. */
+  tone: "warning" | "danger";
 };
 
 const definitions: AlertDefinition[] = [
@@ -39,7 +34,7 @@ const definitions: AlertDefinition[] = [
     description: "Registros financeiros ainda não resolvidos.",
     href: "/gerencia/financeiro",
     action: "Abrir financeiro",
-    icon: CircleDollarSign
+    tone: "warning"
   },
   {
     key: "failed_commission_payments",
@@ -47,7 +42,7 @@ const definitions: AlertDefinition[] = [
     description: "Falhas que exigem conferência antes de uma nova tentativa.",
     href: "/gerencia/pagamentos",
     action: "Revisar pagamentos",
-    icon: BadgeAlert
+    tone: "danger"
   },
   {
     key: "critical_stock",
@@ -55,7 +50,7 @@ const definitions: AlertDefinition[] = [
     description: "Variações no estoque mínimo ou abaixo dele.",
     href: "/gerencia/relatorios",
     action: "Abrir relatórios",
-    icon: Boxes
+    tone: "warning"
   },
   {
     key: "refunds_in_period",
@@ -63,7 +58,7 @@ const definitions: AlertDefinition[] = [
     description: "Reembolsos registrados nos últimos 30 dias.",
     href: "/gerencia/pedidos-vendas",
     action: "Ver pedidos",
-    icon: RotateCcw
+    tone: "warning"
   }
 ];
 
@@ -103,6 +98,8 @@ export function ManagerAlerts() {
   useEffect(() => { void load(); }, [load]);
 
   const total = definitions.reduce((sum, item) => sum + numeric(alerts[item.key]), 0);
+  const active = definitions.filter((item) => numeric(alerts[item.key]) > 0);
+  const quiet = definitions.filter((item) => numeric(alerts[item.key]) === 0);
 
   return (
     <section className="management-page manager-alert-center" aria-busy={loading}>
@@ -111,22 +108,40 @@ export function ManagerAlerts() {
         description="Ocorrências reais que precisam de acompanhamento nas áreas responsáveis."
         actions={<button className="secondary-button" type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} aria-hidden="true" /> Atualizar</button>}
       />
-      {error ? <ManagementEmptyState icon={TriangleAlert} title="Alertas indisponíveis" description={error} action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button>} /> : null}
-      {!error && !loading && total === 0 ? <ManagementEmptyState icon={BadgeAlert} title="Nenhum alerta pendente" description="Não há divergências, falhas, estoque crítico ou reembolsos no recorte atual." /> : null}
-      {!error && (loading || total > 0) ? <section className="panel-card">
-        <ManagementSectionHeader title="Prioridades" description="Cada item direciona para o fluxo operacional correspondente." />
-        <div className="manager-alert-grid">
-          {definitions.map((definition) => {
-            const Icon = definition.icon;
-            const value = numeric(alerts[definition.key]);
-            return <article key={definition.key} className={value ? "manager-alert-item is-active" : "manager-alert-item"}>
-              <Icon aria-hidden="true" />
-              <div><span>{definition.title}</span><strong>{loading ? "—" : value.toLocaleString("pt-BR")}</strong><p>{definition.description}</p></div>
-              <Link href={definition.href}>{definition.action}</Link>
-            </article>;
-          })}
-        </div>
-      </section> : null}
+      {error ? <ManagementEmptyState kind="error" title="Alertas indisponíveis" description={error} action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" /> Tentar novamente</button>} /> : null}
+      {!error && loading ? <div className="manager-alert-loading"><LoadingBlock label="Carregando alertas" rows={4} /></div> : null}
+      {!error && !loading && total === 0 ? <ManagementEmptyState title="Nenhum alerta pendente" description="Não há divergências, falhas, estoque crítico ou reembolsos no recorte atual." /> : null}
+      {!error && !loading && total > 0 ? <>
+        <section className="panel-card manager-alert-group" aria-labelledby="manager-alerts-active">
+          <ManagementSectionHeader id="manager-alerts-active" title="Requer acompanhamento" description="Cada item direciona para o fluxo operacional correspondente." />
+          <ul className="manager-alert-list">
+            {active.map((definition) => <AlertItem key={definition.key} definition={definition} value={numeric(alerts[definition.key])} />)}
+          </ul>
+        </section>
+        {quiet.length ? <section className="panel-card manager-alert-group" aria-labelledby="manager-alerts-quiet">
+          <ManagementSectionHeader id="manager-alerts-quiet" title="Sem ocorrências" description="Áreas sem registros no recorte atual." />
+          <ul className="manager-alert-list">
+            {quiet.map((definition) => <AlertItem key={definition.key} definition={definition} value={0} />)}
+          </ul>
+        </section> : null}
+      </> : null}
     </section>
+  );
+}
+
+function AlertItem({ definition, value }: { definition: AlertDefinition; value: number }) {
+  return (
+    <li className="manager-alert-row manager-alert-entry">
+      <span>
+        <strong>{definition.title}</strong>
+        <small>{definition.description}</small>
+      </span>
+      {value > 0
+        ? <StatusLabel tone={definition.tone}>{value.toLocaleString("pt-BR")} ocorrência(s)</StatusLabel>
+        : <StatusLabel tone="neutral">Nenhuma ocorrência</StatusLabel>}
+      <Link className="manager-alert-link" href={definition.href}>
+        {definition.action} <ChevronRight aria-hidden="true" />
+      </Link>
+    </li>
   );
 }

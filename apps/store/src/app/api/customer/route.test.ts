@@ -1,14 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { POST } from "./route";
+import { cancelCustomerOrder } from "@/lib/customer-order-cancellation";
 
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock("@/lib/customer-order-cancellation", () => ({ cancelCustomerOrder: vi.fn() }));
 vi.mock("@curtiz/security", () => ({ DEMO_SESSION_COOKIE: "demo", verifyDemoSession: () => null }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/personal-data", () => import("../../../lib/personal-data"));
 vi.mock("@/lib/unknown-data", () => import("../../../lib/unknown-data"));
+vi.mock("@/lib/private-request", () => ({
+  PrivateRequestError: class extends Error { constructor(readonly status: number) { super(); } },
+  readPrivateJson: (request: Request) => request.json(),
+  requirePrivateRateLimit: async () => undefined
+}));
 
 const savedId = "11111111-1111-4111-8111-111111111111";
 const body = { action: "address_save", id: savedId, label: "Casa 2", recipientName: "Cliente Teste",
@@ -16,6 +23,30 @@ const body = { action: "address_save", id: savedId, label: "Casa 2", recipientNa
   city: "Sao Paulo", state: "sp", isDefault: false };
 
 describe("saved address response", () => {
+  it("accepts withdrawal without justification and passes only server-owned return fields", async () => {
+    const rpc = vi.fn(async () => ({ data: savedId, error: null }));
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) }, rpc } as never);
+    const response = await POST(new Request("https://store.example/api/customer", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "return_request", orderItemId: savedId, quantity: 1, kind: "withdrawal", resolution: "refund", amount: 999999, customer_id: "attacker", status: "approved" }) }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, data: { id: savedId } });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("request_customer_return_v2", { p_order_item_id: savedId, p_quantity: 1, p_reason: "", p_description: "", p_resolution: "refund", p_kind: "withdrawal" });
+  });
+  it.each([0, -1, 1.5, 21])("rejects invalid return quantity %s before database access", async quantity => {
+    const rpc = vi.fn();
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ rpc } as never);
+    const response = await POST(new Request("https://store.example/api/customer", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "return_request", orderItemId: savedId, quantity, kind: "withdrawal", resolution: "refund" }) }));
+    expect(response.status).toBe(400); expect(rpc).not.toHaveBeenCalled();
+  });
+  it("cancellation passes only the authenticated customer and order ID to the backend", async () => {
+    vi.mocked(createServerSupabaseClient).mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) } } as never);
+    vi.mocked(cancelCustomerOrder).mockResolvedValue({ statusCode: 200, body: { ok: true, status: "cancelled", message: "Pedido cancelado." } });
+    const response = await POST(new Request("https://store.example/api/customer", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "order_cancel", orderId: savedId, customer_id: "attacker", payment_id: "arbitrary", amount: 1 }) }));
+    expect(response.status).toBe(200);
+    expect(cancelCustomerOrder).toHaveBeenCalledWith(savedId,"owner");
+  });
   it.each([false, true])("preserves the saved ID even if reading the canonical address fails (%s)", async (readFails) => {
     const address = { id: savedId, label: "Casa 2", state: "SP", postal_code: "01310100", is_default: false };
     const rpc = vi.fn(async () => ({ data: savedId, error: null }));
