@@ -47,7 +47,7 @@ describe("Mercado Pago em teste", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        id: 123,
+        id: 123, live_mode: false,
         status: "approved",
         status_detail: "accredited",
         transaction_amount: 42.4,
@@ -119,7 +119,7 @@ describe("Mercado Pago em teste", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        id: 456,
+        id: 456, live_mode: false,
         status: "pending",
         status_detail: "pending_waiting_transfer",
         transaction_amount: 42.4,
@@ -154,6 +154,7 @@ describe("Mercado Pago em teste", () => {
   it.each([400, 422])("mapeia erro HTTP %s do pagamento sem expor a resposta", async httpStatus => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
+      headers: new Headers(),
       status: httpStatus,
       json: async () => ({ message: "token secreto e CPF 12345678909", cause: [{ code: 123 }] })
     });

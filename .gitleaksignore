@@ -1,3 +1,14 @@
 # Falsos positivos revisados: placeholders públicos de teste do CI, nunca credenciais reais.
 # scripts/ci-workflow.test.ts:84 → "ci-referral-placeholder-with-32-characters" (mesmo valor do job Qualidade em ci.yml).
 431deba80b940943dd3041f2e050285a723a23f4:scripts/ci-workflow.test.ts:generic-api-key:84
+# Mesmo placeholder fictício do CI; ambas as linhas históricas conferidas literalmente.
+93d5ca61c1529ebe17ef79379af40e1385b5064d:.github/workflows/ci.yml:generic-api-key:121
+93d5ca61c1529ebe17ef79379af40e1385b5064d:.github/workflows/ci.yml:generic-api-key:327
+# Chave isolada usada exclusivamente pelo teste de criptografia (vi.stubEnv).
+6f567bf7292f036368a1e98cdfc529434e9bd3e4:apps/store/src/lib/pii.test.ts:generic-api-key:6
+# JWT sem assinatura válida e token Stripe fictício para testar a remoção de credenciais.
+e784880bdd0fcf3bf7e843438d6871c6de6b5dae:apps/panel/src/lib/technical-sanitizer.test.ts:jwt:29
+e784880bdd0fcf3bf7e843438d6871c6de6b5dae:apps/panel/src/lib/technical-sanitizer.test.ts:stripe-access-token:31
+# DEMO_USERS_PASSWORD vazio; o detector atravessou a quebra de linha e capturou
+# INVENTORY_RESERVATION_MINUTES, configuração numérica sem credencial.
+03146b7b2a9c76ed72f021579494da8b7fd56cc1:.env.example:generic-api-key:41

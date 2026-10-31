@@ -7,6 +7,9 @@ import { CartProvider } from "@/components/cart-provider";
 import { FavoritesProvider } from "@/components/favorites-provider";
 import { RouteFeedback } from "@/components/route-feedback";
 import { CookiePreferences } from "@/components/cookie-preferences";
+import { DevtoolsGuard } from "@/components/devtools-guard";
+import { getCompanyIdentification } from "@/lib/company-identification-data";
+import { getDevtoolsBlockEnabled } from "@/lib/devtools-block-data";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { IntelligenceBootstrap } from "@/components/intelligence-bootstrap";
@@ -18,6 +21,7 @@ import {
   OFFICIAL_STORE_ORIGIN,
   organizationStructuredData,
   STORE_DESCRIPTION,
+  STORE_TITLE,
   websiteStructuredData
 } from "@/lib/seo";
 import "./globals.css";
@@ -27,7 +31,7 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", displa
 export const metadata: Metadata = {
   metadataBase: new URL(OFFICIAL_STORE_ORIGIN),
   title: {
-    default: "curti Z | Chinelos, slides e sandálias",
+    default: STORE_TITLE,
     template: "%s | curti Z"
   },
   description: STORE_DESCRIPTION,
@@ -35,23 +39,25 @@ export const metadata: Metadata = {
     type: "website",
     locale: "pt_BR",
     siteName: "curti Z",
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION,
     url: "/"
   },
   twitter: {
     card: "summary",
-    title: "curti Z | Chinelos, slides e sandálias",
+    title: STORE_TITLE,
     description: STORE_DESCRIPTION
   }
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // A CSP usa um nonce exclusivo por requisição; o HTML não pode ser pré-renderizado sem ele.
-  const [, promotionMessages, navigation] = await Promise.all([
+  const [, promotionMessages, navigation, devtoolsBlocked, company] = await Promise.all([
     connection(),
     getPromotionBarMessages(),
-    getStoreNavigation()
+    getStoreNavigation(),
+    getDevtoolsBlockEnabled(),
+    getCompanyIdentification()
   ]);
   const csp = (await headers()).get("content-security-policy") ?? "";
   const mercadoPagoAllowed = csp.includes("https://sdk.mercadopago.com");
@@ -68,6 +74,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </a>
             <RouteFeedback />
             <IntelligenceBootstrap />
+            <DevtoolsGuard enabled={devtoolsBlocked} />
             <PromotionBar messages={promotionMessages} />
             <SiteHeader navigation={navigation} />
             <main id="main-content">
@@ -75,7 +82,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 {children}
               </PaymentDocumentBoundary>
             </main>
-            <SiteFooter navigation={navigation} />
+            <SiteFooter navigation={navigation} company={company} />
             {/* Chat temporariamente desativado. */}
             <CookiePreferences />
           </FavoritesProvider>

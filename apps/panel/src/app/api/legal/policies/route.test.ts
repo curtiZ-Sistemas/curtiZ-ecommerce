@@ -8,7 +8,8 @@ const state = vi.hoisted(() => ({
   publications: 0,
   calls: [] as { name: string; args?: Record<string, unknown> }[],
   queried: [] as string[],
-  problems: new Map<string, string[]>()
+  problems: new Map<string, string[]>(),
+  pending: new Map<string, string[]>()
 }));
 vi.mock("@/lib/admin-api", () => ({
   privateNoStore: { "cache-control": "private, no-store" },
@@ -45,7 +46,8 @@ vi.mock("@/lib/legal-api", () => ({
                 return {
                   data: (args?.p_documents as { id: string }[]).map((document) => ({
                     id: document.id,
-                    problems: state.problems.get(document.id) ?? []
+                    problems: state.problems.get(document.id) ?? [],
+                    pending: state.pending.get(document.id) ?? []
                   })),
                   error: null
                 };
@@ -55,7 +57,11 @@ vi.mock("@/lib/legal-api", () => ({
                   return { error: { message: "legal concurrent change" }, data: null };
                 state.publications++;
                 return {
-                  data: { versionId: "test-version", unchanged: state.publications > 1 },
+                  data: {
+                    versionId: "test-version",
+                    unchanged: state.publications > 1,
+                    pending: state.pending.get(String(args?.p_id)) ?? []
+                  },
                   error: null
                 };
               }
@@ -100,6 +106,7 @@ describe("API das políticas", () => {
     state.calls = [];
     state.queried = [];
     state.problems = new Map();
+    state.pending = new Map();
     state.publications = 0;
   });
   it("carrega só documentos, seções e empresa", async () => {
@@ -151,8 +158,24 @@ describe("API das políticas", () => {
     ).toBe(400);
     expect(state.calls).toEqual([]);
   });
-  it("valida todas antes de publicar e comunica pendências", async () => {
-    state.problems.set(id2, ["[CNPJ]"]);
+  it("publica mesmo com pendências e devolve o que falta preencher", async () => {
+    state.pending.set(id1, ["[CNPJ]", "CNPJ"]);
+    const response = await post({ action: "publish", documents: [{ id: id1, updated_at }] });
+    const payload = (await response.json()) as {
+      results: { published: boolean; problems: string[]; pending: string[] }[];
+    };
+    expect(payload.results[0]).toMatchObject({
+      published: true,
+      problems: [],
+      pending: ["[CNPJ]", "CNPJ"]
+    });
+    expect(state.calls.map((call) => call.name)).toEqual([
+      "validate_legal_policy_publication",
+      "publish_legal_policy"
+    ]);
+  });
+  it("valida todas antes de publicar e bloqueia só impedimentos estruturais", async () => {
+    state.problems.set(id2, ["Conteúdo vazio"]);
     const response = await post({
       action: "publish",
       documents: [
@@ -164,7 +187,7 @@ describe("API das políticas", () => {
       results: { published: boolean; problems: string[] }[];
     };
     expect(payload.results.map((item) => item.published)).toEqual([true, false]);
-    expect(payload.results[1]?.problems).toContain("[CNPJ]");
+    expect(payload.results[1]?.problems).toContain("Conteúdo vazio");
     expect(state.calls.map((call) => call.name)).toEqual([
       "validate_legal_policy_publication",
       "publish_legal_policy"

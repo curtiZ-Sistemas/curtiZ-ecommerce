@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(20);
 
 insert into auth.users(id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values ('a0700000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000',
@@ -27,13 +27,13 @@ select is((select reason from public.latest_user_access_history(array['a0700000-
 select is((select count(*) from public.latest_user_access_history(array['a0700000-0000-4000-8000-000000000004']::uuid[])), 0::bigint, 'no event is an empty result');
 
 reset role;
-update private.internal_security_settings set require_internal_mfa = true;
+select throws_ok($$update private.internal_security_settings set require_internal_mfa = true$$, '23514', null, 'removed authenticator cannot be reenabled');
 set local role authenticated;
-select ok(not private.has_permission('products.update'), 'aal1 cannot use an allowed override');
-select ok(not private.user_has_role('manager'), 'aal1 cannot use internal role helper');
-select throws_ok($$select private.require_permission('products.update')$$, '42501', 'permission denied', 'protected RPC permission rejects aal1');
-select throws_ok($$select * from public.latest_user_access_history('{}'::uuid[])$$, '42501', 'permission denied', 'history rejects aal1');
-select is((select count(*) from public.audit_logs where reason = 'older-user'), 0::bigint, 'RLS hides internal history from aal1');
+select ok(private.has_permission('products.update'), 'active authorized session retains its allowed override');
+select ok(private.user_has_role('manager'), 'active internal role does not require an authenticator');
+select lives_ok($$select private.require_permission('products.update')$$, 'protected RPC requires the real permission');
+select lives_ok($$select * from public.latest_user_access_history('{}'::uuid[])$$, 'authorized session can read history');
+select is((select count(*) from public.audit_logs where reason = 'older-user'), 1::bigint, 'RLS permits the authorized internal history');
 select throws_ok($$update private.internal_security_settings set require_internal_mfa = false$$, '42501', null, 'API role cannot disable MFA');
 
 select set_config('request.jwt.claims', '{"sub":"a0700000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}', true);
@@ -42,11 +42,23 @@ select ok(private.user_has_role('manager'), 'aal2 retains internal role');
 select is((select count(*) from public.audit_logs where reason = 'older-user'), 1::bigint, 'RLS allows authorized aal2');
 
 reset role;
+update public.profiles set status = 'suspended' where id = 'a0700000-0000-4000-8000-000000000001';
+set local role authenticated;
+select ok(not private.has_permission('products.update'), 'inactive profile loses permission despite override');
+select ok(not private.user_has_role('manager'), 'inactive profile loses internal role access');
+reset role;
+update public.profiles set status = 'active' where id = 'a0700000-0000-4000-8000-000000000001';
+update public.user_permission_overrides set allowed = false where user_id = 'a0700000-0000-4000-8000-000000000001'
+  and permission_id = (select id from public.permissions where code = 'products.update');
+set local role authenticated;
+select ok(not private.has_permission('products.update'), 'explicit denial remains authoritative');
+reset role;
 delete from public.user_roles where user_id = 'a0700000-0000-4000-8000-000000000001' and role in ('admin','manager','technical','operational');
 insert into public.user_roles(user_id,role) values ('a0700000-0000-4000-8000-000000000001','representative') on conflict do nothing;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"a0700000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}', true);
 select ok(private.user_has_role('representative'), 'representative role does not require internal MFA');
+select ok(not private.user_has_role('manager'), 'representative cannot claim an internal role');
 select is((select count(*) from public.profiles where id = auth.uid()), 1::bigint, 'own profile remains accessible');
-select * from finish();
+select * from finish(true);
 rollback;

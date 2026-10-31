@@ -88,6 +88,25 @@ async function login(remember = false, origin = `https://${state.host}`, next?: 
 }
 
 describe("login e sessão entre loja e painel", () => {
+  it("does not expose the removed authenticator enrollment API", async () => {
+    const response = await POST(new NextRequest("https://curtiz.com.br/api/auth/mfa", {
+      method: "POST", headers: { origin: "https://curtiz.com.br", "content-type": "application/json" },
+      body: JSON.stringify({ action: "enroll" })
+    }), { params: Promise.resolve({ mode: "mfa" }) });
+    expect(response.status).toBe(404);
+    expect(state.writes).toEqual([]);
+    expect(state.turnstile).not.toHaveBeenCalled();
+  });
+  it("requires the signup challenge on confirmation resend before contacting the provider", async () => {
+    state.turnstile.mockResolvedValue(false);
+    const response = await POST(new NextRequest("https://curtiz.com.br/api/auth/resend", {
+      method: "POST", headers: { origin: "https://curtiz.com.br", "content-type": "application/json" },
+      body: JSON.stringify({ email: "test@example.invalid", turnstileToken: "fresh-token" })
+    }), { params: Promise.resolve({ mode: "resend" }) });
+    expect(response.status).toBe(403);
+    expect(state.turnstile).toHaveBeenCalledWith(expect.any(Request), "fresh-token", "signup");
+    expect(state.writes).toEqual([]);
+  });
   it.each([
     [["admin"], "/administracao"], [["manager"], "/gerencia"],
     [["technical"], "/tecnico"], [["operational"], "/operacional"],
@@ -103,6 +122,12 @@ describe("login e sessão entre loja e painel", () => {
   it.each(["customer", "representative"])("mantém %s na loja", async role => {
     state.roles = [role];
     expect(await (await login()).json()).toMatchObject({ redirectTo: "/minha-conta" });
+  });
+  it.each(["admin", "manager", "technical", "operational"])("cliente + %s preserva conta e retorno expl?cito", async role => {
+    state.roles = ["customer", role];
+    expect(await (await login()).json()).toMatchObject({ redirectTo: "/minha-conta" });
+    expect(await (await login(false, "https://curtiz.com.br", "/checkout")).json()).toMatchObject({ redirectTo: "/checkout" });
+    expect(await (await login(false, "https://curtiz.com.br", "/selecionar-painel")).json()).toMatchObject({ redirectTo: "https://painel.curtiz.com.br/selecionar-painel" });
   });
   it.each([false, true])("persiste sessão no painel com lembrar acesso %s", async remember => {
     const response = await login(remember);
@@ -124,7 +149,7 @@ describe("login e sessão entre loja e painel", () => {
   it("mantém o par workers.dev e seus cookies separados da produção", async () => {
     state.host = "curtiz-ecommerce.sistemas-curtiz.workers.dev";
     const response = await login();
-    expect(await response.json()).toMatchObject({ redirectTo: "https://curtiz-painel.sistemas-curtiz.workers.dev/administracao" });
+    expect(await response.json()).toMatchObject({ redirectTo: "https://painel.curtiz.com.br/administracao" });
     const sessionCookies = state.writes.filter(c => c.name.startsWith("sb-"));
     expect(sessionCookies.length).toBeGreaterThan(0);
     for (const cookie of sessionCookies) {

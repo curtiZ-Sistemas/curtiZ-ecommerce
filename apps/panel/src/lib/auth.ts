@@ -36,7 +36,7 @@ async function requirePanelUser(
 }
 
 export async function requirePanelAccess(role: PanelRouteRole, currentPath: string) {
-  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const { storeUrl } = await requestPublicAppUrls();
   const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const cookieStore = await cookies();
   const session = verifyDemoSession(cookieStore.get(DEMO_SESSION_COOKIE)?.value);
@@ -76,14 +76,6 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
     redirect(storeDestination("/403"));
   }
 
-  if (process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error || assurance.data.currentLevel !== "aal2") {
-      const safePath = safeInternalPath(currentPath, `/${role}`);
-      const destination = new URL(safePath, panelUrl).toString();
-      redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
-    }
-  }
 
   const profile = profileResult.data as { full_name?: unknown; avatar_path?: unknown } | null;
   let avatarUrl = "";
@@ -106,7 +98,7 @@ export async function requirePanelAccess(role: PanelRouteRole, currentPath: stri
 }
 
 export async function requirePanelSelectionAccess() {
-  const { storeUrl, panelUrl } = await requestPublicAppUrls();
+  const { storeUrl } = await requestPublicAppUrls();
   const storeDestination = (path: string) => new URL(path, storeUrl).toString();
   const currentPath = "/selecionar-painel";
   const cookieStore = await cookies();
@@ -140,13 +132,6 @@ export async function requirePanelSelectionAccess() {
   }
   if (panels.length === 1 && panels[0]) redirect(panels[0].href);
 
-  if (process.env.REQUIRE_INTERNAL_MFA === "true") {
-    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assurance.error || assurance.data.currentLevel !== "aal2") {
-      const destination = new URL(currentPath, panelUrl).toString();
-      redirect(storeDestination(`/mfa?next=${encodeURIComponent(destination)}`));
-    }
-  }
 
   return {
     userId: user.id,

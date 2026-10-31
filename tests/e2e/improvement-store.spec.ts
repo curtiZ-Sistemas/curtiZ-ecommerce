@@ -8,6 +8,12 @@ test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) =>
       JSON.stringify({ categories: { essential: true } })
     );
   });
+  let releaseHydration = () => {};
+  const hydrationGate = new Promise<void>((resolve) => { releaseHydration = resolve; });
+  await page.route("**/_next/**/*.js*", async (route) => {
+    await hydrationGate;
+    await route.continue();
+  });
   await page.goto("/cadastro?returnTo=/checkout", { waitUntil: "commit" });
   const name = page.getByLabel("Nome completo");
   const email = page.getByLabel("E-mail", { exact: true });
@@ -16,6 +22,14 @@ test("normaliza o cadastro e apresenta requisitos de senha", async ({ page }) =>
   const requirements = page.locator("#signup-password-requirements");
 
   await expect(name).toBeVisible({ timeout: 30_000 });
+  try {
+    for (const field of [name, email, phone, password, page.getByLabel("Confirmar senha")]) {
+      await expect(field).toBeDisabled();
+    }
+  } finally {
+    releaseHydration();
+  }
+  await expect(name).toBeEnabled();
   await name.fill("  joão-pedro   d'ávila");
   await email.fill(" RAFAEL @EMAIL.COM ");
   await phone.fill("31999990000");

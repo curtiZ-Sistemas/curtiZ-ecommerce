@@ -50,4 +50,28 @@ describe("rodapé da loja", () => {
       ["Preto", "/produtos?categoria=preto"]
     ]);
   });
+
+  it("mostra a identificação do fornecedor quando os dados legais estão completos", () => {
+    const html = renderToStaticMarkup(<SiteFooter navigation={[]} company={{
+      legalName: "Empresa Exemplo Ltda",
+      tradeName: null,
+      taxId: "11222333000181",
+      address: "Rua Exemplo, 100, Centro",
+      email: "contato@example.test",
+      phone: null,
+      supportChannel: null
+    }} />);
+    expect(html).toContain("Identificação do fornecedor");
+    expect(html).toContain("Empresa Exemplo Ltda");
+    expect(html).toContain("11.222.333/0001-81");
+    expect(html).toContain("Rua Exemplo, 100, Centro");
+    expect(html).toContain("mailto:contato@example.test");
+  });
+
+  it("não mostra o bloco de identificação nem quebra o rodapé sem dados legais", () => {
+    const html = renderToStaticMarkup(<SiteFooter navigation={[]} />);
+    expect(html).not.toContain("Identificação do fornecedor");
+    expect(html).not.toContain("CNPJ");
+    expect(html).toContain("Todos os direitos reservados");
+  });
 });

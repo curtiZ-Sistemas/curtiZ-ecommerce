@@ -1,15 +1,16 @@
 "use client";
 
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
 } from "recharts";
+import { chartAxisTick, chartLegendStyle, chartTooltipProps } from "@/components/management-ui";
 
 export type StrategyPoint = {
   date: string;
@@ -27,45 +28,34 @@ const compactCurrency = new Intl.NumberFormat("pt-BR", {
 export function StrategyChart({ data }: { data: StrategyPoint[] }) {
   if (!data.length) return <p className="admin-empty-copy">Sem vendas no período selecionado.</p>;
 
+  const first = data[0]?.date;
+  const last = data[data.length - 1]?.date;
+
   return (
-    <div className="management-chart" role="img" aria-label="Evolução do faturamento bruto e do lucro estimado">
-      <ResponsiveContainer>
-        <AreaChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
-          <defs>
-            <linearGradient id="strategyGross" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--brand-700)" stopOpacity={0.2} />
-              <stop offset="100%" stopColor="var(--brand-700)" stopOpacity={0.01} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e7e3df" vertical={false} />
-          <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} />
-          <YAxis
-            width={72}
-            fontSize={11}
-            tickLine={false}
-            axisLine={false}
-            tickFormatter={(value: number) => compactCurrency.format(value)}
-          />
-          <Tooltip formatter={(value) => compactCurrency.format(Number(value))} />
-          <Legend />
-          <Area
-            type="monotone"
-            dataKey="gross"
-            name="Faturamento bruto"
-            stroke="var(--brand-800)"
-            strokeWidth={2.5}
-            fill="url(#strategyGross)"
-          />
-          <Area
-            type="monotone"
-            dataKey="profit"
-            name="Lucro estimado"
-            stroke="#15803d"
-            strokeWidth={2}
-            fill="transparent"
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    <figure className="management-chart">
+      <div
+        className="management-chart-canvas"
+        role="img"
+        aria-label={`Evolução do faturamento bruto e do lucro estimado por dia, de ${first} a ${last}.`}
+      >
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+            <CartesianGrid stroke="var(--line)" vertical={false} />
+            <XAxis dataKey="date" tick={chartAxisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} minTickGap={16} />
+            <YAxis
+              width={72}
+              tick={chartAxisTick}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(value: number) => compactCurrency.format(value)}
+            />
+            <Tooltip {...chartTooltipProps} formatter={(value) => compactCurrency.format(Number(value))} />
+            <Legend wrapperStyle={chartLegendStyle} iconType="plainline" />
+            <Line type="monotone" dataKey="gross" name="Faturamento bruto" stroke="var(--brand-700)" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="profit" name="Lucro estimado" stroke="var(--neutral-500)" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </figure>
   );
 }

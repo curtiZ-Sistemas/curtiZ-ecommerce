@@ -1,6 +1,6 @@
 import { logServerEvent } from "@curtiz/security";
-import { getIntegrationConfig } from "@curtiz/config";
-import { FIXED_SHIPPING_IN_CENTS, isMercadoPagoTestCredential } from "@curtiz/integrations";
+import { getIntegrationConfig, getMercadoPagoCredentials } from "@curtiz/config";
+import { FIXED_SHIPPING_IN_CENTS } from "@curtiz/integrations";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { checkoutMissingFields, normalizeOptionalCouponCode, type CheckoutRequiredField } from "@/lib/checkout-flow";
@@ -140,10 +140,9 @@ export async function POST(request: NextRequest) {
         : reply(requestId, { ok: false, code: "INVALID_REQUEST", message: "Revise os dados do checkout." }, 400);
     }
 
-    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
-    const publicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim();
+    const credentials = getMercadoPagoCredentials();
     if (!integrations.payment.enabled || integrations.payment.provider !== "mercadopago"
-      || !isMercadoPagoTestCredential(accessToken) || !isMercadoPagoTestCredential(publicKey)) {
+      || !credentials) {
       logFailure(requestId, "PAYMENT_UNAVAILABLE");
       return reply(requestId, { ok: false, code: "PAYMENT_UNAVAILABLE", message: "Pagamento online indisponível no momento." }, 503);
     }
@@ -248,7 +247,7 @@ export async function POST(request: NextRequest) {
 
     return reply(requestId, {
       ok: true, subtotalInCents, discountInCents, couponName: readString(quote, "couponName"),
-      shippingInCents, shippingQuoteId, amountInCents, publicKey, paymentMode: "test"
+      shippingInCents, shippingQuoteId, amountInCents, publicKey: credentials.publicKey, paymentMode: credentials.mode
     }, 200);
   } catch {
     logFailure(requestId, "CHECKOUT_RUNTIME_FAILURE");

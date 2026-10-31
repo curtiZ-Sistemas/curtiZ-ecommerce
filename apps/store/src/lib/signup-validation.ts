@@ -97,7 +97,7 @@ export const assessPassword = (
     .map(compactIdentityValue)
     .filter((value) => value.length >= 4);
   const assessment = {
-    minimumLength: password.length >= 6,
+    minimumLength: password.length >= 8,
     hasLetter: /\p{L}/u.test(password),
     hasNumber: /\d/u.test(password),
     noObviousSequence: !containsObviousSequence(password),
@@ -113,7 +113,7 @@ const signupRawSchema = z.object({
   name: z.string().max(120),
   email: z.string().max(CUSTOMER_EMAIL_MAX_LENGTH),
   phone: z.string().max(20),
-  password: z.string().min(6).max(256),
+  password: z.string().min(8).max(256),
   confirmPassword: z.string().max(256),
   terms: z.literal("on"),
   marketing: z.string().optional(),

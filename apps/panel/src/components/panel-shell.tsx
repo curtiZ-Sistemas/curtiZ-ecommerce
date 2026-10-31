@@ -30,7 +30,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShoppingBag,
-  Sparkles,
+  ScanSearch,
   Tags,
   Users,
   Wrench,
@@ -49,6 +49,12 @@ import {
 } from "../lib/sidebar-scroll";
 import { PanelGlobalSearch } from "./panel-global-search";
 import { PanelPromptProvider } from "./panel-prompt";
+import { panelPurposes } from "./panel-identity";
+import { administracaoSectionCopy } from "./section-copy/administracao";
+import { gerenciaSectionCopy } from "./section-copy/gerencia";
+import { operacionalSectionCopy } from "./section-copy/operacional";
+import { tecnicoSectionCopy } from "./section-copy/tecnico";
+import type { SectionCopy } from "./section-copy/types";
 
 export type PanelRole = "operacional" | "administracao" | "gerencia" | "tecnico";
 
@@ -85,6 +91,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Coleções", "colecoes", PanelsTopLeft],
     ["Pedidos", "pedidos", ShoppingBag],
     ["Clientes", "clientes", Users],
+    ["Trocas e devoluções", "devolucoes", FileClock],
     ["Banners", "banners", PanelsTopLeft],
     ["Construtor da página inicial", "construtor-home", PanelsTopLeft],
     ["Conteúdo", "conteudo", FileText],
@@ -109,7 +116,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Visão estratégica", "visao-estrategica", ChartNoAxesCombined],
     ["Controle financeiro", "financeiro", BadgeDollarSign],
     ["Pedidos e vendas", "pedidos-vendas", ShoppingBag],
-    ["Inteligência da loja", "inteligencia-loja", Sparkles],
+    ["Inteligência da loja", "inteligencia-loja", ScanSearch],
     ["Clientes", "clientes", Users],
     ["Rede de representantes", "representantes", Users],
     ["Solicitações", "solicitacoes-representantes", ClipboardCheck],
@@ -129,6 +136,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Banners", "banners", PanelsTopLeft],
     ["Relatórios", "relatorios", ChartNoAxesCombined],
     ["Aprovações", "aprovacoes", ShieldCheck],
+    ["Trocas e devoluções", "devolucoes", FileClock],
     ["Logs de Atividades", "auditoria", FileClock],
     ["Usuários e acessos", "usuarios", Users],
     ["Políticas e conformidade", "politicas", Scale],
@@ -173,30 +181,19 @@ const roleLabels: Record<PanelRole, string> = {
   tecnico: "Técnico"
 };
 
-const roleExperience: Record<
-  PanelRole,
-  { purpose: string; actionLabel: string; actionHref: string }
-> = {
-  operacional: {
-    purpose: "Execute pedidos e filas do dia com rastreabilidade.",
-    actionLabel: "Abrir pedidos",
-    actionHref: "/operacional/pedidos"
-  },
-  administracao: {
-    purpose: "Mantenha catálogo, clientes e operação comercial organizados.",
-    actionLabel: "Gerenciar produtos",
-    actionHref: "/administracao/produtos"
-  },
-  gerencia: {
-    purpose: "Priorize decisões, aprovações e resultados do negócio.",
-    actionLabel: "Revisar aprovações",
-    actionHref: "/gerencia/aprovacoes"
-  },
-  tecnico: {
-    purpose: "Monitore a plataforma e trate incidentes com segurança.",
-    actionLabel: "Revisar erros",
-    actionHref: "/tecnico/erros"
-  }
+const roleExperience: Record<PanelRole, { actionLabel: string; actionHref: string }> = {
+  operacional: { actionLabel: "Abrir pedidos", actionHref: "/operacional/pedidos" },
+  administracao: { actionLabel: "Gerenciar produtos", actionHref: "/administracao/produtos" },
+  gerencia: { actionLabel: "Revisar aprovações", actionHref: "/gerencia/aprovacoes" },
+  tecnico: { actionLabel: "Revisar erros", actionHref: "/tecnico/erros" }
+};
+
+// Uma frase por rota, mantida pelo dono de cada painel em section-copy/<papel>.ts.
+const sectionCopy: Record<PanelRole, SectionCopy> = {
+  operacional: operacionalSectionCopy,
+  administracao: administracaoSectionCopy,
+  gerencia: gerenciaSectionCopy,
+  tecnico: tecnicoSectionCopy
 };
 
 export const panelRoleLabel = (role: PanelRole) => roleLabels[role];
@@ -205,17 +202,16 @@ export const panelSectionLabel = (role: PanelRole, section: string) =>
   menus[role].find(([, route]) => route === section)?.[0] ?? roleLabels[role];
 
 export function PanelPageHeading({ role, section }: { role: PanelRole; section: string }) {
-  const title = section ? panelSectionLabel(role, section) : panelRoleLabel(role);
+  // O papel já aparece no menu e na navegação estrutural; o título nomeia só a área.
+  const title = section ? panelSectionLabel(role, section) : "Visão geral";
+  const description = section ? sectionCopy[role][section] : panelPurposes[role];
   const experience = roleExperience[role];
 
   return (
     <div className="page-heading">
       <div>
-        <span className="page-heading-eyebrow">
-          {role === "gerencia" ? roleLabels[role] : `Painel ${roleLabels[role]}`}
-        </span>
         <h1>{title}</h1>
-        <p>{experience.purpose}</p>
+        {description ? <p>{description}</p> : null}
       </div>
       {!section ? (
         <Link className="primary-button page-heading-action" href={experience.actionHref}>
@@ -503,7 +499,9 @@ export function PanelShell({
             </button>
           </div>
         </div>
-        <p className="sidebar-context">Painel {roleLabels[role]}</p>
+        <p className="sidebar-context">
+          Painel <strong>{roleLabels[role]}</strong>
+        </p>
         <nav className="side-nav" ref={navRef} aria-label={`Menu ${roleLabels[role]}`}>
           {navigationGroups.map((group) => {
             return (
@@ -581,13 +579,27 @@ export function PanelShell({
             )}
             <button
               ref={searchButtonRef}
+              className="topbar-search-trigger"
               type="button"
               onClick={() => setSearchOpen((current) => !current)}
-              aria-label={searchOpen ? "Fechar busca" : "Abrir busca"}
+              aria-label={searchOpen ? "Fechar busca" : "Buscar no painel"}
               aria-expanded={searchOpen}
               aria-controls={searchOpen ? "panel-global-search" : undefined}
+              title={searchOpen ? undefined : "Buscar (Ctrl K ou /)"}
             >
-              <Search aria-hidden="true" />
+              {searchOpen ? (
+                <X aria-hidden="true" />
+              ) : (
+                <>
+                  <Search aria-hidden="true" />
+                  <span className="topbar-search-label" aria-hidden="true">
+                    Buscar
+                  </span>
+                  <kbd className="topbar-search-kbd" aria-hidden="true">
+                    Ctrl K
+                  </kbd>
+                </>
+              )}
             </button>
           </div>
           <a className="store-shortcut" href={configuredStoreUrl} target="_blank" rel="noreferrer">
@@ -607,8 +619,9 @@ export function PanelShell({
           ) : null}
           <a
             className="user-chip"
-            href={`${configuredStoreUrl.replace(/\/$/, "")}/perfil`}
-            title="Abrir meu perfil"
+            href={`${configuredStoreUrl.replace(/\/$/, "")}/minha-conta`}
+            title="Minha conta de cliente"
+            aria-label="Minha conta de cliente"
           >
             <div className="avatar">
               {avatarUrl ? (

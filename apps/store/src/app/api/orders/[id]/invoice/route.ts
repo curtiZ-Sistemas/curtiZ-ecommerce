@@ -6,7 +6,9 @@ import { isUnknownRecord, readString } from "@/lib/unknown-data";
 const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" };
 const reply = (message: string, status: number) => NextResponse.json({ message }, { status, headers });
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const format = new URL(request.url).searchParams.get("format") ?? "pdf";
+  if (format !== "pdf" && format !== "xml") return reply("Formato inválido.", 400);
   const { id } = await context.params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(id)) return reply("Pedido inválido.", 400);
   const auth = await createServerSupabaseClient();
@@ -26,8 +28,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const invoice = isUnknownRecord(result) && isUnknownRecord(result.data) ? result.data : null;
     if (!invoice || ![5, 6].includes(Number(invoice.situacao)) || readString(invoice, "chaveAcesso") !== key)
       return reply("Nota ainda não disponível.", 404);
-    const pdf = await provider.invoiceDocument(key);
-    return new NextResponse(pdf, { headers: { ...headers, "content-type": "application/pdf",
-      "content-disposition": 'attachment; filename="nota-fiscal.pdf"' } });
+    const content = await provider.invoiceDocument(key, format);
+    return new NextResponse(content, { headers: { ...headers, "content-type": format === "pdf" ? "application/pdf" : "application/xml",
+      "content-disposition": `attachment; filename="nota-fiscal.${format}"` } });
   } catch { return reply("Não foi possível baixar a nota agora. Tente novamente.", 503); }
 }

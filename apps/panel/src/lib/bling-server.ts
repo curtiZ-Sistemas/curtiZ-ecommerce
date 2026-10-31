@@ -5,7 +5,6 @@ import type { createServiceSupabaseClient } from "./supabase/server";
 import type { NextRequest } from "next/server";
 import { authorizeTechnicalRequest } from "./technical-api";
 import { createServerSupabaseClient } from "./supabase/server";
-import { hasRequiredInternalMfa } from "./internal-mfa";
 import { DEMO_SESSION_COOKIE, verifyDemoSession } from "@curtiz/security";
 
 type Database = NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
@@ -25,14 +24,14 @@ export async function authorizeBlingPanelRequest(request: NextRequest) {
   if (verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value)) return null;
   const db = await createServerSupabaseClient();
   const session = db ? await db.auth.getUser() : null;
-  if (!db || session?.error || !session?.data.user || !await hasRequiredInternalMfa(db)) return null;
+  if (!db || session?.error || !session?.data.user) return null;
   const [profile, roles] = await Promise.all([
     db.from("profiles").select("status").eq("id", session.data.user.id).maybeSingle(),
     db.from("user_roles").select("role").eq("user_id", session.data.user.id)
   ]);
   if (profile.error || roles.error || profile.data?.status !== "active"
     || !roles.data?.some((role) => typeof role.role === "string" && ["admin", "manager", "operational", "technical"].includes(role.role))) return null;
-  // Each authenticated RPC enforces active profile, permissions and applicable MFA in PostgreSQL.
+  // Each authenticated RPC enforces active profile, permissions in PostgreSQL.
   return db;
 }
 

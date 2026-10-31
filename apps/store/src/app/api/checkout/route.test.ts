@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { encryptPII } from "../../../lib/pii";
 import { POST } from "./route";
+import type * as Config from "@curtiz/config";
 
 const integrationState = vi.hoisted(() => ({ checkoutEnabled: true }));
 const identityState = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }));
 vi.mock("server-only", () => ({}));
-vi.mock("@curtiz/config", () => ({ getIntegrationConfig: () => ({
+vi.mock("@curtiz/config", async importOriginal => ({ ...await importOriginal<typeof Config>(), getIntegrationConfig: () => ({
   checkoutEnabled: integrationState.checkoutEnabled,
   payment: { enabled: true, provider: "mercadopago" },
   shipping: { enabled: true, provider: "fixed", melhorEnvioEnabled: false }
