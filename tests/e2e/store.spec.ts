@@ -865,6 +865,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
     await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator(".account-mobile-home")).toHaveCount(1);
     await expect(page.locator(".account-mobile-home")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
     await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
