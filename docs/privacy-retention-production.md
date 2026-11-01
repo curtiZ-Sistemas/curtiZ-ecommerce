@@ -17,3 +17,11 @@ Os testes SQL usam somente fixtures e rollback. Os testes do Worker verificam a 
 - O código mantém a compra produtiva de kits bloqueada por homologação/fiscal. O quadro contratual comercial de representantes não foi preenchido com preços, comissões ou participantes fictícios.
 
 Não declarar concluídas a revisão de transferências internacionais, a auditoria de armazenamento de terceiros ou a aprovação jurídica dos contratos enquanto faltarem suas evidências.
+
+## Conferência efetiva das migrations
+
+O banco efêmero do CI foi reconstruído a partir de todos os arquivos, incluindo as transformações de funções feitas por blocos `DO`. A primeira comparação encontrou 441 definições com corpo/modo de segurança iguais à produção, cinco diferenças efetivas e a nova função de retenção ainda ausente da produção. Isso substitui a comparação incompleta que olhava apenas a última declaração literal de cada função.
+
+A migration incremental de reconciliação trata somente essas cinco diferenças: mantém o cadastro idempotente e a normalização do nome sem reativar nem sobrescrever perfil existente; preserva destinos opcionais de banner e restaura a rejeição de barras invertidas; alinha o alias de reordenação de navegação; e reaproveita as duas funções gerenciais já existentes na main, que excluem pedidos inelegíveis e consideram reembolsos concluídos. Não altera linhas de negócio, RLS ou permissões existentes, nem modifica migrations aplicadas. As funções do catálogo transformadas por migrations posteriores são preservadas.
+
+A conferência atual da cópia original encontrou 48 arquivos idênticos à main no escopo examinado, dez variantes locais antigas e nenhum arquivo de código desse escopo ausente da main. As variantes e demais alterações locais foram preservadas. O CI mais recente dos dez PRs anteriores foi consultado: todos aprovados e sem conflito com a main consultada; isso não autoriza merge automático nem comprova compatibilidade entre todas as atualizações agrupadas.
