@@ -35,7 +35,9 @@ const optionalMoney = (node: Node, name: string) => {
 
 // This reads an archive already obtained from the provider. It does not claim
 // independent XML signature verification, accept uploads, or fetch XML resources.
-export function readBlingReturnOriginalXml(xml: string, invoiceKey: string) {
+export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expectedArchive?: {
+  invoiceNumber: string; series: number; issuerDocument: string; totalInCents: number;
+}) {
   if (!/^\d{44}$/u.test(invoiceKey) || new TextEncoder().encode(xml).length > BLING_RETURN_XML_LIMIT
     || /<!DOCTYPE|<!ENTITY/iu.test(xml)) return fail();
   const stack: Node[] = [];
@@ -79,6 +81,14 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string) {
     || value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1"
     || value(ide, "indFinal") !== "1" || value(recipient, "indIEDest") !== "9"
     || !/^\d{11}$/u.test(value(recipient, "CPF")) || children(recipient, "CNPJ").length) return fail();
+  if (expectedArchive && (value(ide, "mod") !== "55" || invoiceKey.slice(20, 22) !== "55"
+    || value(one(info, "emit"), "CNPJ") !== expectedArchive.issuerDocument
+    || invoiceKey.slice(6, 20) !== expectedArchive.issuerDocument
+    || Number(value(ide, "serie")) !== expectedArchive.series || Number(invoiceKey.slice(22, 25)) !== expectedArchive.series
+    || !/^[1-9]\d{0,8}$/u.test(expectedArchive.invoiceNumber)
+    || Number(value(ide, "nNF")) !== Number(expectedArchive.invoiceNumber)
+    || Number(invoiceKey.slice(25, 34)) !== Number(expectedArchive.invoiceNumber)))
+    throw new BlingError("fiscal_archive_identity_mismatch", 409);
   const destinationState = value(one(recipient, "enderDest"), "UF");
   if (!/^[A-Z]{2}$/u.test(destinationState)) return fail();
   const details = children(info, "det");
@@ -111,6 +121,8 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string) {
     additionalInCents: money(value(totals, "vOutro")) };
   const gross = items.reduce((sum, item) => sum + BigInt(item.quantity) * BigInt(item.unitPriceInCents), 0n);
   const totalInCents = money(value(totals, "vNF"));
+  if (expectedArchive && totalInCents !== expectedArchive.totalInCents)
+    throw new BlingError("fiscal_archive_identity_mismatch", 409);
   if (optionalMoney(totals, "vSeg") !== 0 || gross !== BigInt(money(value(totals, "vProd")))
     || gross + BigInt(amounts.shippingInCents) + BigInt(amounts.additionalInCents) - BigInt(amounts.discountInCents) !== BigInt(totalInCents)
     || Object.keys(amounts).some(key => {
