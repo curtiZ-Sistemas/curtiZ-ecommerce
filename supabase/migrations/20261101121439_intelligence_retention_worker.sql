@@ -23,6 +23,7 @@ begin
   with expired as (
     select id from public.marketing_events
     where occurred_at < now() - make_interval(days => retention_days)
+      and order_id is null -- Preserve commercial attribution and financial evidence.
     order by occurred_at, id limit batch_size for update skip locked
   ), removed as (
     delete from public.marketing_events event using expired

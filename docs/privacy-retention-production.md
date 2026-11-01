@@ -2,7 +2,7 @@
 
 A configuração de produção consultada indica 30 dias para eventos individualizáveis de análise. Foram encontrados 967 eventos além dessa janela e 64 perfis de interesse vencidos, em consultas agregadas sem dados pessoais. A função manual de expurgo existe, mas o Worker publicado não a agenda; `pg_cron` não está instalado.
 
-A nova migration apenas cria índices e uma função de manutenção. Não executa exclusão ao ser aplicada. A função só admite `service_role`, respeita a configuração existente (entre 7 e 180 dias, padrão 30), remove lotes limitados e ignora linhas já bloqueadas por outro processo. Não altera pedidos, pagamentos, estoque, documentos fiscais ou indicadores agregados.
+A nova migration apenas cria índices e uma função de manutenção. Não executa exclusão ao ser aplicada. A função só admite `service_role`, respeita a configuração existente (entre 7 e 180 dias, padrão 30), remove lotes limitados e ignora linhas já bloqueadas por outro processo. Não altera pedidos, pagamentos, estoque, documentos fiscais ou indicadores agregados. Eventos vinculados a pedidos também são preservados para manter atribuição comercial e filtros financeiros; o teste SQL cobre esse caso. Na consulta agregada inicial, os 967 eventos vencidos não tinham vínculo com pedidos.
 
 A fila `privacy_retention` usa a infraestrutura agendada existente, com transporte nativo, timeout e isolamento das outras filas. Permanece desligada sem `PRIVACY_RETENTION_ENABLED=true`. Sua ativação exige aprovação específica da eliminação de eventos/perfis vencidos, depois de a migration e o deploy serem aprovados. Desligar a flag interrompe os próximos lotes; a eliminação de dados vencidos não tem desfazer automático.
 
