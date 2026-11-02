@@ -85,6 +85,27 @@ describe("approved fiscal automation", () => {
   });
 });
 describe("private fiscal archiving", () => {
+  it.each(["000001", "000000001"])("accepts the provider's zero-padded invoice number %s", async invoiceNumber => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation(async (name: string, ...args: unknown[]) => {
+      const result = await original(name, ...args) as { data: unknown; error: null };
+      return name === "read_bling_invoice_archive_context"
+        ? { ...result, data: { ...(result.data as Record<string, unknown>), invoiceNumber } } : result;
+    });
+    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
+    expect(state.rpc).toHaveBeenCalledWith("verify_bling_invoice_archive", expect.objectContaining({ p_environment: 2 }));
+  });
+  it.each(["000000", "000002", "1e0", "1.0", "0000000001"])("rejects invalid or different invoice number %s", async invoiceNumber => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation(async (name: string, ...args: unknown[]) => {
+      const result = await original(name, ...args) as { data: unknown; error: null };
+      return name === "read_bling_invoice_archive_context"
+        ? { ...result, data: { ...(result.data as Record<string, unknown>), invoiceNumber } } : result;
+    });
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey))
+      .rejects.toThrow("fiscal_archive_identity_mismatch");
+    expect(state.upload).not.toHaveBeenCalled();
+  });
   it("records the environment from the XML without inferring production", async () => {
     await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
     expect(state.rpc).toHaveBeenCalledWith("verify_bling_invoice_archive", expect.objectContaining({

@@ -85,7 +85,7 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expe
     || value(one(info, "emit"), "CNPJ") !== expectedArchive.issuerDocument
     || invoiceKey.slice(6, 20) !== expectedArchive.issuerDocument
     || Number(value(ide, "serie")) !== expectedArchive.series || Number(invoiceKey.slice(22, 25)) !== expectedArchive.series
-    || !/^[1-9]\d{0,8}$/u.test(expectedArchive.invoiceNumber)
+    || !/^\d{1,9}$/u.test(expectedArchive.invoiceNumber) || Number(expectedArchive.invoiceNumber) < 1
     || Number(value(ide, "nNF")) !== Number(expectedArchive.invoiceNumber)
     || Number(invoiceKey.slice(25, 34)) !== Number(expectedArchive.invoiceNumber)))
     throw new BlingError("fiscal_archive_identity_mismatch", 409);
