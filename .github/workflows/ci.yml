@@ -163,6 +163,14 @@ jobs:
         run: |
           docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
       - run: supabase db lint --local --fail-on error
+      - name: Conferir definições finais das migrations
+        if: github.event_name == 'pull_request'
+        shell: bash
+        # Hashes only, from the ephemeral database. Never query a linked project.
+        run: |
+          docker exec -i -e PGPASSWORD=postgres supabase_db_curtiz-local \
+            psql -X -w -U postgres -d postgres -v ON_ERROR_STOP=1 -At \
+            < scripts/migration-function-fingerprints.sql
       - name: Testar contratos SQL
         shell: bash
         run: |

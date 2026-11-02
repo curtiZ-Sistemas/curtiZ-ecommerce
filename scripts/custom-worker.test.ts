@@ -9,6 +9,7 @@ const dependencies = {
   nativeFetch: vi.fn<typeof fetch>(),
   optimize: vi.fn(),
   housekeeping: vi.fn(),
+  privacyRetention: vi.fn(),
   representativeTest: vi.fn(),
   shipping: vi.fn(),
   bling: vi.fn(),
@@ -52,6 +53,7 @@ const workerGlobal = {
     if (specifier === "./.open-next/worker.js") return { default: { fetch: dependencies.fetch } };
     if (specifier === "./.open-next/cloudflare/init.js") return { runWithCloudflareRequestContext: dependencies.context };
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
+    if (specifier === "./src/lib/privacy-retention-jobs") return { runPrivacyRetentionJobs: dependencies.privacyRetention };
     if (specifier === "./src/lib/representative-test-jobs") return { runRepresentativeTestJobs: dependencies.representativeTest };
     if (specifier === "./src/lib/melhor-envio-jobs") return { runMelhorEnvioShippingJobs: dependencies.shipping };
     if (specifier === "./src/lib/storefront-image-worker") return { optimizeStorefrontImageRequest: dependencies.optimize };
@@ -105,6 +107,7 @@ describe("custom Worker handlers", () => {
     expect(dependencies.context).toHaveBeenCalledWith(expect.any(Request), environment, context, expect.any(Function));
     await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
     expect(dependencies.housekeeping).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
+    expect(dependencies.privacyRetention).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.representativeTest).toHaveBeenCalledWith(environment, expect.any(Function));
     expect(dependencies.afterSale).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.returns).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
@@ -127,6 +130,7 @@ describe("custom Worker handlers", () => {
       expect(job.mock.calls[0]?.[3]).toBe(transport);
     expect(dependencies.afterSale.mock.calls[0]?.[2]).toBe(transport);
     expect(dependencies.returns.mock.calls[0]?.[2]).toBe(transport);
+    expect(dependencies.privacyRetention.mock.calls[0]?.[2]).toBe(transport);
     expect(dependencies.representativeTest.mock.calls[0]?.[1]).toBe(transport);
     expect(patchedFetch).not.toHaveBeenCalled();
     workerGlobal.fetch = dependencies.nativeFetch;
@@ -171,24 +175,24 @@ describe("custom Worker handlers", () => {
       return Promise.resolve();
     });
     worker.scheduled({}, {}, { waitUntil: vi.fn() });
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.privacyRetention, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).not.toHaveBeenCalled();
     expect(task).toBeTypeOf("function");
     await task?.();
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.privacyRetention, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).toHaveBeenCalledOnce();
   });
 
   it.each([
-    ["expiration", "housekeeping"], ["representative_test", "representativeTest"], ["bling", "bling"], ["after_sale", "afterSale"], ["returns", "returns"], ["shipping", "shipping"], ["transactional_email", "email"]
+    ["expiration", "housekeeping"], ["privacy_retention", "privacyRetention"], ["representative_test", "representativeTest"], ["bling", "bling"], ["after_sale", "afterSale"], ["returns", "returns"], ["shipping", "shipping"], ["transactional_email", "email"]
   ] as const)("isolates a failure in %s while running the remaining queues", async (queue, dependency) => {
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.privacyRetention, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       job.mockResolvedValue({ ok: true });
     dependencies[dependency].mockRejectedValue(new Error("test-only provider failure"));
     const context = { waitUntil: vi.fn() };
     worker.scheduled({}, {}, context);
     await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBeUndefined();
-    for (const job of [dependencies.housekeeping, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
+    for (const job of [dependencies.housekeeping, dependencies.privacyRetention, dependencies.representativeTest, dependencies.bling, dependencies.afterSale, dependencies.returns, dependencies.shipping, dependencies.email])
       expect(job).toHaveBeenCalledOnce();
     expect(dependencies.log).toHaveBeenCalledWith("error", "scheduled_queue_failed", {
       executionId: "scheduled-execution-id", queue, errorType: "other"

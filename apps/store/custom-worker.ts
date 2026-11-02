@@ -12,10 +12,12 @@ import { runTransactionalEmailJobs } from "./src/lib/transactional-email-jobs";
 import { runRepresentativeTestJobs } from "./src/lib/representative-test-jobs";
 import { runAfterSaleJobs } from "./src/lib/after-sale-jobs";
 import { runReturnJobs } from "./src/lib/return-jobs";
+import { runPrivacyRetentionJobs } from "./src/lib/privacy-retention-jobs";
 import { logServerEvent } from "@curtiz/security";
 import { optimizeStorefrontImageRequest, type StorefrontImageEnvironment } from "./src/lib/storefront-image-worker";
 
 type WorkerEnvironment = Parameters<typeof runExpirationHousekeeping>[0] &
+  Parameters<typeof runPrivacyRetentionJobs>[0] &
   Parameters<typeof runMelhorEnvioShippingJobs>[0] & Parameters<typeof runBlingJobs>[0] &
   Parameters<typeof runTransactionalEmailJobs>[0] & Parameters<typeof runRepresentativeTestJobs>[0] & StorefrontImageEnvironment;
 type WorkerContext = { waitUntil(promise: Promise<unknown>): void };
@@ -57,6 +59,7 @@ export default {
         }
       };
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
+      await runQueue("privacy_retention", () => runPrivacyRetentionJobs(environment, executionId, scheduledFetch));
       await runQueue("representative_test", () => runRepresentativeTestJobs(environment, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("after_sale", () => runAfterSaleJobs(environment, executionId, scheduledFetch));

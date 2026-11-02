@@ -16,6 +16,7 @@ import {
   LockKeyhole,
   MapPin,
   PackageCheck,
+  PanelsTopLeft,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -226,9 +227,11 @@ export function CustomerAccount({
       </header>
 
       {snapshot.panelDestination && (
-        <p className="customer-account-notice">
-          <a href={new URL("/selecionar-painel", panelUrl).toString()}>Acessar painéis</a>
-        </p>
+        <a className="customer-panel-access" href={new URL("/selecionar-painel", panelUrl).toString()}>
+          <PanelsTopLeft aria-hidden="true" />
+          <span>Acessar painéis</span>
+          <ChevronRight aria-hidden="true" />
+        </a>
       )}
 
       {(snapshot.warning || signupComplete) && (
