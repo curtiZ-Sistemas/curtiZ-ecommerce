@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     recentOrders,
     activities
   ] = await Promise.all([
-    auth.supabase.from("orders").select("id", { count: "exact", head: true }),
+    auth.supabase.from("reporting_orders").select("id", { count: "exact", head: true }),
     auth.supabase.rpc("admin_approved_sales_total_in_cents"),
     auth.supabase.from("products").select("id", { count: "exact", head: true }),
     auth.supabase.rpc("operational_critical_stock_count"),
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       .select("id", { count: "exact", head: true })
       .eq("status", "published"),
     auth.supabase
-      .from("orders")
+      .from("reporting_orders")
       .select("id,public_code,status,payment_status,grand_total,created_at")
       .order("created_at", { ascending: false })
       .limit(6),
