@@ -1,4 +1,6 @@
 begin;
+-- Query dashboard fixtures using the same business date as the integration.
+set local timezone to 'America/Sao_Paulo';
 
 create extension if not exists pgtap with schema extensions;
 select plan(44);

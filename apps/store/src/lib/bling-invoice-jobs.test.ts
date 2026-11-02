@@ -29,7 +29,7 @@ const snapshot = { variant: { id: item.variant_id, sku: item.sku_snapshot }, met
   pairs_per_sku: 2, fiscal_unit_approved: true, ncm: "64022000", origin: 0, cest: "" },
   kit_components: [1, 2].map(i => ({ sku: `TEST-PAIR-${i}`, description: `Test pair ${i}`, unit: "PR", quantity_pairs: 1,
     allocation_weight: 1, ncm: "64022000", origin: 0, cest: "", source_current: true })) };
-const invoice = () => ({ tipo: 1, dataOperacao: "2026-10-17 12:00:00", situacao: state.situation, numeroPedidoLoja: "CZ-TEST", naturezaOperacao: { id: 10 }, serie: 2,
+const invoice = () => ({ id: 99, tipo: 1, dataOperacao: "2026-10-17 12:00:00", situacao: state.situation, numeroPedidoLoja: "CZ-TEST", naturezaOperacao: { id: 10 }, serie: 2,
   valorNota: 43.45, valorFrete: 0, numero: "1", transporte: { fretePorConta: 0 }, contato: { nome: "Test", numeroDocumento: "12345678909",
     endereco: { endereco: "Rua Teste", numero: "1", complemento: "", bairro: "Centro", municipio: "Belo Horizonte", uf: "MG", cep: "30000000" } },
   parcelas: state.commercialDraft || state.missingInvoiceTerms ? [] : [{ data: "2026-10-17", valor: 43.45, formaPagamento: { id: 100 } }],
@@ -45,6 +45,7 @@ beforeEach(() => {
     name === "read_integration_credential" ? { status: "connected" }
       : name === "claim_bling_job" ? claimed ? null : (claimed = true, { id: "job-test", jobType: state.jobType, payload: { orderId } })
         : name === "read_bling_order_link" ? { external_order_id: 88, invoice_id: 99, erp_status: "synced" }
+          : name === "read_bling_invoice_order" ? { orderCode: "CZ-TEST", externalOrderId: 88, invoiceId: 99 }
           : name === "read_bling_account" ? { companyId: "company-test" }
             : name === "read_bling_fiscal_mirror_approval" ? null
               : name === "read_bling_fiscal_automation_context" ? { configurationHash: "a".repeat(64), policyApproved: state.approved,

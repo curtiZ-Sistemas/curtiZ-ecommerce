@@ -3,7 +3,7 @@
 import { optimizeBannerUpload } from "@/lib/banner-image-client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { panelMediaUrl } from "@/lib/public-media";
 import { normalizeBannerValues } from "@/lib/banner-management";
 
@@ -93,12 +93,28 @@ export function BannerManager() {
       setPending(false);
     }
   };
+  const move = async (row: Row, position: "first" | "last") => {
+    if (pending) return;
+    setPending(true);
+    setMessage(null);
+    try {
+      await request(endpoint, json("PATCH", { action: "move", id: row.id, position }));
+      setMessage({ kind: "success", text: `Banner movido para ${position === "first" ? "o início" : "o fim"}. A loja pode levar alguns instantes para atualizar.` });
+      const destinationPage = position === "first" ? 1 : Math.max(1, Math.ceil(total / 20));
+      if (destinationPage !== page) setPage(destinationPage);
+      else await load();
+    } catch (reason) {
+      setMessage({ kind: "error", text: reason instanceof Error ? reason.message : "Não foi possível alterar a ordem dos banners." });
+    } finally {
+      setPending(false);
+    }
+  };
   return (
     <section className="banner-manager">
       <header className="banner-manager-heading">
         <div>
           <h1>Banners</h1>
-          <p>Imagens e destinos para computador e celular.</p>
+          <p>Organize a ordem e os destinos dos banners para computador e celular.</p>
         </div>
         {editable && (
           <button className="primary-button" onClick={() => setEditing({})}>
@@ -123,19 +139,20 @@ export function BannerManager() {
         </div>
       ) : (
         <div className="banner-table-wrap">
-          <table className="banner-table">
-            <thead>
-              <tr>
-                <th>Banner</th>
-                <th>Destino desktop</th>
-                <th>Destino mobile</th>
-                <th>Ações</th>
+          <table className="banner-table" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" scope="col">Banner</th>
+                <th role="columnheader" scope="col">Destino desktop</th>
+                <th role="columnheader" scope="col">Destino mobile</th>
+                <th role="columnheader" scope="col">Ordem</th>
+                <th role="columnheader" scope="col">Ações</th>
               </tr>
             </thead>
-            <tbody>
-              {items.map((row) => (
-                <tr key={string(row, "id")}>
-                  <td>
+            <tbody role="rowgroup">
+              {items.map((row, index) => (
+                <tr role="row" key={string(row, "id")}>
+                  <td role="cell">
                     <img
                       src={mediaUrl(
                         string(row, "image_path_desktop") || string(row, "image_path_mobile")
@@ -157,9 +174,21 @@ export function BannerManager() {
                       )[string(row, "status")] ?? string(row, "status")}
                     </small>
                   </td>
-                  <td>{destinationFor(row).label}</td>
-                  <td>{destinationFor(row, true).label}</td>
-                  <td>
+                  <td role="cell" data-label="Destino desktop">{destinationFor(row).label}</td>
+                  <td role="cell" data-label="Destino mobile">{destinationFor(row, true).label}</td>
+                  <td role="cell" data-label="Ordem">
+                    <div className="banner-actions banner-order-actions">
+                      <button className="secondary-button" type="button" disabled={!editable || pending || (page === 1 && index === 0)}
+                        aria-label={`Mover banner ${((page - 1) * 20) + index + 1} para o início`} onClick={() => void move(row, "first")}>
+                        <ArrowUpToLine size={16} aria-hidden="true" /> Primeiro
+                      </button>
+                      <button className="secondary-button" type="button" disabled={!editable || pending || ((page - 1) * 20 + index + 1 >= total)}
+                        aria-label={`Mover banner ${((page - 1) * 20) + index + 1} para o fim`} onClick={() => void move(row, "last")}>
+                        <ArrowDownToLine size={16} aria-hidden="true" /> Último
+                      </button>
+                    </div>
+                  </td>
+                  <td role="cell" data-label="Ações">
                     <div className="banner-actions">
                       <button
                         className="secondary-button"
