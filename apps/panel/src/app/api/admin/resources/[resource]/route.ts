@@ -32,6 +32,12 @@ const stateActionSchema = z.object({
   reason: z.string().trim().min(3).max(1000).optional()
 });
 
+const bannerMoveSchema = z.object({
+  action: z.literal("move"),
+  id: postgresUuidSchema,
+  position: z.enum(["first", "last"])
+}).strict();
+
 type AdminClient = NonNullable<Awaited<ReturnType<typeof authorizeAdminRequest>>>["supabase"];
 
 async function permissionGranted(supabase: AdminClient, permissionCode: string) {
@@ -356,9 +362,10 @@ export async function GET(
     }
   }
 
-  const result = await query
-    .order(context.definition.orderColumn, { ascending: false })
-    .range(from, to);
+  const ordered = context.resource === "banners"
+    ? query.order("priority", { ascending: false }).order("sort_order").order("created_at").order("id")
+    : query.order(context.definition.orderColumn, { ascending: false });
+  const result = await ordered.range(from, to);
 
   if (result.error) {
     logResourceQueryFailure(context.resource, context.definition.table, result.error);
@@ -594,6 +601,32 @@ export async function PATCH(
 
   const body = await readPanelJson(request, 64 * 1024);
   if (body instanceof NextResponse) return body;
+  const bannerMove = bannerMoveSchema.safeParse(body);
+  if (context.resource === "banners" && typeof body === "object" && body !== null && "action" in body && body.action === "move") {
+    if (!bannerMove.success)
+      return NextResponse.json({ message: "Revise a posição escolhida." }, { status: 400, headers: privateNoStore });
+    const { id, position } = bannerMove.data;
+    const previous = await context.auth.supabase.from("banners").select("id,priority").eq("id", id).maybeSingle();
+    if (previous.error) return NextResponse.json({ message: "Não foi possível consultar o banner." }, { status: 503, headers: privateNoStore });
+    if (!previous.data) return NextResponse.json({ message: "Banner não encontrado." }, { status: 404, headers: privateNoStore });
+    const previousPriority: unknown = previous.data.priority;
+    if (typeof previousPriority !== "number" || !Number.isInteger(previousPriority))
+      return NextResponse.json({ message: "Não foi possível consultar a ordem dos banners." }, { status: 503, headers: privateNoStore });
+    const extreme = await context.auth.supabase.from("banners").select("priority")
+      .order("priority", { ascending: position === "last" }).limit(1).maybeSingle();
+    const priority: unknown = extreme.data?.priority;
+    if (extreme.error || typeof priority !== "number" || !Number.isInteger(priority))
+      return NextResponse.json({ message: "Não foi possível consultar a ordem dos banners." }, { status: 503, headers: privateNoStore });
+    const nextPriority = Number(priority) + (position === "first" ? 1 : -1);
+    if (nextPriority < -2147483648 || nextPriority > 2147483647)
+      return NextResponse.json({ message: "Não foi possível alterar a ordem. Contate o suporte técnico." }, { status: 409, headers: privateNoStore });
+    const changed = await context.auth.supabase.from("banners")
+      .update({ priority: nextPriority, updated_by: context.auth.userId })
+      .eq("id", id).eq("priority", previousPriority).select("id").maybeSingle();
+    if (changed.error || !changed.data)
+      return NextResponse.json({ message: "A ordem mudou durante a operação. Atualize e tente novamente." }, { status: 409, headers: privateNoStore });
+    return NextResponse.json({ message: "Ordem atualizada." }, { headers: privateNoStore });
+  }
   const stateAction = stateActionSchema.safeParse(body);
 
   if (stateAction.success) {
