@@ -219,7 +219,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     table: "banners",
     readPermission: "banners.update",
     writePermission: "banners.update",
-    select: "id,title,image_path_desktop,image_path_mobile,destination_type,destination_id,destination_url,destination_type_mobile,destination_id_mobile,destination_url_mobile,status,position,starts_at,ends_at,updated_at",
+    select: "id,title,image_path_desktop,image_path_mobile,destination_type,destination_id,destination_url,destination_type_mobile,destination_id_mobile,destination_url_mobile,status,position,priority,sort_order,created_at,starts_at,ends_at,updated_at",
     searchColumns: ["title", "destination_url", "destination_url_mobile"],
     fields: [
       { key: "image_path_desktop", label: "Imagem computador", type: "text", required: true },

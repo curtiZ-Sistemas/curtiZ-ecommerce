@@ -5896,6 +5896,42 @@ select:disabled {
   object-fit: cover;
 }
 
+.customer-panel-access {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--brand-800);
+  border-radius: var(--radius-sm);
+  color: var(--brand-900);
+  background: var(--brand-50);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.customer-panel-access svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.customer-panel-access:hover {
+  border-color: var(--brand-900);
+  background: var(--brand-100);
+}
+
+.customer-panel-access:active {
+  background: var(--brand-200);
+}
+
 .customer-account-notice,
 .customer-action-message {
   margin-top: 14px;
