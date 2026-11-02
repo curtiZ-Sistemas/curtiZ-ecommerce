@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("server-only", () => ({}));
 import { archiveBlingInvoice, ensureBlingFiscalApproval } from "./bling-fiscal-automation";
+import { returnTestXml } from "../../../../packages/integrations/src/bling-return-test-fixture";
 const orderId = "11111111-1111-4111-8111-111111111111";
+const archiveKey = "31" + "2610" + "00000000000000" + "55" + "002" + "000000001" + "1" + "00000000" + "0";
+const archiveXml = () => returnTestXml().replaceAll("1".repeat(44), archiveKey)
+  .replace("<ide>", "<ide><mod>55</mod><serie>2</serie><nNF>1</nNF>")
+  .replace("<dest>", "<emit><CNPJ>00000000000000</CNPJ></emit><dest>");
 const order = { id: orderId, customer_id: "customer-test", shipping_address_snapshot: { state: "MG" }, grand_total: 20, shipping_total: 0, discount_total: 0, fee_total: 0 };
 const items = [{ variant_id: "variant-test", sku_snapshot: "SKU-TEST", product_name_snapshot: "Test", quantity: 1, unit_price: 20 }];
 const state = { rpc: vi.fn(), bucket: vi.fn(), upload: vi.fn(), download: vi.fn(), document: vi.fn() };
@@ -20,10 +25,12 @@ beforeEach(() => {
           pis_rate: 0, cofins_rate: 0, ipi_rate: 0, ipi_cenq: "999", natures: [{ final_consumer: true, external_nature_id: 10 }] }]
           : name === "read_bling_catalog_variant" ? { variant: { id: "variant-test", sku: "SKU-TEST" }, metadata: {
             commercial_unit: "PR", pairs_per_sku: 1, fiscal_unit_approved: true, ncm: "64022000", origin: 0, cest: "" } }
-            : name === "read_bling_invoice_archives" ? [] : true }));
+            : name === "read_bling_invoice_archives" ? []
+              : name === "read_bling_invoice_archive_context" ? { invoiceKey: archiveKey, invoiceNumber: "1", series: 2,
+                issuerDocument: "00000000000000", totalInCents: 1200 } : true }));
   state.bucket.mockResolvedValue({ data: { public: false }, error: null });
   state.upload.mockResolvedValue({ error: null });
-  state.document.mockResolvedValue(new TextEncoder().encode("test-only-document").buffer);
+  state.document.mockImplementation(async (_key: string, format: string) => new TextEncoder().encode(format === "xml" ? archiveXml() : "%PDF-test-only").buffer);
 });
 describe("approved fiscal automation", () => {
   it.each([[true, true], [true, false], [false, false]])(
@@ -78,8 +85,57 @@ describe("approved fiscal automation", () => {
   });
 });
 describe("private fiscal archiving", () => {
+  it.each(["000001", "000000001"])("accepts the provider's zero-padded invoice number %s", async invoiceNumber => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation(async (name: string, ...args: unknown[]) => {
+      const result = await original(name, ...args) as { data: unknown; error: null };
+      return name === "read_bling_invoice_archive_context"
+        ? { ...result, data: { ...(result.data as Record<string, unknown>), invoiceNumber } } : result;
+    });
+    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
+    expect(state.rpc).toHaveBeenCalledWith("verify_bling_invoice_archive", expect.objectContaining({ p_environment: 2 }));
+  });
+  it.each(["000000", "000002", "1e0", "1.0", "0000000001"])("rejects invalid or different invoice number %s", async invoiceNumber => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation(async (name: string, ...args: unknown[]) => {
+      const result = await original(name, ...args) as { data: unknown; error: null };
+      return name === "read_bling_invoice_archive_context"
+        ? { ...result, data: { ...(result.data as Record<string, unknown>), invoiceNumber } } : result;
+    });
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey))
+      .rejects.toThrow("fiscal_archive_identity_mismatch");
+    expect(state.upload).not.toHaveBeenCalled();
+  });
+  it("records the environment from the XML without inferring production", async () => {
+    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
+    expect(state.rpc).toHaveBeenCalledWith("verify_bling_invoice_archive", expect.objectContaining({
+      p_access_key: archiveKey, p_environment: 2, p_xml_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) as unknown }));
+  });
+  it("does not complete archiving if the verification acknowledgement fails", async () => {
+    const original = state.rpc.getMockImplementation()!;
+    state.rpc.mockImplementation((name: string, ...args: unknown[]) => name === "verify_bling_invoice_archive"
+      ? Promise.resolve({ data: false, error: null }) : original(name, ...args) as Promise<unknown>);
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey)).rejects.toThrow("fiscal_archive_unavailable");
+  });
+  it("refuses an invalid DANFE after XML without confirming document readiness", async () => {
+    state.document.mockImplementation(async (_key: string, format: string) => new TextEncoder().encode(format === "xml" ? archiveXml() : "not-a-pdf").buffer);
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey)).rejects.toThrow("invalid_document");
+    expect(state.rpc.mock.calls.some(([name]) => name === "verify_bling_invoice_archive")).toBe(false);
+  });
+  it("refuses an unapproved XML protocol before recording an archive or releasing shipping", async () => {
+    state.document.mockResolvedValue(new TextEncoder().encode(archiveXml().replace("<cStat>100</cStat>", "<cStat>204</cStat>")).buffer);
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey))
+      .rejects.toThrow("original_invoice_xml_invalid");
+    expect(state.upload).not.toHaveBeenCalled();
+  });
+  it("does not accept an XML from another invoice or total", async () => {
+    state.document.mockResolvedValue(new TextEncoder().encode(archiveXml().replace("<nNF>1</nNF>", "<nNF>2</nNF>")).buffer);
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey))
+      .rejects.toThrow("fiscal_archive_identity_mismatch");
+    expect(state.upload).not.toHaveBeenCalled();
+  });
   it("archives XML and PDF by invoice and content hash, never a public URL", async () => {
-    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, "1".repeat(44));
+    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
     expect(state.document.mock.calls.map((call: unknown[]) => call[1])).toEqual(["xml", "pdf"]);
     expect(state.upload).toHaveBeenCalledTimes(2);
     expect(state.upload.mock.calls[0]?.[0]).toMatch(new RegExp(`^${orderId}/123/[a-f0-9]{64}\\.xml$`, "u"));
@@ -87,16 +143,16 @@ describe("private fiscal archiving", () => {
   });
   it("does not write into an existing public bucket", async () => {
     state.bucket.mockResolvedValue({ data: { public: true }, error: null });
-    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, "1".repeat(44))).rejects.toThrow();
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey)).rejects.toThrow();
     expect(state.document).not.toHaveBeenCalled();
   });
   it("recovers a previously uploaded document only after checking its actual hash", async () => {
     state.upload.mockResolvedValue({ error: { statusCode: "409" } });
-    state.download.mockResolvedValue({ data: new Blob(["test-only-document"]), error: null });
-    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, "1".repeat(44));
+    state.download.mockImplementation(async (path: string) => ({ data: new Blob([path.endsWith(".xml") ? archiveXml() : "%PDF-test-only"]), error: null }));
+    await archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey);
     expect(state.download).toHaveBeenCalledTimes(2);
     state.download.mockResolvedValue({ data: new Blob(["different"]), error: null });
-    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, "1".repeat(44)))
+    await expect(archiveBlingInvoice(db, { invoiceDocument: state.document }, orderId, 123, archiveKey))
       .rejects.toMatchObject({ code: "fiscal_archive_mismatch" });
   });
 });

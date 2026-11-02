@@ -6,6 +6,7 @@ import { isUnknownRecord, readNumber, readString } from "./unknown-data";
 import { archiveBlingInvoice, ensureBlingFiscalApproval, resolveBlingOrderNature } from "./bling-fiscal-automation";
 import { assertBlingInvoicePaymentTerms, blingInvoicePaymentTerms, prepareBlingFiscalDraft, requestBlingFiscalResource } from "./bling-invoice-draft";
 import { assertBlingB2CRecipient, readBlingFiscalRecipient } from "./bling-fiscal-scope";
+import { observeBlingInvoice } from "./bling-invoice-observation";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type Job = { id: string; type: "bling.order.create" | "bling.order.reconcile" | "bling.webhook.reconcile" | "bling.invoice.generate" | "bling.invoice.send" | "bling.invoice.poll" | "bling.invoice.archive" | "bling.invoice.email" | "bling.product.sync" | "bling.product.create" | "bling.product.reconcile" | "bling.stock.sync";
@@ -209,15 +210,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
 }
 
 async function observeInvoice(db: SupabaseClient, provider: BlingClient, invoiceId: number): Promise<void> {
-  const observedAt = new Date().toISOString();
-  const result = row(data(await provider.request(`/nfe/${invoiceId}`)));
-  if (!result) throw new BlingError("invalid_invoice_response", 502);
-  const code = readString(result, "numeroPedidoLoja");
-  if (!code) throw new BlingError("invoice_order_unlinked", 409);
-  const linked = await call(db, "observe_bling_invoice", { p_invoice_id: invoiceId, p_order_code: code,
-    p_situation: Number(result.situacao), p_invoice_number: readString(result, "numero"),
-    p_access_key: readString(result, "chaveAcesso"), p_observed_at: observedAt });
-  if (linked !== true) throw new BlingError("invoice_order_unlinked", 409);
+  await observeBlingInvoice(db, provider, invoiceId);
 }
 
 type FiscalInvoiceItem = { sku: string; unit: string; quantity: number; unitPriceInCents: number; ncm: string; origin: number; cest: string; cfop: string };
@@ -388,12 +381,11 @@ async function reconcileWebhook(db: SupabaseClient, provider: BlingClient, event
   const resourceId = idNumber(event.resource_id);
   let status = "ignored";
   if (resourceId && type.startsWith("invoice.") && !type.endsWith(".deleted")) {
-    await observeInvoice(db, provider, resourceId);
-    status = "processed";
+    if (await observeBlingInvoice(db, provider, resourceId, { ignoreUnrelated: true })) status = "processed";
   } else if (resourceId && type.startsWith("order.") && !type.endsWith(".deleted")) {
     const order = row(data(await provider.request(`/pedidos/vendas/${resourceId}`)));
     const invoiceId = idNumber(row(order?.notaFiscal)?.id);
-    if (invoiceId) await observeInvoice(db, provider, invoiceId);
+    if (invoiceId) await observeBlingInvoice(db, provider, invoiceId, { ignoreUnrelated: true });
     status = "processed";
   }
   await call(db, "finish_bling_webhook_event", { p_event_id: eventId, p_status: status, p_error_code: null });
@@ -478,25 +470,34 @@ export async function runBlingJobs(environment: Environment, executionId: string
     } catch (error) {
       failed += 1;
       const issue = error instanceof BlingError ? error : new BlingError("integration_failed", 503, true);
+      // Keep the provider refusal actionable without persisting provider prose,
+      // rejected field values, customer data or a raw response body.
+      const diagnosticCode = issue.code !== "validation_error" ? issue.code
+        : issue.validationFields.includes("dataOperacao") ? "bling_validation_operation_date"
+          : issue.validationFields.some(field => ["parcelas", "formaPagamento", "caut"].includes(field)) ? "bling_validation_payment_terms"
+            : issue.validationHints.includes("certificate") ? "bling_validation_certificate"
+              : issue.validationHints.includes("numbering") ? "bling_validation_numbering"
+                : issue.validationHints.includes("tax_rules") ? "bling_validation_tax_rules" : issue.code;
       if (issue.code === "validation_error") logServerEvent("error", "bling_job_validation_failed", {
-        executionId, jobType: job.type, validationCodes: issue.validationCodes, validationFields: issue.validationFields
+        executionId, jobType: job.type, validationCodes: issue.validationCodes, validationFields: issue.validationFields,
+        validationTopics: issue.validationHints
       });
       if (issue.code === "job_lease_lost") break;
       const outcome = issue.retryable && !issue.uncertainWrite ? "retry" : "failed";
       if (job.type === "bling.order.create") {
         await db.rpc("mark_bling_order_issue", { p_order_id: readString(job.payload, "orderId"),
           p_status: issue.uncertainWrite ? "reconciliation_required" : outcome === "retry" ? "pending" : "failed",
-          p_error_code: issue.code });
+          p_error_code: diagnosticCode });
       } else if (job.type === "bling.invoice.generate" || job.type === "bling.invoice.send") {
         await db.rpc("mark_bling_invoice_issue", { p_order_id: readString(job.payload, "orderId"),
           p_status: issue.code === "fiscal_not_ready" || issue.code === "nature_required" || issue.code === "product_fiscal_data_required"
-            ? "awaiting_data" : "error", p_error_code: issue.code });
+            ? "awaiting_data" : "error", p_error_code: diagnosticCode });
       } else if (job.type === "bling.webhook.reconcile") {
         await db.rpc("finish_bling_webhook_event", { p_event_id: readString(job.payload, "eventId"),
-          p_status: "failed", p_error_code: issue.code });
+          p_status: "failed", p_error_code: diagnosticCode });
       }
       await call(db, "finish_bling_job", { p_job_id: job.id, p_lock_id: lockId,
-        p_outcome: outcome, p_error_code: issue.code, p_retry_after_ms: Math.min(Math.max(Math.ceil(issue.retryAfterMs), 0), 86_400_000) });
+        p_outcome: outcome, p_error_code: diagnosticCode, p_retry_after_ms: Math.min(Math.max(Math.ceil(issue.retryAfterMs), 0), 86_400_000) });
     }
   }
   logServerEvent(failed ? "error" : "info", "bling_jobs_completed", { executionId, processed, failed });
