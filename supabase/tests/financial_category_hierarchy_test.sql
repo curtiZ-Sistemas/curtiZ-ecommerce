@@ -1,4 +1,6 @@
 begin;
+-- The financial control rejects future dates in the business timezone.
+set local timezone to 'America/Sao_Paulo';
 
 create extension if not exists pgtap with schema extensions;
 select plan(19);

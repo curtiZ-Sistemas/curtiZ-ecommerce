@@ -26,6 +26,7 @@ beforeEach(() => {
       return { data: { id: jobId, jobType: "bling.order.reconcile", payload: { orderId }, attempts: 1 }, error: null };
     }
     if (name === "read_bling_order_link") return { data: { external_order_id: 88, erp_status: "reconciliation_required" }, error: null };
+    if (name === "read_bling_invoice_order") return { data: { orderCode: "CZ-TEST", externalOrderId: 88, invoiceId: 99 }, error: null };
     return { data: true, error: null };
   });
   state.from.mockImplementation((table: string) => ({ select: () => ({ eq: () => ({
@@ -33,16 +34,31 @@ beforeEach(() => {
     error: null, maybeSingle: async () => ({ data: order(), error: null })
   }) }) }));
   state.request.mockImplementation(async (path: string) => ({ data: path === "/nfe/99"
-    ? { numeroPedidoLoja: "CZ-TEST", situacao: 5, numero: "1", chaveAcesso: "1".repeat(44) } : external() }));
+    ? { id: 99, numeroPedidoLoja: "CZ-TEST", situacao: 5, numero: "1", chaveAcesso: "1".repeat(44) } : external() }));
 });
 
 describe("persistent Bling job orchestration", () => {
+  it.each([
+    [["dataOperacao"], [], "bling_validation_operation_date"],
+    [["parcelas"], [], "bling_validation_payment_terms"],
+    [[], ["certificate"], "bling_validation_certificate"],
+    [[], ["numbering"], "bling_validation_numbering"],
+    [[], ["tax_rules"], "bling_validation_tax_rules"],
+    [[], [], "validation_error"]
+  ] as const)("persists only an allowlisted refusal reason for fields=%j topics=%j", async (fields, hints, code) => {
+    state.request.mockRejectedValue(new BlingError("validation_error", 400, false, false, 0, [0], fields, hints));
+    expect(await runBlingJobs(environment, "diagnostic-test", 1)).toMatchObject({ failed: 1 });
+    expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_error_code: code, p_outcome: "failed" }));
+    expect(state.request).toHaveBeenCalledTimes(1);
+    expect(state.log).toHaveBeenCalledWith("error", "bling_job_validation_failed", expect.objectContaining({ validationTopics: hints }));
+  });
   it("processes the selected order through the existing reconciliation service", async () => {
     let claimed = false;
     state.rpc.mockImplementation(async (name: string) => ({ error: null, data:
       name === "read_integration_credential" ? { status: "connected" }
         : name === "claim_bling_order_job" ? claimed ? null : (claimed = true, { id: jobId, jobType: "bling.order.reconcile", payload: { orderId }, attempts: 1 })
-          : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "reconciliation_required" } : true }));
+          : name === "read_bling_order_link" ? { external_order_id: 88, erp_status: "reconciliation_required" }
+            : name === "read_bling_invoice_order" ? { orderCode: "CZ-TEST", externalOrderId: 88, invoiceId: 99 } : true }));
     expect(await runBlingJobs({ ...environment, BLING_HOMOLOGATION_ORDER_ID: orderId,
       BLING_INVOICE_TRANSMISSION_MODE: "homologation" }, "homologation-test"))
       .toMatchObject({ ok: true, processed: 1 });
@@ -166,8 +182,9 @@ describe("persistent Bling job orchestration", () => {
   it("retries a processing invoice through read-only calls without resending it", async () => {
     state.rpc.mockImplementation(async (name: string) => ({ error: null, data: name === "read_integration_credential" ? { status: "connected" }
       : name === "claim_bling_job" ? { id: jobId, jobType: "bling.invoice.poll", payload: { orderId }, attempts: 1 }
-        : name === "read_bling_order_link" ? { invoice_id: 99, invoice_status: "processing" } : true }));
-    state.request.mockResolvedValue({ data: { numeroPedidoLoja: "CZ-TEST", situacao: 3 } });
+        : name === "read_bling_order_link" ? { invoice_id: 99, invoice_status: "processing" }
+          : name === "read_bling_invoice_order" ? { orderCode: "CZ-TEST", externalOrderId: 88, invoiceId: 99 } : true }));
+    state.request.mockResolvedValue({ data: { id: 99, numeroPedidoLoja: "CZ-TEST", situacao: 3 } });
     await runBlingJobs(environment, "execution-test", 1);
     expect(state.request.mock.calls).toEqual([["/nfe/99"]]);
     expect(state.rpc).toHaveBeenCalledWith("finish_bling_job", expect.objectContaining({ p_outcome: "retry", p_error_code: "invoice_processing", p_retry_after_ms: 120000 }));

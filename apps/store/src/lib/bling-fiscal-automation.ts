@@ -1,5 +1,5 @@
 import "server-only";
-import { BlingError, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, selectBlingFiscalRule } from "@curtiz/integrations";
+import { BlingError, BLING_RETURN_XML_LIMIT, blingFiscalMirrorHash, buildBlingOrderFiscalMirror, readBlingReturnOriginalXml, selectBlingFiscalRule } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readString } from "./unknown-data";
 import { assertBlingB2CRecipient } from "./bling-fiscal-scope";
@@ -64,9 +64,39 @@ export async function archiveBlingInvoice(db: SupabaseClient, provider: {
   if (bucket.error || bucket.data?.public !== false) throw new BlingError("fiscal_archive_unavailable", 503, true);
   const existing = await db.rpc("read_bling_invoice_archives", { p_order_id: orderId });
   if (existing.error || !Array.isArray(existing.data)) throw new BlingError("storage_unavailable", 503, true);
+  const result = await db.rpc("read_bling_invoice_archive_context", { p_order_id: orderId, p_invoice_id: invoiceId });
+  if (result.error) throw new BlingError("storage_unavailable", 503, true);
+  const context = isUnknownRecord(result.data) ? result.data : {};
+  if (context.invoiceKey !== key || typeof context.invoiceNumber !== "string" || typeof context.issuerDocument !== "string"
+    || !/^\d{14}$/u.test(context.issuerDocument) || !Number.isSafeInteger(context.series) || Number(context.series) < 1
+    || !Number.isSafeInteger(context.totalInCents) || Number(context.totalInCents) < 0)
+    throw new BlingError("fiscal_archive_identity_mismatch", 409);
+  let environment: number | undefined;
+  let xmlHash: string | undefined;
   for (const format of ["xml", "pdf"] as const) {
-    if (existing.data.some((row: unknown) => isUnknownRecord(row) && Number(row.invoice_id) === invoiceId && row.format === format)) continue;
-    const document = await provider.invoiceDocument(key, format), hash = await hashDocument(document);
+    const previous: unknown = existing.data.find((row: unknown) => isUnknownRecord(row) && Number(row.invoice_id) === invoiceId && row.format === format);
+    const prior = isUnknownRecord(previous) ? previous : null;
+    let document: ArrayBuffer;
+    if (prior) {
+      if (prior.storage_path !== `${orderId}/${invoiceId}/${String(prior.sha256)}.${format}` || !/^[a-f0-9]{64}$/u.test(String(prior.sha256)))
+        throw new BlingError("fiscal_archive_mismatch", 409);
+      const stored = await db.storage.from("fiscal-documents").download(String(prior.storage_path));
+      if (stored.error || !stored.data || stored.data.size > 10_000_000) throw new BlingError("fiscal_archive_unavailable", 503, true);
+      document = await stored.data.arrayBuffer();
+      if (await hashDocument(document) !== prior.sha256) throw new BlingError("fiscal_archive_mismatch", 409);
+    } else document = await provider.invoiceDocument(key, format);
+    const hash = await hashDocument(document);
+    if (format === "xml") {
+      if (document.byteLength > BLING_RETURN_XML_LIMIT) throw new BlingError("original_invoice_xml_invalid", 409);
+      let xml: string;
+      try { xml = new TextDecoder("utf-8", { fatal: true }).decode(document); }
+      catch { throw new BlingError("original_invoice_xml_invalid", 409); }
+      environment = readBlingReturnOriginalXml(xml, key, { invoiceNumber: context.invoiceNumber,
+        issuerDocument: context.issuerDocument, series: Number(context.series), totalInCents: Number(context.totalInCents) }).environment;
+      xmlHash = hash;
+    } else if (document.byteLength > 10_000_000 || new TextDecoder().decode(document.slice(0, 5)) !== "%PDF-")
+      throw new BlingError("invalid_document", 502);
+    if (prior) continue;
     const path = `${orderId}/${invoiceId}/${hash}.${format}`;
     const stored = await db.storage.from("fiscal-documents").upload(path, document,
       { contentType: format === "pdf" ? "application/pdf" : "application/xml", upsert: false });
@@ -80,4 +110,7 @@ export async function archiveBlingInvoice(db: SupabaseClient, provider: {
       p_format: format, p_path: path, p_sha256: hash });
     if (saved.error || saved.data !== true) throw new BlingError("fiscal_archive_unavailable", 503, true);
   }
+  const verified = await db.rpc("verify_bling_invoice_archive", { p_order_id: orderId, p_invoice_id: invoiceId,
+    p_access_key: key, p_xml_sha256: xmlHash, p_environment: environment });
+  if (verified.error || verified.data !== true) throw new BlingError("fiscal_archive_unavailable", 503, true);
 }
