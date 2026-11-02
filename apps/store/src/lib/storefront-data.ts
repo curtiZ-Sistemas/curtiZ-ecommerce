@@ -445,6 +445,8 @@ const getCachedHomepageData = unstable_cache(async (): Promise<HomepageData> => 
       .or(`ends_at.is.null,ends_at.gt.${now}`)
       .order("priority", { ascending: false })
       .order("sort_order")
+      .order("created_at")
+      .order("id")
       .limit(40),
     queryPublicCatalog({ sort: "best_sellers", pageSize: 24 }),
     queryPublicCatalog({ promotion: true, pageSize: 12 }),
