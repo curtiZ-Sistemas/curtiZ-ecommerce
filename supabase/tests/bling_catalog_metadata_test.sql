@@ -36,6 +36,12 @@ select is(jsonb_array_length(public.read_bling_catalog_variant('bc200000-0000-40
 update private.bling_catalog_metadata set commercial_unit='UN',pairs_per_sku=2,fiscal_unit_approved=false
 where product_id='bc100000-0000-4000-8000-000000000001';
 select is((select count(*) from public.background_jobs where idempotency_key like 'bling:media:bc200000-0000-4000-8000-000000000001:%'),2::bigint,'Metadata change queues synchronization');
+update private.bling_catalog_metadata set fiscal_unit_approved=true, evidence_reference='Accountant approval recorded', updated_at=now()
+where product_id='bc100000-0000-4000-8000-000000000001';
+select is((select count(*) from public.background_jobs where idempotency_key like 'bling:media:bc200000-0000-4000-8000-000000000001:%'),2::bigint,'Approval bookkeeping does not queue a provider write');
+update private.bling_catalog_metadata set ncm='64041900'
+where product_id='bc100000-0000-4000-8000-000000000001';
+select is((select count(*) from public.background_jobs where idempotency_key like 'bling:media:bc200000-0000-4000-8000-000000000001:%'),3::bigint,'A real fiscal payload change still queues synchronization');
 
 select is(public.claim_bling_catalog_job('bc300000-0000-4000-8000-000000000001',false,false,false),null::jsonb,'All write gates disabled prevents catalogue writes');
 create temporary table catalogue_claim as select public.claim_bling_catalog_job('bc300000-0000-4000-8000-000000000001',true,true,true) job;
