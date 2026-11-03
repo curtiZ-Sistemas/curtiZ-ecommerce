@@ -1623,7 +1623,7 @@ export default function CheckoutPage() {
                       <strong>{quote.service}</strong>
                       <small>
                         {quote.carrier}
-                        {quote.estimatedDays ? ` · até ${quote.estimatedDays} dias úteis` : ""}
+                        {quote.estimatedDays ? ` · até ${quote.estimatedDays} dias úteis, incluindo preparação` : ""}
                       </small>
                     </span>
                     <strong>{formatBRL(quote.amountInCents)}</strong>

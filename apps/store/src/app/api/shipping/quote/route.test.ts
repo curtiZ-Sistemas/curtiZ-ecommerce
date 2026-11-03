@@ -49,6 +49,7 @@ vi.mock("@/lib/unknown-data", () => ({
 // Módulos reais, reexportados por caminho relativo porque o Vitest da loja não resolve o alias "@/".
 vi.mock("@/lib/runtime-environment", () => vi.importActual("../../../../lib/runtime-environment"));
 vi.mock("@/lib/shipping-quote-diagnostics", () => vi.importActual("../../../../lib/shipping-quote-diagnostics"));
+vi.mock("@/lib/shipping-estimate", () => vi.importActual("../../../../lib/shipping-estimate"));
 vi.mock("@/lib/melhor-envio-server", () => ({
   configuredMelhorEnvioProvider: vi.fn(() => ({ quote: providerQuote })),
   resolveShippingProducts: vi.fn()
@@ -151,6 +152,17 @@ describe("POST /api/shipping/quote", () => {
   });
 
   afterEach(() => vi.unstubAllEnvs());
+
+  it("persiste e apresenta o prazo total incluindo até cinco dias úteis de preparação", async () => {
+    runtime.bindings = sandboxRuntimeEnvironment;
+    quoteInsert.mockImplementation(async (rows: Array<Record<string, unknown>>) => ({
+      data: rows.map((row) => ({ ...row, id: "quote-id" })), error: null
+    }));
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(quoteInsert).toHaveBeenCalledWith([expect.objectContaining({ estimated_days: 10 })]);
+    expect(await response.json()).toMatchObject({ ok: true, quotes: [{ estimatedDays: 10 }] });
+  });
 
   it("rejeita origem inválida com 403 sem consultar sessão", async () => {
     origin.allowed = false;
