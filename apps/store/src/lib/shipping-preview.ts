@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { MelhorEnvioQuote, MelhorEnvioQuoteProduct } from "@curtiz/integrations";
+import { totalDeliveryBusinessDays } from "./shipping-estimate";
 
 export type ShippingPreviewQuote = Pick<MelhorEnvioQuote, "serviceId" | "service" | "carrier" | "amountInCents" | "estimatedDays">;
 
@@ -13,7 +14,7 @@ export function createShippingPreviewCache(now = Date.now) {
     // Keep only completed data: Workers must not share another request's I/O promise.
     const result = await load();
     const quotes = result.map(({ serviceId, service, carrier, amountInCents, estimatedDays }) =>
-      ({ serviceId, service, carrier, amountInCents, estimatedDays }));
+      ({ serviceId, service, carrier, amountInCents, estimatedDays: totalDeliveryBusinessDays(estimatedDays) }));
     const until = Math.min(now() + 60_000, ...result.map((quote) => Date.parse(quote.expiresAt)));
     if (Number.isFinite(until) && until > now()) {
       if (entries.size >= 100) entries.delete(entries.keys().next().value ?? "");

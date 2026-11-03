@@ -11,7 +11,7 @@ describe("shipping preview cache", () => {
     const load = vi.fn(async () => [quote]);
     const results = await Promise.all([cache("a", load), cache("a", load)]);
     expect(load).toHaveBeenCalledTimes(2);
-    expect(results[0]).toEqual([{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2000, estimatedDays: 5 }]);
+    expect(results[0]).toEqual([{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2000, estimatedDays: 10 }]);
     await cache("a", load);
     expect(load).toHaveBeenCalledTimes(2);
     now += 60_001;

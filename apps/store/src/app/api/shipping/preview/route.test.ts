@@ -67,7 +67,7 @@ describe("public shipping preview", () => {
     expect(mocks.resolve).toHaveBeenCalledWith([{ productId: input.productId, variantId: input.variantId, quantity: 1 }], mocks.db);
     expect(mocks.quote).toHaveBeenCalledWith({ originPostalCode: "11111111", destinationPostalCode: "01310100",
       products: [{ id: input.variantId, quantity: 1, weightKg: 1, widthCm: 20, heightCm: 10, lengthCm: 30, insuranceValue: 150 }] });
-    expect(await response.json()).toEqual({ ok: true, quotes: [{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 4 }] });
+    expect(await response.json()).toEqual({ ok: true, quotes: [{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9 }] });
   });
   it("returns unavailable services explicitly and still validates live products on cache hits", async () => {
     const first = await POST(request());

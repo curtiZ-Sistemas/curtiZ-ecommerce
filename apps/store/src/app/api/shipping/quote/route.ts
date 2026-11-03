@@ -12,6 +12,7 @@ import { configuredMelhorEnvioProvider, resolveShippingProducts } from "@/lib/me
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { isUnknownRecord, readNumber, readQueryResult, readString } from "@/lib/unknown-data";
 import { getStoreRuntimeEnvironment, type RuntimeEnvironment } from "@/lib/runtime-environment";
+import { totalDeliveryBusinessDays } from "@/lib/shipping-estimate";
 import {
   classifyShippingQuoteFailure,
   createShippingQuoteSupport,
@@ -134,7 +135,7 @@ export async function POST(request: NextRequest) {
       originPostalCode: runtime.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "",
       destinationPostalCode: parsed.data.postalCode,
       products: resolved.products
-    }, services => { unavailableServices = services; });
+    }, (services: readonly MelhorEnvioUnavailableService[]) => { unavailableServices = services; });
     stage = "persistence";
     if (quotes.length === 0) {
       await recordShippingDiagnostic(db, { code: "shipping_services_unavailable", support, httpStatus: 200, userId,
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     const rows = quotes.map((quote) => ({
       customer_id: user.id, provider: quote.provider, service_id: quote.serviceId, service: quote.service,
       carrier: quote.carrier, amount: quote.amountInCents / 100, cost: quote.costInCents / 100,
-      estimated_days: quote.estimatedDays, packages: quote.packages,
+      estimated_days: totalDeliveryBusinessDays(quote.estimatedDays), packages: quote.packages,
       destination_postal_code: parsed.data.postalCode, cart_fingerprint: resolved.fingerprint,
       provider_environment: storeEnvironmentName(runtime),
       provider_payload: { packages: quote.packages }, expires_at: quote.expiresAt

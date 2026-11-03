@@ -90,7 +90,7 @@ export function ProductShippingPreview({ productId, variantId, quantity }: { pro
       {visible?.message ? <p className="shipping-message" data-tone={failed && !visible?.message.startsWith("Nenhum") ? "error" : "info"}>{visible.message}</p> : null}
       {visible?.quotes.length ? <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
         <div><strong>{quote.service}</strong>
-          <span>{quote.carrier} · {quote.estimatedDays} {quote.estimatedDays === 1 ? "dia útil" : "dias úteis"}</span></div>
+          <span>{quote.carrier} · até {quote.estimatedDays} dias úteis, incluindo preparação</span></div>
         <b>{formatBRL(quote.amountInCents)}</b>
       </li>)}</ul> : null}
     </div>
