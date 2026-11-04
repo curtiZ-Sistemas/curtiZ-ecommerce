@@ -2,9 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/auth-form", () => ({ AuthForm: () => null }));
 vi.mock("@/components/google-sign-in", () => ({ GoogleSignIn: () => null }));
-vi.mock("@/lib/google-auth", () => ({ googleAuthReady: () => Promise.resolve(false) }));
 import LoginPage from "./page";
 
 beforeEach(() => vi.stubGlobal("React", React));
