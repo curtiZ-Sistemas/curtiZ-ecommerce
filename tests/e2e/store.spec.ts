@@ -1,6 +1,50 @@
 import { expect, test, type Page } from "@playwright/test";
 import { loginDemoAccount } from "./demo-auth";
 
+test("CEP preenche os formulários da conta e do checkout sem alterar número", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.route("https://viacep.com.br/ws/**", (route) => route.fulfill({
+    json: { logradouro: "Praça da Sé", bairro: "Sé", localidade: "São Paulo", uf: "SP" },
+    headers: { "access-control-allow-origin": "*" }
+  }));
+  await page.addInitScript(() => {
+    localStorage.setItem("curtiz-cart", JSON.stringify([{ productId: "wave-preto", slug: "flip-flop-wave-preto",
+      variantId: "wave-preto:Preto:39/40", name: "Produto teste", image: "/images/products/wave-preto.png",
+      color: "Preto", size: "39/40", quantity: 1, maxQuantity: 10, unitPriceInCents: 5990 }]));
+  });
+  await loginDemoAccount(page, "cliente.demo@curtiz.local");
+  const saved: Record<string, unknown>[] = [];
+  await page.route("**/api/customer", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    saved.push(body);
+    await route.fulfill({ json: { ok: true, data: "cb000000-0000-4000-8000-000000000002" } });
+  });
+  await page.goto("/minha-conta/enderecos", { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("load", { timeout: 60_000 });
+  await page.getByRole("button", { name: "Adicionar endereço" }).click();
+  const accountForm = page.locator("form.customer-form");
+  await accountForm.locator('[name="number"]').fill("42");
+  await accountForm.locator('[name="postalCode"]').fill("01001000");
+  await expect(accountForm.locator('[name="street"]')).toHaveValue("Praça da Sé");
+  await expect(accountForm.locator('[name="city"]')).toHaveValue("São Paulo");
+  await expect(accountForm.locator('[name="number"]')).toHaveValue("42");
+  await accountForm.getByRole("button", { name: "Salvar endereço" }).click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0]).toMatchObject({ postalCode: "01001-000", street: "Praça da Sé", city: "São Paulo", state: "SP", number: "42" });
+  await page.route("**/api/checkout/profile", (route) => route.fulfill({ json: { profile: null, addresses: [] } }));
+  await page.goto("/checkout", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Adicionar endereço" }).click();
+  await page.locator('#postalCode').fill("01001000");
+  await expect(page.locator('#street')).toHaveValue("Praça da Sé");
+  await expect(page.locator('#district')).toHaveValue("Sé");
+  await expect(page.locator('#state')).toHaveValue("SP");
+  await page.getByLabel("Destinatário").fill("Cliente Teste");
+  await page.locator('#number').fill("42");
+  await page.getByRole("button", { name: "Salvar endereço" }).click();
+  await expect.poll(() => saved.length).toBe(2);
+  expect(saved[1]).toMatchObject({ postalCode: "01001-000", street: "Praça da Sé", district: "Sé", city: "São Paulo", state: "SP", number: "42" });
+});
+
 test("Google indisponível preserva login e cadastro tradicionais", async ({ page }) => {
   test.setTimeout(60_000);
   let attempts = 0;

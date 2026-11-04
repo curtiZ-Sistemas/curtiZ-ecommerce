@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { CustomerCpfField } from "@/components/customer-cpf-field";
+import { PostalCodeInput } from "@/components/postal-code-input";
 import { MercadoPagoPaymentBrick } from "@/components/mercadopago-payment-brick";
 import { checkoutMissingFields, normalizeOptionalCouponCode, type CheckoutRequiredField } from "@/lib/checkout-flow";
 import { readMercadoPagoBrickSession, type MercadoPagoBrickSession } from "@/lib/mercadopago-brick-config";
@@ -1397,8 +1398,11 @@ export default function CheckoutPage() {
                   </div>
                   <div className="field address-postal-field">
                     <label htmlFor="postalCode">CEP</label>
-                    <input
+                    <PostalCodeInput
                       id="postalCode"
+                      key={addressEditor.mode === "edit" ? addressEditor.addressId : "new"}
+                      lookupInitial={addressEditor.mode === "new"}
+                      replaceUntouchedOnChange={addressEditor.mode === "edit"}
                       name="postalCode"
                       inputMode="numeric"
                       autoComplete="postal-code"
@@ -1409,8 +1413,7 @@ export default function CheckoutPage() {
                       defaultValue={formatPostalCode(addressBeingEdited?.postalCode ?? readShippingPostalCode())}
                       aria-invalid={Boolean(addressFieldErrors.postalCode)}
                       aria-describedby={addressFieldErrors.postalCode ? "checkout-address-postal-error" : undefined}
-                      onInput={(event) => {
-                        event.currentTarget.value = formatPostalCode(event.currentTarget.value);
+                      onInput={() => {
                         clearAddressFieldError("postalCode");
                         resetShippingQuote();
                       }}
