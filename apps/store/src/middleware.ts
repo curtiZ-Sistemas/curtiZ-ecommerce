@@ -532,6 +532,7 @@ export async function middleware(request: NextRequest) {
     ],
 
     connectSources: [
+      "https://viacep.com.br",
       ...(mercadoPagoPage
         ? MERCADO_PAGO_CONNECT_SOURCES
         : []),

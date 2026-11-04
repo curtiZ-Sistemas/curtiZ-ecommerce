@@ -1,6 +1,7 @@
 "use client";
 
 import { CustomerCpfField } from "./customer-cpf-field";
+import { PostalCodeInput } from "./postal-code-input";
 
 import { CustomerReturns } from "./customer-returns";
 
@@ -1142,7 +1143,7 @@ function Addresses({
           <div className="customer-form-grid">
             <label className="customer-field"><span>Identificação</span><input name="label" defaultValue={current?.label ?? "Casa"} minLength={2} maxLength={40} required /></label>
             <label className="customer-field"><span>Destinatário</span><input name="recipientName" autoComplete="name" defaultValue={current?.recipientName ?? profileName} minLength={3} maxLength={120} required /></label>
-            <label className="customer-field"><span>CEP</span><input name="postalCode" defaultValue={formatPostalCode(current?.postalCode ?? "")} pattern="\d{5}-?\d{3}" inputMode="numeric" autoComplete="postal-code" maxLength={POSTAL_CODE_FORMATTED_MAX_LENGTH} placeholder="00000-000" onInput={(event) => { event.currentTarget.value = formatPostalCode(event.currentTarget.value); }} required /></label>
+            <label className="customer-field"><span>CEP</span><PostalCodeInput key={current?.id ?? "new"} replaceUntouchedOnChange={Boolean(current)} name="postalCode" defaultValue={formatPostalCode(current?.postalCode ?? "")} pattern="\d{5}-?\d{3}" inputMode="numeric" autoComplete="postal-code" maxLength={POSTAL_CODE_FORMATTED_MAX_LENGTH} placeholder="00000-000" required /></label>
             <label className="customer-field"><span>Rua / avenida</span><input name="street" autoComplete="address-line1" defaultValue={current?.street} maxLength={160} required /></label>
             <label className="customer-field"><span>Número</span><input name="number" defaultValue={current?.number} maxLength={20} required /></label>
             <label className="customer-field"><span>Complemento</span><input name="complement" autoComplete="address-line2" defaultValue={current?.complement} maxLength={100} /></label>
