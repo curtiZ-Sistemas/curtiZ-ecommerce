@@ -1,0 +1,54 @@
+-- Disposable fixtures only; all changes roll back. Do not execute as production cleanup.
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+select has_table('private','application_access_logs','Access records live outside the exposed schema');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='private.application_access_logs'::regclass),'RLS is enabled and forced');
+select is((select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema='private' and table_name='application_access_logs'),array['id','application','ip_address','occurred_at','retention_until','legal_hold_until'],'No URL, cookie, identity or body columns');
+select ok(not has_table_privilege('anon','private.application_access_logs','SELECT'),'Anonymous role cannot read raw IPs');
+select ok(not has_table_privilege('authenticated','private.application_access_logs','SELECT'),'Authenticated accounts cannot read raw IPs');
+select ok(not has_table_privilege('service_role','private.application_access_logs','SELECT'),'The server uses limited RPCs instead of raw reads');
+select ok(not has_function_privilege('anon','public.record_application_access(uuid,text,inet,timestamptz)','EXECUTE'),'Anonymous role cannot forge records');
+select ok(not has_function_privilege('authenticated','public.record_application_access(uuid,text,inet,timestamptz)','EXECUTE'),'Customers and panel users cannot forge records');
+select ok(has_function_privilege('service_role','public.record_application_access(uuid,text,inet,timestamptz)','EXECUTE'),'Server can record accesses');
+select ok(not has_function_privilege('anon','public.purge_expired_application_access_logs(integer)','EXECUTE'),'Anonymous role cannot purge records');
+select ok(not has_function_privilege('authenticated','public.purge_expired_application_access_logs(integer)','EXECUTE'),'Authenticated accounts cannot purge records');
+select ok(has_function_privilege('service_role','public.purge_expired_application_access_logs(integer)','EXECUTE'),'Only server role receives the maintenance RPC');
+set local role anon;
+select throws_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000001','store','192.0.2.1',now())$$,'42501',null,'Direct anonymous recording is denied');
+select throws_ok($$select public.purge_expired_application_access_logs(1)$$,'42501',null,'Direct anonymous purge is denied');
+select throws_ok($$select * from private.application_access_logs$$,'42501',null,'Direct anonymous reads are denied');
+reset role;
+set local role authenticated;
+select throws_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000001','store','192.0.2.1',now())$$,'42501',null,'Direct customer recording is denied');
+select throws_ok($$select public.purge_expired_application_access_logs(1)$$,'42501',null,'Direct customer purge is denied');
+select throws_ok($$select * from private.application_access_logs$$,'42501',null,'Direct customer reads are denied');
+reset role;
+set local role service_role;
+select lives_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000001','store','192.0.2.1',now())$$,'Server records a store IPv4 access');
+select lives_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000002','panel','2001:db8::1',now())$$,'Server records a panel IPv6 access');
+select lives_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000001','store','192.0.2.1',now())$$,'Ambiguous retry is idempotent');
+select throws_ok($$select public.record_application_access('ac110000-0000-4000-8000-000000000001','store','192.0.2.2',now())$$,'22023',null,'An ID cannot overwrite a different access');
+select throws_ok($$select public.record_application_access(gen_random_uuid(),'store','192.0.2.1',now()-interval '1 day')$$,'22023',null,'RPC cannot backfill invented historical records');
+select throws_ok($$select public.record_application_access(gen_random_uuid(),'store','192.0.2.1',now()+interval '1 day')$$,'22023',null,'Future timestamps are rejected');
+select throws_ok($$select public.record_application_access(gen_random_uuid(),'store','192.0.2.0/24',now())$$,'22023',null,'Networks are not accepted as individual IPs');
+select throws_ok($$select public.record_application_access(gen_random_uuid(),'other','192.0.2.1',now())$$,'22023',null,'Only known applications can record');
+select throws_ok($$select public.purge_expired_application_access_logs(0)$$,'22023',null,'Empty batches are rejected');
+select throws_ok($$select public.purge_expired_application_access_logs(5001)$$,'22023',null,'Expensive unbounded batches are rejected');
+select throws_ok($$select * from private.application_access_logs$$,'42501',null,'Service role cannot use the RPC as general data access');
+reset role;
+select is((select count(*) from private.application_access_logs),2::bigint,'Retry never duplicates a record');
+select is((select count(*) from private.application_access_logs where retention_until=occurred_at+interval '6 months'),2::bigint,'Retention is six calendar months');
+select throws_ok($$update private.application_access_logs set retention_until=occurred_at+interval '1 day' where id='ac110000-0000-4000-8000-000000000001'$$,'23514',null,'Minimum retention cannot be shortened');
+insert into private.application_access_logs(id,application,ip_address,occurred_at,retention_until,legal_hold_until) values
+ ('ac110000-0000-4000-8000-000000000003','store','192.0.2.3',now()-interval '8 months',now()-interval '2 months',null),
+ ('ac110000-0000-4000-8000-000000000004','panel','192.0.2.4',now()-interval '8 months',now()-interval '2 months',now()+interval '1 month'),
+ ('ac110000-0000-4000-8000-000000000005','store','192.0.2.5',now()-interval '8 months',now()-interval '2 months',null);
+select is(public.purge_expired_application_access_logs(1),1,'A batch removes only one expired record');
+select is((select count(*) from private.application_access_logs where id in ('ac110000-0000-4000-8000-000000000003','ac110000-0000-4000-8000-000000000005')),1::bigint,'The next expired record is preserved for another batch');
+select is(public.purge_expired_application_access_logs(5000),1,'The following batch safely completes cleanup');
+select is((select count(*) from private.application_access_logs where id='ac110000-0000-4000-8000-000000000004'),1::bigint,'An active legal hold is preserved');
+select is((select count(*) from private.application_access_logs where id in ('ac110000-0000-4000-8000-000000000001','ac110000-0000-4000-8000-000000000002')),2::bigint,'Current accesses are never removed early');
+select is(public.purge_expired_application_access_logs(5000),0,'Repeated cleanup is safe');
+select * from finish();
+rollback;

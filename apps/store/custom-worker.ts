@@ -1,5 +1,6 @@
 // Import order is intentional: capture Workerd I/O before loading Next.
 import { scheduledFetch, scheduledFetchWasPatched } from "./worker-native-fetch";
+import { recordApplicationAccess, purgeApplicationAccessLogs, type AccessLogEnvironment } from "@curtiz/security/application-access-log";
 // The OpenNext worker is generated during build and reused for HTTP traffic.
 // @ts-expect-error generated build artifact
 import handler from "./.open-next/worker.js";
@@ -16,7 +17,7 @@ import { runPrivacyRetentionJobs } from "./src/lib/privacy-retention-jobs";
 import { logServerEvent } from "@curtiz/security";
 import { optimizeStorefrontImageRequest, type StorefrontImageEnvironment } from "./src/lib/storefront-image-worker";
 
-type WorkerEnvironment = Parameters<typeof runExpirationHousekeeping>[0] &
+type WorkerEnvironment = AccessLogEnvironment & Parameters<typeof runExpirationHousekeeping>[0] &
   Parameters<typeof runPrivacyRetentionJobs>[0] &
   Parameters<typeof runMelhorEnvioShippingJobs>[0] & Parameters<typeof runBlingJobs>[0] &
   Parameters<typeof runTransactionalEmailJobs>[0] & Parameters<typeof runRepresentativeTestJobs>[0] & StorefrontImageEnvironment;
@@ -30,6 +31,7 @@ const runWithWorkerContext = runWithCloudflareRequestContext as (
 
 export default {
   async fetch(request: Request, environment: WorkerEnvironment, context: WorkerContext) {
+    context.waitUntil(recordApplicationAccess(request, environment, "store", scheduledFetch));
     const optimizedImage = await optimizeStorefrontImageRequest(
       request,
       environment,
@@ -60,6 +62,7 @@ export default {
       };
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
       await runQueue("privacy_retention", () => runPrivacyRetentionJobs(environment, executionId, scheduledFetch));
+      await runQueue("access_log_retention", () => purgeApplicationAccessLogs(environment, scheduledFetch));
       await runQueue("representative_test", () => runRepresentativeTestJobs(environment, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("after_sale", () => runAfterSaleJobs(environment, executionId, scheduledFetch));
