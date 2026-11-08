@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { helpCategories, searchBuiltInHelp, type HelpContent } from "@/lib/help-content";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import {
   isUnknownRecord,
   readNumber,
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
   const total = readRows(result.data)[0] ? readNumber(readRows(result.data)[0]!, "total_count") : 0;
   if (total === 0) return builtInResponse(request, query, category, page);
   if (query) {
-    await actor.supabase.rpc("record_help_search", {
+    await createServiceSupabaseClient()?.rpc("record_help_search", {
       p_query: query,
       p_audience: actor.audience,
       p_result_count: total,
@@ -203,12 +203,27 @@ export async function POST(request: NextRequest) {
   if (process.env.DEMO_MODE === "true") return NextResponse.json({ ok: true });
   const supabase = await createServerSupabaseClient();
   if (!supabase) return NextResponse.json({ ok: false }, { status: 503 });
+  // The caller's client applies audience restrictions before the privileged write.
+  const visible = await supabase.from("published_help_contents").select("id")
+    .eq("id", parsed.data.contentId).maybeSingle();
+  if (visible.error) return NextResponse.json({ ok: false }, { status: 503 });
+  if (!visible.data) return NextResponse.json({ ok: false }, { status: 404 });
+  const service = createServiceSupabaseClient();
+  if (!service) return NextResponse.json({ ok: false }, { status: 503 });
+  let actorId: string | null = null;
+  if (parsed.data.action === "feedback") {
+    const { data, error: authError } = await supabase.auth.getUser();
+    if (authError && authError.name !== "AuthSessionMissingError")
+      return NextResponse.json({ ok: false }, { status: 503 });
+    actorId = data.user?.id ?? null;
+  }
   const { error } =
     parsed.data.action === "view"
-      ? await supabase.rpc("record_help_view", { p_content_id: parsed.data.contentId })
-      : await supabase.rpc("record_help_feedback", {
+      ? await service.rpc("record_help_view", { p_content_id: parsed.data.contentId })
+      : await service.rpc("record_help_feedback_server", {
           p_content_id: parsed.data.contentId,
           p_session_id: parsed.data.sessionId,
+          p_user_id: actorId,
           p_helpful: parsed.data.helpful,
           p_reason: parsed.data.reason ?? null,
           p_action: parsed.data.actionTaken ?? null
