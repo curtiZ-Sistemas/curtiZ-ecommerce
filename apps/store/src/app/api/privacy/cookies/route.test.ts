@@ -101,6 +101,31 @@ describe("cookie preferences API", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
+  it("aceita preferências de uma aba antiga com identificador já utilizado", async () => {
+    const rpc = vi.fn<(name: string, args: { p_id: string; p_categories: unknown }) => Promise<{ error: { code: string } | null }>>()
+      .mockResolvedValueOnce({ error: { code: "23505" } })
+      .mockResolvedValueOnce({ error: null });
+    mockedClient.mockResolvedValue({ rpc } as never);
+
+    const response = await POST(request({ essential: true, analytics: true }));
+    expect(response.status).toBe(200);
+    expect((await response.json() as { persisted: boolean }).persisted).toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[1]?.[1].p_id).not.toBe(rpc.mock.calls[0]?.[1].p_id);
+    expect(rpc.mock.calls[1]?.[1].p_categories).toEqual(rpc.mock.calls[0]?.[1].p_categories);
+  });
+
+  it("não autoriza cookies opcionais se a nova tentativa também falhar", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ error: { code: "23505" } })
+      .mockResolvedValueOnce({ error: { code: "23505" } });
+    mockedClient.mockResolvedValue({ rpc } as never);
+    const response = await POST(request({ essential: true, analytics: true }));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
   it("mantém a rejeição segura quando o cliente remoto lança erro de rede", async () => {
     mockedClient.mockResolvedValue({
       rpc: vi.fn().mockRejectedValue(new Error("network"))

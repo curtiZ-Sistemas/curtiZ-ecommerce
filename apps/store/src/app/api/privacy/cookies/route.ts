@@ -199,13 +199,19 @@ export async function POST(request: NextRequest) {
   if (!supabase) return persistenceFailure(request, normalizedCategories);
 
   try {
-    const result = await supabase.rpc("record_cookie_consent", {
+    const args = {
       p_id: parsed.data.id,
       p_policy_version: parsed.data.policyVersion,
       p_categories: normalizedCategories,
       p_origin: parsed.data.origin,
       p_revoked: parsed.data.revoked
-    });
+    };
+    let result = await supabase.rpc("record_cookie_consent", args);
+    // Older open tabs reuse their stored ID. Once records become immutable,
+    // create a new one rather than overwriting the existing consent.
+    if (result.error?.code === "23505") {
+      result = await supabase.rpc("record_cookie_consent", { ...args, p_id: crypto.randomUUID() });
+    }
     if (result.error) return persistenceFailure(request, normalizedCategories);
   } catch {
     return persistenceFailure(request, normalizedCategories);
