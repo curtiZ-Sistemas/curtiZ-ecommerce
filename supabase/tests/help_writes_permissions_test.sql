@@ -1,0 +1,10 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select plan(5);
+select ok(not has_function_privilege('anon','public.record_help_view(uuid)','execute'), 'anon cannot write views directly');
+select ok(not has_function_privilege('authenticated','public.record_help_search(text,text,integer,text)','execute'), 'users cannot write searches directly');
+select ok(not has_function_privilege('anon','public.record_help_feedback(uuid,uuid,boolean,text,text)','execute'), 'anon cannot write feedback directly');
+select ok(not has_function_privilege('authenticated','public.record_help_feedback_server(uuid,uuid,uuid,boolean,text,text)','execute'), 'users cannot impersonate feedback');
+select ok(has_function_privilege('service_role','public.record_help_feedback_server(uuid,uuid,uuid,boolean,text,text)','execute'), 'server can write verified feedback');
+select * from finish();
+rollback;
