@@ -156,8 +156,7 @@ export function CookiePreferences() {
   ) => {
     setPending(true);
     setError("");
-    const stored = readStoredConsent();
-    const id = stored?.id ?? crypto.randomUUID();
+    const id = crypto.randomUUID();
     const normalized = Object.fromEntries(
       visibleCategories.map((category) => [
         category.id,
