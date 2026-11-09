@@ -10,6 +10,8 @@ const dependencies = {
   optimize: vi.fn(),
   housekeeping: vi.fn(),
   privacyRetention: vi.fn(),
+  accessRecord: vi.fn(),
+  accessPurge: vi.fn(),
   representativeTest: vi.fn(),
   shipping: vi.fn(),
   bling: vi.fn(),
@@ -51,6 +53,7 @@ const workerGlobal = {
       return nativeModule.exports;
     }
     if (specifier === "./.open-next/worker.js") return { default: { fetch: dependencies.fetch } };
+    if (specifier === "@curtiz/security/application-access-log") return { recordApplicationAccess: dependencies.accessRecord, purgeApplicationAccessLogs: dependencies.accessPurge };
     if (specifier === "./.open-next/cloudflare/init.js") return { runWithCloudflareRequestContext: dependencies.context };
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
     if (specifier === "./src/lib/privacy-retention-jobs") return { runPrivacyRetentionJobs: dependencies.privacyRetention };
@@ -71,6 +74,8 @@ const worker = module.exports.default;
 describe("custom Worker handlers", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    dependencies.accessRecord.mockResolvedValue(true);
+    dependencies.accessPurge.mockResolvedValue(true);
     dependencies.context.mockImplementation((_request, _environment, _context, task) => task());
   });
 
@@ -83,6 +88,13 @@ describe("custom Worker handlers", () => {
     dependencies.fetch.mockResolvedValue(response);
     await expect(worker.fetch(request, environment, context)).resolves.toBe(response);
     expect(dependencies.fetch).toHaveBeenCalledWith(request, environment, context);
+    expect(dependencies.accessRecord).toHaveBeenCalledWith(request, environment, "store", expect.any(Function));
+    const transport = dependencies.accessRecord.mock.calls[0]?.[3] as typeof fetch;
+    const persisted = new Response(null, { status: 204 });
+    dependencies.nativeFetch.mockResolvedValue(persisted);
+    await expect(transport("https://database.example.invalid/access")).resolves.toBe(persisted);
+    expect(dependencies.nativeFetch).toHaveBeenCalledWith("https://database.example.invalid/access", undefined);
+    await expect(context.waitUntil.mock.calls[0]?.[0]).resolves.toBe(true);
   });
 
   it("returns optimized images without invoking the page handler", async () => {
@@ -111,6 +123,7 @@ describe("custom Worker handlers", () => {
     expect(dependencies.representativeTest).toHaveBeenCalledWith(environment, expect.any(Function));
     expect(dependencies.afterSale).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.returns).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
+    expect(dependencies.accessPurge).toHaveBeenCalledWith(environment, expect.any(Function));
     for (const job of [dependencies.bling, dependencies.shipping, dependencies.email]) {
       expect(job).toHaveBeenCalledWith(environment, "scheduled-execution-id", undefined, expect.any(Function));
     }

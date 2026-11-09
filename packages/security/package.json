@@ -10,7 +10,8 @@
     "./auth-cookie": "./src/auth-cookie.ts",
     "./postgres-uuid": "./src/postgres-uuid.ts",
     "./content-security-policy": "./src/content-security-policy.ts",
-    "./pii": "./src/pii.ts"
+    "./pii": "./src/pii.ts",
+    "./application-access-log": "./src/application-access-log.ts"
   },
   "scripts": {
     "build": "tsc --outDir dist --declaration --noEmit false --incremental false",
