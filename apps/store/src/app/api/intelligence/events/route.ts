@@ -4,7 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "../../../../lib/http-origin";
 import { hasServerConsent } from "../../../../lib/privacy/consent-server";
-import { createServerSupabaseClient } from "../../../../lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "../../../../lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 const eventTypes = [
@@ -69,10 +69,15 @@ export async function POST(request: NextRequest) {
     );
   const supabase = await createServerSupabaseClient();
   if (!supabase) return NextResponse.json({ accepted: 0 }, { status: 503 });
-  const result = await supabase.rpc("ingest_intelligence_events", {
+  const { data, error: authError } = await supabase.auth.getUser();
+  if (authError && authError.name !== "AuthSessionMissingError")
+    return NextResponse.json({ accepted: 0 }, { status: 503 });
+  const service = createServiceSupabaseClient();
+  if (!service) return NextResponse.json({ accepted: 0 }, { status: 503 });
+  const result = await service.rpc("ingest_intelligence_events_server", {
     p_session_id: parsed.data.sessionId,
     p_events: parsed.data.events,
-    p_consent: true
+    p_user_id: data.user?.id ?? null
   });
   if (result.error)
     return NextResponse.json(

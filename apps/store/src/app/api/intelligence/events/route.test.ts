@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { createServerSupabaseClient } from "../../../../lib/supabase/server";
+import { createServerSupabaseClient, createServiceSupabaseClient } from "../../../../lib/supabase/server";
 import { publicBudgetResponse } from "@/lib/public-request";
 import { POST } from "./route";
 
-vi.mock("../../../../lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
+vi.mock("../../../../lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 vi.mock("@/lib/public-request", () => ({ publicBudgetResponse: vi.fn(async () => null as Response | null) }));
 const client = vi.mocked(createServerSupabaseClient);
 const id = "11111111-1111-4111-8111-111111111111";
@@ -33,6 +33,7 @@ const event = (type: string) => ({
 describe("intelligence event batches", () => {
   beforeEach(() => {
     client.mockReset();
+    vi.mocked(createServiceSupabaseClient).mockReset();
     vi.mocked(publicBudgetResponse).mockReset().mockResolvedValue(null);
     delete process.env.DEMO_MODE;
   });
@@ -67,21 +68,28 @@ describe("intelligence event batches", () => {
   });
   it("forwards one sanitized batch to the database", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { accepted: 1, enabled: true }, error: null });
-    client.mockResolvedValue({ rpc } as never);
+    client.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id } }, error: null }) } } as never);
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
     const response = await POST(request([event("page_view")]));
     expect(response.status).toBe(202);
     expect(rpc).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledWith(
-      "ingest_intelligence_events",
-      expect.objectContaining({ p_session_id: id, p_consent: true })
+      "ingest_intelligence_events_server",
+      expect.objectContaining({ p_session_id: id, p_user_id: id })
     );
   });
   it("maps database throttling to 429", async () => {
-    client.mockResolvedValue({
+    client.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: null }, error: { name: "AuthSessionMissingError" } }) } } as never);
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({
       rpc: vi
         .fn()
         .mockResolvedValue({ data: null, error: { message: "intelligence rate limit exceeded" } })
     } as never);
     expect((await POST(request([event("page_view")]))).status).toBe(429);
+  });
+  it("does not ingest when identity validation fails", async () => {
+    client.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: null }, error: { name: "AuthRetryableFetchError" } }) } } as never);
+    expect((await POST(request([event("page_view")]))).status).toBe(503);
+    expect(createServiceSupabaseClient).not.toHaveBeenCalled();
   });
 });
