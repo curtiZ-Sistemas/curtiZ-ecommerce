@@ -1,6 +1,9 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(9);
+select diag('orders table ACL: ' || coalesce((select relacl::text from pg_class where oid = 'public.orders'::regclass), '<default>'));
+select diag('encrypted CPF column ACL: ' || coalesce((select attacl::text from pg_attribute where attrelid = 'public.orders'::regclass and attname = 'cpf_ciphertext'), '<default>'));
+select diag('security migration recorded: ' || exists(select 1 from supabase_migrations.schema_migrations where version = '20261110153802')::text);
 
 insert into auth.users(id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
