@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cancelDemoRepresentativeSale,
   createDemoKitOrder,
+  deleteDemoRepresentativeSale,
   getDemoRepresentativeSnapshot,
   markDemoRepresentativeNotification,
   recordDemoRepresentativeSale,
@@ -51,6 +52,23 @@ describe("fluxo demo de representante", () => {
     expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before - 1);
     expect(cancelDemoRepresentativeSale(email, sale.id).status).toBe("cancelled");
     expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before);
+  });
+
+  it("remove o pedido do histórico e restaura o estoque ao excluir", () => {
+    const email = "representante.demo@curtiz.local";
+    const before = getDemoRepresentativeSnapshot(email).inventory[0]?.quantity ?? 0;
+    const sale = recordDemoRepresentativeSale(
+      email,
+      [{ variantId: "10000000-0000-4000-8000-000000000001", quantity: 1 }],
+      "00000000-0000-4000-8000-000000000103"
+    );
+    expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before - 1);
+    expect(deleteDemoRepresentativeSale(email, sale.id).deleted).toBe(true);
+    expect(getDemoRepresentativeSnapshot(email).inventory[0]?.quantity).toBe(before);
+    expect(
+      getDemoRepresentativeSnapshot(email).sales.some((item) => item.id === sale.id)
+    ).toBe(false);
+    expect(() => deleteDemoRepresentativeSale(email, sale.id)).toThrow();
   });
 
   it("mantém perfil, kit e notificações no escopo da representante demo", () => {

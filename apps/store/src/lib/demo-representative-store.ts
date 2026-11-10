@@ -466,6 +466,27 @@ export const markDemoRepresentativeNotification = (email: string, notificationId
   return notification;
 };
 
+export const deleteDemoRepresentativeSale = (email: string, saleId: string) => {
+  const representative = state().representatives.find((item) => item.email === email);
+  const index = state().sales.findIndex(
+    (item) => item.id === saleId && item.representativeId === representative?.id
+  );
+  const sale = index >= 0 ? state().sales[index] : undefined;
+  if (!sale) throw new DemoRepresentativeError("Venda não encontrada.", 404);
+  if (sale.status === "confirmed") {
+    sale.items.forEach((item) => {
+      const inventory = state().inventory.find(
+        (entry) =>
+          entry.representativeId === representative?.id && entry.variantId === item.variantId
+      );
+      if (inventory) inventory.quantity += item.quantity;
+    });
+  }
+  const [removed] = state().sales.splice(index, 1);
+  if (!removed) throw new DemoRepresentativeError("Venda não encontrada.", 404);
+  return { deleted: true, publicCode: removed.publicCode };
+};
+
 export const listDemoCreatives = (publishedOnly = false) =>
   state().creatives.filter((creative) => !publishedOnly || creative.status === "published");
 

@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   cancelDemoRepresentativeSale,
   createDemoKitOrder,
+  deleteDemoRepresentativeSale,
   DemoRepresentativeError,
   getDemoRepresentativeSnapshot,
   listDemoRepresentativeApplications,
@@ -37,6 +38,17 @@ import {
 export const dynamic = "force-dynamic";
 
 const draftValue = z.union([z.string().trim().max(500), z.boolean()]);
+const safeTotal = z.union([z.number(), z.string().regex(/^(?:0|[1-9]\d*)$/u)])
+  .transform(Number)
+  .refine((value) => Number.isSafeInteger(value) && value >= 0);
+const totalsSchema = z.object({
+  confirmed_sales_in_cents: safeTotal,
+  available_commission_in_cents: safeTotal,
+  kit_count: safeTotal
+});
+const isSafeCount = (value: number | null): boolean =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const saleStatusSchema = z.enum(["all", "draft", "confirmed", "cancelled", "refunded", "charged_back"]);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("save_draft"),
@@ -100,6 +112,11 @@ const actionSchema = z.discriminatedUnion("action", [
     reason: z.string().trim().min(3).max(500)
   }),
   z.object({
+    action: z.literal("delete_sale"),
+    saleId: z.string().uuid(),
+    confirmation: z.literal("EXCLUIR")
+  }),
+  z.object({
     action: z.literal("mark_notification"),
     notificationId: z.string().uuid().or(z.string().startsWith("notification-demo-"))
   })
@@ -123,6 +140,17 @@ const demoSessionFor = (request: NextRequest) =>
   verifyDemoSession(request.cookies.get(DEMO_SESSION_COOKIE)?.value);
 
 export async function GET(request: NextRequest) {
+  const attemptKey = request.nextUrl.searchParams.get("saleAttempt");
+  if (attemptKey !== null && !z.string().uuid().safeParse(attemptKey).success) {
+    return NextResponse.json({ message: "Tentativa inválida." }, { status: 400, headers: noStore });
+  }
+  const statusResult = saleStatusSchema.safeParse(request.nextUrl.searchParams.get("saleStatus") ?? "all");
+  if (!statusResult.success) return NextResponse.json({ message: "Filtro de vendas inválido." }, { status: 400, headers: noStore });
+  const saleStatus = statusResult.data;
+  const page = Math.min(1_000_000, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1));
+  const pageSize = 20;
+  const rangeFrom = (page - 1) * pageSize;
+  const rangeTo = rangeFrom + pageSize - 1;
   const session = demoSessionFor(request);
   if (session) {
     const internal = request.nextUrl.searchParams.get("scope") === "internal";
@@ -135,7 +163,22 @@ export async function GET(request: NextRequest) {
     if (!session.roles.some((role) => role === "customer" || role === "representative")) {
       return NextResponse.json({ message: "Acesso negado." }, { status: 403, headers: noStore });
     }
-    return NextResponse.json(getDemoRepresentativeSnapshot(session.email), { headers: noStore });
+    const snapshot = getDemoRepresentativeSnapshot(session.email);
+    if (attemptKey !== null) {
+      const sale = snapshot.sales.find((item) => item.idempotencyKey === attemptKey);
+      return NextResponse.json({ found: Boolean(sale), publicCode: sale?.publicCode ?? null }, { headers: noStore });
+    }
+    const sales = saleStatus === "all" ? snapshot.sales : snapshot.sales.filter((sale) => sale.status === saleStatus);
+    return NextResponse.json({
+      ...snapshot,
+      sales: sales.slice(rangeFrom, rangeTo + 1),
+      totals: {
+        confirmedSalesInCents: snapshot.sales.filter((sale) => sale.status === "confirmed").reduce((sum, sale) => sum + sale.totalInCents, 0),
+        availableCommissionInCents: 0,
+        kitCount: snapshot.kitOrders.filter((order) => ["paid", "separating", "ready_to_ship", "shipped", "delivered"].includes(order.status)).length
+      },
+      pagination: { ...snapshot.pagination, sales: { page, pageSize, total: sales.length } }
+    }, { headers: noStore });
   }
 
   const supabase = await createServerSupabaseClient();
@@ -162,7 +205,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [{ data: applicationRaw }, { data: representativeRaw, error: representativeError }] =
+  const [{ data: applicationRaw, error: applicationError }, { data: representativeRaw, error: representativeError }] =
     await Promise.all([
       supabase
         .from("representative_applications")
@@ -177,7 +220,7 @@ export async function GET(request: NextRequest) {
         .eq("user_id", user.id)
         .maybeSingle()
     ]);
-  if (representativeError) {
+  if (representativeError || applicationError) {
     return NextResponse.json(
       { message: "Não foi possível carregar o perfil de representante." },
       { status: 503, headers: noStore }
@@ -195,21 +238,27 @@ export async function GET(request: NextRequest) {
     : null;
   const representativeRecord = isUnknownRecord(representativeRaw) ? representativeRaw : null;
   if (!representativeRecord) {
+    if (attemptKey !== null) return NextResponse.json({ found: false }, { headers: noStore });
     return NextResponse.json(
       { demo: false, application, representative: null, sales: [], kitOrders: [], inventory: [] },
       { headers: noStore }
     );
   }
   const representativeId = readString(representativeRecord, "id");
+  if (attemptKey !== null) {
+    const { data, error } = await supabase.from("representative_sales")
+      .select("public_code")
+      .eq("representative_id", representativeId)
+      .eq("idempotency_key", attemptKey)
+      .maybeSingle();
+    if (error) return NextResponse.json({ message: "Não foi possível consultar a tentativa." }, { status: 503, headers: noStore });
+    return NextResponse.json({
+      found: isUnknownRecord(data),
+      publicCode: isUnknownRecord(data) ? readString(data, "public_code") : null
+    }, { headers: noStore });
+  }
   const representativeStatus = readString(representativeRecord, "status");
   const levelId = readString(representativeRecord, "current_level_id");
-  const page = Math.max(
-    1,
-    Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1
-  );
-  const pageSize = 20;
-  const rangeFrom = (page - 1) * pageSize;
-  const rangeTo = rangeFrom + pageSize - 1;
   const networkSearch = request.nextUrl.searchParams.get("search")?.trim().slice(0, 80) || null;
   const networkStatus = request.nextUrl.searchParams.get("status")?.trim() || null;
   const goalsQuery = supabase
@@ -220,6 +269,11 @@ export async function GET(request: NextRequest) {
   const scopedGoalsQuery = levelId
     ? goalsQuery.or(`representative_id.eq.${representativeId},level_id.eq.${levelId}`)
     : goalsQuery.eq("representative_id", representativeId);
+  const salesQuery = supabase.from("representative_sales").select(
+    "id,public_code,total_in_cents,status,sold_at,payment_method,notes,representative_sale_items(quantity,item_snapshot)",
+    { count: "exact" }
+  ).eq("representative_id", representativeId);
+  const scopedSalesQuery = saleStatus === "all" ? salesQuery : salesQuery.eq("status", saleStatus);
   const [
     profileResult,
     salesResult,
@@ -237,21 +291,17 @@ export async function GET(request: NextRequest) {
     trainingsResult,
     notificationsResult,
     networkResult,
-    networkCountResult
+    networkCountResult,
+    totalsResult
   ] = await Promise.all([
     supabase
       .from("profiles")
       .select("full_name,email_snapshot,phone,avatar_path")
       .eq("id", user.id)
       .maybeSingle(),
-    supabase
-      .from("representative_sales")
-      .select(
-        "id,public_code,total_in_cents,status,sold_at,payment_method,notes,representative_sale_items(quantity,item_snapshot)",
-        { count: "exact" }
-      )
-      .eq("representative_id", representativeId)
-      .order("sold_at", { ascending: false })
+    scopedSalesQuery
+      .order("sold_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
       .range(rangeFrom, rangeTo),
     supabase
       .from("kit_orders")
@@ -348,8 +398,30 @@ export async function GET(request: NextRequest) {
       .from("representative_network_closure")
       .select("descendant_id", { count: "exact", head: true })
       .eq("ancestor_id", representativeId)
-      .gt("depth", 0)
+      .gt("depth", 0),
+    supabase.rpc("get_representative_portal_totals")
   ]);
+  const parsedTotals = totalsSchema.safeParse(totalsResult.data);
+  const totals = !totalsResult.error && parsedTotals.success ? parsedTotals.data : null;
+  const errors = {
+    profile: Boolean(profileResult.error),
+    sales: Boolean(salesResult.error),
+    salesCount: Boolean(salesResult.error || !isSafeCount(salesResult.count)),
+    kits: Boolean(kitOrdersResult.error || availableKitsResult.error),
+    inventory: Boolean(inventoryResult.error),
+    movements: Boolean(movementsResult.error || inventoryResult.error),
+    qualifications: Boolean(qualificationResult.error),
+    goals: Boolean(goalsResult.error),
+    level: Boolean(levelHistoryResult.error),
+    commissions: Boolean(commissionResult.error),
+    payments: Boolean(paymentResult.error),
+    documents: Boolean(documentsResult.error || contractsResult.error),
+    trainings: Boolean(trainingsResult.error),
+    notifications: Boolean(notificationsResult.error),
+    team: Boolean(networkResult.error),
+    teamCount: Boolean(networkCountResult.error || !isSafeCount(networkCountResult.count)),
+    totals: !totals
+  };
   const sales = readRows(salesResult.data).map((sale) => ({
     id: readString(sale, "id"),
     publicCode: readString(sale, "public_code"),
@@ -535,6 +607,12 @@ export async function GET(request: NextRequest) {
     {
       demo: false,
       application,
+      errors,
+      totals: totals ? {
+        confirmedSalesInCents: totals.confirmed_sales_in_cents,
+        availableCommissionInCents: totals.available_commission_in_cents,
+        kitCount: totals.kit_count
+      } : null,
       representative: {
         id: representativeId,
         publicCode: readString(representativeRecord, "public_code"),
@@ -565,14 +643,12 @@ export async function GET(request: NextRequest) {
       trainings,
       notifications,
       pagination: {
-        sales: { page, pageSize, total: salesResult.count ?? sales.length },
-        team: {
-          page,
-          pageSize,
+        ...(!errors.salesCount ? { sales: { page, pageSize, total: salesResult.count ?? 0 } } : {}),
+        ...(!errors.teamCount ? { team: {
+          page, pageSize,
           total: ["active", "unqualified", "approved_waiting_kit"].includes(representativeStatus)
-            ? (networkCountResult.count ?? team.length)
-            : 0
-        }
+            ? (networkCountResult.count ?? 0) : 0
+        } } : {})
       }
     },
     { headers: noStore }
@@ -659,6 +735,11 @@ export async function POST(request: NextRequest) {
       }
       if (input.action === "cancel_sale") {
         return NextResponse.json(cancelDemoRepresentativeSale(session.email, input.saleId), {
+          headers: noStore
+        });
+      }
+      if (input.action === "delete_sale") {
+        return NextResponse.json(deleteDemoRepresentativeSale(session.email, input.saleId), {
           headers: noStore
         });
       }
@@ -821,9 +902,16 @@ export async function POST(request: NextRequest) {
     const { data, error } = readQueryResult(rpcResponse);
     const sale = isUnknownRecord(data) ? data : null;
     if (error || !sale) {
+      const code = isUnknownRecord(error) ? readString(error, "code") : "";
+      if (["22023", "23514", "42501"].includes(code)) {
+        return NextResponse.json(
+          { message: "Venda recusada. Revise os itens, o estoque e suas permissões." },
+          { status: 422, headers: noStore }
+        );
+      }
       return NextResponse.json(
-        { message: "A venda não foi registrada. Revise os itens e o estoque disponível." },
-        { status: 409, headers: noStore }
+        { message: "Não foi possível confirmar a venda. Consulte a tentativa anterior antes de registrar outra." },
+        { status: 503, headers: noStore }
       );
     }
     if (input.paymentMethod || input.notes || input.soldAt) {
@@ -880,6 +968,17 @@ export async function POST(request: NextRequest) {
     });
     const { data, error } = readQueryResult(rpcResponse);
     return NextResponse.json(error ? { message: "A venda não pode ser cancelada." } : data, {
+      status: error ? 409 : 200,
+      headers: noStore
+    });
+  }
+  if (input.action === "delete_sale") {
+    const rpcResponse: unknown = await supabase.rpc("delete_representative_sale", {
+      p_sale_id: input.saleId,
+      p_confirmation: input.confirmation
+    });
+    const { data, error } = readQueryResult(rpcResponse);
+    return NextResponse.json(error ? { message: "A venda não pode ser excluída." } : data, {
       status: error ? 409 : 200,
       headers: noStore
     });
