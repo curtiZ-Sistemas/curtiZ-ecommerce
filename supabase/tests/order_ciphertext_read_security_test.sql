@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(11);
 select diag('orders table ACL: ' || coalesce((select relacl::text from pg_class where oid = 'public.orders'::regclass), '<default>'));
 select diag('encrypted CPF column ACL: ' || coalesce((select attacl::text from pg_attribute where attrelid = 'public.orders'::regclass and attname = 'cpf_ciphertext'), '<default>'));
 select diag('security migration recorded: ' || exists(select 1 from supabase_migrations.schema_migrations where version = '20261110153802')::text);
@@ -33,6 +33,10 @@ select is((select count(*) from public.orders where id = 'ea200000-0000-4000-800
   1::bigint, 'customer can still read their own permitted order columns');
 select is((select count(*) from public.orders where id = 'ea200000-0000-4000-8000-000000000002'),
   0::bigint, 'customer cannot read another customer order');
+select is((select count(*) from public.reporting_orders where id = 'ea200000-0000-4000-8000-000000000001'),
+  1::bigint, 'reporting view remains readable under ownership RLS');
+select is((select cpf_ciphertext from public.reporting_orders where id = 'ea200000-0000-4000-8000-000000000001'),
+  null::text, 'reporting view never returns encrypted CPF');
 select throws_ok($$select cpf_ciphertext from public.orders limit 1$$, '42501', null,
   'direct database queries cannot read encrypted CPF');
 select throws_ok($$select * from public.orders limit 1$$, '42501', null,
