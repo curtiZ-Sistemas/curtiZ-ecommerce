@@ -10,6 +10,7 @@ import { evaluateMerchantEligibility, normalizeProductColorName, type MerchantCa
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { publicCatalogMediaUrl } from "@/lib/public-media";
+import { attachCatalogCosts } from "@/lib/catalog-costs";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
@@ -656,7 +657,7 @@ export async function GET(request: NextRequest) {
       ["compatibleProductSelect", compatibleProductSelect]
     ] as const;
     for (const [index, [name, select]] of selections.entries()) {
-      const result = await run(select);
+      const result = await run(select.replaceAll(",cost_price", "").replaceAll(",cost_override", ""));
       if (!result.error) {
         if (index > 0) logServerEvent("warn", "panel_catalog_api_compatibility_select_used", { select: name });
         return result;
@@ -846,9 +847,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const serializedProducts: ReturnType<typeof serializeProducts> = "serialized" in result
+  const productsWithoutCosts: ReturnType<typeof serializeProducts> = "serialized" in result
     ? (Array.isArray(result.data) ? result.data as ReturnType<typeof serializeProducts> : [])
     : serializeProducts(result.data, mediaUrl);
+  let serializedProducts: ReturnType<typeof serializeProducts>;
+  try {
+    serializedProducts = await attachCatalogCosts(productsWithoutCosts, async (ids) =>
+      supabase.rpc("admin_read_catalog_costs", { p_product_ids: ids }));
+  } catch {
+    return NextResponse.json(
+      { message: "Não foi possível confirmar os custos dos produtos.", capabilities, capabilityMessage },
+      { status: 503, headers: noStore }
+    );
+  }
   let deleteEligibility: UnknownRecord = {};
   if (capabilities.delete && serializedProducts.length) {
     const eligibilityResult = await supabase.rpc("admin_product_delete_eligibility", {
