@@ -45,9 +45,14 @@ import { type CSSProperties, type FormEvent, useEffect, useLayoutEffect, useRef,
 import { LogoutButton } from "@/components/logout-button";
 import { UserAvatar } from "@/components/user-avatar";
 import { readString } from "@/lib/unknown-data";
+import { fetchRepresentativeJson, pendingRepresentativeAttempt, representativeAttempt, shouldClearRepresentativeAttempt, withRepresentativeSaleLock } from "@/lib/representative-attempt";
+
+type SaleStatusFilter = "all" | "draft" | "confirmed" | "cancelled" | "refunded" | "charged_back";
 
 type Snapshot = {
   demo: boolean;
+  errors?: Record<string, boolean>;
+  totals?: { confirmedSalesInCents: number; availableCommissionInCents: number; kitCount: number } | null;
   representative: null | {
     publicCode: string;
     referralCode: string;
@@ -175,8 +180,8 @@ type Snapshot = {
     createdAt: string;
   }>;
   pagination?: {
-    sales: { page: number; pageSize: number; total: number };
-    team: { page: number; pageSize: number; total: number };
+    sales?: { page: number; pageSize: number; total: number };
+    team?: { page: number; pageSize: number; total: number };
   };
   creatives?: Array<{
     id: string;
@@ -241,27 +246,43 @@ const navigation = [
 
 export function RepresentativePortal({ section }: { section: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotSection, setSnapshotSection] = useState(section);
   const [error, setError] = useState("");
+  const [errorSection, setErrorSection] = useState(section);
   const [menuOpen, setMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [saleStatus, setSaleStatus] = useState<SaleStatusFilter>("all");
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const requestIdRef = useRef(0);
 
-  const load = (targetPage = page) => {
+  const load = (targetPage = page, targetSaleStatus = saleStatus) => {
+    const requestId = ++requestIdRef.current;
+    const query = new URLSearchParams({ page: String(targetPage) });
+    if (section === "vendas" && targetSaleStatus !== "all") query.set("saleStatus", targetSaleStatus);
     setError("");
-    void fetch(`/api/representatives?page=${targetPage}`, { cache: "no-store" })
+    setLoadingSnapshot(true);
+    void fetch(`/api/representatives?${query.toString()}`, { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
-          window.location.assign(`/login?next=/representante${section ? `/${section}` : ""}`);
+          if (requestId === requestIdRef.current) window.location.assign(`/login?next=/representante${section ? `/${section}` : ""}`);
           return null;
         }
         const result = (await response.json()) as Snapshot & { message?: string };
         if (!response.ok) throw new Error(result.message ?? "Não foi possível carregar o portal.");
         if (!result.representative) return result;
-        const creativeResponse = await fetch("/api/creatives", { cache: "no-store" });
-        if (!creativeResponse.ok) return result;
-        const creativeResult = (await creativeResponse.json()) as {
+        const creativeResponse = await fetch("/api/creatives", { cache: "no-store" }).catch(() => null);
+        if (!creativeResponse?.ok) {
+          result.errors = { ...result.errors, creatives: true };
+          return result;
+        }
+        const creativeResult = (await creativeResponse.json().catch(() => null)) as {
           creatives?: Array<Record<string, unknown>>;
-        };
+        } | null;
+        if (!creativeResult) {
+          result.errors = { ...result.errors, creatives: true };
+          return result;
+        }
         result.creatives = (creativeResult.creatives ?? []).map((creative) => ({
           id: readString(creative, "id"),
           title: readString(creative, "title", "Criativo"),
@@ -277,15 +298,28 @@ export function RepresentativePortal({ section }: { section: string }) {
         }));
         return result;
       })
-      .then((result) => result && setSnapshot(result))
+      .then((result) => {
+        if (result && requestId === requestIdRef.current) {
+          setSnapshot(result);
+          setSnapshotSection(section);
+        }
+      })
       .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Falha inesperada.")
-      );
+        {
+          if (requestId === requestIdRef.current) {
+            setError(reason instanceof Error ? reason.message : "Falha inesperada.");
+            setErrorSection(section);
+          }
+        }
+      )
+      .finally(() => { if (requestId === requestIdRef.current) setLoadingSnapshot(false); });
   };
 
   useEffect(() => {
     setPage(1);
-    load(1);
+    setSaleStatus("all");
+    load(1, "all");
+    return () => { requestIdRef.current += 1; };
   }, [section]);
 
   useLayoutEffect(() => {
@@ -320,7 +354,7 @@ export function RepresentativePortal({ section }: { section: string }) {
     };
   }, [section, snapshot]);
 
-  if (error)
+  if (error && errorSection === section)
     return (
       <main className="container page-shell account-experience-page">
         <div className="error-state">
@@ -332,7 +366,7 @@ export function RepresentativePortal({ section }: { section: string }) {
         </div>
       </main>
     );
-  if (!snapshot)
+  if (!snapshot || snapshotSection !== section)
     return (
       <main className="representative-loading account-experience-page">
         <LoaderCircle className="spin" />
@@ -465,7 +499,14 @@ export function RepresentativePortal({ section }: { section: string }) {
           <PortalSection
             section={section}
             snapshot={snapshot}
+            saleStatus={saleStatus}
+            loading={loadingSnapshot}
             onRefresh={() => load(page)}
+            onSaleStatusChange={(status) => {
+              setSaleStatus(status);
+              setPage(1);
+              load(1, status);
+            }}
             onPageChange={(nextPage) => {
               setPage(nextPage);
               load(nextPage);
@@ -481,16 +522,36 @@ export function RepresentativePortal({ section }: { section: string }) {
 function PortalSection({
   section,
   snapshot,
+  saleStatus,
+  loading,
   onRefresh,
+  onSaleStatusChange,
   onPageChange
 }: {
   section: string;
   snapshot: Snapshot;
+  saleStatus: SaleStatusFilter;
+  loading: boolean;
   onRefresh: () => void;
+  onSaleStatusChange: (status: SaleStatusFilter) => void;
   onPageChange: (page: number) => void;
 }) {
   const representative = snapshot.representative!;
-  if (!section) return <Overview snapshot={snapshot} />;
+  const sectionError: Record<string, string> = {
+    perfil: "profile", nivel: "level", qualificacao: "qualifications", metas: "goals",
+    "registrar-venda": "inventory", vendas: "sales", estoque: "inventory",
+    movimentacoes: "movements", equipe: "team", comissoes: "commissions",
+    pagamentos: "payments", criativos: "creatives", kits: "kits", "comprar-kit": "kits",
+    treinamentos: "trainings", documentos: "documents", notificacoes: "notifications"
+  };
+  const errorKey = sectionError[section];
+  if (errorKey && snapshot.errors?.[errorKey]) return (
+    <div className="error-state" role="alert">
+      <p>Não foi possível carregar esta seção. Tente novamente.</p>
+      <button className="primary-button" onClick={onRefresh}>Tentar novamente</button>
+    </div>
+  );
+  if (!section) return <Overview snapshot={snapshot} onRefresh={onRefresh} />;
   if (section === "perfil")
     return <Profile representative={representative} onSaved={onRefresh} />;
   if (section === "nivel")
@@ -499,13 +560,17 @@ function PortalSection({
     return <Qualifications qualifications={snapshot.qualifications ?? []} />;
   if (section === "metas") return <Goals goals={snapshot.goals ?? []} />;
   if (section === "registrar-venda")
-    return <SaleForm inventory={snapshot.inventory ?? []} onSaved={onRefresh} />;
+    return <SaleForm representativeCode={representative.publicCode} inventory={snapshot.inventory ?? []} onSaved={onRefresh} />;
   if (section === "vendas")
     return (
       <Sales
         sales={snapshot.sales ?? []}
+        status={saleStatus}
+        loading={loading}
+        onStatusChange={onSaleStatusChange}
         onRefresh={onRefresh}
-        pagination={snapshot.pagination?.sales}
+        countUnavailable={snapshot.errors?.salesCount}
+        pagination={snapshot.errors?.salesCount ? undefined : snapshot.pagination?.sales}
         onPageChange={onPageChange}
       />
     );
@@ -522,12 +587,14 @@ function PortalSection({
     return (
       <Team
         members={snapshot.team ?? []}
-        pagination={snapshot.pagination?.team}
+        countUnavailable={snapshot.errors?.teamCount}
+        onRetry={onRefresh}
+        pagination={snapshot.errors?.teamCount ? undefined : snapshot.pagination?.team}
         onPageChange={onPageChange}
       />
     );
   if (section === "comissoes")
-    return <Commissions entries={snapshot.commissions ?? []} />;
+    return <Commissions entries={snapshot.commissions ?? []} available={snapshot.totals?.availableCommissionInCents} />;
   if (section === "pagamentos") return <Payments payments={snapshot.payments ?? []} />;
   if (section === "criativos") return <Creatives creatives={snapshot.creatives ?? []} />;
   if (section === "indicacao") return <Referral referralCode={representative.referralCode} />;
@@ -576,11 +643,11 @@ function PortalSection({
   );
 }
 
-function Overview({ snapshot }: { snapshot: Snapshot }) {
+function Overview({ snapshot, onRefresh }: { snapshot: Snapshot; onRefresh: () => void }) {
   const representative = snapshot.representative!;
   const sales = snapshot.sales ?? [];
-  const total = sales.reduce((sum, sale) => sum + sale.totalInCents, 0);
-  const availableCommission = (snapshot.commissions ?? [])
+  const total = snapshot.totals?.confirmedSalesInCents ?? sales.filter((sale) => sale.status === "confirmed").reduce((sum, sale) => sum + sale.totalInCents, 0);
+  const availableCommission = snapshot.totals?.availableCommissionInCents ?? (snapshot.commissions ?? [])
     .filter((entry) => ["approved", "payable"].includes(entry.status))
     .reduce((sum, entry) => sum + entry.amountInCents, 0);
   const currentQualification = snapshot.qualifications?.[0] ?? null;
@@ -590,6 +657,12 @@ function Overview({ snapshot }: { snapshot: Snapshot }) {
         title="Visão geral"
         description="Acompanhe sua operação sem valores ou metas inventados."
       />
+      {snapshot.errors && Object.values(snapshot.errors).some(Boolean) && (
+        <div className="error-state" role="alert">
+          <p>Algumas informações não puderam ser carregadas.</p>
+          <button className="text-button" onClick={onRefresh}>Tentar novamente</button>
+        </div>
+      )}
       <section className="representative-referral-card">
         <div>
           <small>Seu código de indicação</small>
@@ -606,10 +679,10 @@ function Overview({ snapshot }: { snapshot: Snapshot }) {
           <h2>Indicadores principais</h2>
         </header>
         <div className="representative-metrics representative-primary-metrics">
-          <Metric label="Comissão disponível" value={formatBRL(availableCommission)} />
-          <Metric label="Vendas no histórico" value={String(snapshot.pagination?.sales.total ?? sales.length)} />
-          <Metric label="Volume confirmado" value={formatBRL(total)} />
-          <Metric label="Equipe" value={String(snapshot.pagination?.team.total ?? snapshot.team?.length ?? 0)} />
+          <Metric label="Comissão disponível" value={snapshot.errors?.totals ? "Indisponível" : formatBRL(availableCommission)} />
+          <Metric label="Vendas no histórico" value={snapshot.errors?.salesCount ? "Indisponível" : String(snapshot.pagination?.sales?.total ?? sales.length)} />
+          <Metric label="Volume confirmado" value={snapshot.errors?.totals ? "Indisponível" : formatBRL(total)} />
+          <Metric label="Equipe" value={snapshot.errors?.teamCount ? "Indisponível" : String(snapshot.pagination?.team?.total ?? snapshot.team?.length ?? 0)} />
         </div>
       </section>
       <section className="representative-metric-section">
@@ -622,24 +695,26 @@ function Overview({ snapshot }: { snapshot: Snapshot }) {
           <Metric
             label="Qualificação"
             value={
-              currentQualification
+              snapshot.errors?.qualifications ? "Indisponível" : currentQualification
                 ? currentQualification.qualified
                   ? "Qualificada"
                   : "Não qualificada"
                 : "Não avaliada"
             }
           />
-          <Metric label="Kits adquiridos" value={String(snapshot.kitOrders?.length ?? 0)} />
+          <Metric label="Kits adquiridos" value={snapshot.errors?.totals ? "Indisponível" : String(snapshot.totals?.kitCount ?? snapshot.kitOrders?.length ?? 0)} />
           <Metric label="Status comercial" value={statusLabel(representative.status)} />
         </div>
       </section>
       <div className="representative-dashboard-grid">
         <section className="representative-card">
           <h2>Vendas recentes</h2>
-          {sales.length ? (
+          {snapshot.errors?.sales ? (
+            <p className="quiet-state">Não foi possível carregar as vendas recentes.</p>
+          ) : sales.length ? (
             <Sales sales={sales.slice(0, 4)} compact />
           ) : (
-            <p className="quiet-state">Nenhuma venda confirmada.</p>
+            <p className="quiet-state">Nenhuma venda registrada.</p>
           )}
         </section>
         <section className="representative-card">
@@ -651,7 +726,7 @@ function Overview({ snapshot }: { snapshot: Snapshot }) {
                 <ChevronRight />
               </Link>
             ))}
-            {!snapshot.notifications?.some((item) => !item.readAt) && (
+            {!snapshot.errors?.notifications && !snapshot.notifications?.some((item) => !item.readAt) && (
               <p className="quiet-state">Nenhuma ação pendente confirmada.</p>
             )}
           </div>
@@ -901,11 +976,15 @@ function Movements({
 function Team({
   members,
   pagination,
-  onPageChange
+  onPageChange,
+  countUnavailable,
+  onRetry
 }: {
   members: NonNullable<Snapshot["team"]>;
   pagination?: { page: number; pageSize: number; total: number };
   onPageChange: (page: number) => void;
+  countUnavailable?: boolean;
+  onRetry: () => void;
 }) {
   const [query, setQuery] = useState("");
   const filtered = members.filter((member) =>
@@ -914,10 +993,11 @@ function Team({
   return (
     <section>
       <PageTitle title="Minha equipe" description="Rede visível conforme seu vínculo de indicação e suas permissões." />
+      {countUnavailable && <CountUnavailable onRetry={onRetry} />}
       <label className="representative-search">
         <Search />
-        <span className="sr-only">Buscar na equipe</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou código" />
+        <span className="sr-only">Buscar nesta página da equipe</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar nesta página" />
       </label>
       {filtered.length ? (
         <>
@@ -934,26 +1014,23 @@ function Team({
               </article>
             ))}
           </div>
-          {pagination && (
-            <Pagination pagination={pagination} onPageChange={onPageChange} />
-          )}
         </>
       ) : (
-        <EmptyState icon={UsersRound} title="Nenhum membro encontrado" description="Novos vínculos aparecem somente após a validação da indicação." />
+        <EmptyState icon={UsersRound} title="Nenhum membro encontrado nesta página" description="Altere a busca ou consulte outra página." />
       )}
+      {pagination && <Pagination pagination={pagination} onPageChange={onPageChange} />}
     </section>
   );
 }
 
-function Commissions({ entries }: { entries: NonNullable<Snapshot["commissions"]> }) {
+function Commissions({ entries, available }: { entries: NonNullable<Snapshot["commissions"]>; available?: number }) {
   const total = entries.reduce((sum, entry) => sum + entry.amountInCents, 0);
-  const payable = entries.filter((entry) => ["approved", "payable"].includes(entry.status)).reduce((sum, entry) => sum + entry.amountInCents, 0);
   return (
     <section>
       <PageTitle title="Comissões" description="Extrato calculado pelas regras versionadas do período." />
       <div className="representative-metrics">
-        <Metric label="Total no extrato" value={formatBRL(total)} />
-        <Metric label="Disponível" value={formatBRL(payable)} />
+        <Metric label="Total nos lançamentos exibidos" value={formatBRL(total)} />
+        <Metric label="Disponível" value={available === undefined ? "Indisponível" : formatBRL(available)} />
       </div>
       <RecordList
         title="Lançamentos"
@@ -1102,15 +1179,53 @@ function Notifications({
 }
 
 function SaleForm({
+  representativeCode,
   inventory,
   onSaved
 }: {
+  representativeCode: string;
   inventory: NonNullable<Snapshot["inventory"]>;
   onSaved: () => void;
 }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([{ key: crypto.randomUUID(), variantId: "", quantity: 1 }]);
+  const checkPreviousAttempt = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await withRepresentativeSaleLock(navigator.locks, representativeCode, async () => {
+        const pending = pendingRepresentativeAttempt(localStorage, `${representativeCode}:sale`);
+        if (!pending) {
+          setMessage("Não há tentativa pendente neste navegador.");
+          return;
+        }
+        const { response, result } = await fetchRepresentativeJson<{ found?: boolean; publicCode?: string | null }>(
+          `/api/representatives?saleAttempt=${encodeURIComponent(pending.key)}`, { cache: "no-store" }
+        );
+        if (!response.ok) throw new Error("Não foi possível consultar a tentativa. Tente novamente.");
+        if (result.found) {
+          pending.clear();
+          setMessage(`Venda ${result.publicCode ?? ""} localizada. Confira os dados complementares no histórico.`);
+          onSaved();
+        } else {
+          setMessage("A venda ainda não foi localizada. Repita os mesmos dados ou entre em contato com o atendimento antes de criar outra venda.");
+        }
+      });
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Não foi possível consultar a tentativa.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const recovery = (
+    <>
+      <button type="button" className="text-button" disabled={loading} onClick={() => void checkPreviousAttempt()}>
+        Conferir tentativa anterior
+      </button>
+      {message && <p className="form-message" role="status">{message}</p>}
+    </>
+  );
   if (!inventory.some((item) => item.quantity > 0)) {
     return (
       <section>
@@ -1125,6 +1240,7 @@ function SaleForm({
           <Link className="primary-button" href="/representante/comprar-kit">
             Consultar kits
           </Link>
+          {recovery}
         </div>
       </section>
     );
@@ -1133,7 +1249,8 @@ function SaleForm({
     event.preventDefault();
     if (loading) return;
     setLoading(true);
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const rawReference = form.get("reference");
     const customerReference = typeof rawReference === "string" ? rawReference.trim() : "";
     const soldAtRaw = form.get("soldAt");
@@ -1143,27 +1260,35 @@ function SaleForm({
     const paymentMethod = typeof paymentMethodRaw === "string" ? paymentMethodRaw : "";
     const notes = typeof notesRaw === "string" ? notesRaw.trim() : "";
     try {
-      const response = await fetch("/api/representatives", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      await withRepresentativeSaleLock(navigator.locks, representativeCode, async () => {
+        const payload = {
           action: "record_sale",
-          idempotencyKey: crypto.randomUUID(),
           items: lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
           ...(customerReference ? { customerReference } : {}),
           ...(paymentMethod ? { paymentMethod } : {}),
           ...(notes ? { notes } : {}),
           ...(soldAtValue ? { soldAt: new Date(soldAtValue).toISOString() } : {})
-        })
+        };
+        const attempt = await representativeAttempt(localStorage, `${representativeCode}:sale`, payload);
+        const { response, result } = await fetchRepresentativeJson<{ message?: string; publicCode?: string; warning?: string }>("/api/representatives", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            idempotencyKey: attempt.key
+          })
+        }).catch(() => {
+          throw new Error("Não foi possível confirmar a venda. Consulte o histórico e repita os mesmos dados se necessário.");
+        });
+        if (shouldClearRepresentativeAttempt(attempt.isRetry, response.status)) attempt.clear();
+        if (!response.ok) throw new Error(result.message ?? "Não foi possível registrar.");
+        setMessage(
+          `Venda ${result.publicCode ?? ""} registrada.${result.warning ? ` ${result.warning}` : ""}`
+        );
+        formElement.reset();
+        setLines([{ key: crypto.randomUUID(), variantId: "", quantity: 1 }]);
+        onSaved();
       });
-      const result = (await response.json()) as { message?: string; publicCode?: string; warning?: string };
-      if (!response.ok) throw new Error(result.message ?? "Não foi possível registrar.");
-      setMessage(
-        `Venda ${result.publicCode ?? ""} registrada.${result.warning ? ` ${result.warning}` : ""}`
-      );
-      event.currentTarget.reset();
-      setLines([{ key: crypto.randomUUID(), variantId: "", quantity: 1 }]);
-      onSaved();
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Falha inesperada.");
     } finally {
@@ -1308,35 +1433,62 @@ function SaleForm({
         <button className="primary-button" disabled={loading}>
           {loading ? <LoaderCircle className="spin" /> : <ReceiptText />} Registrar venda
         </button>
-        {message && (
-          <p className="form-message" role="status">
-            {message}
-          </p>
-        )}
+        {recovery}
       </form>
     </section>
   );
 }
 
-function Sales({
+export function Sales({
   sales,
   compact = false,
+  status = "all",
+  loading = false,
+  onStatusChange,
   onRefresh,
+  countUnavailable,
   pagination,
   onPageChange
 }: {
   sales: NonNullable<Snapshot["sales"]>;
   compact?: boolean;
+  status?: SaleStatusFilter;
+  loading?: boolean;
+  onStatusChange?: (status: SaleStatusFilter) => void;
   onRefresh?: () => void;
+  countUnavailable?: boolean;
   pagination?: { page: number; pageSize: number; total: number };
   onPageChange?: (page: number) => void;
 }) {
-  const [status, setStatus] = useState("all");
   const [loadingId, setLoadingId] = useState("");
   const [message, setMessage] = useState("");
-  const visible = compact
-    ? sales
-    : sales.filter((sale) => status === "all" || sale.status === status);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; publicCode: string } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const visible = sales;
+  const openDelete = (sale: { id: string; publicCode: string }) => {
+    if (loadingId) return;
+    setDeleteTarget(sale);
+    setDeleteConfirmation("");
+    setMessage("");
+    if (!deleteDialogRef.current?.open) deleteDialogRef.current?.showModal();
+  };
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleteConfirmation.trim() !== "EXCLUIR" || loadingId) return;
+    const saleId = deleteTarget.id;
+    setLoadingId(saleId);
+    setMessage("");
+    try {
+      await postRepresentativeAction({ action: "delete_sale", saleId, confirmation: "EXCLUIR" });
+      deleteDialogRef.current?.close();
+      setMessage("Venda excluída.");
+      onRefresh?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir.");
+    } finally {
+      setLoadingId("");
+    }
+  };
   const cancel = async (saleId: string, correction = false) => {
     const reason = window.prompt(
       correction
@@ -1362,14 +1514,17 @@ function Sales({
       {!compact && (
         <>
           <PageTitle title="Minhas vendas" description="Histórico auditável dos registros profissionais." />
+          {countUnavailable && <CountUnavailable onRetry={onRefresh} />}
           <div className="representative-toolbar">
             <label className="field">
               <span>Status</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select value={status} disabled={loading || !onStatusChange} onChange={(event) => onStatusChange?.(event.target.value as SaleStatusFilter)}>
                 <option value="all">Todos</option>
+                <option value="draft">Rascunhos</option>
                 <option value="confirmed">Confirmadas</option>
                 <option value="cancelled">Canceladas</option>
                 <option value="refunded">Reembolsadas</option>
+                <option value="charged_back">Contestadas</option>
               </select>
             </label>
             <Link className="primary-button" href="/representante/registrar-venda">Registrar venda</Link>
@@ -1377,12 +1532,14 @@ function Sales({
           {message && <p className="form-message" role="status">{message}</p>}
         </>
       )}
-      {visible.length ? (
+      {loading ? <p role="status">Atualizando vendas…</p> : visible.length ? (
         visible.map((sale) => (
           <article key={sale.id}>
             <div>
               <strong>{sale.publicCode}</strong>
-              <small>{new Intl.DateTimeFormat("pt-BR").format(new Date(sale.soldAt))}</small>
+              <small>{formatDate(sale.soldAt)}</small>
+              {!compact && <small>Pagamento: {sale.paymentMethod ? paymentMethodLabel(sale.paymentMethod) : "Não informado"}</small>}
+              {!compact && sale.notes && <small>Observações: {sale.notes}</small>}
             </div>
             <span>{statusLabel(sale.status)}</span>
             <b>{formatBRL(sale.totalInCents)}</b>
@@ -1398,6 +1555,24 @@ function Sales({
                 >
                   {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Cancelar
                 </button>
+                <button
+                  className="text-button danger"
+                  disabled={loadingId === sale.id}
+                  onClick={() => openDelete(sale)}
+                >
+                  {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir
+                </button>
+              </div>
+            )}
+            {!compact && sale.status !== "confirmed" && (
+              <div className="representative-sale-actions">
+                <button
+                  className="text-button danger"
+                  disabled={loadingId === sale.id}
+                  onClick={() => openDelete(sale)}
+                >
+                  {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir
+                </button>
               </div>
             )}
           </article>
@@ -1405,10 +1580,57 @@ function Sales({
       ) : (
         <div className="representative-empty">
           <ReceiptText />
-          <h2>Nenhuma venda registrada</h2>
+          <h2>Nenhuma venda encontrada nesta página</h2>
         </div>
       )}
-      {!compact && pagination && onPageChange && (
+      <dialog
+        ref={deleteDialogRef}
+        className="representative-delete-dialog"
+        aria-labelledby={`delete-sale-${deleteTarget?.id ?? "title"}`}
+        aria-describedby={`delete-sale-description-${deleteTarget?.id ?? "title"}`}
+        onCancel={(event) => {
+          if (loadingId) event.preventDefault();
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget && !loadingId) event.currentTarget.close();
+        }}
+      >
+        <h2 id={`delete-sale-${deleteTarget?.id ?? "title"}`}>Excluir este pedido?</h2>
+        <p id={`delete-sale-description-${deleteTarget?.id ?? "title"}`}>
+          {deleteTarget
+            ? `O pedido ${deleteTarget.publicCode} será removido do seu histórico. Esta ação não pode ser desfeita. Para confirmar, digite EXCLUIR.`
+            : "Este pedido será removido do seu histórico. Para confirmar, digite EXCLUIR."}
+        </p>
+        <label className="field">
+          <span>Confirmação</span>
+          <input
+            value={deleteConfirmation}
+            onChange={(event) => setDeleteConfirmation(event.target.value)}
+            autoComplete="off"
+            autoFocus
+            placeholder="EXCLUIR"
+          />
+        </label>
+        <div className="representative-delete-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={Boolean(loadingId)}
+            onClick={() => deleteDialogRef.current?.close()}
+          >
+            Voltar
+          </button>
+          <button
+            className="primary-button representative-delete-confirm"
+            type="button"
+            disabled={deleteConfirmation.trim() !== "EXCLUIR" || Boolean(loadingId)}
+            onClick={() => void confirmDelete()}
+          >
+            {loadingId ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir pedido
+          </button>
+        </div>
+      </dialog>
+      {!compact && !loading && pagination && onPageChange && (
         <Pagination pagination={pagination} onPageChange={onPageChange} />
       )}
     </div>
@@ -1568,6 +1790,15 @@ function Creatives({ creatives }: { creatives: NonNullable<Snapshot["creatives"]
         )}
       </div>
     </section>
+  );
+}
+
+function CountUnavailable({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="error-state" role="alert">
+      <p>Não foi possível carregar a contagem e as outras páginas. Os registros exibidos podem estar incompletos.</p>
+      {onRetry && <button type="button" className="text-button" onClick={onRetry}>Tentar novamente</button>}
+    </div>
   );
 }
 
@@ -1798,6 +2029,8 @@ const movementLabel = (reason: string) =>
     damage: "Avaria",
     adjustment: "Ajuste"
   })[reason] ?? humanizeCode(reason);
+const paymentMethodLabel = (method: string) =>
+  ({ pix: "Pix", card: "Cartão", cash: "Dinheiro", transfer: "Transferência", other: "Outra" })[method] ?? humanizeCode(method);
 const localDateTimeNow = () => {
   const date = new Date();
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -1811,6 +2044,8 @@ const statusLabel = (status: string) =>
     unqualified: "Não qualificada",
     suspended: "Suspensa",
     cancelled: "Cancelada",
+    draft: "Rascunho",
+    charged_back: "Contestada",
     confirmed: "Confirmada",
     pending_payment: "Aguardando pagamento",
     paid: "Pago",
