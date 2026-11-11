@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Sales } from "./representative-portal";
+import { SaleForm, Sales } from "./representative-portal";
 
 vi.mock("@/components/logout-button", () => ({ LogoutButton: () => null }));
 vi.mock("@/components/user-avatar", () => ({ UserAvatar: () => null }));
@@ -50,5 +50,22 @@ describe("representative sale history", () => {
     }]} status="cancelled" loading onStatusChange={() => undefined} />);
     expect(html).toContain("Atualizando vendas");
     expect(html).not.toContain("VD-STALE");
+  });
+});
+
+describe("representative sale reference", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("uses a valid HTML pattern that accepts references and rejects spaces", () => {
+    vi.stubGlobal("React", React);
+    const html = renderToStaticMarkup(<SaleForm representativeCode="REP-TEST" inventory={[{
+      variantId: "variant-test", productName: "Item", sku: "SKU-1", color: "Preto",
+      size: "34", priceInCents: 1000, quantity: 1
+    }]} onSaved={() => undefined} />);
+    const input = html.match(/<input\b(?=[^>]*\bname="reference")[^>]*>/)?.[0];
+    const pattern = input?.match(/\bpattern="([^"]+)"/)?.[1];
+    expect(pattern).toBeDefined();
+    const reference = new RegExp("^(?:" + pattern + ")$", "v");
+    expect(reference.test("TESTE-123/45")).toBe(true);
+    expect(reference.test("referência inválida")).toBe(false);
   });
 });

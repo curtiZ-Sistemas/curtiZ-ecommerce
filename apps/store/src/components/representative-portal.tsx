@@ -1178,7 +1178,7 @@ function Notifications({
   );
 }
 
-function SaleForm({
+export function SaleForm({
   representativeCode,
   inventory,
   onSaved
@@ -1409,7 +1409,7 @@ function SaleForm({
           <input
             name="reference"
             maxLength={80}
-            pattern="[A-Za-z0-9._/-]+"
+            pattern={"[A-Za-z0-9._\\/\\-]+"}
             aria-describedby="sale-reference-hint"
           />
           <small id="sale-reference-hint">Não informe nome, CPF, telefone ou outro dado pessoal.</small>
