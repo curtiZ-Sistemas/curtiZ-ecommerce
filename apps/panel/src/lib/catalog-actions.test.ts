@@ -50,7 +50,7 @@ beforeEach(() => {
     error: null, count: table === "products" ? 1 : 0
   }));
   state.rpc.mockReset().mockImplementation((name: string) => Promise.resolve({
-    data: name === "has_permission" || name === "consume_private_api_rate_limit" ? true : name === "admin_delete_product" ? { deleted: true, storagePaths: ["products/test.webp"] } : { [id]: { canDelete: true, blockers: [] } }, error: null
+    data: name === "has_permission" || name === "consume_private_api_rate_limit" ? true : name === "admin_read_catalog_costs" ? [{ product_id: id, product_cost: null, variants: { [id]: null } }] : name === "admin_delete_product" ? { deleted: true, storagePaths: ["products/test.webp"] } : { [id]: { canDelete: true, blockers: [] } }, error: null
   }));
   state.remove.mockReset().mockResolvedValue({ error: null });
   state.client.mockResolvedValue({
@@ -167,7 +167,7 @@ describe("product save", () => {
       data: table === "profiles" ? { status: "active" } : table === "user_roles" ? [{ role: "admin" }] : table === "categories" ? { name: "Slides" } : null,
       error: null
     }));
-    state.rpc.mockImplementation(async (name) => ({ data: name === createProductRpc ? id : true, error: null }));
+    state.rpc.mockImplementation(async (name) => ({ data: name === createProductRpc ? id : name === "admin_read_catalog_costs" ? [{ product_id: id, product_cost: null, variants: { [id]: null } }] : true, error: null }));
   });
 
   it("creates draft, published and variation products through PATCH", async () => {
