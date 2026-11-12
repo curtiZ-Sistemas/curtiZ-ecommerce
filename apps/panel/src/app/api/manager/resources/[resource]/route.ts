@@ -10,6 +10,7 @@ import {
   managerResources,
   type ManagerResourceDefinition
 } from "@/lib/manager-resources";
+import { attachManagerOrderProfits } from "@/lib/manager-order-profits";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,15 @@ export async function GET(
       );
     }
 
+    let rows = managerRows(result.data);
+    if (resource === "pedidos-vendas") {
+      try {
+        rows = await attachManagerOrderProfits(rows, (ids) => auth.supabase.rpc("manager_read_order_profits", { p_order_ids: ids }));
+      } catch {
+        return NextResponse.json({ message: "Não foi possível exportar os dados." }, { status: 503, headers: managerNoStore });
+      }
+    }
+
     const audit = await auth.supabase.rpc("manager_log_export", {
       p_resource: resource,
       p_filters: {
@@ -142,7 +152,7 @@ export async function GET(
     }
 
     return new NextResponse(
-      toCsv(managerRows(result.data), definition),
+      toCsv(rows, definition),
       {
         headers: {
           ...managerNoStore,
@@ -162,6 +172,15 @@ export async function GET(
     );
   }
 
+  let rows = managerRows(result.data);
+  if (resource === "pedidos-vendas") {
+    try {
+      rows = await attachManagerOrderProfits(rows, (ids) => auth.supabase.rpc("manager_read_order_profits", { p_order_ids: ids }));
+    } catch {
+      return NextResponse.json({ message: "Não foi possível carregar os registros desta área." }, { status: 503, headers: managerNoStore });
+    }
+  }
+
   const [canExport, canManageClosings, canManageRepresentatives, canManageCreatives, canApproveCreatives, canPublishCreatives] =
     await Promise.all([
       auth.supabase.rpc("has_permission", { permission_code: "reports.export" }),
@@ -174,7 +193,7 @@ export async function GET(
 
   return NextResponse.json(
     {
-      items: result.data ?? [],
+      items: rows,
       total: result.count ?? 0,
       page,
       pageSize,

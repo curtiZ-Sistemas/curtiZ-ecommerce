@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { isOperationallyActiveOrder } from "@/lib/operational-order-status";
+import { readOperationalShipmentCosts } from "@/lib/operational-shipment-costs";
 
 export const dynamic = "force-dynamic";
 
@@ -236,7 +237,7 @@ export async function GET(request: NextRequest) {
   let orderQuery = supabase
     .from("orders")
     .select(
-      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,carrier,tracking_code,label_path,dispatched_at,operation_state,shipping_amount,shipping_cost,estimated_days),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
+      "id,public_code,status,payment_status,customer_name_snapshot,shipping_address_snapshot,placed_at,created_at,order_items(id,product_name_snapshot,sku_snapshot,color_snapshot,size_snapshot,quantity),shipments!shipments_order_id_fkey(id,status,provider,service,carrier,tracking_code,label_path,dispatched_at,operation_state,shipping_amount,estimated_days),order_status_history(previous_status,new_status,reason,created_at),order_notes(id,content_sanitized,created_at)",
       { count: "exact" }
     )
     .in("status", [...orderStatuses])
@@ -391,6 +392,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  let shipmentCosts: Map<string, number | null>;
+  try {
+    const shipmentIds = rows(ordersResult.data).flatMap((order) => rows(order.shipments).map((shipment) => text(shipment.id)));
+    shipmentCosts = await readOperationalShipmentCosts(shipmentIds, (ids) => supabase.rpc("operational_read_shipment_costs", { p_shipment_ids: ids }));
+  } catch {
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar a operação." }, { status: 503, headers: noStore });
+  }
+
   const maskedName = (value: string) => {
     const parts = value.trim().split(/\s+/u).filter(Boolean);
     return parts.length > 1 ? `${parts[0]} ${parts.at(-1)?.slice(0, 1)}.` : parts[0] ?? "Cliente";
@@ -434,7 +443,7 @@ export async function GET(request: NextRequest) {
         labelReady: Boolean(text(shipment.label_path)),
         operationState: text(shipment.operation_state),
         shippingAmount: Number(shipment.shipping_amount ?? 0),
-        shippingCost: Number(shipment.shipping_cost ?? 0),
+        shippingCost: shipmentCosts.get(text(shipment.id)) ?? null,
         estimatedDays: number(shipment.estimated_days) || null
       })),
       history: rows(order.order_status_history).map((history) => ({

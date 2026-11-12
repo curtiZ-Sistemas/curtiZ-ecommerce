@@ -92,7 +92,7 @@ type OperationOrder = {
     labelReady: boolean;
     operationState: string;
     shippingAmount: number;
-    shippingCost: number;
+    shippingCost: number | null;
     estimatedDays: number | null;
   }>;
   history: Array<{ status: string; reason: string; createdAt: string }>;
@@ -822,7 +822,7 @@ function OrderDetail({
                 {shipment.trackingCode ? <> · <Code>{shipment.trackingCode}</Code></> : null}
               </p>
               <p className="operational-muted">
-                Cobrado <span className="ui-num">{formatCurrency(shipment.shippingAmount)}</span> · custo <span className="ui-num">{formatCurrency(shipment.shippingCost)}</span>
+                Cobrado <span className="ui-num">{formatCurrency(shipment.shippingAmount)}</span> · custo <span className="ui-num">{shipment.shippingCost === null ? "não informado" : formatCurrency(shipment.shippingCost)}</span>
                 {shipment.estimatedDays ? ` · ${shipment.estimatedDays} dias úteis` : ""}
               </p>
               {canAddNote && shipment.provider === "melhorenvio" ? (
