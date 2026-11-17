@@ -112,3 +112,20 @@ returns text language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function public.read_representative_resale_product_fingerprint(uuid) from public, anon, authenticated;
 grant execute on function public.read_representative_resale_product_fingerprint(uuid) to service_role;
+
+-- The caller supplies an authenticated, independently verified recipient
+-- context. This lookup derives the product fingerprint in the database and
+-- remains informational: it never authorizes a sale or fiscal operation.
+create function public.find_representative_resale_fiscal_rule_for_variant(
+  p_variant_id uuid, p_issuer_reference text, p_origin_state text,
+  p_destination_state text, p_person_type text, p_icms_status text,
+  p_final_consumer boolean, p_purpose text
+) returns jsonb language sql stable security definer set search_path = '' as $$
+  select public.find_representative_resale_fiscal_rule_candidate(
+    p_issuer_reference, public.read_representative_resale_product_fingerprint(p_variant_id),
+    p_origin_state, p_destination_state, p_person_type, p_icms_status, p_final_consumer, p_purpose);
+$$;
+revoke all on function public.find_representative_resale_fiscal_rule_for_variant(uuid,text,text,text,text,text,boolean,text)
+  from public, anon, authenticated;
+grant execute on function public.find_representative_resale_fiscal_rule_for_variant(uuid,text,text,text,text,text,boolean,text)
+  to service_role;

@@ -55,8 +55,20 @@ values
 create temporary table resale_fingerprint_fixture as select public.read_representative_resale_product_fingerprint('ab100000-0000-4000-8000-000000000001') as fingerprint;
 select matches((select fingerprint from resale_fingerprint_fixture),'^[a-f0-9]{64}$','complete current kit has a deterministic fingerprint');
 select is(public.read_representative_resale_product_fingerprint('ab100000-0000-4000-8000-000000000001'),(select fingerprint from resale_fingerprint_fixture),'unchanged product has the same fingerprint');
+select ok(not has_function_privilege('authenticated','public.find_representative_resale_fiscal_rule_for_variant(uuid,text,text,text,text,text,boolean,text)','execute'),'clients cannot select approved rule candidates');
+insert into private.representative_resale_fiscal_rule_versions
+  (id,rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,icms_status,final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
+select 'aa100000-0000-4000-8000-000000000004','aa200000-0000-4000-8000-000000000004',1,'synthetic-issuer',fingerprint,'MG','SP','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day','{"fixture":true}'::jsonb from resale_fingerprint_fixture;
+insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
+values ('aa100000-0000-4000-8000-000000000004','synthetic-reviewer','synthetic-evidence-4');
+select is(public.find_representative_resale_fiscal_rule_for_variant('ab100000-0000-4000-8000-000000000001','synthetic-issuer','MG','SP','business','taxpayer',false,'resale')->>'id','aa100000-0000-4000-8000-000000000004','server-derived fingerprint matches the exact kit rule');
+update private.bling_kit_fiscal_components set quantity_pairs=2 where kit_variant_id='ab100000-0000-4000-8000-000000000001' and position=1;
+select is(public.read_representative_resale_product_fingerprint('ab100000-0000-4000-8000-000000000001'),null::text,'component quantities must match the kit');
+select is(public.find_representative_resale_fiscal_rule_for_variant('ab100000-0000-4000-8000-000000000001','synthetic-issuer','MG','SP','business','taxpayer',false,'resale'),null::jsonb,'incomplete kit cannot match a rule');
+update private.bling_kit_fiscal_components set quantity_pairs=1 where kit_variant_id='ab100000-0000-4000-8000-000000000001' and position=1;
 update private.bling_kit_fiscal_components set description='Synthetic changed pair' where kit_variant_id='ab100000-0000-4000-8000-000000000001' and position=1;
 select isnt(public.read_representative_resale_product_fingerprint('ab100000-0000-4000-8000-000000000001'),(select fingerprint from resale_fingerprint_fixture),'composition change alters fingerprint');
+select is(public.find_representative_resale_fiscal_rule_for_variant('ab100000-0000-4000-8000-000000000001','synthetic-issuer','MG','SP','business','taxpayer',false,'resale'),null::jsonb,'changed composition does not reuse prior approval');
 update public.products set name='Synthetic changed product' where id='ab300000-0000-4000-8000-000000000001';
 select is(public.read_representative_resale_product_fingerprint('ab100000-0000-4000-8000-000000000001'),null::text,'stale composition cannot produce a fingerprint');
 
