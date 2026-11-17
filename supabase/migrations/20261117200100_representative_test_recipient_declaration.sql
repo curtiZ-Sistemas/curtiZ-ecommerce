@@ -69,3 +69,14 @@ revoke all on function public.create_kit_test_checkout_with_declaration(uuid,uui
   from public, anon, authenticated;
 grant execute on function public.create_kit_test_checkout_with_declaration(uuid,uuid,integer,uuid,text,uuid,uuid,jsonb)
   to service_role;
+
+create function public.read_kit_test_recipient_declaration(p_actor uuid,p_order uuid)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('scenario',d.declared_scenario,'schemaVersion',d.schema_version,
+    'declaredAt',d.declared_at,'verification','unverified')
+  from private.kit_test_recipient_declarations d
+  join private.kit_test_transactions t on t.order_id=d.order_id and t.actor_id=d.actor_id
+  where d.order_id=p_order and d.actor_id=p_actor;
+$$;
+revoke all on function public.read_kit_test_recipient_declaration(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.read_kit_test_recipient_declaration(uuid,uuid) to service_role;

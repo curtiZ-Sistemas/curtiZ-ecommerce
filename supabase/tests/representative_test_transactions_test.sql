@@ -83,6 +83,9 @@ select is((select available_quantity from public.inventory where variant_id=(sel
 update kt_ctx set order_id=(public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
   '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG"}'::jsonb)->>'orderId')::uuid;
 select is((select declared_scenario->>'icmsStatus' from private.kit_test_recipient_declarations where order_id=(select order_id from kt_ctx)),'unknown','Explicit unknown status is preserved without inference');
+select ok(not has_function_privilege('authenticated','public.read_kit_test_recipient_declaration(uuid,uuid)','execute'),'Browser cannot directly read another actor declaration');
+select is((select public.read_kit_test_recipient_declaration(actor,order_id)->>'verification' from kt_ctx),'unverified','Owner read marks declaration unverified');
+select is((select public.read_kit_test_recipient_declaration(gen_random_uuid(),order_id) from kt_ctx),null::jsonb,'Another actor cannot read the declaration');
 select is((select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
   '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG"}'::jsonb)->>'declarationState' from kt_ctx),'unverified','Exact replay remains unverified and idempotent');
 select throws_ok($$select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,

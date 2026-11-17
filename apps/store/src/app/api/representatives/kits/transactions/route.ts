@@ -21,6 +21,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("refund"), orderId: id, idempotencyKey: id, amountInCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 ]);
 const headers = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
+const storedDeclarationSchema = z.object({ scenario: resaleScenarioSchema, schemaVersion: z.literal(1),
+  declaredAt: z.string().min(1).max(64), verification: z.literal("unverified") }).strict();
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
@@ -74,10 +76,14 @@ export async function POST(request: NextRequest) {
     }
     const transaction = await kitRecord(db, "read_kit_test_transaction", { p_actor: user.id, p_order: orderId });
     const instructions = await kitCall(db, "read_kit_test_payment_instructions", { p_actor: user.id, p_order: orderId });
+    const declaration = await kitCall(db, "read_kit_test_recipient_declaration", { p_actor: user.id, p_order: orderId });
+    const parsedDeclaration = declaration == null ? null : storedDeclarationSchema.safeParse(declaration);
+    if (parsedDeclaration && !parsedDeclaration.success) throw new KitTransactionError(503);
     // Fingerprint and provider identity stay server-side; only own payment instructions are returned.
     return NextResponse.json({ ok: true, orderId, mode: "test", state: transaction.state, amountInCents: transaction.amountInCents,
       refundedInCents: transaction.refundedInCents, remainingInCents: transaction.remainingInCents,
-      fiscalValidation: "pending", shippingAllowed: false, ...(declarationState ? { declarationState } : {}), instructions }, { headers });
+      fiscalValidation: "pending", shippingAllowed: false, ...(declarationState ? { declarationState } : {}),
+      declaration: parsedDeclaration?.data ?? null, instructions }, { headers });
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError || error instanceof CheckoutIdentityError ? error.status : 503;
     return NextResponse.json({ message: "Não foi possível concluir a operação. Consulte o pedido antes de tentar novamente." }, { status, headers });
