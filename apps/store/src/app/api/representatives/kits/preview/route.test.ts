@@ -56,6 +56,14 @@ describe("authenticated resale preview boundary", () => {
     expect((await POST(request({ kitId, declaredScenario, icmsTaxpayer: true }))).status).toBe(400);
     expect(state.rpc).not.toHaveBeenCalled();
   });
+  it.each(["final_consumption", "other"])("keeps a %s declaration blocked as a purpose mismatch", async purpose => {
+    const declaredScenario = { personType: "individual", purpose, icmsStatus: "unknown", destinationState: "MG" };
+    const response = await POST(request({ kitId, declaredScenario }));
+    const payload: unknown = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ canPurchase: false, finalConsumer: null });
+    expect(JSON.stringify(payload)).toContain("recipient_purpose_mismatch");
+  });
   it.each([false, true])("requires a valid authenticated user (authError=%s)", authError => {
     state.user = authError; state.authError = authError;
     return POST(request()).then(response => { expect(response.status).toBe(401); expect(state.rpc).not.toHaveBeenCalled(); });
