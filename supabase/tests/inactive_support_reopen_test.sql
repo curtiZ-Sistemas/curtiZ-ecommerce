@@ -8,6 +8,8 @@ values
 ('ef000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000000','authenticated','authenticated','reopen-other@test.local',crypt('Test-password-123',gen_salt('bf')),now(),'{"role":"customer"}','{"full_name":"Other"}',now(),now());
 insert into public.support_conversations(id,customer_id,category_id,priority,origin,subject,status)
 values ('ef100000-0000-0000-0000-000000000001','ef000000-0000-0000-0000-000000000001','41000000-0000-0000-0000-000000000001','normal','account','Teste de reabertura','closed');
+-- A trigger always creates conversations in the admin queue.
+update public.support_conversations set status='closed' where id='ef100000-0000-0000-0000-000000000001';
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"ef000000-0000-0000-0000-000000000002","role":"authenticated"}',true);
