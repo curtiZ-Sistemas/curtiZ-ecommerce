@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 type SessionUser = { id: string; email: string };
 const state = vi.hoisted((): { user: SessionUser | null; record: ReturnType<typeof vi.fn>; rate: ReturnType<typeof vi.fn>; provider: ReturnType<typeof vi.fn>; identity: ReturnType<typeof vi.fn>; pix: ReturnType<typeof vi.fn>; card: ReturnType<typeof vi.fn> } => ({ user: { id: "actor", email: "fixture@example.invalid" },
   record: vi.fn(), rate: vi.fn(), provider: vi.fn(), identity: vi.fn(), pix: vi.fn(), card: vi.fn() }));
@@ -7,9 +8,10 @@ vi.mock("@/lib/http-origin", () => import("../../../../../lib/http-origin"));
 vi.mock("@/lib/private-request", () => ({ readPrivateJson: (r: Request) => r.json(),
   requirePrivateRateLimit: state.rate, PrivateRequestError: class extends Error { status = 429; } }));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
+vi.mock("@/lib/representative-resale", () => import("../../../../../lib/representative-resale"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({ auth: { getUser: async () => ({ data: { user: state.user } }) } }),
   createServiceSupabaseClient: () => ({ rpc: vi.fn(), from: () => ({ select: () => ({ eq: () => ({
-    maybeSingle: async () => ({ error: null, data: { status: "active", full_name: "Representante TESTE" } })
+    maybeSingle: async () => ({ error: null, data: { status: "active", full_name: "Representante TESTE", product_id: "10000000-0000-4000-8000-000000000001" } })
   }) }) }) }) }));
 vi.mock("@/lib/melhor-envio-server", () => ({ resolveShippingProducts: vi.fn() }));
 vi.mock("@/lib/checkout-identity", () => ({ resolveCheckoutPayerDocument: state.identity,
@@ -21,6 +23,7 @@ vi.mock("@/lib/representative-test-transactions", () => ({
 }));
 import { POST } from "./route";
 import { CheckoutIdentityError } from "@/lib/checkout-identity";
+import { resolveShippingProducts } from "@/lib/melhor-envio-server";
 const order = "10000000-0000-4000-8000-000000000001";
 const send = (body: unknown, origin = "https://curtiz.com.br") => POST(new NextRequest("https://curtiz.com.br/api/representatives/kits/transactions", {
   method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body)
@@ -40,6 +43,27 @@ describe("kit transaction access", () => {
   it("does not accept actor, prices or mode from JSON", async () => {
     expect((await send({ action: "pay_pix", orderId: order, actor: "other", amountInCents: 1, mode: "production" })).status).toBe(400);
     expect(state.record).not.toHaveBeenCalled();
+  });
+  it("creates a TEST checkout and unverified declaration in one database operation", async () => {
+    vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "true");
+    vi.stubEnv("REPRESENTATIVE_TEST_ACTOR_ID", "actor");
+    vi.mocked(resolveShippingProducts).mockResolvedValue({ products: [], fingerprint: "a".repeat(64) });
+    state.record.mockResolvedValueOnce({ orderId: order, declarationState: "unverified" })
+      .mockResolvedValueOnce({ state: "reserved", amountInCents: 8043, refundedInCents: 0, remainingInCents: 8043 });
+    const declaredScenario = { personType: "individual", purpose: "resale", icmsStatus: "unknown", destinationState: "MG" };
+    const response = await send({ action: "create", variantId: order, quantity: 1, quoteId: order, addressId: order,
+      idempotencyKey: order, declaredScenario });
+    expect(response.status).toBe(200);
+    expect(state.record).toHaveBeenCalledWith(expect.anything(), "create_kit_test_checkout_with_declaration", {
+      p_actor: "actor", p_variant: order, p_quantity: 1, p_quote: order, p_fingerprint: "a".repeat(64),
+      p_key: order, p_address: order, p_scenario: declaredScenario
+    });
+    expect(await response.json()).toMatchObject({ mode: "test", declarationState: "unverified", fiscalValidation: "pending", shippingAllowed: false });
+  });
+  it("rejects a non-resale purpose before opening a TEST checkout", async () => {
+    const response = await send({ action: "create", variantId: order, quantity: 1, quoteId: order, addressId: order,
+      idempotencyKey: order, declaredScenario: { personType: "individual", purpose: "other", icmsStatus: "unknown", destinationState: "MG" } });
+    expect(response.status).toBe(400); expect(state.record).not.toHaveBeenCalled(); expect(state.provider).not.toHaveBeenCalled();
   });
   it("keeps purchases closed without the explicit authorized TEST actor", async () => {
     vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "false");

@@ -70,7 +70,26 @@ insert into public.addresses(id,user_id,label,recipient_name,postal_code,street,
 update kt_ctx set quote=gen_random_uuid(),key=gen_random_uuid(),lock=gen_random_uuid();
 insert into public.shipping_quotes(id,customer_id,provider,service,service_id,amount,estimated_days,packages,expires_at,cart_fingerprint,provider_environment,destination_postal_code)
   select quote,actor,'melhorenvio','TEST','1',24.49,3,'[]',now()+interval '15 minutes',repeat('a',64),'sandbox','35500000' from kt_ctx;
-update kt_ctx set order_id=(public.create_kit_test_checkout(actor,variant,1,quote,repeat('a',64),key,address)->>'orderId')::uuid;
+select ok(not has_function_privilege('authenticated','public.create_kit_test_checkout_with_declaration(uuid,uuid,integer,uuid,text,uuid,uuid,jsonb)','execute'),'Browser cannot impersonate a test checkout actor');
+select ok(not has_table_privilege('service_role','private.kit_test_recipient_declarations','insert'),'Service role cannot directly write declarations');
+select throws_ok($$select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG","approved":true}'::jsonb) from kt_ctx$$,
+  '23514','invalid_kit_test_declaration','Client cannot supply a fiscal approval');
+select throws_ok($$select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"SP"}'::jsonb) from kt_ctx$$,
+  '23514','kit_test_declaration_state_mismatch','Declaration must match the snapshotted destination');
+select ok((select used_at is null from public.shipping_quotes where id=(select quote from kt_ctx)),'Failed declaration does not consume quote');
+select is((select available_quantity from public.inventory where variant_id=(select variant from kt_ctx)),8,'Failed declaration does not reserve stock');
+update kt_ctx set order_id=(public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG"}'::jsonb)->>'orderId')::uuid;
+select is((select declared_scenario->>'icmsStatus' from private.kit_test_recipient_declarations where order_id=(select order_id from kt_ctx)),'unknown','Explicit unknown status is preserved without inference');
+select is((select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG"}'::jsonb)->>'declarationState' from kt_ctx),'unverified','Exact replay remains unverified and idempotent');
+select throws_ok($$select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"taxpayer","destinationState":"MG"}'::jsonb) from kt_ctx$$,
+  '23514','kit_test_declaration_conflict','Changed declaration on the same order is rejected');
+select throws_ok($$update private.kit_test_recipient_declarations set declared_scenario='{}'::jsonb where order_id=(select order_id from kt_ctx)$$,
+  '23514','kit_test_declaration_is_append_only','Test declaration snapshot is immutable');
 select ok((select public.cancel_unstarted_kit_test_transaction(actor,order_id) from kt_ctx),'Unstarted order cancels without provider');
 select ok((select public.cancel_unstarted_kit_test_transaction(actor,order_id) from kt_ctx),'Unstarted cancellation replay is harmless');
 select is((select available_quantity from public.inventory where variant_id=(select variant from kt_ctx)),8,'Unstarted reservation released once');
