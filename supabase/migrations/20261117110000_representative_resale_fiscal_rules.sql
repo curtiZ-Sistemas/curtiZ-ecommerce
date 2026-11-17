@@ -86,3 +86,29 @@ revoke all on function public.find_representative_resale_fiscal_rule_candidate(t
 grant execute on function public.find_representative_resale_fiscal_rule_candidate(text,text,text,text,text,text,boolean,text)
   to service_role;
 
+-- A server-derived identifier for the current kit fiscal composition. This is
+-- not a fiscal approval and must not be accepted from a browser as evidence.
+-- Missing, inactive, stale or incomplete catalog data fails closed.
+create function public.read_representative_resale_product_fingerprint(p_variant_id uuid)
+returns text language sql stable security definer set search_path = '' as $$
+  with kit as (
+    select v.id, private.bling_kit_source_hash(v.id) as source_hash, m.pairs_per_sku,
+      to_jsonb(m) as metadata
+    from public.product_variants v
+    join public.products p on p.id = v.product_id
+    join private.bling_catalog_metadata m on m.product_id = p.id
+    where v.id = p_variant_id and v.active and p.status = 'active' and m.pairs_per_sku > 1
+  ), components as (
+    select c.kit_variant_id, jsonb_agg(to_jsonb(c) order by c.position) as snapshot,
+      sum(c.quantity_pairs) as pairs, bool_and(c.source_hash = kit.source_hash) as source_current
+    from private.bling_kit_fiscal_components c join kit on kit.id = c.kit_variant_id
+    group by c.kit_variant_id
+  )
+  select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+    jsonb_build_object('version',1,'sourceHash',kit.source_hash,'metadata',kit.metadata,
+      'components',components.snapshot)::text,'UTF8')),'hex')
+  from kit join components on components.kit_variant_id = kit.id
+  where kit.source_hash is not null and components.source_current is true and components.pairs = kit.pairs_per_sku;
+$$;
+revoke all on function public.read_representative_resale_product_fingerprint(uuid) from public, anon, authenticated;
+grant execute on function public.read_representative_resale_product_fingerprint(uuid) to service_role;
