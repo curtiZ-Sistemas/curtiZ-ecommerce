@@ -1,0 +1,21 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select plan(5);
+insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+values ('ec000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','private-storage@test.local',crypt('Test-password-123',gen_salt('bf')),now(),'{"role":"customer"}','{"full_name":"Cliente teste"}',now(),now());
+insert into storage.objects(bucket_id,name) values ('customer-private','ec000000-0000-0000-0000-000000000001/documents/test.png');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"ec000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
+select is((select count(*) from storage.objects where bucket_id='customer-private' and name='ec000000-0000-0000-0000-000000000001/documents/test.png'),1::bigint,'Ativo le proprio arquivo');
+select lives_ok($$insert into storage.objects(bucket_id,name) values('customer-private','ec000000-0000-0000-0000-000000000001/documents/new.png')$$,'Ativo envia arquivo');
+reset role;
+update public.profiles set status='suspended' where id='ec000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select is((select count(*) from storage.objects where bucket_id='customer-private' and name='ec000000-0000-0000-0000-000000000001/documents/test.png'),0::bigint,'Suspenso nao le arquivo');
+select throws_ok($$insert into storage.objects(bucket_id,name) values('customer-private','ec000000-0000-0000-0000-000000000001/documents/blocked.png')$$,'42501',null,'Suspenso nao envia arquivo');
+reset role;
+update public.profiles set status='active',account_closed_at=now() where id='ec000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select is((select count(*) from storage.objects where bucket_id='customer-private' and name='ec000000-0000-0000-0000-000000000001/documents/test.png'),0::bigint,'Conta encerrada nao le arquivo');
+select * from finish();
+rollback;
