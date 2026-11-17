@@ -106,6 +106,10 @@ insert into public.shipping_quotes(id,customer_id,provider,service,service_id,am
   select quote,actor,'melhorenvio','TEST','1',24.49,3,'[]',now()+interval '15 minutes',repeat('a',64),'sandbox','35500000' from kt_ctx;
 update kt_ctx set order_id=(public.create_kit_test_checkout(actor,variant,1,quote,repeat('a',64),key,address)->>'orderId')::uuid;
 select public.claim_kit_test_creation(actor,order_id,repeat('b',64),lock) from kt_ctx;
+select throws_ok($$select public.create_kit_test_checkout_with_declaration(actor,variant,1,quote,repeat('a',64),key,address,
+  '{"personType":"individual","purpose":"resale","icmsStatus":"unknown","destinationState":"MG"}'::jsonb) from kt_ctx$$,
+  '23514','kit_test_declaration_too_late','Declaration cannot be added after payment starts');
+select is((select count(*) from private.kit_test_recipient_declarations where order_id=(select order_id from kt_ctx)),0::bigint,'Late declaration leaves no snapshot');
 select ok(not (select public.cancel_unstarted_kit_test_transaction(actor,order_id) from kt_ctx),'Uncertain provider create cannot release stock');
 select ok((select public.settle_kit_test_payment(order_id,lock,'789','KITTEST-'||order_id,8043,'BRL',false,'pending') from kt_ctx),'Pending provider result persisted');
 select ok((select public.store_kit_test_instructions(order_id,'789',now()+interval '30 minutes','fixture-code','fixture-image') from kt_ctx),'Instructions bound to provider identity');
