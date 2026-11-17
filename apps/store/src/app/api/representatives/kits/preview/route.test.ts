@@ -27,11 +27,34 @@ describe("authenticated resale preview boundary", () => {
   it("returns a blocked private preview, never a B2C order or payment", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(await response.json()).toMatchObject({ purpose: "resale", finalConsumer: false, canPurchase: false, merchandiseTotalInCents: 4345 });
+    const payload: unknown = await response.json();
+    expect(payload).toMatchObject({ purpose: "resale", finalConsumer: null, canPurchase: false, merchandiseTotalInCents: 4345 });
+    expect(payload).toHaveProperty("blockers");
+    expect(JSON.stringify(payload)).toContain("recipient_final_consumer_validation_required");
     expect(state.rpc).toHaveBeenCalledExactlyOnceWith("read_representative_resale_context", { p_kit_id: kitId });
   });
   it("rejects cross-origin requests before accessing the database", async () => {
     state.origin = false; expect((await POST(request())).status).toBe(403); expect(state.rpc).not.toHaveBeenCalled();
+  });
+  it("marks the buyer's declaration as unverified without authorizing a purchase", async () => {
+    const declaredScenario = { personType: "business", purpose: "resale", icmsStatus: "registration_exempt", destinationState: "MG" };
+    const response = await POST(request({ kitId, declaredScenario }));
+    const payload: unknown = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ declaredScenario: { ...declaredScenario, verification: "unverified" }, finalConsumer: null, canPurchase: false });
+  });
+  it.each([
+    { personType: "business", purpose: "resale", icmsStatus: "taxpayer", destinationState: "XX" },
+    { personType: "business", purpose: "resale", icmsStatus: "taxpayer", destinationState: "MG", approved: true },
+    { personType: "individual", purpose: "resale", icmsStatus: "taxpayer", destinationState: "MG", cpf: "123" }
+  ])("rejects malformed or extra fiscal scenario data", async declaredScenario => {
+    expect((await POST(request({ kitId, declaredScenario }))).status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects combining the legacy taxpayer flag with a new scenario", async () => {
+    const declaredScenario = { personType: "business", purpose: "resale", icmsStatus: "non_taxpayer", destinationState: "MG" };
+    expect((await POST(request({ kitId, declaredScenario, icmsTaxpayer: true }))).status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
   });
   it.each([false, true])("requires a valid authenticated user (authError=%s)", authError => {
     state.user = authError; state.authError = authError;

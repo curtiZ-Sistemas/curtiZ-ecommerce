@@ -18,7 +18,9 @@ Enquanto a revenda não estiver homologada:
 {"variantId":"UUID da variante já cadastrada","quantity":3,"icmsTaxpayer":false}
 ```
 
-`icmsTaxpayer` é opcional para a conferência; ausente resulta em pendência explícita. Não é inferido de CNPJ ou papel. Finalidade sempre `resale`, `finalConsumer=false` e `canPurchase=false`. Cliente não fornece preço, estoque, composição, tributação ou `orderId`.
+`icmsTaxpayer` é opcional para a conferência; ausente resulta em pendência explícita. Não é inferido de CNPJ ou papel. A prévia se refere à compra para revenda, mas não determina o indicador fiscal de consumidor final: `finalConsumer=null` e a validação correspondente permanece pendente. `canPurchase=false`. Cliente não fornece preço, estoque, composição, tributação ou `orderId`.
+
+A API aceita opcionalmente `declaredScenario` com tipo de pessoa (`individual`/`business`), finalidade (`resale`/`final_consumption`/`other`), condição de ICMS (`taxpayer`/`registration_exempt`/`non_taxpayer`/`unknown`) e UF de destino. Não pode ser combinado com o campo legado `icmsTaxpayer`. A resposta identifica essa informação como `unverified`: ela não é salva, não estabelece indicadores de NF-e nem aprova regras, e a interface atual ainda não coleta esses campos. Identificadores pessoais e campos de aprovação não são aceitos nesse objeto. Os bloqueios fiscais e comerciais continuam obrigatórios.
 
 A RPC `read_representative_catalog_kit_context` valida o representante, perfil/status, variante ativa e quantidade entre1 e99. Quantidade acima do estoque resulta em bloqueio na prévia. Preço unitário vem do cadastro, total é recalculado no servidor e a composição fiscal vigente é reutilizada. SKU e estoque próprios são preservados; pares fiscais nunca baixam avulsos. Composição fiscal ausente/desatualizada continua bloqueada, sem inventar componentes.
 

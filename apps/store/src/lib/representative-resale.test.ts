@@ -25,7 +25,7 @@ describe("representative resale preview, independent of B2C checkout", () => {
     expect(result.fiscalItems.map(i => i.unitPriceInCents)).toEqual([2173, 2172]);
     expect(result.fiscalItems.every(i => i.unit === "PR" && i.sourceCommercialSku === "OWN-KIT")).toBe(true);
     expect(data).toEqual(before);
-    expect(result).toMatchObject({ purpose: "resale", finalConsumer: false, canPurchase: false, taxes: null,
+    expect(result).toMatchObject({ purpose: "resale", finalConsumer: null, canPurchase: false, taxes: null,
       shippingInCents: null, grandTotalInCents: null, icmsTaxpayer: false });
   });
   it.each([undefined, false, true])("never approves resale and never infers taxpayer status (%s)", declaration => {
@@ -35,6 +35,8 @@ describe("representative resale preview, independent of B2C checkout", () => {
     expect(result.blockers.includes("recipient_taxpayer_declaration_required")).toBe(declaration === undefined);
     expect(result.blockers).toContain("resale_homologation_required");
     expect(result.blockers).toContain("resale_fiscal_validation_required");
+    expect(result.finalConsumer).toBeNull();
+    expect(result.blockers).toContain("recipient_final_consumer_validation_required");
   });
   it("preserves odd totals across repeated commercial kits and fiscal pairs", () => {
     const data = context(); data.items[0]!.quantity = 3;
