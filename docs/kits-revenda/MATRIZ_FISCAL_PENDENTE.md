@@ -22,5 +22,9 @@ A cobertura comercial solicitada é nacional. Os parâmetros abaixo são referê
 | --- | --- | --- | --- |
 | Homologação MG, não consumidor final | 5102 | `15111725693` | Pendente de vinculação e aprovação para revenda. |
 | Homologação interestadual, contribuinte não consumidor | 6102 | `15111725714` | Pendente de vinculação e aprovação do perfil, do crédito e das UFs aplicáveis. |
+| Homologação, não contribuinte não consumidor | 6108 | `15111725713` | Cadastro de teste com CSOSN 102 e regra genérica de destino e produto. A aplicabilidade à revenda por UF e perfil segue pendente. |
+| Homologação de devolução PF em MG | 1202 | `15111772281` | Cadastro de referência para devolução PF. Falta definir a devolução de kits para revenda. |
+| Homologação de devolução PF interestadual | 2202 | `15111772282` | Cadastro de referência para devolução PF. Falta definir a devolução de kits para revenda. |
 
-IDs e CFOPs verificados diretamente no cadastro. A consulta não alterou as naturezas nem transmitiu documentos. O cadastro com CFOP 6108 não foi selecionado como referência de revenda.
+Consulta somente de leitura no Bling em 18/11/2026. Os registros de homologação acima continuam pendentes de aprovação para uso no fluxo produtivo de kits.
+
