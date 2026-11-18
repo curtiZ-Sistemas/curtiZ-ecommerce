@@ -24,6 +24,14 @@ overrides:
   proxy-addr@>=1.1 <2.0.8: 2.0.8
   source-map-js@>=1 <1.2.2: 1.2.2
 
+patchedDependencies:
+  picomatch@2.3.2:
+    hash: bb879893054eb963b2260476d57e54fd4653d49cae41c365d08b2052608ad4a9
+    path: patches/picomatch@2.3.2.patch
+  picomatch@4.0.7:
+    hash: 127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d
+    path: patches/picomatch@4.0.7.patch
+
 importers:
 
   .:
@@ -7462,9 +7470,9 @@ snapshots:
     dependencies:
       reusify: 1.1.0
 
-  fdir@6.5.0(picomatch@4.0.7):
+  fdir@6.5.0(picomatch@4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d)):
     optionalDependencies:
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d)
 
   fflate@0.8.2: {}
 
@@ -8089,7 +8097,7 @@ snapshots:
   micromatch@4.0.8:
     dependencies:
       braces: 3.0.3
-      picomatch: 2.3.2
+      picomatch: 2.3.2(patch_hash=bb879893054eb963b2260476d57e54fd4653d49cae41c365d08b2052608ad4a9)
 
   mime-db@1.52.0: {}
 
@@ -8317,9 +8325,9 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@2.3.2: {}
+  picomatch@2.3.2(patch_hash=bb879893054eb963b2260476d57e54fd4653d49cae41c365d08b2052608ad4a9): {}
 
-  picomatch@4.0.7: {}
+  picomatch@4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d): {}
 
   playwright-core@1.64.1: {}
 
@@ -8854,8 +8862,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d))
+      picomatch: 4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d)
 
   tinyrainbow@3.2.0: {}
 
@@ -9055,7 +9063,7 @@ snapshots:
   vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.36.0)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d)
       postcss: 8.5.32
       rolldown: 1.2.15
       tinyglobby: 0.2.17
@@ -9082,7 +9090,7 @@ snapshots:
       magic-string: 0.30.21
       obug: 2.2.1
       pathe: 2.0.3
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=127182d43cb550ab3bf2748e794e9f90b5243e6c40b022f531f7ab2b8f610c4d)
       std-env: 4.3.0
       tinybench: 2.9.0
       tinyexec: 1.3.1
