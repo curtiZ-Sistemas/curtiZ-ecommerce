@@ -28,6 +28,8 @@ O formato antigo `{kitId,icmsTaxpayer}` continua aceito para compatibilidade, co
 
 Frete, total final e tributos ficam `null` até validação própria; a prévia não é cotação completa, autorização fiscal ou integração de pagamento. Nenhum job externo é enfileirado.
 
+No catálogo, Calcular frete chama `POST /api/representatives/kits/quote` com `mode: "preview"`, variante, quantidade e CEP. Com a prévia de frete da loja habilitada e Melhor Envio em produção, a rota confere o acesso e o estoque e retorna serviços, preço e prazo estimados com a embalagem cadastrada. O resultado serve para consulta. A rota de prévia não gera uma cotação de checkout.
+
 ## Condições para futura homologação
 
 Usar os SKUs, preços, estoques e composições que já estão cadastrados, sem pedir novamente SKU/quantidade ao dono. Validar a aplicação fiscal da revenda e os dados reais do destinatário, sem copiar automaticamente a aprovação B2C. Homologar pagamento de `kit_orders`, reserva/baixa do SKU próprio, cancelamento/replay, NF-e e expedição no escopo separado antes de remover o bloqueio por outra revisão.

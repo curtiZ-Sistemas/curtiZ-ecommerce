@@ -5,6 +5,7 @@ import { formatBRL } from "@curtiz/domain";
 import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/representative-kit-catalog";
 import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
+import { ProductShippingPreview } from "./product-shipping-preview";
 
 const destinationStates = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
@@ -17,6 +18,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [page, setPage] = useState<RepresentativeKitPage | null>(null), [error, setError] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(""), [messages, setMessages] = useState<Record<string, string>>({});
+  const [shippingVariant, setShippingVariant] = useState<string | null>(null);
   const [recipient, setRecipient] = useState<{
     [Field in keyof RecipientFields]: RecipientFields[Field] | "";
   }>({ personType: "", icmsStatus: "", destinationState: "" });
@@ -117,6 +119,13 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
           {checking === kit.variantId ? "Conferindo…" : "Conferir valor"}
         </button>
         {messages[kit.variantId] && <p role="status">{messages[kit.variantId]}</p>}
+        <button type="button" className="secondary-button" disabled={!kit.available}
+          aria-expanded={shippingVariant === kit.variantId}
+          onClick={() => setShippingVariant(current => current === kit.variantId ? null : kit.variantId)}>
+          {shippingVariant === kit.variantId ? "Fechar cálculo de frete" : "Calcular frete"}
+        </button>
+        {shippingVariant === kit.variantId && <ProductShippingPreview
+          mode="kit" variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} />}
         <button type="button" className="primary-button" disabled>Compra em homologação</button>
       </article>)}</div>}
     <nav aria-label="Páginas de kits">

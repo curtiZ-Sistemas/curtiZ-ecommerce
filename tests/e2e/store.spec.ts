@@ -1004,6 +1004,12 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   await page.route("**/api/representatives/kits/preview", route =>
     route.fulfill({ json: { merchandiseTotalInCents: 4500, blockers: ["resale_homologation_required"] } })
   );
+  await page.route("**/api/representatives/kits/quote", route =>
+    route.fulfill({ json: { ok: true, mode: "preview", quotes: [{
+      serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
+    }] } })
+  );
+  await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
 
   const checkValue = page.getByRole("button", { name: "Conferir valor" });
@@ -1026,6 +1032,12 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
   await page.setViewportSize({ width: 320, height: 850 });
   await expect(page.getByLabel("UF de destino")).toBeVisible();
+  await page.getByRole("button", { name: "Calcular frete" }).click();
+  await page.getByLabel("CEP", { exact: true }).fill("01310-100");
+  const shippingPreview = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "01310100", mode: "preview" });
+  await expect(page.getByText("Correios · até 9 dias úteis, incluindo preparação")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });
 
