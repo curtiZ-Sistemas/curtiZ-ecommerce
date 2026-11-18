@@ -3,6 +3,7 @@ import { z } from "zod";
 import { readBoundedJson, RequestBodyError } from "@curtiz/security";
 import { consumePanelMutationBudget } from "@/lib/api-rate-limit";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
+import { melhorEnvioEnvironment, panelMelhorEnvioProvider } from "@/lib/melhor-envio-server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore } from "@/lib/technical-api";
 
@@ -16,7 +17,8 @@ const receipt = z.object({ action: z.literal("receive"), returnId, invoiceId: z.
   restockQuantity: z.number().int().min(0).max(99), refundInCents: z.number().int().positive(),
   inspectionReference: z.string().trim().min(10).max(200) }).strict();
 const refund = z.object({ action: z.literal("refund"), returnId }).strict();
-const input = z.union([approvals,reasons,receipt,refund]);
+const print = z.object({ action: z.literal("print_label"), orderId: z.string().uuid() }).strict();
+const input = z.union([approvals,reasons,receipt,refund,print]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
 async function verified() {
@@ -45,6 +47,16 @@ export async function POST(request: NextRequest) {
     const parsed = input.safeParse(await readBoundedJson(request,4096));
     if (!parsed.success) return send({ message: "Revise os dados informados." },400);
     const item = parsed.data;
+    if (item.action === "print_label") {
+      const result = await db.rpc("read_representative_kit_printable_label",{ p_order: item.orderId });
+      const externalId: unknown = result.data;
+      if (result.error || typeof externalId !== "string" || !/^[A-Za-z0-9-]{1,100}$/u.test(externalId)) {
+        return send({ message: "Etiqueta indisponível para este pedido." }, result.error?.code === "42501" ? 403 : 409);
+      }
+      if (melhorEnvioEnvironment() !== "production") return send({ message: "Integração de expedição indisponível." },503);
+      const url = await panelMelhorEnvioProvider().print([externalId]);
+      return send({ ok: true,url });
+    }
     if (item.action === "approve_invoice") {
       const result = await db.rpc("approve_representative_kit_bling_draft",{
         p_order: item.orderId,p_hash: item.hash,p_evidence: item.evidence

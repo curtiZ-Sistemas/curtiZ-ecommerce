@@ -552,7 +552,8 @@ function Section({
   if (section === "ocorrencias") {
     return <Occurrences occurrences={data.occurrences} run={run} processing={processing} canCreate={capabilities.createOccurrences} canResolve={capabilities.resolveOccurrences} />;
   }
-  if (section === "notas-fiscais") return <><Invoices invoices={data.invoices} /><RepresentativeKitOperations mode="fiscal" /></>;
+  if (section === "notas-fiscais") return <><Invoices invoices={data.invoices} /><RepresentativeKitOperations mode="fiscal"
+    canPrint={capabilities.fulfillKits} /></>;
   if (section === "representantes") return <Representatives representatives={data.representatives} />;
   if (section === "pendencias") {
     const openTasks = data.tasks.filter((task) => task.status !== "completed");

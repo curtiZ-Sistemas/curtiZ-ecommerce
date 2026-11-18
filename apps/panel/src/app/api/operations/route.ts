@@ -322,7 +322,7 @@ export async function GET(request: NextRequest) {
       ? ["operations.tasks.execute"]
       : []),
     ...(section === "pedidos" ? ["orders.update_operational_status"] : []),
-    ...(needsKits ? ["representatives.kits.fulfill"] : []),
+    ...(needsKits || section === "notas-fiscais" ? ["representatives.kits.fulfill"] : []),
     ...(needsInventory ? ["operations.inventory.request_adjustment"] : []),
     ...(needsReturns ? ["returns.inspect", "returns.approve", "returns.refund"] : []),
     ...(section === "ocorrencias"

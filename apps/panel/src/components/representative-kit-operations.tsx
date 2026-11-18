@@ -10,12 +10,31 @@ const states: Record<string,string> = {
   verified: "XML validado", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada"
 };
 
-export function RepresentativeKitOperations({ mode, canReview, canInspect, canRefund }: {
-  mode: "fiscal" | "returns"; canReview?: boolean; canInspect?: boolean; canRefund?: boolean;
+export function RepresentativeKitOperations({ mode, canReview, canInspect, canRefund, canPrint }: {
+  mode: "fiscal" | "returns"; canReview?: boolean; canInspect?: boolean; canRefund?: boolean; canPrint?: boolean;
 }) {
   const [rows,setRows] = useState<Row[] | null>(null);
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
+  const [label,setLabel] = useState<{ orderId: string; url: string } | null>(null);
+  async function prepareLabel(orderId: string) {
+    setBusy(true);
+    setLabel(null);
+    setError("");
+    try {
+      const response = await fetch("/api/operations/representative-kits", {
+        method: "POST",headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "print_label",orderId })
+      });
+      const result: unknown = await response.json();
+      if (!response.ok || !result || typeof result !== "object" || !("url" in result)
+        || typeof result.url !== "string" || new URL(result.url).origin !== "https://melhorenvio.com.br") {
+        throw new Error("label_unavailable");
+      }
+      setLabel({ orderId,url: result.url });
+    } catch { setError("Não foi possível preparar a impressão da etiqueta."); }
+    finally { setBusy(false); }
+  }
   async function readQueue() {
     const response = await fetch(`/api/operations/representative-kits?mode=${mode}`,{ cache: "no-store" });
     const result: unknown = await response.json();
@@ -68,6 +87,9 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
           <p>{row.invoiceAuthorized ? "NF-e autorizada"
             : row.draftApproved ? "Rascunho conferido" : typeof row.invoiceId === "number" ? "Aguardando revisão fiscal" : "Aguardando Bling"}</p>
           {typeof row.invoiceId === "number" && <p>NF-e no Bling {row.invoiceId}</p>}
+          {canPrint && row.invoiceAuthorized === true && ["label_created","dispatched","in_transit","delayed"].includes(field(row,"shipmentStatus"))
+            && <button type="button" disabled={busy} onClick={() => void prepareLabel(field(row,"orderId"))}>Preparar impressão da etiqueta</button>}
+          {label?.orderId === field(row,"orderId") && <a href={label.url} target="_blank" rel="noreferrer">Abrir etiqueta no Melhor Envio</a>}
           {row.cancellationRequested === true && <p>Cancelamento solicitado</p>}
           {field(row,"draftHash") && !row.draftApproved && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
             <label>Referência da conferência fiscal <input required name="evidence" minLength={10} maxLength={200} /></label>
