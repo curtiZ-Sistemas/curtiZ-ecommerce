@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
   if (mode !== "returns" && mode !== "fiscal") return send({ message: "Selecione uma fila." },400);
   const result = await db.rpc(mode === "returns" ? "list_representative_kit_return_work" : "list_representative_kit_fiscal_work");
   if (result.error) return send({ message: "A fila de kits está indisponível." },result.error.code === "42501" ? 403 : 503);
-  return send({ rows: result.data });
+  const rows: unknown = result.data;
+  if (!Array.isArray(rows)) return send({ message: "A fila de kits está indisponível." },503);
+  return send({ rows });
 }
 
 export async function POST(request: NextRequest) {

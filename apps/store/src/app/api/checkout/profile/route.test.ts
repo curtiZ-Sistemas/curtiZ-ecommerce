@@ -9,15 +9,18 @@ vi.mock("@curtiz/security", () => ({ DEMO_SESSION_COOKIE: "demo", verifyDemoSess
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn(), createServiceSupabaseClient: vi.fn() }));
 vi.mock("@/lib/unknown-data", () => import("../../../../lib/unknown-data"));
 
-const profile = { full_name: "Cliente Teste", phone: "11999999999", cpf_last_four: "4725" };
+const profile = {
+  full_name: "Cliente Teste", phone: "11999999999", cpf_last_four: "4725",
+  status: "active", account_closed_at: null as string | null
+};
 const address = { id: "11111111-1111-4111-8111-111111111111", label: "Casa", recipient_name: "Cliente Teste",
   postal_code: "01310100", street: "Avenida Paulista", number: "1000", complement: "", district: "Bela Vista",
   city: "São Paulo", state: "SP", is_default: true };
 
-const publicClient = () => ({
+const publicClient = (currentProfile: typeof profile | null = profile) => ({
   auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "customer-id", email: "cliente@example.com" } }, error: null }) },
   from: vi.fn((table: string) => {
-    const result = table === "profiles" ? { data: profile, error: null } : { data: [address], error: null };
+    const result = table === "profiles" ? { data: currentProfile, error: null } : { data: [address], error: null };
     const query = {
       select: () => query,
       eq: () => query,
@@ -36,6 +39,22 @@ describe("checkout profile readiness", () => {
     vi.mocked(createServerSupabaseClient).mockResolvedValue(publicClient() as never);
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ["suspensa", { ...profile, status: "suspended" }],
+    ["encerrada", { ...profile, account_closed_at: "2026-11-18T00:00:00Z" }],
+    ["sem perfil visível", null]
+  ] as const)("bloqueia conta %s antes de consultar dados privados", async (_, currentProfile) => {
+    const client = publicClient(currentProfile);
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(client as never);
+    const response = await GET();
+    expect(response.status).toBe(403);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toEqual({ message: "Conta indisponível." });
+    expect(createServiceSupabaseClient).not.toHaveBeenCalled();
+    expect(client.from).toHaveBeenCalledTimes(1);
+    expect(client.from).toHaveBeenCalledWith("profiles");
+  });
 
   it("ignora last4 legado quando a identidade privada não existe", async () => {
     vi.mocked(createServiceSupabaseClient).mockReturnValue({

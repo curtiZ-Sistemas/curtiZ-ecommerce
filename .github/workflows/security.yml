@@ -38,6 +38,11 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verificar patch local do picomatch
+        run: |
+          node scripts/verify-picomatch-patch.ts
+          # Register only the locally mitigated CVE in this runner's package.json.
+          pnpm audit --ignore CVE-2026-112366
       - name: Auditar todas as dependências (produção e desenvolvimento)
         run: pnpm audit --audit-level high
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

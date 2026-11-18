@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(18);
 
 insert into auth.users(id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data)
 values ('d1000000-0000-4000-8000-000000000001', 'homepage-publisher-test@example.invalid', '', now(), '{}', '{}'),
@@ -47,7 +47,7 @@ select is(private.has_permission('homepage.review'), false, 'usuário não possu
 select public.save_homepage_section(jsonb_build_object(
   'internalName', 'xlsx:direct-' || index, 'sectionType', 'image_links',
   'layout', 'content_centered', 'visibility', 'all', 'style', '{}'::jsonb,
-  'content', '{}'::jsonb, 'sortOrder', index, 'changeSummary', 'Teste de publicação',
+  'content', '{"source":"fixture-home-projection","limit":6,"configHash":"fixture-private","autoPublishAfterApproval":true}'::jsonb, 'sortOrder', index, 'changeSummary', 'Teste de publicação',
   'items', '[]'::jsonb), null)
 from generate_series(1, 6) index;
 select public.transition_homepage_section(section.id, 'submit_review', 'Teste de publicação')
@@ -127,6 +127,13 @@ select throws_ok($$select private.validate_homepage_publication_snapshot(
 select throws_ok($$select private.validate_homepage_publication_snapshot(
   '{"style":{},"content":{},"items":[{"targetType":"none","media":[{"path":"home-sections/ausente.webp"}]}]}'::jsonb)$$,
   'P4002', 'homepage section validation failed', 'mídia indisponível é rejeitada');
+
+set local role anon;
+select is((
+  select count(*) from public.published_homepage_sections
+  where snapshot->'content' = '{"source":"fixture-home-projection","limit":6}'::jsonb
+), 6::bigint, 'Homepage retains public configuration and omits spreadsheet metadata');
+reset role;
 
 select * from finish();
 rollback;

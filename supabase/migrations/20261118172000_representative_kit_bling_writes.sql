@@ -1,10 +1,10 @@
 alter table private.representative_kit_checkout_approvals add column buyer_fiscal_address jsonb
-  check (jsonb_typeof(buyer_fiscal_address) = 'object' and buyer_fiscal_address ->> 'state' = 'MG'
+  check (buyer_fiscal_address is null or (jsonb_typeof(buyer_fiscal_address) = 'object' and buyer_fiscal_address ->> 'state' = 'MG'
     and buyer_fiscal_address ->> 'postal_code' ~ '^3[0-9]{7}$'
     and length(btrim(coalesce(buyer_fiscal_address ->> 'street',''))) > 0
     and length(btrim(coalesce(buyer_fiscal_address ->> 'number',''))) > 0
     and length(btrim(coalesce(buyer_fiscal_address ->> 'district',''))) > 0
-    and length(btrim(coalesce(buyer_fiscal_address ->> 'city',''))) > 0);
+    and length(btrim(coalesce(buyer_fiscal_address ->> 'city',''))) > 0));
 
 create function private.require_representative_kit_fiscal_address()
 returns trigger language plpgsql set search_path = '' as $$

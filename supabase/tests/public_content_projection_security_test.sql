@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(7);
+select plan(10);
 
 insert into auth.users(id,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data)
 values ('f7000000-0000-4000-8000-000000000001','public-projection@example.invalid','',now(),'{}','{}');
@@ -21,7 +21,17 @@ select ok(not exists (
   ) and has_any_column_privilege('anon',c.oid,'select')
 ),'anon has no direct column access to any underlying editorial table');
 
+insert into public.legal_documents(id,internal_name,public_title,slug,document_type,public_visible)
+values ('f7200000-0000-4000-8000-000000000001','Fixture editorial','Fixture legal','fixture-legal-projection','privacy',true);
+insert into public.legal_document_versions(document_id,version,snapshot,content_hash,effective_from,published_by)
+values ('f7200000-0000-4000-8000-000000000001',1,
+  '{"document":{"slug":"fixture-legal-projection","internal_review_note":"fixture private"},"sections":[{"title":"Fixture section","internal_review_note":"fixture private"}],"references":[{"name":"Fixture reference","official_url":"https://example.invalid","notes":"fixture private"}],"company":{"legal_name":"Fixture company","completeness_status":"review"}}',
+  'fixture-hash',now()-interval '1 day','f7000000-0000-4000-8000-000000000001');
+
 set local role anon;
+select is((select snapshot#>>'{company,legal_name}' from public.published_legal_documents where slug='fixture-legal-projection'),'Fixture company','Published company information remains available');
+select is((select snapshot#>'{references,0}' from public.published_legal_documents where slug='fixture-legal-projection'),'{"name":"Fixture reference","official_url":"https://example.invalid"}'::jsonb,'Only public reference fields are returned');
+select ok((select not ((snapshot->'company') ? 'completeness_status') and not ((snapshot->'document') ? 'internal_review_note') and not ((snapshot#>'{sections,0}') ? 'internal_review_note') from public.published_legal_documents where slug='fixture-legal-projection'),'Editorial metadata is excluded from company, document and section');
 select lives_ok('select count(*) from public.current_store_promotion_messages','anonymous visitors can read the promotion projection');
 select lives_ok('select count(*) from public.published_homepage_sections','anonymous visitors can read published homepage sections');
 select lives_ok('select count(*) from public.published_help_contents','anonymous visitors can read published help');
