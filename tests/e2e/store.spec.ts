@@ -1004,11 +1004,20 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   await page.route("**/api/representatives/kits/preview", route =>
     route.fulfill({ json: { merchandiseTotalInCents: 4500, blockers: ["resale_homologation_required"] } })
   );
-  await page.route("**/api/representatives/kits/quote", route =>
-    route.fulfill({ json: { ok: true, mode: "preview", quotes: [{
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" },
+    { id: "sp-test", label: "Filial", city: "São Paulo", state: "SP", postalCode: "01310-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/quote", route => {
+    const request = route.request().postDataJSON() as { mode: string };
+    if (request.mode === "checkout") {
+      return route.fulfill({ json: { ok: true, mode: "checkout", quote: { id: "quote-test", serviceId: "1", amountInCents: 2200 } } });
+    }
+    return route.fulfill({ json: { ok: true, mode: "preview", quotes: [{
       serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
-    }] } })
-  );
+    }] } });
+  });
   const cookieInventory = page.waitForResponse(response =>
     response.url().endsWith("/api/privacy/cookies") && response.request().method() === "GET");
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
@@ -1044,6 +1053,18 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   await page.getByRole("button", { name: "Calcular", exact: true }).click();
   expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "30110100", mode: "preview" });
   await expect(page.getByText("Correios · até 9 dias úteis, incluindo preparação")).toBeVisible();
+  await page.getByRole("button", { name: "Fechar cálculo de frete" }).click();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await expect(page.getByRole("option", { name: /Filial/ })).toHaveCount(0);
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await expect(page.getByLabel("CEP", { exact: true })).toHaveValue("30110-100");
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  const boundQuote = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
+  await page.getByRole("button", { name: "Selecionar PAC" }).click();
+  expect((await boundQuote).postDataJSON()).toEqual({ variantId, quantity: 1, addressId, serviceId: "1", mode: "checkout" });
+  await expect(page.getByText(/Frete conferido para o endereço: R\$\s22,00/)).toBeVisible();
+  await page.getByLabel("Quantidade de kits").fill("2");
+  await expect(page.getByText(/Frete conferido para o endereço/)).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });
 

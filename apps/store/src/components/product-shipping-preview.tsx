@@ -18,12 +18,14 @@ function isQuote(value: unknown): value is Quote {
 }
 
 type ShippingPreviewProps = { variantId?: string; quantity: number } &
-  ({ productId: string; mode?: never } | { mode: "kit"; productId?: never });
+  ({ productId: string; mode?: never; savedPostalCode?: never; onSelectService?: never }
+    | { mode: "kit"; productId?: never; savedPostalCode?: string; onSelectService?: (serviceId: string) => void });
 
-export function ProductShippingPreview({ productId, variantId, quantity, mode }: ShippingPreviewProps) {
+export function ProductShippingPreview({ productId, variantId, quantity, mode, savedPostalCode, onSelectService }: ShippingPreviewProps) {
   const postalInputId = useId();
   const isKit = mode === "kit";
-  const [postalCode, setPostalCode] = useState("");
+  const [typedPostalCode, setPostalCode] = useState("");
+  const postalCode = savedPostalCode ?? typedPostalCode;
   const [result, setResult] = useState<{ key: string; quotes: Quote[]; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -60,7 +62,7 @@ export function ProductShippingPreview({ productId, variantId, quantity, mode }:
       setResult({ key, quotes: [], message: `Escolha uma quantidade de 1 a ${maxQuantity} para calcular.` });
       return;
     }
-    rememberShippingPostalCode(postalCode);
+    if (!savedPostalCode) rememberShippingPostalCode(postalCode);
     const active = new AbortController();
     controller.current = active;
     setLoading(true);
@@ -95,7 +97,7 @@ export function ProductShippingPreview({ productId, variantId, quantity, mode }:
       <label className="sr-only" htmlFor={postalInputId}>CEP</label>
       <div className="shipping-input"><Truck aria-hidden="true" />
         <input id={postalInputId} inputMode="numeric" autoComplete="postal-code" maxLength={9}
-          placeholder="Digite seu CEP" value={postalCode} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
+          placeholder="Digite seu CEP" value={postalCode} readOnly={Boolean(savedPostalCode)} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
           onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} /></div>
       <button type="submit" disabled={loading}>{loading ? "Calculando…" : "Calcular"}</button>
     </form>
@@ -105,7 +107,11 @@ export function ProductShippingPreview({ productId, variantId, quantity, mode }:
       {visible?.message ? <p className="shipping-message" data-tone={failed && !visible?.message.startsWith("Nenhum") ? "error" : "info"}>{visible.message}</p> : null}
       {visible?.quotes.length ? <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
         <div><strong>{quote.service}</strong>
-          <span>{quote.carrier} · até {quote.estimatedDays} dias úteis, incluindo preparação</span></div>
+          <span>{quote.carrier} · até {quote.estimatedDays} dias úteis, incluindo preparação</span>
+          {onSelectService && <button className="text-button" type="button" onClick={() => onSelectService(quote.serviceId)}>
+            Selecionar {quote.service}
+          </button>}
+        </div>
         <b>{formatBRL(quote.amountInCents)}</b>
       </li>)}</ul> : null}
     </div>

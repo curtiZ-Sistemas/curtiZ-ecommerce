@@ -6,6 +6,7 @@ import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/re
 import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
 import { ProductShippingPreview } from "./product-shipping-preview";
+import { RepresentativeKitDelivery } from "./representative-kit-delivery";
 import { representativeKitState } from "../lib/representative-resale-scope";
 
 type RecipientFields = Pick<ResaleScenario, "personType" | "icmsStatus">;
@@ -115,6 +116,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
         </button>
         {shippingVariant === kit.variantId && <ProductShippingPreview
           mode="kit" variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} />}
+        {kit.available ? <RepresentativeKitDelivery variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} /> : null}
         <button type="button" className="primary-button" disabled>Compra em homologação</button>
       </article>)}</div>}
     <nav aria-label="Páginas de kits">
