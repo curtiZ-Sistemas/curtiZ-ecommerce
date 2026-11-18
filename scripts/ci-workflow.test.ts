@@ -210,6 +210,10 @@ describe("auditoria de dependências sem Dependency Review disponível", () => {
     expect(security).toContain("run: pnpm audit --audit-level high");
     expect(security).not.toMatch(/continue-on-error|--prod|audit.*\|\|\s*true/u);
   });
+  it("verifica o patch do picomatch antes da exceção local e da auditoria completa", () => {
+    expect(security).toMatch(/node scripts\/verify-picomatch-patch\.ts[\s\S]*pnpm audit --ignore CVE-2026-112366[\s\S]*run: pnpm audit --audit-level high/u);
+    expect(readFileSync(resolve(process.cwd(), "package.json"), "utf8")).not.toContain("CVE-2026-112366");
+  });
   it("registra a alternativa e exige habilitação explícita do recurso nativo", () => {
     expect(security).toContain("github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED == 'true'");
     expect(security).toContain("github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW_ENABLED != 'true'");
