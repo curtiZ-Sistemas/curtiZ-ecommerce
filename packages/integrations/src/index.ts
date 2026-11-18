@@ -7,7 +7,7 @@ export * from "./melhor-envio";
 export * from "./bling";
 export * from "./bling-catalog";
 export * from "./bling-fiscal-preview";
-export { readBlingAuthorizedResaleXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
+export { readBlingAuthorizedResaleXml, readBlingAuthorizedResaleReturnXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
 export * from "./bling-tax";
 export { sendInvoiceEmail } from "./invoice-email";
 export * from "./transactional-email";

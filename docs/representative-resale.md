@@ -56,3 +56,21 @@ O portal comercial e a acao antiga buy_kit permanecem bloqueados. O endpoint tec
 
 A rotina agendada de expiracao recebe os bindings e o fetch nativo do Worker, limita cada lote a quatro pedidos TEST e isola falhas por pedido. So cancela uma tentativa conhecida depois de consultar e validar o provedor e conferir sua expiracao; uma aprovacao concorrente segue para conciliacao. Escrita desconhecida por mais de 23 horas vai para reconciliacao obrigatoria, preservando a reserva.
 
+## Compra comercial de kits em Minas Gerais
+
+O portal usa a cotação confirmada para criar um pedido e reservar o SKU cadastrado em uma transação. A rota comercial é `POST /api/representatives/kits/orders`. Os pedidos e os pagamentos usam o agregado privado `representative_kit_orders` e a referência `KITMG-<UUID>`. O checkout varejista e as operações `KITTEST` conservam seus pedidos e endpoints.
+
+O corte inicial preparado é Pix para MG01 e MG02, no atacado de mercadoria de terceiros sem ST quando comprovado. O comprador fiscal, a entrega e a saída física estão em MG. O endereço fiscal oficial e o endereço de entrega podem ser diferentes. A operação exige CNPJ, IE ativa e aprovados para o comprador e uma versão fiscal vigente para o SKU. O crédito só entra em regra aprovada da competência, com referência ao mês anterior. O banco conserva os kits existentes sem inserir SKU, aprovação fiscal, regra tributária ou dados de exemplo.
+
+O pagamento confirmado agenda a venda e a preparação da NF-e no Bling, com rateio por pares. A tela Notas fiscais do painel operacional permite aprovar o rascunho conferido no Bling. O envio exige o mesmo hash revisado e as flags existentes de transmissão. O despacho só avança após leitura do XML de produção com protocolo, série 002, emitente, comprador, endereço de entrega, retirada, itens e valores correspondentes ao pedido. O Melhor Envio cria o envio com a NF-e e só compra uma etiqueta dentro do custo cotado. O comprador acompanha o rastreio no portal.
+
+O cancelamento pode interromper uma reserva ou um Pix pendente. Se a confirmação do Pix vencer a corrida e o pedido ainda não tiver operação fiscal ou logística, o estorno integral é enfileirado. As devoluções aparecem no painel operacional, com permissões existentes para aprovar, inspecionar e estornar. A validação exige a NF-e autorizada correspondente ao pedido original, série 003 quando a própria curti Z emite a entrada, itens proporcionais aos kits devolvidos e saldo disponível. O estoque só recebe os kits aprovados na inspeção e após o estorno ser confirmado. Operações externas incertas conservam os identificadores e entram em conciliação sem uma nova escrita automática.
+
+### Publicação e habilitação
+
+1. Conferir o backup recuperável e o histórico de migrations no Supabase de destino. Aplicar as migrations do PR em ordem e publicar loja e painel pelo workflow oficial. Na publicação inicial, manter as flags comerciais desativadas.
+2. Conferir `/api/version` de cada Worker e executar os smoke tests do CI. Confirmar que o catálogo e o checkout varejista nacional continuam disponíveis. Conferir frete de kit em MG e recusa para outro estado com uma conta autorizada, sem iniciar cobrança.
+3. Confirmar contrato e modalidade sem ST para a rota inicial, classificação e origem do lote, guarda ou retirada em Nova Serrana, cadastro e regime do comprador, natureza fiscal, conta Bling e numeração disponível. Registrar a evidência de NF-e de venda e de pelo menos uma rota de devolução em homologação, ambas com protocolo autorizado. Para crédito, registrar a competência, a taxa e a base nas versões fiscais correspondentes.
+4. Conferir no Mercado Pago a titularidade da conta (collector), Pix de homologação, webhook e estorno. Conferir no Melhor Envio os volumes cotados, o vínculo da etiqueta ao XML, compra e rastreio em ambiente isolado. Cadastrar somente as aprovações sustentadas por essas verificações.
+5. Configurar `REPRESENTATIVE_KIT_MP_COLLECTOR_ID`, `REPRESENTATIVE_KIT_FULFILLMENT_ENABLED`, `REPRESENTATIVE_KIT_REFUNDS_ENABLED` e as autorizações existentes dos provedores no Worker. Habilitar `REPRESENTATIVE_KIT_CHECKOUT_ENABLED` após a verificação da rota. Para suspender novas compras, desativar essa última flag e conservar consultas, conciliação, devoluções e estornos dos pedidos existentes.
+

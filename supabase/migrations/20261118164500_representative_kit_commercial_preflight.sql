@@ -19,6 +19,15 @@ returns boolean language sql stable set search_path = '' as $$
       and bling ->> 'ipi_cst' = '99' and bling ->> 'ipi_cenq' = '999'
       and bling ->> 'pis_rate' ~ '^0([.]0+)?$' and bling ->> 'cofins_rate' ~ '^0([.]0+)?$'
       and bling ->> 'ipi_rate' ~ '^0([.]0+)?$'
+      and exists (
+        select 1 from jsonb_each(case when jsonb_typeof(config -> 'returnRules')='object'
+          then config -> 'returnRules' else '{}'::jsonb end) as returns(route,rule)
+        where ((route='buyer_outflow' and rule ->> 'cfop' ~ '^5[0-9]{3}$')
+            or (route='own_inflow' and rule ->> 'cfop' ~ '^1[0-9]{3}$'))
+          and ((rule ->> 'taxCodeKind'='CST' and rule ->> 'taxCode' ~ '^[0-9]{2}$')
+            or (rule ->> 'taxCodeKind'='CSOSN' and rule ->> 'taxCode' ~ '^[0-9]{3}$'))
+          and length(btrim(rule ->> 'homologationEvidence')) >= 10
+      )
       and 1 = (select count(*) from jsonb_array_elements(
         case when jsonb_typeof(bling -> 'natures') = 'array' then bling -> 'natures' else '[]'::jsonb end
       ) nature where nature -> 'final_consumer' = 'false'::jsonb and nature ->> 'external_nature_id' ~ '^[1-9][0-9]{0,15}$')

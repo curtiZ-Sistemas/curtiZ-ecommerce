@@ -17,6 +17,8 @@ const input = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pix"), orderId }).strict(),
   z.object({ action: z.literal("status"), orderId }).strict(),
   z.object({ action: z.literal("list") }).strict(),
+  z.object({ action: z.literal("return"), orderId, quantity: z.number().int().min(1).max(99),
+    reason: z.string().trim().min(5).max(500), idempotencyKey: z.string().uuid() }).strict(),
   z.object({ action: z.literal("cancel"), orderId }).strict()
 ]);
 
@@ -39,13 +41,20 @@ export async function POST(request: Request) {
       return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
     }
     await requirePrivateRateLimit(auth, {
-      reserve: "checkout_quote", pix: "payment_attempt", status: "payment_reconcile", cancel: "order_cancel", list: "customer_write"
+      reserve: "checkout_quote", pix: "payment_attempt", status: "payment_reconcile", cancel: "order_cancel", list: "customer_write",
+      return: "return_request"
     }[data.action]);
     const db = createServiceSupabaseClient();
     if (!db) throw new KitTransactionError(503);
     if (data.action === "list") {
       const orders = await kitCall(db, "list_representative_kit_orders", { p_actor: user.id });
       return reply({ ok: true, orders }, 200);
+    }
+    if (data.action === "return") {
+      const request = await kitRecord(db, "request_representative_kit_return", {
+        p_actor: user.id, p_order: data.orderId, p_quantity: data.quantity, p_reason: data.reason, p_key: data.idempotencyKey
+      });
+      return reply({ ok: true, request }, 200);
     }
     const provider = commercialKitPaymentProvider(environment);
     const collector = commercialKitCollector(environment);
@@ -67,8 +76,11 @@ export async function POST(request: Request) {
       ? await cancelCommercialKitPayment(db, provider, collector, user.id, data.orderId.toLowerCase())
       : await refreshCommercialKitPayment(db, provider, collector, user.id, data.orderId.toLowerCase());
     if (data.action === "cancel") return reply({ ok: true, order }, 200);
-    const tracking = await kitCall(db, "read_representative_kit_tracking", { p_actor: user.id, p_order: data.orderId });
-    return reply({ ok: true, order, tracking }, 200);
+    const [tracking, returns] = await Promise.all([
+      kitCall(db, "read_representative_kit_tracking", { p_actor: user.id, p_order: data.orderId }),
+      kitCall(db, "list_representative_kit_returns", { p_actor: user.id, p_order: data.orderId })
+    ]);
+    return reply({ ok: true, order, tracking, returns }, 200);
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError ? error.status : 503;
     return reply({ message: status >= 500 ? "Não foi possível confirmar o estado. Consulte o pedido antes de tentar novamente."

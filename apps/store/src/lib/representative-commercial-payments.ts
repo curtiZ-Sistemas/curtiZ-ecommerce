@@ -12,6 +12,12 @@ const kitReference = (orderId: string) => `KITMG-${orderId}`;
 export function commercialKitCheckoutConfigured(environment: RuntimeEnvironment) {
   return environment.APP_ENV === "production" && environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED === "true"
     && environment.REPRESENTATIVE_KIT_FULFILLMENT_ENABLED === "true" && environment.BLING_FISCAL_READY === "true"
+    && environment.REPRESENTATIVE_KIT_REFUNDS_ENABLED === "true" && environment.BLING_ORDER_SYNC_ENABLED === "true"
+    && environment.BLING_INVOICE_SYNC_ENABLED === "true" && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true"
+    && environment.BLING_INVOICE_SEND_ENABLED === "true" && environment.BLING_INVOICE_TRANSMISSION_MODE === "production"
+    && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED === "true"
+    && environment.MELHOR_ENVIO_LABEL_PURCHASE_ENABLED === "true" && environment.MELHOR_ENVIO_LABEL_GENERATION_ENABLED === "true"
+    && environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true"
     && getMelhorEnvioEnvironment(environment) === "production" && getMercadoPagoCredentials(environment)?.mode === "production"
     && /^\d{1,30}$/u.test(environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID?.trim() ?? "");
 }
@@ -61,7 +67,7 @@ export function kitPaymentView(context: UnknownRecord, payment?: MercadoPagoPaym
     && payment.pixCopyPaste.length > 0 && payment.pixCopyPaste.length <= 1024
     ? { copyPaste: payment.pixCopyPaste, expiresAt: payment.expiresAt } : null;
   return {
-    orderId: readString(context, "orderId"), state, cancellationRequested,
+    orderId: readString(context, "orderId"), state, cancellationRequested, canCancelPaid: context.canCancelPaid === true,
     amountInCents: readNumber(context, "amountInCents"), shippingInCents: readNumber(context, "shippingInCents"),
     reservedUntil: readString(context, "reservedUntil"),
     ...(pix ? { pix } : {})

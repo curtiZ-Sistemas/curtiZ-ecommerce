@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { readBlingAuthorizedResaleXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
+import { readBlingAuthorizedResaleReturnXml, readBlingAuthorizedResaleXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
 import { returnTestKey, returnTestXml } from "./bling-return-test-fixture";
 
 const issuer = "12345678000195";
@@ -45,5 +45,41 @@ describe("Bling authorized MG resale invoice", () => {
 
   it("does not treat a homologation XML as a production authorization", () => {
     expect(() => readBlingAuthorizedResaleXml(xml(), key, { ...expected, environment: 1 })).toThrow();
+  });
+
+  it("checks a distinct delivery address without changing the official fiscal recipient", () => {
+    const distinct = { ...expected, deliveryPostalCode: "30110200" };
+    expect(() => readBlingAuthorizedResaleXml(xml(), key, distinct)).toThrow();
+    const withDelivery = xml().replace("</retirada>", "</retirada><entrega><UF>MG</UF><CEP>30110200</CEP></entrega>");
+    expect(readBlingAuthorizedResaleXml(withDelivery, key, distinct)).toMatchObject({ invoiceKey: key });
+    expect(() => readBlingAuthorizedResaleXml(withDelivery.replace("<CEP>30110200</CEP>", "<CEP>01310100</CEP>"), key, distinct)).toThrow();
+  });
+});
+
+describe("authorized resale returns", () => {
+  const returnKey = "312611" + issuer + "55003000000002" + "2".repeat(10);
+  const returnExpected = {
+    origin: "own_inflow" as const, environment: 2 as const, issuerDocument: issuer, buyerDocument: expected.buyerDocument,
+    originalKey: key, originalKitQuantity: 2, returnKitQuantity: 1, cfop: "1202",
+    taxCodeKind: "CSOSN" as const, taxCode: "102", refundInCents: 1100
+  };
+  const returnXml = () => xml().replaceAll(key,returnKey)
+    .replace("<tpNF>1</tpNF>", "<tpNF>0</tpNF>").replace("<finNFe>1</finNFe>", "<finNFe>4</finNFe>")
+    .replace("<serie>2</serie>", "<serie>3</serie>").replace("<nNF>1</nNF>", "<nNF>2</nNF>")
+    .replace("</ide>", `<NFref><refNFe>${key}</refNFe></NFref></ide>`)
+    .replace("<qCom>2.0000</qCom>","<qCom>1.0000</qCom>").replaceAll("<vProd>20.00</vProd>","<vProd>10.00</vProd>")
+    .replaceAll("<vFrete>2.00</vFrete>","<vFrete>1.00</vFrete>").replace("<vNF>22.00</vNF>","<vNF>11.00</vNF>")
+    .replace("<CFOP>5102</CFOP>","<CFOP>1202</CFOP>");
+  it("checks series, original invoice, partial pair quantities and the approved refund amount", () => {
+    expect(readBlingAuthorizedResaleReturnXml(returnXml(),returnKey,xml(),returnExpected)).toMatchObject({
+      key: returnKey, protocol: "000000000000001", totalInCents: 1100
+    });
+  });
+  it.each([
+    ["<cStat>100</cStat>","<cStat>204</cStat>"], ["<CFOP>1202</CFOP>","<CFOP>2202</CFOP>"],
+    ["<nNF>2</nNF>","<nNF>3</nNF>"], ["<cProd>TEST-PAIR</cProd>","<cProd>OTHER-PAIR</cProd>"],
+    [`<refNFe>${key}</refNFe>`,`<refNFe>${returnKey}</refNFe>`]
+  ])("rejects a return whose fiscal evidence does not match %s",(from,to) => {
+    expect(() => readBlingAuthorizedResaleReturnXml(returnXml().replace(from,to),returnKey,xml(),returnExpected)).toThrow();
   });
 });

@@ -30,7 +30,8 @@ insert into public.addresses(id,user_id,label,recipient_name,postal_code,street,
   select address,actor,'Test','Test recipient','30110-100','Test street','1','Test district','Test city','MG' from commercial_kit_fixture;
 
 alter table commercial_kit_fixture add column request_key uuid not null default gen_random_uuid(),
-  add column rule_version uuid not null default gen_random_uuid(), add column order_id uuid;
+  add column rule_version uuid not null default gen_random_uuid(), add column order_id uuid,
+  add column expected_payment text not null default '123';
 
 insert into private.bling_kit_fiscal_components(
   kit_variant_id,position,sku,description,unit,quantity_pairs,allocation_weight,ncm,origin,cest,source_hash,evidence_reference
@@ -77,6 +78,7 @@ insert into private.representative_resale_fiscal_rule_versions
 select rule_version,gen_random_uuid(),1,'synthetic issuer',public.read_representative_resale_product_fingerprint(variant),
   'MG','MG','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day',
   '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,
+    "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic return XML"}},
     "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":2,"document_model":55,"cfop":"5102",
     "csosn":"102","icms_rate":0,"pis_cst":"49","cofins_cst":"49","ipi_cst":"99","ipi_cenq":"999",
     "pis_rate":0,"cofins_rate":0,"ipi_rate":0,"natures":[{"final_consumer":false,"external_nature_id":123}]}}'
@@ -97,7 +99,8 @@ update public.products set width_cm = 10 where id = (select product from commerc
 select throws_ok($$select pg_temp.reserve_commercial_kit()$$,'23514','resale_configuration_required',
   'the fiscal buyer and its official registration are required before creating an order');
 update private.representative_kit_checkout_approvals set buyer_legal_name = 'Synthetic buyer LTDA',
-  buyer_document = '11222333000181', buyer_state_registration = '0012345678900'
+  buyer_document = '11222333000181', buyer_state_registration = '0012345678900',
+  buyer_fiscal_address = '{"state":"MG","postal_code":"30110100","street":"Test street","number":"1","district":"Test district","city":"Test city"}'
   where actor_id = (select actor from commercial_kit_fixture);
 
 select is(pg_temp.reserve_commercial_kit()->>'amountInCents','12100','uses the locked catalog price and private freight');
@@ -130,10 +133,10 @@ create function pg_temp.claim_commercial_pix() returns jsonb language sql as $$
   select public.claim_representative_kit_pix(actor,order_id) from commercial_kit_fixture;
 $$;
 
-create function pg_temp.settle_commercial_pix(p_status text,p_id text default '123',p_amount bigint default 12100,
+create function pg_temp.settle_commercial_pix(p_status text,p_id text default null,p_amount bigint default 12100,
   p_refunds jsonb default '[]')
 returns jsonb language sql as $$
-  select public.settle_representative_kit_payment(order_id,p_id,'KITMG-'||order_id,p_amount,'BRL',p_status,now(),p_refunds)
+  select public.settle_representative_kit_payment(order_id,coalesce(p_id,expected_payment),'KITMG-'||order_id,p_amount,'BRL',p_status,now(),p_refunds)
   from commercial_kit_fixture;
 $$;
 
@@ -164,9 +167,29 @@ select results_eq(
   $$values (1,0)$$,'paid stock is debited once');
 select is((select count(*)::integer from public.inventory_movements where reference_id=(select order_id from commercial_kit_fixture)),
   1,'debit has one physical movement');
+select is((select count(*)::integer from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture) and reason='undispatched_cancellation'),
+  1,'the cancellation race enqueues one full estorno before fulfillment');
+select is((select public.claim_representative_kit_refund(id,'{}') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'the unshipped order can refund after confirmed payment');
+select is(pg_temp.settle_commercial_pix('refunded',null,12100,'[{"id":"88","amountInCents":12100}]')->>'state',
+  'refunded','an approved full refund reconciles to the payment ledger');
+select is((select public.acknowledge_representative_kit_refund(id,'88') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'the exact provider refund receipt is recorded');
+select is((select public.finish_representative_kit_refund(id,'88') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'the provider receipt closes the local refund');
+select is((select public.finish_representative_kit_refund(id,'88') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'the unshipped refund can replay safely');
+select results_eq(
+  $$select available_quantity,reserved_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)$$,
+  $$values (3,0)$$,'confirmed unshipped refund returns stock exactly once');
 
-insert into private.representative_kit_fulfillment(order_id,bling_sale_id,bling_invoice_id,shipment_id)
-select order_id,123,456,'synthetic-carrier' from commercial_kit_fixture;
+update commercial_kit_fixture set quote=pg_temp.commercial_quote(),request_key=gen_random_uuid(),expected_payment='222';
+update commercial_kit_fixture set order_id=(pg_temp.reserve_commercial_kit()->>'orderId')::uuid;
+select is(pg_temp.claim_commercial_pix()->>'buyerDocument','11222333000181','a second order has an independent payment claim');
+select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','an ordinary payment enqueues fulfillment');
+update private.representative_kit_fulfillment set bling_sale_id=123,bling_invoice_id=456,shipment_id='synthetic-carrier'
+  where order_id=(select order_id from commercial_kit_fixture);
 create function pg_temp.record_kit_invoice(p_series text default '002')
 returns boolean language sql as $$
   select public.record_representative_kit_authorized_invoice(order_id,123,456,
@@ -193,13 +216,31 @@ select order_id,2100,'undispatched_cancellation','synthetic cancellation','synth
 select is((select public.claim_representative_kit_refund(id,'{}') from private.representative_kit_refund_requests
   where order_id=(select order_id from commercial_kit_fixture)),false,'an order in transit cannot use the unshipped refund path');
 
-select is(pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2100}]')->>'state',
+create function pg_temp.request_kit_return(p_quantity integer,p_key uuid)
+returns jsonb language sql as $$
+  select public.request_representative_kit_return(actor,order_id,p_quantity,'Synthetic return request',p_key)
+  from commercial_kit_fixture;
+$$;
+select throws_ok($$select pg_temp.request_kit_return(1,'11111111-1111-4111-8111-111111111111')$$,
+  '23514','kit_return_unavailable','a shipment in transit cannot be refunded as a received return');
+select is(pg_temp.record_kit_tracking('delivered'),true,'delivery is recorded from the confirmed carrier');
+select is(pg_temp.request_kit_return(1,'11111111-1111-4111-8111-111111111111')->>'state','requested','buyer can request one returned kit');
+select is(pg_temp.request_kit_return(1,'11111111-1111-4111-8111-111111111111')->>'state','requested','return request is idempotent');
+select throws_ok($$select pg_temp.request_kit_return(2,'22222222-2222-4222-8222-222222222222')$$,
+  '23514','kit_return_unavailable','return requests share one order quantity balance');
+select is((select public.list_representative_kit_returns(outsider,order_id) from commercial_kit_fixture),
+  '[]'::jsonb,'another buyer cannot see private return records');
+select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555003'||repeat('1',19),
+  '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
+  false,'XML cannot bypass inspection and receipt');
+
+select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2100}]')->>'state',
   'manual_review','a partial refund blocks fulfillment without automatically returning stock');
-select is(pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2100}]')->>'refundedInCents',
+select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2100}]')->>'refundedInCents',
   '2100','repeated refund events cannot duplicate the refund amount');
-select throws_ok($$select pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2101}]')$$,
+select throws_ok($$select pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2101}]')$$,
   '23514','kit_refund_identity_mismatch','existing refund amount cannot be changed');
-select is(pg_temp.settle_commercial_pix('refunded','123',12100,'[{"id":"100","amountInCents":10000}]')->>'state',
+select is(pg_temp.settle_commercial_pix('refunded',null,12100,'[{"id":"100","amountInCents":10000}]')->>'state',
   'refunded','full provider refund is recorded');
 select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
   1,'a financial refund does not put sold items back on the shelf');

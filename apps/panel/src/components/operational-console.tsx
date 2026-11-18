@@ -1,6 +1,7 @@
 "use client";
 import { returnKindLabels, returnStatusLabels, type ReturnKind } from "@curtiz/domain";
 import { ReturnReviewActions } from "./return-review-actions";
+import { RepresentativeKitOperations } from "./representative-kit-operations";
 
 import {
   AlertTriangle,
@@ -544,12 +545,14 @@ function Section({
       section === "trocas"
         ? data.returns.filter((item) => item.requestedResolution === "exchange")
         : data.returns;
-    return <Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} canReview={capabilities.reviewReturns === true} canRefund={capabilities.refundReturns === true} />;
+    return <><Returns records={list} run={run} processing={processing} canInspect={capabilities.inspectReturns} canReview={capabilities.reviewReturns === true} canRefund={capabilities.refundReturns === true} />
+      {section === "devolucoes" && <RepresentativeKitOperations mode="returns" canInspect={capabilities.inspectReturns}
+        canReview={capabilities.reviewReturns} canRefund={capabilities.refundReturns} />}</>;
   }
   if (section === "ocorrencias") {
     return <Occurrences occurrences={data.occurrences} run={run} processing={processing} canCreate={capabilities.createOccurrences} canResolve={capabilities.resolveOccurrences} />;
   }
-  if (section === "notas-fiscais") return <Invoices invoices={data.invoices} />;
+  if (section === "notas-fiscais") return <><Invoices invoices={data.invoices} /><RepresentativeKitOperations mode="fiscal" /></>;
   if (section === "representantes") return <Representatives representatives={data.representatives} />;
   if (section === "pendencias") {
     const openTasks = data.tasks.filter((task) => task.status !== "completed");

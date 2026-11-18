@@ -56,6 +56,7 @@ insert into private.representative_resale_fiscal_rule_versions
 select rule_version,gen_random_uuid(),1,'synthetic issuer',public.read_representative_resale_product_fingerprint(variant),
   'MG','MG','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day',
   '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,
+    "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic return XML"}},
     "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":2,"document_model":55,"cfop":"5102",
     "csosn":"102","icms_rate":0,"pis_cst":"49","cofins_cst":"49","ipi_cst":"99","ipi_cenq":"999",
     "pis_rate":0,"cofins_rate":0,"ipi_rate":0,"natures":[{"final_consumer":false,"external_nature_id":123}]}}'
@@ -64,9 +65,10 @@ insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,
   select rule_version,'synthetic approver','synthetic evidence' from kit_concurrency_fixture.ids;
 insert into private.representative_kit_checkout_approvals(
   actor_id,rule_version_id,buyer_profile,buyer_fiscal_state,origin_postal_code,buyer_evidence,operation_evidence,
-  stock_evidence,homologation_evidence,valid_until,buyer_document,buyer_legal_name,buyer_state_registration)
+  stock_evidence,homologation_evidence,valid_until,buyer_document,buyer_legal_name,buyer_state_registration,buyer_fiscal_address)
 select actor,rule_version,'MG02','MG','35520000','synthetic buyer','synthetic operation','synthetic stock',
-  'synthetic XML authorization',now()+interval '1 hour','11222333000181','Synthetic buyer','0012345678900'
+  'synthetic XML authorization',now()+interval '1 hour','11222333000181','Synthetic buyer','0012345678900',
+  '{"state":"MG","postal_code":"30110100","street":"Test street","number":"1","district":"Test district","city":"Test city"}'
 from kit_concurrency_fixture.ids;
 create function kit_concurrency_fixture.quote() returns uuid language sql as $$
   select (public.confirm_representative_kit_shipping_quote(actor,variant,2,address,'30110100',repeat('a',64),
