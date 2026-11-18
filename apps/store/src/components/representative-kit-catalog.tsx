@@ -7,6 +7,7 @@ import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
 import { ProductShippingPreview } from "./product-shipping-preview";
 import { RepresentativeKitDelivery } from "./representative-kit-delivery";
+import { RepresentativeKitOrderHistory } from "./representative-kit-order";
 import { representativeKitState } from "../lib/representative-resale-scope";
 
 type RecipientFields = Pick<ResaleScenario, "personType" | "icmsStatus">;
@@ -60,12 +61,13 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
         throw new Error("Não foi possível conferir este kit.");
       const unavailable = data.blockers.includes("commercial_stock_unavailable");
       setMessages(current => ({ ...current, [variantId]: unavailable ? "Quantidade indisponível no estoque." :
-        `${quantity} kit(s): ${formatBRL(Number(data.merchandiseTotalInCents))} em produtos. A compra continua em homologação.` }));
+        `${quantity} kit(s): ${formatBRL(Number(data.merchandiseTotalInCents))} em produtos.` }));
     } catch { setMessages(current => ({ ...current, [variantId]: "Não foi possível conferir este kit. Tente novamente." })); }
     finally { setChecking(""); }
   }
   return <section>
     {header}
+    {page?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={page.checkoutConfigured === true} />}
     {Boolean(page?.items.length) && (
       <fieldset className="representative-card representative-profile-form" disabled={Boolean(checking)}>
         <legend>Dados para a prévia de revenda</legend>
@@ -117,7 +119,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
         {shippingVariant === kit.variantId && <ProductShippingPreview
           mode="kit" variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} />}
         {kit.available ? <RepresentativeKitDelivery variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} /> : null}
-        <button type="button" className="primary-button" disabled>Compra em homologação</button>
+        {!page.checkoutConfigured && <button type="button" className="primary-button" disabled>Compra em homologação</button>}
       </article>)}</div>}
     <nav aria-label="Páginas de kits">
       <button type="button" disabled={offset === 0 || !page} onClick={() => setOffset(value => Math.max(0, value - 24))}>Anterior</button>

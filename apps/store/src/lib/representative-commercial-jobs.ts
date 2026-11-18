@@ -1,7 +1,9 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { logServerEvent } from "@curtiz/security";
-import { commercialKitCollector, commercialKitPaymentProvider, recoverCommercialKitPayment } from "./representative-commercial-payments";
+import {
+  commercialKitCollector, commercialKitPaymentProvider, reconcileCommercialKitRefund, recoverCommercialKitPayment
+} from "./representative-commercial-payments";
 import { kitCall } from "./representative-test-transactions";
 import { type RuntimeEnvironment } from "./runtime-environment";
 import { readRows, readString } from "./unknown-data";
@@ -28,6 +30,19 @@ export async function runRepresentativeCommercialJobs(environment: RuntimeEnviro
     } catch {
       logServerEvent("error", "representative_commercial_reconciliation_failed", { orderId });
       await kitCall(db, "defer_representative_kit_payment_check", { p_order: orderId }).catch(() => null);
+    }
+  }
+  const refunds = await kitCall(db, "due_representative_kit_refunds", {});
+  if (!Array.isArray(refunds)) throw new Error("kit_refund_job_invalid");
+  for (const job of readRows(refunds)) {
+    const refundId = readString(job, "refundId");
+    try {
+      await reconcileCommercialKitRefund(db, commercialKitPaymentProvider(environment, transport),
+        commercialKitCollector(environment), job, environment.REPRESENTATIVE_KIT_REFUNDS_ENABLED === "true");
+    } catch {
+      logServerEvent("error", "representative_commercial_refund_reconciliation_failed", { refundId });
+    } finally {
+      await kitCall(db, "defer_representative_kit_refund", { p_refund: refundId });
     }
   }
 }

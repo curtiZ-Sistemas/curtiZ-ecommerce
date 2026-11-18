@@ -1,13 +1,12 @@
-import { getMelhorEnvioEnvironment } from "@curtiz/config";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 import {
-  beginCommercialKitPix, cancelCommercialKitPayment, commercialKitCollector, commercialKitPaymentProvider,
+  beginCommercialKitPix, cancelCommercialKitPayment, commercialKitCheckoutConfigured, commercialKitCollector, commercialKitPaymentProvider,
   kitPaymentView, refreshCommercialKitPayment
 } from "@/lib/representative-commercial-payments";
 import { isRepresentativeKitPostalCode } from "@/lib/representative-resale-scope";
-import { KitTransactionError, kitRecord } from "@/lib/representative-test-transactions";
+import { KitTransactionError, kitCall, kitRecord } from "@/lib/representative-test-transactions";
 import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 
@@ -17,6 +16,7 @@ const input = z.discriminatedUnion("action", [
     addressId: z.string().uuid(), quantity: z.number().int().min(1).max(99), idempotencyKey: z.string().uuid() }).strict(),
   z.object({ action: z.literal("pix"), orderId }).strict(),
   z.object({ action: z.literal("status"), orderId }).strict(),
+  z.object({ action: z.literal("list") }).strict(),
   z.object({ action: z.literal("cancel"), orderId }).strict()
 ]);
 
@@ -35,17 +35,18 @@ export async function POST(request: Request) {
     const user = session?.data.user;
     if (!auth || session?.error || !user) throw new KitTransactionError(401);
     const environment = getStoreRuntimeEnvironment();
-    if (data.action === "reserve" || data.action === "pix") {
-      if (environment.APP_ENV !== "production" || environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED !== "true"
-        || environment.BLING_FISCAL_READY !== "true" || getMelhorEnvioEnvironment(environment) !== "production") {
-        return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
-      }
+    if ((data.action === "reserve" || data.action === "pix") && !commercialKitCheckoutConfigured(environment)) {
+      return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
     }
     await requirePrivateRateLimit(auth, {
-      reserve: "checkout_quote", pix: "payment_attempt", status: "payment_reconcile", cancel: "order_cancel"
+      reserve: "checkout_quote", pix: "payment_attempt", status: "payment_reconcile", cancel: "order_cancel", list: "customer_write"
     }[data.action]);
     const db = createServiceSupabaseClient();
     if (!db) throw new KitTransactionError(503);
+    if (data.action === "list") {
+      const orders = await kitCall(db, "list_representative_kit_orders", { p_actor: user.id });
+      return reply({ ok: true, orders }, 200);
+    }
     const provider = commercialKitPaymentProvider(environment);
     const collector = commercialKitCollector(environment);
     if (data.action === "reserve") {
@@ -65,7 +66,9 @@ export async function POST(request: Request) {
     const order = data.action === "cancel"
       ? await cancelCommercialKitPayment(db, provider, collector, user.id, data.orderId.toLowerCase())
       : await refreshCommercialKitPayment(db, provider, collector, user.id, data.orderId.toLowerCase());
-    return reply({ ok: true, order }, 200);
+    if (data.action === "cancel") return reply({ ok: true, order }, 200);
+    const tracking = await kitCall(db, "read_representative_kit_tracking", { p_actor: user.id, p_order: data.orderId });
+    return reply({ ok: true, order, tracking }, 200);
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError ? error.status : 503;
     return reply({ message: status >= 500 ? "Não foi possível confirmar o estado. Consulte o pedido antes de tentar novamente."

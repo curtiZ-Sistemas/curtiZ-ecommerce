@@ -35,9 +35,7 @@ const optionalMoney = (node: Node, name: string) => {
 
 // This reads an archive already obtained from the provider. It does not claim
 // independent XML signature verification, accept uploads, or fetch XML resources.
-export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expectedArchive?: {
-  invoiceNumber: string; series: number; issuerDocument: string; totalInCents: number;
-}) {
+function parseAuthorizedBlingInvoice(xml: string, invoiceKey: string) {
   if (!/^\d{44}$/u.test(invoiceKey) || new TextEncoder().encode(xml).length > BLING_RETURN_XML_LIMIT
     || /<!DOCTYPE|<!ENTITY/iu.test(xml)) return fail();
   const stack: Node[] = [];
@@ -77,20 +75,23 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expe
   const environment = value(ide, "tpAmb");
   if (info.attributes.versao !== "4.00" || info.attributes.Id !== `NFe${invoiceKey}` || value(protocol, "chNFe") !== invoiceKey
     || !["100", "150"].includes(value(protocol, "cStat")) || !/^\d{15}$/u.test(value(protocol, "nProt"))
-    || !["1", "2"].includes(environment) || value(protocol, "tpAmb") !== environment
-    || value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1"
-    || value(ide, "indFinal") !== "1" || value(recipient, "indIEDest") !== "9"
-    || !/^\d{11}$/u.test(value(recipient, "CPF")) || children(recipient, "CNPJ").length) return fail();
-  if (expectedArchive && (value(ide, "mod") !== "55" || invoiceKey.slice(20, 22) !== "55"
+    || !["1", "2"].includes(environment) || value(protocol, "tpAmb") !== environment) return fail();
+  return { info, ide, recipient, protocol, environment };
+}
+
+type ArchiveExpectation = { invoiceNumber: string; series: number; issuerDocument: string; totalInCents: number };
+function assertBlingArchiveIdentity(info: Node, ide: Node, invoiceKey: string, expectedArchive: ArchiveExpectation) {
+  if (value(ide, "mod") !== "55" || invoiceKey.slice(20, 22) !== "55"
     || value(one(info, "emit"), "CNPJ") !== expectedArchive.issuerDocument
     || invoiceKey.slice(6, 20) !== expectedArchive.issuerDocument
     || Number(value(ide, "serie")) !== expectedArchive.series || Number(invoiceKey.slice(22, 25)) !== expectedArchive.series
     || !/^\d{1,9}$/u.test(expectedArchive.invoiceNumber) || Number(expectedArchive.invoiceNumber) < 1
     || Number(value(ide, "nNF")) !== Number(expectedArchive.invoiceNumber)
-    || Number(invoiceKey.slice(25, 34)) !== Number(expectedArchive.invoiceNumber)))
+    || Number(invoiceKey.slice(25, 34)) !== Number(expectedArchive.invoiceNumber))
     throw new BlingError("fiscal_archive_identity_mismatch", 409);
-  const destinationState = value(one(recipient, "enderDest"), "UF");
-  if (!/^[A-Z]{2}$/u.test(destinationState)) return fail();
+}
+
+function readBlingInvoiceItems(info: Node, expectedTotal?: number) {
   const details = children(info, "det");
   if (!details.length || details.length > 990) return fail();
   const itemAllocationsInCents: { shippingInCents: number; discountInCents: number; additionalInCents: number }[] = [];
@@ -121,7 +122,7 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expe
     additionalInCents: money(value(totals, "vOutro")) };
   const gross = items.reduce((sum, item) => sum + BigInt(item.quantity) * BigInt(item.unitPriceInCents), 0n);
   const totalInCents = money(value(totals, "vNF"));
-  if (expectedArchive && totalInCents !== expectedArchive.totalInCents)
+  if (expectedTotal !== undefined && totalInCents !== expectedTotal)
     throw new BlingError("fiscal_archive_identity_mismatch", 409);
   if (optionalMoney(totals, "vSeg") !== 0 || gross !== BigInt(money(value(totals, "vProd")))
     || gross + BigInt(amounts.shippingInCents) + BigInt(amounts.additionalInCents) - BigInt(amounts.discountInCents) !== BigInt(totalInCents)
@@ -129,5 +130,89 @@ export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expe
       const field = key as keyof typeof amounts;
       return itemAllocationsInCents.reduce((sum, item) => sum + BigInt(item[field]), 0n) !== BigInt(amounts[field]);
     })) return fail();
-  return { invoiceKey, items, itemAllocationsInCents, ...amounts, totalInCents, destinationState, environment: Number(environment) };
+  return { items, itemAllocationsInCents, ...amounts, totalInCents };
+}
+
+export function readBlingReturnOriginalXml(xml: string, invoiceKey: string, expectedArchive?: ArchiveExpectation) {
+  const { info, ide, recipient, environment } = parseAuthorizedBlingInvoice(xml, invoiceKey);
+  if (value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1"
+    || value(ide, "indFinal") !== "1" || value(recipient, "indIEDest") !== "9"
+    || !/^\d{11}$/u.test(value(recipient, "CPF")) || children(recipient, "CNPJ").length) return fail();
+  if (expectedArchive) assertBlingArchiveIdentity(info, ide, invoiceKey, expectedArchive);
+  const destinationState = value(one(recipient, "enderDest"), "UF");
+  if (!/^[A-Z]{2}$/u.test(destinationState)) return fail();
+  return { invoiceKey, ...readBlingInvoiceItems(info, expectedArchive?.totalInCents),
+    destinationState, environment: Number(environment) };
+}
+
+type ResaleInvoiceLine = Pick<BlingFiscalItem, "sku" | "unit" | "quantity" | "unitPriceInCents" | "ncm" | "origin" | "cest"> & {
+  cfop: string;
+  csosn: string;
+  icms: Record<string, string>;
+  shippingInCents: number;
+};
+
+export type BlingResaleInvoiceExpectation = ArchiveExpectation & {
+  environment: 1 | 2;
+  issueDate: string;
+  buyerDocument: string;
+  buyerStateRegistration: string;
+  destinationPostalCode: string;
+  originPostalCode: string;
+  shippingInCents: number;
+  additionalInfo?: string;
+  items: ResaleInvoiceLine[];
+};
+
+const fiscalDecimal = (entry: string) => /^\d+(?:\.\d+)?$/u.test(entry)
+  ? entry.replace(/^(0+)(?=\d)/u, "").replace(/(\.\d*?)0+$/u, "$1").replace(/\.$/u, "") : null;
+
+// Validate the XML downloaded from Bling against the paid order and its approved
+// tax parameters. Every ICMS tag must match the configured fiscal mirror.
+export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, expected: BlingResaleInvoiceExpectation) {
+  const { info, ide, recipient, protocol, environment } = parseAuthorizedBlingInvoice(xml, invoiceKey);
+  assertBlingArchiveIdentity(info, ide, invoiceKey, expected);
+  const emitter = one(info, "emit");
+  const destination = one(recipient, "enderDest");
+  const pickup = children(info, "retirada").length ? one(info, "retirada") : one(emitter, "enderEmit");
+  if (expected.series !== 2 || environment !== String(expected.environment)
+    || value(ide, "cUF") !== "31" || invoiceKey.slice(0, 2) !== "31"
+    || value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1" || value(ide, "idDest") !== "1"
+    || value(ide, "indFinal") !== "0" || value(ide, "indPres") !== "2" || value(recipient, "indIEDest") !== "1"
+    || !/^\d{4}-\d{2}-\d{2}$/u.test(expected.issueDate)
+    || value(ide, "dhEmi").slice(0, 10) !== expected.issueDate
+    || !/^\d{14}$/u.test(expected.buyerDocument) || value(recipient, "CNPJ") !== expected.buyerDocument
+    || !/^\d{2,14}$/u.test(expected.buyerStateRegistration) || value(recipient, "IE") !== expected.buyerStateRegistration
+    || children(recipient, "CPF").length || value(destination, "UF") !== "MG"
+    || !/^3\d{7}$/u.test(expected.destinationPostalCode) || value(destination, "CEP") !== expected.destinationPostalCode
+    || value(one(emitter, "enderEmit"), "UF") !== "MG" || value(pickup, "UF") !== "MG"
+    || value(pickup, "cMun") !== "3145208"
+    || !/^3\d{7}$/u.test(expected.originPostalCode) || value(pickup, "CEP") !== expected.originPostalCode) return fail();
+  const invoice = readBlingInvoiceItems(info, expected.totalInCents);
+  if (expected.additionalInfo && !value(one(info, "infAdic"), "infCpl").includes(expected.additionalInfo)) return fail();
+  const details = children(info, "det");
+  if (invoice.shippingInCents !== expected.shippingInCents || invoice.items.length !== expected.items.length
+    || invoice.discountInCents !== 0 || invoice.additionalInCents !== 0) return fail();
+  for (const [index, item] of invoice.items.entries()) {
+    const line = expected.items[index]!;
+    const detail = details[index]!;
+    const product = one(detail, "prod");
+    const groups = one(one(detail, "imposto"), "ICMS").children.filter(child => child.uri === namespace);
+    const group = groups[0]!;
+    const fields = group.children.filter(child => child.uri === namespace);
+    const approved = { ...line.icms, orig: String(line.origin), CSOSN: line.csosn };
+    if (item.sku !== line.sku || item.unit !== line.unit || item.quantity !== line.quantity
+      || item.unitPriceInCents !== line.unitPriceInCents || item.ncm !== line.ncm || item.cest !== line.cest
+      || item.origin !== line.origin || !/^5\d{3}$/u.test(line.cfop) || value(product, "CFOP") !== line.cfop
+      || !/^\d{3}$/u.test(line.csosn) || !/^ICMSSN\d{3}$/u.test(group.name)
+      || fields.length !== Object.keys(approved).length
+      || Object.entries(approved).some(([key, expectedValue]) => {
+        const actual = value(group, key);
+        if (!/^[pv][A-Z]/u.test(key)) return actual !== expectedValue;
+        const expectedNumber = fiscalDecimal(expectedValue);
+        return expectedNumber === null || fiscalDecimal(actual) !== expectedNumber;
+      })
+      || invoice.itemAllocationsInCents[index]?.shippingInCents !== line.shippingInCents) return fail();
+  }
+  return { invoiceKey, protocol: value(protocol, "nProt"), environment: Number(environment), ...invoice };
 }

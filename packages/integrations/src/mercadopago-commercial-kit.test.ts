@@ -19,7 +19,8 @@ describe("Mercado Pago commercial kit Pix", () => {
     const [url, init] = transport.mock.calls[0]!;
     expect(url).toBe("https://api.mercadopago.com/v1/payments");
     expect(new Headers(init?.headers).get("x-idempotency-key")).toBe(orderId);
-    expect(JSON.parse(String(init?.body))).toMatchObject({
+    if (typeof init?.body !== "string") throw new Error("Expected a JSON request body");
+    expect(JSON.parse(init.body)).toMatchObject({
       transaction_amount: 121, external_reference: reference, payment_method_id: "pix",
       payer: { identification: { type: "CNPJ", number: input.buyerDocument } },
       date_of_expiration: "2099-01-01T00:00:00.000Z"

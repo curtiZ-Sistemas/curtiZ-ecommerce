@@ -1,5 +1,5 @@
 import "server-only";
-import { getMercadoPagoCredentials } from "@curtiz/config";
+import { getMelhorEnvioEnvironment, getMercadoPagoCredentials } from "@curtiz/config";
 import { MercadoPagoPaymentProvider, type MercadoPagoPayment } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { KitTransactionError, kitCall, kitRecord } from "./representative-test-transactions";
@@ -8,6 +8,13 @@ import { readNumber, readString, type UnknownRecord } from "./unknown-data";
 
 const referencePattern = /^KITMG-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/u;
 const kitReference = (orderId: string) => `KITMG-${orderId}`;
+
+export function commercialKitCheckoutConfigured(environment: RuntimeEnvironment) {
+  return environment.APP_ENV === "production" && environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED === "true"
+    && environment.REPRESENTATIVE_KIT_FULFILLMENT_ENABLED === "true" && environment.BLING_FISCAL_READY === "true"
+    && getMelhorEnvioEnvironment(environment) === "production" && getMercadoPagoCredentials(environment)?.mode === "production"
+    && /^\d{1,30}$/u.test(environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID?.trim() ?? "");
+}
 
 export function commercialKitCollector(environment: RuntimeEnvironment = getStoreRuntimeEnvironment()) {
   const collector = environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID?.trim() ?? "";
@@ -142,4 +149,34 @@ export async function recoverCommercialKitPayment(
     return;
   }
   await reconcileCommercialKitPayment(db, payment, collector, orderId);
+}
+
+export async function reconcileCommercialKitRefund(
+  db: SupabaseClient, provider: MercadoPagoPaymentProvider, collector: string, job: UnknownRecord, writesEnabled: boolean
+) {
+  const refundId = readString(job, "refundId");
+  const orderId = readString(job, "orderId");
+  const paymentId = readString(job, "paymentId");
+  let payment = await provider.getPayment(paymentId);
+  await reconcileCommercialKitPayment(db, payment, collector, orderId);
+
+  let acknowledged = readString(job, "providerAckId");
+  if (!readString(job, "startedAt")) {
+    if (!writesEnabled || payment.status !== "approved"
+      || payment.refunds.some(refund => !["approved", "completed", "rejected", "failed"].includes(refund.status))) return;
+    const baseline = payment.refunds.filter(refund => ["approved", "completed"].includes(refund.status)).map(refund => refund.id).sort();
+    if (await kitCall(db, "claim_representative_kit_refund", { p_refund: refundId, p_baseline_ids: baseline }) !== true) return;
+    const refund = await provider.refundPayment(paymentId, readNumber(job, "amountInCents"), refundId);
+    acknowledged = refund.id;
+    if (await kitCall(db, "acknowledge_representative_kit_refund", { p_refund: refundId, p_provider_refund: acknowledged }) !== true) {
+      throw new KitTransactionError(503);
+    }
+    payment = await provider.getPayment(paymentId);
+    await reconcileCommercialKitPayment(db, payment, collector, orderId);
+  }
+  // An external refund can reconcile the monetary ledger. Only an acknowledged
+  // provider response can identify which operation produced it.
+  if (!acknowledged || await kitCall(db, "finish_representative_kit_refund", {
+    p_refund: refundId, p_provider_refund: acknowledged
+  }) !== true) throw new KitTransactionError(503);
 }

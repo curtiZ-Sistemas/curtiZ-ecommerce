@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { isRepresentativeKitPostalCode, representativeKitState } from "../lib/representative-resale-scope";
 import { isUnknownRecord, readRows, readString } from "../lib/unknown-data";
 import { ProductShippingPreview } from "./product-shipping-preview";
+import { ReserveRepresentativeKit } from "./representative-kit-order";
 
 export function RepresentativeKitDelivery({ variantId, quantity }: { variantId: string; quantity: number }) {
   const [shown, setShown] = useState(false);
@@ -58,7 +59,7 @@ function SavedKitAddress({ variantId, quantity }: { variantId: string; quantity:
 
 function SelectKitFreight({ variantId, quantity, address }: { variantId: string; quantity: number; address: KitAddress }) {
   const [serviceId, setServiceId] = useState("");
-  const [result, setResult] = useState<{ id: string; amountInCents: number } | null>(null);
+  const [result, setResult] = useState<{ id: string; amountInCents: number; totalInCents: number | null } | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
     if (!serviceId) return;
@@ -73,7 +74,8 @@ function SelectKitFreight({ variantId, quantity, address }: { variantId: string;
         || !Number.isSafeInteger(data.quote.amountInCents) || Number(data.quote.amountInCents) < 0) {
         throw new Error("invalid_quote");
       }
-      if (!request.signal.aborted) setResult({ id: readString(data.quote, "id"), amountInCents: Number(data.quote.amountInCents) });
+      if (!request.signal.aborted) setResult({ id: readString(data.quote, "id"), amountInCents: Number(data.quote.amountInCents),
+        totalInCents: data.purchaseAvailable === true && Number.isSafeInteger(data.totalInCents) ? Number(data.totalInCents) : null });
     }).catch(() => {
       if (!request.signal.aborted) setError(true);
     }).finally(() => { if (!request.signal.aborted) setServiceId(""); });
@@ -85,5 +87,8 @@ function SelectKitFreight({ variantId, quantity, address }: { variantId: string;
     <p role="status">{serviceId ? "Conferindo frete…" : error
       ? "Não foi possível confirmar o frete. Selecione o serviço novamente."
       : result ? `Frete conferido para o endereço: ${formatBRL(result.amountInCents)}.` : ""}</p>
+    {result && (result.totalInCents === null ? <p>A compra deste kit aguarda homologação.</p>
+      : <ReserveRepresentativeKit key={result.id} variantId={variantId} quantity={quantity} quoteId={result.id}
+        addressId={address.id} totalInCents={result.totalInCents} />)}
   </>;
 }

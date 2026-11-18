@@ -7,6 +7,7 @@ export * from "./melhor-envio";
 export * from "./bling";
 export * from "./bling-catalog";
 export * from "./bling-fiscal-preview";
+export { readBlingAuthorizedResaleXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
 export * from "./bling-tax";
 export { sendInvoiceEmail } from "./invoice-email";
 export * from "./transactional-email";
@@ -87,7 +88,9 @@ export type MercadoPagoPayment = {
 export class MercadoPagoProviderError extends Error {
   readonly providerRequestId: string | null;
   constructor(
-    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "invalid_issuer" | "payment_mode_mismatch" | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund" | "refund_unavailable" | "refund_unconfirmed",
+    readonly code: "invalid_test_credential" | "invalid_payment_credential" | "invalid_issuer" | "payment_mode_mismatch"
+      | "payment_rejected" | "provider_unavailable" | "invalid_provider_response" | "invalid_refund"
+      | "refund_unavailable" | "refund_unconfirmed" | "invalid_kit_payment" | "ambiguous_kit_payment",
     readonly httpStatus = 502,
     readonly providerCauseCodes: readonly string[] = [],
     readonly providerRejectionFields: readonly string[] = [],

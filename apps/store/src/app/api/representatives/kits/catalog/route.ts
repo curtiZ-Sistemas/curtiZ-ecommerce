@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { commercialKitCheckoutConfigured } from "@/lib/representative-commercial-payments";
+import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
+import { isUnknownRecord } from "@/lib/unknown-data";
 
 const headers = { "cache-control": "private, no-store" };
 export async function GET(request: NextRequest) {
@@ -12,5 +15,10 @@ export async function GET(request: NextRequest) {
   const result = await db.rpc("list_representative_catalog_kits", { p_offset: offset.data });
   if (result.error) return NextResponse.json({ message: "Não foi possível carregar os kits. Tente novamente." }, { status: 503, headers });
   if (!result.data) return NextResponse.json({ message: "Acesso de representante indisponível." }, { status: 403, headers });
+  const environment = getStoreRuntimeEnvironment();
+  if (isUnknownRecord(result.data) && environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID) {
+    return NextResponse.json({ ...result.data, orderHistoryAvailable: true,
+      checkoutConfigured: commercialKitCheckoutConfigured(environment) }, { headers });
+  }
   return NextResponse.json(result.data, { headers });
 }

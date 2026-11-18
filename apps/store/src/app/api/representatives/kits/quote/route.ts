@@ -8,6 +8,7 @@ import { configuredMelhorEnvioProvider, resolveShippingProducts } from "@/lib/me
 import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 import { isUnknownRecord, readRows, readString, readNumber } from "@/lib/unknown-data";
 import { KitTransactionError, kitTestProvider } from "@/lib/representative-test-transactions";
+import { commercialKitCheckoutConfigured } from "@/lib/representative-commercial-payments";
 import { createShippingPreviewCache, shippingPreviewKey } from "@/lib/shipping-preview";
 import { isRepresentativeKitPostalCode, representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
@@ -105,6 +106,16 @@ export async function POST(request: NextRequest) {
       if (saved.error?.code === "23514") throw new KitTransactionError();
       if (saved.error) throw new KitTransactionError(503);
       if (!isUnknownRecord(saved.data)) throw new KitTransactionError();
+      if (commercialKitCheckoutConfigured(environment)) {
+        const eligibility = await db.rpc("representative_kit_purchase_available", {
+          p_actor: user.id, p_variant: input.variantId, p_origin: originPostalCode
+        });
+        if (eligibility.error) throw new KitTransactionError(503);
+        if (eligibility.data === true) return NextResponse.json({ ok: true, mode: "checkout",
+          quote: saved.data, purchaseAvailable: true,
+          totalInCents: Math.round(shipment.insuranceValue * 100) * input.quantity + selected.amountInCents
+        }, { headers });
+      }
       return NextResponse.json({ ok: true, mode: "checkout", quote: saved.data }, { headers });
     }
     if (!quotes.length) return NextResponse.json({ ok: true, quotes: [] }, { headers });

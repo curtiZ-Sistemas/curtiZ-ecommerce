@@ -26,6 +26,9 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/melhor-envio-server", () => ({ configuredMelhorEnvioProvider: state.provider, resolveShippingProducts: mocks.resolve }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => mocks.environment }));
+vi.mock("@/lib/representative-commercial-payments", () => ({
+  commercialKitCheckoutConfigured: () => mocks.environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED === "true"
+}));
 vi.mock("@/lib/shipping-preview", () => import("../../../../../lib/shipping-preview"));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
