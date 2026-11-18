@@ -23,6 +23,21 @@ export async function GET() {
     return NextResponse.json({ message: "Entre para continuar." }, { status: 401, headers: noStore });
   }
 
+  const profileResult = readQueryResult(
+    await supabase.from("profiles").select("full_name,phone,status,account_closed_at")
+      .eq("id", user.id).maybeSingle()
+  );
+  if (profileResult.error) {
+    return NextResponse.json(
+      { message: "Não foi possível carregar seus dados salvos." },
+      { status: 503, headers: noStore }
+    );
+  }
+  const profileRow = profileResult.data;
+  if (!isUnknownRecord(profileRow) || profileRow.status !== "active" || profileRow.account_closed_at !== null) {
+    return NextResponse.json({ message: "Conta indisponível." }, { status: 403, headers: noStore });
+  }
+
   const identityDb = createServiceSupabaseClient();
   if (!identityDb) {
     return NextResponse.json(
@@ -42,27 +57,21 @@ export async function GET() {
     }
   }
 
-  const [profile, addresses] = await Promise.all([
-    supabase.from("profiles").select("full_name,phone").eq("id", user.id).maybeSingle(),
-    supabase
+  const addressesResult = readQueryResult(
+    await supabase
       .from("addresses")
       .select("id,label,recipient_name,postal_code,street,number,complement,district,city,state,is_default")
       .eq("user_id", user.id)
       .order("is_default", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(3)
-  ]);
-
-  const profileResult = readQueryResult(profile);
-  const addressesResult = readQueryResult(addresses);
-  if (profileResult.error || addressesResult.error) {
+  );
+  if (addressesResult.error) {
     return NextResponse.json(
       { message: "Não foi possível carregar seus dados salvos." },
       { status: 503, headers: noStore }
     );
   }
-  const profileRow = isUnknownRecord(profileResult.data) ? profileResult.data : {};
-
   return NextResponse.json(
     {
       profile: {
