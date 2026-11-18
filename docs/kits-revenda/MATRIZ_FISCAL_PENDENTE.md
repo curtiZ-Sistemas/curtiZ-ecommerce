@@ -1,14 +1,17 @@
-# Matriz fiscal pendente — kits para revenda
+# Matriz fiscal — kits para revenda
 
-Nenhuma linha abaixo é uma regra aprovada. A seleção, a vigência, os dados do emitente e as decisões tributárias precisam de validação específica antes de qualquer cobrança ou emissão produtiva.
+A cobertura comercial solicitada é nacional. Os parâmetros abaixo são referências registradas e nenhuma linha está liberada para emissão automática em produção.
 
-| Destinatário | Destino | Informações e decisão pendentes |
-| --- | --- | --- |
-| Pessoa física | MG ou outra UF | Finalidade, atividade, condição e eventual inscrição de ICMS; tratamento fiscal da operação. |
-| Pessoa jurídica contribuinte | MG ou outra UF | CNPJ, IE e sua situação, finalidade, classificação e tributação dos produtos. |
-| Pessoa jurídica não contribuinte ou com inscrição dispensada | MG ou outra UF | Situação e evidência da declaração, finalidade e enquadramento da operação. |
-| MEI | MG ou outra UF | Situação cadastral, atividade, IE ou dispensa, finalidade e tratamento fiscal. |
+| Destinatário | Destino | Referência registrada | Decisão ainda pendente |
+| --- | --- | --- | --- |
+| Pessoa física | MG / demais UFs | 5102 / 6102 como referência de revenda | Elegibilidade para revenda, condição perante ICMS e exceções de destino. |
+| MEI | MG / demais UFs | 5102 / 6102 como referência de revenda | Elegibilidade, IE ou dispensa e tratamento por UF. |
+| Pessoa jurídica contribuinte | MG / demais UFs | 5102 / 6102. CSOSN 102 se sem crédito, 101 quando elegível. | Aprovação do cenário e da natureza no Bling. Para 101, comprovar elegibilidade e percentual da competência. |
+| Pessoa jurídica não contribuinte ou com inscrição dispensada | MG / demais UFs | Avaliação específica de revenda | Classificação do cenário e natureza aplicável. O 6108 registrado para B2C não serve como padrão de revenda. |
+| Devolução de revendedor | MG / demais UFs | Série 003 para devoluções já documentadas | Emissor e natureza da devolução, totais/parciais, referência à nota original e tratamento fiscal. As referências de B2C PF não se estendem à revenda. |
 
-Para cada cenário devem ser confirmados estabelecimento e UF de saída, regime do emitente, produtos e composição, natureza, CFOP, indicadores, NCM, origem, CEST quando aplicável, tributos, ST, DIFAL, devoluções, vigência e responsável. Códigos de notas de teste anteriores não constituem aprovação geral. A ausência ou divergência deve impedir a compra produtiva.
-
-Os dados e decisões devem ser fornecidos e aprovados pelo responsável fiscal; não há matriz preenchida ou cadastrada por este documento.
+- **Orientação registrada em 24/10/2026.** Venda para revenda com `finalConsumer=false`, presença 2, e CFOPs de referência 5102 em MG e 6102 interestadual. O NCM 64022000 e os parâmetros tributários descritos na política valem como referência para os produtos documentados. [Política fiscal](../fiscal-policy-2026-10-24.md)
+- **Vigência.** Crédito de 1,36% foi registrado apenas para operações elegíveis de outubro de 2026. Para novembro e competências posteriores, é necessária a definição do percentual se houver crédito. [Conferência de 01/11/2026](../bling-producao-2026-11-01.md)
+- **Implementação técnica existente.** Catálogo, prévia e transações de teste de kits. O estoque fica no SKU comercial com unidade UN, e a composição fiscal cadastrada usa pares em PR. A conferência de 01/11 registrou 162 SKUs e 372 componentes. [Conferência de 01/11/2026](../bling-producao-2026-11-01.md)
+- **Homologação.** Existe registro de uma NF-e de kit de dois pares preparada manualmente em homologação. O registro cobre aquele documento e não comprova o fluxo automatizado de revenda ou autorização dos demais cenários.
+- **Produção.** Falta identificar, para cada cenário permitido, a natureza ativa de revenda no Bling e a vigência da aprovação, incluindo exceções por UF e produto, tributos aplicáveis e devoluções. A integração comercial permanece fechada. A origem logística registrada é Nova Serrana/MG e permanece separada do endereço fiscal.
