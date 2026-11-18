@@ -35,6 +35,8 @@ import { POST } from "./route";
 const input = { variantId: "10000000-0000-4000-8000-000000000001", quantity: 1, postalCode: "35500000" };
 const checkout = { variantId: input.variantId, quantity: 1, mode: "checkout",
   addressId: "10000000-0000-4000-8000-000000000002", serviceId: "1" };
+const shippingProduct = { id: input.variantId, quantity: 1, weightKg: 0.25,
+  widthCm: 10, heightCm: 5, lengthCm: 20, insuranceValue: 50 };
 const send = (body: unknown = input, origin = "https://curtiz.com.br") => POST(new NextRequest("https://curtiz.com.br/api/representatives/kits/quote", {
   method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body)
 }));
@@ -49,7 +51,7 @@ beforeEach(() => {
   mocks.addressFilter.mockReturnValue({ eq: mocks.addressFilter, maybeSingle: mocks.address });
   mocks.address.mockResolvedValue({ data: { postal_code: "30110-100", state: "MG" } });
   mocks.maybeSingle.mockResolvedValue({ data: { product_id: "official-product" } });
-  mocks.resolve.mockResolvedValue({ products: [{ id: input.variantId, quantity: 1 }], fingerprint: "official-package" });
+  mocks.resolve.mockResolvedValue({ products: [shippingProduct], fingerprint: "official-package" });
   mocks.quote.mockResolvedValue([{ provider: "melhorenvio", serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100,
     costInCents: 1800, estimatedDays: 4, expiresAt: "2099-01-01T00:00:00Z", packages: [{ private: true }] }]);
   state.provider.mockReturnValue({ quote: mocks.quote });
@@ -77,7 +79,7 @@ describe("kit quote scope", () => {
       { p_variant_id: input.variantId, p_quantity: 1 });
     expect(mocks.resolve).toHaveBeenCalledWith([{ productId: "official-product", variantId: input.variantId, quantity: 1 }], expect.anything());
     expect(mocks.quote).toHaveBeenCalledWith({ originPostalCode: "35520000", destinationPostalCode: input.postalCode,
-      products: [{ id: input.variantId, quantity: 1 }] });
+      products: [shippingProduct] });
     expect(await response.json()).toEqual({ ok: true, mode: "preview", quotes: [{
       serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
     }] });
@@ -118,9 +120,10 @@ describe("kit quote scope", () => {
     expect(response.status).toBe(200);
     expect(mocks.addressFilter.mock.calls).toEqual([["id", checkout.addressId], ["user_id", "actor"], ["country", "BR"]]);
     expect(mocks.quote).toHaveBeenCalledWith(expect.objectContaining({ destinationPostalCode: "30110100" }));
-    expect(mocks.issue).toHaveBeenCalledWith("issue_representative_kit_shipping_quote", expect.objectContaining({
+    expect(mocks.issue).toHaveBeenCalledWith("confirm_representative_kit_shipping_quote", expect.objectContaining({
       p_actor: "actor", p_variant: checkout.variantId, p_quantity: 1, p_address: checkout.addressId,
-      p_postal_code: "30110100", p_service_id: "1", p_amount_in_cents: 2100, p_cart_fingerprint: "official-package"
+      p_postal_code: "30110100", p_service_id: "1", p_amount_in_cents: 2100, p_cart_fingerprint: "official-package",
+      p_origin_postal_code: "35520000", p_unit_price_cents: 5000, p_dimensions: [250, 10, 5, 20]
     }));
     expect(await response.json()).toEqual({
       ok: true, mode: "checkout", quote: { id: "private-quote", serviceId: "1", amountInCents: 2100 }

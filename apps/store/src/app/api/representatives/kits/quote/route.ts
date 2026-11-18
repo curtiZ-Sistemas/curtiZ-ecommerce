@@ -91,13 +91,18 @@ export async function POST(request: NextRequest) {
       const matchingQuotes = quotes.filter(option => option.serviceId === input.serviceId);
       const [selected] = matchingQuotes;
       if (matchingQuotes.length !== 1 || !selected || selected.provider !== "melhorenvio") throw new KitTransactionError();
-      const saved = await db.rpc("issue_representative_kit_shipping_quote", {
+      const [shipment] = resolved.products;
+      if (!shipment) throw new KitTransactionError(503);
+      const saved = await db.rpc("confirm_representative_kit_shipping_quote", {
         p_actor: user.id, p_variant: input.variantId, p_quantity: input.quantity, p_address: input.addressId,
         p_postal_code: postalCode, p_cart_fingerprint: resolved.fingerprint, p_service_id: selected.serviceId,
         p_service: selected.service, p_carrier: selected.carrier, p_amount_in_cents: selected.amountInCents,
         p_cost_in_cents: selected.costInCents, p_estimated_days: selected.estimatedDays, p_packages: selected.packages,
-        p_expires_at: selected.expiresAt
+        p_expires_at: selected.expiresAt, p_origin_postal_code: originPostalCode,
+        p_unit_price_cents: Math.round(shipment.insuranceValue * 100),
+        p_dimensions: [Math.round(shipment.weightKg * 1000), shipment.widthCm, shipment.heightCm, shipment.lengthCm]
       });
+      if (saved.error?.code === "23514") throw new KitTransactionError();
       if (saved.error) throw new KitTransactionError(503);
       if (!isUnknownRecord(saved.data)) throw new KitTransactionError();
       return NextResponse.json({ ok: true, mode: "checkout", quote: saved.data }, { headers });
