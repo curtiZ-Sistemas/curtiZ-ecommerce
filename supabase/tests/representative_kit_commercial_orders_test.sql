@@ -149,6 +149,12 @@ update private.representative_kit_checkout_approvals set revoked_at = now() wher
 select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
   'approval is required again before issuing Pix');
 update private.representative_kit_checkout_approvals set revoked_at = null where actor_id = (select actor from commercial_kit_fixture);
+update private.representative_kit_checkout_approvals set buyer_state_registration='0099999999999'
+  where actor_id=(select actor from commercial_kit_fixture);
+select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
+  'changing the verified fiscal buyer after checkout cannot start payment for the old snapshot');
+update private.representative_kit_checkout_approvals set buyer_state_registration='0012345678900'
+  where actor_id=(select actor from commercial_kit_fixture);
 select is(pg_temp.claim_commercial_pix()->>'buyerDocument','11222333000181','the provider receives the approved fiscal buyer');
 select is(pg_temp.claim_commercial_pix(),null::jsonb,'a replay never claims a second provider write');
 select is((select public.cancel_unstarted_representative_kit_order(actor,order_id) from commercial_kit_fixture),
@@ -234,16 +240,55 @@ select is((select public.record_representative_kit_return_invoice(id,'3126111234
   '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
   false,'XML cannot bypass inspection and receipt');
 
-select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2100}]')->>'state',
+create function pg_temp.manage_kit_return(p_action text,p_data jsonb default '{}'::jsonb)
+returns text language sql as $$
+  select public.manage_representative_kit_return(r.id,p_action,p_data)->>'state'
+  from private.representative_kit_returns r join commercial_kit_fixture f using(order_id);
+$$;
+select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true) from commercial_kit_fixture;
+select throws_ok($$select pg_temp.manage_kit_return('approve','{"instructions":"No support role"}')$$,
+  '42501','permission denied','the buyer cannot approve their own return');
+update public.profiles set status='active' where id=(select outsider from commercial_kit_fixture);
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.outsider,p.id,true,'Synthetic return reviewer permissions',f.outsider
+from public.permissions p cross join commercial_kit_fixture f where p.code in ('returns.approve','returns.inspect','returns.refund');
+select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true) from commercial_kit_fixture;
+select is(pg_temp.manage_kit_return('approve','{"instructions":"Synthetic store return instructions"}'),
+  'approved','authorized staff can approve the return');
+select is(pg_temp.manage_kit_return('receive',jsonb_build_object('invoiceId',901,'refundInCents',6050,'restockQuantity',1,
+  'invoiceKey','3126111234567800019555003'||repeat('1',19),'documentOrigin','own_inflow','inspectionReference','Synthetic inspected kit')),
+  'received','receiving inventory alone does not authorize the refund');
+select is(pg_temp.manage_kit_return('refund'),null::text,'staff cannot authorize the refund before XML validation');
+select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555003'||repeat('1',19),
+  '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
+  true,'trusted verification attaches the exact authorized return');
+delete from private.representative_kit_refund_requests where order_id=(select order_id from commercial_kit_fixture);
+select is(pg_temp.manage_kit_return('refund'),'refund_pending','the authorized partial refund is queued');
+select is((select public.claim_representative_kit_refund(id,'{}') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'verified partial refund can claim one external write');
+select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
+  1,'stock waits for the actual refund receipt');
+
+select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":6050}]')->>'state',
   'manual_review','a partial refund blocks fulfillment without automatically returning stock');
-select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2100}]')->>'refundedInCents',
-  '2100','repeated refund events cannot duplicate the refund amount');
+select is(pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":6050}]')->>'refundedInCents',
+  '6050','repeated refund events cannot duplicate the refund amount');
+select is((select public.acknowledge_representative_kit_refund(id,'99') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'provider acknowledgement is associated with the reviewed return');
+select is((select public.finish_representative_kit_refund(id,'99') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'settled return completes');
+select is((select public.finish_representative_kit_refund(id,'99') from private.representative_kit_refund_requests
+  where order_id=(select order_id from commercial_kit_fixture)),true,'receipt replay is harmless');
+select is((select r.state from private.representative_kit_returns r join commercial_kit_fixture f using(order_id)),
+  'completed','buyer reads completed return after settlement');
+select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
+  2,'the inspected resellable kit returns to inventory exactly once');
 select throws_ok($$select pg_temp.settle_commercial_pix('approved',null,12100,'[{"id":"99","amountInCents":2101}]')$$,
   '23514','kit_refund_identity_mismatch','existing refund amount cannot be changed');
-select is(pg_temp.settle_commercial_pix('refunded',null,12100,'[{"id":"100","amountInCents":10000}]')->>'state',
+select is(pg_temp.settle_commercial_pix('refunded',null,12100,'[{"id":"100","amountInCents":6050}]')->>'state',
   'refunded','full provider refund is recorded');
 select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
-  1,'a financial refund does not put sold items back on the shelf');
+  2,'an external financial refund without a second inspected return does not restock');
 
 select * from finish();
 rollback;

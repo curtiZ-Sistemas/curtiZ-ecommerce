@@ -6,19 +6,46 @@ alter table private.representative_kit_checkout_approvals add column buyer_fisca
     and length(btrim(coalesce(buyer_fiscal_address ->> 'district',''))) > 0
     and length(btrim(coalesce(buyer_fiscal_address ->> 'city',''))) > 0));
 
+alter table private.representative_kit_orders add column buyer_snapshot jsonb
+  check (jsonb_typeof(buyer_snapshot)='object');
+
 create function private.require_representative_kit_fiscal_address()
 returns trigger language plpgsql set search_path = '' as $$
+declare snapshot jsonb;
 begin
-  if (tg_op='INSERT' or (old.payment_started_at is null and new.payment_started_at is not null)) and not exists (
-    select 1 from private.representative_kit_checkout_approvals a where a.actor_id=new.actor_id and a.rule_version_id=new.rule_version_id
-      and a.buyer_fiscal_address ->> 'state' = 'MG' and a.buyer_fiscal_address ->> 'postal_code' ~ '^3[0-9]{7}$'
-  ) then raise exception 'kit_fiscal_address_required' using errcode='23514'; end if;
+  if tg_op='UPDATE' and old.payment_started_at is not null then return new; end if;
+  select jsonb_build_object('name',a.buyer_legal_name,'document',a.buyer_document,'registration',a.buyer_state_registration,
+    'address',a.buyer_fiscal_address) into snapshot
+  from private.representative_kit_checkout_approvals a where a.actor_id=new.actor_id and a.rule_version_id=new.rule_version_id
+    and a.buyer_fiscal_address ->> 'state' = 'MG' and a.buyer_fiscal_address ->> 'postal_code' ~ '^3[0-9]{7}$'
+    for share of a;
+  if snapshot is null then raise exception 'kit_fiscal_address_required' using errcode='23514'; end if;
+  if tg_op='INSERT' then new.buyer_snapshot := snapshot;
+  elsif new.buyer_snapshot is distinct from snapshot then raise exception 'kit_fiscal_recipient_changed' using errcode='23514';
+  end if;
   return new;
 end;
 $$;
 revoke all on function private.require_representative_kit_fiscal_address() from public,anon,authenticated,service_role;
 create trigger representative_kit_fiscal_address before insert or update of payment_started_at on private.representative_kit_orders
   for each row execute function private.require_representative_kit_fiscal_address();
+
+create or replace function private.representative_kit_payment_allowed(o private.representative_kit_orders)
+returns boolean language sql stable set search_path = '' as $$
+  select coalesce(private.find_representative_kit_checkout_approval(o.actor_id,o.variant_id,
+    o.shipping_snapshot ->> 'originPostalCode')=o.rule_version_id,false)
+  and exists (
+    select 1 from public.profiles p join public.representatives r on r.user_id=p.id
+    join public.addresses a on a.user_id=p.id
+    join private.representative_kit_checkout_approvals buyer on buyer.actor_id=p.id and buyer.rule_version_id=o.rule_version_id
+    where p.id=o.actor_id and p.status='active' and r.status in ('approved_waiting_kit','active','unqualified')
+      and a.id=o.address_id and a.state='MG' and a.country='BR'
+      and a.updated_at=(o.shipping_snapshot -> 'address' ->> 'version')::timestamptz
+      and regexp_replace(a.postal_code,'[^0-9]','','g')=o.shipping_snapshot -> 'address' ->> 'postalCode'
+      and o.buyer_snapshot=jsonb_build_object('name',buyer.buyer_legal_name,'document',buyer.buyer_document,
+        'registration',buyer.buyer_state_registration,'address',buyer.buyer_fiscal_address)
+  );
+$$;
 
 create or replace function public.representative_kit_purchase_available(p_actor uuid,p_variant uuid,p_origin text)
 returns boolean language sql stable security definer set search_path = '' as $$
@@ -36,14 +63,13 @@ alter table private.representative_kit_fulfillment add column invoice_draft_hash
 create function public.read_representative_kit_bling_order(p_order uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('saleId',f.bling_sale_id,'invoiceId',f.bling_invoice_id,
-    'buyerName',a.buyer_legal_name,'buyerDocument',a.buyer_document,'buyerRegistration',a.buyer_state_registration,
-    'fiscalAddress',a.buyer_fiscal_address,
+    'buyerName',o.buyer_snapshot -> 'name','buyerDocument',o.buyer_snapshot -> 'document',
+    'buyerRegistration',o.buyer_snapshot -> 'registration','fiscalAddress',o.buyer_snapshot -> 'address',
     'reviewedDraftHash',f.reviewed_draft_hash,'draftHash',f.invoice_draft_hash,
     'address',jsonb_build_object('street',d.street,'number',d.number,'district',d.district,'city',d.city,
       'complement',d.complement,'state',d.state,'postal_code',o.shipping_snapshot -> 'address' ->> 'postalCode'))
   from private.representative_kit_orders o
   join private.representative_kit_fulfillment f on f.order_id=o.id
-  join private.representative_kit_checkout_approvals a on a.actor_id=o.actor_id and a.rule_version_id=o.rule_version_id
   join public.addresses d on d.id=o.address_id and d.user_id=o.actor_id
   where o.id=p_order and o.state='paid' and o.stock_state='sold'
     and o.cancellation_requested_at is null and private.representative_kit_payment_allowed(o)

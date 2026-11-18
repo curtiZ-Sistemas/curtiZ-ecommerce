@@ -147,13 +147,12 @@ returns jsonb language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(to_jsonb(due)),'[]'::jsonb) from (
     select r.id as "returnId",r.quantity as "returnQuantity",r.document_origin as "documentOrigin",
       r.bling_invoice_id as "invoiceId",r.invoice_key as "invoiceKey",r.refund_cents as "refundInCents",
-      o.quantity as "originalQuantity",a.buyer_document as "buyerDocument",
+      o.quantity as "originalQuantity",o.buyer_snapshot ->> 'document' as "buyerDocument",
       rule.fiscal_parameters ->> 'issuerDocument' as "issuerDocument",
       rule.fiscal_parameters -> 'returnRules' -> r.document_origin as "returnRule",
       f.invoice_access_key as "originalKey",f.invoice_xml_sha256 as "originalHash",f.bling_invoice_id as "originalInvoiceId"
     from private.representative_kit_returns r join private.representative_kit_orders o on o.id=r.order_id
     join private.representative_kit_fulfillment f on f.order_id=o.id
-    join private.representative_kit_checkout_approvals a on a.actor_id=o.actor_id and a.rule_version_id=o.rule_version_id
     join private.representative_resale_fiscal_rule_versions rule on rule.id=o.rule_version_id
     where r.state='received' and f.invoice_cancellation_confirmed_at is null
       and (r.checked_at is null or r.checked_at<now()-interval '15 minutes')

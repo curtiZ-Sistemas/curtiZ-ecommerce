@@ -123,9 +123,12 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
     {pix && <>
       <label>Pix copia e cola<input readOnly value={pix} onFocus={event => event.currentTarget.select()} /></label>
       <button type="button" className="secondary-button" onClick={() => {
-        const copy = navigator.clipboard?.writeText(pix);
-        if (!copy) setMessage("Selecione e copie o código Pix.");
-        else void copy.then(() => setCopied(true)).catch(() => setMessage("Selecione e copie o código Pix."));
+        if (!navigator.clipboard) {
+          setMessage("Selecione e copie o código Pix.");
+          return;
+        }
+        void navigator.clipboard.writeText(pix).then(() => setCopied(true))
+          .catch(() => setMessage("Selecione e copie o código Pix."));
       }}>{copied ? "Código copiado" : "Copiar código Pix"}</button>
     </>}
     {state === "reserved" && checkoutConfigured && canCancel && <button type="button" className="primary-button"

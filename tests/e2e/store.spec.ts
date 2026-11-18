@@ -1068,6 +1068,56 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });
 
+test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal", async ({ page, baseURL }) => {
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const variantId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null,
+    items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto", size: "34", pairsPerSku: 2,
+      unitPriceInCents: 4500, available: 3 }]
+  } }));
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/quote", route => {
+    const data = route.request().postDataJSON() as { mode?: string };
+    return route.fulfill({ json: data.mode === "checkout"
+      ? { ok: true, mode: "checkout", purchaseAvailable: true, totalInCents: 6700, quote: { id: quoteId, serviceId: "1", amountInCents: 2200 } }
+      : { ok: true, mode: "preview", quotes: [{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9 }] } });
+  });
+  await page.route("**/api/representatives/kits/orders", route => {
+    const data = route.request().postDataJSON() as { action: string };
+    const state = data.action === "pix" ? "payment_pending" : data.action === "cancel" ? "cancelled" : "reserved";
+    return route.fulfill({ json: { ok: true, order: {
+      orderId, state, amountInCents: 6700, ...(state === "payment_pending" ? { pix: { copyPaste: "PIX-FIXTURE" } } : {})
+    } } });
+  });
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  await page.getByRole("button", { name: "Selecionar PAC" }).click();
+  await expect(page.getByText(/Total com frete\s*R\$\s*67,00/)).toBeVisible();
+  const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
+  await page.getByRole("button", { name: "Reservar kit" }).click();
+  expect((await reserve).postDataJSON()).toEqual({ action: "reserve", variantId, addressId, quoteId, quantity: 1,
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await page.getByRole("button", { name: "Gerar Pix" }).click();
+  await expect(page.getByLabel("Pix copia e cola")).toHaveValue("PIX-FIXTURE");
+  await page.getByRole("button", { name: "Cancelar pedido" }).click();
+  await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
+});
+
 test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     headers: { origin: "http://localhost:3000" },
