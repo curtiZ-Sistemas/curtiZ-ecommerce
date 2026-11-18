@@ -1009,8 +1009,12 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
       serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
     }] } })
   );
-  await page.addInitScript(() => localStorage.setItem("curtiz-cookie-consent", JSON.stringify({ categories: { essential: true } })));
+  const cookieInventory = page.waitForResponse(response =>
+    response.url().endsWith("/api/privacy/cookies") && response.request().method() === "GET");
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await cookieInventory;
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByRole("button", { name: "Recusar opcionais" })).toBeHidden();
 
   const checkValue = page.getByRole("button", { name: "Conferir valor" });
   const basicPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
