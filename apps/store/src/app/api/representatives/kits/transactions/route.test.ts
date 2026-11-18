@@ -9,6 +9,7 @@ vi.mock("@/lib/private-request", () => ({ readPrivateJson: (r: Request) => r.jso
   requirePrivateRateLimit: state.rate, PrivateRequestError: class extends Error { status = 429; } }));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
 vi.mock("@/lib/representative-resale", () => import("../../../../../lib/representative-resale"));
+vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({ auth: { getUser: async () => ({ data: { user: state.user } }) } }),
   createServiceSupabaseClient: () => ({ rpc: vi.fn(), from: () => ({ select: () => ({ eq: () => ({
     maybeSingle: async () => ({ error: null, data: { status: "active", full_name: "Representante TESTE", product_id: "10000000-0000-4000-8000-000000000001" } })

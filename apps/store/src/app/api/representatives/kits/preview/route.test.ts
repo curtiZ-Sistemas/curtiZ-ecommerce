@@ -8,6 +8,7 @@ vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () =
   rpc: state.rpc
 }) }));
 vi.mock("@/lib/representative-resale", () => import("../../../../../lib/representative-resale"));
+vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 import { POST } from "./route";
 const kitId = "a0100000-0000-4000-8000-000000000001";
 const request = (body: unknown = { kitId }) => new NextRequest("https://curtiz.com.br/api/representatives/kits/preview", {
@@ -42,7 +43,17 @@ describe("authenticated resale preview boundary", () => {
     const payload: unknown = await response.json();
     expect(response.status).toBe(200);
     expect(payload).toMatchObject({ declaredScenario: { ...declaredScenario, verification: "unverified" }, finalConsumer: null, canPurchase: false });
+    expect(payload).toHaveProperty("blockers", expect.arrayContaining(["recipient_fiscal_exception_evidence_required"]));
   });
+  it.each(["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
+    "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"])(
+    "blocks territorial declarations from %s before fetching a kit", async destinationState => {
+      const declaredScenario = { personType: "business", purpose: "resale", icmsStatus: "taxpayer", destinationState };
+      const response = await POST(request({ kitId, declaredScenario }));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: "KIT_OUTSIDE_MG" });
+      expect(state.rpc).not.toHaveBeenCalled();
+    });
   it.each([
     { personType: "business", purpose: "resale", icmsStatus: "taxpayer", destinationState: "XX" },
     { personType: "business", purpose: "resale", icmsStatus: "taxpayer", destinationState: "MG", approved: true },

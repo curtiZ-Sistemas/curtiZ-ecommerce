@@ -1022,25 +1022,27 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   expect((await basicPreview).postDataJSON()).toEqual({ variantId, quantity: 1 });
   await page.getByLabel("Tipo de comprador").selectOption("business");
   await checkValue.click();
-  await expect(page.getByText("Preencha os três dados da prévia ou deixe todos em branco.")).toBeVisible();
+  await expect(page.getByText("Preencha os dois campos da prévia ou deixe ambos em branco.")).toBeVisible();
 
   await page.getByLabel("Situação perante o ICMS").selectOption("unknown");
-  await page.getByLabel("UF de destino").selectOption("TO");
-  await expect(page.getByText("Preencha os três dados da prévia ou deixe todos em branco.")).toHaveCount(0);
+  await expect(page.getByText("Preencha os dois campos da prévia ou deixe ambos em branco.")).toHaveCount(0);
   const declaredPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
   await checkValue.click();
   expect((await declaredPreview).postDataJSON()).toEqual({
     variantId, quantity: 1,
-    declaredScenario: { personType: "business", icmsStatus: "unknown", destinationState: "TO", purpose: "resale" }
+    declaredScenario: { personType: "business", icmsStatus: "unknown", destinationState: "MG", purpose: "resale" }
   });
   await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
   await page.setViewportSize({ width: 320, height: 850 });
-  await expect(page.getByLabel("UF de destino")).toBeVisible();
+  await expect(page.getByText(/Entrega exclusiva em Minas Gerais/)).toBeVisible();
   await page.getByRole("button", { name: "Calcular frete" }).click();
   await page.getByLabel("CEP", { exact: true }).fill("01310-100");
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(page.getByText(/atende apenas Minas Gerais/)).toBeVisible();
+  await page.getByLabel("CEP", { exact: true }).fill("30110-100");
   const shippingPreview = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
   await page.getByRole("button", { name: "Calcular", exact: true }).click();
-  expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "01310100", mode: "preview" });
+  expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "30110100", mode: "preview" });
   await expect(page.getByText("Correios · até 9 dias úteis, incluindo preparação")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });

@@ -5,6 +5,7 @@ import { Truck } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatPostalCode } from "../lib/personal-data";
 import { readShippingPostalCode, rememberShippingPostalCode } from "../lib/shipping-postal-code";
+import { isRepresentativeKitPostalCode, representativeKitScopeMessage } from "../lib/representative-resale-scope";
 
 const POSTAL_CODE = /^\d{5}-?\d{3}$/u;
 type Quote = { serviceId: string; service: string; carrier: string; amountInCents: number; estimatedDays: number };
@@ -44,6 +45,10 @@ export function ProductShippingPreview({ productId, variantId, quantity, mode }:
     const key = currentKey;
     if (!/^\d{5}-?\d{3}$/u.test(postalCode)) {
       setResult({ key, quotes: [], message: "Informe um CEP válido com oito dígitos." });
+      return;
+    }
+    if (isKit && !isRepresentativeKitPostalCode(postalCode)) {
+      setResult({ key, quotes: [], message: representativeKitScopeMessage });
       return;
     }
     if (!variantId) {

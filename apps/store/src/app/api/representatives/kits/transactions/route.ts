@@ -8,6 +8,7 @@ import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "@/lib/check
 import { isUnknownRecord, readString } from "@/lib/unknown-data";
 import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, beginKitCard, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 import { resaleScenarioSchema } from "@/lib/representative-resale";
+import { representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
 const id = z.string().uuid();
 const schema = z.discriminatedUnion("action", [
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest) {
     let orderId: string;
     let declarationState: "unverified" | undefined;
     if (data.action === "create") {
+      if (data.declaredScenario && data.declaredScenario.destinationState !== representativeKitState) {
+        return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+      }
       const variant = await db.from("product_variants").select("product_id").eq("id", data.variantId).maybeSingle();
       if (variant.error || !isUnknownRecord(variant.data)) throw new KitTransactionError(404);
       const resolved = await resolveShippingProducts([{ productId: readString(variant.data, "product_id"), variantId: data.variantId, quantity: data.quantity }], db);

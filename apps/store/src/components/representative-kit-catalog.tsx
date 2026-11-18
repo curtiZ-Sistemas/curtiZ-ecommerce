@@ -6,12 +6,9 @@ import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/re
 import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
 import { ProductShippingPreview } from "./product-shipping-preview";
+import { representativeKitState } from "../lib/representative-resale-scope";
 
-const destinationStates = [
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
-  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
-] as const satisfies readonly ResaleScenario["destinationState"][];
-type RecipientFields = Omit<ResaleScenario, "purpose">;
+type RecipientFields = Pick<ResaleScenario, "personType" | "icmsStatus">;
 
 export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
@@ -21,7 +18,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [shippingVariant, setShippingVariant] = useState<string | null>(null);
   const [recipient, setRecipient] = useState<{
     [Field in keyof RecipientFields]: RecipientFields[Field] | "";
-  }>({ personType: "", icmsStatus: "", destinationState: "" });
+  }>({ personType: "", icmsStatus: "" });
   useEffect(() => {
     const controller = new AbortController();
     setPage(null); setError("");
@@ -45,12 +42,12 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
       setMessages(current => ({ ...current, [variantId]: "Informe uma quantidade de kits entre 1 e 99." })); return;
     }
-    const { personType, icmsStatus, destinationState } = recipient;
-    const declaredScenario = personType && icmsStatus && destinationState
-      ? { personType, icmsStatus, destinationState, purpose: "resale" as const }
+    const { personType, icmsStatus } = recipient;
+    const declaredScenario = personType && icmsStatus
+      ? { personType, icmsStatus, destinationState: representativeKitState, purpose: "resale" as const }
       : undefined;
-    if (!declaredScenario && (personType || icmsStatus || destinationState)) {
-      setMessages(current => ({ ...current, [variantId]: "Preencha os três dados da prévia ou deixe todos em branco." }));
+    if (!declaredScenario && (personType || icmsStatus)) {
+      setMessages(current => ({ ...current, [variantId]: "Preencha os dois campos da prévia ou deixe ambos em branco." }));
       return;
     }
     setChecking(variantId);
@@ -71,7 +68,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
     {Boolean(page?.items.length) && (
       <fieldset className="representative-card representative-profile-form" disabled={Boolean(checking)}>
         <legend>Dados para a prévia de revenda</legend>
-        <p>Preenchimento opcional. Os dados informados precisam de validação fiscal.</p>
+        <p>Entrega exclusiva em Minas Gerais. Os dados fiscais da prévia são opcionais.</p>
         <label>
           Tipo de comprador
           <select value={recipient.personType}
@@ -90,14 +87,6 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
             <option value="registration_exempt">Dispensado de inscrição estadual</option>
             <option value="non_taxpayer">Não contribuinte</option>
             <option value="unknown">Não sei informar</option>
-          </select>
-        </label>
-        <label>
-          UF de destino
-          <select value={recipient.destinationState}
-            onChange={event => updateRecipient("destinationState", event.target.value as RecipientFields["destinationState"] | "")}>
-            <option value="">Selecione</option>
-            {destinationStates.map(state => <option key={state} value={state}>{state}</option>)}
           </select>
         </label>
       </fieldset>

@@ -9,6 +9,7 @@ import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 import { isUnknownRecord, readRows, readString, readNumber } from "@/lib/unknown-data";
 import { KitTransactionError, kitTestProvider } from "@/lib/representative-test-transactions";
 import { createShippingPreviewCache, shippingPreviewKey } from "@/lib/shipping-preview";
+import { isRepresentativeKitPostalCode, representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
 const selection = { variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99) };
 const postalCodeSchema = z.string().regex(/^\d{8}$/u);
@@ -53,22 +54,29 @@ export async function POST(request: NextRequest) {
     if (!item || readNumber(item, "available") < input.quantity) throw new KitTransactionError();
     let postalCode: string;
     if (input.mode === "checkout") {
-      const address = await auth.from("addresses").select("postal_code").eq("id", input.addressId)
+      const address = await auth.from("addresses").select("postal_code,state").eq("id", input.addressId)
         .eq("user_id", user.id).eq("country", "BR").maybeSingle();
       if (address.error) throw new KitTransactionError(503);
       if (!isUnknownRecord(address.data)) throw new KitTransactionError(404);
+      if (address.data.state !== representativeKitState) {
+        return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+      }
       postalCode = readString(address.data, "postal_code").replace(/\D/gu, "");
       if (!postalCodeSchema.safeParse(postalCode).success) throw new KitTransactionError();
     } else {
       postalCode = input.postalCode;
     }
+    if (!isRepresentativeKitPostalCode(postalCode)) {
+      return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+    }
+    const originPostalCode = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
+    if (!isRepresentativeKitPostalCode(originPostalCode)) throw new KitTransactionError(503);
     const db = createServiceSupabaseClient();
     if (!db) throw new KitTransactionError(503);
     const variant = await db.from("product_variants").select("product_id").eq("id", input.variantId).maybeSingle();
     if (variant.error || !isUnknownRecord(variant.data)) throw new KitTransactionError(503);
     const productId = readString(variant.data, "product_id");
     const resolved = await resolveShippingProducts([{ productId, variantId: input.variantId, quantity: input.quantity }], db);
-    const originPostalCode = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
     const quote = () => configuredMelhorEnvioProvider(environment, db).quote({
       originPostalCode, destinationPostalCode: postalCode, products: resolved.products
     });

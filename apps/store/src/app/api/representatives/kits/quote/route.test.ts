@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/melhor-envio-server", () => ({ configuredMelhorEnvioProvider: state.provider, resolveShippingProducts: mocks.resolve }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => mocks.environment }));
 vi.mock("@/lib/shipping-preview", () => import("../../../../../lib/shipping-preview"));
+vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
 vi.mock("@/lib/representative-test-transactions", () => ({ kitTestProvider: vi.fn(),
   KitTransactionError: class extends Error { constructor(readonly status = 409) { super(); } } }));
@@ -46,7 +47,7 @@ beforeEach(() => {
     MELHOR_ENVIO_ORIGIN_POSTAL_CODE: "35520000" };
   mocks.rpc.mockResolvedValue({ data: { items: [{ available: 2 }] } });
   mocks.addressFilter.mockReturnValue({ eq: mocks.addressFilter, maybeSingle: mocks.address });
-  mocks.address.mockResolvedValue({ data: { postal_code: "01310-100" } });
+  mocks.address.mockResolvedValue({ data: { postal_code: "30110-100", state: "MG" } });
   mocks.maybeSingle.mockResolvedValue({ data: { product_id: "official-product" } });
   mocks.resolve.mockResolvedValue({ products: [{ id: input.variantId, quantity: 1 }], fingerprint: "official-package" });
   mocks.quote.mockResolvedValue([{ provider: "melhorenvio", serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100,
@@ -97,15 +98,29 @@ describe("kit quote scope", () => {
     expect((await send({ ...input, mode: "preview" })).status).toBe(503);
     expect(state.provider).not.toHaveBeenCalled();
   });
+  it("rejects a CEP or saved state outside Minas Gerais before reaching the provider", async () => {
+    expect((await send({ ...input, mode: "preview", postalCode: "01310100" })).status).toBe(403);
+    mocks.address.mockResolvedValueOnce({ data: { postal_code: "30110-100", state: "SP" } });
+    expect((await send(checkout)).status).toBe(403);
+    mocks.address.mockResolvedValueOnce({ data: { postal_code: "01310-100", state: "MG" } });
+    expect((await send(checkout)).status).toBe(403);
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.issue).not.toHaveBeenCalled();
+  });
+  it("fails closed if the configured warehouse CEP is outside Minas Gerais", async () => {
+    mocks.environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE = "01310100";
+    expect((await send({ ...input, mode: "preview" })).status).toBe(503);
+    expect(mocks.quote).not.toHaveBeenCalled();
+  });
   it("uses the saved address and selected production rate when issuing a checkout quote", async () => {
     mocks.issue.mockResolvedValue({ data: { id: "private-quote", serviceId: "1", amountInCents: 2100 } });
     const response = await send(checkout);
     expect(response.status).toBe(200);
     expect(mocks.addressFilter.mock.calls).toEqual([["id", checkout.addressId], ["user_id", "actor"], ["country", "BR"]]);
-    expect(mocks.quote).toHaveBeenCalledWith(expect.objectContaining({ destinationPostalCode: "01310100" }));
+    expect(mocks.quote).toHaveBeenCalledWith(expect.objectContaining({ destinationPostalCode: "30110100" }));
     expect(mocks.issue).toHaveBeenCalledWith("issue_representative_kit_shipping_quote", expect.objectContaining({
       p_actor: "actor", p_variant: checkout.variantId, p_quantity: 1, p_address: checkout.addressId,
-      p_postal_code: "01310100", p_service_id: "1", p_amount_in_cents: 2100, p_cart_fingerprint: "official-package"
+      p_postal_code: "30110100", p_service_id: "1", p_amount_in_cents: 2100, p_cart_fingerprint: "official-package"
     }));
     expect(await response.json()).toEqual({
       ok: true, mode: "checkout", quote: { id: "private-quote", serviceId: "1", amountInCents: 2100 }

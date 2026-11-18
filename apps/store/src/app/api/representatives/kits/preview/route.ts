@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { previewRepresentativeResale, resaleScenarioSchema } from "@/lib/representative-resale";
+import { representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
 const headers = { "cache-control": "private, no-store" };
 const schema = z.union([
@@ -19,6 +20,9 @@ export async function POST(request: NextRequest) {
   const db = await createServerSupabaseClient();
   const auth = db ? await db.auth.getUser() : null;
   if (!db || auth?.error || !auth?.data.user) return NextResponse.json({ message: "Acesso negado." }, { status: 401, headers });
+  if (input.data.declaredScenario && input.data.declaredScenario.destinationState !== representativeKitState) {
+    return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+  }
   const result = "variantId" in input.data
     ? await db.rpc("read_representative_catalog_kit_context", { p_variant_id: input.data.variantId, p_quantity: input.data.quantity })
     : await db.rpc("read_representative_resale_context", { p_kit_id: input.data.kitId });

@@ -1,5 +1,7 @@
 # Kits para revenda dos representantes
 
+O canal atende exclusivamente Minas Gerais. O escopo e as evidências de liberação estão no [relatório da revenda MG](./revenda-mg-relatorio-final.md).
+
 O portal usa diretamente os kits já cadastrados em `products`/`product_variants`, seus preços e `inventory`. O representante escolhe cor/tamanho e quantidade de kits; estoque disponível não é confundido com quantidade comprada. Não é necessário recadastrar SKU/quantidade nem preencher a oferta legada “Completo”. A revenda permanece separada de `orders` e do checkout B2C. A condição de representante não determina se a pessoa é contribuinte do ICMS.
 
 Enquanto a revenda não estiver homologada:
@@ -20,7 +22,7 @@ Enquanto a revenda não estiver homologada:
 
 `icmsTaxpayer` é opcional para a conferência; ausente resulta em pendência explícita. Não é inferido de CNPJ ou papel. A prévia se refere à compra para revenda, mas não determina o indicador fiscal de consumidor final: `finalConsumer=null` e a validação correspondente permanece pendente. `canPurchase=false`. Cliente não fornece preço, estoque, composição, tributação ou `orderId`.
 
-A API aceita opcionalmente `declaredScenario` com tipo de pessoa (`individual`/`business`), finalidade (`resale`/`final_consumption`/`other`), condição de ICMS (`taxpayer`/`registration_exempt`/`non_taxpayer`/`unknown`) e UF de destino. Não pode ser combinado com o campo legado `icmsTaxpayer`. No catálogo, o representante pode informar o tipo de comprador, a condição de ICMS e a UF de destino na prévia de revenda. Os dados são opcionais e, quando informados, seguem juntos com finalidade `resale`. A resposta identifica a declaração como `unverified`. Identificadores pessoais e campos de aprovação não são aceitos nesse objeto. Os bloqueios fiscais e comerciais continuam obrigatórios.
+A API aceita opcionalmente `declaredScenario` com tipo de pessoa (`individual`/`business`), finalidade (`resale`/`final_consumption`/`other`), condição de ICMS (`taxpayer`/`registration_exempt`/`non_taxpayer`/`unknown`) e UF de destino. Não pode ser combinado com o campo legado `icmsTaxpayer`. No catálogo, o representante pode informar o tipo de comprador e a condição de ICMS. Quando informados, os dois campos seguem com finalidade `resale` e destino `MG`. A resposta identifica a declaração como `unverified`. Identificadores pessoais e campos de aprovação não são aceitos nesse objeto. Os bloqueios fiscais e comerciais continuam obrigatórios.
 
 A RPC `read_representative_catalog_kit_context` valida o representante, perfil/status, variante ativa e quantidade entre1 e99. Quantidade acima do estoque resulta em bloqueio na prévia. Preço unitário vem do cadastro, total é recalculado no servidor e a composição fiscal vigente é reutilizada. SKU e estoque próprios são preservados; pares fiscais nunca baixam avulsos. Composição fiscal ausente/desatualizada continua bloqueada, sem inventar componentes.
 

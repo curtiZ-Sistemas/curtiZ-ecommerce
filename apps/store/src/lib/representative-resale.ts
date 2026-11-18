@@ -34,6 +34,10 @@ export function previewRepresentativeResale(context: unknown, icmsTaxpayer?: boo
   const blockers = new Set<string>(["resale_homologation_required", "resale_fiscal_validation_required", "shipping_quote_required", "recipient_final_consumer_validation_required"]);
   if (typeof icmsTaxpayer !== "boolean") blockers.add("recipient_taxpayer_declaration_required");
   if (declaredScenario && declaredScenario.purpose !== "resale") blockers.add("recipient_purpose_mismatch");
+  if (declaredScenario?.icmsStatus === "non_taxpayer") blockers.add("recipient_active_mg_registration_required");
+  if (declaredScenario?.icmsStatus === "registration_exempt" || declaredScenario?.personType === "individual") {
+    blockers.add("recipient_fiscal_exception_evidence_required");
+  }
   if (!input.items.length) blockers.add("commercial_composition_required");
   if (new Set(input.items.map(i => i.variantId)).size !== input.items.length) throw new Error("duplicate_commercial_variant");
   const weights = input.items.map(i => i.allocationWeight ?? (input.items.length === 1 ? 1 : 0));
