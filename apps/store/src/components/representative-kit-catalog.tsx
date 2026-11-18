@@ -3,13 +3,23 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatBRL } from "@curtiz/domain";
 import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/representative-kit-catalog";
+import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
+
+const destinationStates = [
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
+] as const satisfies readonly ResaleScenario["destinationState"][];
+type RecipientFields = Omit<ResaleScenario, "purpose">;
 
 export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
   const [page, setPage] = useState<RepresentativeKitPage | null>(null), [error, setError] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(""), [messages, setMessages] = useState<Record<string, string>>({});
+  const [recipient, setRecipient] = useState<{
+    [Field in keyof RecipientFields]: RecipientFields[Field] | "";
+  }>({ personType: "", icmsStatus: "", destinationState: "" });
   useEffect(() => {
     const controller = new AbortController();
     setPage(null); setError("");
@@ -22,16 +32,29 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
       }).catch(() => { if (!controller.signal.aborted) setError("Não foi possível carregar os kits. Tente novamente."); });
     return () => controller.abort();
   }, [offset, retry]);
+  function updateRecipient<Field extends keyof RecipientFields>(field: Field, value: RecipientFields[Field] | "") {
+    setRecipient(current => ({ ...current, [field]: value }));
+    setMessages({});
+  }
+
   async function preview(variantId: string) {
     if (checking) return;
     const quantity = Number(quantities[variantId] ?? "1");
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
       setMessages(current => ({ ...current, [variantId]: "Informe uma quantidade de kits entre 1 e 99." })); return;
     }
+    const { personType, icmsStatus, destinationState } = recipient;
+    const declaredScenario = personType && icmsStatus && destinationState
+      ? { personType, icmsStatus, destinationState, purpose: "resale" as const }
+      : undefined;
+    if (!declaredScenario && (personType || icmsStatus || destinationState)) {
+      setMessages(current => ({ ...current, [variantId]: "Preencha os três dados da prévia ou deixe todos em branco." }));
+      return;
+    }
     setChecking(variantId);
     try {
       const response = await fetch("/api/representatives/kits/preview", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ variantId, quantity }) });
+        body: JSON.stringify({ variantId, quantity, declaredScenario }) });
       const data: unknown = await response.json();
       if (!response.ok || !isUnknownRecord(data) || !Number.isSafeInteger(data.merchandiseTotalInCents) || !Array.isArray(data.blockers))
         throw new Error("Não foi possível conferir este kit.");
@@ -43,6 +66,40 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   }
   return <section>
     {header}
+    {Boolean(page?.items.length) && (
+      <fieldset className="representative-card representative-profile-form" disabled={Boolean(checking)}>
+        <legend>Dados para a prévia de revenda</legend>
+        <p>Preenchimento opcional. Os dados informados precisam de validação fiscal.</p>
+        <label>
+          Tipo de comprador
+          <select value={recipient.personType}
+            onChange={event => updateRecipient("personType", event.target.value as RecipientFields["personType"] | "")}>
+            <option value="">Selecione</option>
+            <option value="individual">Pessoa física</option>
+            <option value="business">CNPJ, incluindo MEI</option>
+          </select>
+        </label>
+        <label>
+          Situação perante o ICMS
+          <select value={recipient.icmsStatus}
+            onChange={event => updateRecipient("icmsStatus", event.target.value as RecipientFields["icmsStatus"] | "")}>
+            <option value="">Selecione</option>
+            <option value="taxpayer">Contribuinte</option>
+            <option value="registration_exempt">Dispensado de inscrição estadual</option>
+            <option value="non_taxpayer">Não contribuinte</option>
+            <option value="unknown">Não sei informar</option>
+          </select>
+        </label>
+        <label>
+          UF de destino
+          <select value={recipient.destinationState}
+            onChange={event => updateRecipient("destinationState", event.target.value as RecipientFields["destinationState"] | "")}>
+            <option value="">Selecione</option>
+            {destinationStates.map(state => <option key={state} value={state}>{state}</option>)}
+          </select>
+        </label>
+      </fieldset>
+    )}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>
       : !page ? <p role="status">Carregando kits…</p>
       : !page.items.length ? <p>Nenhum kit disponível nesta página.</p>

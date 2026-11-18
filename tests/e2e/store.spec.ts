@@ -984,6 +984,51 @@ test("oferece o Painel do representante sem remover a conta de cliente", async (
   await expect(page.locator(".help-widget")).toBeHidden();
 });
 
+test("envia os dados informados para a prévia de kits de revenda", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+
+  const variantId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  await page.route("**/api/representatives/kits/catalog?offset=0", route =>
+    route.fulfill({ json: {
+      items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto",
+        size: "34", pairsPerSku: 2, unitPriceInCents: 4500, available: 3 }],
+      nextOffset: null
+    } })
+  );
+  await page.route("**/api/representatives/kits/preview", route =>
+    route.fulfill({ json: { merchandiseTotalInCents: 4500, blockers: ["resale_homologation_required"] } })
+  );
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+
+  const checkValue = page.getByRole("button", { name: "Conferir valor" });
+  const basicPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
+  await checkValue.click();
+  expect((await basicPreview).postDataJSON()).toEqual({ variantId, quantity: 1 });
+  await page.getByLabel("Tipo de comprador").selectOption("business");
+  await checkValue.click();
+  await expect(page.getByText("Preencha os três dados da prévia ou deixe todos em branco.")).toBeVisible();
+
+  await page.getByLabel("Situação perante o ICMS").selectOption("unknown");
+  await page.getByLabel("UF de destino").selectOption("TO");
+  await expect(page.getByText("Preencha os três dados da prévia ou deixe todos em branco.")).toHaveCount(0);
+  const declaredPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
+  await checkValue.click();
+  expect((await declaredPreview).postDataJSON()).toEqual({
+    variantId, quantity: 1,
+    declaredScenario: { personType: "business", icmsStatus: "unknown", destinationState: "TO", purpose: "resale" }
+  });
+  await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
+  await page.setViewportSize({ width: 320, height: 850 });
+  await expect(page.getByLabel("UF de destino")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
+});
+
 test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     headers: { origin: "http://localhost:3000" },
