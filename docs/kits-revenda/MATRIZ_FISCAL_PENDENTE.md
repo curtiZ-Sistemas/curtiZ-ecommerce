@@ -15,3 +15,12 @@ A cobertura comercial solicitada é nacional. Os parâmetros abaixo são referê
 - **Implementação técnica existente.** Catálogo, prévia e transações de teste de kits. O estoque fica no SKU comercial com unidade UN, e a composição fiscal cadastrada usa pares em PR. A conferência de 01/11 registrou 162 SKUs e 372 componentes. [Conferência de 01/11/2026](../bling-producao-2026-11-01.md)
 - **Homologação.** Existe registro de uma NF-e de kit de dois pares preparada manualmente em homologação. O registro cobre aquele documento e não comprova o fluxo automatizado de revenda ou autorização dos demais cenários.
 - **Produção.** Falta identificar, para cada cenário permitido, a natureza ativa de revenda no Bling e a vigência da aprovação, incluindo exceções por UF e produto, tributos aplicáveis e devoluções. A integração comercial permanece fechada. A origem logística registrada é Nova Serrana/MG e permanece separada do endereço fiscal.
+
+## Naturezas consultadas no Bling
+
+| Cadastro | CFOP exibido | ID Bling | Uso produtivo |
+| --- | --- | --- | --- |
+| Homologação MG, não consumidor final | 5102 | `15111725693` | Pendente de vinculação e aprovação para revenda. |
+| Homologação interestadual, contribuinte não consumidor | 6102 | `15111725714` | Pendente de vinculação e aprovação do perfil, do crédito e das UFs aplicáveis. |
+
+IDs e CFOPs verificados diretamente no cadastro. A consulta não alterou as naturezas nem transmitiu documentos. O cadastro com CFOP 6108 não foi selecionado como referência de revenda.
