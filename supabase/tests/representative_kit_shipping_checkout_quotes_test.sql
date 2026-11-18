@@ -19,6 +19,13 @@ insert into public.products(id,name,slug,category_id,status,base_price)
   select product,'Kit shipping test',product::text,category,'draft',50 from kit_shipping_fixture;
 insert into public.product_variants(id,product_id,sku,color_name,size)
   select variant,product,'TEST-SHIPPING-'||variant::text,'White','37' from kit_shipping_fixture;
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+  select product,'test/kit-shipping.webp','Shipping fixture',720,720,true from kit_shipping_fixture;
+update public.products set status='active' where id=(select product from kit_shipping_fixture);
+insert into public.inventory(variant_id,available_quantity,reserved_quantity)
+  select variant,3,0 from kit_shipping_fixture;
+insert into private.bling_catalog_metadata(product_id,commercial_unit,pairs_per_sku,ncm,origin,cest,production_type,evidence_reference)
+  select product,'UN',2,'64022000',0,'','T','Shipping fixture' from kit_shipping_fixture;
 insert into public.addresses(id,user_id,label,recipient_name,postal_code,street,number,district,city,state)
   select address,actor,'Test','Test recipient','30110-100','Test street','1','Test district','Test city','MG' from kit_shipping_fixture;
 
@@ -56,6 +63,18 @@ select is((select (private.consume_representative_kit_shipping_quote(quote,actor
   null::uuid,'quantity changes invalidate the quote');
 select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('b',64))).id from kit_shipping_fixture),
   null::uuid,'changes in the package fingerprint invalidate the quote');
+update public.profiles set status='disabled' where id=(select actor from kit_shipping_fixture);
+select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('a',64))).id from kit_shipping_fixture),
+  null::uuid,'disabled account cannot consume a previously issued quote');
+update public.profiles set status='active' where id=(select actor from kit_shipping_fixture);
+update public.product_variants set active=false where id=(select variant from kit_shipping_fixture);
+select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('a',64))).id from kit_shipping_fixture),
+  null::uuid,'disabled variant cannot consume a previously issued quote');
+update public.product_variants set active=true where id=(select variant from kit_shipping_fixture);
+update public.inventory set available_quantity=1 where variant_id=(select variant from kit_shipping_fixture);
+select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('a',64))).id from kit_shipping_fixture),
+  null::uuid,'stock shortage cannot consume a previously issued quote');
+update public.inventory set available_quantity=3 where variant_id=(select variant from kit_shipping_fixture);
 select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('a',64))).amount_in_cents from kit_shipping_fixture),
   2100,'the transaction obtains the server-quoted amount');
 select is((select (private.consume_representative_kit_shipping_quote(quote,actor,variant,2,address,repeat('a',64))).id from kit_shipping_fixture),
