@@ -30,6 +30,8 @@ Frete, total final e tributos ficam `null` até validação própria; a prévia 
 
 No catálogo, Calcular frete chama `POST /api/representatives/kits/quote` com `mode: "preview"`, variante, quantidade e CEP. Com a prévia de frete da loja habilitada e Melhor Envio em produção, a rota confere o acesso e o estoque e retorna serviços, preço e prazo estimados com a embalagem cadastrada. O resultado serve para consulta. A rota de prévia não gera uma cotação de checkout.
 
+A mesma rota aceita `mode: "checkout"`, variante, quantidade, endereço salvo e serviço. Recalcula o frete com o endereço do representante e grava a cotação dos kits em uma tabela privada. A cotação vale por até 30 minutos e identifica quantidade, endereço, variante e a composição usada no transporte. O checkout produtivo ainda precisa chamar a função privada de consumo na mesma transação que cria o pedido. A função devolve o valor cotado uma vez, após conferir novamente endereço, composição e vigência.
+
 ## Condições para futura homologação
 
 Usar os SKUs, preços, estoques e composições que já estão cadastrados, sem pedir novamente SKU/quantidade ao dono. Validar a aplicação fiscal da revenda e os dados reais do destinatário, sem copiar automaticamente a aprovação B2C. Homologar pagamento de `kit_orders`, reserva/baixa do SKU próprio, cancelamento/replay, NF-e e expedição no escopo separado antes de remover o bloqueio por outra revisão.
