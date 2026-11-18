@@ -113,5 +113,59 @@ select results_eq(
   $$select available_quantity,reserved_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)$$,
   $$values (3,0)$$,'the hold is restored exactly once');
 
+update private.representative_kit_checkout_approvals set buyer_legal_name = 'Synthetic buyer LTDA', buyer_document = '11222333000181'
+  where actor_id = (select actor from commercial_kit_fixture);
+update commercial_kit_fixture set quote = pg_temp.commercial_quote(), request_key = gen_random_uuid();
+update commercial_kit_fixture set order_id = (pg_temp.reserve_commercial_kit()->>'orderId')::uuid;
+
+create function pg_temp.claim_commercial_pix() returns jsonb language sql as $$
+  select public.claim_representative_kit_pix(actor,order_id) from commercial_kit_fixture;
+$$;
+
+create function pg_temp.settle_commercial_pix(p_status text,p_id text default '123',p_amount bigint default 12100,
+  p_refunds jsonb default '[]')
+returns jsonb language sql as $$
+  select public.settle_representative_kit_payment(order_id,p_id,'KITMG-'||order_id,p_amount,'BRL',p_status,now(),p_refunds)
+  from commercial_kit_fixture;
+$$;
+
+select ok(not has_function_privilege('authenticated',
+  'public.settle_representative_kit_payment(uuid,text,text,bigint,text,text,timestamptz,jsonb)','execute'),
+  'buyers cannot confirm their own payment');
+select throws_ok($$select pg_temp.settle_commercial_pix('approved')$$,'23514','kit_payment_identity_mismatch',
+  'payments cannot attach before the creation claim');
+update private.representative_kit_checkout_approvals set revoked_at = now() where actor_id = (select actor from commercial_kit_fixture);
+select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
+  'approval is required again before issuing Pix');
+update private.representative_kit_checkout_approvals set revoked_at = null where actor_id = (select actor from commercial_kit_fixture);
+select is(pg_temp.claim_commercial_pix()->>'buyerDocument','11222333000181','the provider receives the approved fiscal buyer');
+select is(pg_temp.claim_commercial_pix(),null::jsonb,'a replay never claims a second provider write');
+select is((select public.cancel_unstarted_representative_kit_order(actor,order_id) from commercial_kit_fixture),
+  false,'an uncertain provider creation keeps the stock held');
+select throws_ok($$select pg_temp.settle_commercial_pix('pending','123',1)$$,'23514','kit_payment_identity_mismatch',
+  'provider amount must match exactly');
+select is(pg_temp.settle_commercial_pix('pending')->>'state','payment_pending','a matching payment attaches');
+select throws_ok($$select pg_temp.settle_commercial_pix('approved','456')$$,'23514','kit_payment_identity_mismatch',
+  'a different payment cannot replace the attached identity');
+select is((select public.request_representative_kit_payment_cancellation(actor,order_id)->>'cancellationRequested'
+  from commercial_kit_fixture),'true','a requested cancellation awaits provider confirmation');
+select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','confirmed approval wins the cancellation race');
+select is(pg_temp.settle_commercial_pix('pending')->>'state','paid','a stale pending response cannot regress payment');
+select results_eq(
+  $$select available_quantity,reserved_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)$$,
+  $$values (1,0)$$,'paid stock is debited once');
+select is((select count(*)::integer from public.inventory_movements where reference_id=(select order_id from commercial_kit_fixture)),
+  1,'debit has one physical movement');
+select is(pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2100}]')->>'state',
+  'manual_review','a partial refund blocks fulfillment without automatically returning stock');
+select is(pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2100}]')->>'refundedInCents',
+  '2100','repeated refund events cannot duplicate the refund amount');
+select throws_ok($$select pg_temp.settle_commercial_pix('approved','123',12100,'[{"id":"99","amountInCents":2101}]')$$,
+  '23514','kit_refund_identity_mismatch','existing refund amount cannot be changed');
+select is(pg_temp.settle_commercial_pix('refunded','123',12100,'[{"id":"100","amountInCents":10000}]')->>'state',
+  'refunded','full provider refund is recorded');
+select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
+  1,'a financial refund does not put sold items back on the shelf');
+
 select * from finish();
 rollback;

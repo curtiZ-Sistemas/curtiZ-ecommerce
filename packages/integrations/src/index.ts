@@ -59,6 +59,7 @@ export type MercadoPagoPaymentInput = {
 
 export type MercadoPagoPayment = {
   id: string;
+  collectorId?: string;
   status: string;
   statusDetail: string;
   amountInCents: number;
@@ -146,6 +147,8 @@ const mercadoPagoPayment = (value: unknown): MercadoPagoPayment => {
   }
   return {
     id,
+    ...((typeof payment.collector_id === "number" || typeof payment.collector_id === "string")
+      ? { collectorId: String(payment.collector_id) } : {}),
     status: typeof payment.status === "string" ? payment.status : "pending",
     statusDetail: typeof payment.status_detail === "string" ? payment.status_detail : "",
     amountInCents: Math.round(amount * 100),
@@ -178,7 +181,7 @@ export class MercadoPagoPaymentProvider {
     }
   }
 
-  private async request(path: string, init: RequestInit, idempotencyKey?: string) {
+  private async requestJson(path: string, init: RequestInit, idempotencyKey?: string): Promise<unknown> {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${this.accessToken}`);
     headers.set("content-type", "application/json");
@@ -205,11 +208,73 @@ export class MercadoPagoPaymentProvider {
         response.status, codes, fields, response.headers.get("x-request-id")
       );
     }
+    return body;
+  }
+
+  private async request(path: string, init: RequestInit, idempotencyKey?: string) {
+    const body = await this.requestJson(path, init, idempotencyKey);
     if (!body || typeof body !== "object" || !("live_mode" in body)
       || body.live_mode !== (this.mode === "production")) {
       throw new MercadoPagoProviderError("payment_mode_mismatch");
     }
     return mercadoPagoPayment(body);
+  }
+
+  async getRepresentativeKitCollectorId(): Promise<string> {
+    if (this.mode !== "production") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+    const body = await this.requestJson("/users/me", { method: "GET" });
+    const id = body && typeof body === "object" && "id" in body ? String(body.id) : "";
+    if (!/^\d{1,30}$/u.test(id)) throw new MercadoPagoProviderError("invalid_provider_response");
+    return id;
+  }
+
+  async createRepresentativeKitPix(input: {
+    orderId: string;
+    amountInCents: number;
+    email: string;
+    buyerName: string;
+    buyerDocument: string;
+    expiresAt: string;
+  }): Promise<MercadoPagoPayment> {
+    if (this.mode !== "production") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+    if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(input.orderId)
+      || !/^\d{14}$/u.test(input.buyerDocument)
+      || !Number.isSafeInteger(input.amountInCents) || input.amountInCents <= 0
+      || !Number.isFinite(Date.parse(input.expiresAt))) {
+      throw new MercadoPagoProviderError("invalid_kit_payment", 400);
+    }
+    const reference = `KITMG-${input.orderId}`;
+    return this.request("/v1/payments", {
+      method: "POST",
+      body: JSON.stringify({
+        transaction_amount: input.amountInCents / 100,
+        description: `Pedido ${reference}`,
+        installments: 1,
+        payment_method_id: "pix",
+        payer: {
+          email: input.email, first_name: input.buyerName, entity_type: "association",
+          identification: { type: "CNPJ", number: input.buyerDocument }
+        },
+        external_reference: reference,
+        metadata: { aggregate: "representative_kit_orders", kit_order_id: input.orderId },
+        date_of_expiration: new Date(input.expiresAt).toISOString()
+      })
+    }, input.orderId);
+  }
+
+  async findRepresentativeKitPayment(reference: string): Promise<MercadoPagoPayment | null> {
+    if (this.mode !== "production") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+    if (!/^KITMG-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(reference)) {
+      throw new MercadoPagoProviderError("invalid_kit_payment", 400);
+    }
+    const query = new URLSearchParams({ external_reference: reference, sort: "date_created", criteria: "desc", limit: "2" });
+    const response = await this.requestJson(`/v1/payments/search?${query}`, { method: "GET" });
+    const results = response && typeof response === "object" && "results" in response ? response.results : null;
+    if (!Array.isArray(results) || results.length > 1) throw new MercadoPagoProviderError("ambiguous_kit_payment");
+    if (!results.length) return null;
+    const candidate = mercadoPagoPayment(results[0]);
+    if (candidate.externalReference !== reference) throw new MercadoPagoProviderError("invalid_provider_response");
+    return this.getPayment(candidate.id);
   }
 
   async getPaymentMethodIds(): Promise<string[]> {

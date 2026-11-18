@@ -10,6 +10,7 @@ import { runMelhorEnvioShippingJobs } from "./src/lib/melhor-envio-jobs";
 import { runBlingJobs } from "./src/lib/bling-jobs";
 import { runTransactionalEmailJobs } from "./src/lib/transactional-email-jobs";
 import { runRepresentativeTestJobs } from "./src/lib/representative-test-jobs";
+import { runRepresentativeCommercialJobs } from "./src/lib/representative-commercial-jobs";
 import { runAfterSaleJobs } from "./src/lib/after-sale-jobs";
 import { runReturnJobs } from "./src/lib/return-jobs";
 import { runPrivacyRetentionJobs } from "./src/lib/privacy-retention-jobs";
@@ -61,6 +62,7 @@ export default {
       await runQueue("expiration", () => runExpirationHousekeeping(environment, executionId, scheduledFetch));
       await runQueue("privacy_retention", () => runPrivacyRetentionJobs(environment, executionId, scheduledFetch));
       await runQueue("representative_test", () => runRepresentativeTestJobs(environment, scheduledFetch));
+      await runQueue("representative_commercial", () => runRepresentativeCommercialJobs(environment, scheduledFetch));
       await runQueue("bling", () => runBlingJobs(environment, executionId, undefined, scheduledFetch));
       await runQueue("after_sale", () => runAfterSaleJobs(environment, executionId, scheduledFetch));
       await runQueue("returns", () => runReturnJobs(environment, executionId, scheduledFetch));
