@@ -1,0 +1,16 @@
+diff --git a/lib/parse.js b/lib/parse.js
+index caa2b86aa5a567df33cef4bda3c7a97794f439f8..257f3d3b1da805a06ba4a4f57e9fafb30d476fd6 100644
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -492,6 +492,11 @@ const parse = (input, options) => {
+   };
+ 
+   const extglobOpen = (type, value) => {
++    // CVE-2026-112366: reject repeated extglobs before building a regexp.
++    if (type === 'plus' || type === 'star') {
++      throw new SyntaxError('Repeated extglobs are disabled by the security patch');
++    }
++
+     const token = { ...EXTGLOB_CHARS[value], conditions: 1, inner: '' };
+ 
+     token.prev = prev;
