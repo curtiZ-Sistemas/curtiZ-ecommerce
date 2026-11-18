@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(22);
 
 insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data) values
  ('f6100000-0000-4000-8000-000000000001','help-customer@example.invalid','{}','{}'),
@@ -38,10 +38,10 @@ insert into public.help_content_versions(id,content_id,version,snapshot,change_s
 select ('f6400000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,
  ('f6300000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,1,
  jsonb_build_object('content',jsonb_build_object('slug','fixture-help-audience-'||i,'content_type','article',
-   'title','Fixture ajuda '||i,'summary','','body','Conteúdo fictício',
+   'title','Fixture ajuda '||i,'summary','','internal_review_note','fixture-private','body','Conteúdo fictício',
    'audiences',jsonb_build_array((array['visitor','customer','representative','technical','admin','manager','operational','visitor','visitor'])[i])),
-   'category',jsonb_build_object('name','Fixture','slug','fixture-help-audience'),
-   'related',case when i=1 then jsonb_build_array(jsonb_build_object('slug','fixture-help-audience-4','title','Conteúdo interno'),jsonb_build_object('slug','fixture-help-audience-8','title','Categoria interna')) else '[]'::jsonb end),
+   'category',jsonb_build_object('name','Fixture','slug','fixture-help-audience','internal_review_note','fixture-private'),
+   'related',case when i=1 then jsonb_build_array(jsonb_build_object('slug','fixture-help-audience-4','internal_review_note','fixture-private','title','Conteúdo interno'),jsonb_build_object('slug','fixture-help-audience-8','title','Categoria interna')) else '[]'::jsonb end),
  'Fixture','published','f6100000-0000-4000-8000-000000000001'
 from generate_series(1,9) i;
 update public.help_contents set published_version_id=
@@ -53,6 +53,8 @@ select set_config('request.jwt.claims','{"role":"anon"}',true);
 select is((select count(*) from public.published_help_contents where slug like 'fixture-help-audience-%'),1::bigint,'Visitante lê apenas conteúdo público');
 select is((select count(*) from public.search_published_help('','technical',1,24) where slug like 'fixture-help-audience-%'),0::bigint,'Visitante não escolhe público interno pela RPC');
 select is((select snapshot->'related' from public.published_help_contents where slug='fixture-help-audience-1'),'[]'::jsonb,'Referências internas não aparecem no conteúdo público');
+select is((select snapshot#>>'{content,title}' from public.published_help_contents where slug='fixture-help-audience-1'),'Fixture ajuda 1','Published title is preserved');
+select ok((select not ((snapshot->'content') ? 'internal_review_note') and not ((snapshot->'category') ? 'internal_review_note') from public.published_help_contents where slug='fixture-help-audience-1'),'Editorial metadata is excluded from content and category');
 select is((select count(*) from public.published_help_contents where slug='fixture-help-audience-8'),0::bigint,'Categoria interna não divulga conteúdo ao visitante');
 select is((select count(*) from public.published_help_contents where slug='fixture-help-audience-9'),0::bigint,'Categoria inativa não divulga conteúdo ao visitante');
 
@@ -70,6 +72,7 @@ select is((select count(*) from public.published_help_contents where slug like '
 select set_config('request.jwt.claims','{"sub":"f6100000-0000-4000-8000-000000000003","role":"authenticated","aal":"aal2"}',true);
 select is((select count(*) from public.search_published_help('','technical',1,24) where slug like 'fixture-help-audience-%'),1::bigint,'Papel técnico com MFA acessa seu conteúdo');
 select is((select jsonb_array_length(snapshot->'related') from public.published_help_contents where slug='fixture-help-audience-1'),1,'Papel autorizado vê referência interna');
+select ok((select not ((snapshot#>'{related,0}') ? 'internal_review_note') from public.published_help_contents where slug='fixture-help-audience-1'),'Related items expose only publication fields');
 select set_config('request.jwt.claims','{"sub":"f6100000-0000-4000-8000-000000000004","role":"authenticated","aal":"aal2"}',true);
 select is((select count(*) from public.search_published_help('','admin',1,24) where slug like 'fixture-help-audience-%'),1::bigint,'Administrador acessa seu público');
 select set_config('request.jwt.claims','{"sub":"f6100000-0000-4000-8000-000000000005","role":"authenticated","aal":"aal2"}',true);
