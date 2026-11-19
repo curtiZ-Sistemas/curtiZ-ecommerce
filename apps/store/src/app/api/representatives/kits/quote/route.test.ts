@@ -47,6 +47,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   state.user = { id: "actor" };
   vi.stubEnv("ALLOWED_ORIGINS", "https://curtiz.com.br");
+  vi.stubEnv("APP_ENV", "staging");
   vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "false");
   mocks.environment = { SHIPPING_PREVIEW_ENABLED: "true", MELHOR_ENVIO_ENVIRONMENT: "production",
     MELHOR_ENVIO_ORIGIN_POSTAL_CODE: "35520000" };

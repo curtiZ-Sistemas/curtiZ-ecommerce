@@ -30,7 +30,13 @@ const order = "10000000-0000-4000-8000-000000000001";
 const send = (body: unknown, origin = "https://curtiz.com.br") => POST(new NextRequest("https://curtiz.com.br/api/representatives/kits/transactions", {
   method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body)
 }));
-beforeEach(() => { vi.clearAllMocks(); state.call.mockReset(); state.user = { id: "actor", email: "fixture@example.invalid" }; vi.stubEnv("ALLOWED_ORIGINS", "https://curtiz.com.br"); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  state.call.mockReset();
+  state.user = { id: "actor", email: "fixture@example.invalid" };
+  vi.stubEnv("ALLOWED_ORIGINS", "https://curtiz.com.br");
+  vi.stubEnv("APP_ENV", "staging");
+});
 afterEach(() => vi.unstubAllEnvs());
 describe("kit transaction access", () => {
   it("rejects cross origin before authentication or provider work", async () => {
