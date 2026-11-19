@@ -69,9 +69,9 @@ export async function POST(request: Request) {
       return reply({ ok: true, request }, 200);
     }
     if (data.action === "reserve_collection") {
-      const origin = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
-      if (!isRepresentativeKitPostalCode(origin)) throw new KitTransactionError(503);
-      const order = await kitRecord(db, "reserve_representative_kit_collection_order", {
+      const origin = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
+      if (origin && !isRepresentativeKitPostalCode(origin)) throw new KitTransactionError(503);
+      const order = await kitRecord(db, "reserve_representative_kit_own_collection", {
         p_actor: user.id, p_selection: data.selectionId, p_template: data.template ?? null, p_quantity: data.quantity,
         p_quote: data.quoteId, p_address: data.addressId, p_key: data.idempotencyKey, p_origin: origin,
         p_method: data.method, p_cash_tendered: data.cashTenderedInCents ?? null
@@ -81,17 +81,14 @@ export async function POST(request: Request) {
     const provider = commercialKitPaymentProvider(environment);
     const collector = commercialKitCollector(environment);
     if (data.action === "reserve" || data.action === "reserve_grade") {
-      const originPostalCode = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
-      if (!isRepresentativeKitPostalCode(originPostalCode)) throw new KitTransactionError(503);
-      const common = { p_actor: user.id, p_quantity: data.quantity, p_quote: data.quoteId,
-        p_address: data.addressId, p_key: data.idempotencyKey };
-      const order = data.action === "reserve_grade"
-        ? await kitRecord(db, "reserve_representative_kit_grade_order", {
-          ...common, p_kit: data.kitId, p_template: data.template, p_origin: originPostalCode
-        })
-        : await kitRecord(db, "reserve_representative_kit_order", {
-          ...common, p_variant: data.variantId, p_origin_postal_code: originPostalCode
-        });
+      const originPostalCode = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
+      if (originPostalCode && !isRepresentativeKitPostalCode(originPostalCode)) throw new KitTransactionError(503);
+      const order = await kitRecord(db, "reserve_representative_kit_own_delivery", {
+        p_actor: user.id, p_quantity: data.quantity, p_quote: data.quoteId,
+        p_address: data.addressId, p_key: data.idempotencyKey, p_origin: originPostalCode,
+        p_selection: data.action === "reserve_grade" ? data.kitId : data.variantId,
+        p_template: data.action === "reserve_grade" ? data.template : null
+      });
       return reply({ ok: true, order: kitPaymentView(order) }, 200);
     }
     if (data.action === "pix") {

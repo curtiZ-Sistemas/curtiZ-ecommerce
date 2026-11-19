@@ -8,7 +8,7 @@ const mock = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => mock.originAllowed }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({
-  MELHOR_ENVIO_ORIGIN_POSTAL_CODE: mock.originPostal
+  REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE: mock.originPostal
 }) }));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/private-request", () => ({
@@ -80,8 +80,8 @@ describe("commercial kit order route", () => {
     const response = await post(reserve);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(mock.record).toHaveBeenCalledWith(expect.anything(),"reserve_representative_kit_order",{
-      p_actor: mock.actor, p_origin_postal_code: "35520000", p_variant: variantId, p_quantity: 2,
+    expect(mock.record).toHaveBeenCalledWith(expect.anything(),"reserve_representative_kit_own_delivery",{
+      p_actor: mock.actor, p_origin: "35520000", p_selection: variantId, p_template: null, p_quantity: 2,
       p_quote: quoteId, p_address: addressId, p_key: idempotencyKey
     });
     mock.originPostal = "01310100";

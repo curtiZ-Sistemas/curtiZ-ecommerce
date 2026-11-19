@@ -17,6 +17,7 @@ import {
   X
 } from "lucide-react";
 import { BannerManager } from "./banner-manager";
+import { RepresentativeKitDeliveryRoutes } from "./representative-kit-delivery-routes";
 import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
@@ -597,6 +598,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
   return (
     <section className="panel-card admin-resource">
+      {resource === "kits" && canUpdate && <RepresentativeKitDeliveryRoutes />}
       {resource === "pedidos" ? <BlingOperational /> : null}
       <header className="admin-resource-header">
         <div>

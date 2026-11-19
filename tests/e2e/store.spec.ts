@@ -1009,15 +1009,8 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
     { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" },
     { id: "sp-test", label: "Filial", city: "São Paulo", state: "SP", postalCode: "01310-100" }
   ] } }));
-  await page.route("**/api/representatives/kits/quote", route => {
-    const request = route.request().postDataJSON() as { mode: string };
-    if (request.mode === "checkout") {
-      return route.fulfill({ json: { ok: true, mode: "checkout", quote: { id: "quote-test", serviceId: "1", amountInCents: 2200 } } });
-    }
-    return route.fulfill({ json: { ok: true, mode: "preview", quotes: [{
-      serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
-    }] } });
-  });
+  await page.route("**/api/representatives/kits/collection", route =>
+    route.fulfill({ json: { quote: null } }));
   const cookieInventory = page.waitForResponse(response =>
     response.url().endsWith("/api/privacy/cookies") && response.request().method() === "GET");
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
@@ -1044,27 +1037,11 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
   await page.setViewportSize({ width: 320, height: 850 });
   await expect(page.getByText(/Entrega exclusiva em Minas Gerais/)).toBeVisible();
-  await page.getByRole("button", { name: "Calcular frete" }).click();
-  await page.getByLabel("CEP", { exact: true }).fill("01310-100");
-  await page.getByRole("button", { name: "Calcular", exact: true }).click();
-  await expect(page.getByText(/atende apenas Minas Gerais/)).toBeVisible();
-  await page.getByLabel("CEP", { exact: true }).fill("30110-100");
-  const shippingPreview = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
-  await page.getByRole("button", { name: "Calcular", exact: true }).click();
-  expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "30110100", mode: "preview" });
-  await expect(page.getByText("Correios · até 9 dias úteis, incluindo preparação")).toBeVisible();
-  await page.getByRole("button", { name: "Fechar cálculo de frete" }).click();
   await page.getByRole("button", { name: "Usar endereço salvo" }).click();
   await expect(page.getByRole("option", { name: /Filial/ })).toHaveCount(0);
   await page.getByLabel("Endereço de entrega").selectOption(addressId);
-  await expect(page.getByLabel("CEP", { exact: true })).toHaveValue("30110-100");
-  await page.getByRole("button", { name: "Calcular", exact: true }).click();
-  const boundQuote = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
-  await page.getByRole("button", { name: "Selecionar PAC" }).click();
-  expect((await boundQuote).postDataJSON()).toEqual({ variantId, quantity: 1, addressId, serviceId: "1", mode: "checkout" });
-  await expect(page.getByText(/Frete conferido para o endereço: R\$\s22,00/)).toBeVisible();
+  await expect(page.getByText("Entrega indisponível para este endereço ou forma de pagamento.")).toBeVisible();
   await page.getByLabel("Quantidade de kits").fill("2");
-  await expect(page.getByText(/Frete conferido para o endereço/)).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });
 
@@ -1081,7 +1058,7 @@ test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal
   const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: { items: [] } }));
-  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: { quote: null } }));
+
   await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: {
     checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null,
     items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto", size: "34", pairsPerSku: 2,
@@ -1090,12 +1067,9 @@ test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal
   await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
     { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
   ] } }));
-  await page.route("**/api/representatives/kits/quote", route => {
-    const data = route.request().postDataJSON() as { mode?: string };
-    return route.fulfill({ json: data.mode === "checkout"
-      ? { ok: true, mode: "checkout", purchaseAvailable: true, totalInCents: 6700, quote: { id: quoteId, serviceId: "1", amountInCents: 2200 } }
-      : { ok: true, mode: "preview", quotes: [{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9 }] } });
-  });
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: {
+    quote: { id: quoteId, amountInCents: 6700, shippingInCents: 2200, estimatedDays: 3 }
+  } }));
   await page.route("**/api/representatives/kits/orders", route => {
     const data = route.request().postDataJSON() as { action: string };
     const state = data.action === "pix" ? "payment_pending" : data.action === "cancel" ? "cancelled" : "reserved";
@@ -1107,8 +1081,7 @@ test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal
   await page.getByRole("button", { name: "Recusar opcionais" }).click();
   await page.getByRole("button", { name: "Usar endereço salvo" }).click();
   await page.getByLabel("Endereço de entrega").selectOption(addressId);
-  await page.getByRole("button", { name: "Calcular", exact: true }).click();
-  await page.getByRole("button", { name: "Selecionar PAC" }).click();
+  await expect(page.getByText(/Entrega pela curti Z.*Até 3 dias/)).toBeVisible();
   await expect(page.getByText(/Total com frete\s*R\$\s*67,00/)).toBeVisible();
   const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
   await page.getByRole("button", { name: "Reservar kit" }).click();
