@@ -5993,6 +5993,23 @@ button:not(:disabled):active,
   grid-column: 1 / -1;
 }
 
+.kit-grade-prices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 12px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.kit-grade-prices legend {
+  padding-inline: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .admin-form-grid textarea,
 .admin-permission-form textarea {
   resize: vertical;

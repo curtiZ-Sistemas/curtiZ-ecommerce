@@ -12,6 +12,7 @@ import {
 import {
   adminResources,
   isAdminResource,
+  kitGradePriceFields,
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
@@ -99,6 +100,35 @@ function normalizeKitGradeSource(values: Record<string, unknown>, source: unknow
   }
   values.grade_product_id = product.data;
   values.grade_color = color;
+}
+
+const kitGradePrice = z.number().int().min(12).max(9_999_999_999);
+
+function normalizeKitGradePrices(values: Record<string, unknown>, input: Record<string, unknown>) {
+  normalizeKitGradeSource(values, input.gradeSource);
+  const errors: Record<string, string> = {};
+  if (values.grade_product_id === null) {
+    for (const field of kitGradePriceFields) values[field.key] = null;
+  } else if (typeof values.grade_product_id === "string") {
+    for (const field of kitGradePriceFields) {
+      const price = kitGradePrice.safeParse(input[field.key]);
+      if (price.success) {
+        values[field.key] = price.data;
+      } else {
+        errors[field.key] = "Informe um preço entre R$ 0,12 e R$ 99.999.999,99.";
+      }
+    }
+    // Keep the kit's legacy price available to consumers that don't read grade prices.
+    values.price_in_cents = values.grade_standard_price_cents;
+  } else if (kitGradePriceFields.some(field => field.key in input)) {
+    errors.gradeSource = "Selecione a linha de estoque das fichas.";
+  }
+  if (Object.keys(errors).length > 0) {
+    return NextResponse.json(
+      { message: "Revise os campos destacados.", errors },
+      { status: 400, headers: privateNoStore }
+    );
+  }
 }
 
 function normalizeCategoryValues(values: Record<string, unknown>, requestedSlug?: unknown) {
@@ -548,7 +578,8 @@ export async function POST(
         );
       }
       values.slug = slug;
-      normalizeKitGradeSource(values, parsed.data.values.gradeSource);
+      const invalid = normalizeKitGradePrices(values, parsed.data.values);
+      if (invalid) return invalid;
     }
     validateResourceRules(context.resource, values);
 
@@ -776,7 +807,10 @@ export async function PATCH(
         );
       }
     }
-    if (context.resource === "kits") normalizeKitGradeSource(values, parsed.data.values.gradeSource);
+    if (context.resource === "kits") {
+      const invalid = normalizeKitGradePrices(values, parsed.data.values);
+      if (invalid) return invalid;
+    }
     validateResourceRules(context.resource, values);
 
     if (context.resource === "avaliacoes") {

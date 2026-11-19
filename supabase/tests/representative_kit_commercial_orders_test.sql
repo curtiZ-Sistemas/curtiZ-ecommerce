@@ -338,6 +338,26 @@ insert into private.bling_catalog_metadata(product_id,commercial_unit,pairs_per_
   select grade_product,'PR',1,'64022000',0,'','T','Grade synthetic evidence' from commercial_kit_fixture;
 insert into public.kits(id,name,slug,description,price_in_cents,grade_product_id,grade_color,created_by)
   select grade_kit,'Grade test kit',grade_kit::text,'Grade fixture',36001,grade_product,'White',actor from commercial_kit_fixture;
+select is((select private.representative_kit_grade_snapshot(grade_kit,'upper_restock')->>'priceCents'
+  from commercial_kit_fixture),'36001','an existing kit retains its common price until configured');
+select throws_ok($$update public.kits set grade_standard_price_cents=36001
+  where id=(select grade_kit from commercial_kit_fixture)$$,
+  '23514',null,'a kit cannot have a partial price configuration');
+update public.kits set grade_standard_price_cents=36001,
+  grade_lower_restock_price_cents=35001,grade_upper_restock_price_cents=37001
+  where id=(select grade_kit from commercial_kit_fixture);
+select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select is((select jsonb_object_agg(template->>'code',template->'unitPriceInCents')
+  from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  cross join lateral jsonb_array_elements(offer->'templates') template
+  where (offer->>'kitId')::uuid=(select grade_kit from commercial_kit_fixture)),
+  '{"standard":36001,"lower_restock":35001,"upper_restock":37001}'::jsonb,
+  'the catalog publishes the individual prices of all three grades');
+select is((select private.representative_kit_grade_snapshot(grade_kit,'lower_restock')->>'priceCents'
+  from commercial_kit_fixture),'35001','the freight snapshot uses the lower restock price');
+select is((select private.representative_kit_grade_snapshot(grade_kit,'upper_restock')->>'priceCents'
+  from commercial_kit_fixture),'37001','the freight snapshot uses the upper restock price');
 insert into private.representative_resale_fiscal_rule_versions(
   id,rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,icms_status,
   final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
@@ -359,6 +379,14 @@ returns jsonb language sql as $$
   select public.reserve_representative_kit_collection_order(actor,grade_kit,'standard',1,grade_quote,address,grade_key,
     '35520000','cash',40000) from commercial_kit_fixture;
 $$;
+update public.kits set grade_standard_price_cents=36501 where id=(select grade_kit from commercial_kit_fixture);
+select throws_ok($$select pg_temp.reserve_grade_cash()$$,'23514','kit_grade_quote_changed',
+  'changing the chosen grade price invalidates the previous quote');
+select is((select used_at from private.representative_kit_shipping_checkout_quotes
+  where id=(select grade_quote from commercial_kit_fixture)),null::timestamptz,
+  'a stale quote remains unused');
+update commercial_kit_fixture set grade_quote=(public.quote_representative_kit_collection(actor,grade_kit,'standard',1,address,
+  '35520000')->>'id')::uuid;
 update public.inventory set available_quantity=0 where variant_id in (
   select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
 select throws_ok($$select pg_temp.reserve_grade_cash()$$,'23514','kit_grade_quote_changed',
@@ -367,7 +395,9 @@ select is((select sum(i.reserved_quantity)::integer from public.inventory i join
   join commercial_kit_fixture f on v.product_id=f.grade_product),0,'failure leaves all reservations untouched');
 update public.inventory set available_quantity=5 where variant_id in (
   select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
-select is(pg_temp.reserve_grade_cash()->>'cashChangeInCents','2699','the grade price and freight determine cash change');
+select is(pg_temp.reserve_grade_cash()->>'cashChangeInCents','2199','the new grade price and freight determine cash change');
+update public.kits set grade_standard_price_cents=37501 where id=(select grade_kit from commercial_kit_fixture);
+select is(pg_temp.reserve_grade_cash()->>'amountInCents','37801','an idempotent replay retains the reserved grade price');
 select is((select jsonb_object_agg(v.size,i.reserved_quantity) from public.inventory i join public.product_variants v on v.id=i.variant_id
   join commercial_kit_fixture f on v.product_id=f.grade_product),
   '{"34":1,"35":2,"36":3,"37":3,"38":2,"39":1}'::jsonb,'reserving a sheet holds its exact shared stock');

@@ -1135,9 +1135,12 @@ test("escolhe a ficha e calcula o troco no recebimento sem enviá-lo pelo formul
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
   await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: { items: [], nextOffset: null } }));
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
-    items: [{ kitId, name: "Kit por ficha", unitPriceInCents: 30001, color: "Preto", description: "Grade de 12 pares",
-      templates: [{ code: "upper_restock", label: "Ficha reposição alta", available: 2,
-        sizes: [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }] }] }]
+    items: [{ kitId, name: "Kit por ficha", color: "Preto", description: "Grade de 12 pares", templates: [
+      { code: "lower_restock", label: "Ficha reposição baixa", available: 3, unitPriceInCents: 26590,
+        sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 3 }, { size: "36", pairs: 4 }, { size: "37", pairs: 4 }] },
+      { code: "upper_restock", label: "Ficha reposição alta", available: 2, unitPriceInCents: 30001,
+        sizes: [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }] }
+    ] }]
   } }));
   await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
     { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
@@ -1151,7 +1154,11 @@ test("escolhe a ficha e calcula o troco no recebimento sem enviá-lo pelo formul
   } }));
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Recusar opcionais" }).click();
-  await expect(page.getByLabel("Escolher ficha")).toHaveValue("upper_restock");
+  const grade = page.getByLabel("Escolher ficha");
+  await expect(grade).toHaveValue("lower_restock");
+  await expect(page.getByText(/12 pares · R\$\s*265,90/u)).toBeVisible();
+  await grade.selectOption("upper_restock");
+  await expect(page.getByText(/12 pares · R\$\s*300,01/u)).toBeVisible();
   await expect(page.getByText("Tamanho 39")).toBeVisible();
   await page.getByRole("button", { name: "Usar endereço salvo" }).click();
   await page.getByLabel("Endereço de entrega").selectOption(addressId);

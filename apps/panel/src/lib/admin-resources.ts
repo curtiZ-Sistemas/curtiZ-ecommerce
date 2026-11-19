@@ -18,6 +18,12 @@ export type AdminResourceField = {
   readOnly?: boolean;
 };
 
+export const kitGradePriceFields = [
+  { key: "grade_standard_price_cents", label: "Ficha padrão", type: "money" },
+  { key: "grade_lower_restock_price_cents", label: "Reposição baixa", type: "money" },
+  { key: "grade_upper_restock_price_cents", label: "Reposição alta", type: "money" }
+] as const satisfies readonly AdminResourceField[];
+
 export type AdminResourceDefinition = {
   label: string;
   singular: string;
@@ -380,7 +386,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     readPermission: "representatives.read_all",
     writePermission: "representatives.rules.manage",
     select:
-      "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at,grade_product_id,grade_color",
+      "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at,grade_product_id,grade_color," +
+      kitGradePriceFields.map(field => field.key).join(","),
     searchColumns: ["name", "slug"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },

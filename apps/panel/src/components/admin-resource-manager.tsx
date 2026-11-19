@@ -23,6 +23,7 @@ import { usePanelPrompt } from "./panel-prompt";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   adminResources,
+  kitGradePriceFields,
   type AdminResourceField,
   type AdminResourceKey
 } from "@/lib/admin-resources";
@@ -120,7 +121,8 @@ const columnLabels: Record<string, string> = {
   brand_response: "Resposta da curti Z",
   storage_path: "Arquivo",
   accepted_at: "Aceito em",
-  product_count: "Produtos"
+  product_count: "Produtos",
+  kit_prices: "Preços"
 };
 
 const statusLabels: Record<string, string> = {
@@ -285,6 +287,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [categoryName, setCategoryName] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
   const [categorySlugEdited, setCategorySlugEdited] = useState(false);
+  const [kitGradeSource, setKitGradeSource] = useState("");
   const [kitGradeSources, setKitGradeSources] = useState<KitGradeSource[] | null>(null);
   const [kitGradeSourcesError, setKitGradeSourcesError] = useState(false);
   const [kitGradeSourcesRetry, setKitGradeSourcesRetry] = useState(0);
@@ -381,6 +384,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       .map((key) => key.trim())
       .filter((key) => !["id", "updated_at", "created_at", "edited_at"].includes(key));
 
+    if (resource === "kits") return ["name", "description", "kit_prices", "active"];
     return resource === "categorias"
       ? ["name", "product_count", "active", "sort_order"]
       : keys.slice(0, 5);
@@ -392,6 +396,16 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const canUpdate = definition.allowCreate && capabilities.update;
   const canArchive = definition.allowArchive && capabilities.archive;
   const canDelete = definition.allowDelete === true && capabilities.delete;
+
+  const openEditor = (item: Item | "new") => {
+    if (resource === "kits") {
+      setKitGradeSource(item !== "new" && typeof item.grade_product_id === "string" && typeof item.grade_color === "string"
+        ? `${item.grade_product_id}|${item.grade_color}`
+        : "");
+    }
+    setFieldErrors({});
+    setEditing(item);
+  };
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -407,13 +421,19 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
     try {
       for (const field of definition.fields) {
+        if (resource === "kits" && field.key === "price_in_cents" && kitGradeSource) continue;
         values[field.key] = getFormValue(form, field);
       }
       if (resource === "categorias") {
         values.name = categoryName;
         values.slug = categorySlug || resourceSlug(categoryName);
       }
-      if (resource === "kits" && form.has("gradeSource")) values.gradeSource = form.get("gradeSource");
+      if (resource === "kits") {
+        values.gradeSource = kitGradeSource;
+        if (kitGradeSource) {
+          for (const field of kitGradePriceFields) values[field.key] = getFormValue(form, field);
+        }
+      }
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "Revise os valores informados." });
       setPending(false);
@@ -483,7 +503,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       copy[definition.archiveField] = definition.restoreValue;
     }
 
-    setEditing(copy);
+    openEditor(copy);
   };
 
   const updateState = async (): Promise<void> => {
@@ -585,7 +605,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         </div>
 
         {canCreate ? (
-          <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+          <button className="primary-button" type="button" onClick={() => openEditor("new")}>
             <Plus aria-hidden="true" /> {createLabel}
           </button>
         ) : null}
@@ -719,7 +739,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
               : "Não há dados reais para os filtros informados."}
           </p>
           {canCreate ? (
-            <button className="primary-button" type="button" onClick={() => setEditing("new")}>
+            <button className="primary-button" type="button" onClick={() => openEditor("new")}>
               <Plus aria-hidden="true" /> {createLabel}
             </button>
           ) : null}
@@ -776,7 +796,13 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     ) : null}
                     {columns.map((column) => (
                       <td key={column} data-label={columnLabel(column, definition.fields)}>
-                        {displayValue(item[column], column)}
+                        {column === "kit_prices" ? (
+                          item.grade_product_id
+                            ? kitGradePriceFields.map(field => (
+                              <div key={field.key}>{field.label} · {displayValue(item[field.key] ?? item.price_in_cents, field.key)}</div>
+                            ))
+                            : displayValue(item.price_in_cents, "price_in_cents")
+                        ) : displayValue(item[column], column)}
                       </td>
                     ))}
 
@@ -785,7 +811,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                         {canUpdate ? (
                           <button
                             type="button"
-                            onClick={() => setEditing(item)}
+                            onClick={() => openEditor(item)}
                             aria-label="Editar"
                           >
                             <Pencil />
@@ -895,6 +921,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
             <form onSubmit={(event) => void save(event)}>
               <div className="admin-form-grid">
                 {definition.fields.map((field) => {
+                  if (resource === "kits" && field.key === "price_in_cents" && kitGradeSource) return null;
                   const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
 
@@ -1022,8 +1049,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                       {kitGradeSources ? (
                         <select
                           name="gradeSource"
-                          defaultValue={editing !== "new" && typeof editing.grade_product_id === "string"
-                            && typeof editing.grade_color === "string" ? `${editing.grade_product_id}|${editing.grade_color}` : ""}
+                          value={kitGradeSource}
+                          onChange={event => setKitGradeSource(event.target.value)}
                           aria-describedby={fieldErrors.gradeSource ? "grade-source-error" : "grade-source-help"}
                           aria-invalid={Boolean(fieldErrors.gradeSource)}
                         >
@@ -1048,6 +1075,35 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                       <small id="grade-source-help">Uma linha de pares avulsos habilita as três fichas de 12 pares para este kit.</small>
                     )}
                   </div>
+                )}
+                {resource === "kits" && kitGradeSource && (
+                  <fieldset className="wide kit-grade-prices">
+                    <legend>Preços por ficha</legend>
+                    {kitGradePriceFields.map(field => {
+                      const cents = editing === "new" ? undefined : readNumber(editing[field.key])
+                        ?? (editing.grade_product_id ? readNumber(editing.price_in_cents) : undefined);
+                      const error = fieldErrors[field.key];
+                      return (
+                        <label key={field.key}>
+                          <span>{field.label} *</span>
+                          <span className="money-field-control">
+                            <span aria-hidden="true">R$</span>
+                            <input
+                              name={field.key}
+                              type="text"
+                              inputMode="decimal"
+                              defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
+                              placeholder="0,00"
+                              required
+                              aria-invalid={Boolean(error)}
+                              aria-describedby={error ? `${field.key}-error` : undefined}
+                            />
+                          </span>
+                          {error && <small className="admin-field-error" id={`${field.key}-error`} role="alert">{error}</small>}
+                        </label>
+                      );
+                    })}
+                  </fieldset>
                 )}
               </div>
 
