@@ -2,7 +2,10 @@ import { isUnknownRecord } from "./unknown-data";
 
 export type RepresentativeCatalogKit = { variantId: string; name: string; sku: string; color: string; size: string;
   unitPriceInCents: number; pairsPerSku: number; available: number | null };
-export type RepresentativeKitPage = { items: RepresentativeCatalogKit[]; nextOffset: number | null };
+export type RepresentativeKitPage = {
+  items: RepresentativeCatalogKit[]; nextOffset: number | null;
+  orderHistoryAvailable?: true; checkoutConfigured?: true;
+};
 export function readRepresentativeKitPage(value: unknown): RepresentativeKitPage {
   if (!isUnknownRecord(value) || !Array.isArray(value.items)
     || !(value.nextOffset === null || Number.isSafeInteger(value.nextOffset) && Number(value.nextOffset) >= 0))
@@ -17,5 +20,7 @@ export function readRepresentativeKitPage(value: unknown): RepresentativeKitPage
       size: String(item.size), unitPriceInCents: Number(item.unitPriceInCents), pairsPerSku: Number(item.pairsPerSku),
       available: item.available === null ? null : Number(item.available) };
   });
-  return { items, nextOffset: value.nextOffset === null ? null : Number(value.nextOffset) };
+  return { items, nextOffset: value.nextOffset === null ? null : Number(value.nextOffset),
+    ...(value.orderHistoryAvailable === true ? { orderHistoryAvailable: true } : {}),
+    ...(value.checkoutConfigured === true ? { checkoutConfigured: true } : {}) };
 }

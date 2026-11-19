@@ -3,6 +3,14 @@ import { allocateBlingFiscalCents, expandBlingFiscalKit, type BlingFiscalItem } 
 import { z } from "zod";
 
 const integer = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+// These are unverified declarations for a read-only preview, not NF-e indicators.
+export const resaleScenarioSchema = z.object({
+  personType: z.enum(["individual", "business"]),
+  purpose: z.enum(["resale", "final_consumption", "other"]),
+  icmsStatus: z.enum(["taxpayer", "registration_exempt", "non_taxpayer", "unknown"]),
+  destinationState: z.enum(["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"])
+}).strict();
+export type ResaleScenario = z.infer<typeof resaleScenarioSchema>;
 const metadataSchema = z.object({
   commercial_unit: z.enum(["PR", "UN", "KIT"]), pairs_per_sku: z.number().int().min(1).max(100),
   ncm: z.string().regex(/^\d{8}$/u), origin: z.number().int().min(0).max(8),
@@ -21,10 +29,15 @@ const contextSchema = z.object({
 
 // A read-only merchandise preview. It neither approves taxation nor reserves
 // inventory. Fiscal pairs never become inventory/BOM deductions.
-export function previewRepresentativeResale(context: unknown, icmsTaxpayer?: boolean) {
+export function previewRepresentativeResale(context: unknown, icmsTaxpayer?: boolean, declaredScenario?: ResaleScenario) {
   const input = contextSchema.parse(context);
-  const blockers = new Set<string>(["resale_homologation_required", "resale_fiscal_validation_required", "shipping_quote_required"]);
+  const blockers = new Set<string>(["resale_homologation_required", "resale_fiscal_validation_required", "shipping_quote_required", "recipient_final_consumer_validation_required"]);
   if (typeof icmsTaxpayer !== "boolean") blockers.add("recipient_taxpayer_declaration_required");
+  if (declaredScenario && declaredScenario.purpose !== "resale") blockers.add("recipient_purpose_mismatch");
+  if (declaredScenario?.icmsStatus === "non_taxpayer") blockers.add("recipient_active_mg_registration_required");
+  if (declaredScenario?.icmsStatus === "registration_exempt" || declaredScenario?.personType === "individual") {
+    blockers.add("recipient_fiscal_exception_evidence_required");
+  }
   if (!input.items.length) blockers.add("commercial_composition_required");
   if (new Set(input.items.map(i => i.variantId)).size !== input.items.length) throw new Error("duplicate_commercial_variant");
   const weights = input.items.map(i => i.allocationWeight ?? (input.items.length === 1 ? 1 : 0));
@@ -62,7 +75,8 @@ export function previewRepresentativeResale(context: unknown, icmsTaxpayer?: boo
   if (compositionReady && (commercialTotal !== input.merchandiseTotalInCents || fiscalTotal !== commercialTotal))
     throw new Error("resale_total_mismatch");
   return { kitId: input.kitId, source: input.source, variantId: input.variantId ?? null,
-    name: input.name, purpose: "resale" as const, finalConsumer: false as const,
+    name: input.name, purpose: "resale" as const, finalConsumer: null,
+    declaredScenario: declaredScenario ? { ...declaredScenario, verification: "unverified" as const } : null,
     icmsTaxpayer: icmsTaxpayer ?? null, canPurchase: false as const, merchandiseTotalInCents: input.merchandiseTotalInCents,
     shippingInCents: null, grandTotalInCents: null, taxes: null, commercialItems,
     fiscalItems: compositionReady ? fiscalItems : [], blockers: [...blockers] };

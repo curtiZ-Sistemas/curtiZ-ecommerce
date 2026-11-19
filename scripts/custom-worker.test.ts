@@ -11,6 +11,8 @@ const dependencies = {
   housekeeping: vi.fn(),
   privacyRetention: vi.fn(),
   representativeTest: vi.fn(),
+  representativeCommercial: vi.fn(),
+  representativeFulfillment: vi.fn(),
   shipping: vi.fn(),
   bling: vi.fn(),
   email: vi.fn(),
@@ -55,6 +57,8 @@ const workerGlobal = {
     if (specifier === "./src/lib/housekeeping") return { runExpirationHousekeeping: dependencies.housekeeping };
     if (specifier === "./src/lib/privacy-retention-jobs") return { runPrivacyRetentionJobs: dependencies.privacyRetention };
     if (specifier === "./src/lib/representative-test-jobs") return { runRepresentativeTestJobs: dependencies.representativeTest };
+    if (specifier === "./src/lib/representative-commercial-jobs") return { runRepresentativeCommercialJobs: dependencies.representativeCommercial };
+    if (specifier === "./src/lib/representative-commercial-fulfillment") return { runRepresentativeCommercialFulfillment: dependencies.representativeFulfillment };
     if (specifier === "./src/lib/melhor-envio-jobs") return { runMelhorEnvioShippingJobs: dependencies.shipping };
     if (specifier === "./src/lib/storefront-image-worker") return { optimizeStorefrontImageRequest: dependencies.optimize };
     if (specifier === "./src/lib/bling-jobs") return { runBlingJobs: dependencies.bling };
@@ -109,6 +113,8 @@ describe("custom Worker handlers", () => {
     expect(dependencies.housekeeping).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.privacyRetention).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.representativeTest).toHaveBeenCalledWith(environment, expect.any(Function));
+    expect(dependencies.representativeCommercial).toHaveBeenCalledWith(environment, expect.any(Function));
+    expect(dependencies.representativeFulfillment).toHaveBeenCalledWith(environment, expect.any(Function));
     expect(dependencies.afterSale).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     expect(dependencies.returns).toHaveBeenCalledWith(environment, "scheduled-execution-id", expect.any(Function));
     for (const job of [dependencies.bling, dependencies.shipping, dependencies.email]) {
@@ -132,6 +138,8 @@ describe("custom Worker handlers", () => {
     expect(dependencies.returns.mock.calls[0]?.[2]).toBe(transport);
     expect(dependencies.privacyRetention.mock.calls[0]?.[2]).toBe(transport);
     expect(dependencies.representativeTest.mock.calls[0]?.[1]).toBe(transport);
+    expect(dependencies.representativeCommercial.mock.calls[0]?.[1]).toBe(transport);
+    expect(dependencies.representativeFulfillment.mock.calls[0]?.[1]).toBe(transport);
     expect(patchedFetch).not.toHaveBeenCalled();
     workerGlobal.fetch = dependencies.nativeFetch;
   });

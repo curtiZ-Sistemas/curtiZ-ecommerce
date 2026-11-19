@@ -1,4 +1,5 @@
 import { z } from "zod";
+export { representativePointIntent, representativePointRefund } from "./representative-point";
 
 const booleanString = z
   .enum(["true", "false", "1", "0", "yes", "no"])

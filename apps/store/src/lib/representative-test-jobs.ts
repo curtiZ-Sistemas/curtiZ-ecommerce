@@ -36,6 +36,7 @@ export async function runRepresentativeTestJobs(environment: Readonly<Record<str
       if (context.state === "reserved" && ["pending", "in_process"].includes(payment.status)
         && payment.expiresAt && Number.isFinite(Date.parse(payment.expiresAt)) && Date.parse(payment.expiresAt) <= Date.now()) {
         payment = await provider.cancelPayment(providerId);
+        assertKitPayment(context, payment);
       }
       await reconcileKitTestPayment(db, payment);
       processed += 1;

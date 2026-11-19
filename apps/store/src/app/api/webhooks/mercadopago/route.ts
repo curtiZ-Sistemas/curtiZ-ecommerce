@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { normalizeMercadoPagoStatus } from "@/lib/mercadopago-payment";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { reconcileKitTestPayment } from "@/lib/representative-test-transactions";
+import { commercialKitCollector, reconcileCommercialKitPayment } from "@/lib/representative-commercial-payments";
 
 const signed = (request: Request, dataId: string, secret: string) => {
   const signature = request.headers.get("x-signature") ?? "";
@@ -71,6 +72,13 @@ export async function POST(request: Request) {
   try {
     const payment = await new MercadoPagoPaymentProvider(credentials.accessToken, credentials.mode).getPayment(dataId);
     if (payment.id.toLowerCase() !== dataId.toLowerCase()) throw new Error("provider_payment_mismatch");
+    if (payment.externalReference.startsWith("KITMG-")) {
+      if (credentials.mode !== "production") throw new Error("payment_mode_mismatch");
+      const reconciled = await reconcileCommercialKitPayment(db, payment, commercialKitCollector());
+      const completed = await finish(true);
+      const ok = !completed.error && completed.data === true;
+      return reply({ ok, review: reconciled.state === "manual_review" }, ok ? 200 : 503);
+    }
     if (payment.externalReference.startsWith("KITTEST-")) {
       if (credentials.mode !== "test") throw new Error("payment_mode_mismatch");
       await reconcileKitTestPayment(db, payment);

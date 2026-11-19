@@ -380,11 +380,10 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     readPermission: "representatives.read_all",
     writePermission: "representatives.rules.manage",
     select:
-      "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at",
+      "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at,grade_product_id,grade_color",
     searchColumns: ["name", "slug"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
-      { key: "slug", label: "Slug", type: "text", required: true },
       { key: "description", label: "Descrição", type: "textarea", required: true },
       { key: "price_in_cents", label: "Preço", type: "money", required: true },
       { key: "required_for_activation", label: "Obrigatório para ativação", type: "boolean" },
@@ -396,7 +395,8 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     archiveValue: false,
     restoreValue: true,
     orderColumn: "updated_at",
-    createdByField: "created_by"
+    createdByField: "created_by",
+    allowDelete: true
   },
   niveis: {
     label: "Níveis",

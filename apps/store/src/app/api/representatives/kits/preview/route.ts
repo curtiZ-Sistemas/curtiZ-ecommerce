@@ -3,13 +3,14 @@ import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { previewRepresentativeResale } from "@/lib/representative-resale";
+import { previewRepresentativeResale, resaleScenarioSchema } from "@/lib/representative-resale";
+import { representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
 const headers = { "cache-control": "private, no-store" };
 const schema = z.union([
-  z.object({ kitId: z.string().uuid(), icmsTaxpayer: z.boolean().optional() }).strict(),
-  z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99), icmsTaxpayer: z.boolean().optional() }).strict()
-]);
+  z.object({ kitId: z.string().uuid(), icmsTaxpayer: z.boolean().optional(), declaredScenario: resaleScenarioSchema.optional() }).strict(),
+  z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99), icmsTaxpayer: z.boolean().optional(), declaredScenario: resaleScenarioSchema.optional() }).strict()
+]).refine(value => !(value.icmsTaxpayer !== undefined && value.declaredScenario !== undefined));
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   const body = await readJsonResponse(request, 1024);
@@ -19,13 +20,16 @@ export async function POST(request: NextRequest) {
   const db = await createServerSupabaseClient();
   const auth = db ? await db.auth.getUser() : null;
   if (!db || auth?.error || !auth?.data.user) return NextResponse.json({ message: "Acesso negado." }, { status: 401, headers });
+  if (input.data.declaredScenario && input.data.declaredScenario.destinationState !== representativeKitState) {
+    return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+  }
   const result = "variantId" in input.data
     ? await db.rpc("read_representative_catalog_kit_context", { p_variant_id: input.data.variantId, p_quantity: input.data.quantity })
     : await db.rpc("read_representative_resale_context", { p_kit_id: input.data.kitId });
   if (result.error) return NextResponse.json({ message: "Conferência indisponível. Tente novamente." }, { status: 503, headers });
   if (!result.data) return NextResponse.json({ message: "Kit indisponível para seu perfil." }, { status: 404, headers });
   try {
-    return NextResponse.json(previewRepresentativeResale(result.data, input.data.icmsTaxpayer), { headers });
+    return NextResponse.json(previewRepresentativeResale(result.data, input.data.icmsTaxpayer, input.data.declaredScenario), { headers });
   } catch {
     return NextResponse.json({ message: "Os dados deste kit precisam de revisão." }, { status: 409, headers });
   }

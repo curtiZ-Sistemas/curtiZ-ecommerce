@@ -7,10 +7,14 @@ import { resolveShippingProducts } from "@/lib/melhor-envio-server";
 import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "@/lib/checkout-identity";
 import { isUnknownRecord, readString } from "@/lib/unknown-data";
 import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, beginKitCard, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
+import { resaleScenarioSchema } from "@/lib/representative-resale";
+import { representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
+import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 
 const id = z.string().uuid();
 const schema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("create"), variantId: id, quantity: z.number().int().min(1).max(99), quoteId: id, addressId: id, idempotencyKey: id }).strict(),
+  z.object({ action: z.literal("create"), variantId: id, quantity: z.number().int().min(1).max(99), quoteId: id, addressId: id, idempotencyKey: id,
+    declaredScenario: resaleScenarioSchema.optional() }).strict(),
   z.object({ action: z.literal("pay_pix"), orderId: id, payerDocument: z.string().max(20).optional() }).strict(),
   z.object({ action: z.literal("pay_card"), orderId: id, payerDocument: z.string().max(20).optional(),
     card: z.object({ paymentMethodId: z.enum(["master", "visa", "amex", "elo", "hipercard"]), token: z.string().min(16).max(128),
@@ -19,32 +23,48 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("refund"), orderId: id, idempotencyKey: id, amountInCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 ]);
 const headers = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
+const storedDeclarationSchema = z.object({ scenario: resaleScenarioSchema, schemaVersion: z.literal(1),
+  declaredAt: z.string().min(1).max(64), verification: z.literal("unverified") }).strict();
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   try {
     const input = schema.safeParse(await readPrivateJson(request, 4096));
     if (!input.success) return NextResponse.json({ message: "Revise os dados informados." }, { status: 400, headers });
+    if (input.data.action === "create" && input.data.declaredScenario && input.data.declaredScenario.purpose !== "resale")
+      return NextResponse.json({ message: "A finalidade informada não corresponde a uma compra para revenda." }, { status: 400, headers });
     const session = await createServerSupabaseClient();
     const user = session ? (await session.auth.getUser()).data.user : null;
     const db = createServiceSupabaseClient();
     if (!user || !session) return NextResponse.json({ message: "Entre na sua conta." }, { status: 401, headers });
     if (!db) throw new KitTransactionError(503);
-    kitTestProvider(); // Production mode never opens this TEST-only transaction boundary.
-    await requirePrivateRateLimit(session, "customer_write");
     const data = input.data;
+    const environment = getStoreRuntimeEnvironment();
     if ((data.action === "create" || data.action === "pay_pix" || data.action === "pay_card")
-      && (process.env.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true" || process.env.REPRESENTATIVE_TEST_ACTOR_ID !== user.id)) {
+      && (environment.APP_ENV === "production" || environment.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true"
+        || environment.REPRESENTATIVE_TEST_ACTOR_ID !== user.id)) {
       throw new KitTransactionError(403);
     }
+    kitTestProvider();
+    await requirePrivateRateLimit(session, "customer_write");
     let orderId: string;
+    let declarationState: "unverified" | undefined;
     if (data.action === "create") {
+      if (data.declaredScenario && data.declaredScenario.destinationState !== representativeKitState) {
+        return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+      }
       const variant = await db.from("product_variants").select("product_id").eq("id", data.variantId).maybeSingle();
       if (variant.error || !isUnknownRecord(variant.data)) throw new KitTransactionError(404);
       const resolved = await resolveShippingProducts([{ productId: readString(variant.data, "product_id"), variantId: data.variantId, quantity: data.quantity }], db);
-      const created = await kitRecord(db, "create_kit_test_checkout", { p_actor: user.id, p_variant: data.variantId,
-        p_quantity: data.quantity, p_quote: data.quoteId, p_fingerprint: resolved.fingerprint, p_key: data.idempotencyKey, p_address: data.addressId });
+      const created = await kitRecord(db, data.declaredScenario ? "create_kit_test_checkout_with_declaration" : "create_kit_test_checkout", {
+        p_actor: user.id, p_variant: data.variantId, p_quantity: data.quantity, p_quote: data.quoteId,
+        p_fingerprint: resolved.fingerprint, p_key: data.idempotencyKey, p_address: data.addressId,
+        ...(data.declaredScenario ? { p_scenario: data.declaredScenario } : {}) });
       orderId = readString(created, "orderId");
+      if (data.declaredScenario) {
+        if (created.declarationState !== "unverified") throw new KitTransactionError(503);
+        declarationState = "unverified";
+      }
     } else {
       orderId = data.orderId;
       const context = await kitRecord(db, "read_kit_test_transaction", { p_actor: user.id, p_order: orderId });
@@ -63,10 +83,14 @@ export async function POST(request: NextRequest) {
     }
     const transaction = await kitRecord(db, "read_kit_test_transaction", { p_actor: user.id, p_order: orderId });
     const instructions = await kitCall(db, "read_kit_test_payment_instructions", { p_actor: user.id, p_order: orderId });
+    const declaration = await kitCall(db, "read_kit_test_recipient_declaration", { p_actor: user.id, p_order: orderId });
+    const parsedDeclaration = declaration == null ? null : storedDeclarationSchema.safeParse(declaration);
+    if (parsedDeclaration && !parsedDeclaration.success) throw new KitTransactionError(503);
     // Fingerprint and provider identity stay server-side; only own payment instructions are returned.
     return NextResponse.json({ ok: true, orderId, mode: "test", state: transaction.state, amountInCents: transaction.amountInCents,
       refundedInCents: transaction.refundedInCents, remainingInCents: transaction.remainingInCents,
-      fiscalValidation: "pending", shippingAllowed: false, instructions }, { headers });
+      fiscalValidation: "pending", shippingAllowed: false, ...(declarationState ? { declarationState } : {}),
+      declaration: parsedDeclaration?.data ?? null, instructions }, { headers });
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError || error instanceof CheckoutIdentityError ? error.status : 503;
     return NextResponse.json({ message: "Não foi possível concluir a operação. Consulte o pedido antes de tentar novamente." }, { status, headers });

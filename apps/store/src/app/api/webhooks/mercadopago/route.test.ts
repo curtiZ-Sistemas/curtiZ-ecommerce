@@ -5,7 +5,11 @@ import { POST } from "./route";
 
 const provider = vi.hoisted(() => ({ getPayment: vi.fn() }));
 const kitReconciliation = vi.hoisted(() => vi.fn());
+const commercialKitReconciliation = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/representative-test-transactions", () => ({ reconcileKitTestPayment: kitReconciliation }));
+vi.mock("@/lib/representative-commercial-payments", () => ({
+  commercialKitCollector: () => "456", reconcileCommercialKitPayment: commercialKitReconciliation
+}));
 vi.mock("@curtiz/integrations", () => ({
   isMercadoPagoTestCredential: (value: string | undefined) => value?.startsWith("TEST-") === true,
   MercadoPagoPaymentProvider: class { getPayment = provider.getPayment; }
@@ -33,6 +37,7 @@ describe("webhook canônico do Mercado Pago", () => {
     vi.mocked(createServiceSupabaseClient).mockReset();
     provider.getPayment.mockReset();
     kitReconciliation.mockReset();
+    commercialKitReconciliation.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -53,6 +58,31 @@ describe("webhook canônico do Mercado Pago", () => {
     kitReconciliation.mockRejectedValue(new Error("uncertain"));
     expect((await POST(request())).status).toBe(502);
     expect(rpc).toHaveBeenLastCalledWith("finish_payment_webhook", expect.objectContaining({ p_success: false }));
+  });
+
+  it("reconciles a production kit only through the commercial aggregate", async () => {
+    vi.stubEnv("MERCADO_PAGO_ENVIRONMENT", "production");
+    vi.stubEnv("MERCADO_PAGO_PRODUCTION_READY", "true");
+    vi.stubEnv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-fixture");
+    vi.stubEnv("NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY", "APP_USR-fixture");
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook"
+      ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITMG-10000000-0000-4000-8000-000000000001" });
+    commercialKitReconciliation.mockResolvedValue({ state: "paid" });
+    expect((await POST(request())).status).toBe(200);
+    expect(commercialKitReconciliation).toHaveBeenCalledOnce();
+    expect(kitReconciliation).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(["claim_payment_webhook", "finish_payment_webhook"]);
+  });
+
+  it("rejects a commercial reference obtained using test credentials", async () => {
+    const rpc = vi.fn(async (name: string) => ({ data: name === "claim_payment_webhook"
+      ? "acquired:10000000-0000-4000-8000-000000000001" : true, error: null }));
+    vi.mocked(createServiceSupabaseClient).mockReturnValue({ rpc } as never);
+    provider.getPayment.mockResolvedValue({ id: "123", externalReference: "KITMG-10000000-0000-4000-8000-000000000001" });
+    expect((await POST(request())).status).toBe(502);
+    expect(commercialKitReconciliation).not.toHaveBeenCalled();
   });
 
   it("rejeita assinatura inválida e replay expirado antes do banco e do provedor", async () => {

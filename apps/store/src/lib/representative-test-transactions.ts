@@ -107,6 +107,9 @@ export async function cancelKitTestOrder(db: SupabaseClient, actor: string, orde
     return;
   }
   if (["pending", "in_process"].includes(payment.status)) payment = await provider.cancelPayment(payment.id);
+  // A provider response to cancellation must still belong to this order.
+  // Do not use its reference to claim or settle a different transaction.
+  assertKitPayment(context, payment);
   if (!["cancelled", "expired", "rejected"].includes(payment.status)) throw new KitTransactionError();
   await reconcileKitTestPayment(db, payment);
 }

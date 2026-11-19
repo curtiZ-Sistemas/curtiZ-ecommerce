@@ -2,9 +2,10 @@
 
 import { formatBRL } from "@curtiz/domain";
 import { Truck } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatPostalCode } from "../lib/personal-data";
 import { readShippingPostalCode, rememberShippingPostalCode } from "../lib/shipping-postal-code";
+import { isRepresentativeKitPostalCode, representativeKitScopeMessage } from "../lib/representative-resale-scope";
 
 const POSTAL_CODE = /^\d{5}-?\d{3}$/u;
 type Quote = { serviceId: string; service: string; carrier: string; amountInCents: number; estimatedDays: number };
@@ -16,12 +17,19 @@ function isQuote(value: unknown): value is Quote {
     && Number.isInteger(row.estimatedDays) && Number(row.estimatedDays) > 0;
 }
 
-export function ProductShippingPreview({ productId, variantId, quantity }: { productId: string; variantId?: string; quantity: number }) {
-  const [postalCode, setPostalCode] = useState("");
+type ShippingPreviewProps = { variantId?: string; quantity: number } &
+  ({ productId: string; mode?: never; savedPostalCode?: never; onSelectService?: never }
+    | { mode: "kit"; productId?: never; savedPostalCode?: string; onSelectService?: (serviceId: string) => void });
+
+export function ProductShippingPreview({ productId, variantId, quantity, mode, savedPostalCode, onSelectService }: ShippingPreviewProps) {
+  const postalInputId = useId();
+  const isKit = mode === "kit";
+  const [typedPostalCode, setPostalCode] = useState("");
+  const postalCode = savedPostalCode ?? typedPostalCode;
   const [result, setResult] = useState<{ key: string; quotes: Quote[]; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const controller = useRef<AbortController | null>(null);
-  const currentKey = `${productId}:${variantId ?? ""}:${quantity}:${postalCode}`;
+  const currentKey = `${isKit ? "kit" : productId}:${variantId ?? ""}:${quantity}:${postalCode}`;
   const latestKey = useRef(currentKey);
   latestKey.current = currentKey;
   const visible = result?.key === currentKey ? result : null;
@@ -41,22 +49,31 @@ export function ProductShippingPreview({ productId, variantId, quantity }: { pro
       setResult({ key, quotes: [], message: "Informe um CEP válido com oito dígitos." });
       return;
     }
+    if (isKit && !isRepresentativeKitPostalCode(postalCode)) {
+      setResult({ key, quotes: [], message: representativeKitScopeMessage });
+      return;
+    }
     if (!variantId) {
       setResult({ key, quotes: [], message: "Escolha a cor e o tamanho para calcular." });
       return;
     }
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
-      setResult({ key, quotes: [], message: "Escolha uma quantidade de 1 a 10 para calcular." });
+    const maxQuantity = isKit ? 99 : 10;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
+      setResult({ key, quotes: [], message: `Escolha uma quantidade de 1 a ${maxQuantity} para calcular.` });
       return;
     }
-    rememberShippingPostalCode(postalCode);
+    if (!savedPostalCode) rememberShippingPostalCode(postalCode);
     const active = new AbortController();
     controller.current = active;
     setLoading(true);
     setResult(null);
     try {
-      const response = await fetch("/api/shipping/preview", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ postalCode, productId, variantId, quantity }), signal: active.signal, cache: "no-store" });
+      const endpoint = isKit ? "/api/representatives/kits/quote" : "/api/shipping/preview";
+      const body = isKit
+        ? { mode: "preview", postalCode: postalCode.replace("-", ""), variantId, quantity }
+        : { postalCode, productId, variantId, quantity };
+      const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(body), signal: active.signal, cache: "no-store" });
       const data: unknown = await response.json();
       if (active.signal.aborted || latestKey.current !== key) return;
       if (typeof data !== "object" || data === null) throw new Error("invalid response");
@@ -77,10 +94,10 @@ export function ProductShippingPreview({ productId, variantId, quantity }: { pro
   const failed = Boolean(visible?.message) && !visible?.quotes.length;
   return <section className="product-shipping-preview" aria-label="Calcule o frete e o prazo de entrega">
     <form onSubmit={(event) => { void calculate(event); }} noValidate>
-      <label className="sr-only" htmlFor="product-shipping-postal">CEP</label>
+      <label className="sr-only" htmlFor={postalInputId}>CEP</label>
       <div className="shipping-input"><Truck aria-hidden="true" />
-        <input id="product-shipping-postal" inputMode="numeric" autoComplete="postal-code" maxLength={9}
-          placeholder="Digite seu CEP" value={postalCode} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
+        <input id={postalInputId} inputMode="numeric" autoComplete="postal-code" maxLength={9}
+          placeholder="Digite seu CEP" value={postalCode} readOnly={Boolean(savedPostalCode)} aria-invalid={failed && !POSTAL_CODE.test(postalCode) ? true : undefined}
           onChange={(event) => setPostalCode(formatPostalCode(event.target.value))} /></div>
       <button type="submit" disabled={loading}>{loading ? "Calculando…" : "Calcular"}</button>
     </form>
@@ -90,7 +107,11 @@ export function ProductShippingPreview({ productId, variantId, quantity }: { pro
       {visible?.message ? <p className="shipping-message" data-tone={failed && !visible?.message.startsWith("Nenhum") ? "error" : "info"}>{visible.message}</p> : null}
       {visible?.quotes.length ? <ul>{visible.quotes.map((quote) => <li key={quote.serviceId}>
         <div><strong>{quote.service}</strong>
-          <span>{quote.carrier} · até {quote.estimatedDays} dias úteis, incluindo preparação</span></div>
+          <span>{quote.carrier} · até {quote.estimatedDays} dias úteis, incluindo preparação</span>
+          {onSelectService && <button className="text-button" type="button" onClick={() => onSelectService(quote.serviceId)}>
+            Selecionar {quote.service}
+          </button>}
+        </div>
         <b>{formatBRL(quote.amountInCents)}</b>
       </li>)}</ul> : null}
     </div>

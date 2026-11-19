@@ -66,6 +66,23 @@ describe("representative TEST payment boundary", () => {
     await expect(cancelKitTestOrder(db, "actor", order)).rejects.toThrow();
     expect(provider.cancelPayment).not.toHaveBeenCalled();
   });
+  it("rejects a cancellation response for another order before claiming reconciliation", async () => {
+    rpc.mockResolvedValue({ data: context, error: null });
+    provider.getPayment.mockResolvedValue(payment);
+    provider.cancelPayment.mockResolvedValue({ ...payment, status: "cancelled",
+      externalReference: "KITTEST-20000000-0000-4000-8000-000000000002" });
+    await expect(cancelKitTestOrder(db, "actor", order)).rejects.toThrow();
+    expect(provider.cancelPayment).toHaveBeenCalledWith("123");
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("read_kit_test_transaction", { p_actor: "actor", p_order: order });
+  });
+  it("reconciles a cancellation response only when it matches the original order", async () => {
+    rpc.mockImplementation(async (name: string) => ({ data: name === "read_kit_test_transaction" || name === "claim_kit_test_reconciliation" ? context : true, error: null }));
+    provider.getPayment.mockResolvedValue(payment);
+    provider.cancelPayment.mockResolvedValue({ ...payment, status: "cancelled" });
+    await cancelKitTestOrder(db, "actor", order);
+    expect(rpc).toHaveBeenCalledWith("claim_kit_test_reconciliation", expect.objectContaining({ p_order: order }));
+    expect(rpc).toHaveBeenCalledWith("settle_kit_test_payment", expect.objectContaining({ p_order: order, p_status: "cancelled" }));
+  });
   it("uses the same ledger for a TEST card and never stores its raw token", async () => {
     const card = { paymentMethodId: "master" as const, token: "test-only-card-token", issuerId: 24, installments: 1 };
     rpc.mockImplementation(async (name: string) => ({ data: name === "claim_kit_test_creation"

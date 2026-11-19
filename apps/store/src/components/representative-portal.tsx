@@ -1663,7 +1663,7 @@ function Kits({
   purchasing: boolean;
 }) {
   if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kits para revenda"
-    description="Escolha os kits do catálogo. Preços e estoque são os cadastrados na loja. As compras para revenda continuam em homologação." />} />;
+    description="Escolha os kits do catálogo e consulte o frete para um endereço salvo em Minas Gerais." />} />;
   return (
     <section>
       <PageTitle

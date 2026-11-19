@@ -9,7 +9,7 @@ vi.mock("./representative-test-transactions", () => ({ kitCall: state.call, kitR
   reconcileKitTestPayment: state.reconcile, assertKitPayment: state.assert }));
 import { runRepresentativeTestJobs } from "./representative-test-jobs";
 const environment = { SUPABASE_URL: "https://isolated.supabase.co", SUPABASE_SECRET_KEY: "test-only-key" };
-beforeEach(() => { vi.clearAllMocks(); state.mode = "test"; });
+beforeEach(() => { vi.resetAllMocks(); state.mode = "test"; });
 describe("kit TEST expiration queue", () => {
   it("does no work with production credentials", async () => {
     state.mode = "production";
@@ -37,6 +37,19 @@ describe("kit TEST expiration queue", () => {
     await runRepresentativeTestJobs(environment);
     expect(state.cancel).not.toHaveBeenCalled();
     expect(state.reconcile).toHaveBeenCalled();
+  });
+  it("rejects a cancellation response that fails the payment identity check", async () => {
+    const context = { state: "reserved" };
+    const cancelled = { id: "456", status: "cancelled" };
+    state.call.mockResolvedValue([{ orderId: "order", actorId: "actor", providerPaymentId: "123" }]);
+    state.record.mockResolvedValue(context);
+    state.get.mockResolvedValue({ id: "123", status: "pending", expiresAt: "2020-01-01T00:00:00Z" });
+    state.cancel.mockResolvedValue(cancelled);
+    state.assert.mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => { throw new Error("mismatch"); });
+    await expect(runRepresentativeTestJobs(environment)).resolves.toEqual({ processed: 0, failed: 1 });
+    expect(state.assert).toHaveBeenLastCalledWith(context, cancelled);
+    expect(state.reconcile).not.toHaveBeenCalled();
   });
   it("does not cancel when the provider reports a future expiration", async () => {
     state.call.mockResolvedValue([{ orderId: "order", actorId: "actor", providerPaymentId: "123" }]);

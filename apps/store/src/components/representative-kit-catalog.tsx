@@ -3,13 +3,25 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatBRL } from "@curtiz/domain";
 import { readRepresentativeKitPage, type RepresentativeKitPage } from "../lib/representative-kit-catalog";
+import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
+import { ProductShippingPreview } from "./product-shipping-preview";
+import { RepresentativeKitDelivery } from "./representative-kit-delivery";
+import { RepresentativeKitGrades } from "./representative-kit-grades";
+import { RepresentativeKitOrderHistory } from "./representative-kit-order";
+import { representativeKitState } from "../lib/representative-resale-scope";
+
+type RecipientFields = Pick<ResaleScenario, "personType" | "icmsStatus">;
 
 export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   const [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
   const [page, setPage] = useState<RepresentativeKitPage | null>(null), [error, setError] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(""), [messages, setMessages] = useState<Record<string, string>>({});
+  const [shippingVariant, setShippingVariant] = useState<string | null>(null);
+  const [recipient, setRecipient] = useState<{
+    [Field in keyof RecipientFields]: RecipientFields[Field] | "";
+  }>({ personType: "", icmsStatus: "" });
   useEffect(() => {
     const controller = new AbortController();
     setPage(null); setError("");
@@ -22,27 +34,68 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
       }).catch(() => { if (!controller.signal.aborted) setError("Não foi possível carregar os kits. Tente novamente."); });
     return () => controller.abort();
   }, [offset, retry]);
+  function updateRecipient<Field extends keyof RecipientFields>(field: Field, value: RecipientFields[Field] | "") {
+    setRecipient(current => ({ ...current, [field]: value }));
+    setMessages({});
+  }
+
   async function preview(variantId: string) {
     if (checking) return;
     const quantity = Number(quantities[variantId] ?? "1");
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
       setMessages(current => ({ ...current, [variantId]: "Informe uma quantidade de kits entre 1 e 99." })); return;
     }
+    const { personType, icmsStatus } = recipient;
+    const declaredScenario = personType && icmsStatus
+      ? { personType, icmsStatus, destinationState: representativeKitState, purpose: "resale" as const }
+      : undefined;
+    if (!declaredScenario && (personType || icmsStatus)) {
+      setMessages(current => ({ ...current, [variantId]: "Preencha os dois campos da prévia ou deixe ambos em branco." }));
+      return;
+    }
     setChecking(variantId);
     try {
       const response = await fetch("/api/representatives/kits/preview", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ variantId, quantity }) });
+        body: JSON.stringify({ variantId, quantity, declaredScenario }) });
       const data: unknown = await response.json();
       if (!response.ok || !isUnknownRecord(data) || !Number.isSafeInteger(data.merchandiseTotalInCents) || !Array.isArray(data.blockers))
         throw new Error("Não foi possível conferir este kit.");
       const unavailable = data.blockers.includes("commercial_stock_unavailable");
       setMessages(current => ({ ...current, [variantId]: unavailable ? "Quantidade indisponível no estoque." :
-        `${quantity} kit(s): ${formatBRL(Number(data.merchandiseTotalInCents))} em produtos. A compra continua em homologação.` }));
+        `${quantity} kit(s): ${formatBRL(Number(data.merchandiseTotalInCents))} em produtos.` }));
     } catch { setMessages(current => ({ ...current, [variantId]: "Não foi possível conferir este kit. Tente novamente." })); }
     finally { setChecking(""); }
   }
   return <section>
     {header}
+    {page?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={page.checkoutConfigured === true} />}
+    <RepresentativeKitGrades />
+    {Boolean(page?.items.length) && (
+      <fieldset className="representative-card representative-profile-form" disabled={Boolean(checking)}>
+        <legend>Dados para a prévia de revenda</legend>
+        <p>Entrega exclusiva em Minas Gerais. Os dados fiscais da prévia são opcionais.</p>
+        <label>
+          Tipo de comprador
+          <select value={recipient.personType}
+            onChange={event => updateRecipient("personType", event.target.value as RecipientFields["personType"] | "")}>
+            <option value="">Selecione</option>
+            <option value="individual">Pessoa física</option>
+            <option value="business">CNPJ, incluindo MEI</option>
+          </select>
+        </label>
+        <label>
+          Situação perante o ICMS
+          <select value={recipient.icmsStatus}
+            onChange={event => updateRecipient("icmsStatus", event.target.value as RecipientFields["icmsStatus"] | "")}>
+            <option value="">Selecione</option>
+            <option value="taxpayer">Contribuinte</option>
+            <option value="registration_exempt">Dispensado de inscrição estadual</option>
+            <option value="non_taxpayer">Não contribuinte</option>
+            <option value="unknown">Não sei informar</option>
+          </select>
+        </label>
+      </fieldset>
+    )}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>
       : !page ? <p role="status">Carregando kits…</p>
       : !page.items.length ? <p>Nenhum kit disponível nesta página.</p>
@@ -60,7 +113,15 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
           {checking === kit.variantId ? "Conferindo…" : "Conferir valor"}
         </button>
         {messages[kit.variantId] && <p role="status">{messages[kit.variantId]}</p>}
-        <button type="button" className="primary-button" disabled>Compra em homologação</button>
+        <button type="button" className="secondary-button" disabled={!kit.available}
+          aria-expanded={shippingVariant === kit.variantId}
+          onClick={() => setShippingVariant(current => current === kit.variantId ? null : kit.variantId)}>
+          {shippingVariant === kit.variantId ? "Fechar cálculo de frete" : "Calcular frete"}
+        </button>
+        {shippingVariant === kit.variantId && <ProductShippingPreview
+          mode="kit" variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} />}
+        {kit.available ? <RepresentativeKitDelivery variantId={kit.variantId} quantity={Number(quantities[kit.variantId] ?? "1")} /> : null}
+        {!page.checkoutConfigured && <button type="button" className="primary-button" disabled>Compra em homologação</button>}
       </article>)}</div>}
     <nav aria-label="Páginas de kits">
       <button type="button" disabled={offset === 0 || !page} onClick={() => setOffset(value => Math.max(0, value - 24))}>Anterior</button>

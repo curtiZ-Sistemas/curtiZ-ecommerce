@@ -984,6 +984,192 @@ test("oferece o Painel do representante sem remover a conta de cliente", async (
   await expect(page.locator(".help-widget")).toBeHidden();
 });
 
+test("envia os dados informados para a prévia de kits de revenda", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+
+  const variantId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  await page.route("**/api/representatives/kits/catalog?offset=0", route =>
+    route.fulfill({ json: {
+      items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto",
+        size: "34", pairsPerSku: 2, unitPriceInCents: 4500, available: 3 }],
+      nextOffset: null
+    } })
+  );
+  await page.route("**/api/representatives/kits/preview", route =>
+    route.fulfill({ json: { merchandiseTotalInCents: 4500, blockers: ["resale_homologation_required"] } })
+  );
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" },
+    { id: "sp-test", label: "Filial", city: "São Paulo", state: "SP", postalCode: "01310-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/quote", route => {
+    const request = route.request().postDataJSON() as { mode: string };
+    if (request.mode === "checkout") {
+      return route.fulfill({ json: { ok: true, mode: "checkout", quote: { id: "quote-test", serviceId: "1", amountInCents: 2200 } } });
+    }
+    return route.fulfill({ json: { ok: true, mode: "preview", quotes: [{
+      serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9
+    }] } });
+  });
+  const cookieInventory = page.waitForResponse(response =>
+    response.url().endsWith("/api/privacy/cookies") && response.request().method() === "GET");
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await cookieInventory;
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByRole("button", { name: "Recusar opcionais" })).toBeHidden();
+
+  const checkValue = page.getByRole("button", { name: "Conferir valor" });
+  const basicPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
+  await checkValue.click();
+  expect((await basicPreview).postDataJSON()).toEqual({ variantId, quantity: 1 });
+  await page.getByLabel("Tipo de comprador").selectOption("business");
+  await checkValue.click();
+  await expect(page.getByText("Preencha os dois campos da prévia ou deixe ambos em branco.")).toBeVisible();
+
+  await page.getByLabel("Situação perante o ICMS").selectOption("unknown");
+  await expect(page.getByText("Preencha os dois campos da prévia ou deixe ambos em branco.")).toHaveCount(0);
+  const declaredPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
+  await checkValue.click();
+  expect((await declaredPreview).postDataJSON()).toEqual({
+    variantId, quantity: 1,
+    declaredScenario: { personType: "business", icmsStatus: "unknown", destinationState: "MG", purpose: "resale" }
+  });
+  await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
+  await page.setViewportSize({ width: 320, height: 850 });
+  await expect(page.getByText(/Entrega exclusiva em Minas Gerais/)).toBeVisible();
+  await page.getByRole("button", { name: "Calcular frete" }).click();
+  await page.getByLabel("CEP", { exact: true }).fill("01310-100");
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  await expect(page.getByText(/atende apenas Minas Gerais/)).toBeVisible();
+  await page.getByLabel("CEP", { exact: true }).fill("30110-100");
+  const shippingPreview = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  expect((await shippingPreview).postDataJSON()).toEqual({ variantId, quantity: 1, postalCode: "30110100", mode: "preview" });
+  await expect(page.getByText("Correios · até 9 dias úteis, incluindo preparação")).toBeVisible();
+  await page.getByRole("button", { name: "Fechar cálculo de frete" }).click();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await expect(page.getByRole("option", { name: /Filial/ })).toHaveCount(0);
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await expect(page.getByLabel("CEP", { exact: true })).toHaveValue("30110-100");
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  const boundQuote = page.waitForRequest(request => request.url().endsWith("/kits/quote"));
+  await page.getByRole("button", { name: "Selecionar PAC" }).click();
+  expect((await boundQuote).postDataJSON()).toEqual({ variantId, quantity: 1, addressId, serviceId: "1", mode: "checkout" });
+  await expect(page.getByText(/Frete conferido para o endereço: R\$\s22,00/)).toBeVisible();
+  await page.getByLabel("Quantidade de kits").fill("2");
+  await expect(page.getByText(/Frete conferido para o endereço/)).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
+});
+
+test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const variantId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: { quote: null } }));
+  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null,
+    items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto", size: "34", pairsPerSku: 2,
+      unitPriceInCents: 4500, available: 3 }]
+  } }));
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/quote", route => {
+    const data = route.request().postDataJSON() as { mode?: string };
+    return route.fulfill({ json: data.mode === "checkout"
+      ? { ok: true, mode: "checkout", purchaseAvailable: true, totalInCents: 6700, quote: { id: quoteId, serviceId: "1", amountInCents: 2200 } }
+      : { ok: true, mode: "preview", quotes: [{ serviceId: "1", service: "PAC", carrier: "Correios", amountInCents: 2100, estimatedDays: 9 }] } });
+  });
+  await page.route("**/api/representatives/kits/orders", route => {
+    const data = route.request().postDataJSON() as { action: string };
+    const state = data.action === "pix" ? "payment_pending" : data.action === "cancel" ? "cancelled" : "reserved";
+    return route.fulfill({ json: { ok: true, order: {
+      orderId, state, amountInCents: 6700, ...(state === "payment_pending" ? { pix: { copyPaste: "PIX-FIXTURE" } } : {})
+    } } });
+  });
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await page.getByRole("button", { name: "Calcular", exact: true }).click();
+  await page.getByRole("button", { name: "Selecionar PAC" }).click();
+  await expect(page.getByText(/Total com frete\s*R\$\s*67,00/)).toBeVisible();
+  const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
+  await page.getByRole("button", { name: "Reservar kit" }).click();
+  expect((await reserve).postDataJSON()).toEqual({ action: "reserve", variantId, addressId, quoteId, quantity: 1,
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await page.getByRole("button", { name: "Gerar Pix" }).click();
+  await expect(page.getByLabel("Pix copia e cola")).toHaveValue("PIX-FIXTURE");
+  await page.getByRole("button", { name: "Cancelar pedido" }).click();
+  await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
+});
+
+test("escolhe a ficha e calcula o troco no recebimento sem enviá-lo pelo formulário", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const kitId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: { items: [], nextOffset: null } }));
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
+    items: [{ kitId, name: "Kit por ficha", unitPriceInCents: 30001, color: "Preto", description: "Grade de 12 pares",
+      templates: [{ code: "upper_restock", label: "Ficha reposição alta", available: 2,
+        sizes: [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }] }] }]
+  } }));
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: {
+    quote: { id: quoteId, amountInCents: 31301, shippingInCents: 1300, service: "Entrega local" }
+  } }));
+  await page.route("**/api/representatives/kits/orders", route => route.fulfill({ json: {
+    ok: true, order: { orderId, state: "awaiting_receipt", amountInCents: 31301, collectionMethod: "cash",
+      cashTenderedInCents: 40000, cashChangeInCents: 8699 }
+  } }));
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByLabel("Escolher ficha")).toHaveValue("upper_restock");
+  await expect(page.getByText("Tamanho 39")).toBeVisible();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await page.getByLabel("Quando pagar").selectOption("collection");
+  await page.getByLabel("Escolher forma de pagamento").selectOption("cash");
+  const pay = page.getByRole("button", { name: "Confirmar pagamento no recebimento" });
+  await page.getByLabel("Valor que você vai entregar").fill("300,00");
+  await expect(pay).toBeDisabled();
+  await page.getByLabel("Valor que você vai entregar").fill("400,00");
+  await expect(page.locator("output").filter({ hasText: /Troco no recebimento/ })).toContainText("86,99");
+  const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
+  await pay.click();
+  expect((await reserve).postDataJSON()).toEqual({ action: "reserve_collection", selectionId: kitId, template: "upper_restock",
+    quoteId, addressId, quantity: 1, method: "cash", cashTenderedInCents: 40000,
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await expect(page.getByText(/Valor informado.*Troco.*86,99/)).toBeVisible();
+});
+
 test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     headers: { origin: "http://localhost:3000" },

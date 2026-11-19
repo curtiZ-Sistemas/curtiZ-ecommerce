@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getMelhorEnvioEnvironment } from "@curtiz/config";
+import { getIntegrationConfig, getMelhorEnvioEnvironment } from "@curtiz/config";
 import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
@@ -8,39 +8,121 @@ import { configuredMelhorEnvioProvider, resolveShippingProducts } from "@/lib/me
 import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 import { isUnknownRecord, readRows, readString, readNumber } from "@/lib/unknown-data";
 import { KitTransactionError, kitTestProvider } from "@/lib/representative-test-transactions";
+import { commercialKitCheckoutConfigured } from "@/lib/representative-commercial-payments";
+import { createShippingPreviewCache, shippingPreviewKey } from "@/lib/shipping-preview";
+import { isRepresentativeKitPostalCode, representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
 
-const schema = z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99),
-  postalCode: z.string().regex(/^\d{8}$/u) }).strict();
+const selection = { variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99) };
+const postalCodeSchema = z.string().regex(/^\d{8}$/u);
+const schema = z.union([
+  z.object({ ...selection, postalCode: postalCodeSchema, mode: z.literal("preview").optional() }).strict(),
+  z.object({ ...selection, mode: z.literal("checkout"), addressId: z.string().uuid(),
+    serviceId: z.string().min(1).max(50) }).strict()
+]);
 const headers = { "cache-control": "private, no-store" };
+const cachedPreview = createShippingPreviewCache();
+
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ message: "Origem não autorizada." }, { status: 403, headers });
   try {
     const parsed = schema.safeParse(await readPrivateJson(request, 1024));
     if (!parsed.success) return NextResponse.json({ message: "Revise o kit, a quantidade e o CEP." }, { status: 400, headers });
-    const auth = await createServerSupabaseClient();
-    const user = auth ? (await auth.auth.getUser()).data.user : null;
-    if (!auth || !user) throw new KitTransactionError(401);
-    if (process.env.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true" || process.env.REPRESENTATIVE_TEST_ACTOR_ID !== user.id) throw new KitTransactionError(403);
-    kitTestProvider();
-    await requirePrivateRateLimit(auth, "shipping_quote");
     const input = parsed.data;
+    const isPreview = input.mode === "preview";
+    const isCheckout = input.mode === "checkout";
+    const auth = await createServerSupabaseClient();
+    const session = auth ? await auth.auth.getUser() : null;
+    const user = session?.data.user;
+    if (!auth || session?.error || !user) throw new KitTransactionError(401);
+    const environment = getStoreRuntimeEnvironment();
+    if (!isPreview && !isCheckout) {
+      if (environment.APP_ENV === "production" || environment.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true"
+        || environment.REPRESENTATIVE_TEST_ACTOR_ID !== user.id) throw new KitTransactionError(403);
+      kitTestProvider();
+    }
+    const providerEnvironment = getMelhorEnvioEnvironment(environment);
+    if (isPreview || isCheckout) {
+      const { shipping } = getIntegrationConfig(environment);
+      if (environment.SHIPPING_PREVIEW_ENABLED !== "true" || !shipping.enabled
+        || shipping.provider !== "melhorenvio" || providerEnvironment !== "production") throw new KitTransactionError(503);
+    } else if (providerEnvironment !== "sandbox") {
+      throw new KitTransactionError(503);
+    }
+    await requirePrivateRateLimit(auth, "shipping_quote");
     const context = await auth.rpc("read_representative_catalog_kit_context", { p_variant_id: input.variantId, p_quantity: input.quantity });
     if (context.error) throw new KitTransactionError(503);
     if (!isUnknownRecord(context.data)) throw new KitTransactionError(403);
     const item = readRows(context.data.items)[0];
     if (!item || readNumber(item, "available") < input.quantity) throw new KitTransactionError();
+    let postalCode: string;
+    if (input.mode === "checkout") {
+      const address = await auth.from("addresses").select("postal_code,state").eq("id", input.addressId)
+        .eq("user_id", user.id).eq("country", "BR").maybeSingle();
+      if (address.error) throw new KitTransactionError(503);
+      if (!isUnknownRecord(address.data)) throw new KitTransactionError(404);
+      if (address.data.state !== representativeKitState) {
+        return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+      }
+      postalCode = readString(address.data, "postal_code").replace(/\D/gu, "");
+      if (!postalCodeSchema.safeParse(postalCode).success) throw new KitTransactionError();
+    } else {
+      postalCode = input.postalCode;
+    }
+    if (!isRepresentativeKitPostalCode(postalCode)) {
+      return NextResponse.json({ code: "KIT_OUTSIDE_MG", message: representativeKitScopeMessage }, { status: 403, headers });
+    }
+    const originPostalCode = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
+    if (!isRepresentativeKitPostalCode(originPostalCode)) throw new KitTransactionError(503);
     const db = createServiceSupabaseClient();
-    const environment = getStoreRuntimeEnvironment();
-    if (!db || !environment || getMelhorEnvioEnvironment(environment) !== "sandbox") throw new KitTransactionError(503);
+    if (!db) throw new KitTransactionError(503);
     const variant = await db.from("product_variants").select("product_id").eq("id", input.variantId).maybeSingle();
     if (variant.error || !isUnknownRecord(variant.data)) throw new KitTransactionError(503);
-    const resolved = await resolveShippingProducts([{ productId: readString(variant.data, "product_id"), variantId: input.variantId, quantity: input.quantity }], db);
-    const quotes = await configuredMelhorEnvioProvider(environment, db).quote({ originPostalCode: environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "",
-      destinationPostalCode: input.postalCode, products: resolved.products });
+    const productId = readString(variant.data, "product_id");
+    const resolved = await resolveShippingProducts([{ productId, variantId: input.variantId, quantity: input.quantity }], db);
+    const quote = () => configuredMelhorEnvioProvider(environment, db).quote({
+      originPostalCode, destinationPostalCode: postalCode, products: resolved.products
+    });
+    if (isPreview) {
+      const key = shippingPreviewKey({ productId, variantId: input.variantId, postalCode,
+        originPostalCode, environment: "production", products: resolved.products });
+      const estimates = await cachedPreview(key, quote);
+      return NextResponse.json({ ok: true, mode: "preview", quotes: estimates }, { headers });
+    }
+    const quotes = await quote();
+    if (input.mode === "checkout") {
+      const matchingQuotes = quotes.filter(option => option.serviceId === input.serviceId);
+      const [selected] = matchingQuotes;
+      if (matchingQuotes.length !== 1 || !selected || selected.provider !== "melhorenvio") throw new KitTransactionError();
+      const [shipment] = resolved.products;
+      if (!shipment) throw new KitTransactionError(503);
+      const saved = await db.rpc("confirm_representative_kit_shipping_quote", {
+        p_actor: user.id, p_variant: input.variantId, p_quantity: input.quantity, p_address: input.addressId,
+        p_postal_code: postalCode, p_cart_fingerprint: resolved.fingerprint, p_service_id: selected.serviceId,
+        p_service: selected.service, p_carrier: selected.carrier, p_amount_in_cents: selected.amountInCents,
+        p_cost_in_cents: selected.costInCents, p_estimated_days: selected.estimatedDays, p_packages: selected.packages,
+        p_expires_at: selected.expiresAt, p_origin_postal_code: originPostalCode,
+        p_unit_price_cents: Math.round(shipment.insuranceValue * 100),
+        p_dimensions: [Math.round(shipment.weightKg * 1000), shipment.widthCm, shipment.heightCm, shipment.lengthCm]
+      });
+      if (saved.error?.code === "23514") throw new KitTransactionError();
+      if (saved.error) throw new KitTransactionError(503);
+      if (!isUnknownRecord(saved.data)) throw new KitTransactionError();
+      if (commercialKitCheckoutConfigured(environment)) {
+        const eligibility = await db.rpc("representative_kit_purchase_available", {
+          p_actor: user.id, p_variant: input.variantId, p_origin: originPostalCode
+        });
+        if (eligibility.error) throw new KitTransactionError(503);
+        if (eligibility.data === true) return NextResponse.json({ ok: true, mode: "checkout",
+          quote: saved.data, purchaseAvailable: true,
+          totalInCents: Math.round(shipment.insuranceValue * 100) * input.quantity + selected.amountInCents
+        }, { headers });
+      }
+      return NextResponse.json({ ok: true, mode: "checkout", quote: saved.data }, { headers });
+    }
     if (!quotes.length) return NextResponse.json({ ok: true, quotes: [] }, { headers });
     const saved = await db.from("shipping_quotes").insert(quotes.map(q => ({ customer_id: user.id, provider: q.provider,
       service_id: q.serviceId, service: q.service, carrier: q.carrier, amount: q.amountInCents / 100, cost: q.costInCents / 100,
-      estimated_days: q.estimatedDays, packages: q.packages, destination_postal_code: input.postalCode, cart_fingerprint: resolved.fingerprint,
+      estimated_days: q.estimatedDays, packages: q.packages, destination_postal_code: postalCode, cart_fingerprint: resolved.fingerprint,
       provider_environment: "sandbox", provider_payload: { packages: q.packages }, expires_at: q.expiresAt })))
       .select("id,service,carrier,amount,estimated_days,expires_at");
     if (saved.error || !Array.isArray(saved.data) || saved.data.length !== quotes.length) throw new KitTransactionError(503);

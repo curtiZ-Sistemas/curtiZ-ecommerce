@@ -50,14 +50,14 @@ async function call(db: SupabaseClient, name: string, args: Record<string, unkno
   return result.data;
 }
 
-async function findContact(provider: BlingClient, cpf: string): Promise<number | null> {
-  const result = await provider.request(`/contatos?numeroDocumento=${encodeURIComponent(cpf)}&pagina=1&limite=100`);
-  const matches = array(data(result)).filter((item) => readString(item, "numeroDocumento").replace(/\D/gu, "") === cpf);
+export async function findBlingContact(provider: BlingClient, document: string): Promise<number | null> {
+  const result = await provider.request(`/contatos?numeroDocumento=${encodeURIComponent(document)}&pagina=1&limite=100`);
+  const matches = array(data(result)).filter((item) => readString(item, "numeroDocumento").replace(/\D/gu, "") === document);
   if (matches.length > 1) throw new BlingError("duplicate_contact", 409);
   return matches.length ? idNumber(matches[0]?.id) : null;
 }
 
-async function findOrder(provider: BlingClient, code: string): Promise<number | null> {
+export async function findBlingOrder(provider: BlingClient, code: string): Promise<number | null> {
   const query = new URLSearchParams({ "numerosLojas[]": code, pagina: "1", limite: "100" });
   const result = await provider.request(`/pedidos/vendas?${query.toString()}`);
   const matches = array(data(result)).filter((item) => readString(item, "numeroLoja") === code);
@@ -66,9 +66,18 @@ async function findOrder(provider: BlingClient, code: string): Promise<number | 
 }
 
 export function blingOrderPayload(input: { order: Record<string, unknown>; items: Record<string, unknown>[];
-  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number; natureId?: number }) {
+  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number; natureId?: number;
+  collectionDueDate?: string }) {
   const { order, items, productLinks, contactId, paymentMethodId } = input;
-  assertBlingPaidOrder(order);
+  if (input.collectionDueDate) {
+    if (order.status !== "awaiting_receipt" || order.payment_status !== "pending"
+      || !/^KITMG-[a-f0-9-]{36}$/u.test(readString(order, "public_code"))
+      || !/^\d{4}-\d{2}-\d{2}$/u.test(input.collectionDueDate)) {
+      throw new BlingError("order_not_eligible", 409);
+    }
+  } else {
+    assertBlingPaidOrder(order);
+  }
   const code = readString(order, "public_code");
   const money = ["subtotal", "discount_total", "shipping_total", "fee_total", "grand_total"];
   if (!code || !items.length || money.some((key) => !validAmount(order[key])) || cents(order.fee_total) !== 0)
@@ -101,7 +110,7 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
     || !/^\d{8}$/u.test(readString(address, "postal_code").replace(/\D/gu, "")))
     throw new BlingError("shipping_address_required", 409);
   return { numeroLoja: code, data: paidDate, contato: { id: contactId }, itens: products,
-    parcelas: [{ dataVencimento: paidDate, valor: total / 100, formaPagamento: { id: paymentMethodId } }],
+    parcelas: [{ dataVencimento: input.collectionDueDate ?? paidDate, valor: total / 100, formaPagamento: { id: paymentMethodId } }],
     ...(discount > 0 ? { desconto: { valor: discount / 100, unidade: "REAL" } } : {}),
     transporte: { frete: shipping / 100, etiqueta: {
       nome: readString(order, "customer_name_snapshot"), endereco: readString(address, "street"),
@@ -172,7 +181,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
   if (!paymentMethodId) throw new BlingError("payment_method_required", 409);
   // Validate the entire immutable order before any external mutation.
   blingOrderPayload({ order, items, productLinks: array(links), contactId: 1, paymentMethodId });
-  const existing = await findOrder(provider, code);
+  const existing = await findBlingOrder(provider, code);
   if (existing) {
     const external = row(data(await provider.request(`/pedidos/vendas/${existing}`)));
     assertBlingExternalOrder(order, items, external);
@@ -185,7 +194,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
   }
   if (reconcileOnly) throw new BlingError("external_record_not_found", 409);
   const natureId = environment.BLING_FISCAL_READY === "true" ? await resolveBlingOrderNature(db, order, items) : undefined;
-  let contactId = await findContact(provider, cpf);
+  let contactId = await findBlingContact(provider, cpf);
   if (!contactId) {
     const contactResult = await provider.request("/contatos", { method: "POST", body: {
       nome: readString(order, "customer_name_snapshot"), situacao: "A", tipo: "F", numeroDocumento: cpf,

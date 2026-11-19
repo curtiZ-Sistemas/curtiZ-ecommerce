@@ -27,7 +27,13 @@ const heroAssetPaths = [
 ];
 
 const nextConfig: NextConfig = {
-  experimental: { cpus: 1 },
+  experimental: {
+    cpus: 1,
+    // Cada execução do Playwright em CI inicia um novo servidor de demonstração.
+    ...(process.env.CI === "true" && process.env.DEMO_MODE === "true"
+      ? { turbopackFileSystemCacheForDev: false }
+      : {})
+  },
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   turbopack: { root: path.resolve(process.cwd(), "../..") },

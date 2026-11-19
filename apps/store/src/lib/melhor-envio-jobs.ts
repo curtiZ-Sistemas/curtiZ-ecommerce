@@ -21,7 +21,7 @@ type ServiceDatabase = Parameters<typeof createMelhorEnvioProvider>[1];
 type Job = { id: string; jobType: "melhorenvio.create" | "melhorenvio.cancel" | "melhorenvio.purchase" | "melhorenvio.generate" | "melhorenvio.sync"; shipmentId: string };
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isUnknownRecord) : [];
 
-function labelGenerationConfirmed(remote: Record<string, unknown>): boolean {
+export function labelGenerationConfirmed(remote: Record<string, unknown>): boolean {
   const status = readString(remote, "status").toLowerCase();
   const generatedAt = readString(remote, "generated_at");
   // Released also describes paid orders. Require the provider's generation
@@ -38,7 +38,7 @@ const serviceDatabase = (environment: ShippingJobEnvironment, transport: typeof 
   } catch { return null; }
 };
 
-const originParty = (environment: ShippingJobEnvironment): MelhorEnvioParty => {
+export const melhorEnvioOriginParty = (environment: ShippingJobEnvironment): MelhorEnvioParty => {
   const value = (name: string) => environment[name]?.trim() ?? "";
   const digits = (name: string) => value(name).replace(/\D/gu, "");
   const document = digits("MELHOR_ENVIO_ORIGIN_DOCUMENT");
@@ -160,7 +160,7 @@ async function createShipment(db: ServiceDatabase, environment: ShippingJobEnvir
     if ([to.name, to.address, to.number, to.district, to.city].some(value => !value.trim())
       || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(to.email) || !/^\d{10,11}$/u.test(to.phone)
       || !/^\d{8}$/u.test(to.postal_code) || !/^[A-Z]{2}$/u.test(to.state_abbr)) throw new MelhorEnvioError("validation", 409, false);
-    const input: MelhorEnvioShipmentInput = { serviceId: readString(quote, "service_id"), from: originParty(environment), to, products, volumes,
+    const input: MelhorEnvioShipmentInput = { serviceId: readString(quote, "service_id"), from: melhorEnvioOriginParty(environment), to, products, volumes,
       options: { platform: environment.MELHOR_ENVIO_APP_NAME?.trim() ?? "curti Z",
         insurance_value: products.reduce((total, item) => total + item.quantity * item.unitary_value, 0), receipt: false,
         own_hand: false, reverse: false, ...(fiscalKey ? { invoice: { key: fiscalKey } } : {}),

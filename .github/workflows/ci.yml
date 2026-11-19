@@ -181,6 +181,8 @@ jobs:
         run: bash scripts/test-return-balance-concurrency.sh
       - name: Testar concorrência de comissões de representante
         run: bash scripts/test-representative-commission-concurrency.sh
+      - name: Testar concorrência de estoque de kits de revenda
+        run: bash scripts/test-representative-kit-stock-concurrency.sh
       - name: Testar concorrência da fila de remessas
         run: bash scripts/test-shipping-claim-concurrency.sh
       - name: Testar runtime com safeupdate ativo

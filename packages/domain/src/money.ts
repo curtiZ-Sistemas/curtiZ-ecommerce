@@ -20,6 +20,12 @@ export const parseBRLToCents = (value: string): number => {
   return Math.round(parsed * 100);
 };
 
+export function cashChangeInCents(totalInCents: number, tenderedInCents: number): number | null {
+  if (!Number.isSafeInteger(totalInCents) || totalInCents <= 0
+    || !Number.isSafeInteger(tenderedInCents) || tenderedInCents < totalInCents) return null;
+  return tenderedInCents - totalInCents;
+}
+
 export const calculateSubtotal = (
   lines: ReadonlyArray<{ quantity: number; unitPriceInCents: number }>
 ): number =>
