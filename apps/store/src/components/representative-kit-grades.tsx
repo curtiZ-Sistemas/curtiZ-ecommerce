@@ -6,13 +6,18 @@ import { isUnknownRecord, readRows, readString, readNumber } from "../lib/unknow
 import { RepresentativeKitDelivery } from "./representative-kit-delivery";
 
 type GradeSize = { size: string; pairs: number };
-type GradeTemplate = { code: string; label: string; available: number; sizes: GradeSize[] };
+type GradeTemplate = {
+  code: string;
+  label: string;
+  available: number;
+  unitPriceInCents: number;
+  sizes: GradeSize[];
+};
 type GradeOffer = {
   kitId: string;
   name: string;
   description: string;
   color: string;
-  unitPriceInCents: number;
   templates: GradeTemplate[];
 };
 
@@ -23,11 +28,11 @@ function readGradeOffers(value: unknown): GradeOffer[] {
     name: readString(item, "name"),
     description: readString(item, "description"),
     color: readString(item, "color"),
-    unitPriceInCents: readNumber(item, "unitPriceInCents"),
     templates: readRows(item.templates).map(template => ({
       code: readString(template, "code"),
       label: readString(template, "label"),
       available: readNumber(template, "available"),
+      unitPriceInCents: readNumber(template, "unitPriceInCents", readNumber(item, "unitPriceInCents")),
       sizes: readRows(template.sizes).map(size => ({ size: readString(size, "size"), pairs: readNumber(size, "pairs") }))
     }))
   }));
@@ -59,7 +64,7 @@ function GradeCard({ offer }: { offer: GradeOffer }) {
           </div>
         ))}
       </dl>
-      <strong>{totalPairs} pares · {formatBRL(offer.unitPriceInCents)}</strong>
+      <strong>{totalPairs} pares · {formatBRL(template.unitPriceInCents)}</strong>
       <p role="status">{template.available > 0 ? `${template.available} fichas disponíveis` : "Ficha sem estoque para todos os tamanhos."}</p>
       {template.available > 0 && (
         <label>Quantidade de fichas
