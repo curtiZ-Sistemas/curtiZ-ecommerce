@@ -193,7 +193,7 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
       <form onSubmit={event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
-        const submitter = (event.nativeEvent as SubmitEvent).submitter;
+        const submitter = event.nativeEvent.submitter;
         if (submitter instanceof HTMLButtonElement) void run(orderId,submitter.value,form.get("evidence"));
       }}>
         <label>Referência da operação <input name="evidence" required minLength={10} maxLength={200} /></label>

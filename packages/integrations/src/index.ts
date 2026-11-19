@@ -556,7 +556,7 @@ export class MockShippingProvider implements ShippingProvider {
 
 export const unconfiguredState = async (): Promise<IntegrationState> => "not_configured";
 export { allocateBlingFiscalCents, expandBlingFiscalKit } from "./bling-kit-fiscal";
-export { reconcileRepresentativePoint, reconcileRepresentativePointRefund, representativePointIntent, representativePointRefund } from "./mercadopago-point";
+export { reconcileRepresentativePoint, reconcileRepresentativePointRefund } from "./mercadopago-point";
 export type { BlingFiscalItem } from "./bling-kit-fiscal";
 export { readBlingReturnOriginalXml, BLING_RETURN_XML_LIMIT } from "./bling-return-xml";
 export { buildBlingArchivedReturnMirror } from "./bling-return-context";

@@ -1,64 +1,94 @@
 import "server-only";
-import { z } from "zod";
 
-const pointMethods = z.enum(["pix", "debit_card", "credit_card"]);
-const centAmount = z.string().regex(/^\d{1,13}(?:\.\d{1,2})?$/u);
-const orderIdSchema = z.string().regex(/^ORD[A-Za-z0-9]{12,62}$/u);
-const pointOrder = z.object({
-  id: orderIdSchema,
-  external_reference: z.string(),
-  user_id: z.union([z.string(), z.number()]).transform(String),
-  type: z.literal("point"),
-  country_code: z.enum(["BR", "BRA"]),
-  currency: z.literal("BRL").optional(),
-  status: z.enum(["created", "at_terminal", "processed", "failed", "expired", "canceled", "action_required", "refunded"]),
-  config: z.object({
-    point: z.object({ terminal_id: z.string() }),
-    payment_method: z.object({ default_type: z.string() })
-  }),
-  transactions: z.object({
-    payments: z.array(z.object({
-      id: z.string().regex(/^PAY[A-Za-z0-9]{12,62}$/u),
-      amount: centAmount,
-      paid_amount: centAmount.optional(),
-      status: z.string(),
-      payment_method: z.object({ type: z.string(), id: z.string() }).optional()
-    })).length(1),
-    refunds: z.array(z.object({
-      id: z.string().regex(/^REF[A-Za-z0-9]{12,62}$/u), transaction_id: z.string(),
-      amount: centAmount, status: z.string()
-    })).optional()
-  })
-});
+const pointStatuses = ["created", "at_terminal", "processed", "failed", "expired", "canceled", "action_required", "refunded"] as const;
+type PointStatus = (typeof pointStatuses)[number];
+type PointMethod = "pix" | "debit_card" | "credit_card";
+export type RepresentativePointIntent = {
+  pointOrderId: string | null;
+  pointKey: string;
+  method: PointMethod;
+  terminal: string;
+  amountInCents: number;
+  confirmed: boolean;
+};
+export type RepresentativePointRefundIntent = RepresentativePointIntent & {
+  pointOrderId: string;
+  confirmed: false;
+  refundId: string;
+  refundCents: number;
+  receipt: string;
+  maySend: boolean;
+  previousRefundIds: string[];
+};
 
-export const representativePointIntent = z.object({
-  pointOrderId: orderIdSchema.nullable(),
-  pointKey: z.string().uuid(),
-  method: pointMethods,
-  terminal: z.string().regex(/^[A-Za-z0-9_]{4,80}$/u),
-  amountInCents: z.number().int().positive().max(999_999_999_999),
-  confirmed: z.boolean()
-});
+const invalid = () => new Error("Resposta inválida do Point.");
+const object = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const isStatus = (value: unknown): value is PointStatus =>
+  typeof value === "string" && pointStatuses.some(status => status === value);
 
-type PointIntent = z.infer<typeof representativePointIntent>;
-type PointOrder = z.infer<typeof pointOrder>;
+function amountInCents(value: unknown): number {
+  if (typeof value !== "string" || !/^\d{1,13}(?:\.\d{1,2})?$/u.test(value)) throw invalid();
+  const [reais = "", cents = ""] = value.split(".");
+  const result = Number(reais) * 100 + Number(cents.padEnd(2, "0"));
+  if (!Number.isSafeInteger(result)) throw invalid();
+  return result;
+}
+
+function readPointOrder(value: unknown) {
+  const order = object(value);
+  const config = object(order?.config);
+  const point = object(config?.point);
+  const configuredMethod = object(config?.payment_method);
+  const transactions = object(order?.transactions);
+  const payments = transactions?.payments;
+  if (!order || order.type !== "point" || !isStatus(order.status)
+    || (order.country_code !== "BR" && order.country_code !== "BRA")
+    || (order.currency !== undefined && order.currency !== "BRL")
+    || typeof order.id !== "string" || !/^ORD[A-Za-z0-9]{12,62}$/u.test(order.id)
+    || typeof order.external_reference !== "string"
+    || !(typeof order.user_id === "string" || Number.isSafeInteger(order.user_id))
+    || typeof point?.terminal_id !== "string" || typeof configuredMethod?.default_type !== "string"
+    || !Array.isArray(payments) || payments.length !== 1) throw invalid();
+
+  const payment = object(payments[0]);
+  const method = object(payment?.payment_method);
+  if (!payment || typeof payment.id !== "string" || !/^PAY[A-Za-z0-9]{12,62}$/u.test(payment.id)
+    || typeof payment.status !== "string") throw invalid();
+  const refundValues = transactions?.refunds;
+  if (refundValues !== undefined && (!Array.isArray(refundValues) || refundValues.length > 100)) throw invalid();
+  const refunds = Array.isArray(refundValues) ? refundValues.map((value: unknown) => {
+    const refund = object(value);
+    if (!refund || typeof refund.id !== "string" || !/^REF[A-Za-z0-9]{12,62}$/u.test(refund.id)
+      || typeof refund.transaction_id !== "string" || typeof refund.status !== "string") throw invalid();
+    return { id: refund.id, paymentId: refund.transaction_id, status: refund.status, amount: amountInCents(refund.amount) };
+  }) : [];
+  return { id: order.id, reference: order.external_reference, collector: String(order.user_id), status: order.status,
+    terminal: point.terminal_id, configuredMethod: configuredMethod.default_type,
+    payment: { id: payment.id, status: payment.status, amount: amountInCents(payment.amount),
+      paid: payment.paid_amount === undefined ? null : amountInCents(payment.paid_amount),
+      methodId: method?.id, methodType: method?.type },
+    refunds };
+}
+
+type PointIntent = RepresentativePointIntent;
+type PointOrder = ReturnType<typeof readPointOrder>;
 const methodType = (method: PointIntent["method"]) => method === "pix" ? "qr" : method;
 
 function verifyPointIdentity(order: PointOrder, intent: PointIntent, collector: string) {
-  const payment = order.transactions.payments[0];
-  if (!payment || order.external_reference !== `KITMG-POS-${intent.pointKey}` || order.user_id !== collector
-    || order.config.point.terminal_id !== intent.terminal || order.config.payment_method.default_type !== methodType(intent.method)
+  const payment = order.payment;
+  if (order.reference !== `KITMG-POS-${intent.pointKey}` || order.collector !== collector
+    || order.terminal !== intent.terminal || order.configuredMethod !== methodType(intent.method)
     || (intent.pointOrderId && order.id !== intent.pointOrderId)
-    || Math.round(Number(payment.amount) * 100) !== intent.amountInCents) throw new Error("O recebimento no Point não corresponde ao pedido.");
+    || payment.amount !== intent.amountInCents) throw new Error("O recebimento no Point não corresponde ao pedido.");
   return payment;
 }
 
 function assertPointPaymentAmount(payment: ReturnType<typeof verifyPointIdentity>, intent: PointIntent) {
   const approvedMethod = intent.method === "pix"
-    ? payment.payment_method?.id === "pix"
-    : payment.payment_method?.type === intent.method;
-  if (!approvedMethod || !payment.paid_amount
-    || Math.round(Number(payment.paid_amount) * 100) !== intent.amountInCents) {
+    ? payment.methodId === "pix"
+    : payment.methodType === intent.method;
+  if (!approvedMethod || payment.paid !== intent.amountInCents) {
     throw new Error("A confirmação do Point requer conciliação.");
   }
 }
@@ -101,23 +131,13 @@ export async function reconcileRepresentativePoint(
     result = await request(url, { method: "GET" });
   }
   if (!result.ok) throw new Error("Não foi possível confirmar o recebimento no Point.");
-  return verifyPointOrder(pointOrder.parse(await result.json()), intent, credentials.collector);
+  return verifyPointOrder(readPointOrder(await result.json() as unknown), intent, credentials.collector);
 }
-
-export const representativePointRefund = representativePointIntent.omit({ confirmed: true }).extend({
-  pointOrderId: orderIdSchema,
-  confirmed: z.literal(false),
-  refundId: z.string().uuid(),
-  refundCents: z.number().int().positive().max(999_999_999_999),
-  receipt: z.string().regex(/^PAY[A-Za-z0-9]{12,62}$/u),
-  maySend: z.boolean(),
-  previousRefundIds: z.array(z.string().regex(/^REF[A-Za-z0-9]{12,62}$/u)).max(100)
-});
 
 export async function reconcileRepresentativePointRefund(
   transport: typeof fetch,
   credentials: { accessToken: string; collector: string },
-  intent: z.infer<typeof representativePointRefund>
+  intent: RepresentativePointRefundIntent
 ): Promise<string | null> {
   const url = `https://api.mercadopago.com/v1/orders/${intent.pointOrderId}`;
   const request = (endpoint: string, init: RequestInit) => transport(endpoint, {
@@ -128,20 +148,20 @@ export async function reconcileRepresentativePointRefund(
   async function readOrder() {
     const response = await request(url, { method: "GET" });
     if (!response.ok) throw new Error("Não foi possível conciliar o estorno do Point.");
-    const current = pointOrder.parse(await response.json());
+    const current = readPointOrder(await response.json() as unknown);
     const payment = verifyPointIdentity(current, intent, credentials.collector);
     assertPointPaymentAmount(payment, intent);
     if (payment.id !== intent.receipt) throw new Error("A transação do Point não corresponde ao estorno.");
-    const refunds = current.transactions.refunds ?? [];
+    const refunds = current.refunds;
     const known = new Set(intent.previousRefundIds);
-    if (refunds.some(refund => known.has(refund.id) && (refund.status !== "processed" || refund.transaction_id !== payment.id))
+    if (refunds.some(refund => known.has(refund.id) && (refund.status !== "processed" || refund.paymentId !== payment.id))
       || intent.previousRefundIds.some(id => !refunds.some(refund => refund.id === id))) {
       throw new Error("Há divergências nos estornos anteriores.");
     }
     const newRefunds = refunds.filter(refund => !known.has(refund.id));
-    if (newRefunds.some(refund => refund.transaction_id !== payment.id || Math.round(Number(refund.amount) * 100) !== intent.refundCents)
+    if (newRefunds.some(refund => refund.paymentId !== payment.id || refund.amount !== intent.refundCents)
       || newRefunds.length > 1) throw new Error("Há um estorno do Point que requer conciliação.");
-    const prior = refunds.filter(refund => known.has(refund.id)).reduce((sum, refund) => sum + Math.round(Number(refund.amount) * 100), 0);
+    const prior = refunds.filter(refund => known.has(refund.id)).reduce((sum, refund) => sum + refund.amount, 0);
     if (prior + intent.refundCents > intent.amountInCents) throw new Error("O estorno supera o total recebido.");
     return { current, prior, newRefund: newRefunds[0] };
   }

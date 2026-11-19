@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { reconcileRepresentativePoint, representativePointIntent } from "./mercadopago-point";
+import { reconcileRepresentativePoint, type RepresentativePointIntent } from "./mercadopago-point";
 
 vi.mock("server-only", () => ({}));
 
@@ -7,9 +7,9 @@ const credentials = { accessToken: "synthetic", collector: "123" };
 const key = "10000000-0000-4000-8000-000000000001";
 const id = "ORD10000000000000000000000001";
 const paymentId = "PAY10000000000000000000000001";
-const intent = representativePointIntent.parse({
+const intent: RepresentativePointIntent = {
   pointOrderId: id, pointKey: key, method: "pix", terminal: "POINT_TEST", amountInCents: 6300, confirmed: false
-});
+};
 
 function response({ methodId = "pix", paid = "63.00", status = "processed", user = "123", transaction = "processed" } = {}) {
   return Response.json({
