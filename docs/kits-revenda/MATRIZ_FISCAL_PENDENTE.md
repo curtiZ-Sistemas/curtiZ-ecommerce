@@ -27,4 +27,3 @@ A cobertura comercial solicitada é nacional. Os parâmetros abaixo são referê
 | Homologação de devolução PF interestadual | 2202 | `15111772282` | Cadastro de referência para devolução PF. Falta definir a devolução de kits para revenda. |
 
 Consulta somente de leitura no Bling em 18/11/2026. Os registros de homologação acima continuam pendentes de aprovação para uso no fluxo produtivo de kits.
-

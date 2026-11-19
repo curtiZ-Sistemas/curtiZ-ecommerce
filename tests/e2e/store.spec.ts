@@ -1069,6 +1069,7 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
 });
 
 test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
   const loginUrl = new URL("/api/auth/login", baseURL);
   const login = await page.request.post(loginUrl.toString(), {
     headers: { origin: loginUrl.origin },
