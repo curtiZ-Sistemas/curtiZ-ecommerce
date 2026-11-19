@@ -538,7 +538,10 @@ function Section({
     );
   }
   if (["kits", "montagem-kits"].includes(section)) {
-    return <Kits kits={data.kitOrders} run={run} processing={processing} canExecute={capabilities.executeTasks && capabilities.fulfillKits} />;
+    return <>
+      <Kits kits={data.kitOrders} run={run} processing={processing} canExecute={capabilities.executeTasks && capabilities.fulfillKits} />
+      {section === "kits" && capabilities.executeTasks && <RepresentativeKitOperations mode="collection" />}
+    </>;
   }
   if (["trocas", "devolucoes"].includes(section)) {
     const list =

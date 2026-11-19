@@ -10,6 +10,7 @@ vi.mock("@/lib/private-request", () => ({ readPrivateJson: (r: Request) => r.jso
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
 vi.mock("@/lib/representative-resale", () => import("../../../../../lib/representative-resale"));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
+vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => process.env }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({ auth: { getUser: async () => ({ data: { user: state.user } }) } }),
   createServiceSupabaseClient: () => ({ rpc: vi.fn(), from: () => ({ select: () => ({ eq: () => ({
     maybeSingle: async () => ({ error: null, data: { status: "active", full_name: "Representante TESTE", product_id: "10000000-0000-4000-8000-000000000001" } })
@@ -69,6 +70,14 @@ describe("kit transaction access", () => {
   it("keeps purchases closed without the explicit authorized TEST actor", async () => {
     vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "false");
     expect((await send({ action: "pay_pix", orderId: order })).status).toBe(403);
+    expect(state.record).not.toHaveBeenCalled();
+  });
+  it("blocks new TEST payments in production even for the TEST actor", async () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "true");
+    vi.stubEnv("REPRESENTATIVE_TEST_ACTOR_ID", "actor");
+    expect((await send({ action: "pay_pix", orderId: order })).status).toBe(403);
+    expect(state.provider).not.toHaveBeenCalled();
     expect(state.record).not.toHaveBeenCalled();
   });
   it("rejects an actor different from the isolated TEST authorization", async () => {

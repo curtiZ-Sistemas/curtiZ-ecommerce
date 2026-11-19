@@ -28,6 +28,7 @@ import {
 } from "@/lib/admin-resources";
 
 type Item = Record<string, unknown>;
+type KitGradeSource = { productId: string; name: string; color: string };
 
 type ListResponse = {
   items?: Item[];
@@ -284,6 +285,9 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [categoryName, setCategoryName] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
   const [categorySlugEdited, setCategorySlugEdited] = useState(false);
+  const [kitGradeSources, setKitGradeSources] = useState<KitGradeSource[] | null>(null);
+  const [kitGradeSourcesError, setKitGradeSourcesError] = useState(false);
+  const [kitGradeSourcesRetry, setKitGradeSourcesRetry] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -300,6 +304,28 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     setCategorySlugEdited(editing !== "new" && Boolean(formValue(source.slug)));
     setFieldErrors({});
   }, [editing, resource]);
+
+  useEffect(() => {
+    if (resource !== "kits" || !editing) return;
+    const controller = new AbortController();
+    setFieldErrors({});
+    setKitGradeSources(null);
+    setKitGradeSourcesError(false);
+    void fetch("/api/admin/resources/kits?gradeSources=true", { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const result = await readListResponse(response);
+        if (!response.ok || !result.items) throw new Error("Linhas de estoque indisponíveis.");
+        const sources = result.items.flatMap(item =>
+          typeof item.productId === "string" && typeof item.name === "string" && typeof item.color === "string"
+            ? [{ productId: item.productId, name: item.name, color: item.color }]
+            : []);
+        if (!controller.signal.aborted) setKitGradeSources(sources);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setKitGradeSourcesError(true);
+      });
+    return () => controller.abort();
+  }, [editing, kitGradeSourcesRetry, resource]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -387,6 +413,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         values.name = categoryName;
         values.slug = categorySlug || resourceSlug(categoryName);
       }
+      if (resource === "kits" && form.has("gradeSource")) values.gradeSource = form.get("gradeSource");
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "Revise os valores informados." });
       setPending(false);
@@ -448,7 +475,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     for (const key of ["name", "title", "slug", "code", "sku"]) {
       const currentValue = copy[key];
       if (typeof currentValue === "string") {
-        copy[key] = `${currentValue}-copia`;
+        copy[key] = resource === "kits" && key === "name" ? `${currentValue} (cópia)` : `${currentValue}-copia`;
       }
     }
 
@@ -509,10 +536,15 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     }
   };
 
-  const deleteCategory = async (): Promise<void> => {
-    if (resource !== "categorias" || !deleteTarget || pending) return;
-    const dependencyMessage = categoryDeletionMessage(Number(deleteTarget.product_count) || 0, Number(deleteTarget.subcategory_count) || 0);
+  const deletionDependency = (target: Item) => resource === "categorias"
+    ? categoryDeletionMessage(Number(target.product_count) || 0, Number(target.subcategory_count) || 0)
+    : null;
+
+  const deleteResource = async (): Promise<void> => {
+    if (!canDelete || !deleteTarget || pending) return;
+    const dependencyMessage = deletionDependency(deleteTarget);
     if (dependencyMessage) { setDeleteError(dependencyMessage); return; }
+    const failureMessage = resource === "kits" ? "Não foi possível excluir o kit." : "Não foi possível excluir a categoria.";
     setPending(true);
     setMessage(null);
     try {
@@ -522,12 +554,12 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         body: JSON.stringify({ id: itemId(deleteTarget), permanent: true })
       });
       const result = await readListResponse(response);
-      if (!response.ok) throw new Error(result.message || "Não foi possível excluir a categoria.");
+      if (!response.ok) throw new Error(result.message || failureMessage);
       setDeleteTarget(null);
       await load();
-      setMessage({ kind: "success", text: result.message ?? "Categoria excluída." });
+      setMessage({ kind: "success", text: result.message ?? "Registro excluído." });
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Não foi possível excluir a categoria.");
+      setDeleteError(error instanceof Error ? error.message : failureMessage);
     } finally {
       setPending(false);
     }
@@ -791,10 +823,10 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                           <button
                             type="button"
                             onClick={() => {
-                              setDeleteError(categoryDeletionMessage(Number(item.product_count) || 0, Number(item.subcategory_count) || 0) ?? "");
+                              setDeleteError(deletionDependency(item) ?? "");
                               setDeleteTarget(item);
                             }}
-                            aria-label="Excluir permanentemente"
+                            aria-label={resource === "kits" ? `Excluir kit ${displayValue(item.name, "name")}` : "Excluir permanentemente"}
                           >
                             <Trash2 />
                           </button>
@@ -846,10 +878,14 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
             aria-labelledby="resource-form-title"
           >
             <header>
-              <div>
-                <span>{editing === "new" ? "Novo registro" : "Editar registro"}</span>
-                <h2 id="resource-form-title">{definition.singular}</h2>
-              </div>
+              {resource === "kits" ? (
+                <h2 id="resource-form-title">{editing === "new" || editing._duplicate ? "Novo kit" : "Editar kit"}</h2>
+              ) : (
+                <div>
+                  <span>{editing === "new" ? "Novo registro" : "Editar registro"}</span>
+                  <h2 id="resource-form-title">{definition.singular}</h2>
+                </div>
+              )}
 
               <button type="button" onClick={() => setEditing(null)} aria-label="Fechar">
                 <X />
@@ -896,7 +932,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
                   return (
                     <label
-                      className={field.type === "textarea" || field.type === "json" ? "wide" : ""}
+                      className={field.type === "textarea" || field.type === "json" || (resource === "kits" && field.key === "name") ? "wide" : ""}
                       key={field.key}
                     >
                       <span>
@@ -969,11 +1005,50 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                           required={field.required}
                           step={field.type === "number" ? "any" : undefined}
                           inputMode={field.type === "number" ? numberInputMode(field) : undefined}
+                          aria-invalid={Boolean(fieldErrors[field.key])}
+                          aria-describedby={fieldErrors[field.key] ? `${field.key}-error` : undefined}
                         />
+                      )}
+                      {fieldErrors[field.key] && (
+                        <small className="admin-field-error" id={`${field.key}-error`} role="alert">{fieldErrors[field.key]}</small>
                       )}
                     </label>
                   );
                 })}
+                {resource === "kits" && (
+                  <div className="wide">
+                    <label>
+                      <span>Linha de estoque das fichas</span>
+                      {kitGradeSources ? (
+                        <select
+                          name="gradeSource"
+                          defaultValue={editing !== "new" && typeof editing.grade_product_id === "string"
+                            && typeof editing.grade_color === "string" ? `${editing.grade_product_id}|${editing.grade_color}` : ""}
+                          aria-describedby={fieldErrors.gradeSource ? "grade-source-error" : "grade-source-help"}
+                          aria-invalid={Boolean(fieldErrors.gradeSource)}
+                        >
+                          <option value="">Sem fichas vinculadas</option>
+                          {editing !== "new" && typeof editing.grade_product_id === "string" && typeof editing.grade_color === "string"
+                            && !kitGradeSources.some(source => source.productId === editing.grade_product_id && source.color === editing.grade_color) && (
+                              <option value={`${editing.grade_product_id}|${editing.grade_color}`}>Linha vinculada indisponível</option>
+                            )}
+                          {kitGradeSources.map(source => {
+                            const value = `${source.productId}|${source.color}`;
+                            return <option key={value} value={value}>{source.name} · {source.color}</option>;
+                          })}
+                        </select>
+                      ) : kitGradeSourcesError ? (
+                        <span role="alert">Não foi possível carregar as linhas de estoque.</span>
+                      ) : <span role="status">Carregando linhas de estoque…</span>}
+                    </label>
+                    {kitGradeSourcesError && <button type="button" className="secondary-button" onClick={() => setKitGradeSourcesRetry(value => value + 1)}>Tentar novamente</button>}
+                    {fieldErrors.gradeSource ? (
+                      <small className="admin-field-error" id="grade-source-error" role="alert">{fieldErrors.gradeSource}</small>
+                    ) : (
+                      <small id="grade-source-help">Uma linha de pares avulsos habilita as três fichas de 12 pares para este kit.</small>
+                    )}
+                  </div>
+                )}
               </div>
 
               <footer>
@@ -1002,13 +1077,18 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
             className="admin-confirm"
             role="alertdialog"
             aria-modal="true"
-            aria-labelledby="delete-category-title"
+            aria-labelledby="delete-resource-title"
           >
-            <h2 id="delete-category-title">Excluir categoria?</h2>
-            <p>
-              <strong>{displayValue(deleteTarget.name, "name")}</strong> será excluída somente
-              se não estiver em uso.
-            </p>
+            <h2 id="delete-resource-title">{resource === "kits" ? "Excluir kit?" : "Excluir categoria?"}</h2>
+            {resource === "kits" ? (
+              <>
+                <p>Tem certeza de que deseja excluir o kit <strong>{displayValue(deleteTarget.name, "name")}</strong>?</p>
+                <p>O kit sai do catálogo de representantes. Pedidos anteriores ficam no histórico.</p>
+                {deleteTarget.required_for_activation === true && <p>Este kit está marcado como obrigatório para ativação.</p>}
+              </>
+            ) : (
+              <p><strong>{displayValue(deleteTarget.name, "name")}</strong> será excluída somente se não estiver em uso.</p>
+            )}
             {deleteError ? <p className="admin-field-error" role="alert">{deleteError}</p> : null}
             <div>
               <button
@@ -1022,11 +1102,11 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
               <button
                 className="primary-button danger-button"
                 type="button"
-                onClick={() => void deleteCategory()}
-                disabled={pending || Boolean(categoryDeletionMessage(Number(deleteTarget.product_count) || 0, Number(deleteTarget.subcategory_count) || 0))}
+                onClick={() => void deleteResource()}
+                disabled={pending || Boolean(deletionDependency(deleteTarget))}
               >
                 {pending ? <LoaderCircle className="spin" /> : null}
-                Excluir categoria
+                {resource === "kits" ? "Excluir kit" : "Excluir categoria"}
               </button>
             </div>
           </section>

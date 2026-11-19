@@ -290,5 +290,91 @@ select is(pg_temp.settle_commercial_pix('refunded',null,12100,'[{"id":"100","amo
 select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
   2,'an external financial refund without a second inspected return does not restock');
 
+select is((select jsonb_object_agg(size,pairs) from private.representative_kit_grade_templates() where code='standard'),
+  '{"34":1,"35":2,"36":3,"37":3,"38":2,"39":1}'::jsonb,'standard sheet matches the approved sizes');
+select is((select jsonb_object_agg(size,pairs) from private.representative_kit_grade_templates() where code='lower_restock'),
+  '{"34":1,"35":3,"36":4,"37":4}'::jsonb,'lower restock matches the approved sizes');
+select is((select jsonb_object_agg(size,pairs) from private.representative_kit_grade_templates() where code='upper_restock'),
+  '{"37":4,"38":4,"39":4}'::jsonb,'upper restock matches the approved sizes');
+
+insert into private.representative_kit_collection_routes(name,origin_postal_code,destination_from,destination_through,
+  delivery_cents,estimated_days,bling_method_ids,point_terminal_id,verified_evidence,valid_until)
+values('Synthetic delivery','35520000','30110000','30110999',1300,2,
+  '{"cash":11,"pix":22,"debit_card":33,"credit_card":44}','SYNTHETIC_POINT','Synthetic verified local delivery',now()+interval '1 day');
+alter table commercial_kit_fixture add column collection_quote uuid, add column collection_key uuid default gen_random_uuid();
+update commercial_kit_fixture set collection_quote=(public.quote_representative_kit_collection(actor,variant,null,1,address,
+  '35520000')->>'id')::uuid;
+
+create function pg_temp.reserve_cash_kit(p_cash bigint)
+returns jsonb language sql as $$
+  select public.reserve_representative_kit_collection_order(actor,variant,null,1,collection_quote,address,collection_key,
+    '35520000','cash',p_cash) from commercial_kit_fixture;
+$$;
+
+select throws_ok($$select pg_temp.reserve_cash_kit(6299)$$,'23514','kit_cash_tender_invalid','insufficient cash rejects the whole transaction');
+select is((select q.used_at from private.representative_kit_shipping_checkout_quotes q
+  join commercial_kit_fixture f on q.id=f.collection_quote),null::timestamptz,'invalid cash leaves the quote available');
+select is(pg_temp.reserve_cash_kit(7000)->>'cashChangeInCents','700','database computes change from the confirmed order total');
+select is(pg_temp.reserve_cash_kit(7000)->>'state','awaiting_receipt','cash selection reserves stock without marking the order paid');
+select throws_ok($$select pg_temp.reserve_cash_kit(8000)$$,'23505','kit_idempotency_conflict','replay cannot alter the planned cash');
+select is((select public.request_representative_kit_payment_cancellation(actor,(pg_temp.reserve_cash_kit(7000)->>'orderId')::uuid)->>'state'
+  from commercial_kit_fixture),'cancelled','collection cancellation before any external action is available');
+select is((select available_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)),
+  2,'an unpaid cancellation releases the reservation');
+
+alter table commercial_kit_fixture add column grade_product uuid default gen_random_uuid(),
+  add column grade_kit uuid default gen_random_uuid(),add column grade_rule uuid default gen_random_uuid(),
+  add column grade_key uuid default gen_random_uuid(),add column grade_quote uuid;
+insert into public.products(id,name,slug,category_id,status,base_price,weight_grams,width_cm,height_cm,length_cm)
+  select grade_product,'Grade fixture',grade_product::text,category,'draft',35,150,8,4,16 from commercial_kit_fixture;
+insert into public.product_variants(product_id,sku,color_name,size)
+  select grade_product,'TEST-GRADE-'||s,'White',s::text from commercial_kit_fixture cross join generate_series(34,39) s;
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+  select grade_product,'test/kit-grade.webp','Grade fixture',720,720,true from commercial_kit_fixture;
+update public.products set status='active' where id=(select grade_product from commercial_kit_fixture);
+insert into public.inventory(variant_id,available_quantity,reserved_quantity)
+  select v.id,5,0 from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product;
+insert into private.bling_catalog_metadata(product_id,commercial_unit,pairs_per_sku,ncm,origin,cest,production_type,evidence_reference)
+  select grade_product,'PR',1,'64022000',0,'','T','Grade synthetic evidence' from commercial_kit_fixture;
+insert into public.kits(id,name,slug,description,price_in_cents,grade_product_id,grade_color,created_by)
+  select grade_kit,'Grade test kit',grade_kit::text,'Grade fixture',36001,grade_product,'White',actor from commercial_kit_fixture;
+insert into private.representative_resale_fiscal_rule_versions(
+  id,rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,icms_status,
+  final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
+select f.grade_rule,gen_random_uuid(),1,r.issuer_reference,public.read_representative_kit_grade_fingerprint(f.grade_kit,'standard'),
+  r.origin_state,r.destination_state,r.person_type,r.icms_status,r.final_consumer,r.purpose,r.valid_from,r.valid_until,r.fiscal_parameters
+from private.representative_resale_fiscal_rule_versions r join commercial_kit_fixture f on r.id=f.rule_version;
+insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
+select grade_rule,'Synthetic grade approver','Synthetic grade evidence' from commercial_kit_fixture;
+insert into private.representative_kit_checkout_approvals(
+  actor_id,rule_version_id,buyer_profile,buyer_fiscal_state,origin_postal_code,buyer_evidence,operation_evidence,
+  stock_evidence,homologation_evidence,valid_until,buyer_legal_name,buyer_document,buyer_state_registration,buyer_fiscal_address)
+select f.actor,f.grade_rule,a.buyer_profile,a.buyer_fiscal_state,a.origin_postal_code,a.buyer_evidence,a.operation_evidence,
+  a.stock_evidence,a.homologation_evidence,a.valid_until,a.buyer_legal_name,a.buyer_document,a.buyer_state_registration,a.buyer_fiscal_address
+from private.representative_kit_checkout_approvals a join commercial_kit_fixture f on a.rule_version_id=f.rule_version and a.actor_id=f.actor;
+update commercial_kit_fixture set grade_quote=(public.quote_representative_kit_collection(actor,grade_kit,'standard',1,address,
+  '35520000')->>'id')::uuid;
+create function pg_temp.reserve_grade_cash()
+returns jsonb language sql as $$
+  select public.reserve_representative_kit_collection_order(actor,grade_kit,'standard',1,grade_quote,address,grade_key,
+    '35520000','cash',40000) from commercial_kit_fixture;
+$$;
+update public.inventory set available_quantity=0 where variant_id in (
+  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
+select throws_ok($$select pg_temp.reserve_grade_cash()$$,'23514','kit_grade_quote_changed',
+  'a missing grade size rejects the complete sheet');
+select is((select sum(i.reserved_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),0,'failure leaves all reservations untouched');
+update public.inventory set available_quantity=5 where variant_id in (
+  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
+select is(pg_temp.reserve_grade_cash()->>'cashChangeInCents','2699','the grade price and freight determine cash change');
+select is((select jsonb_object_agg(v.size,i.reserved_quantity) from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),
+  '{"34":1,"35":2,"36":3,"37":3,"38":2,"39":1}'::jsonb,'reserving a sheet holds its exact shared stock');
+select is((select public.request_representative_kit_payment_cancellation(actor,(pg_temp.reserve_grade_cash()->>'orderId')::uuid)->>'state'
+  from commercial_kit_fixture),'cancelled','the unpaid grade can be cancelled as a whole');
+select is((select sum(i.available_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),30,'all of the original grade stock is restored');
+
 select * from finish();
 rollback;

@@ -1080,6 +1080,8 @@ test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal
   const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
   const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: { quote: null } }));
   await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: {
     checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null,
     items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto", size: "34", pairsPerSku: 2,
@@ -1117,6 +1119,55 @@ test("reserva o kit confirmado, exibe o Pix e acompanha o cancelamento no portal
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
   await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
+});
+
+test("escolhe a ficha e calcula o troco no recebimento sem enviá-lo pelo formulário", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const kitId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: { items: [], nextOffset: null } }));
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
+    items: [{ kitId, name: "Kit por ficha", unitPriceInCents: 30001, color: "Preto", description: "Grade de 12 pares",
+      templates: [{ code: "upper_restock", label: "Ficha reposição alta", available: 2,
+        sizes: [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }] }] }]
+  } }));
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+  ] } }));
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: {
+    quote: { id: quoteId, amountInCents: 31301, shippingInCents: 1300, service: "Entrega local" }
+  } }));
+  await page.route("**/api/representatives/kits/orders", route => route.fulfill({ json: {
+    ok: true, order: { orderId, state: "awaiting_receipt", amountInCents: 31301, collectionMethod: "cash",
+      cashTenderedInCents: 40000, cashChangeInCents: 8699 }
+  } }));
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByLabel("Escolher ficha")).toHaveValue("upper_restock");
+  await expect(page.getByText("Tamanho 39")).toBeVisible();
+  await page.getByRole("button", { name: "Usar endereço salvo" }).click();
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await page.getByLabel("Quando pagar").selectOption("collection");
+  await page.getByLabel("Escolher forma de pagamento").selectOption("cash");
+  const pay = page.getByRole("button", { name: "Confirmar pagamento no recebimento" });
+  await page.getByLabel("Valor que você vai entregar").fill("300,00");
+  await expect(pay).toBeDisabled();
+  await page.getByLabel("Valor que você vai entregar").fill("400,00");
+  await expect(page.locator("output").filter({ hasText: /Troco no recebimento/ })).toContainText("86,99");
+  const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
+  await pay.click();
+  expect((await reserve).postDataJSON()).toEqual({ action: "reserve_collection", selectionId: kitId, template: "upper_restock",
+    quoteId, addressId, quantity: 1, method: "cash", cashTenderedInCents: 40000,
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await expect(page.getByText(/Valor informado.*Troco.*86,99/)).toBeVisible();
 });
 
 test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {

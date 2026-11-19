@@ -9,6 +9,7 @@ import { isUnknownRecord, readString } from "@/lib/unknown-data";
 import { KitTransactionError, kitCall, kitRecord, kitTestProvider, beginKitPix, beginKitCard, cancelKitTestOrder, refundKitTestOrder, reconcileKitTestPayment } from "@/lib/representative-test-transactions";
 import { resaleScenarioSchema } from "@/lib/representative-resale";
 import { representativeKitScopeMessage, representativeKitState } from "@/lib/representative-resale-scope";
+import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 
 const id = z.string().uuid();
 const schema = z.discriminatedUnion("action", [
@@ -37,13 +38,15 @@ export async function POST(request: NextRequest) {
     const db = createServiceSupabaseClient();
     if (!user || !session) return NextResponse.json({ message: "Entre na sua conta." }, { status: 401, headers });
     if (!db) throw new KitTransactionError(503);
-    kitTestProvider(); // Production mode never opens this TEST-only transaction boundary.
-    await requirePrivateRateLimit(session, "customer_write");
     const data = input.data;
+    const environment = getStoreRuntimeEnvironment();
     if ((data.action === "create" || data.action === "pay_pix" || data.action === "pay_card")
-      && (process.env.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true" || process.env.REPRESENTATIVE_TEST_ACTOR_ID !== user.id)) {
+      && (environment.APP_ENV === "production" || environment.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true"
+        || environment.REPRESENTATIVE_TEST_ACTOR_ID !== user.id)) {
       throw new KitTransactionError(403);
     }
+    kitTestProvider();
+    await requirePrivateRateLimit(session, "customer_write");
     let orderId: string;
     let declarationState: "unverified" | undefined;
     if (data.action === "create") {

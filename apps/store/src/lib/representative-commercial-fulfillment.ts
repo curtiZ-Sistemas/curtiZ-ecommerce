@@ -2,7 +2,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   allocateBlingFiscalCents, BlingError, blingExternalSku, blingFiscalMirrorHash, buildBlingFiscalMirror,
-  createBlingClient, expandBlingFiscalKit, readBlingAuthorizedResaleXml, selectBlingFiscalRule, type BlingClient
+  createBlingClient, expandBlingFiscalKit, readBlingAuthorizedResaleXml, selectBlingFiscalRule, type BlingClient, type BlingFiscalItem
 } from "@curtiz/integrations";
 import { getMelhorEnvioEnvironment } from "@curtiz/config";
 import { logServerEvent } from "@curtiz/security";
@@ -10,6 +10,7 @@ import { assertBlingExternalOrder, blingOrderPayload, findBlingContact, findBlin
 import { blingInvoicePaymentTerms, invoiceMatchesFiscalLines, prepareBlingFiscalDraft } from "./bling-invoice-draft";
 import { createMelhorEnvioProvider } from "./melhor-envio-server";
 import { advanceRepresentativeKitShipping } from "./representative-commercial-shipping";
+import { priceRepresentativeGradeItems } from "./representative-grade-lines";
 import { verifyDueRepresentativeKitReturns } from "./representative-commercial-returns";
 import { kitCall, kitRecord } from "./representative-test-transactions";
 import { type RuntimeEnvironment } from "./runtime-environment";
@@ -18,6 +19,51 @@ import { isUnknownRecord, readNumber, readRows, readString, type UnknownRecord }
 const row = (value: unknown) => isUnknownRecord(value) ? value : {};
 const id = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
 const scopeError = () => new BlingError("kit_fiscal_clearance_failed", 409);
+
+type KitSaleLine = BlingFiscalItem & { variantId: string };
+
+async function commercialKitFiscalLines(db: SupabaseClient, job: UnknownRecord): Promise<{
+  commercial: KitSaleLine[];
+  expanded: BlingFiscalItem[];
+}> {
+  const unitPriceInCents = readNumber(job, "unitPriceInCents");
+  const quantity = readNumber(job, "quantity");
+  if (Array.isArray(job.gradeLines)) {
+    const priced = priceRepresentativeGradeItems(job.gradeLines, unitPriceInCents, quantity);
+    const metadataByVariant = new Map<string, UnknownRecord>();
+    const commercial: KitSaleLine[] = [];
+    for (const item of priced) {
+      let metadata = metadataByVariant.get(item.variantId);
+      if (!metadata) {
+        const catalog = await kitRecord(db, "read_bling_catalog_variant", { p_variant_id: item.variantId });
+        metadata = row(catalog.metadata);
+        if (row(catalog.variant).sku !== item.sku || metadata.production_type !== "T"
+          || metadata.fiscal_unit_approved !== true || readNumber(metadata, "pairs_per_sku") !== 1
+          || readString(metadata, "commercial_unit") !== "PR") throw scopeError();
+        metadataByVariant.set(item.variantId, metadata);
+      }
+      commercial.push({
+        sku: item.sku, variantId: item.variantId, description: `${item.name} · Tamanho ${item.size}`,
+        quantity: item.quantity, unit: "PR", pairsPerSku: 1, fiscalUnitApproved: true,
+        unitPriceInCents: item.unitPriceInCents, ncm: readString(metadata, "ncm"),
+        origin: readNumber(metadata, "origin"), cest: readString(metadata, "cest")
+      });
+    }
+    return { commercial, expanded: commercial.map(item => ({ ...item, sku: blingExternalSku(item.sku, item.variantId) })) };
+  }
+
+  const variantId = readString(job, "variantId");
+  const catalog = await kitRecord(db, "read_bling_catalog_variant", { p_variant_id: variantId });
+  const metadata = row(catalog.metadata);
+  if (row(catalog.variant).sku !== job.sku || metadata.production_type !== "T" || metadata.fiscal_unit_approved !== true
+    || readNumber(metadata, "pairs_per_sku") < 2) throw scopeError();
+  const commercial = {
+    sku: readString(job, "sku"), description: readString(job, "productName"), quantity, variantId,
+    unit: readString(metadata, "commercial_unit"), pairsPerSku: readNumber(metadata, "pairs_per_sku"), fiscalUnitApproved: true,
+    unitPriceInCents, ncm: readString(metadata, "ncm"), origin: readNumber(metadata, "origin"), cest: readString(metadata, "cest")
+  };
+  return { commercial: [commercial], expanded: expandBlingFiscalKit(commercial, catalog.kit_components) };
+}
 
 async function commercialKitFiscalMirror(db: SupabaseClient, job: UnknownRecord, issueDate: string) {
   const configuration = row(job.fiscalParameters);
@@ -34,17 +80,7 @@ async function commercialKitFiscalMirror(db: SupabaseClient, job: UnknownRecord,
   });
   if (rule.series !== 2 || !rule.external_nature_id) throw scopeError();
 
-  const catalog = await kitRecord(db, "read_bling_catalog_variant", { p_variant_id: readString(job, "variantId") });
-  const metadata = row(catalog.metadata);
-  if (row(catalog.variant).sku !== job.sku || metadata.production_type !== "T" || metadata.fiscal_unit_approved !== true
-    || readNumber(metadata, "pairs_per_sku") < 2) throw scopeError();
-  const commercial = {
-    sku: readString(job, "sku"), description: readString(job, "productName"), quantity: readNumber(job, "quantity"),
-    unit: readString(metadata, "commercial_unit"), pairsPerSku: readNumber(metadata, "pairs_per_sku"), fiscalUnitApproved: true,
-    unitPriceInCents: readNumber(job, "unitPriceInCents"), ncm: readString(metadata, "ncm"),
-    origin: readNumber(metadata, "origin"), cest: readString(metadata, "cest")
-  };
-  const expanded = expandBlingFiscalKit(commercial, catalog.kit_components);
+  const { commercial, expanded } = await commercialKitFiscalLines(db, job);
   const freight = readNumber(job, "shippingInCents");
   const amounts = expanded.map(item => item.quantity * item.unitPriceInCents);
   const allocations = freight === 0 ? amounts.map(() => 0) : allocateBlingFiscalCents(freight, amounts);
@@ -128,20 +164,31 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const { issuer, natureId, rule, commercial, mirror, freight } = await commercialKitFiscalMirror(db, job, date);
   const buyerName = readString(context, "buyerName");
-  const methodId = positiveId(environment.BLING_PAYMENT_METHOD_ID);
+  const collection = Boolean(readString(job, "collectionMethod"));
+  const methodId = positiveId(collection ? job.collectionBlingMethod : environment.BLING_PAYMENT_METHOD_ID);
   if (!methodId || !/^\d{14}$/u.test(document) || !/^\d{2,14}$/u.test(registration) || address.state !== "MG" || billing.state !== "MG") throw scopeError();
+  let collectionDueDate: string | undefined;
+  if (collection) {
+    const days = readNumber(job, "deliveryDays", -1);
+    const submitted = Date.parse(readString(job, "createdAt"));
+    if (!Number.isInteger(days) || days < 0 || days > 60 || !Number.isFinite(submitted)) throw scopeError();
+    collectionDueDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(submitted + days * 86_400_000));
+  }
 
   const company = row(row(await provider.request("/empresas/me/dados-basicos")).data);
   const account = await kitRecord(db, "read_bling_account", { p_environment: "production" });
   if (id(company.id) !== id(account.companyId) || !id(company.id)
     || readString(company, "cnpj").replace(/\D/gu, "") !== issuer) throw scopeError();
-  const order = { public_code: reference, payment_status: "approved", status: "payment_approved", placed_at: job.paidAt,
+  const order = { public_code: reference, payment_status: collection ? "pending" : "approved",
+    status: collection ? "awaiting_receipt" : "payment_approved", placed_at: collection ? job.createdAt : job.paidAt,
     customer_name_snapshot: buyerName, shipping_address_snapshot: address, subtotal: (mirror.totalInCents - freight) / 100,
     discount_total: 0, shipping_total: freight / 100, fee_total: 0, grand_total: mirror.totalInCents / 100 };
-  const variantId = readString(job, "variantId");
-  const unitPrice = commercial.unitPriceInCents / 100;
-  const items = [{ variant_id: variantId, sku_snapshot: commercial.sku, product_name_snapshot: commercial.description,
-    quantity: commercial.quantity, unit_price: unitPrice, total: (commercial.unitPriceInCents * commercial.quantity) / 100, discount_amount: 0 }];
+  const items = commercial.map(item => ({
+    variant_id: item.variantId, sku_snapshot: item.sku, product_name_snapshot: item.description,
+    quantity: item.quantity, unit_price: item.unitPriceInCents / 100,
+    total: (item.unitPriceInCents * item.quantity) / 100, discount_amount: 0
+  }));
   const claim = (operation: string, hash: string | null = null) => kitCall(db, "claim_representative_kit_bling_write", {
     p_order: orderId, p_operation: operation, p_expected_hash: hash
   });
@@ -156,8 +203,9 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
       || readString(fiscalAddress, "cep").replace(/\D/gu, "") !== billing.postal_code
       || readString(contact, "numeroDocumento").replace(/\D/gu, "") !== document
       || readString(contact, "ie").replace(/\D/gu, "") !== registration) throw scopeError();
-    const links = await kitCall(db, "read_bling_product_links", { p_variant_ids: [variantId] });
-    const payload = blingOrderPayload({ order, items, productLinks: readRows(links), contactId, paymentMethodId: methodId, natureId });
+    const links = await kitCall(db, "read_bling_product_links", { p_variant_ids: [...new Set(commercial.map(item => item.variantId))] });
+    const payload = blingOrderPayload({ order, items, productLinks: readRows(links), contactId, paymentMethodId: methodId, natureId,
+      ...(collectionDueDate ? { collectionDueDate } : {}) });
     if (await claim("bling_sale") !== true) return false;
     saleId = positiveId(row(row(await provider.request("/pedidos/vendas", { method: "POST", body: payload })).data).id);
     if (!saleId) throw new BlingError("uncertain_write", 503, false, true);
@@ -183,9 +231,9 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     if (!draft || await link(draft) !== true) throw new BlingError("uncertain_write", 503, false, true);
   }
   const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
-  await prepareBlingFiscalDraft(provider, draft, mirror.items, [{
-    ...commercial, sku: blingExternalSku(commercial.sku,variantId)
-  }], {
+  await prepareBlingFiscalDraft(provider, draft, mirror.items, commercial.map(item => ({
+    ...item, sku: blingExternalSku(item.sku,item.variantId)
+  })), {
     document, icmsTaxpayer: true, businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
     totalInCents: mirror.totalInCents, shippingInCents: freight, discountInCents: 0, additionalInCents: 0
   }, true, async () => await kitCall(db,"read_representative_kit_bling_order",{ p_order: orderId }) !== null);
@@ -222,6 +270,7 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
         p_key: verified.key, p_protocol: verified.protocol, p_sha256: verified.hash
       }) === true;
       if (!clearance) throw scopeError();
+      if (readString(job, "collectionMethod")) continue;
       if (getMelhorEnvioEnvironment(environment) !== "production") throw scopeError();
       const shipping = createMelhorEnvioProvider(environment, db, transport);
       await advanceRepresentativeKitShipping(db, shipping, environment, job, verified.key);

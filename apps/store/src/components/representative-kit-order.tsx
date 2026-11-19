@@ -3,11 +3,12 @@
 import { formatBRL } from "@curtiz/domain";
 import { useRef, useState, type FormEvent } from "react";
 import { isUnknownRecord, readRows, readString, type UnknownRecord } from "../lib/unknown-data";
+import { kitCashTenderInCents, RepresentativeKitCashChange } from "./representative-kit-cash-change";
 
 const statusLabels: Record<string, string> = {
   reserved: "Estoque reservado", payment_pending: "Aguardando pagamento",
   paid: "Pagamento confirmado", cancelled: "Cancelado", refunded: "Estornado",
-  manual_review: "Em análise"
+  manual_review: "Em análise", awaiting_receipt: "Pagamento no recebimento"
 };
 const shipmentLabels: Record<string, string> = {
   pending: "Envio em preparação", ready: "Envio em preparação", label_created: "Etiqueta gerada",
@@ -26,21 +27,39 @@ async function kitRequest(body: UnknownRecord) {
   return data;
 }
 
-export function ReserveRepresentativeKit({ variantId, quantity, quoteId, addressId, totalInCents }: {
-  variantId: string; quantity: number; quoteId: string; addressId: string; totalInCents: number;
+export type RepresentativeKitSelection = { variantId: string } | { kitId: string; template: string };
+
+const collectionMethods = {
+  pix: "Pix", debit_card: "Cartão de débito", credit_card: "Cartão de crédito", cash: "Dinheiro"
+};
+type CollectionMethod = keyof typeof collectionMethods;
+
+export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalInCents, collection = false, ...selection }: RepresentativeKitSelection & {
+  quantity: number; quoteId: string; addressId: string; totalInCents: number; collection?: boolean;
 }) {
   const requestKey = useRef("");
   const [order, setOrder] = useState<UnknownRecord | null>(null);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState("");
+  const [selectionLocked, setSelectionLocked] = useState(false);
+  const [method, setMethod] = useState<CollectionMethod | "">("");
+  const [tendered, setTendered] = useState("");
+  const cashTendered = kitCashTenderInCents(tendered);
+  const collectionReady = !collection || Boolean(method && (method !== "cash" || cashTendered !== null && cashTendered >= totalInCents));
   async function reserve() {
-    if (waiting) return;
+    if (waiting || !collectionReady) return;
     setWaiting(true);
+    setSelectionLocked(true);
     setError("");
     requestKey.current ||= crypto.randomUUID();
     try {
-      const data = await kitRequest({ action: "reserve", variantId, quantity, quoteId, addressId,
-        idempotencyKey: requestKey.current });
+      const common = { quantity, quoteId, addressId, idempotencyKey: requestKey.current };
+      const data = await kitRequest(collection ? {
+        ...common, action: "reserve_collection", method,
+        selectionId: "variantId" in selection ? selection.variantId : selection.kitId,
+        ...("template" in selection ? { template: selection.template } : {}),
+        ...(method === "cash" ? { cashTenderedInCents: cashTendered } : {})
+      } : { ...common, action: "variantId" in selection ? "reserve" : "reserve_grade", ...selection });
       if (!isUnknownRecord(data.order)) throw new Error("Pedido indisponível para consulta.");
       setOrder(data.order);
     } catch (failure) {
@@ -51,8 +70,18 @@ export function ReserveRepresentativeKit({ variantId, quantity, quoteId, address
   }
   return order ? <RepresentativeKitOrder initial={order} checkoutConfigured /> : <>
     <p>Total com frete <strong>{formatBRL(totalInCents)}</strong></p>
-    <button type="button" className="primary-button" disabled={waiting} onClick={() => void reserve()}>
-      {waiting ? "Reservando…" : "Reservar kit"}
+    {collection && <fieldset disabled={selectionLocked}>
+      <legend>Forma de pagamento no recebimento</legend>
+      <label>Escolher forma de pagamento
+        <select value={method} onChange={event => setMethod(event.target.value as CollectionMethod | "")}>
+          <option value="">Selecione</option>
+          {Object.entries(collectionMethods).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {method === "cash" && <RepresentativeKitCashChange totalInCents={totalInCents} tendered={tendered} onTenderedChange={setTendered} />}
+    </fieldset>}
+    <button type="button" className="primary-button" disabled={waiting || !collectionReady} onClick={() => void reserve()}>
+      {waiting ? "Confirmando…" : collection ? "Confirmar pagamento no recebimento" : "Reservar kit"}
     </button>
     {error && <p role="alert">{error}</p>}
   </>;
@@ -69,8 +98,9 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   const [copied, setCopied] = useState(false);
   const orderId = readString(order, "orderId");
   const state = readString(order, "state");
-  const canCancel = (["reserved", "payment_pending"].includes(state) || order.canCancelPaid === true)
+  const canCancel = (["reserved", "payment_pending"].includes(state) || order.canCancelPaid === true || order.canCancelCollection === true)
     && order.cancellationRequested !== true;
+  const method = readString(order, "collectionMethod") as CollectionMethod;
   const pix = isUnknownRecord(order.pix) ? readString(order.pix, "copyPaste") : "";
   async function update(action: "pix" | "status" | "cancel") {
     if (pending) return;
@@ -120,6 +150,10 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
     <p role="status">{order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)
       ? "Cancelamento em confirmação" : statusLabels[state] ?? "Pedido em análise"}</p>
     {typeof order.amountInCents === "number" && <p>Total {formatBRL(order.amountInCents)}</p>}
+    {method && Object.hasOwn(collectionMethods, method) && <p>No recebimento · {collectionMethods[method]}</p>}
+    {method === "cash" && typeof order.cashTenderedInCents === "number" && typeof order.cashChangeInCents === "number"
+      && <p>Valor informado {formatBRL(order.cashTenderedInCents)} · {order.cashChangeInCents > 0
+        ? `Troco ${formatBRL(order.cashChangeInCents)}` : "Sem troco"}</p>}
     {pix && <>
       <label>Pix copia e cola<input readOnly value={pix} onFocus={event => event.currentTarget.select()} /></label>
       <button type="button" className="secondary-button" onClick={() => {

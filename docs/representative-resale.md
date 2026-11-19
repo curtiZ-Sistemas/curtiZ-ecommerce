@@ -74,3 +74,25 @@ O cancelamento pode interromper uma reserva ou um Pix pendente. Se a confirmaç�
 4. Conferir no Mercado Pago a titularidade da conta (collector), Pix de homologação, webhook e estorno. Conferir no Melhor Envio os volumes cotados, o vínculo da etiqueta ao XML, compra e rastreio em ambiente isolado. Cadastrar somente as aprovações sustentadas por essas verificações.
 5. Configurar `REPRESENTATIVE_KIT_MP_COLLECTOR_ID`, `REPRESENTATIVE_KIT_FULFILLMENT_ENABLED`, `REPRESENTATIVE_KIT_REFUNDS_ENABLED` e as autorizações existentes dos provedores no Worker. Habilitar `REPRESENTATIVE_KIT_CHECKOUT_ENABLED` após a verificação da rota. Para suspender novas compras, desativar essa última flag e conservar consultas, conciliação, devoluções e estornos dos pedidos existentes.
 
+## Fichas de 12 pares
+
+| Ficha | 34 | 35 | 36 | 37 | 38 | 39 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Padrão | 1 | 2 | 3 | 3 | 2 | 1 |
+| Reposição baixa | 1 | 3 | 4 | 4 | 0 | 0 |
+| Reposição alta | 0 | 0 | 0 | 4 | 4 | 4 |
+
+No cadastro administrativo, selecione a linha de estoque pelo modelo e pela cor. A linha precisa ter uma variante avulsa ativa para cada tamanho de 34 a 39. O preço cadastrado é o valor de uma ficha. O banco grava a grade e o preço junto ao pedido. O estoque, a cotação, a NF-e e a devolução usam as quantidades por tamanho. As versões fiscais existentes para pacotes de dois ou três pares e a aprovação da ficha têm identificações próprias. Use `read_representative_kit_grade_fingerprint` no backend para obter a impressão digital da composição a homologar.
+
+O slug é criado na inclusão ou duplicação. **Excluir** remove o kit do catálogo e da lista administrativa. O banco conserva kits com dependências históricas e permite o processamento de pedidos anteriores. As contas existentes e os SKUs usados pelo varejo conservam seu cadastro.
+
+## Recebimento na entrega
+
+O recebimento está disponível na entrega própria para CEPs de MG cobertos por uma rota operacional verificada. A configuração privada `representative_kit_collection_routes` guarda a faixa de CEP, o CEP de origem, o custo, o prazo, os IDs de pagamento no Bling, o terminal Point e a referência da evidência. Uma faixa sobreposta impede que o checkout reserve um pedido naquela área. O cadastro de rotas e as credenciais do terminal precisam corresponder à operação real.
+
+O representante escolhe Pix, débito, crédito à vista ou dinheiro. Em dinheiro, ele informa quanto pretende entregar. O servidor grava esse valor no pedido e deriva o troco em centavos sobre o total confirmado. A expedição vê o troco e só registra saída após verificação do protocolo da NF-e. O pagamento presencial por Pix ou cartão começa no painel operacional após o registro de saída. O Point valida a conta, o terminal, a referência, o método e o valor antes de confirmar. A equipe confirma o numerário com uma referência auditável. Entrega sem cobrança mantém a reserva até a verificação do retorno físico e do cancelamento fiscal.
+
+As devoluções de kits recebidos passam pela revisão fiscal e financeira. No painel, confirme devolução em dinheiro por uma referência própria ou envie e concilie o estorno pelo Point. O estoque usa as quantidades inspecionadas de cada tamanho.
+
+Antes de habilitar `REPRESENTATIVE_KIT_COLLECTION_ENABLED`, confirme a operação de entrega, o caixa Point, o perfil autorizado do operador e os meios de pagamento, e verifique a NF-e com cobrança no recebimento. Configure os bindings do Worker da loja para cotação e o Worker do painel para Point. O painel precisa das credenciais de produção do Mercado Pago, `REPRESENTATIVE_KIT_MP_COLLECTOR_ID` e as flags de recebimento e estorno para as ações correspondentes. Mantenha a aplicação e o terminal em homologação durante testes que simulem cobranças.
+

@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase/server", () => ({
     : { select: () => ({ eq: () => ({ maybeSingle: mocks.maybeSingle }) }) } })
 }));
 vi.mock("@/lib/melhor-envio-server", () => ({ configuredMelhorEnvioProvider: state.provider, resolveShippingProducts: mocks.resolve }));
-vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => mocks.environment }));
+vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({ ...process.env, ...mocks.environment }) }));
 vi.mock("@/lib/representative-commercial-payments", () => ({
   commercialKitCheckoutConfigured: () => mocks.environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED === "true"
 }));
@@ -70,6 +70,14 @@ describe("kit quote scope", () => {
   });
   it("does not request provider quotes until the actor is explicitly authorized", async () => {
     vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "false");
+    expect((await send()).status).toBe(403);
+    expect(state.provider).not.toHaveBeenCalled();
+  });
+  it("blocks TEST quotes in production even when sandbox flags were copied", async () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED", "true");
+    vi.stubEnv("REPRESENTATIVE_TEST_ACTOR_ID", "actor");
+    mocks.environment.MELHOR_ENVIO_ENVIRONMENT = "sandbox";
     expect((await send()).status).toBe(403);
     expect(state.provider).not.toHaveBeenCalled();
   });

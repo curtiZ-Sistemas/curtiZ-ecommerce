@@ -68,8 +68,12 @@ export function kitPaymentView(context: UnknownRecord, payment?: MercadoPagoPaym
     ? { copyPaste: payment.pixCopyPaste, expiresAt: payment.expiresAt } : null;
   return {
     orderId: readString(context, "orderId"), state, cancellationRequested, canCancelPaid: context.canCancelPaid === true,
+    ...(context.canCancelCollection === true ? { canCancelCollection: true } : {}),
     amountInCents: readNumber(context, "amountInCents"), shippingInCents: readNumber(context, "shippingInCents"),
     reservedUntil: readString(context, "reservedUntil"),
+    ...(typeof context.collectionMethod === "string" ? { collectionMethod: context.collectionMethod } : {}),
+    ...(typeof context.cashTenderedInCents === "number" ? { cashTenderedInCents: context.cashTenderedInCents,
+      cashChangeInCents: readNumber(context, "cashChangeInCents") } : {}),
     ...(pix ? { pix } : {})
   };
 }

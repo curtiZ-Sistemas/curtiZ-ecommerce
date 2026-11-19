@@ -83,6 +83,24 @@ const normalizedSlug = (value: string) =>
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-|-$/gu, "");
 
+function normalizeKitGradeSource(values: Record<string, unknown>, source: unknown) {
+  if (source === undefined) return;
+  if (typeof source !== "string") throw new Error("Escolha uma linha de estoque válida.");
+  if (source === "") {
+    values.grade_product_id = null;
+    values.grade_color = null;
+    return;
+  }
+  const separator = source.indexOf("|");
+  const product = postgresUuidSchema.safeParse(source.slice(0, separator));
+  const color = source.slice(separator + 1);
+  if (separator < 0 || !product.success || color.length > 150 || color.trim().length === 0) {
+    throw new Error("Escolha uma linha de estoque válida.");
+  }
+  values.grade_product_id = product.data;
+  values.grade_color = color;
+}
+
 function normalizeCategoryValues(values: Record<string, unknown>, requestedSlug?: unknown) {
   if (values.sort_order === null) delete values.sort_order;
   const name = typeof values.name === "string" ? values.name.trim() : "";
@@ -332,6 +350,15 @@ export async function GET(
   }
   if (!readPermission.allowed) return forbiddenPermissionResponse();
 
+  if (context.resource === "kits" && request.nextUrl.searchParams.get("gradeSources") === "true") {
+    if (!writePermission.allowed) return forbiddenPermissionResponse();
+    const sources = await context.auth.supabase.rpc("list_representative_kit_grade_sources");
+    if (sources.error || !Array.isArray(sources.data)) {
+      return NextResponse.json({ message: "Não foi possível carregar as linhas de estoque." }, { status: 503, headers: privateNoStore });
+    }
+    return NextResponse.json({ items: sources.data }, { headers: privateNoStore });
+  }
+
   const page = Math.max(1, Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1));
   const pageSize = 20;
   const queryText = cleanSearch(request.nextUrl.searchParams.get("q") ?? "");
@@ -342,6 +369,8 @@ export async function GET(
   let query = context.auth.supabase
     .from(context.definition.table)
     .select(context.definition.select, { count: "exact" });
+
+  if (context.resource === "kits") query = query.is("deleted_at", null);
 
   if (queryText && context.definition.searchColumns.length) {
     query = query.or(
@@ -509,6 +538,18 @@ export async function POST(
         );
       }
     }
+    if (context.resource === "kits") {
+      const name = typeof values.name === "string" ? values.name : "";
+      const slug = normalizedSlug(name).slice(0, 150).replace(/-$/u, "");
+      if (!slug) {
+        return NextResponse.json(
+          { message: "Revise o nome do kit.", errors: { name: "Use letras ou números no nome." } },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+      values.slug = slug;
+      normalizeKitGradeSource(values, parsed.data.values.gradeSource);
+    }
     validateResourceRules(context.resource, values);
 
     if (context.definition.createdByField) {
@@ -519,15 +560,29 @@ export async function POST(
       values[context.definition.updatedByField] = context.auth.userId;
     }
 
-    const result = await context.auth.supabase
+    let result = await context.auth.supabase
       .from(context.definition.table)
       .insert(values)
       .select(context.definition.select)
       .single();
 
+    if (context.resource === "kits" && result.error?.code === "23505") {
+      result = await context.auth.supabase
+        .from(context.definition.table)
+        .insert({ ...values, slug: `${String(values.slug)}-${crypto.randomUUID().replace(/-/gu, "").slice(0, 20)}` })
+        .select(context.definition.select)
+        .single();
+    }
+
     if (result.error) {
       if (context.resource === "banners") return NextResponse.json({ message: bannerFailure(result.error, "create") }, { status: 409, headers: privateNoStore });
       if (context.resource === "categorias") logResourceQueryFailure(context.resource, "categories.POST", result.error);
+      if (context.resource === "kits" && result.error.message === "invalid_kit_grade_source") {
+        return NextResponse.json(
+          { message: "A linha precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha uma linha disponível." } },
+          { status: 409, headers: privateNoStore }
+        );
+      }
       if (context.resource === "categorias" && result.error.code === "23505") {
         return NextResponse.json(
           {
@@ -543,7 +598,7 @@ export async function POST(
     return NextResponse.json(
       {
         item: result.data,
-        message: `${context.definition.singular} criada com sucesso.`
+        message: context.resource === "kits" ? "Kit criado com sucesso." : `${context.definition.singular} criada com sucesso.`
       },
       { status: 201, headers: privateNoStore }
     );
@@ -721,6 +776,7 @@ export async function PATCH(
         );
       }
     }
+    if (context.resource === "kits") normalizeKitGradeSource(values, parsed.data.values.gradeSource);
     validateResourceRules(context.resource, values);
 
     if (context.resource === "avaliacoes") {
@@ -744,6 +800,12 @@ export async function PATCH(
     if (result.error || !result.data) {
       if (context.resource === "banners" && result.error) return NextResponse.json({ message: bannerFailure(result.error, "edit") }, { status: 409, headers: privateNoStore });
       if (context.resource === "categorias" && result.error) logResourceQueryFailure(context.resource, "categories.PATCH", result.error);
+      if (context.resource === "kits" && result.error?.message === "invalid_kit_grade_source") {
+        return NextResponse.json(
+          { message: "A linha precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha uma linha disponível." } },
+          { status: 409, headers: privateNoStore }
+        );
+      }
       if (context.resource === "categorias" && result.error?.code === "23505") {
         return NextResponse.json(
           {
@@ -839,6 +901,20 @@ export async function DELETE(
     const deleted = await context.auth.supabase.from("banners").delete().eq("id", parsed.data.id).select("id").maybeSingle();
     if (deleted.error || !deleted.data) return NextResponse.json({ message: deleted.error ? bannerFailure(deleted.error, "delete") : "Banner não encontrado." }, { status: 409, headers: privateNoStore });
     return NextResponse.json({ message: "Banner excluído." }, { headers: privateNoStore });
+  }
+
+  if (parsed.data.permanent === true && context.resource === "kits") {
+    const removed = await context.auth.supabase.rpc("remove_representative_admin_kit", { p_kit: parsed.data.id });
+    if (removed.error || typeof removed.data !== "boolean") {
+      return NextResponse.json(
+        { message: "Não foi possível excluir o kit." },
+        { status: 409, headers: privateNoStore }
+      );
+    }
+    return NextResponse.json(
+      { message: removed.data ? "Kit excluído." : "Kit removido do catálogo. Histórico preservado." },
+      { headers: privateNoStore }
+    );
   }
 
   if (parsed.data.permanent === true && context.resource === "categorias") {

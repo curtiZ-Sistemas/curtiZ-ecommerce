@@ -66,9 +66,18 @@ export async function findBlingOrder(provider: BlingClient, code: string): Promi
 }
 
 export function blingOrderPayload(input: { order: Record<string, unknown>; items: Record<string, unknown>[];
-  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number; natureId?: number }) {
+  productLinks: Record<string, unknown>[]; contactId: number; paymentMethodId: number; natureId?: number;
+  collectionDueDate?: string }) {
   const { order, items, productLinks, contactId, paymentMethodId } = input;
-  assertBlingPaidOrder(order);
+  if (input.collectionDueDate) {
+    if (order.status !== "awaiting_receipt" || order.payment_status !== "pending"
+      || !/^KITMG-[a-f0-9-]{36}$/u.test(readString(order, "public_code"))
+      || !/^\d{4}-\d{2}-\d{2}$/u.test(input.collectionDueDate)) {
+      throw new BlingError("order_not_eligible", 409);
+    }
+  } else {
+    assertBlingPaidOrder(order);
+  }
   const code = readString(order, "public_code");
   const money = ["subtotal", "discount_total", "shipping_total", "fee_total", "grand_total"];
   if (!code || !items.length || money.some((key) => !validAmount(order[key])) || cents(order.fee_total) !== 0)
@@ -101,7 +110,7 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
     || !/^\d{8}$/u.test(readString(address, "postal_code").replace(/\D/gu, "")))
     throw new BlingError("shipping_address_required", 409);
   return { numeroLoja: code, data: paidDate, contato: { id: contactId }, itens: products,
-    parcelas: [{ dataVencimento: paidDate, valor: total / 100, formaPagamento: { id: paymentMethodId } }],
+    parcelas: [{ dataVencimento: input.collectionDueDate ?? paidDate, valor: total / 100, formaPagamento: { id: paymentMethodId } }],
     ...(discount > 0 ? { desconto: { valor: discount / 100, unidade: "REAL" } } : {}),
     transporte: { frete: shipping / 100, etiqueta: {
       nome: readString(order, "customer_name_snapshot"), endereco: readString(address, "street"),

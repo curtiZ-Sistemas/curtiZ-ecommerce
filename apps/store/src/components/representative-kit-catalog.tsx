@@ -7,6 +7,7 @@ import type { ResaleScenario } from "../lib/representative-resale";
 import { isUnknownRecord } from "../lib/unknown-data";
 import { ProductShippingPreview } from "./product-shipping-preview";
 import { RepresentativeKitDelivery } from "./representative-kit-delivery";
+import { RepresentativeKitGrades } from "./representative-kit-grades";
 import { RepresentativeKitOrderHistory } from "./representative-kit-order";
 import { representativeKitState } from "../lib/representative-resale-scope";
 
@@ -68,6 +69,7 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   return <section>
     {header}
     {page?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={page.checkoutConfigured === true} />}
+    <RepresentativeKitGrades />
     {Boolean(page?.items.length) && (
       <fieldset className="representative-card representative-profile-form" disabled={Boolean(checking)}>
         <legend>Dados para a prévia de revenda</legend>

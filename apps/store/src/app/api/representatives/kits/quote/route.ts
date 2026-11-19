@@ -34,11 +34,12 @@ export async function POST(request: NextRequest) {
     const session = auth ? await auth.auth.getUser() : null;
     const user = session?.data.user;
     if (!auth || session?.error || !user) throw new KitTransactionError(401);
+    const environment = getStoreRuntimeEnvironment();
     if (!isPreview && !isCheckout) {
-      if (process.env.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true" || process.env.REPRESENTATIVE_TEST_ACTOR_ID !== user.id) throw new KitTransactionError(403);
+      if (environment.APP_ENV === "production" || environment.REPRESENTATIVE_TEST_TRANSACTIONS_ENABLED !== "true"
+        || environment.REPRESENTATIVE_TEST_ACTOR_ID !== user.id) throw new KitTransactionError(403);
       kitTestProvider();
     }
-    const environment = getStoreRuntimeEnvironment();
     const providerEnvironment = getMelhorEnvioEnvironment(environment);
     if (isPreview || isCheckout) {
       const { shipping } = getIntegrationConfig(environment);
