@@ -18,16 +18,31 @@ const receipt = z.object({ action: z.literal("receive"), returnId, invoiceId: z.
   invoiceKey: z.string().regex(/^31\d{42}$/u), documentOrigin: z.enum(["buyer_outflow","own_inflow"]),
   restockQuantity: z.number().int().min(0).max(99), refundInCents: z.number().int().positive(),
   inspectionReference: z.string().trim().min(10).max(200) }).strict();
-const refund = z.object({ action: z.literal("refund"), returnId }).strict();
+const refund = z.object({ action: z.enum(["prepare_refund","refund"]), returnId }).strict();
+const pickupSchedule = z.object({ action: z.literal("schedule_pickup"), returnId,
+  pickupDate: z.iso.date() }).strict();
+const pickupReceipt = z.object({ action: z.literal("confirm_pickup"), returnId,
+  pickupReference: z.string().trim().min(10).max(200) }).strict();
+const postalCode = z.string().regex(/^3[0-9]{7}$/u);
+const paymentId = z.string().regex(/^[1-9][0-9]{0,14}$/u);
+const createRoute = z.object({ action: z.literal("create_route"), route: z.object({
+  name: z.string().trim().min(3).max(100),
+  origin_postal_code: postalCode, destination_from: postalCode, destination_through: postalCode,
+  delivery_cents: z.number().int().min(0).max(100_000_000), estimated_days: z.number().int().min(0).max(60),
+  bling_method_ids: z.object({ cash: paymentId, pix: paymentId, debit_card: paymentId, credit_card: paymentId }).strict(),
+  point_terminal_id: z.string().regex(/^[A-Za-z0-9_]{4,80}$/u),
+  verified_evidence: z.string().trim().min(10).max(500), valid_until: z.iso.datetime({ offset: true })
+}).strict() }).strict();
+const closeRoute = z.object({ action: z.literal("close_route"), routeId: z.string().uuid() }).strict();
 const print = z.object({ action: z.literal("print_label"), orderId: z.string().uuid() }).strict();
 const collect = z.object({ action: z.literal("collection"), orderId: z.string().uuid(),
-  operation: z.enum(["dispatch","cancel_before_dispatch","delivery_failed","returned_unpaid","cash_received"]),
+  operation: z.enum(["dispatch","confirm_delivery","cancel_before_dispatch","delivery_failed","returned_unpaid","cash_received"]),
   evidence: z.string().trim().min(10).max(200) }).strict();
 const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
   operation: z.enum(["launch","refresh","cancel"]) }).strict();
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
-const input = z.union([approvals,reasons,receipt,refund,print,collect,point,collectRefund]);
+const input = z.union([approvals,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,point,collectRefund,createRoute,closeRoute]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
 async function verified() {
@@ -49,10 +64,11 @@ export async function GET(request: NextRequest) {
   const db = await verified();
   if (!db) return send({ message: "Acesso negado." },403);
   const mode = request.nextUrl.searchParams.get("mode");
-  if (mode !== "returns" && mode !== "fiscal" && mode !== "collection") return send({ message: "Selecione uma fila." },400);
+  if (mode !== "returns" && mode !== "fiscal" && mode !== "collection" && mode !== "routes") return send({ message: "Selecione uma fila." },400);
   const result = await db.rpc({
     returns: "list_representative_kit_return_work", fiscal: "list_representative_kit_fiscal_work",
-    collection: "list_representative_kit_collection_work"
+    collection: "list_representative_kit_collection_work",
+    routes: "list_representative_kit_delivery_routes"
   }[mode]);
   if (result.error) return send({ message: "A fila de kits está indisponível." },result.error.code === "42501" ? 403 : 503);
   const rows: unknown = result.data;
@@ -69,6 +85,15 @@ export async function POST(request: NextRequest) {
     const parsed = input.safeParse(await readBoundedJson(request,4096));
     if (!parsed.success) return send({ message: "Revise os dados informados." },400);
     const item = parsed.data;
+    if (item.action === "create_route" || item.action === "close_route") {
+      const result = await db.rpc("manage_representative_kit_delivery_route", {
+        p_close: item.action === "close_route" ? item.routeId : null,
+        p_route: item.action === "create_route" ? item.route : null
+      });
+      if (result.error || result.data !== true) return send({ message: "Confira os dados, a vigência e a sobreposição de CEPs." },
+        result.error?.code === "42501" ? 403 : 409);
+      return send({ ok: true });
+    }
     if (item.action === "collection") {
       const result = await db.rpc("manage_representative_kit_collection", {
         p_order: item.orderId, p_action: item.operation, p_evidence: item.evidence

@@ -7,7 +7,8 @@ import { KitTransactionError, kitCall } from "@/lib/representative-test-transact
 import { getStoreRuntimeEnvironment } from "@/lib/runtime-environment";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 
-const common = { addressId: z.string().uuid(), quantity: z.number().int().min(1).max(99) };
+const common = { addressId: z.string().uuid(), quantity: z.number().int().min(1).max(99),
+  paymentTiming: z.enum(["prepay", "collection"]).default("collection") };
 const input = z.union([
   z.object({ ...common, variantId: z.string().uuid() }).strict(),
   z.object({ ...common, kitId: z.string().uuid(), template: z.enum(["standard","lower_restock","upper_restock"]) }).strict()
@@ -24,20 +25,22 @@ export async function POST(request: Request) {
     const user = session?.data.user;
     if (!auth || session?.error || !user) throw new KitTransactionError(401);
     const environment = getStoreRuntimeEnvironment();
-    if (environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true" || !commercialKitCheckoutConfigured(environment)) return reply({ quote: null });
-    const origin = environment.MELHOR_ENVIO_ORIGIN_POSTAL_CODE?.trim() ?? "";
-    const db = createServiceSupabaseClient();
-    if (!db || !isRepresentativeKitPostalCode(origin)) throw new KitTransactionError(503);
-    await requirePrivateRateLimit(auth, "shipping_quote");
     const data = parsed.data;
-    const quote = await kitCall(db, "quote_representative_kit_collection", {
+    const atReceipt = data.paymentTiming === "collection";
+    if (!commercialKitCheckoutConfigured(environment)
+      || (atReceipt && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true")) return reply({ quote: null });
+    const origin = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
+    const db = createServiceSupabaseClient();
+    if (!db || (origin && !isRepresentativeKitPostalCode(origin))) throw new KitTransactionError(503);
+    await requirePrivateRateLimit(auth, "shipping_quote");
+    const quote = await kitCall(db, "quote_representative_kit_own_delivery", {
       p_actor: user.id, p_selection: "variantId" in data ? data.variantId : data.kitId,
       p_template: "template" in data ? data.template : null, p_quantity: data.quantity,
-      p_address: data.addressId, p_origin: origin
+      p_address: data.addressId, p_origin: origin, p_at_receipt: atReceipt
     });
     return reply({ quote });
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError ? error.status : 503;
-    return reply({ message: "Não foi possível consultar o pagamento no recebimento." }, status);
+    return reply({ message: "Não foi possível consultar a entrega pela curti Z." }, status);
   }
 }

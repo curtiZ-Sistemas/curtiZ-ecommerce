@@ -263,6 +263,18 @@ select is((select public.record_representative_kit_return_invoice(id,'3126111234
   '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
   true,'trusted verification attaches the exact authorized return');
 delete from private.representative_kit_refund_requests where order_id=(select order_id from commercial_kit_fixture);
+select is(pg_temp.manage_kit_return('refund'),null::text,'a refund must be prepared first');
+select is(pg_temp.manage_kit_return('prepare_refund'),'verified','preparation leaves the refund unqueued');
+select is(pg_temp.manage_kit_return('refund'),null::text,'a preparer cannot approve the same refund');
+alter table commercial_kit_fixture add column refund_reviewer uuid default gen_random_uuid();
+insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
+  select refund_reviewer,'kit-refund-reviewer@example.invalid','{}'::jsonb,'{}'::jsonb from commercial_kit_fixture;
+update public.profiles set status='active' where id=(select refund_reviewer from commercial_kit_fixture);
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+  select f.refund_reviewer,p.id,true,'Synthetic second refund reviewer',f.outsider
+  from public.permissions p cross join commercial_kit_fixture f where p.code='returns.refund';
+select set_config('request.jwt.claims',jsonb_build_object('sub',refund_reviewer,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
 select is(pg_temp.manage_kit_return('refund'),'refund_pending','the authorized partial refund is queued');
 select is((select public.claim_representative_kit_refund(id,'{}') from private.representative_kit_refund_requests
   where order_id=(select order_id from commercial_kit_fixture)),true,'verified partial refund can claim one external write');
@@ -301,6 +313,23 @@ insert into private.representative_kit_collection_routes(name,origin_postal_code
   delivery_cents,estimated_days,bling_method_ids,point_terminal_id,verified_evidence,valid_until)
 values('Synthetic delivery','35520000','30110000','30110999',1300,2,
   '{"cash":11,"pix":22,"debit_card":33,"credit_card":44}','SYNTHETIC_POINT','Synthetic verified local delivery',now()+interval '1 day');
+alter table commercial_kit_fixture add column own_quote uuid, add column own_key uuid default gen_random_uuid();
+update commercial_kit_fixture set own_quote=(public.quote_representative_kit_own_delivery(actor,variant,null,1,address,
+  '35520000',false)->>'id')::uuid;
+create function pg_temp.reserve_own_kit()
+returns jsonb language sql as $$
+  select public.reserve_representative_kit_own_delivery(actor,variant,null,1,own_quote,address,own_key,'35520000')
+    from commercial_kit_fixture;
+$$;
+update private.representative_kit_collection_routes set delivery_cents=1400 where name='Synthetic delivery';
+select throws_ok($$select pg_temp.reserve_own_kit()$$,'23514','kit_own_delivery_quote_changed',
+  'an own-delivery rate change rejects the reservation');
+update private.representative_kit_collection_routes set delivery_cents=1300 where name='Synthetic delivery';
+select is(pg_temp.reserve_own_kit()->>'amountInCents','6300','the prepaid order uses the own-delivery rate');
+select is((select shipping_snapshot->>'provider' from private.representative_kit_orders
+  where id=(pg_temp.reserve_own_kit()->>'orderId')::uuid),'own_delivery','the prepaid order preserves the delivery provider');
+select is((select public.request_representative_kit_payment_cancellation(actor,(pg_temp.reserve_own_kit()->>'orderId')::uuid)->>'state'
+  from commercial_kit_fixture),'cancelled','unused prepaid own-delivery stock can be released');
 alter table commercial_kit_fixture add column collection_quote uuid, add column collection_key uuid default gen_random_uuid();
 update commercial_kit_fixture set collection_quote=(public.quote_representative_kit_collection(actor,variant,null,1,address,
   '35520000')->>'id')::uuid;
@@ -405,6 +434,28 @@ select is((select public.request_representative_kit_payment_cancellation(actor,(
   from commercial_kit_fixture),'cancelled','the unpaid grade can be cancelled as a whole');
 select is((select sum(i.available_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
   join commercial_kit_fixture f on v.product_id=f.grade_product),30,'all of the original grade stock is restored');
+
+alter table commercial_kit_fixture add column delivery_order uuid;
+update commercial_kit_fixture set grade_key=gen_random_uuid(),grade_quote=(public.quote_representative_kit_own_delivery(
+  actor,grade_kit,'standard',1,address,'35520000',true)->>'id')::uuid;
+update commercial_kit_fixture set delivery_order=(pg_temp.reserve_grade_cash()->>'orderId')::uuid;
+insert into private.representative_kit_fulfillment(order_id,bling_sale_id,bling_invoice_id,invoice_access_key,
+  invoice_protocol,invoice_xml_sha256,invoice_confirmed_at,shipment_status,shipment_rank)
+select delivery_order,912,913,'3126111234567800019555002'||repeat('4',19),
+  '100000000000004',repeat('b',64),clock_timestamp(),'dispatched',4 from commercial_kit_fixture;
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.outsider,p.id,true,'Synthetic delivery operator',f.outsider
+  from public.permissions p cross join commercial_kit_fixture f where p.code='orders.update_operational_status';
+select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select is((select public.manage_representative_kit_collection(delivery_order,'cash_received','Synthetic cash receipt')->>'ok'
+  from commercial_kit_fixture),'true','cash can be confirmed independently of delivery');
+select is((select f.shipment_status from private.representative_kit_fulfillment f join commercial_kit_fixture t
+  on f.order_id=t.delivery_order),'dispatched','cash receipt cannot complete the physical delivery');
+select is((select public.manage_representative_kit_collection(delivery_order,'confirm_delivery','Synthetic signed delivery')->>'ok'
+  from commercial_kit_fixture),'true','authorized staff can confirm the physical delivery');
+select is((select f.shipment_status from private.representative_kit_fulfillment f join commercial_kit_fixture t
+  on f.order_id=t.delivery_order),'delivered','both confirmations complete the order');
 
 select * from finish();
 rollback;

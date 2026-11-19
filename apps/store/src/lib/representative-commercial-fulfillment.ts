@@ -270,7 +270,7 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
         p_key: verified.key, p_protocol: verified.protocol, p_sha256: verified.hash
       }) === true;
       if (!clearance) throw scopeError();
-      if (readString(job, "collectionMethod")) continue;
+      if (job.ownDelivery === true || readString(job, "collectionMethod")) continue;
       if (getMelhorEnvioEnvironment(environment) !== "production") throw scopeError();
       const shipping = createMelhorEnvioProvider(environment, db, transport);
       await advanceRepresentativeKitShipping(db, shipping, environment, job, verified.key);

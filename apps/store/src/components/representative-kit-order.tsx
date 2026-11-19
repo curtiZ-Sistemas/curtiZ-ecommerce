@@ -177,7 +177,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
         onClick={() => setReturnForm(open => !open)} disabled={pending}>Solicitar devolução</button>}
     {returnForm && <form onSubmit={event => void requestReturn(event)}>
       <label>Kits para devolver <input name="quantity" type="number" defaultValue={1} min={1} max={99} required /></label>
-      <label>Motivo <textarea name="reason" minLength={5} maxLength={500} required /></label>
+      <label>Motivo e orientações para a retirada <textarea name="reason" minLength={5} maxLength={500} required /></label>
       <button type="submit" disabled={pending}>Enviar solicitação</button>
     </form>}
     {returns.length > 0 && <ul aria-label="Devoluções">{returns.map(item => {
@@ -185,6 +185,8 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
         verified: "Em análise de estorno", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada" };
       return <li key={readString(item,"id")}>{labels[readString(item,"state")] ?? "Em análise"}
         {typeof item.quantity === "number" && <> · {item.quantity} kits</>}
+        {item.pickedUp === true ? <p>Retirada confirmada</p> : typeof item.pickupOn === "string" &&
+          <p>Retirada agendada para {item.pickupOn.split("-").reverse().join("/")}</p>}
         {typeof item.instructions === "string" && <p>{item.instructions}</p>}</li>;
     })}</ul>}
     {message && <p role="alert">{message}</p>}

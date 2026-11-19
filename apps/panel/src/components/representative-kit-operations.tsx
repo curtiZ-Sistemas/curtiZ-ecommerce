@@ -5,6 +5,12 @@ import { useState, type FormEvent } from "react";
 
 type Row = Record<string, unknown>;
 const field = (row: Row,key: string) => typeof row[key] === "string" ? row[key] : "";
+function DeliveryAddress({ value }: { value: unknown }) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const address = value as Row;
+  return <p>{["name","street","number","complement","district","city","state","postalCode"]
+    .map(key => field(address,key)).filter(Boolean).join(" · ")}</p>;
+}
 const states: Record<string,string> = {
   requested: "Solicitada", approved: "Aprovada", received: "Aguardando validação do XML",
   verified: "XML validado", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada"
@@ -85,6 +91,8 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
       : { action, returnId: field(row,"id"),
         ...(action === "collection_refund" && row.collectionMethod === "cash" ? { cashEvidence: form.get("cashEvidence") } : {}),
         ...(action === "approve" || action === "reject" ? { instructions: form.get("instructions") } : {}),
+        ...(action === "schedule_pickup" ? { pickupDate: form.get("pickupDate") } : {}),
+        ...(action === "confirm_pickup" ? { pickupReference: form.get("pickupReference") } : {}),
         ...(action === "receive" ? { invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey"),
           documentOrigin: form.get("documentOrigin"), restockQuantity: Number(form.get("restockQuantity")),
           refundInCents: Number(form.get("refundInCents")), inspectionReference: form.get("inspectionReference") } : {}) };
@@ -98,7 +106,7 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
     finally { setBusy(false); }
   }
   return <section className="op-surface" aria-busy={busy}>
-    <h2>{mode === "fiscal" ? "Notas fiscais dos kits MG" : mode === "collection" ? "Pagamento no recebimento · Kits MG" : "Devoluções de kits MG"}</h2>
+    <h2>{mode === "fiscal" ? "Notas fiscais dos kits MG" : mode === "collection" ? "Entregas de kits MG" : "Devoluções de kits MG"}</h2>
     <button type="button" disabled={busy} onClick={() => void load()}>{rows ? "Atualizar fila" : "Consultar fila"}</button>
     {error && <p role="alert">{error}</p>}
     {rows?.length === 0 && <p role="status">Nenhum registro nesta fila.</p>}
@@ -111,7 +119,7 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
           <p>{row.invoiceAuthorized ? "NF-e autorizada"
             : row.draftApproved ? "Rascunho conferido" : typeof row.invoiceId === "number" ? "Aguardando revisão fiscal" : "Aguardando Bling"}</p>
           {typeof row.invoiceId === "number" && <p>NF-e no Bling {row.invoiceId}</p>}
-          {canPrint && row.invoiceAuthorized === true && !row.collectionMethod && ["label_created","dispatched","in_transit","delayed"].includes(field(row,"shipmentStatus"))
+          {canPrint && row.invoiceAuthorized === true && !row.ownDelivery && !row.collectionMethod && ["label_created","dispatched","in_transit","delayed"].includes(field(row,"shipmentStatus"))
             && <button type="button" disabled={busy} onClick={() => void prepareLabel(field(row,"orderId"))}>Preparar impressão da etiqueta</button>}
           {label?.orderId === field(row,"orderId") && <a href={label.url} target="_blank" rel="noreferrer">Abrir etiqueta no Melhor Envio</a>}
           {row.cancellationRequested === true && <p>Cancelamento solicitado</p>}
@@ -122,13 +130,24 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
         </> : mode === "collection" ? <CollectionControls row={row} busy={busy} run={collectionAction} /> : <>
           <p>{states[state] ?? "Em análise"}</p>
           <p>{field(row,"reason")}</p>
+          {state === "approved" && <DeliveryAddress value={row.deliveryAddress} />}
           {typeof row.refundInCents === "number" && <p>Estorno {formatBRL(row.refundInCents)}</p>}
           {state === "requested" && canReview && <form onSubmit={event => void submit(event,row)}>
             <label>Orientações para o comprador <input name="instructions" required minLength={5} maxLength={500} /></label>
             <button type="submit" value="approve" disabled={busy}>Aprovar devolução</button>
             <button type="submit" value="reject" disabled={busy}>Recusar devolução</button>
           </form>}
-          {state === "approved" && canInspect && <form onSubmit={event => void submit(event,row)}>
+          {row.ownDelivery === true && state === "approved" && canInspect && !row.pickedUp && <>
+            <form onSubmit={event => void submit(event,row)}>
+              <label>Data da retirada <input type="date" name="pickupDate" required defaultValue={field(row,"pickupOn")} /></label>
+              <button type="submit" value="schedule_pickup" disabled={busy}>Agendar retirada</button>
+            </form>
+            {row.pickupOn && <form onSubmit={event => void submit(event,row)}>
+              <label>Referência da retirada <input name="pickupReference" required minLength={10} maxLength={200} /></label>
+              <button type="submit" value="confirm_pickup" disabled={busy}>Confirmar retirada</button>
+            </form>}
+          </>}
+          {state === "approved" && canInspect && (!row.ownDelivery || row.pickedUp) && <form onSubmit={event => void submit(event,row)}>
             <label>Documento fiscal
               <select name="documentOrigin" required defaultValue="">
                 <option value="" disabled>Selecione</option><option value="buyer_outflow">NF-e emitida pelo comprador</option>
@@ -143,7 +162,12 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
             <button type="submit" value="receive" disabled={busy}>Registrar recebimento</button>
           </form>}
           {state === "verified" && canRefund && <form onSubmit={event => void submit(event,row)}>
-            <button type="submit" value="refund" disabled={busy}>Autorizar estorno</button>
+            {row.collectionMethod === "cash"
+              ? <button type="submit" value="refund" disabled={busy}>Autorizar devolução em dinheiro</button>
+              : row.refundPrepared
+                ? row.canConfirmRefund ? <button type="submit" value="refund" disabled={busy}>Confirmar estorno no Mercado Pago</button>
+                  : <p>Aguardando confirmação de outro responsável.</p>
+                : <button type="submit" value="prepare_refund" disabled={busy}>Solicitar estorno no Mercado Pago</button>}
           </form>}
           {state === "refund_pending" && canRefund && field(row,"collectionMethod") && <form onSubmit={event => void submit(event,row)}>
             {row.collectionMethod === "cash" && <label>Comprovante da devolução em dinheiro
@@ -166,30 +190,37 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
   const shipment = field(row,"shipmentStatus");
   const pointStatus = field(row,"pointStatus");
   const awaitingReceipt = field(row,"state") === "awaiting_receipt";
+  const paid = field(row,"state") === "paid";
+  const dispatched = shipment === "dispatched";
+  const delivered = shipment === "delivered";
+  const canConfirmDelivery = dispatched && (awaitingReceipt || paid) && !row.cancellationRequested && row.invoiceAuthorized === true;
+  const canConfirmCash = awaitingReceipt && method === "cash" && (dispatched || delivered) && !row.cancellationRequested;
+  const canReportFailure = (awaitingReceipt || paid && !method) && dispatched && !row.cancellationRequested;
   const waitingTerminal = row.pointStarted === true && !["failed","expired","canceled"].includes(pointStatus);
-  const operation = awaitingReceipt && !row.cancellationRequested
-    ? shipment === "dispatched" ? (method === "cash" ? "cash_received" : null)
-      : row.invoiceAuthorized === true ? "dispatch" : null
+  const operation = (awaitingReceipt || paid) && !row.cancellationRequested
+    ? !dispatched && !delivered && row.invoiceAuthorized === true ? "dispatch" : null
     : awaitingReceipt && shipment === "delayed" && row.invoiceCancelled ? "returned_unpaid" : null;
 
   return <>
-    <p>{paymentMethods[method] ?? "Meio a confirmar"}{typeof row.amountInCents === "number" && ` · ${formatBRL(row.amountInCents)}`}</p>
+    <DeliveryAddress value={row.deliveryAddress} />
+    <p>{paymentMethods[method] ?? "Pix antecipado"}{typeof row.amountInCents === "number" && ` · ${formatBRL(row.amountInCents)}`}</p>
     {typeof row.cashTenderedInCents === "number" && typeof row.cashChangeInCents === "number"
       && <p>Valor informado {formatBRL(row.cashTenderedInCents)} · {row.cashChangeInCents ? `Troco ${formatBRL(row.cashChangeInCents)}` : "Sem troco"}</p>}
-    <p role="status">{row.receiptConfirmed ? "Recebimento confirmado"
-      : pointStatus ? pointStates[pointStatus] : shipment === "dispatched" ? "Em entrega"
-        : shipment === "delayed" ? "Aguardando retorno e cancelamento fiscal" : row.invoiceAuthorized ? "Pronto para expedição" : "Aguardando NF-e autorizada"}</p>
-    {awaitingReceipt && shipment === "dispatched" && method !== "cash" && !row.cancellationRequested && (
+    <p role="status">{delivered && paid ? "Pedido concluído" : delivered ? "Entrega confirmada"
+      : dispatched ? "Em entrega" : shipment === "delayed" ? "Entrega pendente"
+        : row.invoiceAuthorized ? "Pronto para entrega" : "Aguardando NF-e autorizada"}</p>
+    <p>{paid ? "Pagamento confirmado" : pointStatus ? pointStates[pointStatus] : "Pagamento pendente"}</p>
+    {awaitingReceipt && (dispatched || delivered) && method !== "cash" && !row.cancellationRequested && (
       <div>
         {(!waitingTerminal || row.pointLinked !== true) && <button type="button" disabled={busy}
           onClick={() => void run(orderId,"launch")}>Enviar cobrança ao terminal</button>}
         {row.pointLinked === true && <button type="button" disabled={busy}
-          onClick={() => void run(orderId,"refresh")}>Conciliar terminal</button>}
+          onClick={() => void run(orderId,"refresh")}>Confirmar pagamento</button>}
         {waitingTerminal && row.pointLinked === true && <button type="button" disabled={busy}
           onClick={() => void run(orderId,"cancel")}>Cancelar cobrança no terminal</button>}
       </div>
     )}
-    {(operation || awaitingReceipt && shipment === "dispatched" && !waitingTerminal) && (
+    {(operation || canConfirmDelivery || canConfirmCash || canReportFailure && !waitingTerminal) && (
       <form onSubmit={event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
@@ -199,10 +230,12 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
         <label>Referência da operação <input name="evidence" required minLength={10} maxLength={200} /></label>
         {operation && <button type="submit" value={operation} disabled={busy}>
           {operation === "dispatch" ? "Registrar saída para entrega"
-            : operation === "cash_received" ? "Confirmar dinheiro recebido" : "Confirmar retorno ao estoque"}
+            : "Confirmar retorno ao estoque"}
         </button>}
-        {operation === "dispatch" && <button type="submit" value="cancel_before_dispatch" disabled={busy}>Solicitar cancelamento antes da entrega</button>}
-        {awaitingReceipt && shipment === "dispatched" && !waitingTerminal
+        {canConfirmDelivery && <button type="submit" value="confirm_delivery" disabled={busy}>Confirmar entrega</button>}
+        {canConfirmCash && <button type="submit" value="cash_received" disabled={busy}>Confirmar pagamento em dinheiro</button>}
+        {operation === "dispatch" && awaitingReceipt && <button type="submit" value="cancel_before_dispatch" disabled={busy}>Solicitar cancelamento antes da entrega</button>}
+        {canReportFailure && !waitingTerminal
           && <button type="submit" value="delivery_failed" disabled={busy}>Registrar entrega sem recebimento</button>}
       </form>
     )}

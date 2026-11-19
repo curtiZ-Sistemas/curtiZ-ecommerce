@@ -1,5 +1,5 @@
 import "server-only";
-import { getMelhorEnvioEnvironment, getMercadoPagoCredentials } from "@curtiz/config";
+import { getMercadoPagoCredentials } from "@curtiz/config";
 import { MercadoPagoPaymentProvider, type MercadoPagoPayment } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { KitTransactionError, kitCall, kitRecord } from "./representative-test-transactions";
@@ -16,9 +16,7 @@ export function commercialKitCheckoutConfigured(environment: RuntimeEnvironment)
     && environment.BLING_INVOICE_SYNC_ENABLED === "true" && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true"
     && environment.BLING_INVOICE_SEND_ENABLED === "true" && environment.BLING_INVOICE_TRANSMISSION_MODE === "production"
     && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED === "true"
-    && environment.MELHOR_ENVIO_LABEL_PURCHASE_ENABLED === "true" && environment.MELHOR_ENVIO_LABEL_GENERATION_ENABLED === "true"
-    && environment.MELHOR_ENVIO_LIVE_LABEL_PURCHASE_AUTHORIZED === "true"
-    && getMelhorEnvioEnvironment(environment) === "production" && getMercadoPagoCredentials(environment)?.mode === "production"
+    && getMercadoPagoCredentials(environment)?.mode === "production"
     && /^\d{1,30}$/u.test(environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID?.trim() ?? "");
 }
 
