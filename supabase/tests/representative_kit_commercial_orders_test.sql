@@ -439,10 +439,11 @@ alter table commercial_kit_fixture add column delivery_order uuid;
 update commercial_kit_fixture set grade_key=gen_random_uuid(),grade_quote=(public.quote_representative_kit_own_delivery(
   actor,grade_kit,'standard',1,address,'35520000',true)->>'id')::uuid;
 update commercial_kit_fixture set delivery_order=(pg_temp.reserve_grade_cash()->>'orderId')::uuid;
-insert into private.representative_kit_fulfillment(order_id,bling_sale_id,bling_invoice_id,invoice_access_key,
-  invoice_protocol,invoice_xml_sha256,invoice_confirmed_at,shipment_status,shipment_rank)
-select delivery_order,912,913,'3126111234567800019555002'||repeat('4',19),
-  '100000000000004',repeat('b',64),clock_timestamp(),'dispatched',4 from commercial_kit_fixture;
+update private.representative_kit_fulfillment
+  set bling_sale_id=912,bling_invoice_id=913,invoice_access_key='3126111234567800019555002'||repeat('4',19),
+    invoice_protocol='100000000000004',invoice_xml_sha256=repeat('b',64),
+    invoice_confirmed_at=clock_timestamp(),shipment_status='dispatched',shipment_rank=4
+  where order_id=(select delivery_order from commercial_kit_fixture);
 insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
 select f.outsider,p.id,true,'Synthetic delivery operator',f.outsider
   from public.permissions p cross join commercial_kit_fixture f where p.code='orders.update_operational_status';
