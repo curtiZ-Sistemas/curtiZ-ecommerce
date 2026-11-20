@@ -19,7 +19,7 @@ const states = new Set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ
 
 export function selectBlingFiscalRule(value: unknown, input: { destinationState: string; icmsTaxpayer: boolean; operation: "sale" | "return"; finalConsumer?: boolean;
   creditEligible?: boolean; recipientIsCompany?: boolean; saleDate?: string;
-  stateRegistrationActive?: boolean; recipientTaxRegime?: "normal" | "simples" | "unknown";
+  stateRegistrationActive?: boolean; recipientTaxRegime?: "normal" | "simples" | "mei" | "unknown";
   goodsPurpose?: "resale" | "industrialization" | "other" }): BlingFiscalRule {
   if (!states.has(input.destinationState) || typeof input.icmsTaxpayer !== "boolean" || !["sale", "return"].includes(input.operation))
     throw new BlingError("fiscal_recipient_required", 409);

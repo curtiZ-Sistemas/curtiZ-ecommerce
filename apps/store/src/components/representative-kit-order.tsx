@@ -34,8 +34,9 @@ const collectionMethods = {
 };
 type CollectionMethod = keyof typeof collectionMethods;
 
-export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalInCents, collection = false, ...selection }: RepresentativeKitSelection & {
-  quantity: number; quoteId: string; addressId: string; totalInCents: number; collection?: boolean;
+export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalInCents, collection = false, allowedCollectionMethods = [],
+  ...selection }: RepresentativeKitSelection & {
+  quantity: number; quoteId: string; addressId: string; totalInCents: number; collection?: boolean; allowedCollectionMethods?: string[];
 }) {
   const requestKey = useRef("");
   const [order, setOrder] = useState<UnknownRecord | null>(null);
@@ -45,7 +46,8 @@ export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalIn
   const [method, setMethod] = useState<CollectionMethod | "">("");
   const [tendered, setTendered] = useState("");
   const cashTendered = kitCashTenderInCents(tendered);
-  const collectionReady = !collection || Boolean(method && (method !== "cash" || cashTendered !== null && cashTendered >= totalInCents));
+  const collectionReady = !collection || Boolean(method && allowedCollectionMethods.includes(method)
+    && (method !== "cash" || cashTendered !== null && cashTendered >= totalInCents));
   async function reserve() {
     if (waiting || !collectionReady) return;
     setWaiting(true);
@@ -75,7 +77,8 @@ export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalIn
       <label>Escolher forma de pagamento
         <select value={method} onChange={event => setMethod(event.target.value as CollectionMethod | "")}>
           <option value="">Selecione</option>
-          {Object.entries(collectionMethods).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {Object.entries(collectionMethods).filter(([value]) => allowedCollectionMethods.includes(value))
+            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       {method === "cash" && <RepresentativeKitCashChange totalInCents={totalInCents} tendered={tendered} onTenderedChange={setTendered} />}
@@ -92,6 +95,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   const [tracking, setTracking] = useState<UnknownRecord | null>(null);
   const [returns, setReturns] = useState<UnknownRecord[]>([]);
   const [returnForm, setReturnForm] = useState(false);
+  const [returnMode, setReturnMode] = useState("kits");
   const returnKey = useRef("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
@@ -126,11 +130,20 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     if (pending) return;
+    const returningPairs = form.get("returnMode") === "pairs";
+    const pairs = Object.fromEntries(pairOptions.map(option => [
+      readString(option,"sku"), Number(form.get(`pair-${readString(option,"sku")}`))
+    ]).filter(([,quantity]) => Number(quantity)>0));
+    if (returningPairs && !Object.keys(pairs).length) {
+      setMessage("Informe pelo menos um par para devolver.");
+      return;
+    }
     setPending(true);
     setMessage("");
     returnKey.current ||= crypto.randomUUID();
     try {
-      const data = await kitRequest({ action: "return", orderId, quantity: Number(form.get("quantity")),
+      const data = await kitRequest({ action: "return", orderId, quantity: returningPairs ? 1 : Number(form.get("quantity")),
+        ...(returningPairs ? { pairs } : {}),
         reason: form.get("reason"), idempotencyKey: returnKey.current });
       if (!isUnknownRecord(data.request)) throw new Error("Solicitação indisponível.");
       const requested = data.request;
@@ -145,6 +158,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   }
   const trackingCode = tracking ? readString(tracking, "trackingCode") : "";
   const shipmentStatus = tracking ? shipmentLabels[readString(tracking, "status")] : "";
+  const pairOptions = readRows(order.returnablePairOptions);
   return <div className="representative-profile-form">
     {typeof order.productName === "string" && <strong>{order.productName}</strong>}
     <p role="status">{order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)
@@ -176,7 +190,21 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
       <button type="button" className="secondary-button" aria-expanded={returnForm}
         onClick={() => setReturnForm(open => !open)} disabled={pending}>Solicitar devolução</button>}
     {returnForm && <form onSubmit={event => void requestReturn(event)}>
-      <label>Kits para devolver <input name="quantity" type="number" defaultValue={1} min={1} max={99} required /></label>
+      {pairOptions.length > 0 && <label>Itens para devolver
+        <select name="returnMode" value={returnMode} onChange={event => setReturnMode(event.target.value)}>
+          <option value="kits">Kits completos</option><option value="pairs">Pares avulsos</option>
+        </select>
+      </label>}
+      {returnMode === "pairs" && pairOptions.length > 0 ? <fieldset>
+        <legend>Quantidade por SKU</legend>
+        {pairOptions.map(option => {
+          const sku = readString(option,"sku");
+          return <label key={sku}>{readString(option,"size")} · {sku}
+            <input name={`pair-${sku}`} type="number" defaultValue={0} min={0}
+              max={typeof option.quantity === "number" ? option.quantity : 0} required />
+          </label>;
+        })}
+      </fieldset> : <label>Kits para devolver <input name="quantity" type="number" defaultValue={1} min={1} max={99} required /></label>}
       <label>Motivo e orientações para a retirada <textarea name="reason" minLength={5} maxLength={500} required /></label>
       <button type="submit" disabled={pending}>Enviar solicitação</button>
     </form>}
@@ -184,7 +212,10 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
       const labels: Record<string, string> = { requested: "Solicitada", approved: "Aprovada", received: "Recebida",
         verified: "Em análise de estorno", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada" };
       return <li key={readString(item,"id")}>{labels[readString(item,"state")] ?? "Em análise"}
-        {typeof item.quantity === "number" && <> · {item.quantity} kits</>}
+        {isUnknownRecord(item.requestedPairs)
+          ? <ul>{Object.entries(item.requestedPairs).map(([sku,quantity]) =>
+            <li key={sku}>{sku} · {String(quantity)} {quantity === 1 ? "par" : "pares"}</li>)}</ul>
+          : typeof item.quantity === "number" && <> · {item.quantity} kits</>}
         {item.pickedUp === true ? <p>Retirada confirmada</p> : typeof item.pickupOn === "string" &&
           <p>Retirada agendada para {item.pickupOn.split("-").reverse().join("/")}</p>}
         {typeof item.instructions === "string" && <p>{item.instructions}</p>}</li>;

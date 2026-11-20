@@ -100,4 +100,21 @@ describe("commercial kit order route", () => {
     expect(mock.cancel).toHaveBeenCalledWith(expect.anything(),provider,"123",mock.actor,orderId);
     expect(mock.refresh).toHaveBeenCalledWith(expect.anything(),provider,"123",mock.actor,orderId);
   });
+
+  it("sends pair quantities to the buyer-scoped return RPC and keeps whole returns working", async () => {
+    mock.record.mockResolvedValue({ id: quoteId, state: "requested" });
+    const request = { action: "return", orderId, quantity: 1, reason: "Inspeção de teste", idempotencyKey };
+    const pairs = { "PAIR-34": 2 };
+    expect((await post({ ...request, pairs })).status).toBe(200);
+    expect(mock.record).toHaveBeenLastCalledWith(expect.anything(),"request_representative_kit_pair_return",{
+      p_actor: mock.actor, p_order: orderId, p_reason: request.reason, p_key: idempotencyKey, p_pairs: pairs
+    });
+    expect((await post({ ...request, pairs: {} })).status).toBe(400);
+    expect((await post({ ...request, pairs, quantity: 2 })).status).toBe(400);
+    expect((await post(request)).status).toBe(200);
+    expect(mock.record).toHaveBeenLastCalledWith(expect.anything(),"request_representative_kit_return",{
+      p_actor: mock.actor, p_order: orderId, p_reason: request.reason, p_key: idempotencyKey, p_quantity: 1
+    });
+    expect(mock.record).toHaveBeenCalledTimes(2);
+  });
 });

@@ -4,7 +4,7 @@ import { MercadoPagoPaymentProvider, type MercadoPagoPayment } from "@curtiz/int
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { KitTransactionError, kitCall, kitRecord } from "./representative-test-transactions";
 import { getStoreRuntimeEnvironment, type RuntimeEnvironment } from "./runtime-environment";
-import { readNumber, readString, type UnknownRecord } from "./unknown-data";
+import { readNumber, readRows, readString, type UnknownRecord } from "./unknown-data";
 
 const referencePattern = /^KITMG-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/u;
 const kitReference = (orderId: string) => `KITMG-${orderId}`;
@@ -69,6 +69,7 @@ export function kitPaymentView(context: UnknownRecord, payment?: MercadoPagoPaym
     ...(context.canCancelCollection === true ? { canCancelCollection: true } : {}),
     amountInCents: readNumber(context, "amountInCents"), shippingInCents: readNumber(context, "shippingInCents"),
     reservedUntil: readString(context, "reservedUntil"),
+    ...(Array.isArray(context.returnablePairOptions) ? { returnablePairOptions: readRows(context.returnablePairOptions) } : {}),
     ...(typeof context.collectionMethod === "string" ? { collectionMethod: context.collectionMethod } : {}),
     ...(typeof context.cashTenderedInCents === "number" ? { cashTenderedInCents: context.cashTenderedInCents,
       cashChangeInCents: readNumber(context, "cashChangeInCents") } : {}),

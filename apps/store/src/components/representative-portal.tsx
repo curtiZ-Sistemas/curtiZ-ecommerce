@@ -1663,7 +1663,7 @@ function Kits({
   purchasing: boolean;
 }) {
   if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kits para revenda"
-    description="Escolha os kits do catálogo e consulte o frete para um endereço salvo em Minas Gerais." />} />;
+    description="Escolha os kits do catálogo e informe o endereço de entrega em Minas Gerais." />} />;
   return (
     <section>
       <PageTitle

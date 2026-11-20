@@ -29,10 +29,17 @@ export async function verifyRepresentativeKitReturnInvoice(provider: BlingClient
   if (await digest(original) !== job.originalHash) throw invalid();
   const returned = await provider.invoiceDocument(key,"xml");
   const decode = new TextDecoder("utf-8",{ fatal: true });
+  const selection = job.requestedPairs == null
+    ? { returnKitQuantity: readNumber(job,"returnQuantity") }
+    : { returnedPairs: Object.entries(row(job.requestedPairs)).map(([sku, quantity]) => {
+      if (typeof quantity !== "number") throw invalid();
+      return { sku, quantity };
+    }) };
   const verified = readBlingAuthorizedResaleReturnXml(decode.decode(returned),key,decode.decode(original),{
     origin, environment: 1, issuerDocument: readString(job,"issuerDocument"), buyerDocument: readString(job,"buyerDocument"),
-    originalKey, originalKitQuantity: readNumber(job,"originalQuantity"), returnKitQuantity: readNumber(job,"returnQuantity"),
-    cfop: readString(rule,"cfop"), taxCodeKind, taxCode: readString(rule,"taxCode"), refundInCents: readNumber(job,"refundInCents")
+    originalKey, originalKitQuantity: readNumber(job,"originalQuantity"), ...selection,
+    cfop: readString(rule,"cfop"), taxCodeKind, taxCode: readString(rule,"taxCode"),
+    refundInCents: readNumber(job,"fiscalTotalInCents",readNumber(job,"refundInCents"))
   });
   return { ...verified, hash: await digest(returned) };
 }
@@ -44,8 +51,8 @@ export async function verifyDueRepresentativeKitReturns(db: SupabaseClient, prov
     const returnId = readString(job,"returnId");
     try {
       const proof = await verifyRepresentativeKitReturnInvoice(provider,job);
-      if (await kitCall(db,"record_representative_kit_return_invoice",{
-        p_return: returnId, p_key: proof.key, p_protocol: proof.protocol, p_hash: proof.hash
+      if (await kitCall(db,"record_representative_kit_return_invoice_lines",{
+        p_return: returnId, p_key: proof.key, p_protocol: proof.protocol, p_hash: proof.hash, p_lines: proof.fiscalLines
       }) !== true) throw invalid();
     } catch {
       logServerEvent("error","representative_kit_return_verification_failed",{ returnId });

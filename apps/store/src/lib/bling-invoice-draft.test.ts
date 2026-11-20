@@ -165,4 +165,14 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
     await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true);
     expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT", "GET"]);
   });
+  it("checks the carrier mode again after updating a draft whose SKU lines already match", async () => {
+    const wholesale = { ...input, freightMode: 3 as const };
+    const body = blingFiscalDraftBody({ ...invoice(), transporte: { fretePorConta: 9 } }, items, commercial, wholesale);
+    const aligned = { ...invoice(), itens: body.itens, parcelas: body.parcelas, transporte: { fretePorConta: 9 } };
+    const request = vi.fn().mockResolvedValueOnce({ data: aligned }).mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: aligned });
+    await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, wholesale, true, async () => true))
+      .rejects.toThrow("invoice_freight_mapping_required");
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { transporte: { fretePorConta: 3, frete: 0 } } });
+  });
 });

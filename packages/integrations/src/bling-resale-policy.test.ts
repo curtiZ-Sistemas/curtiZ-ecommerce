@@ -17,6 +17,41 @@ const recipient = { destinationState: "SP", operation: "sale" as const, finalCon
 const pair = { sku: "TEST-PAIR", description: "Synthetic pair", unit: "PR", pairsPerSku: 1,
   fiscalUnitApproved: true, quantity: 1, unitPriceInCents: 2173, ncm: "64022000", origin: 0, cest: "" };
 
+describe("wholesale kits for registered MG businesses", () => {
+  const november = { ...period, application_month: "2026-11-01", reference_month: "2026-10-01", rate: 1.36,
+    approved_at: "2026-11-01T12:00:00Z" };
+  const wholesaleRules = rules.filter(rule => rule.cfop === "5102").map(rule => ({
+    ...rule, series: 3, icms_credit_rate: null, credit_periods: rule.csosn === "101" ? [november] : []
+  }));
+  const buyer = { ...recipient, destinationState: "MG", icmsTaxpayer: true, recipientIsCompany: true,
+    stateRegistrationActive: true, saleDate: "2026-11-19", goodsPurpose: "resale" as const };
+
+  it("uses 102 for MEI with active state registration and refuses a credit request", () => {
+    const mei = { ...buyer, recipientTaxRegime: "mei" as const };
+    expect(selectBlingFiscalRule(wholesaleRules, { ...mei, creditEligible: false })).toMatchObject({ cfop: "5102", csosn: "102", series: 3 });
+    expect(() => selectBlingFiscalRule(wholesaleRules, { ...mei, creditEligible: true })).toThrow("fiscal_credit_recipient_required");
+  });
+  it("uses 102 without credit for a Simples Nacional company with active state registration", () => {
+    const simples = { ...buyer, recipientTaxRegime: "simples" as const };
+    const rule = selectBlingFiscalRule(wholesaleRules, { ...simples, creditEligible: false });
+    expect(rule).toMatchObject({ cfop: "5102", csosn: "102", series: 3 });
+    expect(buildBlingFiscalMirror(rule, [pair]).icmsCredit).toBeUndefined();
+    expect(() => selectBlingFiscalRule(wholesaleRules, { ...simples, creditEligible: true })).toThrow("fiscal_credit_recipient_required");
+  });
+  it("uses 102 for a normal-regime taxpayer when the operation does not grant credit", () => {
+    const rule = selectBlingFiscalRule(wholesaleRules, { ...buyer, recipientTaxRegime: "normal", creditEligible: false });
+    expect(rule).toMatchObject({ cfop: "5102", csosn: "102", series: 3 });
+    expect(buildBlingFiscalMirror(rule, [pair]).icmsCredit).toBeUndefined();
+  });
+  it("uses 101 and the approved November rate for an eligible normal-regime taxpayer", () => {
+    const eligible = { ...buyer, recipientTaxRegime: "normal" as const, creditEligible: true };
+    const rule = selectBlingFiscalRule(wholesaleRules, eligible);
+    expect(rule).toMatchObject({ cfop: "5102", csosn: "101", series: 3, icms_credit_rate: 1.36 });
+    expect(buildBlingFiscalMirror(rule, [pair], { icmsCreditBasesInCents: [2173] }).icmsCredit?.totalInCents).toBe(30);
+    expect(() => selectBlingFiscalRule(wholesaleRules, { ...eligible, saleDate: "2026-12-01" })).toThrow("fiscal_monthly_credit_required");
+  });
+});
+
 describe("accountant resale and individual return policy", () => {
   it.each(["MG", "SP"])("uses resale CFOP for non-contributors in %s without B2C fallback", destinationState => {
     const rule = selectBlingFiscalRule(rules, { ...recipient, destinationState });

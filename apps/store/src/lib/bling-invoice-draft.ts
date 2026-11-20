@@ -103,7 +103,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number; recipientAddress: Record<string, unknown>;
     paymentTerms: BlingInvoicePaymentTerm[];
     totalInCents: number; shippingInCents: number; discountInCents: number; additionalInCents: number;
-    businessRegistration?: string }) {
+    businessRegistration?: string; freightMode?: 3 }) {
   // Only the exact, untransmitted commercial draft may be transformed. Never repair
   // an arbitrary/partially edited provider note by overwriting it.
   if (Number(invoice.situacao) !== 1 || readString(invoice, "chaveAcesso") || Number(invoice.tipo) !== 1
@@ -131,11 +131,14 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   if (!Number.isSafeInteger(gross) || gross + input.shippingInCents + input.additionalInCents - input.discountInCents !== input.totalInCents)
     throw new BlingError("fiscal_total_mismatch", 409);
   const transport = row(invoice.transporte);
-  if (![0, 1, 2, 3, 4, 9].includes(Number(transport.fretePorConta))) throw new BlingError("invoice_freight_mapping_required", 409);
+  const freightMode = input.freightMode ?? Number(transport.fretePorConta);
+  if (![0, 1, 2, 3, 4, 9].includes(freightMode)) throw new BlingError("invoice_freight_mapping_required", 409);
   // GET can return an empty carrier; PUT requires a name whenever it is supplied.
   const carrier = row(transport.transportador);
   const hasCarrier = Object.values(carrier).some(value => typeof value === "string"
     ? value.trim().length > 0 : value != null && value !== 0 && value !== false);
+  if (input.freightMode === 3 && Number(transport.fretePorConta) !== 3 && hasCarrier)
+    throw new BlingError("invoice_carrier_mapping_required", 409);
   if (hasCarrier && !readString(carrier, "nome").trim()) throw new BlingError("invoice_carrier_mapping_required", 409);
   const operationDate = draftOperationDate(invoice);
   return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: operationDate,
@@ -147,7 +150,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
       classificacaoFiscal: i.ncm, origem: i.origin, cest: i.cest, tipo: "P",
       ...(i.sourceCommercialSku ? { informacoesAdicionais: `SKU comercial: ${i.sourceCommercialSku}` } : {}) })),
     desconto: input.discountInCents / 100, despesas: input.additionalInCents / 100,
-    transporte: { fretePorConta: Number(transport.fretePorConta), frete: input.shippingInCents / 100,
+    transporte: { fretePorConta: freightMode, frete: input.shippingInCents / 100,
       ...(hasCarrier ? { transportador: carrier } : {}), etiqueta: transport.etiqueta },
     parcelas: Array.isArray(invoice.parcelas) && invoice.parcelas.length
       ? array(invoice.parcelas).map(p => ({ data: p.data, valor: p.valor, observacoes: p.observacoes,
@@ -160,18 +163,22 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   const response = await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_read");
   const invoice = row(row(response).data);
   const expected = fiscalItems.map(i => ({ ...i, sku: i.sourceCommercialSku ? i.sku : blingExternalSku(i.sku, i.variantId ?? "") }));
-  if (invoiceMatchesFiscalLines(invoice, expected)) {
+  const matchesItems = invoiceMatchesFiscalLines(invoice, expected);
+  const matchesFreightMode = input.freightMode === undefined || Number(row(invoice.transporte).fretePorConta) === input.freightMode;
+  if (matchesItems && matchesFreightMode) {
     assertReviewedAddress(invoice, reviewedRecipientAddress(input.recipientAddress));
     assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
     return;
   }
-  if (!fiscalItems.some(i => i.sourceCommercialSku)) throw new BlingError("invoice_items_mismatch", 409);
+  if (!matchesItems && !fiscalItems.some(i => i.sourceCommercialSku)) throw new BlingError("invoice_items_mismatch", 409);
   if (!stockAutomationDisabled) throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
-  const body = blingFiscalDraftBody(invoice, fiscalItems, commercialItems, input);
+  const body = blingFiscalDraftBody(invoice, fiscalItems, matchesItems ? expected : commercialItems, input);
   if (!await authorizeMutation()) throw new BlingError("order_not_eligible", 409);
   await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_update", { method: "PUT", body });
   const saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
   if (!invoiceMatchesFiscalLines(saved, expected)) throw new BlingError("invoice_items_mismatch", 409);
+  if (input.freightMode !== undefined && Number(row(saved.transporte).fretePorConta) !== input.freightMode)
+    throw new BlingError("invoice_freight_mapping_required", 409);
   assertReviewedAddress(saved, body.contato.endereco);
   assertBlingInvoicePaymentTerms(saved, input.paymentTerms);
 }

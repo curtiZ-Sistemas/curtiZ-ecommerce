@@ -176,7 +176,8 @@ export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, ex
   const emitter = one(info, "emit");
   const destination = one(recipient, "enderDest");
   const pickup = children(info, "retirada").length ? one(info, "retirada") : one(emitter, "enderEmit");
-  if (expected.series !== 2 || environment !== String(expected.environment)
+  if ((expected.series !== 2 && expected.series !== 3) || environment !== String(expected.environment)
+    || (expected.series === 3 && (expected.shippingInCents !== 0 || value(one(info, "transp"), "modFrete") !== "3"))
     || value(ide, "cUF") !== "31" || invoiceKey.slice(0, 2) !== "31"
     || value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1" || value(ide, "idDest") !== "1"
     || value(ide, "indFinal") !== "0" || value(ide, "indPres") !== "2" || value(recipient, "indIEDest") !== "1"
@@ -230,12 +231,22 @@ type ResaleReturnExpectation = {
   buyerDocument: string;
   originalKey: string;
   originalKitQuantity: number;
-  returnKitQuantity: number;
   cfop: string;
   taxCodeKind: "CST" | "CSOSN";
   taxCode: string;
   refundInCents: number;
-};
+} & ({ returnKitQuantity: number; returnedPairs?: never }
+  | { returnKitQuantity?: never; returnedPairs: readonly { sku: string; quantity: number }[] });
+
+function readReturnPairSelection(selection: readonly { sku: string; quantity: number }[]) {
+  if (!selection.length || selection.length > 990) return fail();
+  const pairs = new Map<string, number>();
+  for (const { sku, quantity } of selection) {
+    if (!sku || sku.length > 60 || !Number.isSafeInteger(quantity) || quantity < 1 || pairs.has(sku)) return fail();
+    pairs.set(sku, quantity);
+  }
+  return pairs;
+}
 
 export function readBlingAuthorizedResaleReturnXml(xml: string, key: string, originalXml: string, expected: ResaleReturnExpectation) {
   const original = parseAuthorizedBlingInvoice(originalXml, expected.originalKey);
@@ -245,7 +256,8 @@ export function readBlingAuthorizedResaleReturnXml(xml: string, key: string, ori
   const buyer = expected.buyerDocument;
   const emitter = one(returned.info, "emit");
   const invoiceNumber = value(returned.ide, "nNF");
-  const series = own ? 3 : integer(value(returned.ide, "serie"));
+  const originalSeries = integer(value(original.ide, "serie"));
+  const series = own ? (originalSeries === 3 ? 4 : 3) : integer(value(returned.ide, "serie"));
   const referenced = value(one(returned.ide, "NFref"), "refNFe");
   if (original.environment !== returned.environment
     || returned.environment !== String(expected.environment) || key === expected.originalKey || referenced !== expected.originalKey
@@ -257,34 +269,56 @@ export function readBlingAuthorizedResaleReturnXml(xml: string, key: string, ori
     || value(returned.recipient, "CNPJ") !== (own ? buyer : supplier)
     || value(one(original.info, "emit"), "CNPJ") !== supplier || value(original.recipient, "CNPJ") !== buyer
     || value(original.ide, "finNFe") !== "1" || value(original.ide, "indFinal") !== "0"
-    || !(own ? /^1\d{3}$/u : /^5\d{3}$/u).test(expected.cfop)
+    || (originalSeries !== 2 && originalSeries !== 3) || Number(expected.originalKey.slice(22, 25)) !== originalSeries
+    || expected.cfop !== (own ? "1202" : "5202")
     || !(expected.taxCodeKind === "CST" ? /^\d{2}$/u : /^\d{3}$/u).test(expected.taxCode)
-    || !Number.isSafeInteger(expected.originalKitQuantity) || !Number.isSafeInteger(expected.returnKitQuantity)
-    || expected.returnKitQuantity < 1 || expected.returnKitQuantity > expected.originalKitQuantity
+    || !Number.isSafeInteger(expected.originalKitQuantity) || expected.originalKitQuantity < 1
     || !Number.isSafeInteger(expected.refundInCents) || expected.refundInCents < 1) return fail();
 
   assertBlingArchiveIdentity(returned.info, returned.ide, key, { invoiceNumber, series,
     issuerDocument: own ? supplier : buyer, totalInCents: expected.refundInCents });
   const sale = readBlingInvoiceItems(original.info);
   const residual = readBlingInvoiceItems(returned.info, expected.refundInCents);
-  if (sale.items.length !== residual.items.length || residual.discountInCents !== 0 || residual.additionalInCents !== 0
-    || BigInt(residual.shippingInCents) * BigInt(expected.originalKitQuantity)
-      > BigInt(sale.shippingInCents) * BigInt(expected.returnKitQuantity) + BigInt(expected.originalKitQuantity - 1)) return fail();
+  const wholeKits = expected.returnKitQuantity;
+  const pairs = expected.returnedPairs ? readReturnPairSelection(expected.returnedPairs) : undefined;
+  if (residual.discountInCents !== 0 || residual.additionalInCents !== 0) return fail();
+  if (pairs) {
+    if (originalSeries !== 3 || sale.shippingInCents !== 0 || residual.shippingInCents !== 0
+      || sale.discountInCents !== 0 || sale.additionalInCents !== 0) return fail();
+  } else {
+    if (wholeKits === undefined || !Number.isSafeInteger(wholeKits) || wholeKits < 1
+      || wholeKits > expected.originalKitQuantity || sale.items.length !== residual.items.length
+      || BigInt(residual.shippingInCents) * BigInt(expected.originalKitQuantity)
+        > BigInt(sale.shippingInCents) * BigInt(wholeKits) + BigInt(expected.originalKitQuantity - 1)) return fail();
+  }
   const signature = (item: BlingFiscalItem) => JSON.stringify([item.sku, item.unit, item.unitPriceInCents, item.ncm, item.origin, item.cest]);
   const remaining = new Map<string, number>();
   for (const item of sale.items) {
     const line = signature(item);
-    const quantity = item.quantity * expected.returnKitQuantity / expected.originalKitQuantity;
+    const quantity = wholeKits === undefined ? item.quantity : item.quantity * wholeKits / expected.originalKitQuantity;
     if (!Number.isSafeInteger(quantity) || quantity < 1 || remaining.has(line)) return fail();
     remaining.set(line, quantity);
   }
+  const returnDetails = children(returned.info,"det");
+  const fiscalLines: { signature: string; sku: string; quantity: number; saleQuantity: number }[] = [];
+  const saleQuantities = new Map(sale.items.map(item => [signature(item), item.quantity]));
   for (const [index, item] of residual.items.entries()) {
-    const detail = children(returned.info,"det")[index]!;
+    const detail = returnDetails[index]!;
     const tax = one(one(detail,"imposto"),"ICMS").children.filter(child => child.uri === namespace)[0]!;
-    if (remaining.get(signature(item)) !== item.quantity || value(one(detail,"prod"),"CFOP") !== expected.cfop
+    const line = signature(item);
+    const available = remaining.get(line);
+    if (available === undefined || item.quantity > available || (!pairs && available !== item.quantity)
+      || value(one(detail,"prod"),"CFOP") !== expected.cfop
       || value(tax,expected.taxCodeKind) !== expected.taxCode) return fail();
-    remaining.delete(signature(item));
+    fiscalLines.push({ signature: line, sku: item.sku, quantity: item.quantity, saleQuantity: saleQuantities.get(line)! });
+    remaining.delete(line);
+    if (pairs) {
+      const selected = pairs.get(item.sku);
+      if (selected === undefined || item.quantity > selected) return fail();
+      if (selected === item.quantity) pairs.delete(item.sku);
+      else pairs.set(item.sku, selected - item.quantity);
+    }
   }
-  if (remaining.size) return fail();
-  return { protocol: value(returned.protocol,"nProt"), totalInCents: residual.totalInCents, key };
+  if (pairs ? pairs.size : remaining.size) return fail();
+  return { protocol: value(returned.protocol,"nProt"), totalInCents: residual.totalInCents, key, fiscalLines };
 }

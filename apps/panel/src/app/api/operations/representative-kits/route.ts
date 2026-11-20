@@ -17,6 +17,7 @@ const reasons = z.object({ returnId, action: z.enum(["approve","reject"]),
 const receipt = z.object({ action: z.literal("receive"), returnId, invoiceId: z.number().int().positive(),
   invoiceKey: z.string().regex(/^31\d{42}$/u), documentOrigin: z.enum(["buyer_outflow","own_inflow"]),
   restockQuantity: z.number().int().min(0).max(99), refundInCents: z.number().int().positive(),
+  restockPairs: z.record(z.string().min(1).max(60),z.number().int().min(1).max(999)).optional(),
   inspectionReference: z.string().trim().min(10).max(200) }).strict();
 const refund = z.object({ action: z.enum(["prepare_refund","refund"]), returnId }).strict();
 const pickupSchedule = z.object({ action: z.literal("schedule_pickup"), returnId,
@@ -28,9 +29,9 @@ const paymentId = z.string().regex(/^[1-9][0-9]{0,14}$/u);
 const createRoute = z.object({ action: z.literal("create_route"), route: z.object({
   name: z.string().trim().min(3).max(100),
   origin_postal_code: postalCode, destination_from: postalCode, destination_through: postalCode,
-  delivery_cents: z.number().int().min(0).max(100_000_000), estimated_days: z.number().int().min(0).max(60),
-  bling_method_ids: z.object({ cash: paymentId, pix: paymentId, debit_card: paymentId, credit_card: paymentId }).strict(),
-  point_terminal_id: z.string().regex(/^[A-Za-z0-9_]{4,80}$/u),
+  delivery_cents: z.literal(0), estimated_days: z.number().int().min(0).max(60),
+  bling_method_ids: z.object({ cash: paymentId.optional() }).strict(),
+  point_terminal_id: z.null(),
   verified_evidence: z.string().trim().min(10).max(500), valid_until: z.iso.datetime({ offset: true })
 }).strict() }).strict();
 const closeRoute = z.object({ action: z.literal("close_route"), routeId: z.string().uuid() }).strict();
@@ -38,11 +39,20 @@ const print = z.object({ action: z.literal("print_label"), orderId: z.string().u
 const collect = z.object({ action: z.literal("collection"), orderId: z.string().uuid(),
   operation: z.enum(["dispatch","confirm_delivery","cancel_before_dispatch","delivery_failed","returned_unpaid","cash_received"]),
   evidence: z.string().trim().min(10).max(200) }).strict();
+const cashSchedule = z.object({ action: z.literal("schedule_cash_delivery"), orderId: z.string().uuid(),
+  deliveryOn: z.iso.date() }).strict();
+const mdfe = z.object({ action: z.literal("confirm_mdfe"), orderId: z.string().uuid(),
+  accessKey: z.string().regex(/^31[0-9]{18}58[0-9]{22}$/u), protocol: z.string().regex(/^[0-9]{15}$/u),
+  evidence: z.string().trim().min(10).max(200) }).strict();
+const undeliveredReturn = z.object({ action: z.literal("register_undelivered_return"), orderId: z.string().uuid(),
+  invoiceId: z.number().int().positive(), invoiceKey: z.string().regex(/^31[0-9]{20}004[0-9]{19}$/u),
+  restockQuantity: z.number().int().min(0).max(99), evidence: z.string().trim().min(10).max(200) }).strict();
 const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
   operation: z.enum(["launch","refresh","cancel"]) }).strict();
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
-const input = z.union([approvals,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,point,collectRefund,createRoute,closeRoute]);
+const input = z.union([approvals,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
+  point,collectRefund,createRoute,closeRoute]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
 async function verified() {
@@ -94,10 +104,32 @@ export async function POST(request: NextRequest) {
         result.error?.code === "42501" ? 403 : 409);
       return send({ ok: true });
     }
+    if (item.action === "confirm_mdfe") {
+      const result = await db.rpc("confirm_representative_kit_mdfe", {
+        p_order: item.orderId, p_key: item.accessKey, p_protocol: item.protocol, p_evidence: item.evidence
+      });
+      return result.error || result.data !== true ? send({ message: "Confira a chave, o protocolo e a situação fiscal do pedido." },
+        result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
+    }
+    if (item.action === "register_undelivered_return") {
+      const result = await db.rpc("register_representative_kit_undelivered_return", {
+        p_order: item.orderId,p_invoice: item.invoiceId,p_key: item.invoiceKey,
+        p_restock_quantity: item.restockQuantity,p_evidence: item.evidence
+      });
+      return result.error || result.data !== true ? send({ message: "Confira a inspeção e a regra fiscal homologada para retorno sem entrega." },
+        result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
+    }
+    if (item.action === "schedule_cash_delivery") {
+      const result = await db.rpc("schedule_representative_kit_cash_delivery", { p_order: item.orderId, p_day: item.deliveryOn });
+      return result.error || result.data !== true ? send({ message: "Confira a data e a situação fiscal do pedido." },
+        result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
+    }
     if (item.action === "collection") {
       const result = await db.rpc("manage_representative_kit_collection", {
         p_order: item.orderId, p_action: item.operation, p_evidence: item.evidence
       });
+      if (result.error?.code === "23514" && result.error.message === "kit_mdfe_required")
+        return send({ message: "Registre a conferência do MDF-e autorizado antes de registrar a saída." },409);
       return result.error || !result.data ? send({ message: "Confira a entrega e seu estado fiscal." },
         result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
     }

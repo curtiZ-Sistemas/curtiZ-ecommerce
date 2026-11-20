@@ -1,6 +1,6 @@
 "use client";
 
-import { formatBRL, parseBRLToCents } from "@curtiz/domain";
+import { formatBRL } from "@curtiz/domain";
 import { type FormEvent, useState } from "react";
 import { z } from "zod";
 
@@ -12,9 +12,6 @@ const routeResponse = z.object({ rows: z.array(z.object({
 type DeliveryRoute = z.infer<typeof routeResponse>["rows"][number];
 
 const api = "/api/operations/representative-kits";
-const paymentFields = [
-  ["cash", "Dinheiro"], ["pix", "Pix"], ["debit_card", "Débito"], ["credit_card", "Crédito"]
-] as const;
 const dateFormat = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" });
 
 export function RepresentativeKitDeliveryRoutes() {
@@ -57,10 +54,10 @@ export function RepresentativeKitDeliveryRoutes() {
     void run(async () => {
       await mutate({ action: "create_route", route: {
         name: value("name"), origin_postal_code: value("origin"), destination_from: value("from"),
-        destination_through: value("through"), delivery_cents: parseBRLToCents(value("fee")),
+        destination_through: value("through"), delivery_cents: 0,
         estimated_days: Number(value("days")), valid_until: `${value("validUntil")}T23:59:59-03:00`,
-        point_terminal_id: value("terminal"), verified_evidence: value("evidence"),
-        bling_method_ids: Object.fromEntries(paymentFields.map(([name]) => [name, value(name)]))
+        point_terminal_id: null, verified_evidence: value("evidence"),
+        bling_method_ids: value("cash") ? { cash: value("cash") } : {}
       } });
       form.reset();
       await readRoutes();
@@ -99,13 +96,10 @@ export function RepresentativeKitDeliveryRoutes() {
         <label>CEP de saída <input name="origin" inputMode="numeric" pattern="3[0-9]{7}" required /></label>
         <label>Primeiro CEP atendido <input name="from" inputMode="numeric" pattern="3[0-9]{7}" required /></label>
         <label>Último CEP atendido <input name="through" inputMode="numeric" pattern="3[0-9]{7}" required /></label>
-        <label>Taxa de entrega em reais <input name="fee" inputMode="decimal" placeholder="0,00" required /></label>
+        <p>Entrega sem taxa</p>
         <label>Prazo em dias <input name="days" type="number" min={0} max={60} required /></label>
         <label>Válida até <input name="validUntil" type="date" required /></label>
-        <label>ID do terminal Point <input name="terminal" pattern="[A-Za-z0-9_]{4,80}" required /></label>
-        {paymentFields.map(([name, label]) => <label key={name}>
-          ID no Bling · {label} <input name={name} inputMode="numeric" pattern="[1-9][0-9]{0,14}" required />
-        </label>)}
+        <label>ID no Bling para dinheiro no recebimento <input name="cash" inputMode="numeric" pattern="[1-9][0-9]{0,14}" /></label>
         <label className="wide">Referência da conferência da rota <input name="evidence" minLength={10} maxLength={500} required /></label>
         <button type="submit" className="primary-button" disabled={pending}>Cadastrar rota</button>
       </form>
