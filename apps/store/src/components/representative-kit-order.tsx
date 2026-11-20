@@ -131,9 +131,9 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
     const form = new FormData(event.currentTarget);
     if (pending) return;
     const returningPairs = form.get("returnMode") === "pairs";
-    const pairs = Object.fromEntries(pairOptions.map(option => [
+    const pairs = Object.fromEntries(pairOptions.map((option): [string, number] => [
       readString(option,"sku"), Number(form.get(`pair-${readString(option,"sku")}`))
-    ]).filter(([,quantity]) => Number(quantity)>0));
+    ]).filter(([,quantity]) => quantity > 0));
     if (returningPairs && !Object.keys(pairs).length) {
       setMessage("Informe pelo menos um par para devolver.");
       return;

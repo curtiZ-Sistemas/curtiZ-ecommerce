@@ -110,8 +110,8 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
         ...(action === "confirm_pickup" ? { pickupReference: form.get("pickupReference") } : {}),
         ...(action === "receive" ? { invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey"),
           documentOrigin: form.get("documentOrigin"), restockQuantity: Number(form.get("restockQuantity")),
-          ...(pairs.length ? { restockPairs: Object.fromEntries(pairs.map(([sku]) =>
-            [sku,Number(form.get(`restock-${sku}`))]).filter(([,quantity]) => Number(quantity)>0)) } : {}),
+          ...(pairs.length ? { restockPairs: Object.fromEntries(pairs.map(([sku]): [string, number] =>
+            [sku,Number(form.get(`restock-${sku}`))]).filter(([,quantity]) => quantity > 0)) } : {}),
           refundInCents: Number(form.get("refundInCents")), inspectionReference: form.get("inspectionReference") } : {}) };
     try {
       const response = await fetch("/api/operations/representative-kits", {
