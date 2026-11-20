@@ -22,6 +22,12 @@ const xml = () => returnTestXml().replaceAll(returnTestKey, key)
   .replace("<uCom>", "<CFOP>5102</CFOP><uCom>").replaceAll("<vDesc>10.00</vDesc>", "<vDesc>0.00</vDesc>")
   .replace("<vNF>12.00</vNF>", "<vNF>22.00</vNF>");
 
+const ownDeliveryKey = key.slice(0, 22) + "003" + key.slice(25);
+const ownDeliveryXml = () => xml().replaceAll(key, ownDeliveryKey).replace("<serie>2</serie>", "<serie>3</serie>")
+  .replaceAll("<vFrete>2.00</vFrete>", "<vFrete>0.00</vFrete>")
+  .replace("<vNF>22.00</vNF>", "<vNF>20.00</vNF>")
+  .replace("</infNFe>", "<transp><modFrete>3</modFrete></transp></infNFe>");
+
 describe("Bling authorized MG resale invoice", () => {
   it("validates an authorized synthetic business resale document and returns its protocol", () => {
     expect(readBlingAuthorizedResaleXml(xml(), key, expected)).toMatchObject({
@@ -45,6 +51,16 @@ describe("Bling authorized MG resale invoice", () => {
 
   it("does not treat a homologation XML as a production authorization", () => {
     expect(() => readBlingAuthorizedResaleXml(xml(), key, { ...expected, environment: 1 })).toThrow();
+  });
+
+  it("requires sender-owned transport and zero freight for the series 003 sale", () => {
+    const ownDelivery = { ...expected, series: 3, shippingInCents: 0, totalInCents: 2000,
+      items: expected.items.map(item => ({ ...item, shippingInCents: 0 })) };
+    expect(readBlingAuthorizedResaleXml(ownDeliveryXml(), ownDeliveryKey, ownDelivery)).toMatchObject({ shippingInCents: 0 });
+    expect(() => readBlingAuthorizedResaleXml(ownDeliveryXml().replace("<modFrete>3</modFrete>", "<modFrete>9</modFrete>"),
+      ownDeliveryKey, ownDelivery)).toThrow();
+    expect(() => readBlingAuthorizedResaleXml(ownDeliveryXml().replace("<transp><modFrete>3</modFrete></transp>", ""),
+      ownDeliveryKey, ownDelivery)).toThrow();
   });
 
   it("checks a distinct delivery address without changing the official fiscal recipient", () => {
@@ -74,6 +90,33 @@ describe("authorized resale returns", () => {
     expect(readBlingAuthorizedResaleReturnXml(returnXml(),returnKey,xml(),returnExpected)).toMatchObject({
       key: returnKey, protocol: "000000000000001", totalInCents: 1100
     });
+  });
+  it("requires series 004 for own returns of series 003 sales", () => {
+    const ownReturnKey = returnKey.slice(0, 22) + "004" + returnKey.slice(25);
+    const issuedReturn = returnXml().replaceAll(returnKey, ownReturnKey).replaceAll(key, ownDeliveryKey)
+      .replace("<serie>3</serie>", "<serie>4</serie>").replaceAll("<vFrete>1.00</vFrete>", "<vFrete>0.00</vFrete>")
+      .replace("<vNF>11.00</vNF>", "<vNF>10.00</vNF>");
+    const revised = { ...returnExpected, originalKey: ownDeliveryKey, refundInCents: 1000 };
+    expect(readBlingAuthorizedResaleReturnXml(issuedReturn, ownReturnKey, ownDeliveryXml(), revised)).toMatchObject({ key: ownReturnKey });
+    expect(() => readBlingAuthorizedResaleReturnXml(issuedReturn.replaceAll(ownReturnKey, returnKey).replace("<serie>4</serie>", "<serie>3</serie>"),
+      returnKey, ownDeliveryXml(), revised)).toThrow();
+  });
+  it("matches an individual pair against its exact original SKU and fiscal price", () => {
+    const ownReturnKey = returnKey.slice(0, 22) + "004" + returnKey.slice(25);
+    const issuedReturn = returnXml().replaceAll(returnKey, ownReturnKey).replaceAll(key, ownDeliveryKey)
+      .replace("<serie>3</serie>", "<serie>4</serie>").replaceAll("<vFrete>1.00</vFrete>", "<vFrete>0.00</vFrete>")
+      .replace("<vNF>11.00</vNF>", "<vNF>10.00</vNF>");
+    const original = ownDeliveryXml().replace(/<det nItem="1">[\s\S]*?<\/det>/u, line =>
+      line + line.replace('nItem="1"', 'nItem="2"').replace("TEST-PAIR", "SECOND-PAIR"))
+      .replace("<vProd>20.00</vProd><vFrete>", "<vProd>40.00</vProd><vFrete>")
+      .replace("<vNF>20.00</vNF>", "<vNF>40.00</vNF>");
+    const selected = { ...returnExpected, returnKitQuantity: undefined, originalKey: ownDeliveryKey,
+      refundInCents: 1000, returnedPairs: [{ sku: "TEST-PAIR", quantity: 1 }] };
+    expect(readBlingAuthorizedResaleReturnXml(issuedReturn, ownReturnKey, original, selected)).toMatchObject({ key: ownReturnKey });
+    expect(() => readBlingAuthorizedResaleReturnXml(issuedReturn, ownReturnKey, original,
+      { ...selected, returnedPairs: [{ sku: "SECOND-PAIR", quantity: 1 }] })).toThrow();
+    expect(() => readBlingAuthorizedResaleReturnXml(issuedReturn, ownReturnKey, original,
+      { ...selected, returnedPairs: [{ sku: "TEST-PAIR", quantity: 2 }] })).toThrow();
   });
   it.each([
     ["<cStat>100</cStat>","<cStat>204</cStat>"], ["<CFOP>1202</CFOP>","<CFOP>2202</CFOP>"],

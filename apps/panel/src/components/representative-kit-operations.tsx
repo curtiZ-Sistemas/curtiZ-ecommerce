@@ -5,6 +5,12 @@ import { useState, type FormEvent } from "react";
 
 type Row = Record<string, unknown>;
 const field = (row: Row,key: string) => typeof row[key] === "string" ? row[key] : "";
+function requestedPairs(row: Row): [string,number][] {
+  const selection = row.requestedPairs;
+  if (!selection || typeof selection !== "object" || Array.isArray(selection)) return [];
+  return Object.entries(selection as Row).filter((entry): entry is [string,number] =>
+    typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1]>0);
+}
 function DeliveryAddress({ value }: { value: unknown }) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const address = value as Row;
@@ -86,8 +92,17 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
     const form = new FormData(event.currentTarget);
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : "";
+    const pairs = requestedPairs(row);
     const body = mode === "fiscal"
       ? { action: "approve_invoice", orderId: field(row,"orderId"), hash: field(row,"draftHash"), evidence: form.get("evidence") }
+      : action === "register_undelivered_return"
+        ? { action, orderId: field(row,"orderId"), invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey"),
+          restockQuantity: Number(form.get("restockQuantity")), evidence: form.get("evidence") }
+      : action === "schedule_cash_delivery"
+        ? { action, orderId: field(row,"orderId"), deliveryOn: form.get("deliveryOn") }
+      : action === "confirm_mdfe"
+        ? { action, orderId: field(row,"orderId"), accessKey: form.get("accessKey"),
+          protocol: form.get("protocol"), evidence: form.get("evidence") }
       : { action, returnId: field(row,"id"),
         ...(action === "collection_refund" && row.collectionMethod === "cash" ? { cashEvidence: form.get("cashEvidence") } : {}),
         ...(action === "approve" || action === "reject" ? { instructions: form.get("instructions") } : {}),
@@ -95,6 +110,8 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
         ...(action === "confirm_pickup" ? { pickupReference: form.get("pickupReference") } : {}),
         ...(action === "receive" ? { invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey"),
           documentOrigin: form.get("documentOrigin"), restockQuantity: Number(form.get("restockQuantity")),
+          ...(pairs.length ? { restockPairs: Object.fromEntries(pairs.map(([sku]): [string, number] =>
+            [sku,Number(form.get(`restock-${sku}`))]).filter(([,quantity]) => quantity > 0)) } : {}),
           refundInCents: Number(form.get("refundInCents")), inspectionReference: form.get("inspectionReference") } : {}) };
     try {
       const response = await fetch("/api/operations/representative-kits", {
@@ -112,9 +129,12 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
     {rows?.length === 0 && <p role="status">Nenhum registro nesta fila.</p>}
     {rows?.map(row => {
       const state = field(row,"state");
+      const pairs = requestedPairs(row);
       return <article key={field(row,mode === "returns" ? "id" : "orderId")} className="op-surface">
         <h3>{field(row,"productName")}</h3>
-        <p>{field(row,"sku") ? `${field(row,"sku")} · ` : ""}{typeof row.quantity === "number" ? row.quantity : ""} kits</p>
+        {pairs.length ? <ul>{pairs.map(([sku,quantity]) =>
+          <li key={sku}>{sku} · {quantity} {quantity === 1 ? "par" : "pares"}</li>)}</ul>
+          : <p>{field(row,"sku") ? `${field(row,"sku")} · ` : ""}{typeof row.quantity === "number" ? row.quantity : ""} kits</p>}
         {mode === "fiscal" ? <>
           <p>{row.invoiceAuthorized ? "NF-e autorizada"
             : row.draftApproved ? "Rascunho conferido" : typeof row.invoiceId === "number" ? "Aguardando revisão fiscal" : "Aguardando Bling"}</p>
@@ -127,7 +147,8 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
             <label>Referência da conferência fiscal <input required name="evidence" minLength={10} maxLength={200} /></label>
             <button type="submit" disabled={busy}>Aprovar rascunho revisado</button>
           </form>}
-        </> : mode === "collection" ? <CollectionControls row={row} busy={busy} run={collectionAction} /> : <>
+        </> : mode === "collection" ? <CollectionControls row={row} busy={busy} run={collectionAction}
+          submitProof={event => void submit(event,row)} /> : <>
           <p>{states[state] ?? "Em análise"}</p>
           <p>{field(row,"reason")}</p>
           {state === "approved" && <DeliveryAddress value={row.deliveryAddress} />}
@@ -156,7 +177,14 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
             </label>
             <label>ID no Bling <input required name="invoiceId" type="number" min="1" /></label>
             <label>Chave da NF-e de devolução <input required name="invoiceKey" pattern="31[0-9]{42}" maxLength={44} inputMode="numeric" /></label>
-            <label>Kits em condição de revenda <input required name="restockQuantity" type="number" min="0" max={typeof row.quantity === "number" ? row.quantity : 99} /></label>
+            {pairs.length ? <fieldset>
+              <legend>Pares em condição de revenda</legend>
+              {pairs.map(([sku,quantity]) => <label key={sku}>{sku}
+                <input name={`restock-${sku}`} type="number" min={0} max={quantity} defaultValue={0} required />
+              </label>)}
+            </fieldset> : <label>Kits em condição de revenda
+              <input required name="restockQuantity" type="number" min="0" max={typeof row.quantity === "number" ? row.quantity : 99} />
+            </label>}
             <label>Estorno em centavos <input required name="refundInCents" type="number" min="1" /></label>
             <label>Referência da inspeção <input required name="inspectionReference" minLength={10} maxLength={200} /></label>
             <button type="submit" value="receive" disabled={busy}>Registrar recebimento</button>
@@ -183,7 +211,8 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
   </section>;
 }
 
-function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
+function CollectionControls({ row, busy, run, submitProof }: { row: Row; busy: boolean;
+  submitProof: (event: FormEvent<HTMLFormElement>) => void;
   run: (orderId: string, operation: string, evidence?: FormDataEntryValue | null) => Promise<void> }) {
   const orderId = field(row,"orderId");
   const method = field(row,"collectionMethod");
@@ -197,9 +226,13 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
   const canConfirmCash = awaitingReceipt && method === "cash" && (dispatched || delivered) && !row.cancellationRequested;
   const canReportFailure = (awaitingReceipt || paid && !method) && dispatched && !row.cancellationRequested;
   const waitingTerminal = row.pointStarted === true && !["failed","expired","canceled"].includes(pointStatus);
-  const operation = (awaitingReceipt || paid) && !row.cancellationRequested
+  const operation = (awaitingReceipt || paid) && !row.cancellationRequested && !row.undeliveredReturnRecorded
     ? !dispatched && !delivered && row.invoiceAuthorized === true ? "dispatch" : null
     : awaitingReceipt && shipment === "delayed" && row.invoiceCancelled ? "returned_unpaid" : null;
+  const canDispatch = row.mdfeRequired === false || row.mdfeVerified === true;
+  const awaitingMdfe = operation === "dispatch" && !canDispatch;
+  const canCancelBeforeDispatch = operation === "dispatch" && awaitingReceipt && shipment !== "delayed";
+  const collectionDueOn = field(row,"collectionDueOn");
 
   return <>
     <DeliveryAddress value={row.deliveryAddress} />
@@ -208,7 +241,31 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
       && <p>Valor informado {formatBRL(row.cashTenderedInCents)} · {row.cashChangeInCents ? `Troco ${formatBRL(row.cashChangeInCents)}` : "Sem troco"}</p>}
     <p role="status">{delivered && paid ? "Pedido concluído" : delivered ? "Entrega confirmada"
       : dispatched ? "Em entrega" : shipment === "delayed" ? "Entrega pendente"
-        : row.invoiceAuthorized ? "Pronto para entrega" : "Aguardando NF-e autorizada"}</p>
+        : awaitingMdfe ? "Aguardando conferência do MDF-e"
+          : row.invoiceAuthorized ? "Pronto para entrega"
+            : row.canScheduleCash === true && !collectionDueOn ? "Aguardando agendamento da entrega"
+              : "Aguardando NF-e autorizada"}</p>
+    {row.canScheduleCash === true ? <form onSubmit={submitProof}>
+      <label>Data da entrega <input name="deliveryOn" type="date" defaultValue={collectionDueOn} required /></label>
+      <button type="submit" value="schedule_cash_delivery" disabled={busy}>Salvar data da entrega</button>
+    </form> : collectionDueOn && <p>Entrega agendada para {collectionDueOn.split("-").reverse().join("/")}</p>}
+    {awaitingMdfe && row.mdfeRequired === true && <form onSubmit={submitProof}>
+      <p>Na SEFAZ, confira se o MDF-e está autorizado e inclui a NF-e deste pedido, a rota e o veículo da saída.</p>
+      <label>Chave do MDF-e <input name="accessKey" required inputMode="numeric" pattern="31[0-9]{18}58[0-9]{22}" maxLength={44} /></label>
+      <label>Protocolo de autorização <input name="protocol" required inputMode="numeric" pattern="[0-9]{15}" maxLength={15} /></label>
+      <label>Referência da conferência na SEFAZ <input name="evidence" required minLength={10} maxLength={200} /></label>
+      <button type="submit" value="confirm_mdfe" disabled={busy}>Registrar MDF-e conferido</button>
+    </form>}
+    {shipment === "delayed" && (awaitingReceipt || paid) && row.invoiceAuthorized === true && !row.cancellationRequested && (
+      row.undeliveredReturnRecorded ? <p>Retorno físico registrado. Aguardando validação do XML.</p> : <form onSubmit={submitProof}>
+        <label>ID no Bling da NF-e de entrada <input name="invoiceId" type="number" min={1} required /></label>
+        <label>Chave da NF-e série 004 <input name="invoiceKey" inputMode="numeric" pattern="31[0-9]{20}004[0-9]{19}" maxLength={44} required /></label>
+        <label>Kits em condição de revenda <input name="restockQuantity" type="number" min={awaitingReceipt && typeof row.quantity === "number" ? row.quantity : 0}
+          max={typeof row.quantity === "number" ? row.quantity : 99} required /></label>
+        <label>Referência da inspeção do retorno <input name="evidence" minLength={10} maxLength={200} required /></label>
+        <button type="submit" value="register_undelivered_return" disabled={busy}>Registrar retorno físico sem entrega</button>
+      </form>
+    )}
     <p>{paid ? "Pagamento confirmado" : pointStatus ? pointStates[pointStatus] : "Pagamento pendente"}</p>
     {awaitingReceipt && (dispatched || delivered) && method !== "cash" && !row.cancellationRequested && (
       <div>
@@ -220,7 +277,8 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
           onClick={() => void run(orderId,"cancel")}>Cancelar cobrança no terminal</button>}
       </div>
     )}
-    {(operation || canConfirmDelivery || canConfirmCash || canReportFailure && !waitingTerminal) && (
+    {((operation && !awaitingMdfe) || canCancelBeforeDispatch
+      || canConfirmDelivery || canConfirmCash || canReportFailure && !waitingTerminal) && (
       <form onSubmit={event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
@@ -228,13 +286,14 @@ function CollectionControls({ row, busy, run }: { row: Row; busy: boolean;
         if (submitter instanceof HTMLButtonElement) void run(orderId,submitter.value,form.get("evidence"));
       }}>
         <label>Referência da operação <input name="evidence" required minLength={10} maxLength={200} /></label>
-        {operation && <button type="submit" value={operation} disabled={busy}>
+        {operation && !awaitingMdfe && <button type="submit" value={operation} disabled={busy}>
           {operation === "dispatch" ? "Registrar saída para entrega"
             : "Confirmar retorno ao estoque"}
         </button>}
         {canConfirmDelivery && <button type="submit" value="confirm_delivery" disabled={busy}>Confirmar entrega</button>}
         {canConfirmCash && <button type="submit" value="cash_received" disabled={busy}>Confirmar pagamento em dinheiro</button>}
-        {operation === "dispatch" && awaitingReceipt && <button type="submit" value="cancel_before_dispatch" disabled={busy}>Solicitar cancelamento antes da entrega</button>}
+        {canCancelBeforeDispatch
+          && <button type="submit" value="cancel_before_dispatch" disabled={busy}>Solicitar cancelamento antes da entrega</button>}
         {canReportFailure && !waitingTerminal
           && <button type="submit" value="delivery_failed" disabled={busy}>Registrar entrega sem recebimento</button>}
       </form>

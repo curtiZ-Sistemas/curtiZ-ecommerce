@@ -78,10 +78,11 @@ async function commercialKitFiscalMirror(db: SupabaseClient, job: UnknownRecord,
     recipientIsCompany: true, stateRegistrationActive: true, recipientTaxRegime: buyerProfile === "MG01" ? "normal" : "simples",
     goodsPurpose: "resale", saleDate: issueDate
   });
-  if (rule.series !== 2 || !rule.external_nature_id) throw scopeError();
+  if ((rule.series !== 2 && rule.series !== 3) || !rule.external_nature_id) throw scopeError();
 
   const { commercial, expanded } = await commercialKitFiscalLines(db, job);
   const freight = readNumber(job, "shippingInCents");
+  if (rule.series === 3 && freight !== 0) throw scopeError();
   const amounts = expanded.map(item => item.quantity * item.unitPriceInCents);
   const allocations = freight === 0 ? amounts.map(() => 0) : allocateBlingFiscalCents(freight, amounts);
   const base = configuration.creditBase;
@@ -163,12 +164,17 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
   const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo",
     year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const { issuer, natureId, rule, commercial, mirror, freight } = await commercialKitFiscalMirror(db, job, date);
+  if (rule.series !== 3) throw scopeError();
   const buyerName = readString(context, "buyerName");
   const collection = Boolean(readString(job, "collectionMethod"));
   const methodId = positiveId(collection ? job.collectionBlingMethod : environment.BLING_PAYMENT_METHOD_ID);
   if (!methodId || !/^\d{14}$/u.test(document) || !/^\d{2,14}$/u.test(registration) || address.state !== "MG" || billing.state !== "MG") throw scopeError();
   let collectionDueDate: string | undefined;
-  if (collection) {
+  const scheduledCashDate = readString(job, "collectionDueOn");
+  if (scheduledCashDate) {
+    if (job.collectionMethod !== "cash" || !/^\d{4}-\d{2}-\d{2}$/u.test(scheduledCashDate)) throw scopeError();
+    collectionDueDate = scheduledCashDate;
+  } else if (collection) {
     const days = readNumber(job, "deliveryDays", -1);
     const submitted = Date.parse(readString(job, "createdAt"));
     if (!Number.isInteger(days) || days < 0 || days > 60 || !Number.isFinite(submitted)) throw scopeError();
@@ -189,9 +195,12 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     quantity: item.quantity, unit_price: item.unitPriceInCents / 100,
     total: (item.unitPriceInCents * item.quantity) / 100, discount_amount: 0
   }));
-  const claim = (operation: string, hash: string | null = null) => kitCall(db, "claim_representative_kit_bling_write", {
-    p_order: orderId, p_operation: operation, p_expected_hash: hash
-  });
+  const claim = (operation: string, hash: string | null = null) => {
+    const args = { p_order: orderId, p_operation: operation, p_expected_hash: hash };
+    return scheduledCashDate
+      ? kitCall(db, "claim_representative_kit_bling_write_for_delivery", { ...args, p_collection_due_on: scheduledCashDate })
+      : kitCall(db, "claim_representative_kit_bling_write", args);
+  };
   const linkedSale = positiveId(context.saleId);
   let saleId = linkedSale ?? await findBlingOrder(provider, reference);
   if (!saleId) {
@@ -235,11 +244,13 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     ...item, sku: blingExternalSku(item.sku,item.variantId)
   })), {
     document, icmsTaxpayer: true, businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
-    totalInCents: mirror.totalInCents, shippingInCents: freight, discountInCents: 0, additionalInCents: 0
+    totalInCents: mirror.totalInCents, shippingInCents: freight, discountInCents: 0, additionalInCents: 0,
+    freightMode: 3
   }, true, async () => await kitCall(db,"read_representative_kit_bling_order",{ p_order: orderId }) !== null);
   const preview = row(row(await provider.request(`/nfe/${draft}`)).data);
   if (Number(preview.id) !== draft || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series
-    || Number(row(preview.naturezaOperacao).id) !== natureId || !invoiceMatchesFiscalLines(preview, mirror.items)) throw scopeError();
+    || Number(row(preview.naturezaOperacao).id) !== natureId || !invoiceMatchesFiscalLines(preview, mirror.items)
+    || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
   const draftHash = await blingFiscalMirrorHash({ orderId, draft, competence: date.slice(0,7), preview, mirror, origin: job.originPostalCode });
   if (await kitCall(db, "record_representative_kit_bling_draft", { p_order: orderId, p_invoice: draft, p_hash: draftHash }) !== true) throw scopeError();
   if (environment.BLING_INVOICE_SEND_ENABLED !== "true" || environment.BLING_INVOICE_TRANSMISSION_MODE !== "production"

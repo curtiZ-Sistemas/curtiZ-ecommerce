@@ -1,8 +1,8 @@
 "use client";
 
 import { type ComponentProps, useEffect, useRef, useState } from "react";
-import { formatPostalCode } from "@/lib/personal-data";
-import { createPostalCodeLookup, type PostalAddress } from "@/lib/postal-code-lookup";
+import { formatPostalCode } from "../lib/personal-data";
+import { createPostalCodeLookup, type PostalAddress } from "../lib/postal-code-lookup";
 
 type Props = ComponentProps<"input"> & { lookupInitial?: boolean; replaceUntouchedOnChange?: boolean };
 

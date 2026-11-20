@@ -26,6 +26,7 @@ const input = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status"), orderId }).strict(),
   z.object({ action: z.literal("list") }).strict(),
   z.object({ action: z.literal("return"), orderId, quantity: z.number().int().min(1).max(99),
+    pairs: z.record(z.string().min(1).max(60),z.number().int().min(1).max(999)).optional(),
     reason: z.string().trim().min(5).max(500), idempotencyKey: z.string().uuid() }).strict(),
   z.object({ action: z.literal("cancel"), orderId }).strict()
 ]);
@@ -63,9 +64,13 @@ export async function POST(request: Request) {
       return reply({ ok: true, orders }, 200);
     }
     if (data.action === "return") {
-      const request = await kitRecord(db, "request_representative_kit_return", {
-        p_actor: user.id, p_order: data.orderId, p_quantity: data.quantity, p_reason: data.reason, p_key: data.idempotencyKey
-      });
+      if (data.pairs && (data.quantity !== 1 || Object.keys(data.pairs).length < 1 || Object.keys(data.pairs).length > 6)) {
+        return reply({ message: "Selecione os pares que deseja devolver." }, 400);
+      }
+      const details = { p_actor: user.id, p_order: data.orderId, p_reason: data.reason, p_key: data.idempotencyKey };
+      const request = data.pairs
+        ? await kitRecord(db, "request_representative_kit_pair_return", { ...details, p_pairs: data.pairs })
+        : await kitRecord(db, "request_representative_kit_return", { ...details, p_quantity: data.quantity });
       return reply({ ok: true, request }, 200);
     }
     if (data.action === "reserve_collection") {

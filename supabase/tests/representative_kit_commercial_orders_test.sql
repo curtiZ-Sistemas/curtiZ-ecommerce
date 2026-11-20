@@ -78,8 +78,9 @@ insert into private.representative_resale_fiscal_rule_versions
 select rule_version,gen_random_uuid(),1,'synthetic issuer',public.read_representative_resale_product_fingerprint(variant),
   'MG','MG','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day',
   '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,
-    "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic return XML"}},
-    "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":2,"document_model":55,"cfop":"5102",
+    "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic return XML"},
+      "undelivered_return":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic undelivered return XML"}},
+    "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":3,"document_model":55,"cfop":"5102",
     "csosn":"102","icms_rate":0,"pis_cst":"49","cofins_cst":"49","ipi_cst":"99","ipi_cenq":"999",
     "pis_rate":0,"cofins_rate":0,"ipi_rate":0,"natures":[{"final_consumer":false,"external_nature_id":123}]}}'
 from commercial_kit_fixture;
@@ -309,27 +310,27 @@ select is((select jsonb_object_agg(size,pairs) from private.representative_kit_g
 select is((select jsonb_object_agg(size,pairs) from private.representative_kit_grade_templates() where code='upper_restock'),
   '{"37":4,"38":4,"39":4}'::jsonb,'upper restock matches the approved sizes');
 
-insert into private.representative_kit_collection_routes(name,origin_postal_code,destination_from,destination_through,
-  delivery_cents,estimated_days,bling_method_ids,point_terminal_id,verified_evidence,valid_until)
-values('Synthetic delivery','35520000','30110000','30110999',1300,2,
-  '{"cash":11,"pix":22,"debit_card":33,"credit_card":44}','SYNTHETIC_POINT','Synthetic verified local delivery',now()+interval '1 day');
 alter table commercial_kit_fixture add column own_quote uuid, add column own_key uuid default gen_random_uuid();
 update commercial_kit_fixture set own_quote=(public.quote_representative_kit_own_delivery(actor,variant,null,1,address,
-  '35520000',false)->>'id')::uuid;
+  null,false)->>'id')::uuid;
+select ok((select own_quote is not null from commercial_kit_fixture),'the prepaid quote needs no route or configured origin');
 create function pg_temp.reserve_own_kit()
 returns jsonb language sql as $$
   select public.reserve_representative_kit_own_delivery(actor,variant,null,1,own_quote,address,own_key,'35520000')
     from commercial_kit_fixture;
 $$;
-update private.representative_kit_collection_routes set delivery_cents=1400 where name='Synthetic delivery';
-select throws_ok($$select pg_temp.reserve_own_kit()$$,'23514','kit_own_delivery_quote_changed',
-  'an own-delivery rate change rejects the reservation');
-update private.representative_kit_collection_routes set delivery_cents=1300 where name='Synthetic delivery';
-select is(pg_temp.reserve_own_kit()->>'amountInCents','6300','the prepaid order uses the own-delivery rate');
+select is(pg_temp.reserve_own_kit()->>'amountInCents','5000','the prepaid order includes no delivery charge');
 select is((select shipping_snapshot->>'provider' from private.representative_kit_orders
   where id=(pg_temp.reserve_own_kit()->>'orderId')::uuid),'own_delivery','the prepaid order preserves the delivery provider');
+select ok((select own_delivery_route_id is null and shipping_snapshot->>'estimatedDays' is null
+  and shipping_snapshot->'deliveryAddress'->>'state'='MG' from private.representative_kit_orders
+  where id=(pg_temp.reserve_own_kit()->>'orderId')::uuid),'the order stores the MG address without a route or estimated date');
 select is((select public.request_representative_kit_payment_cancellation(actor,(pg_temp.reserve_own_kit()->>'orderId')::uuid)->>'state'
   from commercial_kit_fixture),'cancelled','unused prepaid own-delivery stock can be released');
+insert into private.representative_kit_collection_routes(name,origin_postal_code,destination_from,destination_through,
+  delivery_cents,estimated_days,bling_method_ids,point_terminal_id,verified_evidence,valid_until)
+values('Synthetic delivery','35520000','30110000','30110999',1300,2,
+  '{"cash":11,"pix":22,"debit_card":33,"credit_card":44}','SYNTHETIC_POINT','Synthetic verified local delivery',now()+interval '1 day');
 alter table commercial_kit_fixture add column collection_quote uuid, add column collection_key uuid default gen_random_uuid();
 update commercial_kit_fixture set collection_quote=(public.quote_representative_kit_collection(actor,variant,null,1,address,
   '35520000')->>'id')::uuid;
@@ -391,7 +392,8 @@ insert into private.representative_resale_fiscal_rule_versions(
   id,rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,icms_status,
   final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
 select f.grade_rule,gen_random_uuid(),1,r.issuer_reference,public.read_representative_kit_grade_fingerprint(f.grade_kit,'standard'),
-  r.origin_state,r.destination_state,r.person_type,r.icms_status,r.final_consumer,r.purpose,r.valid_from,r.valid_until,r.fiscal_parameters
+  r.origin_state,r.destination_state,r.person_type,r.icms_status,r.final_consumer,r.purpose,r.valid_from,r.valid_until,
+  r.fiscal_parameters || '{"cashAtDelivery":{"blingPaymentMethodId":"11","homologationEvidence":"Synthetic cash XML"}}'::jsonb
 from private.representative_resale_fiscal_rule_versions r join commercial_kit_fixture f on r.id=f.rule_version;
 insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
 select grade_rule,'Synthetic grade approver','Synthetic grade evidence' from commercial_kit_fixture;
@@ -435,20 +437,36 @@ select is((select public.request_representative_kit_payment_cancellation(actor,(
 select is((select sum(i.available_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
   join commercial_kit_fixture f on v.product_id=f.grade_product),30,'all of the original grade stock is restored');
 
-alter table commercial_kit_fixture add column delivery_order uuid;
+alter table commercial_kit_fixture add column delivery_order uuid, add column pair_return uuid;
+update private.representative_kit_collection_routes set closed_at=now() where name='Synthetic delivery';
 update commercial_kit_fixture set grade_key=gen_random_uuid(),grade_quote=(public.quote_representative_kit_own_delivery(
-  actor,grade_kit,'standard',1,address,'35520000',true)->>'id')::uuid;
-update commercial_kit_fixture set delivery_order=(pg_temp.reserve_grade_cash()->>'orderId')::uuid;
-update private.representative_kit_fulfillment
-  set bling_sale_id=912,bling_invoice_id=913,invoice_access_key='3126111234567800019555002'||repeat('4',19),
-    invoice_protocol='100000000000004',invoice_xml_sha256=repeat('b',64),
-    invoice_confirmed_at=clock_timestamp(),shipment_status='dispatched',shipment_rank=4
-  where order_id=(select delivery_order from commercial_kit_fixture);
+  actor,grade_kit,'standard',1,address,null,true)->>'id')::uuid;
+update commercial_kit_fixture set delivery_order=(public.reserve_representative_kit_own_collection(
+  actor,grade_kit,'standard',1,grade_quote,address,grade_key,null,'cash',40000)->>'orderId')::uuid;
+select ok((select o.collection_route_id is null and o.collection_method='cash' and o.collection_bling_method=11
+    and o.shipping_cents=0 and o.shipping_snapshot->>'estimatedDays' is null
+  from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.delivery_order),
+  'cash at delivery uses the rule and the MG address without a route');
+select is((select private.representative_kit_fiscal_ready(o)
+  from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.delivery_order),
+  false,'address-only cash billing waits for an operating date');
 insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
 select f.outsider,p.id,true,'Synthetic delivery operator',f.outsider
   from public.permissions p cross join commercial_kit_fixture f where p.code='orders.update_operational_status';
 select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true)
   from commercial_kit_fixture;
+select is((select public.schedule_representative_kit_cash_delivery(delivery_order,current_date+1)
+  from commercial_kit_fixture),true,'an authorized operator schedules cash delivery');
+select is((select private.representative_kit_fiscal_ready(o)
+  from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.delivery_order),
+  true,'the delivery date enables the usual billing queue');
+select is((select public.claim_representative_kit_bling_write_for_delivery(delivery_order,'bling_sale',null,current_date+2)
+  from commercial_kit_fixture),false,'a stale delivery snapshot cannot claim a billing write');
+update private.representative_kit_fulfillment
+  set bling_sale_id=912,bling_invoice_id=913,invoice_access_key='3126111234567800019555003'||repeat('4',19),
+    invoice_protocol='100000000000004',invoice_xml_sha256=repeat('b',64),
+    invoice_confirmed_at=clock_timestamp(),shipment_status='dispatched',shipment_rank=4
+  where order_id=(select delivery_order from commercial_kit_fixture);
 select is((select public.manage_representative_kit_collection(delivery_order,'cash_received','Synthetic cash receipt')->>'ok'
   from commercial_kit_fixture),'true','cash can be confirmed independently of delivery');
 select is((select f.shipment_status from private.representative_kit_fulfillment f join commercial_kit_fixture t
@@ -457,6 +475,100 @@ select is((select public.manage_representative_kit_collection(delivery_order,'co
   from commercial_kit_fixture),'true','authorized staff can confirm the physical delivery');
 select is((select f.shipment_status from private.representative_kit_fulfillment f join commercial_kit_fixture t
   on f.order_id=t.delivery_order),'delivered','both confirmations complete the order');
+
+select throws_ok($$select public.request_representative_kit_pair_return(actor,delivery_order,
+  '{"TEST-GRADE-35":3}','Synthetic excess return',gen_random_uuid()) from commercial_kit_fixture$$,
+  '23514','kit_return_unavailable','a pair request cannot exceed the sold quantity for its SKU');
+update commercial_kit_fixture set pair_return=(public.request_representative_kit_pair_return(actor,delivery_order,
+  '{"TEST-GRADE-35":1}','Synthetic pair return',gen_random_uuid())->>'id')::uuid;
+select is((select public.manage_representative_kit_return(pair_return,'approve',
+  '{"instructions":"Synthetic approved return"}')->>'state' from commercial_kit_fixture),
+  'approved','the operator approves the selected pair');
+select isnt((select public.manage_representative_kit_return(pair_return,'schedule_pickup',
+  jsonb_build_object('pickupDate',current_date+1)) from commercial_kit_fixture),null::jsonb,'pickup can be scheduled for a pair');
+select isnt((select public.manage_representative_kit_return(pair_return,'confirm_pickup',
+  '{"pickupReference":"Synthetic documented pickup"}') from commercial_kit_fixture),null::jsonb,'pickup evidence is recorded');
+select is((select public.manage_representative_kit_return(pair_return,'receive',jsonb_build_object(
+  'invoiceId',917,'invoiceKey','3126111234567800019555004'||repeat('7',19),'documentOrigin','own_inflow',
+  'restockQuantity',0,'restockPairs','{"TEST-GRADE-34":1}'::jsonb,'refundInCents',3000,
+  'inspectionReference','Synthetic pair inspection')) from commercial_kit_fixture),
+  null::jsonb,'the inspector cannot restock a different SKU');
+select is((select public.manage_representative_kit_return(pair_return,'receive',jsonb_build_object(
+  'invoiceId',917,'invoiceKey','3126111234567800019555004'||repeat('7',19),'documentOrigin','own_inflow',
+  'restockQuantity',0,'restockPairs','{"TEST-GRADE-35":1}'::jsonb,'refundInCents',3000,
+  'inspectionReference','Synthetic pair inspection'))->>'state' from commercial_kit_fixture),
+  'received','the inspected SKU and fiscal reference are recorded together');
+select is((select public.record_representative_kit_return_invoice_lines(pair_return,
+  '3126111234567800019555004'||repeat('7',19),'100000000000009',repeat('e',64),
+  '[{"signature":"synthetic price line","sku":"TEST-GRADE-35","quantity":1,"saleQuantity":2}]')
+  from commercial_kit_fixture),true,'the provider proof verifies the requested SKU and sold quantity');
+select is((select public.manage_representative_kit_return(pair_return,'refund','{}')->>'state'
+  from commercial_kit_fixture),'refund_pending','the fiscal evidence allows the usual cash return workflow');
+select is((select public.prepare_representative_kit_collection_refund(pair_return,'Synthetic confirmed cash return')->>'confirmed'
+  from commercial_kit_fixture),'true','cash return confirmation finalizes inventory without a route');
+select is((select jsonb_object_agg(v.size,i.available_quantity) from public.inventory i
+  join public.product_variants v on v.id=i.variant_id join commercial_kit_fixture f on v.product_id=f.grade_product),
+  '{"34":4,"35":4,"36":2,"37":2,"38":3,"39":4}'::jsonb,'only the inspected variant returns to inventory');
+
+select is((select public.quote_representative_kit_own_delivery(actor,variant,null,1,address,null,true)
+  from commercial_kit_fixture),null::jsonb,'cash approval for a grade cannot authorize a different product');
+update private.representative_kit_collection_routes set closed_at=null where name='Synthetic delivery';
+update private.representative_kit_collection_routes set delivery_cents=0 where name='Synthetic delivery';
+update commercial_kit_fixture set collection_key=gen_random_uuid(),collection_quote=(public.quote_representative_kit_own_delivery(
+  actor,variant,null,1,address,'35520000',true)->>'id')::uuid;
+update commercial_kit_fixture set delivery_order=(pg_temp.reserve_cash_kit(5000)->>'orderId')::uuid;
+update private.representative_kit_fulfillment
+  set bling_sale_id=914,bling_invoice_id=915,invoice_access_key='3126111234567800019555003'||repeat('5',19),
+    invoice_protocol='100000000000005',invoice_xml_sha256=repeat('c',64),
+    invoice_confirmed_at=clock_timestamp(),shipment_status='pending',shipment_rank=0
+  where order_id=(select delivery_order from commercial_kit_fixture);
+select is(private.representative_kit_requires_mdfe('{
+  "originPostalCode":"35524168","address":{"postalCode":"35522001"},
+  "deliveryAddress":{"city":"Nova Serrana","state":"MG","postalCode":"35522001"}}'),false,
+  'a confirmed municipal Nova Serrana delivery can leave without a manifesto');
+select is(private.representative_kit_requires_mdfe('{
+  "originPostalCode":"35524168","address":{"postalCode":"30110100"},
+  "deliveryAddress":{"city":"Nova Serrana","state":"MG","postalCode":"30110100"}}'),true,
+  'a municipality name alone cannot exempt an intermunicipal CEP');
+select is(private.representative_kit_requires_mdfe('{}'::jsonb),true,'an incomplete snapshot requires verification');
+select throws_ok($$select public.manage_representative_kit_collection(delivery_order,'dispatch','Synthetic dispatch attempt')
+  from commercial_kit_fixture$$,'23514','kit_mdfe_required','intermunicipal dispatch requires proof independently from the panel');
+select is((select public.confirm_representative_kit_mdfe(delivery_order,'31261112345678000195580010000000011123456780',
+  '100000000000006','Synthetic SEFAZ consultation') from commercial_kit_fixture),false,'invalid check digit cannot authorize dispatch');
+select is((select public.confirm_representative_kit_mdfe(delivery_order,'31261112345678000195580010000000011123456787',
+  '100000000000006','Synthetic SEFAZ consultation') from commercial_kit_fixture),true,'staff records a manifesto for the authorized NF-e');
+select is((select private.representative_kit_pending_mdfe(delivery_order,'3126111234567800019555003'||repeat('6',19))
+  from commercial_kit_fixture),null::text,'the evidence is bound to the invoice for which it was reviewed');
+select is((select public.manage_representative_kit_collection(delivery_order,'dispatch','Synthetic dispatch after review')->>'ok'
+  from commercial_kit_fixture),'true','matching verified manifesto unlocks the intermunicipal dispatch');
+select is((select private.representative_kit_pending_mdfe(delivery_order,'3126111234567800019555003'||repeat('5',19))
+  from commercial_kit_fixture),null::text,'dispatch consumes the authorization for this order');
+select is((select public.manage_representative_kit_collection(delivery_order,'delivery_failed','Synthetic delivery refusal')->>'ok'
+  from commercial_kit_fixture),'true','the delivery refusal is recorded after circulation');
+select is((select o.cancellation_requested_at from private.representative_kit_orders o join commercial_kit_fixture t
+  on o.id=t.delivery_order),null::timestamptz,'a refusal does not start invoice cancellation');
+select is((select public.manage_representative_kit_collection(delivery_order,'returned_unpaid','Synthetic physical return')
+  from commercial_kit_fixture),null::jsonb,'a physical return alone does not release stock');
+select is((select o.stock_state from private.representative_kit_orders o join commercial_kit_fixture t
+  on o.id=t.delivery_order),'reserved','the stock stays reserved until the fiscal return can be verified');
+
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.outsider,p.id,true,'Synthetic inspection operator',f.outsider
+  from public.permissions p cross join commercial_kit_fixture f where p.code='returns.inspect'
+on conflict (user_id,permission_id) do nothing;
+select is((select public.register_representative_kit_undelivered_return(delivery_order,916,
+  '3126111234567800019555004'||repeat('6',19),1,'Synthetic physical count') from commercial_kit_fixture),
+  true,'the operator can register physically inspected stock with the independent return document');
+select is((select o.stock_state from private.representative_kit_orders o join commercial_kit_fixture t
+  on o.id=t.delivery_order),'reserved','registration alone still does not release stock');
+select is((select public.record_representative_kit_return_invoice(r.id,r.invoice_key,'100000000000008',repeat('d',64))
+  from private.representative_kit_returns r join commercial_kit_fixture t on t.delivery_order=r.order_id),true,
+  'authorized return verification releases the unpaid stock');
+select is((select public.record_representative_kit_return_invoice(r.id,r.invoice_key,'100000000000008',repeat('d',64))
+  from private.representative_kit_returns r join commercial_kit_fixture t on t.delivery_order=r.order_id),true,
+  'the authorized return verifier can replay without creating another stock movement');
+select is((select o.stock_state from private.representative_kit_orders o join commercial_kit_fixture t
+  on o.id=t.delivery_order),'released','the final state reflects the released reservation');
 
 select * from finish();
 rollback;
