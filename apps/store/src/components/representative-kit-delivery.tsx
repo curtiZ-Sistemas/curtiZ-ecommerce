@@ -79,7 +79,10 @@ function KitAddressForm({ onSaved, onCancel }: { onSaved: (address: KitAddress) 
     event.preventDefault();
     if (saving.current) return;
     const form = new FormData(event.currentTarget);
-    const value = (name: string) => String(form.get(name) ?? "").trim();
+    const value = (name: string) => {
+      const field = form.get(name);
+      return typeof field === "string" ? field.trim() : "";
+    };
     const postalCode = value("postalCode");
     if (!isRepresentativeKitPostalCode(postalCode)) {
       setError("Informe um CEP de Minas Gerais.");
