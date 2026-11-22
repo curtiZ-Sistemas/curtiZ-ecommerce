@@ -909,8 +909,9 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect(page.locator(".account-mobile-home")).toHaveCount(1);
-    await expect(page.locator(".account-mobile-home")).toBeVisible();
+    const visibleMobileHome = page.locator(".account-mobile-home:visible");
+    await expect(visibleMobileHome).toHaveCount(1);
+    await expect(visibleMobileHome).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
     await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
@@ -945,7 +946,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.locator(".account-mobile-home")).toBeHidden();
+    await expect(page.locator(".account-mobile-home:visible")).toHaveCount(0);
     await expect(page.locator(".customer-account-desktop-header")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();

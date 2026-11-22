@@ -77,7 +77,7 @@ insert into private.representative_resale_fiscal_rule_versions
     icms_status,final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
 select rule_version,gen_random_uuid(),1,'synthetic issuer',public.read_representative_resale_product_fingerprint(variant),
   'MG','MG','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day',
-  '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,
+  '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,"advancePixWithManualInvoice":true,
     "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic return XML"},
       "undelivered_return":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","homologationEvidence":"synthetic undelivered return XML"}},
     "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":3,"document_model":55,"cfop":"5102",
@@ -574,6 +574,91 @@ select is((select public.record_representative_kit_return_invoice(r.id,r.invoice
   'the authorized return verifier can replay without creating another stock movement');
 select is((select o.stock_state from private.representative_kit_orders o join commercial_kit_fixture t
   on o.id=t.delivery_order),'released','the final state reflects the released reservation');
+
+update public.inventory set available_quantity=10 where variant_id in (
+  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product);
+
+update commercial_kit_fixture set grade_key=gen_random_uuid(),grade_quote=(public.quote_representative_kit_own_delivery(
+  actor,grade_kit,'standard',1,address,'35520000',false)->>'id')::uuid;
+update commercial_kit_fixture set order_id=(public.reserve_representative_kit_manual_pix(
+  actor,grade_kit,'standard',1,grade_quote,address,grade_key,null)->>'orderId')::uuid;
+select is((select public.can_start_representative_kit_manual_pix(actor,order_id) from commercial_kit_fixture),true,
+  'the permitted MG02 order can claim Pix before an invoice exists');
+select is((select public.can_start_representative_kit_manual_pix(outsider,order_id) from commercial_kit_fixture),false,
+  'another user cannot qualify the order for manual fiscal checkout');
+select ok(pg_temp.claim_commercial_pix() is not null,'manual fiscal mode reuses the Pix claim');
+select is(pg_temp.settle_commercial_pix('approved','331',37501)->>'state','paid','payment settles without an invoice');
+select is((select public.read_representative_kit_tracking(actor,order_id)->>'fiscalStatus' from commercial_kit_fixture),
+  'awaiting_fiscal_issuance','only the buyer can see that the paid manual order awaits the fiscal document');
+select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated','aal','aal2')::text,true)
+  from commercial_kit_fixture;
+select is((select public.submit_representative_kit_manual_invoice(t.order_id,f.bling_invoice_id,
+    '3126111234567800019555003'||repeat('8',19))
+  from commercial_kit_fixture t join private.representative_kit_fulfillment f on f.order_id=t.delivery_order),false,
+  'an invoice ID already attached to another order cannot be submitted');
+select is((select public.submit_representative_kit_manual_invoice(order_id,919,
+    '3126111234567800019555003'||repeat('8',19)) from commercial_kit_fixture),true,
+  'the operator submits a manual invoice for verification');
+select ok((select f.invoice_confirmed_at is null from private.representative_kit_fulfillment f
+  join commercial_kit_fixture t using(order_id)),'an operator submission is not a fiscal authorization');
+select ok(not has_function_privilege('authenticated',
+  'public.confirm_representative_kit_manual_invoice(uuid,bigint,text,text,text)','execute'),
+  'the operator cannot call the authorization function');
+select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
+    '3126111234567800019555003'||repeat('9',19),'100000000000010',repeat('f',64))
+  from commercial_kit_fixture),false,'provider proof must match the exact submitted identity');
+select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
+    '3126111234567800019555003'||repeat('8',19),'100000000000010',repeat('f',64))
+  from commercial_kit_fixture),true,'the worker can attach the verified provider proof');
+
+create temporary table mg02_approval_fixture as
+select gen_random_uuid() as actor,gen_random_uuid() as application,gen_random_uuid() as representative;
+insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
+select actor,'mg02-approval@example.invalid','{}'::jsonb,'{}'::jsonb from mg02_approval_fixture;
+update public.profiles set status='active' where id=(select actor from mg02_approval_fixture);
+insert into public.representative_applications(id,user_id)
+select application,actor from mg02_approval_fixture;
+insert into public.representatives(id,user_id,application_id,status)
+select representative,actor,application,'approved_waiting_kit' from mg02_approval_fixture;
+with rule as (
+  insert into private.representative_resale_fiscal_rule_versions(
+    rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,
+    icms_status,final_consumer,purpose,valid_from,valid_until,fiscal_parameters
+  )
+  select gen_random_uuid(),1,'68267385000191',public.read_representative_resale_product_fingerprint(f.variant),
+    'MG','MG','business','taxpayer',false,'resale',now()-interval '1 minute','infinity'::timestamptz,
+    '{"buyerProfile":"MG02","issuerDocument":"68267385000191","classification":"third_party_no_st",
+      "creditEligible":false,"advancePixWithManualInvoice":true,
+      "returnRules":{"own_inflow":{"cfop":"1202","taxCodeKind":"CSOSN","taxCode":"102","series":4,
+        "homologationEvidence":"Synthetic fixture only; not production evidence"}},
+      "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":3,"document_model":55,
+        "cfop":"5102","csosn":"102","icms_rate":0,"pis_cst":"49","cofins_cst":"49","ipi_cst":"99",
+        "ipi_cenq":"999","pis_rate":0,"cofins_rate":0,"ipi_rate":0,
+        "natures":[{"final_consumer":false,"external_nature_id":15111725693}]}}'::jsonb
+  from commercial_kit_fixture f
+  returning id
+)
+insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
+select id,'Synthetic test only','Synthetic test fixture evidence; not production evidence' from rule;
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.outsider,p.id,true,'Synthetic MG02 approval test',f.outsider
+from commercial_kit_fixture f join public.permissions p on p.code='representatives.rules.manage'
+on conflict(user_id,permission_id) do update set allowed=true,reason=excluded.reason;
+select set_config('request.jwt.claims',jsonb_build_object('sub',f.outsider,'role','authenticated','aal','aal2',
+  'app_metadata',jsonb_build_object('role','admin'))::text,true) from commercial_kit_fixture f;
+select ok((select public.approve_representative_kit_mg02(r.public_code,'11222333000181','Synthetic MG02 LTDA',
+  '0012345678900','{"state":"MG","postal_code":"35524168","street":"Rua de teste","number":"10",
+    "district":"Centro","city":"Nova Serrana"}'::jsonb,'Synthetic buyer source reference','Synthetic operation source reference',
+  'Synthetic stock source reference','Owner-reported test only; documents not retained',now()+interval '1 day')>0
+  from mg02_approval_fixture f join public.representatives r on r.user_id=f.actor),
+  'a manager with the fiscal permission can approve a real MG02 representative account');
+select ok((select count(*)>0 from private.representative_kit_checkout_approvals a
+  join mg02_approval_fixture f on f.actor=a.actor_id where a.buyer_profile='MG02' and a.origin_postal_code='35524168'
+    and a.buyer_document='11222333000181' and a.buyer_fiscal_address->>'state'='MG'),
+  'the account approval stores the verified buyer snapshot and Nova Serrana origin');
+select ok(not has_function_privilege('anon',
+  'public.approve_representative_kit_mg02(text,text,text,text,jsonb,text,text,text,text,timestamp with time zone)','execute'),
+  'anonymous callers cannot approve representative accounts');
 
 select * from finish();
 rollback;

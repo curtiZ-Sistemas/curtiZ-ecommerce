@@ -2,6 +2,7 @@
 
 import { formatBRL } from "@curtiz/domain";
 import { useState, type FormEvent } from "react";
+import { RepresentativeKitMg02Approval } from "./representative-kit-mg02-approval";
 
 type Row = Record<string, unknown>;
 const field = (row: Row,key: string) => typeof row[key] === "string" ? row[key] : "";
@@ -94,7 +95,9 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
     const action = submitter instanceof HTMLButtonElement ? submitter.value : "";
     const pairs = requestedPairs(row);
     const body = mode === "fiscal"
-      ? { action: "approve_invoice", orderId: field(row,"orderId"), hash: field(row,"draftHash"), evidence: form.get("evidence") }
+      ? action === "submit_manual_invoice"
+        ? { action, orderId: field(row,"orderId"), invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey") }
+        : { action: "approve_invoice", orderId: field(row,"orderId"), hash: field(row,"draftHash"), evidence: form.get("evidence") }
       : action === "register_undelivered_return"
         ? { action, orderId: field(row,"orderId"), invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey"),
           restockQuantity: Number(form.get("restockQuantity")), evidence: form.get("evidence") }
@@ -124,6 +127,7 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
   }
   return <section className="op-surface" aria-busy={busy}>
     <h2>{mode === "fiscal" ? "Notas fiscais dos kits MG" : mode === "collection" ? "Entregas de kits MG" : "Devoluções de kits MG"}</h2>
+    {mode === "fiscal" && <RepresentativeKitMg02Approval />}
     <button type="button" disabled={busy} onClick={() => void load()}>{rows ? "Atualizar fila" : "Consultar fila"}</button>
     {error && <p role="alert">{error}</p>}
     {rows?.length === 0 && <p role="status">Nenhum registro nesta fila.</p>}
@@ -137,12 +141,19 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
           : <p>{field(row,"sku") ? `${field(row,"sku")} · ` : ""}{typeof row.quantity === "number" ? row.quantity : ""} kits</p>}
         {mode === "fiscal" ? <>
           <p>{row.invoiceAuthorized ? "NF-e autorizada"
+            : row.manualFiscal ? typeof row.manualInvoiceId === "number" ? "Aguardando validação da NF-e" : "Aguardando emissão fiscal"
             : row.draftApproved ? "Rascunho conferido" : typeof row.invoiceId === "number" ? "Aguardando revisão fiscal" : "Aguardando Bling"}</p>
           {typeof row.invoiceId === "number" && <p>NF-e no Bling {row.invoiceId}</p>}
           {canPrint && row.invoiceAuthorized === true && !row.ownDelivery && !row.collectionMethod && ["label_created","dispatched","in_transit","delayed"].includes(field(row,"shipmentStatus"))
             && <button type="button" disabled={busy} onClick={() => void prepareLabel(field(row,"orderId"))}>Preparar impressão da etiqueta</button>}
           {label?.orderId === field(row,"orderId") && <a href={label.url} target="_blank" rel="noreferrer">Abrir etiqueta no Melhor Envio</a>}
           {row.cancellationRequested === true && <p>Cancelamento solicitado</p>}
+          {row.manualFiscal === true && state === "paid" && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
+            <p>Importe no Bling o XML autorizado antes de informar o ID e a chave.</p>
+            <label>ID da NF-e no Bling <input required name="invoiceId" type="number" min={1} /></label>
+            <label>Chave da NF-e série 003 <input required name="invoiceKey" inputMode="numeric" pattern="31[0-9]{18}55003[0-9]{19}" maxLength={44} /></label>
+            <button type="submit" value="submit_manual_invoice" disabled={busy}>Enviar NF-e para validação</button>
+          </form>}
           {field(row,"draftHash") && !row.draftApproved && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
             <label>Referência da conferência fiscal <input required name="evidence" minLength={10} maxLength={200} /></label>
             <button type="submit" disabled={busy}>Aprovar rascunho revisado</button>
