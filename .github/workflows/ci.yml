@@ -162,6 +162,12 @@ jobs:
             'CI-only fixture for MG02 rule migration; no issued invoice or SEFAZ protocol.',
             '49','49','99',0,0,0,'999'
           ) on conflict(scenario) do nothing;
+          insert into private.bling_fiscal_rules(
+            scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference
+          ) values (
+            'return_in_state','MG','1202','102',0,3,
+            'CI-only fixture for return fiscal rule migration; no issued invoice or SEFAZ protocol.'
+          ) on conflict(scenario) do nothing;
           insert into private.bling_fiscal_natures(scenario,final_consumer,external_nature_id,evidence_reference)
           values(
             'return_in_state',true,15111772281,
