@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     const data = parsed.data;
     const atReceipt = data.paymentTiming === "collection";
     if (!commercialKitCheckoutConfigured(environment)
-      || (atReceipt && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true")) return reply({ quote: null });
+      || (atReceipt && (environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED === "true"
+        || environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true"))) return reply({ quote: null });
     const origin = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
     const db = createServiceSupabaseClient();
     if (!db || (origin && !isRepresentativeKitPostalCode(origin))) throw new KitTransactionError(503);

@@ -96,23 +96,28 @@ async function commercialKitFiscalMirror(db: SupabaseClient, job: UnknownRecord,
   return { issuer, natureId: rule.external_nature_id, rule, commercial, mirror, allocations, freight };
 }
 
-export async function verifyCommercialKitInvoice(db: SupabaseClient, provider: BlingClient, job: UnknownRecord, environment: 1 | 2) {
+export async function verifyCommercialKitInvoice(db: SupabaseClient, provider: BlingClient, job: UnknownRecord, environment: 1 | 2,
+  manual?: { key: string; invoice: UnknownRecord }) {
   const orderId = readString(job, "orderId");
   const saleId = readNumber(job, "saleId");
   const invoiceId = readNumber(job, "invoiceId");
-  if (!Number.isSafeInteger(saleId) || saleId <= 0 || !Number.isSafeInteger(invoiceId) || invoiceId <= 0) throw scopeError();
-  const sale = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) throw scopeError();
   const reference = `KITMG-${orderId}`;
-  if (Number(sale.id) !== saleId || sale.numeroLoja !== reference || Number(row(sale.notaFiscal).id) !== invoiceId) throw scopeError();
-  const invoice = row(row(await provider.request(`/nfe/${invoiceId}`)).data);
+  if (!manual) {
+    if (!Number.isSafeInteger(saleId) || saleId <= 0) throw scopeError();
+    const sale = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+    if (Number(sale.id) !== saleId || sale.numeroLoja !== reference || Number(row(sale.notaFiscal).id) !== invoiceId) throw scopeError();
+  }
+  const invoice = manual?.invoice ?? row(row(await provider.request(`/nfe/${invoiceId}`)).data);
   const key = readString(invoice, "chaveAcesso");
   if (Number(invoice.id) !== invoiceId || Number(invoice.situacao) !== 5
-    || (invoice.numeroPedidoLoja && invoice.numeroPedidoLoja !== reference) || !/^31\d{42}$/u.test(key)) throw scopeError();
+    || (manual ? key !== manual.key : invoice.numeroPedidoLoja && invoice.numeroPedidoLoja !== reference)
+    || !/^31\d{42}$/u.test(key)) throw scopeError();
   const issueDate = readString(invoice, "dataEmissao").slice(0, 10);
   const { issuer, natureId, rule, mirror, allocations, freight } = await commercialKitFiscalMirror(db, job, issueDate);
   const context = await kitRecord(db,"read_representative_kit_bling_order",{ p_order: orderId });
   const billing = row(context.fiscalAddress);
-  if (Number(row(invoice.naturezaOperacao).id) !== natureId) throw scopeError();
+  if (!manual && Number(row(invoice.naturezaOperacao).id) !== natureId) throw scopeError();
   const document = await provider.invoiceDocument(key, "xml");
   const xml = new TextDecoder("utf-8", { fatal: true }).decode(document);
   const verified = readBlingAuthorizedResaleXml(xml, key, {
@@ -274,6 +279,26 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
     const orderId = readString(job, "orderId");
     let clearance = false;
     try {
+      if (row(job.fiscalParameters).advancePixWithManualInvoice === true) {
+        if (environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED !== "true") continue;
+        const manual = row(await kitCall(db, "read_representative_kit_manual_invoice", { p_order: orderId }));
+        if (manual.manual !== true) throw scopeError();
+        const invoiceId = positiveId(manual.invoiceId);
+        const key = readString(manual, "key");
+        if (!invoiceId || !key) continue;
+        const invoice = row(row(await bling.request(`/nfe/${invoiceId}`)).data);
+        if (Number(invoice.id) === invoiceId && invoice.chaveAcesso === key && Number(invoice.situacao) === 2) {
+          await kitCall(db, "observe_representative_kit_invoice_cancellation", { p_order: orderId, p_invoice: invoiceId, p_key: key });
+          continue;
+        }
+        const verified = await verifyCommercialKitInvoice(db, bling, { ...job, invoiceId }, 1, { key, invoice });
+        clearance = await kitCall(db, "confirm_representative_kit_manual_invoice", {
+          p_order: orderId, p_invoice: invoiceId, p_key: verified.key,
+          p_protocol: verified.protocol, p_sha256: verified.hash
+        }) === true;
+        if (!clearance) throw scopeError();
+        continue;
+      }
       if (!await advanceRepresentativeKitBling(db, bling, environment, job)) continue;
       const verified = await verifyCommercialKitInvoice(db, bling, job, 1);
       clearance = await kitCall(db, "record_representative_kit_authorized_invoice", {

@@ -12,10 +12,12 @@ const kitReference = (orderId: string) => `KITMG-${orderId}`;
 export function commercialKitCheckoutConfigured(environment: RuntimeEnvironment) {
   return environment.APP_ENV === "production" && environment.REPRESENTATIVE_KIT_CHECKOUT_ENABLED === "true"
     && environment.REPRESENTATIVE_KIT_FULFILLMENT_ENABLED === "true" && environment.BLING_FISCAL_READY === "true"
-    && environment.REPRESENTATIVE_KIT_REFUNDS_ENABLED === "true" && environment.BLING_ORDER_SYNC_ENABLED === "true"
-    && environment.BLING_INVOICE_SYNC_ENABLED === "true" && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true"
-    && environment.BLING_INVOICE_SEND_ENABLED === "true" && environment.BLING_INVOICE_TRANSMISSION_MODE === "production"
-    && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED === "true"
+    && environment.REPRESENTATIVE_KIT_REFUNDS_ENABLED === "true"
+    && (environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED === "true"
+      || (environment.BLING_ORDER_SYNC_ENABLED === "true" && environment.BLING_INVOICE_SYNC_ENABLED === "true"
+        && environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED === "true"
+        && environment.BLING_INVOICE_SEND_ENABLED === "true" && environment.BLING_INVOICE_TRANSMISSION_MODE === "production"
+        && environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED === "true"))
     && getMercadoPagoCredentials(environment)?.mode === "production"
     && /^\d{1,30}$/u.test(environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID?.trim() ?? "");
 }
