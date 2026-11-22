@@ -186,6 +186,12 @@ jobs:
         shell: bash
         run: |
           docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
+      - name: Remover configuração fiscal temporária do banco local
+        shell: bash
+        run: |
+          docker exec -i -e PGPASSWORD=postgres supabase_db_curtiz-local \
+            psql -X -w -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "DELETE FROM private.bling_fiscal_natures WHERE external_nature_id = 15111772281; DELETE FROM private.bling_fiscal_rules WHERE scenario IN ('resale_in_state_no_credit','return_in_state');"
       - run: supabase db lint --local --fail-on error
       - name: Conferir definições finais das migrations
         if: github.event_name == 'pull_request'
