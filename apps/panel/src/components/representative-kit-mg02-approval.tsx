@@ -14,25 +14,30 @@ export function RepresentativeKitMg02Approval() {
     setSuccess("");
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    const value = (name: string) => {
+      const entry = form.get(name);
+      if (typeof entry !== "string") throw new Error("invalid_form_value");
+      return entry.trim();
+    };
     try {
       const response = await fetch("/api/operations/representative-kits", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "approve_mg02",
-          representativeCode: form.get("representativeCode"),
-          document: form.get("document"),
-          legalName: form.get("legalName"),
-          stateRegistration: form.get("stateRegistration"),
+          representativeCode: value("representativeCode"),
+          document: value("document"),
+          legalName: value("legalName"),
+          stateRegistration: value("stateRegistration"),
           fiscalAddress: {
-            state: "MG", postal_code: form.get("postalCode"), street: form.get("street"),
-            number: form.get("number"), district: form.get("district"), city: form.get("city")
+            state: "MG", postal_code: value("postalCode"), street: value("street"),
+            number: value("number"), district: value("district"), city: value("city")
           },
-          buyerEvidence: form.get("buyerEvidence"),
-          operationEvidence: form.get("operationEvidence"),
-          stockEvidence: form.get("stockEvidence"),
-          homologationEvidence: form.get("homologationEvidence"),
-          validUntil: new Date(String(form.get("validUntil"))).toISOString()
+          buyerEvidence: value("buyerEvidence"),
+          operationEvidence: value("operationEvidence"),
+          stockEvidence: value("stockEvidence"),
+          homologationEvidence: value("homologationEvidence"),
+          validUntil: new Date(value("validUntil")).toISOString()
         })
       });
       const result: unknown = await response.json();
@@ -47,10 +52,14 @@ export function RepresentativeKitMg02Approval() {
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    void submit(event);
+  }
+
   return <details className="op-surface">
     <summary>Habilitar conta de representante MG02</summary>
     <p>Use somente dados conferidos e referências reais. Não informe protocolo, XML ou parecer que não esteja disponível.</p>
-    <form onSubmit={submit}>
+    <form onSubmit={handleSubmit}>
       <label>Código do representante <input required name="representativeCode" placeholder="REP-0123ABCDEF" pattern="REP-[A-Fa-f0-9]{10}" maxLength={14} /></label>
       <label>CNPJ <input required name="document" inputMode="numeric" pattern="[0-9]{14}" maxLength={14} /></label>
       <label>Razão social <input required name="legalName" minLength={2} maxLength={180} /></label>
@@ -74,3 +83,4 @@ export function RepresentativeKitMg02Approval() {
     </form>
   </details>;
 }
+
