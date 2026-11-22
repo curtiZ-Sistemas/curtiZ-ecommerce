@@ -197,7 +197,7 @@ select is(pg_temp.claim_commercial_pix()->>'buyerDocument','11222333000181','a s
 select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','an ordinary payment enqueues fulfillment');
 update private.representative_kit_fulfillment set bling_sale_id=123,bling_invoice_id=456,shipment_id='synthetic-carrier'
   where order_id=(select order_id from commercial_kit_fixture);
-create function pg_temp.record_kit_invoice(p_series text default '002')
+create function pg_temp.record_kit_invoice(p_series text default '003')
 returns boolean language sql as $$
   select public.record_representative_kit_authorized_invoice(order_id,123,456,
     '3126111234567800019555'||p_series||repeat('1',19),'100000000000001',repeat('a',64))
@@ -206,11 +206,11 @@ $$;
 create function pg_temp.record_kit_tracking(p_status text)
 returns boolean language sql as $$
   select public.record_representative_kit_tracking(order_id,'synthetic-carrier',
-    '3126111234567800019555002'||repeat('1',19),p_status,'SYNTHETICCODE')
+    '3126111234567800019555003'||repeat('1',19),p_status,'SYNTHETICCODE')
   from commercial_kit_fixture;
 $$;
 select is(pg_temp.record_kit_tracking('dispatched'),false,'carrier state requires validated fiscal clearance');
-select is(pg_temp.record_kit_invoice('003'),false,'the return series cannot clear a sale for dispatch');
+select is(pg_temp.record_kit_invoice('004'),false,'the return series cannot clear a sale for dispatch');
 select is(pg_temp.record_kit_invoice(),true,'the backend can record a verified sale identity');
 select is(pg_temp.record_kit_tracking('in_transit'),true,'tracking can proceed once the paid order has fiscal clearance');
 select is(pg_temp.record_kit_tracking('ready'),false,'an old provider state cannot regress tracking');
@@ -219,7 +219,7 @@ select is((select public.read_representative_kit_tracking(outsider,order_id) fro
 
 insert into private.representative_kit_refund_requests(order_id,amount_cents,reason,operational_evidence,fiscal_evidence,original_invoice_key)
 select order_id,2100,'undispatched_cancellation','synthetic cancellation','synthetic fiscal evidence',
-  '3126111234567800019555002'||repeat('1',19) from commercial_kit_fixture;
+  '3126111234567800019555003'||repeat('1',19) from commercial_kit_fixture;
 select is((select public.claim_representative_kit_refund(id,'{}') from private.representative_kit_refund_requests
   where order_id=(select order_id from commercial_kit_fixture)),false,'an order in transit cannot use the unshipped refund path');
 
@@ -237,7 +237,7 @@ select throws_ok($$select pg_temp.request_kit_return(2,'22222222-2222-4222-8222-
   '23514','kit_return_unavailable','return requests share one order quantity balance');
 select is((select public.list_representative_kit_returns(outsider,order_id) from commercial_kit_fixture),
   '[]'::jsonb,'another buyer cannot see private return records');
-select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555003'||repeat('1',19),
+select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555004'||repeat('1',19),
   '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
   false,'XML cannot bypass inspection and receipt');
 
@@ -257,10 +257,10 @@ select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role',
 select is(pg_temp.manage_kit_return('approve','{"instructions":"Synthetic store return instructions"}'),
   'approved','authorized staff can approve the return');
 select is(pg_temp.manage_kit_return('receive',jsonb_build_object('invoiceId',901,'refundInCents',6050,'restockQuantity',1,
-  'invoiceKey','3126111234567800019555003'||repeat('1',19),'documentOrigin','own_inflow','inspectionReference','Synthetic inspected kit')),
+  'invoiceKey','3126111234567800019555004'||repeat('1',19),'documentOrigin','own_inflow','inspectionReference','Synthetic inspected kit')),
   'received','receiving inventory alone does not authorize the refund');
 select is(pg_temp.manage_kit_return('refund'),null::text,'staff cannot authorize the refund before XML validation');
-select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555003'||repeat('1',19),
+select is((select public.record_representative_kit_return_invoice(id,'3126111234567800019555004'||repeat('1',19),
   '100000000000003',repeat('a',64)) from private.representative_kit_returns where order_id=(select order_id from commercial_kit_fixture)),
   true,'trusted verification attaches the exact authorized return');
 delete from private.representative_kit_refund_requests where order_id=(select order_id from commercial_kit_fixture);
@@ -462,10 +462,15 @@ select is((select private.representative_kit_fiscal_ready(o)
   true,'the delivery date enables the usual billing queue');
 select is((select public.claim_representative_kit_bling_write_for_delivery(delivery_order,'bling_sale',null,current_date+2)
   from commercial_kit_fixture),false,'a stale delivery snapshot cannot claim a billing write');
-update private.representative_kit_fulfillment
-  set bling_sale_id=912,bling_invoice_id=913,invoice_access_key='3126111234567800019555003'||repeat('4',19),
-    invoice_protocol='100000000000004',invoice_xml_sha256=repeat('b',64),
-    invoice_confirmed_at=clock_timestamp(),shipment_status='dispatched',shipment_rank=4
+update private.representative_kit_fulfillment set bling_sale_id=912,bling_invoice_id=913
+  where order_id=(select delivery_order from commercial_kit_fixture);
+select is((select public.record_representative_kit_authorized_invoice(delivery_order,912,913,
+    '3126111234567800019555002'||repeat('4',19),'100000000000004',repeat('b',64))
+  from commercial_kit_fixture),false,'a legacy series cannot clear an order approved for series 003');
+select is((select public.record_representative_kit_authorized_invoice(delivery_order,912,913,
+    '3126111234567800019555003'||repeat('4',19),'100000000000004',repeat('b',64))
+  from commercial_kit_fixture),true,'authorization for series 003 is recorded for its approved order');
+update private.representative_kit_fulfillment set shipment_status='dispatched',shipment_rank=4
   where order_id=(select delivery_order from commercial_kit_fixture);
 select is((select public.manage_representative_kit_collection(delivery_order,'cash_received','Synthetic cash receipt')->>'ok'
   from commercial_kit_fixture),'true','cash can be confirmed independently of delivery');
