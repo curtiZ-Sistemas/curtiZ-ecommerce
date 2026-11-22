@@ -11,6 +11,9 @@ import { safeTechnicalOrigin, technicalNoStore } from "@/lib/technical-api";
 
 const approvals = z.object({ action: z.literal("approve_invoice"), orderId: z.string().uuid(),
   hash: z.string().regex(/^[a-f0-9]{64}$/u), evidence: z.string().trim().min(10).max(200) }).strict();
+const manualInvoice = z.object({ action: z.literal("submit_manual_invoice"), orderId: z.string().uuid(),
+  invoiceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  invoiceKey: z.string().regex(/^31[0-9]{18}55003[0-9]{19}$/u) }).strict();
 const returnId = z.string().uuid();
 const reasons = z.object({ returnId, action: z.enum(["approve","reject"]),
   instructions: z.string().trim().min(5).max(500) }).strict();
@@ -51,7 +54,7 @@ const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
   operation: z.enum(["launch","refresh","cancel"]) }).strict();
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
-const input = z.union([approvals,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
+const input = z.union([approvals,manualInvoice,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
   point,collectRefund,createRoute,closeRoute]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
@@ -184,6 +187,13 @@ export async function POST(request: NextRequest) {
       if (melhorEnvioEnvironment() !== "production") return send({ message: "Integração de expedição indisponível." },503);
       const url = await panelMelhorEnvioProvider().print([externalId]);
       return send({ ok: true,url });
+    }
+    if (item.action === "submit_manual_invoice") {
+      const result = await db.rpc("submit_representative_kit_manual_invoice",{
+        p_order: item.orderId, p_invoice: item.invoiceId, p_key: item.invoiceKey
+      });
+      return result.error || result.data !== true ? send({ message: "Confira a NF-e série 003 importada no Bling e a situação do pedido." },
+        result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
     }
     if (item.action === "approve_invoice") {
       const result = await db.rpc("approve_representative_kit_bling_draft",{

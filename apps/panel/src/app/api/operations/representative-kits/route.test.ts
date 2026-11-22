@@ -29,6 +29,20 @@ const post = (body: object) => POST(new NextRequest(url, {
 beforeEach(() => { rpc.mockReset().mockResolvedValue({ data: true, error: null }); });
 
 describe("representative kit operations", () => {
+  it("queues an imported NF-e for verification without confirming it in the panel", async () => {
+    const invoiceKey = "31261112345678000195550030000000001123456782";
+    expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(200);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("submit_representative_kit_manual_invoice", {
+      p_order: orderId, p_invoice: 301, p_key: invoiceKey
+    });
+  });
+
+  it("rejects a return NF-e in the manual sale workflow", async () => {
+    const invoiceKey = "31261112345678000195550040000000001123456782";
+    expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(400);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("rejects a route charging one cent before calling the database", async () => {
     const response = await post({ action: "create_route", route: { ...route, delivery_cents: 1 } });
     expect(response.status).toBe(400);

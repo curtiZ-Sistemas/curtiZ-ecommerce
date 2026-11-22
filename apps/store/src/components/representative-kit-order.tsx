@@ -162,7 +162,10 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   return <div className="representative-profile-form">
     {typeof order.productName === "string" && <strong>{order.productName}</strong>}
     <p role="status">{order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)
-      ? "Cancelamento em confirmação" : statusLabels[state] ?? "Pedido em análise"}</p>
+      ? "Cancelamento em confirmação"
+      : state === "paid" && tracking?.fiscalStatus === "awaiting_fiscal_issuance"
+        ? "Pagamento confirmado. Aguardando emissão fiscal."
+        : statusLabels[state] ?? "Pedido em análise"}</p>
     {typeof order.amountInCents === "number" && <p>Total {formatBRL(order.amountInCents)}</p>}
     {method && Object.hasOwn(collectionMethods, method) && <p>No recebimento · {collectionMethods[method]}</p>}
     {method === "cash" && typeof order.cashTenderedInCents === "number" && typeof order.cashChangeInCents === "number"

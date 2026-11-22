@@ -46,10 +46,11 @@ export async function POST(request: Request) {
     const user = session?.data.user;
     if (!auth || session?.error || !user) throw new KitTransactionError(401);
     const environment = getStoreRuntimeEnvironment();
+    const manualFiscal = environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED === "true";
     if (["reserve","reserve_grade","reserve_collection","pix"].includes(data.action) && !commercialKitCheckoutConfigured(environment)) {
       return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
     }
-    if (data.action === "reserve_collection" && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true") {
+    if (data.action === "reserve_collection" && (manualFiscal || environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true")) {
       return reply({ message: "Pagamento no recebimento indisponível para este pedido." }, 409);
     }
     await requirePrivateRateLimit(auth, {
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
     if (data.action === "reserve" || data.action === "reserve_grade") {
       const originPostalCode = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
       if (originPostalCode && !isRepresentativeKitPostalCode(originPostalCode)) throw new KitTransactionError(503);
-      const order = await kitRecord(db, "reserve_representative_kit_own_delivery", {
+      const order = await kitRecord(db, manualFiscal ? "reserve_representative_kit_manual_pix" : "reserve_representative_kit_own_delivery", {
         p_actor: user.id, p_quantity: data.quantity, p_quote: data.quoteId,
         p_address: data.addressId, p_key: data.idempotencyKey, p_origin: originPostalCode,
         p_selection: data.action === "reserve_grade" ? data.kitId : data.variantId,
@@ -98,6 +99,9 @@ export async function POST(request: Request) {
     }
     if (data.action === "pix") {
       if (!user.email || !user.email_confirmed_at) throw new KitTransactionError(403);
+      if (manualFiscal && await kitCall(db,"can_start_representative_kit_manual_pix", {
+        p_actor: user.id, p_order: data.orderId
+      }) !== true) throw new KitTransactionError(409);
       const order = await beginCommercialKitPix(db, provider, collector, { id: user.id, email: user.email }, data.orderId.toLowerCase());
       return reply({ ok: true, order }, 200);
     }

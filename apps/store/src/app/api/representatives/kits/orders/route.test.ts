@@ -4,11 +4,12 @@ const mock = vi.hoisted(() => ({
   actor: "10000000-0000-4000-8000-000000000001", configured: false, originAllowed: true,
   session: vi.fn(), authBudget: vi.fn(), record: vi.fn(), call: vi.fn(),
   begin: vi.fn(), cancel: vi.fn(), refresh: vi.fn(), makeProvider: vi.fn(),
-  originPostal: "35520000"
+  originPostal: "35520000", manualFiscal: false
 }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => mock.originAllowed }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({
-  REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE: mock.originPostal
+  REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE: mock.originPostal,
+  REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED: String(mock.manualFiscal),
 }) }));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/private-request", () => ({
@@ -45,12 +46,25 @@ beforeEach(() => {
   vi.resetAllMocks();
   mock.configured = false;
   mock.originAllowed = true;
+  mock.manualFiscal = false;
   mock.originPostal = "35520000";
   mock.session.mockResolvedValue({ data: { user: { id: mock.actor, email: "verified@example.invalid",
     email_confirmed_at: "2026-11-18T00:00:00Z" } } });
 });
 
 describe("commercial kit order route", () => {
+  it("uses the MG02 manual reservation rule and blocks Pix until the order qualifies", async () => {
+    mock.configured = true;
+    mock.manualFiscal = true;
+    mock.record.mockResolvedValue({ orderId, state: "reserved" });
+    expect((await post(reserve)).status).toBe(200);
+    expect(mock.record).toHaveBeenCalledWith(expect.anything(),"reserve_representative_kit_manual_pix", expect.objectContaining({p_actor: mock.actor}));
+    mock.call.mockResolvedValueOnce(false);
+    expect((await post({ action: "pix", orderId })).status).toBe(409);
+    expect(mock.call).toHaveBeenCalledWith(expect.anything(),"can_start_representative_kit_manual_pix", { p_actor: mock.actor, p_order: orderId });
+    expect(mock.begin).not.toHaveBeenCalled();
+  });
+
   it("blocks origin before reading the account", async () => {
     mock.originAllowed = false;
     expect((await post(reserve)).status).toBe(403);
