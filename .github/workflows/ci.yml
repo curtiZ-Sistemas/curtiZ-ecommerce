@@ -150,10 +150,34 @@ jobs:
       - uses: supabase/setup-cli@v3
         with:
           version: 2.110.0
+      - name: Preparar configuração fiscal de CI (somente banco local)
+        shell: bash
+        run: |
+          cat > supabase/migrations/20261122205330_ci_mg02_fiscal_configuration_fixture.sql <<'SQL'
+          insert into private.bling_fiscal_rules(
+            scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference,
+            pis_cst,cofins_cst,ipi_cst,pis_rate,cofins_rate,ipi_rate,ipi_cenq
+          ) values (
+            'resale_in_state_no_credit','MG','5102','102',0,2,
+            'CI-only fixture for MG02 rule migration; no issued invoice or SEFAZ protocol.',
+            '49','49','99',0,0,0,'999'
+          ) on conflict(scenario) do nothing;
+          insert into private.bling_fiscal_rules(
+            scenario,issuer_state,cfop,csosn,icms_rate,series,evidence_reference
+          ) values (
+            'return_in_state','MG','1202','102',0,3,
+            'CI-only fixture for return fiscal rule migration; no issued invoice or SEFAZ protocol.'
+          ) on conflict(scenario) do nothing;
+          insert into private.bling_fiscal_natures(scenario,final_consumer,external_nature_id,evidence_reference)
+          values(
+            'return_in_state',true,15111772281,
+            'CI-only fixture for return nature update; no issued invoice or SEFAZ protocol.'
+          ) on conflict(scenario,final_consumer) do nothing;
+          SQL
       - name: Iniciar Supabase local (migrations + seed)
         # Startup prints local credentials. Keep them out of public CI logs.
         run: |
-          if ! supabase start > /dev/null 2>&1; then
+          if ! supabase start > /dev/null; then
             echo "::error::Supabase local não iniciou; consulte o estado dos containers."
             exit 1
           fi
@@ -162,6 +186,12 @@ jobs:
         shell: bash
         run: |
           docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase || true
+      - name: Remover configuração fiscal temporária do banco local
+        shell: bash
+        run: |
+          docker exec -i -e PGPASSWORD=postgres supabase_db_curtiz-local \
+            psql -X -w -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "DELETE FROM private.bling_fiscal_natures WHERE external_nature_id = 15111772281; DELETE FROM private.bling_fiscal_rules WHERE scenario IN ('resale_in_state_no_credit','return_in_state');"
       - run: supabase db lint --local --fail-on error
       - name: Conferir definições finais das migrations
         if: github.event_name == 'pull_request'
