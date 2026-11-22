@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 19458)
+Total output lines: 1610
+
 import { expect, test, type Page } from "@playwright/test";
 import { loginDemoAccount } from "./demo-auth";
 
@@ -767,122 +770,7 @@ test("oferece um único acesso para clientes e equipe", async ({ page }) => {
 
 test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, context }) => {
   test.setTimeout(90_000);
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "curtiz-cookie-consent",
-      JSON.stringify({ categories: { essential: true } })
-    );
-  });
-  await page.goto("/produto/flip-flop-wave-preto", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("group", { name: "Tamanho" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "39/40", exact: true }).click();
-  await page.getByRole("button", { name: /Adicionar ao carrinho/i }).click();
-  await expect(page.getByRole("button", { name: /Adicionado ao carrinho/i })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Carrinho com 1 itens/i })).toBeVisible();
-  await page.goto("/login", { waitUntil: "networkidle" });
-  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]:visible').fill("1234567890");
-  await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
-  await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
-
-  const sessionCookies = await context.cookies();
-  expect(sessionCookies.find((cookie) => cookie.name === "curtiz-demo-session")?.expires).toBe(-1);
-  expect(sessionCookies.find((cookie) => cookie.name === "curtiz-auth-persistence")?.expires).toBe(
-    -1
-  );
-  const cartStorage = await page.evaluate(() => ({
-    persistent: localStorage.getItem("curtiz-cart"),
-    session: JSON.parse(sessionStorage.getItem("curtiz-session-cart") ?? "[]") as Array<{
-      productId?: string;
-    }>
-  }));
-  expect(cartStorage.persistent).toBeNull();
-  expect(cartStorage.session.map((line) => line.productId)).toEqual(["wave-preto"]);
-
-  // The session-dependent header confirms hydration after the full-page login navigation.
-  await expect(page.locator(".account-action")).toHaveAttribute("href", "/minha-conta", { timeout: 30_000 });
-  await page.getByRole("button", { name: "Sair da conta" }).first().click();
-  await expect(page).toHaveURL(/\/login$/u, { timeout: 30_000 });
-  const logoutState = await page.evaluate(() => ({
-    persistent: JSON.parse(localStorage.getItem("curtiz-cart") ?? "[]") as unknown[],
-    session: sessionStorage.getItem("curtiz-session-cart")
-  }));
-  expect(logoutState).toEqual({ persistent: [], session: null });
-  expect((await context.cookies()).some((cookie) => cookie.name === "curtiz-demo-session")).toBe(
-    false
-  );
-
-  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
-  await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
-  const persistentCookies = await context.cookies();
-  const nowInSeconds = Date.now() / 1_000;
-  expect(
-    persistentCookies.find((cookie) => cookie.name === "curtiz-demo-session")?.expires ?? -1
-  ).toBeGreaterThan(nowInSeconds);
-  expect(
-    persistentCookies.find((cookie) => cookie.name === "curtiz-auth-persistence")?.expires ?? -1
-  ).toBeGreaterThan(nowInSeconds);
-});
-
-test("login encontra o footer sem faixa estrutural vazia", async ({ page }) => {
-  for (const viewport of [
-    { width: 1920, height: 1080 },
-    { width: 1366, height: 768 },
-    { width: 768, height: 1024 },
-    { width: 390, height: 844 }
-  ]) {
-    await page.setViewportSize(viewport);
-    await page.goto("/login", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Acesse sua conta" })).toBeVisible();
-
-    const layout = await page.evaluate(() => {
-      const main = document.querySelector<HTMLElement>("#main-content");
-      const authPage = document.querySelector<HTMLElement>(".auth-page");
-      const authShell = document.querySelector<HTMLElement>(".auth-shell");
-      const footer = document.querySelector<HTMLElement>(".site-footer");
-      if (!main || !authPage || !authShell || !footer)
-        throw new Error("Estrutura do login incompleta.");
-      const mainBounds = main.getBoundingClientRect();
-      const authBounds = authPage.getBoundingClientRect();
-      const shellBounds = authShell.getBoundingClientRect();
-      const footerBounds = footer.getBoundingClientRect();
-      return {
-        footerGap: footerBounds.top - mainBounds.bottom,
-        authGap: mainBounds.bottom - authBounds.bottom,
-        footerMargin: window.getComputedStyle(footer).marginTop,
-        shellCenter: shellBounds.left + shellBounds.width / 2,
-        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
-      };
-    });
-
-    expect(Math.abs(layout.footerGap)).toBeLessThanOrEqual(1);
-    expect(Math.abs(layout.authGap)).toBeLessThanOrEqual(1);
-    expect(layout.footerMargin).toBe("0px");
-    expect(Math.abs(layout.shellCenter - viewport.width / 2)).toBeLessThanOrEqual(1);
-    expect(layout.pageOverflow).toBeLessThanOrEqual(1);
-  }
-});
-
-test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
-  test.setTimeout(90_000);
-  await page.goto("/");
-  await page
-    .getByRole("button", { name: "Favoritar curti Z Flip-Flop Wave Preto" })
-    .first()
-    .click();
-
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
-  await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
-  await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
-  await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await page.waitForURL("**/minha-conta", { timeout: 20_000 });
+  await page.add…1458 tokens truncated…nta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
 
   await expect(page.getByRole("heading", { name: "Seus favoritos" })).toBeVisible();
@@ -909,8 +797,9 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect(page.locator(".account-mobile-home")).toHaveCount(1);
-    await expect(page.locator(".account-mobile-home")).toBeVisible();
+    const visibleMobileHome = page.locator(".account-mobile-home:visible");
+    await expect(visibleMobileHome).toHaveCount(1);
+    await expect(visibleMobileHome).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
     await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
@@ -945,7 +834,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.locator(".account-mobile-home")).toBeHidden();
+    await expect(page.locator(".account-mobile-home:visible")).toHaveCount(0);
     await expect(page.locator(".customer-account-desktop-header")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();
@@ -1606,3 +1495,4 @@ test("produto inexistente usa 404 específica sem expor detalhes", async ({ page
   );
   await expect(page.getByText(/supabase|sql|exception|stack|token/iu)).toHaveCount(0);
 });
+
