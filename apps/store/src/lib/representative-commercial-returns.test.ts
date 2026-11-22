@@ -10,7 +10,7 @@ vi.mock("./representative-test-transactions", () => ({ kitCall: vi.fn() }));
 vi.mock("./unknown-data", () => ({
   isUnknownRecord: (value: unknown) => !!value && typeof value === "object" && !Array.isArray(value),
   readNumber: (row: Record<string, unknown>, key: string) => typeof row[key] === "number" ? row[key] : 0,
-  readRows: (value: unknown) => Array.isArray(value) ? value : [],
+  readRows: (value: unknown): unknown[] => Array.isArray(value) ? value as unknown[] : [],
   readString: (row: Record<string, unknown>, key: string) => typeof row[key] === "string" ? row[key] : ""
 }));
 
@@ -63,3 +63,4 @@ describe("representative kit return fiscal verification", () => {
       expect.objectContaining({ origin: "own_inflow", cfop: "1202", taxCode: "102" }));
   });
 });
+
