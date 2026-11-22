@@ -14,6 +14,15 @@ const approvals = z.object({ action: z.literal("approve_invoice"), orderId: z.st
 const manualInvoice = z.object({ action: z.literal("submit_manual_invoice"), orderId: z.string().uuid(),
   invoiceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   invoiceKey: z.string().regex(/^31[0-9]{18}55003[0-9]{19}$/u) }).strict();
+const mg02Approval = z.object({ action: z.literal("approve_mg02"), representativeCode: z.string().regex(/^REP-[A-Fa-f0-9]{10}$/u),
+  document: z.string().regex(/^[0-9]{14}$/u), legalName: z.string().trim().min(2).max(180),
+  stateRegistration: z.string().regex(/^[0-9]{2,14}$/u), fiscalAddress: z.object({
+    state: z.literal("MG"), postal_code: z.string().regex(/^3[0-9]{7}$/u),
+    street: z.string().trim().min(1).max(180), number: z.string().trim().min(1).max(30),
+    district: z.string().trim().min(1).max(100), city: z.string().trim().min(1).max(100)
+  }).strict(), buyerEvidence: z.string().trim().min(10).max(500),
+  operationEvidence: z.string().trim().min(10).max(500), stockEvidence: z.string().trim().min(10).max(500),
+  homologationEvidence: z.string().trim().min(10).max(500), validUntil: z.iso.datetime({ offset: true }) }).strict();
 const returnId = z.string().uuid();
 const reasons = z.object({ returnId, action: z.enum(["approve","reject"]),
   instructions: z.string().trim().min(5).max(500) }).strict();
@@ -54,7 +63,7 @@ const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
   operation: z.enum(["launch","refresh","cancel"]) }).strict();
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
-const input = z.union([approvals,manualInvoice,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
+const input = z.union([approvals,manualInvoice,mg02Approval,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
   point,collectRefund,createRoute,closeRoute]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
@@ -98,6 +107,19 @@ export async function POST(request: NextRequest) {
     const parsed = input.safeParse(await readBoundedJson(request,4096));
     if (!parsed.success) return send({ message: "Revise os dados informados." },400);
     const item = parsed.data;
+    if (item.action === "approve_mg02") {
+      const result = await db.rpc("approve_representative_kit_mg02", {
+        p_representative_code: item.representativeCode, p_document: item.document, p_legal_name: item.legalName,
+        p_state_registration: item.stateRegistration, p_fiscal_address: item.fiscalAddress,
+        p_buyer_evidence: item.buyerEvidence, p_operation_evidence: item.operationEvidence,
+        p_stock_evidence: item.stockEvidence, p_homologation_evidence: item.homologationEvidence,
+        p_valid_until: item.validUntil
+      });
+      return result.error || typeof result.data !== "number" || !Number.isInteger(result.data) || result.data < 1
+        ? send({ message: "A conta não foi habilitada. Confira a elegibilidade MG02, as referências reais e a permissão de gestão." },
+          result.error?.code === "42501" ? 403 : 409)
+        : send({ ok: true, approvedRuleVersions: result.data });
+    }
     if (item.action === "create_route" || item.action === "close_route") {
       const result = await db.rpc("manage_representative_kit_delivery_route", {
         p_close: item.action === "close_route" ? item.routeId : null,

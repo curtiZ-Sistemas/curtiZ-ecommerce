@@ -2,6 +2,7 @@
 
 import { formatBRL } from "@curtiz/domain";
 import { useState, type FormEvent } from "react";
+import { RepresentativeKitMg02Approval } from "./representative-kit-mg02-approval";
 
 type Row = Record<string, unknown>;
 const field = (row: Row,key: string) => typeof row[key] === "string" ? row[key] : "";
@@ -126,6 +127,7 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
   }
   return <section className="op-surface" aria-busy={busy}>
     <h2>{mode === "fiscal" ? "Notas fiscais dos kits MG" : mode === "collection" ? "Entregas de kits MG" : "Devoluções de kits MG"}</h2>
+    {mode === "fiscal" && <RepresentativeKitMg02Approval />}
     <button type="button" disabled={busy} onClick={() => void load()}>{rows ? "Atualizar fila" : "Consultar fila"}</button>
     {error && <p role="alert">{error}</p>}
     {rows?.length === 0 && <p role="status">Nenhum registro nesta fila.</p>}
