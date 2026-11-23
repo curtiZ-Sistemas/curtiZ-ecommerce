@@ -39,9 +39,9 @@ describe("representative existing catalog API", () => {
       p_offset: 0, p_query: "kit", p_color: "Bege", p_size: "37", p_available: true
     });
     const body = await response.json() as { items: { variants: Record<string, unknown>[] }[] };
-    expect(body.items[0].variants[0]).not.toHaveProperty("sku");
-    expect(body.items[0].variants[0]).not.toHaveProperty("imagePath");
-    expect(body.items[0].variants[0]).toMatchObject({ variantId: "v1", color: "Bege", size: "37" });
+    expect(body.items[0]?.variants[0]).not.toHaveProperty("sku");
+    expect(body.items[0]?.variants[0]).not.toHaveProperty("imagePath");
+    expect(body.items[0]?.variants[0]).toMatchObject({ variantId: "v1", color: "Bege", size: "37" });
   });
   it.each(["-1", "10001", "abc", "1.5"])("rejects invalid offset %s", async offset => {
     expect((await GET(request(offset))).status).toBe(400); expect(state.rpc).not.toHaveBeenCalled();
