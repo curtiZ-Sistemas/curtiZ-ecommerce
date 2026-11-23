@@ -187,11 +187,8 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
       <aside className="checkout-summary" aria-labelledby="kit-checkout-summary">
         <h2 id="kit-checkout-summary">Resumo</h2>
         <div className="checkout-totals">
-          <div className="summary-line"><span>Subtotal</span><strong>{formatBRL(subtotal)}</strong></div>
-          <div className="summary-line"><span>Entrega</span>
-            <strong>{quote ? (quote.shipping === 0 ? "Grátis" : formatBRL(quote.shipping)) : "A calcular"}</strong></div>
           {quote && deliveryTime(quote.days) && <div className="summary-line"><span>Prazo</span><strong>{deliveryTime(quote.days)}</strong></div>}
-          <div className="summary-line summary-total"><span>Total</span><strong>{quote ? formatBRL(quote.amount) : "—"}</strong></div>
+          <div className="summary-line summary-total"><span>Total</span><strong>{formatBRL(quote ? quote.amount : subtotal)}</strong></div>
         </div>
         <button type="button" className="primary-button full-button checkout-button" disabled={!canFinish}
           aria-busy={waiting} onClick={() => void finish()}>

@@ -1052,7 +1052,7 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /Pagar na entrega/ })).toHaveCount(0);
   const summary = page.locator(".checkout-summary");
-  await expect(summary.getByText("Grátis")).toBeVisible();
+  await expect(summary.getByText(/Frete|Entrega|Grátis/)).toHaveCount(0);
   await expect(summary.locator(".summary-total")).toContainText(/R\$\s*45,00/);
   await page.getByRole("button", { name: "Aumentar quantidade" }).click();
   await expect(page.locator("#kit-checkout-quantity")).toHaveText("2");
