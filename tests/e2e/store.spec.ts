@@ -1007,9 +1007,19 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
           { size: "38", pairs: 2 }, { size: "39", pairs: 1 }] }
     ] }]
   } }));
-  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [] } }));
+  // The address book starts empty and returns the saved address afterwards, like the real profile.
+  const savedAddresses: unknown[] = [];
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: savedAddresses } }));
   await page.route("https://viacep.com.br/ws/**", route => route.fulfill({ json: { erro: true } }));
-  await page.route("**/api/customer", route => route.fulfill({ json: { ok: true, data: addressId } }));
+  await page.route("**/api/customer", route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.action === "address_save") {
+      savedAddresses.splice(0, savedAddresses.length, { id: addressId, label: body.label, recipientName: body.recipientName,
+        street: body.street, number: body.number, complement: body.complement ?? "", district: body.district,
+        city: body.city, state: body.state, postalCode: body.postalCode, isDefault: false });
+    }
+    return route.fulfill({ json: { ok: true, data: addressId } });
+  });
   await page.route("**/api/representatives/kits/collection", route => {
     const body = route.request().postDataJSON() as { paymentTiming: string };
     // Payment on receipt is not offered for this address.

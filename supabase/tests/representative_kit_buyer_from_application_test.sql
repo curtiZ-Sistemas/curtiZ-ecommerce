@@ -34,8 +34,8 @@ insert into public.addresses(id,user_id,label,recipient_name,postal_code,street,
 
 insert into public.categories(id,name,slug) select category,'Kit app test',category::text from app_kit_fixture;
 insert into public.products(id,name,slug,category_id,status,base_price,weight_grams,width_cm,height_cm,length_cm)
-  select product,'Kit app test',product::text,category,'draft',50,250,10,5,20 from app_kit_fixture
-  union all select product2,'Kit app test 2',product2::text,category,'draft',60,250,10,5,20 from app_kit_fixture;
+  select product,'Kit app test',product::text,category,'draft'::public.product_status,50,250,10,5,20 from app_kit_fixture
+  union all select product2,'Kit app test 2',product2::text,category,'draft'::public.product_status,60,250,10,5,20 from app_kit_fixture;
 insert into public.product_variants(id,product_id,sku,color_name,size)
   select variant,product,'TEST-APP-'||variant::text,'White','37' from app_kit_fixture
   union all select variant2,product2,'TEST-APP-'||variant2::text,'White','38' from app_kit_fixture;
