@@ -216,6 +216,7 @@ export function PanelGlobalSearch({
           }
         }}
         placeholder="Buscar ação, página, pedido, cliente ou produto…"
+        aria-label="Buscar no painel"
         autoComplete="off"
         autoFocus
         role="combobox"
