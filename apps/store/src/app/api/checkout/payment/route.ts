@@ -8,6 +8,7 @@ import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { CUSTOMER_EMAIL_MAX_LENGTH, isValidBrazilianPhone, isValidCpf, phoneDigits, sanitizeCpf } from "@/lib/personal-data";
 import { encryptPII } from "@/lib/pii";
 import { CheckoutIdentityError, resolveCheckoutPayerDocument } from "../../../../lib/checkout-identity";
+import { mercadoPagoCardMethodIds } from "../../../../lib/mercadopago-card-methods";
 import { normalizeMercadoPagoStatus, publicPaymentState } from "@/lib/mercadopago-payment";
 import { readMercadoPagoPayerDocument } from "@/lib/mercadopago-payer-identity";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
@@ -52,9 +53,6 @@ const schema = z.object({
   })
 }).refine((value) => Boolean(value.orderId || value.checkout), "Pedido ou checkout obrigatório.");
 
-const mercadoPagoCardMethodIds = new Set([
-  "amex", "debcabal", "debmaster", "debvisa", "diners", "elo", "hipercard", "master", "visa"
-]);
 const validatePaymentMethod = (payment: z.infer<typeof schema>["payment"]) => {
   if (payment.payment_method_id === "pix" || payment.payment_method_id === "bolbradesco") return null;
   if (!mercadoPagoCardMethodIds.has(payment.payment_method_id)) return {

@@ -215,10 +215,10 @@ update private.representative_kit_checkout_approvals set buyer_document=null,gra
 -- reserved for a CNPJ-less automatic approval would be.
 update private.representative_kit_orders set buyer_snapshot=jsonb_set(buyer_snapshot,'{document}','null'::jsonb)
   where id=(select order_id from commercial_kit_fixture);
-select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
+select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','kit_payer_document_required',
   'an approval without CNPJ cannot start Pix while the server holds no payer CPF');
 select throws_ok($$select public.claim_representative_kit_pix(actor,order_id,false) from commercial_kit_fixture$$,
-  '23514','resale_payment_blocked','an explicit not-ready payer CPF cannot start Pix either');
+  '23514','kit_payer_document_required','an explicit not-ready payer CPF cannot start Pix either');
 select is((select o.payment_started_at is null from private.representative_kit_orders o
   join commercial_kit_fixture f on f.order_id=o.id),true,'a blocked claim leaves the order unclaimed');
 select is((select public.claim_representative_kit_pix(actor,order_id,true)->>'buyerName' from commercial_kit_fixture),

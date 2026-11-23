@@ -71,7 +71,7 @@ export function readMercadoPagoBrickSession(
   };
 }
 
-export function createMercadoPagoInitialization(session: MercadoPagoBrickSession) {
+export function createMercadoPagoInitialization<T extends Pick<MercadoPagoBrickSession, "amountInCents" | "email" | "savedCards">>(session: T) {
   if (!positiveSafeInteger(session.amountInCents)) return null;
   return {
     amount: session.amountInCents / 100,

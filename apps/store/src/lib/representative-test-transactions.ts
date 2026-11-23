@@ -5,14 +5,19 @@ import { MercadoPagoPaymentProvider, type MercadoPagoPayment } from "@curtiz/int
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isUnknownRecord, readNumber, readString } from "./unknown-data";
 
+export type KitTransactionReason = "payer_document_required";
 export class KitTransactionError extends Error {
-  constructor(readonly status = 409) { super("kit_transaction_unavailable"); }
+  constructor(readonly status = 409, readonly reason?: KitTransactionReason) { super("kit_transaction_unavailable"); }
 }
 
 export async function kitCall(db: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   const result = await db.rpc(name, args);
-  if (result.error) throw new KitTransactionError(result.error.code === "42501" ? 403
-    : ["P0001", "23514", "23505"].includes(result.error.code) ? 409 : 503);
+  if (result.error) {
+    // Only this fixed database message is a reason the buyer can act on; no other text is exposed.
+    const reason = result.error.message === "kit_payer_document_required" ? "payer_document_required" : undefined;
+    throw new KitTransactionError(result.error.code === "42501" ? 403
+      : ["P0001", "23514", "23505"].includes(result.error.code) ? 409 : 503, reason);
+  }
   return result.data;
 }
 export async function kitRecord(db: SupabaseClient, name: string, args: Record<string, unknown>) {
