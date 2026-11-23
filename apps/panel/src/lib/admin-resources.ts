@@ -379,9 +379,9 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     createdByField: "created_by"
   },
   kits: {
-    label: "Kits",
-    singular: "kit",
-    description: "Gerencie kits comerciais e regras de ativação.",
+    label: "Kits comerciais",
+    singular: "kit comercial",
+    description: "Gerencie kits comerciais e regras de ativação por ficha.",
     table: "kits",
     readPermission: "representatives.read_all",
     writePermission: "representatives.rules.manage",
