@@ -306,6 +306,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [categorySlug, setCategorySlug] = useState("");
   const [categorySlugEdited, setCategorySlugEdited] = useState(false);
   const [kitGradeSource, setKitGradeSource] = useState("");
+  const [kitStockDraft, setKitStockDraft] = useState<Record<string, number>>({});
   const [kitGradeSources, setKitGradeSources] = useState<KitGradeSource[] | null>(null);
   const [kitGradeSourcesError, setKitGradeSourcesError] = useState(false);
   const [kitGradeSourcesRetry, setKitGradeSourcesRetry] = useState(0);
@@ -438,6 +439,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       setKitGradeSource(item !== "new" && typeof item.grade_product_id === "string" && typeof item.grade_color === "string"
         ? `${item.grade_product_id}|${item.grade_color}`
         : "");
+      setKitStockDraft({});
     }
     setFieldErrors({});
     setFormError("");
@@ -977,8 +979,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
               </button>
             </header>
 
-            <form onSubmit={(event) => void save(event)}>
-              <div className="admin-form-grid">
+            <form className={resource === "kits" ? "kit-form" : undefined} onSubmit={(event) => void save(event)}>
+              <div className={resource === "kits" ? "admin-form-grid kit-form-grid" : "admin-form-grid"}>
                 {definition.fields.map((field) => {
                   const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
@@ -1015,9 +1017,21 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     );
                   }
 
+                  if (resource === "kits" && field.key === "active") {
+                    return (
+                      <label className="kit-form-toggle" key={field.key}>
+                        <input name={field.key} type="checkbox" defaultChecked={value === true} />
+                        <span className="kit-form-toggle-text">
+                          <strong>Ativo</strong>
+                          <small>Visível para representantes</small>
+                        </span>
+                      </label>
+                    );
+                  }
+
                   return (
                     <label
-                      className={field.type === "textarea" || field.type === "json" || (resource === "kits" && field.key === "name") ? "wide" : ""}
+                      className={field.type === "textarea" || field.type === "json" ? "wide" : ""}
                       key={field.key}
                     >
                       <span>
@@ -1101,7 +1115,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                   );
                 })}
                 {resource === "kits" && (
-                  <div className="wide">
+                  <div className="wide kit-form-source">
                     <label>
                       <span>Produto de referência para frete e NF-e *</span>
                       {kitGradeSources ? (
@@ -1131,58 +1145,82 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     {fieldErrors.gradeSource ? (
                       <small className="admin-field-error" id="grade-source-error" role="alert">{fieldErrors.gradeSource}</small>
                     ) : (
-                      <small id="grade-source-help">Usado só para NCM, peso e medidas. Não usa o estoque do produto.</small>
+                      <small className="kit-form-help" id="grade-source-help">Usado só para NCM, peso e medidas. Não usa o estoque do produto.</small>
                     )}
                   </div>
                 )}
                 {resource === "kits" && (
-                  <fieldset className="wide kit-grade-prices">
-                    <legend>Fichas</legend>
-                    <p className="wide kit-grade-help">Cada ficha tem 12 pares, com a distribuição de tamanhos fixa. O estoque conta kits completos; ficha sem estoque fica indisponível.</p>
-                    {kitGradeSheets.map(sheet => {
-                      const cents = editing === "new" ? undefined : readNumber(editing[sheet.priceKey]);
-                      const stock = editing === "new" ? undefined : readNumber(editing[sheet.stockKey]);
-                      const priceError = fieldErrors[sheet.priceKey];
-                      const stockError = fieldErrors[sheet.stockKey];
-                      return (
-                        <div key={sheet.priceKey} className="kit-grade-sheet">
-                          <strong>{sheet.label}</strong>
-                          <small className="kit-grade-sizes">{sheet.distribution}</small>
-                          <label>
-                            <span>Preço (R$) *</span>
-                            <span className="money-field-control">
-                              <span aria-hidden="true">R$</span>
-                              <input
-                                name={sheet.priceKey}
-                                type="text"
-                                inputMode="decimal"
-                                defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
-                                placeholder="0,00"
-                                required
-                                aria-invalid={Boolean(priceError)}
-                                aria-describedby={priceError ? `${sheet.priceKey}-error` : undefined}
-                              />
-                            </span>
-                            {priceError && <small className="admin-field-error" id={`${sheet.priceKey}-error`} role="alert">{priceError}</small>}
-                          </label>
-                          <label>
-                            <span>Estoque (kits) *</span>
-                            <input
-                              name={sheet.stockKey}
-                              type="number"
-                              inputMode="numeric"
-                              min={0}
-                              step={1}
-                              defaultValue={stock ?? 0}
-                              required
-                              aria-invalid={Boolean(stockError)}
-                              aria-describedby={stockError ? `${sheet.stockKey}-error` : undefined}
-                            />
-                            {stockError && <small className="admin-field-error" id={`${sheet.stockKey}-error`} role="alert">{stockError}</small>}
-                          </label>
-                        </div>
-                      );
-                    })}
+                  <fieldset className="wide kit-grade-prices" aria-labelledby="kit-grade-title">
+                    <h3 className="kit-form-section-title" id="kit-grade-title">Fichas</h3>
+                    <p className="kit-grade-help">Cada ficha tem 12 pares, com a distribuição de tamanhos fixa. O estoque conta kits completos; ficha sem estoque fica indisponível.</p>
+                    <div className="kit-grade-table">
+                      <div className="kit-grade-head" aria-hidden="true">
+                        <span>Ficha</span>
+                        <span>Preço (R$)</span>
+                        <span>Estoque (kits)</span>
+                      </div>
+                      {kitGradeSheets.map(sheet => {
+                        const cents = editing === "new" ? undefined : readNumber(editing[sheet.priceKey]);
+                        const stock = editing === "new" ? undefined : readNumber(editing[sheet.stockKey]);
+                        const priceError = fieldErrors[sheet.priceKey];
+                        const stockError = fieldErrors[sheet.stockKey];
+                        return (
+                          <div key={sheet.priceKey} className="kit-grade-sheet">
+                            <div className="kit-grade-name">
+                              <strong>{sheet.label}</strong>
+                              <ul className="kit-grade-sizes" aria-label="Distribuição de tamanhos">
+                                {sheet.distribution.split(", ").map(entry => {
+                                  const [size, pairs] = entry.split("×");
+                                  return <li key={entry}>{size} <span>×{pairs}</span></li>;
+                                })}
+                              </ul>
+                            </div>
+                            <label className="kit-grade-cell">
+                              <span className="kit-grade-cell-label">Preço (R$) *</span>
+                              <span className="money-field-control">
+                                <span aria-hidden="true">R$</span>
+                                <input
+                                  name={sheet.priceKey}
+                                  type="text"
+                                  inputMode="decimal"
+                                  defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
+                                  placeholder="0,00"
+                                  required
+                                  aria-invalid={Boolean(priceError)}
+                                  aria-describedby={priceError ? `${sheet.priceKey}-error` : undefined}
+                                />
+                              </span>
+                              {priceError && <small className="admin-field-error" id={`${sheet.priceKey}-error`} role="alert">{priceError}</small>}
+                            </label>
+                            <label className="kit-grade-cell">
+                              <span className="kit-grade-cell-label">Estoque (kits) *</span>
+                              <span className="kit-grade-stock-control">
+                                <input
+                                  name={sheet.stockKey}
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={0}
+                                  step={1}
+                                  defaultValue={stock ?? 0}
+                                  required
+                                  onChange={event => {
+                                    const next = event.target.valueAsNumber;
+                                    setKitStockDraft(current => ({ ...current, [sheet.stockKey]: Number.isFinite(next) && next > 0 ? next : 0 }));
+                                  }}
+                                  aria-invalid={Boolean(stockError)}
+                                  aria-describedby={stockError ? `${sheet.stockKey}-error` : undefined}
+                                />
+                                <span aria-hidden="true">kits</span>
+                              </span>
+                              {stockError && <small className="admin-field-error" id={`${sheet.stockKey}-error`} role="alert">{stockError}</small>}
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="kit-grade-total" aria-live="polite">
+                      Total: <strong>{kitGradeSheets.reduce((sum, sheet) => sum + (kitStockDraft[sheet.stockKey] ?? (editing === "new" ? 0 : readNumber(editing[sheet.stockKey]) ?? 0)), 0)} kits</strong> em estoque
+                    </p>
                   </fieldset>
                 )}
               </div>
