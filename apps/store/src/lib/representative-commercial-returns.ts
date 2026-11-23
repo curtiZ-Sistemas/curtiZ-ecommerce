@@ -18,11 +18,15 @@ export async function verifyRepresentativeKitReturnInvoice(provider: BlingClient
   const origin = readString(job,"documentOrigin");
   const rule = row(job.returnRule);
   const taxCodeKind = readString(rule,"taxCodeKind");
+  const series = readNumber(rule,"series");
+  const natureId = readNumber(rule,"external_nature_id");
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(originalInvoiceId) || originalInvoiceId <= 0 || id === originalInvoiceId
     || !/^31\d{42}$/u.test(key) || !/^31\d{42}$/u.test(originalKey)
-    || (origin !== "buyer_outflow" && origin !== "own_inflow") || (taxCodeKind !== "CST" && taxCodeKind !== "CSOSN")) throw invalid();
+    || (origin !== "buyer_outflow" && origin !== "own_inflow") || (taxCodeKind !== "CST" && taxCodeKind !== "CSOSN")
+    || !Number.isSafeInteger(series) || series < 1 || !Number.isSafeInteger(natureId) || natureId <= 0) throw invalid();
   const invoice = row(row(await provider.request(`/nfe/${id}`)).data);
-  if (Number(invoice.id) !== id || invoice.chaveAcesso !== key || Number(invoice.situacao) !== 5) throw invalid();
+  if (Number(invoice.id) !== id || invoice.chaveAcesso !== key || Number(invoice.situacao) !== 5
+    || Number(invoice.serie) !== series || Number(row(invoice.naturezaOperacao).id) !== natureId) throw invalid();
   const source = row(row(await provider.request(`/nfe/${originalInvoiceId}`)).data);
   if (Number(source.id) !== originalInvoiceId || source.chaveAcesso !== originalKey || Number(source.situacao) !== 5) throw invalid();
   const original = await provider.invoiceDocument(originalKey,"xml");

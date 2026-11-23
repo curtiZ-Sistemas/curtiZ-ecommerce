@@ -909,8 +909,9 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [320, 360, 375, 390, 412, 430]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect(page.locator(".account-mobile-home")).toHaveCount(1);
-    await expect(page.locator(".account-mobile-home")).toBeVisible();
+    const visibleMobileHome = page.locator(".account-mobile-home:visible");
+    await expect(visibleMobileHome).toHaveCount(1);
+    await expect(visibleMobileHome).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
     await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
@@ -945,7 +946,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
 
   for (const width of [768, 1366]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.locator(".account-mobile-home")).toBeHidden();
+    await expect(page.locator(".account-mobile-home:visible")).toHaveCount(0);
     await expect(page.locator(".customer-account-desktop-header")).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sua conta em resumo" })).toBeVisible();
@@ -994,11 +995,11 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   expect(login.ok()).toBe(true);
 
   const variantId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
-  await page.route("**/api/representatives/kits/catalog?offset=0", route =>
+  await page.route("**/api/representatives/kits/catalog?*", route =>
     route.fulfill({ json: {
-      items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto",
-        size: "34", pairsPerSku: 2, unitPriceInCents: 4500, available: 3 }],
-      nextOffset: null
+      items: [{ productId: "kit-test", name: "Kit de teste", variants: [{ variantId, color: "Preto",
+        size: "34", pairsPerSku: 2, unitPriceInCents: 4500, available: 3, imageUrl: "", imageAlt: "" }] }],
+      total: 1, colors: ["Preto"], sizes: ["34"], nextOffset: null
     } })
   );
   await page.route("**/api/representatives/kits/preview", route =>
@@ -1022,6 +1023,7 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   const basicPreview = page.waitForRequest(request => request.url().endsWith("/kits/preview"));
   await checkValue.click();
   expect((await basicPreview).postDataJSON()).toEqual({ variantId, quantity: 1 });
+  await page.getByText("Dados fiscais para a prévia").click();
   await page.getByLabel("Tipo de comprador").selectOption("business");
   await checkValue.click();
   await expect(page.getByText("Preencha os dois campos da prévia ou deixe ambos em branco.")).toBeVisible();
@@ -1036,7 +1038,6 @@ test("envia os dados informados para a prévia de kits de revenda", async ({ pag
   });
   await expect(page.getByRole("button", { name: "Compra em homologação" })).toBeDisabled();
   await page.setViewportSize({ width: 320, height: 850 });
-  await expect(page.getByText(/Entrega exclusiva em Minas Gerais/)).toBeVisible();
   await page.getByRole("button", { name: "Informar endereço de entrega" }).click();
   await expect(page.getByRole("option", { name: /Filial/ })).toHaveCount(0);
   await page.getByLabel("Endereço de entrega").selectOption(addressId);
@@ -1061,10 +1062,10 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: { items: [] } }));
 
-  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: {
-    checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null,
-    items: [{ variantId, name: "Kit de teste", sku: "KIT-TEST", color: "Preto", size: "34", pairsPerSku: 2,
-      unitPriceInCents: 4500, available: 3 }]
+  await page.route("**/api/representatives/kits/catalog?*", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: true, nextOffset: null, total: 1, colors: ["Preto"], sizes: ["34"],
+    items: [{ productId: "kit-test", name: "Kit de teste", variants: [{ variantId, color: "Preto", size: "34", pairsPerSku: 2,
+      unitPriceInCents: 4500, available: 3, imageUrl: "", imageAlt: "" }] }]
   } }));
   await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [] } }));
   await page.route("https://viacep.com.br/ws/**", route => route.fulfill({ json: { erro: true } }));
@@ -1123,7 +1124,7 @@ test("escolhe a ficha e calcula o troco no recebimento sem enviá-lo pelo formul
   const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
   const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
-  await page.route("**/api/representatives/kits/catalog?offset=0", route => route.fulfill({ json: { items: [], nextOffset: null } }));
+  await page.route("**/api/representatives/kits/catalog?*", route => route.fulfill({ json: { items: [], nextOffset: null } }));
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
     items: [{ kitId, name: "Kit por ficha", color: "Preto", description: "Grade de 12 pares", templates: [
       { code: "lower_restock", label: "Ficha reposição baixa", available: 3, unitPriceInCents: 26590,

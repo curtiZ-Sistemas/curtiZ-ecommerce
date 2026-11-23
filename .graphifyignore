@@ -27,3 +27,16 @@ supabase/.temp/
 .wrangler/
 design-references/
 performance/
+# Worktrees e pastas temporarias de agentes: duplicam simbolos no mapa.
+.bling-*/
+.cep-*/
+.home-*/
+.login-*/
+.pr*/
+.privacidade-*/
+.producao-*/
+.reconciliacao-*/
+.release-*/
+.retomada-*/
+.seguranca-*/
+.teste-*/

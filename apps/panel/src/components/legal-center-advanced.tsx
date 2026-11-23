@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { usePanelPrompt } from "./panel-prompt";
 import { LegalContent } from "./legal-content";
+import { privacyRequestDeclarationReference } from "../lib/privacy-request-deadline";
 
 type Item = Record<string, unknown>;
 type Capability =
@@ -1201,6 +1202,17 @@ function AcceptanceTable({ items, allowed }: { items: Item[]; allowed: boolean }
   );
 }
 
+function PrivacyRequestDeadline({ type, requestedAt }: { type: unknown; requestedAt: unknown }) {
+  const reference = privacyRequestDeclarationReference(type, requestedAt);
+  if (!reference) return null;
+  return (
+    <p>
+      Confirmação ou acesso: resposta simplificada imediata ou declaração completa em até 15 dias.
+      Referência para a declaração completa: {date(reference)}.
+    </p>
+  );
+}
+
 function PrivacyRequests({
   items,
   allowed,
@@ -1229,6 +1241,7 @@ function PrivacyRequests({
                   {text(item, "status")} · {date(item.requested_at)}
                 </small>
               </summary>
+              <PrivacyRequestDeadline type={item.request_type} requestedAt={item.requested_at} />
               <p>
                 <strong>Solicitante:</strong> {text(item, "requester_name")} ·{" "}
                 {text(item, "requester_email")}

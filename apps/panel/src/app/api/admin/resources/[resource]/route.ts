@@ -19,6 +19,7 @@ import { postgresUuidSchema } from "@/lib/postgres-uuid";
 import { normalizeBannerValues } from "@/lib/banner-management";
 import { bannerFailure, validateBannerReferences } from "@/lib/banner-management-server";
 import { categoryDeletionMessage } from "../../../../../lib/category-management";
+import { publicCatalogMediaUrl } from "@/lib/public-media";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,16 @@ const bannerMoveSchema = z.object({
 }).strict();
 
 type AdminClient = NonNullable<Awaited<ReturnType<typeof authorizeAdminRequest>>>["supabase"];
+type CatalogVariantRecord = Record<string, unknown>;
+type CatalogProductRecord = Record<string, unknown> & { variants: CatalogVariantRecord[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isCatalogProduct(value: unknown): value is CatalogProductRecord {
+  return isRecord(value) && Array.isArray(value.variants) && value.variants.every(isRecord);
+}
 
 async function permissionGranted(supabase: AdminClient, permissionCode: string) {
   const result = await supabase.rpc("has_permission", {
@@ -387,6 +398,52 @@ export async function GET(
       return NextResponse.json({ message: "Não foi possível carregar as linhas de estoque." }, { status: 503, headers: privateNoStore });
     }
     return NextResponse.json({ items: sources.data }, { headers: privateNoStore });
+  }
+
+  if (context.resource === "kits" && request.nextUrl.searchParams.get("catalog") === "true") {
+    const filters = z.object({
+      offset: z.coerce.number().int().min(0).max(10_000).default(0),
+      q: z.string().trim().max(80).default(""),
+      color: z.string().trim().max(80).default(""),
+      size: z.string().trim().max(40).default(""),
+      available: z.enum(["true", "false"]).default("false")
+    }).safeParse(Object.fromEntries(request.nextUrl.searchParams));
+    if (!filters.success) {
+      return NextResponse.json({ message: "Revise os filtros do catálogo." }, { status: 400, headers: privateNoStore });
+    }
+    const catalog = await context.auth.supabase.rpc("list_admin_representative_catalog_kit_groups", {
+      p_offset: filters.data.offset,
+      p_query: filters.data.q,
+      p_color: filters.data.color,
+      p_size: filters.data.size,
+      p_available: filters.data.available === "true"
+    });
+    if (catalog.error) {
+      if (catalog.error.code === "42501") return forbiddenPermissionResponse();
+      return NextResponse.json({ message: "Não foi possível carregar o catálogo de revenda." }, { status: 503, headers: privateNoStore });
+    }
+    if (!isRecord(catalog.data) || !Array.isArray(catalog.data.items)) {
+      return NextResponse.json({ message: "Não foi possível carregar o catálogo de revenda." }, { status: 503, headers: privateNoStore });
+    }
+    const productRows = catalog.data.items.filter(isCatalogProduct);
+    if (productRows.length !== catalog.data.items.length) {
+      return NextResponse.json({ message: "Não foi possível carregar o catálogo de revenda." }, { status: 503, headers: privateNoStore });
+    }
+    const items = productRows.map(item => ({
+      ...item,
+      variants: item.variants.map(variant => {
+        const { imagePath, ...saved } = variant;
+        return {
+          ...saved,
+          imageUrl: typeof imagePath === "string" ? publicCatalogMediaUrl(imagePath, {
+            storeUrl: process.env.NEXT_PUBLIC_STORE_URL,
+            supabaseUrl: process.env.SUPABASE_URL
+          }) : "",
+          imageAlt: typeof variant.imageAlt === "string" ? variant.imageAlt : ""
+        };
+      })
+    }));
+    return NextResponse.json({ ...catalog.data, items }, { headers: privateNoStore });
   }
 
   const page = Math.max(1, Math.min(10_000, Number(request.nextUrl.searchParams.get("page")) || 1));

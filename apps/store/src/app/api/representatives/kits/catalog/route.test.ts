@@ -11,6 +11,7 @@ vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => 
   REPRESENTATIVE_KIT_MP_COLLECTOR_ID: state.collector
 }) }));
 vi.mock("@/lib/unknown-data", () => import("../../../../../lib/unknown-data"));
+vi.mock("@/lib/product-image-seo", () => import("../../../../../lib/product-image-seo"));
 import { GET } from "./route";
 const request = (offset = "0") => new NextRequest(`https://curtiz.com.br/api/representatives/kits/catalog?offset=${offset}`);
 beforeEach(() => {
@@ -18,13 +19,29 @@ beforeEach(() => {
   state.configured = false;
   state.collector = "";
   state.rpc.mockReset();
-  state.rpc.mockResolvedValue({ data: { items: [], nextOffset: null }, error: null });
+  state.rpc.mockResolvedValue({ data: { items: [], total: 0, nextOffset: null }, error: null });
 });
 describe("representative existing catalog API", () => {
-  it("reads a private page using only the server catalog RPC", async () => {
+  it("reads a private page of products grouped by the server catalog RPC", async () => {
     const response = await GET(request("24")); expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("list_representative_catalog_kits", { p_offset: 24 });
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("list_representative_catalog_kit_groups", {
+      p_offset: 24, p_query: "", p_color: "", p_size: "", p_available: false
+    });
+  });
+  it("forwards filters and never exposes SKU or storage paths to the representative", async () => {
+    state.rpc.mockResolvedValueOnce({ data: { items: [{ productId: "p1", name: "Kit", variants: [
+      { variantId: "v1", sku: "SHOPEE-X-37", color: "Bege", size: "37", imagePath: "", imageAlt: "Kit bege" }
+    ] }], total: 1, nextOffset: null }, error: null });
+    const response = await GET(new NextRequest(
+      "https://curtiz.com.br/api/representatives/kits/catalog?q=kit&color=Bege&size=37&available=true"));
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("list_representative_catalog_kit_groups", {
+      p_offset: 0, p_query: "kit", p_color: "Bege", p_size: "37", p_available: true
+    });
+    const body = await response.json() as { items: { variants: Record<string, unknown>[] }[] };
+    expect(body.items[0].variants[0]).not.toHaveProperty("sku");
+    expect(body.items[0].variants[0]).not.toHaveProperty("imagePath");
+    expect(body.items[0].variants[0]).toMatchObject({ variantId: "v1", color: "Bege", size: "37" });
   });
   it.each(["-1", "10001", "abc", "1.5"])("rejects invalid offset %s", async offset => {
     expect((await GET(request(offset))).status).toBe(400); expect(state.rpc).not.toHaveBeenCalled();
@@ -32,7 +49,7 @@ describe("representative existing catalog API", () => {
   it("preserves access to past orders while new commercial checkout is disabled", async () => {
     state.collector = "123";
     await expect((await GET(request())).json()).resolves.toEqual({
-      items: [], nextOffset: null, orderHistoryAvailable: true, checkoutConfigured: false
+      items: [], total: 0, nextOffset: null, orderHistoryAvailable: true, checkoutConfigured: false
     });
   });
   it("requires login, distinguishes denied role and database failure", async () => {

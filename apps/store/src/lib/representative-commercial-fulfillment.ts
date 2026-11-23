@@ -117,7 +117,7 @@ export async function verifyCommercialKitInvoice(db: SupabaseClient, provider: B
   const { issuer, natureId, rule, mirror, allocations, freight } = await commercialKitFiscalMirror(db, job, issueDate);
   const context = await kitRecord(db,"read_representative_kit_bling_order",{ p_order: orderId });
   const billing = row(context.fiscalAddress);
-  if (!manual && Number(row(invoice.naturezaOperacao).id) !== natureId) throw scopeError();
+  if (Number(row(invoice.naturezaOperacao).id) !== natureId) throw scopeError();
   const document = await provider.invoiceDocument(key, "xml");
   const xml = new TextDecoder("utf-8", { fatal: true }).decode(document);
   const verified = readBlingAuthorizedResaleXml(xml, key, {
@@ -297,6 +297,11 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
           p_protocol: verified.protocol, p_sha256: verified.hash
         }) === true;
         if (!clearance) throw scopeError();
+        if (job.ownDelivery !== true && !readString(job, "collectionMethod")) {
+          if (getMelhorEnvioEnvironment(environment) !== "production") throw scopeError();
+          const shipping = createMelhorEnvioProvider(environment, db, transport);
+          await advanceRepresentativeKitShipping(db, shipping, environment, job, verified.key);
+        }
         continue;
       }
       if (!await advanceRepresentativeKitBling(db, bling, environment, job)) continue;

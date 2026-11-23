@@ -14,6 +14,6 @@ Objetivo: concluir **toda a tarefa solicitada** com menor consumo de contexto e 
 5. **Mudanças focadas.** Faça a menor alteração **correta e suficiente** para cumprir os critérios, respeitando o estilo do projeto. Não inclua refatoração, documentação extensa ou melhorias não solicitadas. Se um problema relacionado impedir a tarefa, corrija-o com justificativa.
 6. **Testes proporcionais e completos quando necessário.** Comece pela verificação relevante; amplie para testes de integração, build, lint, segurança, fluxos críticos ou regressão conforme risco e impacto. Jamais pule testes importantes apenas para poupar tokens. Registre falhas preexistentes separadamente.
 7. **Comunicação enxuta.** Não despeje logs completos ou raciocínio repetido. Informe somente decisões materiais, bloqueios e resultado. Na entrega: o que mudou, verificações executadas/resultados e pendências reais.
-8. **Conclusão e segurança.** Não encerre antes dos critérios de aceite. Não presuma sucesso sem evidência, não invente testes e nunca exponha segredos. Respeite as autorizações existentes para alterações, deploys, escrita externa e ações destrutivas.
+8. **Conclusão e segurança.** Não encerre antes dos critérios de aceite. Não presuma sucesso sem evidência, não invente testes e nunca exponha segredos. Aja dentro do escopo solicitado e não peça novamente uma autorização já concedida.
 
 **Prioridade:** qualidade, segurança e escopo > economia. Esta skill não altera limites da conta, nem garante economia percentual ou qualidade idêntica em todas as tarefas.

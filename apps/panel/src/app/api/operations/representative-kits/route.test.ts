@@ -22,6 +22,14 @@ const route = {
   bling_method_ids: { cash: "11" },
   point_terminal_id: null, verified_evidence: "Conferência isolada de teste", valid_until: "2099-01-01T00:00:00Z"
 };
+const mg02 = {
+  action: "approve_mg02", representativeCode: "REP-0123ABCDEF", document: "11222333000181",
+  legalName: "Empresa de teste LTDA", stateRegistration: "0012345678900",
+  fiscalAddress: { state: "MG", postal_code: "35524168", street: "Rua de teste", number: "10", district: "Centro", city: "Nova Serrana" },
+  buyerEvidence: "Protocolo cadastral conferido", operationEvidence: "Referência contábil conferida",
+  stockEvidence: "Inventário atual conferido", homologationEvidence: "Relato do proprietário; documentos não retidos",
+  validUntil: "2099-01-01T00:00:00Z"
+};
 const post = (body: object) => POST(new NextRequest(url, {
   method: "POST", headers: { origin: new URL(url).origin, "content-type": "application/json" }, body: JSON.stringify(body)
 }));
@@ -41,6 +49,29 @@ describe("representative kit operations", () => {
     const invoiceKey = "31261112345678000195550040000000001123456782";
     expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(400);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("registers a verified MG02 account through the protected approval RPC", async () => {
+    rpc.mockResolvedValueOnce({ data: 162, error: null });
+    const response = await post(mg02);
+    expect(response.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("approve_representative_kit_mg02", {
+      p_representative_code: mg02.representativeCode, p_document: mg02.document, p_legal_name: mg02.legalName,
+      p_state_registration: mg02.stateRegistration, p_fiscal_address: mg02.fiscalAddress,
+      p_buyer_evidence: mg02.buyerEvidence, p_operation_evidence: mg02.operationEvidence,
+      p_stock_evidence: mg02.stockEvidence, p_homologation_evidence: mg02.homologationEvidence,
+      p_valid_until: mg02.validUntil
+    });
+  });
+
+  it("rejects an invalid representative code before the database call", async () => {
+    expect((await post({ ...mg02, representativeCode: "REP-unknown" })).status).toBe(400);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("preserves the database permission boundary for MG02 approvals", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+    expect((await post(mg02)).status).toBe(403);
   });
 
   it("rejects a route charging one cent before calling the database", async () => {

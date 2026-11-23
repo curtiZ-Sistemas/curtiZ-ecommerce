@@ -13,6 +13,7 @@ returns boolean language sql stable set search_path = '' as $$
       and r.fiscal_parameters->'advancePixWithManualInvoice'='true'::jsonb
       and r.fiscal_parameters->'blingRule'->>'series'='3'
       and r.fiscal_parameters->'creditEligible'='false'::jsonb
+      and private.representative_kit_commercial_configuration(o.actor_id,o.rule_version_id)
   );
 $$;
 revoke all on function private.representative_kit_manual_fiscal(private.representative_kit_orders)
@@ -70,6 +71,9 @@ begin
     where f.order_id=o.id and f.invoice_access_key is null and f.bling_invoice_id is null
       and not exists(select 1 from private.representative_kit_fulfillment_writes w where w.order_id=o.id
         and w.operation in ('bling_invoice_draft','bling_invoice_send'))
+      and not exists(select 1 from private.representative_kit_fulfillment other where other.order_id<>o.id
+        and (other.bling_invoice_id=p_invoice or other.manual_invoice_id=p_invoice
+          or other.invoice_access_key=p_key or other.manual_invoice_key=p_key))
       and not exists(select 1 from private.bling_order_links b where b.invoice_id=p_invoice or b.invoice_access_key=p_key);
   if not found then return false; end if;
   insert into public.audit_logs(actor_id,actor_role,action,entity_type,entity_id,new_data_sanitized)
@@ -108,6 +112,9 @@ begin
       and f.invoice_cancellation_confirmed_at is null
       and (f.bling_invoice_id is null or f.bling_invoice_id=p_invoice)
       and (f.invoice_access_key is null or (f.invoice_access_key=p_key and f.invoice_protocol=p_protocol and f.invoice_xml_sha256=p_sha256))
+      and not exists(select 1 from private.representative_kit_fulfillment other where other.order_id<>o.id
+        and (other.bling_invoice_id=p_invoice or other.manual_invoice_id=p_invoice
+          or other.invoice_access_key=p_key or other.manual_invoice_key=p_key))
       and not exists(select 1 from private.bling_order_links b where b.invoice_id=p_invoice or b.invoice_access_key=p_key);
   return found;
 exception when unique_violation then return false;
