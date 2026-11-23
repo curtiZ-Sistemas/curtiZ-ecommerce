@@ -913,7 +913,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
     await expect(visibleMobileHome).toHaveCount(1);
     await expect(visibleMobileHome).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
-    await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
+    await expect(page.getByText("cliente.demo@curtiz.local").first()).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
     await expect(
       page.locator(".account-mobile-menu-copy strong", {
