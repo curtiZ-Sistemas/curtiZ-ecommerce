@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { BannerManager } from "./banner-manager";
 import { RepresentativeKitDeliveryRoutes } from "./representative-kit-delivery-routes";
+import { RepresentativeKitCatalogAdmin } from "./representative-kit-catalog-admin";
 import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
@@ -598,7 +599,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
   return (
     <section className="panel-card admin-resource">
-      {resource === "kits" && canUpdate && <RepresentativeKitDeliveryRoutes />}
       {resource === "pedidos" ? <BlingOperational /> : null}
       <header className="admin-resource-header">
         <div>
@@ -612,6 +612,16 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
           </button>
         ) : null}
       </header>
+
+      {resource === "kits" ? <>
+        <RepresentativeKitCatalogAdmin />
+        <header className="representative-kit-commercial-heading">
+          <div>
+            <h2>Kits comerciais</h2>
+            <p>Registros comerciais e regras de ativação. Eles são separados dos produtos e variantes exibidos no catálogo acima.</p>
+          </div>
+        </header>
+      </> : null}
 
       <div className="admin-toolbar">
         <form
@@ -737,7 +747,9 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
           <h3>Nenhum registro encontrado</h3>
           <p>
             {canCreate
-              ? `Cadastre ${definition.singular} para começar nesta área.`
+              ? resource === "kits"
+                ? "Não há kits comerciais cadastrados. Os produtos elegíveis para revenda aparecem no catálogo acima."
+                : `Cadastre ${definition.singular} para começar nesta área.`
               : "Não há dados reais para os filtros informados."}
           </p>
           {canCreate ? (
@@ -1212,6 +1224,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
           </section>
         </div>
       ) : null}
+      {resource === "kits" && canUpdate ? <RepresentativeKitDeliveryRoutes /> : null}
     </section>
   );
 }
@@ -1227,7 +1240,7 @@ function createActionLabel(resource: AdminResourceKey, singular: string) {
     conteudo: "Novo conteúdo",
     marketing: "Novo público",
     cupons: "Criar cupom",
-    kits: "Novo kit",
+    kits: "Novo kit comercial",
     niveis: "Novo nível",
     metas: "Nova meta",
     comissoes: "Nova regra",
