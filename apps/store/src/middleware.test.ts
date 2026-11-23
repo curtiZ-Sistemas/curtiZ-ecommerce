@@ -218,6 +218,25 @@ describe("store security headers", () => {
     expect(csp).not.toContain("mlstatic.com");
   });
 
+  it("libera o Mercado Pago só nas páginas de compra de kit do representante", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "");
+
+    for (const pathname of ["/representante/comprar-kit", "/representante/comprar-kit/checkout"]) {
+      const csp = (await middleware(new NextRequest(`https://loja.example${pathname}`)))
+        .headers.get("content-security-policy") ?? "";
+      expect(readCspDirective(csp, "script-src")).toContain("https://sdk.mercadopago.com");
+      expect(readCspDirective(csp, "connect-src")).toContain("https://api.mercadopago.com");
+      expect(readCspDirective(csp, "connect-src")).toContain("https://http2.mlstatic.com");
+    }
+    for (const pathname of ["/representante", "/representante/metas", "/representante/comprar-kit/outra"]) {
+      const csp = (await middleware(new NextRequest(`https://loja.example${pathname}`)))
+        .headers.get("content-security-policy") ?? "";
+      expect(csp).not.toContain("mercadopago.com");
+    }
+  });
+
   it("libera o Brick somente na rota estrita de pagamento do pedido", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SUPABASE_URL", "");

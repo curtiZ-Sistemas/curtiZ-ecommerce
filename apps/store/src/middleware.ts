@@ -283,6 +283,11 @@ function isCheckoutRoute(pathname: string): boolean {
   return pathname === "/checkout" || pathname.startsWith("/checkout/");
 }
 
+// Kit purchase pages render the Mercado Pago card Brick (and the Pix flow) for representatives.
+function isRepresentativeKitPaymentRoute(pathname: string): boolean {
+  return /^\/representante\/comprar-kit(?:\/checkout)?\/?$/u.test(pathname);
+}
+
 function isOrderPaymentRoute(pathname: string): boolean {
   return /^\/pedido\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/pagamento\/?$/iu.test(
     pathname
@@ -491,7 +496,8 @@ export async function middleware(request: NextRequest) {
 
   const mercadoPagoPage =
     checkoutRequest ||
-    isOrderPaymentRoute(request.nextUrl.pathname);
+    isOrderPaymentRoute(request.nextUrl.pathname) ||
+    isRepresentativeKitPaymentRoute(request.nextUrl.pathname);
 
   /*
    * crypto.randomUUID gera um valor imprevisível por requisição.
