@@ -9,16 +9,40 @@ import { kitRequest, KitRequestError } from "./representative-kit-request";
 
 export { kitRequest };
 
+type StatusTone = "pending" | "success" | "review" | "muted";
 const statusLabels: Record<string, string> = {
-  reserved: "Estoque reservado", payment_pending: "Aguardando pagamento",
+  reserved: "Aguardando pagamento", payment_pending: "Aguardando pagamento",
   paid: "Pagamento confirmado", cancelled: "Cancelado", refunded: "Estornado",
   manual_review: "Em análise", awaiting_receipt: "Pagamento no recebimento"
+};
+const statusTones: Record<string, StatusTone> = {
+  reserved: "pending", payment_pending: "pending", paid: "success", awaiting_receipt: "success",
+  manual_review: "review", cancelled: "muted", refunded: "muted"
 };
 const shipmentLabels: Record<string, string> = {
   pending: "Envio em preparação", ready: "Envio em preparação", label_created: "Etiqueta gerada",
   dispatched: "Enviado", in_transit: "Em transporte", delayed: "Entrega com atraso",
   delivered: "Entregue", returned: "Devolvido ao remetente", cancelled: "Envio cancelado"
 };
+const historyStates = ["cancelled", "refunded"];
+// States where asking the server again can bring news (payment, review, tracking, returns).
+const syncStates = ["payment_pending", "manual_review", "paid", "awaiting_receipt"];
+
+function orderStatus(order: UnknownRecord, tracking: UnknownRecord | null): { label: string; tone: StatusTone } {
+  const state = readString(order, "state");
+  if (order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)) {
+    return { label: "Cancelamento em confirmação", tone: "review" };
+  }
+  if (tracking?.status === "delivered") return { label: "Entregue", tone: "success" };
+  return { label: statusLabels[state] ?? "Pedido em análise", tone: statusTones[state] ?? "review" };
+}
+
+function formatMoment(value: unknown) {
+  if (typeof value !== "string") return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(", ", " às ");
+}
 
 export type RepresentativeKitSelection = { variantId: string } | { kitId: string; template: string };
 
@@ -29,11 +53,17 @@ export type CollectionMethod = keyof typeof collectionMethods;
 
 export type PrepayMethod = "pix" | "credit_card" | "debit_card";
 export const prepayMethods: Record<PrepayMethod, string> = { pix: "Pix", credit_card: "Cartão de crédito", debit_card: "Cartão de débito" };
+const methodTabs: Record<PrepayMethod, string> = { pix: "Pix", credit_card: "Crédito", debit_card: "Débito" };
 export const isPrepayMethod = (value: string): value is PrepayMethod => Object.hasOwn(prepayMethods, value);
 const cardKinds: Record<Exclude<PrepayMethod, "pix">, KitCardKind> = { credit_card: "credit", debit_card: "debit" };
 
-function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null, onOffersChanged }: {
+function StatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
+  return <span className={`kit-order-badge is-${tone}`}>{label}</span>;
+}
+
+function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null, onOffersChanged, onChange }: {
   initial: UnknownRecord; checkoutConfigured: boolean; autoMethod?: PrepayMethod | null; onOffersChanged?: () => void;
+  onChange?: (order: UnknownRecord) => void;
 }) {
   const [order, setOrder] = useState(initial);
   const [tracking, setTracking] = useState<UnknownRecord | null>(null);
@@ -44,14 +74,19 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
-  const [cardKind, setCardKind] = useState<KitCardKind | null>(null);
+  const [payMethod, setPayMethod] = useState<PrepayMethod>(autoMethod ?? "pix");
+  const [cardSubmitted, setCardSubmitted] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [issueCode, setIssueCode] = useState("");
   const orderId = readString(order, "orderId");
   const state = readString(order, "state");
   const canCancel = (["reserved", "payment_pending"].includes(state) || order.canCancelPaid === true || order.canCancelCollection === true)
     && order.cancellationRequested !== true;
   const method = readString(order, "collectionMethod") as CollectionMethod;
-  const pix = isUnknownRecord(order.pix) ? readString(order.pix, "copyPaste") : "";
+  const pixData = isUnknownRecord(order.pix) ? order.pix : null;
+  const pix = pixData ? readString(pixData, "copyPaste") : "";
+  const choosing = state === "reserved" && checkoutConfigured && canCancel && !cardSubmitted;
+  const cardKind = choosing && payMethod !== "pix" ? cardKinds[payMethod] : null;
   const orderState = useRef(state);
   orderState.current = state;
   async function update(action: "pix" | "status" | "cancel") {
@@ -60,11 +95,13 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
     setMessage("");
     setIssueCode("");
     setCopied(false);
+    setConfirmCancel(false);
     try {
       const data = await kitRequest({ action, orderId });
       if (!isUnknownRecord(data.order)) throw new Error("Pedido indisponível para consulta.");
       const next = data.order;
       setOrder(current => ({ ...current, ...next, pix: next.pix }));
+      onChange?.(next);
       // A cancelled or expired order gives its stock back: the offers must show it.
       if (action === "cancel" || readString(next, "state") !== orderState.current) onOffersChanged?.();
       if (action === "status") {
@@ -82,22 +119,30 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
     if (isUnknownRecord(data.order)) {
       const next = data.order;
       setOrder(current => ({ ...current, ...next, pix: undefined }));
+      onChange?.(next);
     }
     const status = isUnknownRecord(data.card) ? readString(data.card, "status") : "";
-    setCardKind(null);
+    setCardSubmitted(true);
     setMessage(status === "approved" ? "Pagamento aprovado."
       : status === "in_process" ? "Pagamento em análise. Avisaremos assim que o Mercado Pago confirmar."
         : "Pagamento enviado. Use Atualizar situação para acompanhar.");
     onOffersChanged?.();
   }
+  function choose(next: PrepayMethod) {
+    if (pending || next === payMethod) return;
+    setPayMethod(next);
+    setMessage("");
+    setIssueCode("");
+    if (next === "pix" && !pix) void update("pix");
+  }
   const autoStarted = useRef(false);
   const startPix = useRef(update);
   startPix.current = update;
   useEffect(() => {
-    if (!autoMethod || autoStarted.current || !checkoutConfigured || state !== "reserved" || !canCancel) return;
+    // Only Pix needs a request to begin; the card form mounts as soon as it is the chosen method.
+    if (autoMethod !== "pix" || autoStarted.current || !checkoutConfigured || state !== "reserved" || !canCancel) return;
     autoStarted.current = true;
-    if (autoMethod === "pix") void startPix.current("pix");
-    else setCardKind(cardKinds[autoMethod]);
+    void startPix.current("pix");
   }, [autoMethod, checkoutConfigured, state, canCancel]);
   async function requestReturn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,49 +178,65 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
   const shipmentStatus = tracking ? shipmentLabels[readString(tracking, "status")] : "";
   const pairOptions = readRows(order.returnablePairOptions);
   const sizeBySku = new Map(pairOptions.map(option => [readString(option,"sku"), readString(option,"size")]));
-  return <div className="representative-profile-form">
-    {typeof order.productName === "string" && <strong>{order.productName}</strong>}
-    <p role="status">{order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)
-      ? "Cancelamento em confirmação"
-      : state === "paid" && tracking?.fiscalStatus === "awaiting_fiscal_issuance"
-        ? "Pagamento confirmado. Aguardando emissão fiscal."
-        : statusLabels[state] ?? "Pedido em análise"}</p>
-    {typeof order.amountInCents === "number" && <p>Total {formatBRL(order.amountInCents)}</p>}
-    {method && Object.hasOwn(collectionMethods, method) && <p>No recebimento · {collectionMethods[method]}</p>}
+  const status = orderStatus(order, tracking);
+  const awaitingFiscal = state === "paid" && tracking?.fiscalStatus === "awaiting_fiscal_issuance";
+  const reservedUntil = ["reserved", "payment_pending"].includes(state) ? formatMoment(order.reservedUntil) : "";
+  const pixUntil = pixData ? formatMoment(pixData.expiresAt) : "";
+  const showPayment = choosing || Boolean(pix);
+  const canSync = syncStates.includes(state) || cardSubmitted;
+  return <div className="kit-order-detail">
+    <header className="kit-order-head">
+      <div>
+        {typeof order.productName === "string" && <h3 className="kit-order-title">{order.productName}</h3>}
+        {typeof order.quantity === "number" && <p className="kit-order-meta">{order.quantity} {order.quantity === 1 ? "kit" : "kits"}</p>}
+      </div>
+      <StatusBadge {...status} />
+    </header>
+    {awaitingFiscal && <p role="status" className="kit-order-note">Aguardando emissão fiscal.</p>}
+    {showPayment && <section className="kit-order-pay" aria-label="Pagamento">
+      <div className="kit-order-summary">
+        {typeof order.amountInCents === "number" && <p className="kit-order-total">
+          <span>Total</span><strong>{formatBRL(order.amountInCents)}</strong></p>}
+        {reservedUntil && <p className="kit-order-hold">Estoque reservado até {reservedUntil}</p>}
+      </div>
+      <div className="kit-order-pay-main">
+        {choosing && <div className="kit-order-methods" role="radiogroup" aria-label="Forma de pagamento">
+          {(Object.keys(methodTabs) as PrepayMethod[]).map(key => <button key={key} type="button" role="radio"
+            aria-checked={payMethod === key} disabled={pending} className={payMethod === key ? "kit-order-method is-active" : "kit-order-method"}
+            onClick={() => choose(key)}>{methodTabs[key]}</button>)}
+        </div>}
+        {cardKind
+          ? <RepresentativeKitCardPayment key={cardKind} orderId={orderId} kind={cardKind} onResult={cardResult} />
+          : pix ? <div className="kit-order-pix">
+            <label>Pix copia e cola<input readOnly value={pix} onFocus={event => event.currentTarget.select()} /></label>
+            <button type="button" className="primary-button" onClick={() => {
+              if (!navigator.clipboard) {
+                setMessage("Selecione e copie o código Pix.");
+                return;
+              }
+              void navigator.clipboard.writeText(pix).then(() => setCopied(true))
+                .catch(() => setMessage("Selecione e copie o código Pix."));
+            }}>{copied ? "Código copiado" : "Copiar código Pix"}</button>
+            {pixUntil && <p className="kit-order-hold">Pague até {pixUntil}</p>}
+          </div> : <div className="kit-order-pix">
+            <p className="kit-order-hold">{pending ? "Gerando o Pix…" : "O código Pix vale por tempo limitado e é gerado ao confirmar."}</p>
+            <button type="button" className="primary-button" disabled={pending} onClick={() => void update("pix")}>Gerar Pix</button>
+          </div>}
+      </div>
+    </section>}
+    {!showPayment && typeof order.amountInCents === "number" && <p className="kit-order-total">
+      <span>Total</span><strong>{formatBRL(order.amountInCents)}</strong></p>}
+    {method && Object.hasOwn(collectionMethods, method) && <p className="kit-order-meta">No recebimento · {collectionMethods[method]}</p>}
     {method === "cash" && typeof order.cashTenderedInCents === "number" && typeof order.cashChangeInCents === "number"
-      && <p>Valor informado {formatBRL(order.cashTenderedInCents)} · {order.cashChangeInCents > 0
+      && <p className="kit-order-meta">Valor informado {formatBRL(order.cashTenderedInCents)} · {order.cashChangeInCents > 0
         ? `Troco ${formatBRL(order.cashChangeInCents)}` : "Sem troco"}</p>}
-    {pix && <>
-      <label>Pix copia e cola<input readOnly value={pix} onFocus={event => event.currentTarget.select()} /></label>
-      <button type="button" className="secondary-button" onClick={() => {
-        if (!navigator.clipboard) {
-          setMessage("Selecione e copie o código Pix.");
-          return;
-        }
-        void navigator.clipboard.writeText(pix).then(() => setCopied(true))
-          .catch(() => setMessage("Selecione e copie o código Pix."));
-      }}>{copied ? "Código copiado" : "Copiar código Pix"}</button>
-    </>}
     {state === "payment_pending" && order.paymentMethod === "card" && !pix && order.cancellationRequested !== true
-      && <p role="status">Pagamento no cartão em análise. Atualizaremos o pedido assim que o Mercado Pago confirmar.</p>}
-    {state === "reserved" && checkoutConfigured && canCancel && <div className="kit-order-payment-actions">
-      <button type="button" className="primary-button" disabled={pending} onClick={() => { setCardKind(null); void update("pix"); }}>Gerar Pix</button>
-      <button type="button" className="secondary-button" disabled={pending} aria-expanded={cardKind === "credit"}
-        onClick={() => setCardKind("credit")}>Pagar com cartão de crédito</button>
-      <button type="button" className="secondary-button" disabled={pending} aria-expanded={cardKind === "debit"}
-        onClick={() => setCardKind("debit")}>Pagar com cartão de débito</button>
-    </div>}
-    {state === "reserved" && checkoutConfigured && canCancel && cardKind
-      && <RepresentativeKitCardPayment key={cardKind} orderId={orderId} kind={cardKind} onResult={cardResult} />}
-    <button type="button" className="secondary-button" disabled={pending}
-      onClick={() => void update("status")}>{pending ? "Consultando…" : "Atualizar situação"}</button>
-    {canCancel && <button type="button" className="secondary-button" disabled={pending}
-      onClick={() => void update("cancel")}>Cancelar pedido</button>}
-    {shipmentStatus && <p role="status">{shipmentStatus}{trackingCode && <> · Rastreio {trackingCode}</>}</p>}
+      && <p role="status" className="kit-order-note">Pagamento no cartão em análise. Atualizaremos o pedido assim que o Mercado Pago confirmar.</p>}
+    {shipmentStatus && <p role="status" className="kit-order-note">{shipmentStatus}{trackingCode && <> · Rastreio {trackingCode}</>}</p>}
     {(tracking?.status === "delivered" || tracking?.status === "returned") && ["paid","manual_review"].includes(state) &&
       <button type="button" className="secondary-button" aria-expanded={returnForm}
         onClick={() => setReturnForm(open => !open)} disabled={pending}>Solicitar devolução</button>}
-    {returnForm && <form onSubmit={event => void requestReturn(event)}>
+    {returnForm && <form className="kit-order-return" onSubmit={event => void requestReturn(event)}>
       {pairOptions.length > 0 && <label>Itens para devolver
         <select name="returnMode" value={returnMode} onChange={event => setReturnMode(event.target.value)}>
           <option value="kits">Kits completos</option><option value="pairs">Pares avulsos</option>
@@ -192,9 +253,9 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
         })}
       </fieldset> : <label>Kits para devolver <input name="quantity" type="number" defaultValue={1} min={1} max={99} required /></label>}
       <label>Motivo e orientações para a retirada <textarea name="reason" minLength={5} maxLength={500} required /></label>
-      <button type="submit" disabled={pending}>Enviar solicitação</button>
+      <button type="submit" className="primary-button" disabled={pending}>Enviar solicitação</button>
     </form>}
-    {returns.length > 0 && <ul aria-label="Devoluções">{returns.map(item => {
+    {returns.length > 0 && <ul aria-label="Devoluções" className="kit-order-returns">{returns.map(item => {
       const labels: Record<string, string> = { requested: "Solicitada", approved: "Aprovada", received: "Recebida",
         verified: "Em análise de estorno", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada" };
       return <li key={readString(item,"id")}>{labels[readString(item,"state")] ?? "Em análise"}
@@ -208,10 +269,40 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
     })}</ul>}
     {message && <p role="alert">{message}</p>}
     {issueCode === "PAYER_DOCUMENT_REQUIRED" && <p><Link href="/representante/solicitacao">Completar CPF ou CNPJ no cadastro</Link></p>}
+    {confirmCancel && canCancel && <div className="kit-order-confirm" role="alertdialog" aria-label="Cancelar pedido">
+      <p>Cancelar este pedido? O estoque reservado volta para o catálogo.</p>
+      <div>
+        <button type="button" className="kit-order-danger" disabled={pending}
+          onClick={() => void update("cancel")}>Confirmar cancelamento</button>
+        <button type="button" className="kit-order-link" disabled={pending} onClick={() => setConfirmCancel(false)}>Manter pedido</button>
+      </div>
+    </div>}
+    {(canSync || (canCancel && !confirmCancel)) && <div className="kit-order-actions">
+      {canSync && <button type="button" className="kit-order-link" disabled={pending}
+        onClick={() => void update("status")}>{pending ? "Consultando…" : "Atualizar situação"}</button>}
+      {canCancel && !confirmCancel && <button type="button" className="kit-order-link is-danger" disabled={pending}
+        onClick={() => setConfirmCancel(true)}>Cancelar pedido</button>}
+    </div>}
   </div>;
 }
 
 const orderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+function OrderRow({ order, onOpen }: { order: UnknownRecord; onOpen: () => void }) {
+  const status = orderStatus(order, null);
+  const until = ["reserved", "payment_pending"].includes(readString(order, "state")) ? formatMoment(order.reservedUntil) : "";
+  return <li>
+    <button type="button" className="kit-orders-row" onClick={onOpen}>
+      <span className="kit-orders-row-name">
+        <strong>{typeof order.productName === "string" && order.productName ? order.productName : "Kit"}</strong>
+        <small>{typeof order.quantity === "number" ? `${order.quantity} ${order.quantity === 1 ? "kit" : "kits"}` : ""}
+          {until ? ` · reserva até ${until}` : ""}</small>
+      </span>
+      <span className="kit-orders-row-total">{typeof order.amountInCents === "number" ? formatBRL(order.amountInCents) : ""}</span>
+      <StatusBadge {...status} />
+    </button>
+  </li>;
+}
 
 export function RepresentativeKitOrderHistory({ checkoutConfigured, onOffersChanged }: {
   checkoutConfigured: boolean; onOffersChanged?: () => void;
@@ -219,8 +310,10 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured, onOffersChan
   const [orders, setOrders] = useState<UnknownRecord[] | null>(null);
   const [error, setError] = useState("");
   const [waiting, setWaiting] = useState(false);
-  const [highlight, setHighlight] = useState("");
-  const [highlightMethod, setHighlightMethod] = useState<PrepayMethod>("pix");
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState("");
+  const [auto, setAuto] = useState<{ id: string; method: PrepayMethod } | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const offersChanged = useRef(onOffersChanged);
   offersChanged.current = onOffersChanged;
   const loadOrders = useCallback(async () => {
@@ -238,29 +331,65 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured, onOffersChan
       setWaiting(false);
     }
   }, []);
-  // The checkout sends the buyer here with the new order, ready to pay.
+  // The checkout sends the buyer here with the new order: the panel opens on it, ready to pay.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("pedido") ?? "";
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("pedido") ?? "";
     if (!orderIdPattern.test(id)) return;
-    setHighlight(id);
-    const method = new URLSearchParams(window.location.search).get("pagamento") ?? "";
-    if (isPrepayMethod(method)) setHighlightMethod(method);
+    const method = params.get("pagamento") ?? "";
+    setSelected(id);
+    setAuto({ id, method: isPrepayMethod(method) ? method : "pix" });
+    setOpen(true);
     void loadOrders();
   }, [loadOrders]);
-  const shown = orders && highlight
-    ? [...orders].sort((a, b) => Number(readString(b, "orderId") === highlight) - Number(readString(a, "orderId") === highlight))
-    : orders;
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    if (open && !element.open) element.showModal();
+    if (!open && element.open) element.close();
+  }, [open]);
+  const updateOrder = useCallback((orderId: string, next: UnknownRecord) => {
+    setOrders(current => current && current.map(item => readString(item, "orderId") === orderId ? { ...item, ...next } : item));
+  }, []);
+  const active = orders?.filter(item => !historyStates.includes(readString(item, "state"))) ?? [];
+  const history = orders?.filter(item => historyStates.includes(readString(item, "state"))) ?? [];
+  const current = selected ? orders?.find(item => readString(item, "orderId") === selected) : undefined;
+  const closePanel = () => { setOpen(false); setSelected(""); setAuto(null); };
   return <section aria-label="Meus pedidos de kits">
-    <button type="button" className="secondary-button" onClick={() => void loadOrders()} disabled={waiting}>
-      {waiting ? "Carregando pedidos…" : "Meus pedidos de kits"}
+    <button type="button" className="secondary-button" aria-haspopup="dialog" disabled={waiting}
+      onClick={() => { setOpen(true); void loadOrders(); }}>
+      {waiting && !open ? "Carregando pedidos…" : "Meus pedidos de kits"}
     </button>
-    {error && <p role="alert">{error}</p>}
-    {shown && (shown.length ? <ul className="representative-record-grid">
-      {shown.map(order => <li key={readString(order, "orderId")} className="representative-card">
-        <RepresentativeKitOrder initial={order} checkoutConfigured={checkoutConfigured}
-          autoMethod={highlight && readString(order, "orderId") === highlight ? highlightMethod : null}
-          onOffersChanged={onOffersChanged} />
-      </li>)}
-    </ul> : <p role="status">Você ainda não tem pedidos de kits.</p>)}
+    <dialog ref={dialog} className="kit-orders-panel" aria-labelledby="kit-orders-title" onClose={closePanel}
+      onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
+      {open && <div className="kit-orders-body">
+        <header className="kit-orders-head">
+          {current && orders && orders.length > 1
+            ? <button type="button" className="kit-order-link" onClick={() => { setSelected(""); setAuto(null); }}>Todos os pedidos</button>
+            : <span />}
+          <h2 id="kit-orders-title">{current ? "Pedido" : "Meus pedidos de kits"}</h2>
+          <button type="button" className="kit-order-link" onClick={() => dialog.current?.close()}>Fechar</button>
+        </header>
+        {error && <p role="alert">{error}</p>}
+        {!orders && waiting && <p role="status">Carregando pedidos…</p>}
+        {current
+          ? <RepresentativeKitOrder key={selected} initial={current} checkoutConfigured={checkoutConfigured}
+            autoMethod={auto && auto.id === selected ? auto.method : null} onOffersChanged={onOffersChanged}
+            onChange={next => updateOrder(selected, next)} />
+          : orders && (orders.length ? <>
+            {active.length > 0 && <ul className="kit-orders-list" aria-label="Pedidos">
+              {active.map(order => <OrderRow key={readString(order, "orderId")} order={order}
+                onOpen={() => setSelected(readString(order, "orderId"))} />)}
+            </ul>}
+            {history.length > 0 && <details className="kit-orders-history">
+              <summary>Histórico ({history.length})</summary>
+              <ul className="kit-orders-list" aria-label="Histórico de pedidos">
+                {history.map(order => <OrderRow key={readString(order, "orderId")} order={order}
+                  onOpen={() => setSelected(readString(order, "orderId"))} />)}
+              </ul>
+            </details>}
+          </> : <p role="status">Você ainda não tem pedidos de kits.</p>)}
+      </div>}
+    </dialog>
   </section>;
 }

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RepresentativeKitCardPayment } from "./representative-kit-card-payment";
 import { readGradeCatalog, RepresentativeKitGrades } from "./representative-kit-grades";
-import { isPrepayMethod, prepayMethods } from "./representative-kit-order";
+import { isPrepayMethod, prepayMethods, RepresentativeKitOrderHistory } from "./representative-kit-order";
 import { KitRequestError, kitRequest } from "./representative-kit-request";
 
 const orderId = "10000000-0000-4000-8000-000000000001";
@@ -25,6 +25,16 @@ describe("kit prepay choice", () => {
     expect(Object.values(prepayMethods)).toEqual(["Pix", "Cartão de crédito", "Cartão de débito"]);
     expect(["pix", "credit_card", "debit_card"].every(isPrepayMethod)).toBe(true);
     expect(["cash", "boleto", "", "__proto__"].some(isPrepayMethod)).toBe(false);
+  });
+});
+
+describe("kit orders panel", () => {
+  it("keeps the orders in a closed panel, so the offers are never pushed down", () => {
+    const markup = renderToStaticMarkup(<RepresentativeKitOrderHistory checkoutConfigured onOffersChanged={() => undefined} />);
+    expect(markup).toContain(">Meus pedidos de kits</button>");
+    expect(markup).toContain("<dialog");
+    expect(markup).not.toMatch(/<dialog[^>]* open/u);
+    expect(markup).not.toContain("Gerar Pix");
   });
 });
 
