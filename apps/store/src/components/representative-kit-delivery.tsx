@@ -12,8 +12,8 @@ import { ReserveRepresentativeKit, type RepresentativeKitSelection } from "./rep
 export function RepresentativeKitDelivery({ quantity, ...selection }: RepresentativeKitSelection & { quantity: number }) {
   const [shown, setShown] = useState(false);
   return <>
-    <button type="button" className="secondary-button" aria-expanded={shown} onClick={() => setShown(value => !value)}>
-      {shown ? "Fechar endereço de entrega" : "Informar endereço de entrega"}
+    <button type="button" className="primary-button" aria-expanded={shown} onClick={() => setShown(value => !value)}>
+      {shown ? "Fechar solicitação" : "Solicitar compra"}
     </button>
     {shown && <SavedKitAddress selection={selection} quantity={quantity} />}
   </>;
@@ -52,6 +52,7 @@ function SavedKitAddress({ selection, quantity }: { selection: RepresentativeKit
     <Link href="/minha-conta/enderecos">Atualize um dos seus endereços</Link> para entrega em Minas Gerais.
   </p>;
   return <>
+    <p>Confirme o endereço onde a curti Z deve entregar este kit.</p>
     {addresses.length > 0 && <label>Endereço de entrega
       <select value={addressId} onChange={event => setAddressId(event.target.value)}>
         <option value="">Selecione</option>
@@ -65,8 +66,8 @@ function SavedKitAddress({ selection, quantity }: { selection: RepresentativeKit
         setAdding(false);
       }} />
       : <button type="button" className="secondary-button" onClick={() => setAdding(true)}>Cadastrar endereço</button>)}
-    {selected && !adding && <SelectDeliveryPayment key={JSON.stringify([selection, quantity, selected.id])}
-      selection={selection} quantity={quantity} address={selected} />}
+    {selected && !adding && <OwnDeliveryQuote key={JSON.stringify([selection, quantity, selected.id])}
+      selection={selection} quantity={quantity} addressId={selected.id} />}
   </>;
 }
 
@@ -138,26 +139,11 @@ function KitAddressForm({ onSaved, onCancel }: { onSaved: (address: KitAddress) 
   </form>;
 }
 
-function SelectDeliveryPayment({ selection, quantity, address }: {
-  selection: RepresentativeKitSelection; quantity: number; address: KitAddress;
+function OwnDeliveryQuote({ selection, quantity, addressId }: {
+  selection: RepresentativeKitSelection; quantity: number; addressId: string;
 }) {
-  const [mode, setMode] = useState<"prepay" | "collection">("prepay");
-  return <>
-    <label>Quando pagar
-      <select value={mode} onChange={event => setMode(event.target.value === "collection" ? "collection" : "prepay")}>
-        <option value="prepay">Pagar agora</option>
-        <option value="collection">Pagar no recebimento</option>
-      </select>
-    </label>
-    <OwnDeliveryQuote key={mode} selection={selection} quantity={quantity} addressId={address.id} mode={mode} />
-  </>;
-}
-
-function OwnDeliveryQuote({ selection, quantity, addressId, mode }: {
-  selection: RepresentativeKitSelection; quantity: number; addressId: string; mode: "prepay" | "collection";
-}) {
-  const payload = JSON.stringify({ ...selection, quantity, addressId, paymentTiming: mode });
-  const [quote, setQuote] = useState<{ id: string; amount: number; shipping: number; days: number; methods: string[] } | null>();
+  const payload = JSON.stringify({ ...selection, quantity, addressId, paymentTiming: "prepay" });
+  const [quote, setQuote] = useState<{ id: string; amount: number; shipping: number; days: number } | null>();
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -174,25 +160,23 @@ function OwnDeliveryQuote({ selection, quantity, addressId, mode }: {
       const amount = readNumber(data.quote, "amountInCents");
       const shipping = readNumber(data.quote, "shippingInCents", -1);
       const days = readNumber(data.quote, "estimatedDays", -1);
-      const methods = Array.isArray(data.quote.collectionMethods)
-        ? (data.quote.collectionMethods as unknown[]).filter((item): item is string => typeof item === "string") : [];
       if (!id || !Number.isSafeInteger(amount) || amount <= 0 || !Number.isSafeInteger(shipping) || shipping < 0) {
         throw new Error("invalid_delivery");
       }
-      setQuote(mode === "collection" && methods.length === 0 ? null : { id, amount, shipping, days, methods });
+      setQuote({ id, amount, shipping, days });
     }).catch(() => { if (!request.signal.aborted) setError(true); });
     return () => request.abort();
-  }, [mode, payload, retry]);
+  }, [payload, retry]);
   if (error) return <div role="alert">
     <p>Não foi possível consultar a entrega.</p>
     <button type="button" onClick={() => { setError(false); setRetry(value => value + 1); }}>Tentar novamente</button>
   </div>;
   if (quote === undefined) return <p role="status">Consultando entrega…</p>;
-  if (quote === null) return <p role="status">Entrega indisponível para este endereço ou forma de pagamento.</p>;
+  if (quote === null) return <p role="status">Não foi possível entregar neste endereço. Escolha outro endereço em Minas Gerais.</p>;
   return <>
     <p>Entrega pela curti Z · {formatBRL(quote.shipping)}
       {quote.days >= 0 && (quote.days === 0 ? " · No mesmo dia" : ` · Até ${quote.days} ${quote.days === 1 ? "dia" : "dias"}`)}</p>
     <ReserveRepresentativeKit {...selection} quantity={quantity} addressId={addressId} quoteId={quote.id}
-      totalInCents={quote.amount} collection={mode === "collection"} allowedCollectionMethods={quote.methods} />
+      totalInCents={quote.amount} />
   </>;
 }

@@ -36,17 +36,6 @@ const pickupSchedule = z.object({ action: z.literal("schedule_pickup"), returnId
   pickupDate: z.iso.date() }).strict();
 const pickupReceipt = z.object({ action: z.literal("confirm_pickup"), returnId,
   pickupReference: z.string().trim().min(10).max(200) }).strict();
-const postalCode = z.string().regex(/^3[0-9]{7}$/u);
-const paymentId = z.string().regex(/^[1-9][0-9]{0,14}$/u);
-const createRoute = z.object({ action: z.literal("create_route"), route: z.object({
-  name: z.string().trim().min(3).max(100),
-  origin_postal_code: postalCode, destination_from: postalCode, destination_through: postalCode,
-  delivery_cents: z.literal(0), estimated_days: z.number().int().min(0).max(60),
-  bling_method_ids: z.object({ cash: paymentId.optional() }).strict(),
-  point_terminal_id: z.null(),
-  verified_evidence: z.string().trim().min(10).max(500), valid_until: z.iso.datetime({ offset: true })
-}).strict() }).strict();
-const closeRoute = z.object({ action: z.literal("close_route"), routeId: z.string().uuid() }).strict();
 const print = z.object({ action: z.literal("print_label"), orderId: z.string().uuid() }).strict();
 const collect = z.object({ action: z.literal("collection"), orderId: z.string().uuid(),
   operation: z.enum(["dispatch","confirm_delivery","cancel_before_dispatch","delivery_failed","returned_unpaid","cash_received"]),
@@ -64,7 +53,7 @@ const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
 const input = z.union([approvals,manualInvoice,mg02Approval,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
-  point,collectRefund,createRoute,closeRoute]);
+  point,collectRefund]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
 async function verified() {
@@ -86,11 +75,10 @@ export async function GET(request: NextRequest) {
   const db = await verified();
   if (!db) return send({ message: "Acesso negado." },403);
   const mode = request.nextUrl.searchParams.get("mode");
-  if (mode !== "returns" && mode !== "fiscal" && mode !== "collection" && mode !== "routes") return send({ message: "Selecione uma fila." },400);
+  if (mode !== "returns" && mode !== "fiscal" && mode !== "collection") return send({ message: "Selecione uma fila." },400);
   const result = await db.rpc({
     returns: "list_representative_kit_return_work", fiscal: "list_representative_kit_fiscal_work",
-    collection: "list_representative_kit_collection_work",
-    routes: "list_representative_kit_delivery_routes"
+    collection: "list_representative_kit_collection_work"
   }[mode]);
   if (result.error) return send({ message: "A fila de kits está indisponível." },result.error.code === "42501" ? 403 : 503);
   const rows: unknown = result.data;
@@ -119,15 +107,6 @@ export async function POST(request: NextRequest) {
         ? send({ message: "A conta não foi habilitada. Confira a elegibilidade MG02, as referências reais e a permissão de gestão." },
           result.error?.code === "42501" ? 403 : 409)
         : send({ ok: true, approvedRuleVersions: result.data });
-    }
-    if (item.action === "create_route" || item.action === "close_route") {
-      const result = await db.rpc("manage_representative_kit_delivery_route", {
-        p_close: item.action === "close_route" ? item.routeId : null,
-        p_route: item.action === "create_route" ? item.route : null
-      });
-      if (result.error || result.data !== true) return send({ message: "Confira os dados, a vigência e a sobreposição de CEPs." },
-        result.error?.code === "42501" ? 403 : 409);
-      return send({ ok: true });
     }
     if (item.action === "confirm_mdfe") {
       const result = await db.rpc("confirm_representative_kit_mdfe", {

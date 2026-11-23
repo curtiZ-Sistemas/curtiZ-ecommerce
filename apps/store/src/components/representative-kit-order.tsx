@@ -159,6 +159,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   const trackingCode = tracking ? readString(tracking, "trackingCode") : "";
   const shipmentStatus = tracking ? shipmentLabels[readString(tracking, "status")] : "";
   const pairOptions = readRows(order.returnablePairOptions);
+  const sizeBySku = new Map(pairOptions.map(option => [readString(option,"sku"), readString(option,"size")]));
   return <div className="representative-profile-form">
     {typeof order.productName === "string" && <strong>{order.productName}</strong>}
     <p role="status">{order.cancellationRequested === true && ["reserved", "payment_pending", "paid", "manual_review"].includes(state)
@@ -199,10 +200,10 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
         </select>
       </label>}
       {returnMode === "pairs" && pairOptions.length > 0 ? <fieldset>
-        <legend>Quantidade por SKU</legend>
+        <legend>Pares por tamanho</legend>
         {pairOptions.map(option => {
           const sku = readString(option,"sku");
-          return <label key={sku}>{readString(option,"size")} · {sku}
+          return <label key={sku}>Tamanho {readString(option,"size")}
             <input name={`pair-${sku}`} type="number" defaultValue={0} min={0}
               max={typeof option.quantity === "number" ? option.quantity : 0} required />
           </label>;
@@ -217,7 +218,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
       return <li key={readString(item,"id")}>{labels[readString(item,"state")] ?? "Em análise"}
         {isUnknownRecord(item.requestedPairs)
           ? <ul>{Object.entries(item.requestedPairs).map(([sku,quantity]) =>
-            <li key={sku}>{sku} · {String(quantity)} {quantity === 1 ? "par" : "pares"}</li>)}</ul>
+            <li key={sku}>{sizeBySku.get(sku) ? `Tamanho ${sizeBySku.get(sku)}` : "Pares"} · {String(quantity)} {quantity === 1 ? "par" : "pares"}</li>)}</ul>
           : typeof item.quantity === "number" && <> · {item.quantity} kits</>}
         {item.pickedUp === true ? <p>Retirada confirmada</p> : typeof item.pickupOn === "string" &&
           <p>Retirada agendada para {item.pickupOn.split("-").reverse().join("/")}</p>}

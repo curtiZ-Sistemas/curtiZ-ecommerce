@@ -928,12 +928,11 @@ function Inventory({ inventory }: { inventory: NonNullable<Snapshot["inventory"]
       {inventory.length ? (
         <div className="representative-table-wrap">
           <table className="representative-table">
-            <thead><tr><th>Produto</th><th>SKU</th><th>Variação</th><th>Saldo</th></tr></thead>
+            <thead><tr><th>Produto</th><th>Variação</th><th>Saldo</th></tr></thead>
             <tbody>
               {inventory.map((item) => (
                 <tr key={item.variantId}>
                   <td data-label="Produto">{item.productName}</td>
-                  <td data-label="SKU">{item.sku}</td>
                   <td data-label="Variação">{[item.color, item.size].filter(Boolean).join(" · ")}</td>
                   <td data-label="Saldo"><strong>{item.quantity}</strong></td>
                 </tr>

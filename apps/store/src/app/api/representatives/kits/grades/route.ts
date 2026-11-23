@@ -32,7 +32,12 @@ export async function GET() {
   if (result.error || !Array.isArray(result.data)) {
     return NextResponse.json({ message: "Não foi possível carregar as fichas." }, { status: 503, headers });
   }
-  return NextResponse.json({ items: result.data }, { headers });
+  const environment = getStoreRuntimeEnvironment();
+  const historyAvailable = Boolean(environment.REPRESENTATIVE_KIT_MP_COLLECTOR_ID);
+  return NextResponse.json({
+    items: result.data,
+    ...(historyAvailable ? { orderHistoryAvailable: true, checkoutConfigured: commercialKitCheckoutConfigured(environment) } : {})
+  }, { headers });
 }
 
 export async function POST(request: Request) {

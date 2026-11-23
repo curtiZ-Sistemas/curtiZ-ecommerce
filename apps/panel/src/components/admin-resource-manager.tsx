@@ -17,8 +17,6 @@ import {
   X
 } from "lucide-react";
 import { BannerManager } from "./banner-manager";
-import { RepresentativeKitDeliveryRoutes } from "./representative-kit-delivery-routes";
-import { RepresentativeKitCatalogAdmin } from "./representative-kit-catalog-admin";
 import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
@@ -32,6 +30,12 @@ import {
 
 type Item = Record<string, unknown>;
 type KitGradeSource = { productId: string; name: string; color: string };
+
+const kitGradeDistributions: Record<(typeof kitGradePriceFields)[number]["key"], string> = {
+  grade_standard_price_cents: "34×1, 35×2, 36×3, 37×3, 38×2, 39×1",
+  grade_lower_restock_price_cents: "34×1, 35×3, 36×4, 37×4",
+  grade_upper_restock_price_cents: "37×4, 38×4, 39×4"
+};
 
 type ListResponse = {
   items?: Item[];
@@ -124,7 +128,8 @@ const columnLabels: Record<string, string> = {
   storage_path: "Arquivo",
   accepted_at: "Aceito em",
   product_count: "Produtos",
-  kit_prices: "Preços"
+  kit_line: "Linha de estoque",
+  kit_prices: "Preços por ficha"
 };
 
 const statusLabels: Record<string, string> = {
@@ -293,6 +298,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [kitGradeSources, setKitGradeSources] = useState<KitGradeSource[] | null>(null);
   const [kitGradeSourcesError, setKitGradeSourcesError] = useState(false);
   const [kitGradeSourcesRetry, setKitGradeSourcesRetry] = useState(0);
+  const [kitLineNames, setKitLineNames] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -309,6 +315,23 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     setCategorySlugEdited(editing !== "new" && Boolean(formValue(source.slug)));
     setFieldErrors({});
   }, [editing, resource]);
+
+  useEffect(() => {
+    if (resource !== "kits" || !capabilities.update) return;
+    const controller = new AbortController();
+    void fetch("/api/admin/resources/kits?gradeSources=true", { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const result = await readListResponse(response);
+        if (!response.ok || !result.items) return;
+        const names: Record<string, string> = {};
+        for (const item of result.items) {
+          if (typeof item.productId === "string" && typeof item.name === "string") names[item.productId] = item.name;
+        }
+        if (!controller.signal.aborted) setKitLineNames(names);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [capabilities.update, resource]);
 
   useEffect(() => {
     if (resource !== "kits" || !editing) return;
@@ -386,7 +409,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       .map((key) => key.trim())
       .filter((key) => !["id", "updated_at", "created_at", "edited_at"].includes(key));
 
-    if (resource === "kits") return ["name", "description", "kit_prices", "active"];
+    if (resource === "kits") return ["name", "kit_line", "kit_prices", "active"];
     return resource === "categorias"
       ? ["name", "product_count", "active", "sort_order"]
       : keys.slice(0, 5);
@@ -613,16 +636,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         ) : null}
       </header>
 
-      {resource === "kits" ? <>
-        <RepresentativeKitCatalogAdmin />
-        <header className="representative-kit-commercial-heading">
-          <div>
-            <h2>Kits comerciais</h2>
-            <p>Registros comerciais e regras de ativação. Eles são separados dos produtos e variantes exibidos no catálogo acima.</p>
-          </div>
-        </header>
-      </> : null}
-
       <div className="admin-toolbar">
         <form
           className="admin-search"
@@ -744,11 +757,11 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         </div>
       ) : items.length === 0 ? (
         <div className="admin-empty-state">
-          <h3>Nenhum registro encontrado</h3>
+          <h3>{resource === "kits" && !submittedQuery && !status ? "Nenhum kit cadastrado." : "Nenhum registro encontrado"}</h3>
           <p>
             {canCreate
               ? resource === "kits"
-                ? "Não há kits comerciais cadastrados. Os produtos elegíveis para revenda aparecem no catálogo acima."
+                ? "Cadastre um kit e vincule uma linha de estoque para ele aparecer ao representante."
                 : `Cadastre ${definition.singular} para começar nesta área.`
               : "Não há dados reais para os filtros informados."}
           </p>
@@ -810,11 +823,27 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     ) : null}
                     {columns.map((column) => (
                       <td key={column} data-label={columnLabel(column, definition.fields)}>
-                        {column === "kit_prices" ? (
+                        {column === "kit_line" ? (
+                          typeof item.grade_product_id === "string" && typeof item.grade_color === "string" ? (
+                            <div className="kit-admin-line">
+                              <strong>{kitLineNames[item.grade_product_id] ?? "Linha vinculada"}</strong>
+                              <small>{item.grade_color}</small>
+                            </div>
+                          ) : (
+                            <span className="kit-admin-line-missing">Sem linha de estoque — não aparece ao representante</span>
+                          )
+                        ) : column === "kit_prices" ? (
                           item.grade_product_id
-                            ? kitGradePriceFields.map(field => (
-                              <div key={field.key}>{field.label} · {displayValue(item[field.key] ?? item.price_in_cents, field.key)}</div>
-                            ))
+                            ? (
+                              <div className="kit-admin-prices">
+                                {kitGradePriceFields.map(field => (
+                                  <div key={field.key}>
+                                    <span>{field.label}</span>
+                                    <strong>{displayValue(item[field.key] ?? item.price_in_cents, field.key)}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            )
                             : displayValue(item.price_in_cents, "price_in_cents")
                         ) : displayValue(item[column], column)}
                       </td>
@@ -1086,13 +1115,14 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     {fieldErrors.gradeSource ? (
                       <small className="admin-field-error" id="grade-source-error" role="alert">{fieldErrors.gradeSource}</small>
                     ) : (
-                      <small id="grade-source-help">Uma linha de pares avulsos habilita as três fichas de 12 pares para este kit.</small>
+                      <small id="grade-source-help">Obrigatória para o kit aparecer ao representante. Uma linha de pares avulsos habilita as três fichas de 12 pares.</small>
                     )}
                   </div>
                 )}
                 {resource === "kits" && kitGradeSource && (
                   <fieldset className="wide kit-grade-prices">
                     <legend>Preços por ficha</legend>
+                    <p className="wide kit-grade-help">Cada ficha tem 12 pares, com a distribuição de tamanhos fixa abaixo.</p>
                     {kitGradePriceFields.map(field => {
                       const cents = editing === "new" ? undefined : readNumber(editing[field.key])
                         ?? (editing.grade_product_id ? readNumber(editing.price_in_cents) : undefined);
@@ -1100,6 +1130,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                       return (
                         <label key={field.key}>
                           <span>{field.label} *</span>
+                          <small className="kit-grade-sizes">{kitGradeDistributions[field.key]}</small>
                           <span className="money-field-control">
                             <span aria-hidden="true">R$</span>
                             <input
@@ -1224,7 +1255,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
           </section>
         </div>
       ) : null}
-      {resource === "kits" && canUpdate ? <RepresentativeKitDeliveryRoutes /> : null}
     </section>
   );
 }
@@ -1240,7 +1270,7 @@ function createActionLabel(resource: AdminResourceKey, singular: string) {
     conteudo: "Novo conteúdo",
     marketing: "Novo público",
     cupons: "Criar cupom",
-    kits: "Novo kit comercial",
+    kits: "Novo kit",
     niveis: "Novo nível",
     metas: "Nova meta",
     comissoes: "Nova regra",

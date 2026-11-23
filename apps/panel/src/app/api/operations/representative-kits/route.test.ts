@@ -16,12 +16,6 @@ import { POST } from "./route";
 
 const url = "https://panel.example/api/operations/representative-kits";
 const orderId = "10000000-0000-4000-8000-000000000001";
-const route = {
-  name: "Rota de teste", origin_postal_code: "35524168", destination_from: "30110000",
-  destination_through: "30110999", delivery_cents: 0, estimated_days: 2,
-  bling_method_ids: { cash: "11" },
-  point_terminal_id: null, verified_evidence: "Conferência isolada de teste", valid_until: "2099-01-01T00:00:00Z"
-};
 const mg02 = {
   action: "approve_mg02", representativeCode: "REP-0123ABCDEF", document: "11222333000181",
   legalName: "Empresa de teste LTDA", stateRegistration: "0012345678900",
@@ -72,30 +66,6 @@ describe("representative kit operations", () => {
   it("preserves the database permission boundary for MG02 approvals", async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
     expect((await post(mg02)).status).toBe(403);
-  });
-
-  it("rejects a route charging one cent before calling the database", async () => {
-    const response = await post({ action: "create_route", route: { ...route, delivery_cents: 1 } });
-    expect(response.status).toBe(400);
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("passes a free route through to the protected function", async () => {
-    const response = await post({ action: "create_route", route });
-    expect(response.status).toBe(200);
-    expect(rpc).toHaveBeenCalledWith("manage_representative_kit_delivery_route", { p_close: null, p_route: route });
-  });
-
-  it("accepts a prepaid-only route without inventing an at-receipt method", async () => {
-    const prepaid = { ...route, bling_method_ids: {} };
-    expect((await post({ action: "create_route", route: prepaid })).status).toBe(200);
-    expect(rpc).toHaveBeenCalledWith("manage_representative_kit_delivery_route", { p_close: null, p_route: prepaid });
-  });
-
-  it("rejects an electronic payment method when Point is missing", async () => {
-    const unsupported = { ...route, point_terminal_id: null, bling_method_ids: { credit_card: "44" } };
-    expect((await post({ action: "create_route", route: unsupported })).status).toBe(400);
-    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("registers inspection and the series 004 entry for a kit that returned undelivered", async () => {
