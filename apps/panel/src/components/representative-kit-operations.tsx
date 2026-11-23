@@ -22,12 +22,15 @@ function DeliveryAddress({ value }: { value: unknown }) {
     street && `Endereço: ${[street,field(address,"complement")].filter(Boolean).join(" · ")}`,
     field(address,"district") && `Bairro: ${field(address,"district")}`,
     (field(address,"city") || field(address,"state")) && `Cidade: ${[field(address,"city"),field(address,"state")].filter(Boolean).join("/")}`,
-    postalCode && `CEP: ${postalCode.length === 8 ? `${postalCode.slice(0,5)}-${postalCode.slice(5)}` : postalCode}`,
-    field(address,"phone") && `Telefone: ${field(address,"phone")}`
+    postalCode && `CEP: ${postalCode.length === 8 ? `${postalCode.slice(0,5)}-${postalCode.slice(5)}` : postalCode}`
   ].filter(Boolean);
-  return lines.length ? <div aria-label="Endereço de entrega">
+  const phone = field(address,"phone").trim();
+  const dial = phone.replace(/[^\d+]/gu,"");
+  return lines.length || phone ? <div aria-label="Endereço de entrega">
     <strong>Entregar em</strong>
     {lines.map(line => <p key={line}>{line}</p>)}
+    {phone && dial.replace("+","").length >= 8 ? <p>Telefone: <a href={`tel:${dial}`}>{phone}</a></p>
+      : phone ? <p>Telefone: {phone}</p> : null}
   </div> : null;
 }
 const states: Record<string,string> = {

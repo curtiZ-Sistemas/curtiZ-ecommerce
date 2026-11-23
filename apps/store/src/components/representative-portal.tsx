@@ -461,7 +461,7 @@ export function RepresentativePortal({ section }: { section: string }) {
                 size="small"
               />
               <div>
-                <small>Portal profissional</small>
+                <small>Representante</small>
                 <strong>{snapshot.representative.fullName || snapshot.representative.publicCode}</strong>
               </div>
             </div>
@@ -488,10 +488,10 @@ export function RepresentativePortal({ section }: { section: string }) {
             <div className="representative-access-alert" role="status">
               <ShieldCheck />
               <div>
-                <strong>Acesso profissional limitado</strong>
+                <strong>Acesso limitado</strong>
                 <p>
-                  Seu histórico permanece disponível, mas novas vendas, kits, rede e materiais
-                  podem ficar bloqueados enquanto o status estiver {statusLabel(snapshot.representative.status).toLocaleLowerCase("pt-BR")}.
+                  Seu histórico continua disponível, mas novas vendas e kits podem ficar bloqueados
+                  enquanto o status for {statusLabel(snapshot.representative.status).toLocaleLowerCase("pt-BR")}.
                 </p>
               </div>
             </div>
@@ -547,7 +547,7 @@ function PortalSection({
   const errorKey = sectionError[section];
   if (errorKey && snapshot.errors?.[errorKey]) return (
     <div className="error-state" role="alert">
-      <p>Não foi possível carregar esta seção. Tente novamente.</p>
+      <p>Não foi possível carregar esta seção.</p>
       <button className="primary-button" onClick={onRefresh}>Tentar novamente</button>
     </div>
   );
@@ -621,10 +621,10 @@ function PortalSection({
       <section>
         <PageTitle
           title="Atendimento"
-          description="O suporte humano entra pela fila administrativa e mantém o contexto da sua conta."
+          description="Fale com a equipe da curti Z."
         />
-        <div className="representative-card">
-          <p>Abra uma conversa segura na central de atendimento.</p>
+        <div className="representative-card referral-detail">
+          <p>Abra uma conversa na central de atendimento.</p>
           <Link className="primary-button" href="/minha-conta/atendimento?new=1">
             Falar com atendimento
           </Link>
@@ -633,11 +633,11 @@ function PortalSection({
     );
   return (
     <section>
-      <PageTitle title="Área profissional" description="Conteúdo não disponível para este perfil." />
+      <PageTitle title="Página não encontrada" description="Use o menu para escolher uma seção." />
       <div className="representative-empty">
         <BriefcaseBusiness />
-        <h2>Nenhum registro disponível</h2>
-        <p>O sistema mostrará apenas dados confirmados pelas regras configuradas.</p>
+        <h2>Nada por aqui</h2>
+        <Link className="primary-button" href="/representante">Ir para a visão geral</Link>
       </div>
     </section>
   );
@@ -655,12 +655,12 @@ function Overview({ snapshot, onRefresh }: { snapshot: Snapshot; onRefresh: () =
     <>
       <PageTitle
         title="Visão geral"
-        description="Acompanhe sua operação sem valores ou metas inventados."
+        description="Resumo da sua operação."
       />
       {snapshot.errors && Object.values(snapshot.errors).some(Boolean) && (
         <div className="error-state" role="alert">
-          <p>Algumas informações não puderam ser carregadas.</p>
-          <button className="text-button" onClick={onRefresh}>Tentar novamente</button>
+          <p>Algumas informações não carregaram.</p>
+          <button className="secondary-button compact-button" onClick={onRefresh}>Tentar novamente</button>
         </div>
       )}
       <section className="representative-referral-card">
@@ -675,23 +675,21 @@ function Overview({ snapshot, onRefresh }: { snapshot: Snapshot; onRefresh: () =
       </section>
       <section className="representative-metric-section">
         <header>
-          <p className="eyebrow">Desempenho</p>
-          <h2>Indicadores principais</h2>
+          <h2>Desempenho</h2>
         </header>
         <div className="representative-metrics representative-primary-metrics">
           <Metric label="Comissão disponível" value={snapshot.errors?.totals ? "Indisponível" : formatBRL(availableCommission)} />
-          <Metric label="Vendas no histórico" value={snapshot.errors?.salesCount ? "Indisponível" : String(snapshot.pagination?.sales?.total ?? sales.length)} />
+          <Metric label="Vendas" value={snapshot.errors?.salesCount ? "Indisponível" : String(snapshot.pagination?.sales?.total ?? sales.length)} />
           <Metric label="Volume confirmado" value={snapshot.errors?.totals ? "Indisponível" : formatBRL(total)} />
           <Metric label="Equipe" value={snapshot.errors?.teamCount ? "Indisponível" : String(snapshot.pagination?.team?.total ?? snapshot.team?.length ?? 0)} />
         </div>
       </section>
       <section className="representative-metric-section">
         <header>
-          <p className="eyebrow">Perfil comercial</p>
-          <h2>Situação do representante</h2>
+          <h2>Situação</h2>
         </header>
         <div className="representative-metrics representative-situation-metrics">
-          <Metric label="Nível atual" value={representative.levelName ?? "Não atribuído"} />
+          <Metric label="Nível" value={representative.levelName ?? "Sem nível"} />
           <Metric
             label="Qualificação"
             value={
@@ -702,19 +700,19 @@ function Overview({ snapshot, onRefresh }: { snapshot: Snapshot; onRefresh: () =
                 : "Não avaliada"
             }
           />
-          <Metric label="Kits adquiridos" value={snapshot.errors?.totals ? "Indisponível" : String(snapshot.totals?.kitCount ?? snapshot.kitOrders?.length ?? 0)} />
-          <Metric label="Status comercial" value={statusLabel(representative.status)} />
+          <Metric label="Kits comprados" value={snapshot.errors?.totals ? "Indisponível" : String(snapshot.totals?.kitCount ?? snapshot.kitOrders?.length ?? 0)} />
+          <Metric label="Status" value={statusLabel(representative.status)} />
         </div>
       </section>
       <div className="representative-dashboard-grid">
         <section className="representative-card">
           <h2>Vendas recentes</h2>
           {snapshot.errors?.sales ? (
-            <p className="quiet-state">Não foi possível carregar as vendas recentes.</p>
+            <p className="quiet-state">Não foi possível carregar as vendas.</p>
           ) : sales.length ? (
             <Sales sales={sales.slice(0, 4)} compact />
           ) : (
-            <p className="quiet-state">Nenhuma venda registrada.</p>
+            <p className="quiet-state">Nenhuma venda ainda.</p>
           )}
         </section>
         <section className="representative-card">
@@ -727,7 +725,7 @@ function Overview({ snapshot, onRefresh }: { snapshot: Snapshot; onRefresh: () =
               </Link>
             ))}
             {!snapshot.errors?.notifications && !snapshot.notifications?.some((item) => !item.readAt) && (
-              <p className="quiet-state">Nenhuma ação pendente confirmada.</p>
+              <p className="quiet-state">Nada pendente.</p>
             )}
           </div>
         </section>
@@ -755,7 +753,7 @@ function Profile({
     const regionCode = typeof regionValue === "string" ? regionValue.trim().toUpperCase() : "";
     try {
       await postRepresentativeAction({ action: "update_profile", regionCode });
-      setMessage("Perfil profissional atualizado.");
+      setMessage("Região atualizada.");
       onSaved();
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Não foi possível atualizar.");
@@ -766,8 +764,8 @@ function Profile({
   return (
     <section>
       <PageTitle
-        title="Meu perfil profissional"
-        description="Consulte sua identificação e mantenha a região comercial atualizada."
+        title="Meu perfil"
+        description="Seus dados e a região onde você atua."
       />
       <div className="representative-profile-grid">
         <article className="representative-card representative-identity-card">
@@ -785,7 +783,7 @@ function Profile({
             <strong>{representative.publicCode}</strong>
           </div>
           <div>
-            <small>E-mail de acesso</small>
+            <small>E-mail</small>
             <span>{representative.email || "Não informado"}</span>
           </div>
           <div>
@@ -794,9 +792,9 @@ function Profile({
           </div>
         </article>
         <form className="representative-card representative-profile-form" onSubmit={(event) => void submit(event)}>
-          <h2>Dados comerciais</h2>
+          <h2>Região de atuação</h2>
           <label className="field">
-            <span>Região de atuação</span>
+            <span>Sigla da região</span>
             <input
               name="regionCode"
               defaultValue={representative.regionCode}
@@ -807,14 +805,14 @@ function Profile({
             />
           </label>
           <p className="field-hint">
-            Nome, e-mail e telefone são administrados na área de cliente para manter uma única fonte de dados.
+            Nome, e-mail e telefone são editados na área de cliente.
           </p>
           <div className="representative-form-actions">
             <Link className="secondary-button" href="/minha-conta/perfil">
               Editar dados pessoais
             </Link>
             <button className="primary-button" disabled={loading}>
-              {loading && <LoaderCircle className="spin" />} Salvar região
+              {loading && <LoaderCircle className="spin" />} Salvar
             </button>
           </div>
           {message && <p className="form-message" role="status">{message}</p>}
@@ -833,18 +831,18 @@ function Level({
 }) {
   return (
     <section>
-      <PageTitle title="Meu nível" description="Nível calculado pelas regras vigentes e histórico de alterações." />
+      <PageTitle title="Meu nível" description="Seu nível atual e as mudanças anteriores." />
       <article className="representative-card representative-level-card">
         <BriefcaseBusiness />
         <div>
           <small>Nível atual</small>
-          <h2>{representative.levelName ?? "Não atribuído"}</h2>
-          <p>{representative.levelDescription ?? "Nenhuma regra de nível foi aplicada ao seu perfil."}</p>
+          <h2>{representative.levelName ?? "Sem nível"}</h2>
+          <p>{representative.levelDescription ?? "Seu nível ainda não foi definido."}</p>
         </div>
       </article>
       <RecordList
-        title="Histórico de nível"
-        empty="Nenhuma alteração de nível registrada."
+        title="Histórico"
+        empty="Nenhuma mudança de nível."
         rows={history.map((entry) => ({
           id: entry.id,
           title: entry.levelName,
@@ -865,7 +863,7 @@ function Qualifications({
     <section>
       <PageTitle
         title="Qualificação"
-        description="Resultados e critérios das avaliações executadas pelas regras configuradas."
+        description="Resultado das suas avaliações."
       />
       {qualifications.length ? (
         <div className="representative-record-grid">
@@ -880,16 +878,16 @@ function Qualifications({
                   {item.qualified ? "Qualificada" : "Não qualificada"}
                 </span>
               </div>
-              <RuleFacts values={item.metrics} empty="Nenhuma métrica publicada." />
+              <RuleFacts values={item.metrics} empty="Sem métricas." />
               <details>
-                <summary>Consultar critérios</summary>
-                <RuleFacts values={item.criteria} empty="Critérios não publicados." />
+                <summary>Ver critérios</summary>
+                <RuleFacts values={item.criteria} empty="Sem critérios." />
               </details>
             </article>
           ))}
         </div>
       ) : (
-        <EmptyState icon={ShieldCheck} title="Nenhuma avaliação concluída" description="A qualificação aparecerá quando uma regra vigente for processada." />
+        <EmptyState icon={ShieldCheck} title="Nenhuma avaliação ainda" description="O resultado aparece quando o período for avaliado." />
       )}
     </section>
   );
@@ -898,19 +896,19 @@ function Qualifications({
 function Goals({ goals }: { goals: NonNullable<Snapshot["goals"]> }) {
   return (
     <section>
-      <PageTitle title="Metas" description="Metas comerciais configuradas para seu perfil ou nível." />
+      <PageTitle title="Metas" description="Metas do seu período." />
       {goals.length ? (
         <div className="representative-record-grid">
           {goals.map((goal) => (
             <article className="representative-card" key={goal.id}>
               <small>{formatPeriod(goal.periodStart, goal.periodEnd)}</small>
               <h2>{goal.title}</h2>
-              <RuleFacts values={goal.target} empty="Detalhes da meta não publicados." />
+              <RuleFacts values={goal.target} empty="Sem detalhes." />
             </article>
           ))}
         </div>
       ) : (
-        <EmptyState icon={Goal} title="Nenhuma meta vigente" description="Não há uma meta configurada para o período atual." />
+        <EmptyState icon={Goal} title="Nenhuma meta no período" description="Quando houver uma meta, ela aparece aqui." />
       )}
     </section>
   );
@@ -920,10 +918,10 @@ function Inventory({ inventory }: { inventory: NonNullable<Snapshot["inventory"]
   const total = inventory.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <section>
-      <PageTitle title="Meu estoque" description="Saldo derivado exclusivamente de movimentos confirmados." />
+      <PageTitle title="Meu estoque" description="Pares disponíveis para venda." />
       <div className="representative-metrics">
         <Metric label="Unidades disponíveis" value={String(total)} />
-        <Metric label="Variações em estoque" value={String(inventory.filter((item) => item.quantity > 0).length)} />
+        <Metric label="Variações" value={String(inventory.filter((item) => item.quantity > 0).length)} />
       </div>
       {inventory.length ? (
         <div className="representative-table-wrap">
@@ -941,7 +939,7 @@ function Inventory({ inventory }: { inventory: NonNullable<Snapshot["inventory"]
           </table>
         </div>
       ) : (
-        <EmptyState icon={Boxes} title="Estoque sem registros" description="Itens serão exibidos após a entrega confirmada de um kit." />
+        <EmptyState icon={Boxes} title="Estoque vazio" description="Os itens aparecem depois da entrega de um kit." />
       )}
     </section>
   );
@@ -957,10 +955,10 @@ function Movements({
   const byVariant = new Map(inventory.map((item) => [item.variantId, item]));
   return (
     <section>
-      <PageTitle title="Movimentações" description="Trilha imutável de entradas e saídas do estoque profissional." />
+      <PageTitle title="Movimentações" description="Entradas e saídas do seu estoque." />
       <RecordList
-        title="Histórico do estoque"
-        empty="Nenhuma movimentação confirmada."
+        title="Histórico"
+        empty="Nenhuma movimentação."
         rows={movements.map((movement) => ({
           id: movement.id,
           title: byVariant.get(movement.variantId)?.productName ?? "Produto",
@@ -991,12 +989,12 @@ function Team({
   );
   return (
     <section>
-      <PageTitle title="Minha equipe" description="Rede visível conforme seu vínculo de indicação e suas permissões." />
+      <PageTitle title="Minha equipe" description="Pessoas que você indicou." />
       {countUnavailable && <CountUnavailable onRetry={onRetry} />}
       <label className="representative-search">
         <Search />
-        <span className="sr-only">Buscar nesta página da equipe</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar nesta página" />
+        <span className="sr-only">Buscar na equipe</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou código" />
       </label>
       {filtered.length ? (
         <>
@@ -1009,13 +1007,13 @@ function Team({
                   <small>{member.publicCode} · Nível {member.depth} da rede</small>
                 </div>
                 <span className="representative-pill">{statusLabel(member.status)}</span>
-                <small>{member.levelName ?? "Sem nível atribuído"}</small>
+                <small>{member.levelName ?? "Sem nível"}</small>
               </article>
             ))}
           </div>
         </>
       ) : (
-        <EmptyState icon={UsersRound} title="Nenhum membro encontrado nesta página" description="Altere a busca ou consulte outra página." />
+        <EmptyState icon={UsersRound} title="Ninguém encontrado" description="Altere a busca ou confira outra página." />
       )}
       {pagination && <Pagination pagination={pagination} onPageChange={onPageChange} />}
     </section>
@@ -1026,17 +1024,17 @@ function Commissions({ entries, available }: { entries: NonNullable<Snapshot["co
   const total = entries.reduce((sum, entry) => sum + entry.amountInCents, 0);
   return (
     <section>
-      <PageTitle title="Comissões" description="Extrato calculado pelas regras versionadas do período." />
+      <PageTitle title="Comissões" description="Extrato das suas comissões." />
       <div className="representative-metrics">
-        <Metric label="Total nos lançamentos exibidos" value={formatBRL(total)} />
+        <Metric label="Total listado" value={formatBRL(total)} />
         <Metric label="Disponível" value={available === undefined ? "Indisponível" : formatBRL(available)} />
       </div>
       <RecordList
         title="Lançamentos"
-        empty="Nenhuma comissão calculada."
+        empty="Nenhuma comissão ainda."
         rows={entries.map((entry) => ({
           id: entry.id,
-          title: entry.saleCode || "Lançamento de comissão",
+          title: entry.saleCode || "Comissão",
           detail: statusLabel(entry.status),
           meta: `${formatBRL(entry.amountInCents)} · ${formatDate(entry.createdAt)}`
         }))}
@@ -1048,10 +1046,10 @@ function Commissions({ entries, available }: { entries: NonNullable<Snapshot["co
 function Payments({ payments }: { payments: NonNullable<Snapshot["payments"]> }) {
   return (
     <section>
-      <PageTitle title="Pagamentos" description="Histórico de repasses processados pela curti Z." />
+      <PageTitle title="Pagamentos" description="Repasses feitos pela curti Z." />
       <RecordList
         title="Repasses"
-        empty="Nenhum pagamento processado."
+        empty="Nenhum pagamento ainda."
         rows={payments.map((payment) => ({
           id: payment.id,
           title: formatBRL(payment.amountInCents),
@@ -1066,7 +1064,7 @@ function Payments({ payments }: { payments: NonNullable<Snapshot["payments"]> })
 function Trainings({ trainings }: { trainings: NonNullable<Snapshot["trainings"]> }) {
   return (
     <section>
-      <PageTitle title="Treinamentos" description="Conteúdos e progresso vinculados ao seu perfil." />
+      <PageTitle title="Treinamentos" description="Conteúdos e seu progresso." />
       {trainings.length ? (
         <div className="representative-record-grid">
           {trainings.map((training) => (
@@ -1083,7 +1081,7 @@ function Trainings({ trainings }: { trainings: NonNullable<Snapshot["trainings"]
           ))}
         </div>
       ) : (
-        <EmptyState icon={BookOpen} title="Nenhum treinamento disponível" description="Conteúdos publicados para seu perfil aparecerão aqui." />
+        <EmptyState icon={BookOpen} title="Nenhum treinamento" description="Os conteúdos aparecem aqui quando forem publicados." />
       )}
     </section>
   );
@@ -1098,11 +1096,11 @@ function Documents({
 }) {
   return (
     <section>
-      <PageTitle title="Documentos e contratos" description="Referências privadas do seu vínculo profissional." />
+      <PageTitle title="Documentos" description="Documentos e contratos do seu cadastro." />
       <div className="representative-dashboard-grid">
         <PrivateFileList
           title="Documentos"
-          empty="Nenhum documento vigente."
+          empty="Nenhum documento."
           rows={documents.map((document) => ({
             id: document.id,
             title: humanizeCode(document.type),
@@ -1113,7 +1111,7 @@ function Documents({
         />
         <PrivateFileList
           title="Contratos aceitos"
-          empty="Nenhum contrato registrado."
+          empty="Nenhum contrato."
           rows={contracts.map((contract) => ({
             id: contract.id,
             title: `Versão ${contract.version}`,
@@ -1123,7 +1121,6 @@ function Documents({
           }))}
         />
       </div>
-      <p className="representative-security-note"><ShieldCheck /> Arquivos privados exigem URL assinada e não são expostos diretamente pelo portal.</p>
     </section>
   );
 }
@@ -1148,7 +1145,7 @@ function Notifications({
   };
   return (
     <section>
-      <PageTitle title="Notificações" description="Avisos transacionais e ações relevantes para seu perfil." />
+      <PageTitle title="Notificações" description="Avisos sobre sua conta." />
       {notifications.length ? (
         <div className="representative-notifications">
           {notifications.map((notification) => (
@@ -1160,9 +1157,9 @@ function Notifications({
                 <small>{formatDateTime(notification.createdAt)}</small>
               </div>
               <div>
-                {notification.actionPath && <Link className="text-button" href={notification.actionPath}>Abrir</Link>}
+                {notification.actionPath && <Link className="secondary-button compact-button" href={notification.actionPath}>Abrir</Link>}
                 {!notification.readAt && (
-                  <button className="text-button" disabled={loadingId === notification.id} onClick={() => void markRead(notification.id)}>
+                  <button className="secondary-button compact-button" disabled={loadingId === notification.id} onClick={() => void markRead(notification.id)}>
                     {loadingId === notification.id ? <LoaderCircle className="spin" /> : <Check />} Marcar como lida
                   </button>
                 )}
@@ -1171,7 +1168,7 @@ function Notifications({
           ))}
         </div>
       ) : (
-        <EmptyState icon={Bell} title="Nenhuma notificação" description="Você está em dia com os avisos do portal." />
+        <EmptyState icon={Bell} title="Nenhuma notificação" description="Você está em dia." />
       )}
     </section>
   );
@@ -1219,7 +1216,7 @@ export function SaleForm({
   };
   const recovery = (
     <>
-      <button type="button" className="text-button" disabled={loading} onClick={() => void checkPreviousAttempt()}>
+      <button type="button" className="secondary-button compact-button" disabled={loading} onClick={() => void checkPreviousAttempt()}>
         Conferir tentativa anterior
       </button>
       {message && <p className="form-message" role="status">{message}</p>}
@@ -1230,14 +1227,14 @@ export function SaleForm({
       <section>
         <PageTitle
           title="Registrar venda"
-          description="As vendas usam exclusivamente itens confirmados no seu estoque."
+          description="Venda itens do seu estoque."
         />
         <div className="representative-empty">
           <Boxes />
-          <h2>Estoque indisponível</h2>
-          <p>Receba ou reponha um kit antes de registrar uma venda.</p>
+          <h2>Sem estoque para vender</h2>
+          <p>Compre um kit para registrar vendas.</p>
           <Link className="primary-button" href="/representante/comprar-kit">
-            Consultar kits
+            Comprar kit
           </Link>
           {recovery}
         </div>
@@ -1298,7 +1295,7 @@ export function SaleForm({
     <section>
       <PageTitle
         title="Registrar venda"
-        description="Preço, disponibilidade e total são recalculados no servidor antes da baixa do estoque."
+        description="Escolha os itens do seu estoque."
       />
       <form
         className="representative-card representative-sale-form"
@@ -1311,7 +1308,7 @@ export function SaleForm({
             return (
               <div key={line.key}>
                 <label className="field">
-                  <span>Produto e variação {index + 1}</span>
+                  <span>Item {index + 1}</span>
                   <select
                     required
                     value={line.variantId}
@@ -1323,7 +1320,7 @@ export function SaleForm({
                       )
                     }
                   >
-                    <option value="" disabled>Selecione um item do estoque</option>
+                    <option value="" disabled>Selecione um item</option>
                     {inventory.filter((item) => item.quantity > 0).map((item) => (
                       <option
                         value={item.variantId}
@@ -1373,7 +1370,7 @@ export function SaleForm({
             );
           })}
           <button
-            className="text-button"
+            className="secondary-button compact-button"
             type="button"
             disabled={lines.length >= Math.min(50, inventory.filter((item) => item.quantity > 0).length)}
             onClick={() =>
@@ -1404,21 +1401,21 @@ export function SaleForm({
           </label>
         </div>
         <label className="field">
-          <span>Referência externa (opcional)</span>
+          <span>Referência (opcional)</span>
           <input
             name="reference"
             maxLength={80}
             pattern={"[A-Za-z0-9._\\/\\-]+"}
             aria-describedby="sale-reference-hint"
           />
-          <small id="sale-reference-hint">Não informe nome, CPF, telefone ou outro dado pessoal.</small>
+          <small id="sale-reference-hint">Não informe dados pessoais do cliente.</small>
         </label>
         <label className="field">
-          <span>Observações operacionais (opcional)</span>
+          <span>Observações (opcional)</span>
           <textarea name="notes" maxLength={500} rows={3} />
         </label>
         <div className="representative-sale-preview">
-          <span>Prévia dos itens</span>
+          <span>Total estimado</span>
           <strong>
             {formatBRL(
               lines.reduce((sum, line) => {
@@ -1427,7 +1424,7 @@ export function SaleForm({
               }, 0)
             )}
           </strong>
-          <small>Valor apenas informativo; o servidor recalcula o total final.</small>
+          <small>O total final é confirmado ao registrar.</small>
         </div>
         <button className="primary-button" disabled={loading}>
           {loading ? <LoaderCircle className="spin" /> : <ReceiptText />} Registrar venda
@@ -1464,7 +1461,22 @@ export function Sales({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; publicCode: string } | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; publicCode: string; correction: boolean } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const cancelDialogRef = useRef<HTMLDialogElement>(null);
+  const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const visible = sales;
+  const openCancel = (sale: { id: string; publicCode: string }, correction = false) => {
+    if (loadingId || cancelling) return;
+    setCancelTarget({ id: sale.id, publicCode: sale.publicCode, correction });
+    setCancelReason("");
+    setCancelError("");
+    setMessage("");
+    if (!cancelDialogRef.current?.open) cancelDialogRef.current?.showModal();
+    cancelReasonRef.current?.focus();
+  };
   const openDelete = (sale: { id: string; publicCode: string }) => {
     if (loadingId) return;
     setDeleteTarget(sale);
@@ -1488,31 +1500,33 @@ export function Sales({
       setLoadingId("");
     }
   };
-  const cancel = async (saleId: string, correction = false) => {
-    const reason = window.prompt(
-      correction
-        ? "Informe o motivo da correção. A venda atual será cancelada e o estoque estornado:"
-        : "Informe o motivo do cancelamento:"
-    );
-    if (!reason || reason.trim().length < 3 || loadingId) return;
-    setLoadingId(saleId);
-    setMessage("");
+  const confirmCancel = async () => {
+    if (!cancelTarget || cancelling) return;
+    const reason = cancelReason.trim();
+    if (reason.length < 3) {
+      setCancelError("Informe o motivo com pelo menos 3 caracteres.");
+      cancelReasonRef.current?.focus();
+      return;
+    }
+    setCancelling(true);
+    setCancelError("");
     try {
-      await postRepresentativeAction({ action: "cancel_sale", saleId, reason: reason.trim() });
+      await postRepresentativeAction({ action: "cancel_sale", saleId: cancelTarget.id, reason });
+      cancelDialogRef.current?.close();
       setMessage("Venda cancelada e estoque estornado.");
       onRefresh?.();
-      if (correction) window.location.assign("/representante/registrar-venda");
+      if (cancelTarget.correction) window.location.assign("/representante/registrar-venda");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível cancelar.");
+      setCancelError(error instanceof Error ? error.message : "Não foi possível cancelar.");
     } finally {
-      setLoadingId("");
+      setCancelling(false);
     }
   };
   return (
     <div className={compact ? "representative-sales compact" : "representative-sales"}>
       {!compact && (
         <>
-          <PageTitle title="Minhas vendas" description="Histórico auditável dos registros profissionais." />
+          <PageTitle title="Minhas vendas" description="Histórico das suas vendas." />
           {countUnavailable && <CountUnavailable onRetry={onRefresh} />}
           <div className="representative-toolbar">
             <label className="field">
@@ -1544,33 +1558,33 @@ export function Sales({
             <b>{formatBRL(sale.totalInCents)}</b>
             {!compact && sale.status === "confirmed" && (
               <div className="representative-sale-actions">
-                <button className="text-button" disabled={loadingId === sale.id} onClick={() => void cancel(sale.id, true)}>
+                <button className="secondary-button compact-button" disabled={loadingId === sale.id} onClick={() => openCancel(sale, true)}>
                   Corrigir
                 </button>
                 <button
-                  className="text-button danger"
+                  className="secondary-button compact-button danger"
                   disabled={loadingId === sale.id}
-                  onClick={() => void cancel(sale.id)}
+                  onClick={() => openCancel(sale)}
                 >
-                  {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Cancelar
+                  {loadingId === sale.id && <LoaderCircle className="spin" />} Cancelar
                 </button>
                 <button
-                  className="text-button danger"
+                  className="secondary-button compact-button danger"
                   disabled={loadingId === sale.id}
                   onClick={() => openDelete(sale)}
                 >
-                  {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir
+                  <Trash2 /> Excluir
                 </button>
               </div>
             )}
             {!compact && sale.status !== "confirmed" && (
               <div className="representative-sale-actions">
                 <button
-                  className="text-button danger"
+                  className="secondary-button compact-button danger"
                   disabled={loadingId === sale.id}
                   onClick={() => openDelete(sale)}
                 >
-                  {loadingId === sale.id ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir
+                  <Trash2 /> Excluir
                 </button>
               </div>
             )}
@@ -1579,9 +1593,58 @@ export function Sales({
       ) : (
         <div className="representative-empty">
           <ReceiptText />
-          <h2>Nenhuma venda encontrada nesta página</h2>
+          <h2>Nenhuma venda encontrada</h2>
+          {!compact && <Link className="primary-button" href="/representante/registrar-venda">Registrar venda</Link>}
         </div>
       )}
+      <dialog
+        ref={cancelDialogRef}
+        className="representative-delete-dialog"
+        aria-labelledby="cancel-sale-title"
+        onCancel={(event) => {
+          if (cancelling) event.preventDefault();
+        }}
+        onClose={() => { setCancelTarget(null); setCancelReason(""); setCancelError(""); }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget && !cancelling) event.currentTarget.close();
+        }}
+      >
+        <h2 id="cancel-sale-title">{cancelTarget?.correction ? "Corrigir esta venda?" : "Cancelar esta venda?"}</h2>
+        <p>
+          {cancelTarget
+            ? `A venda ${cancelTarget.publicCode} será cancelada e o estoque estornado.${cancelTarget.correction ? " Depois você registra a venda novamente." : ""}`
+            : "A venda será cancelada e o estoque estornado."}
+        </p>
+        <label className="field">
+          <span>Motivo</span>
+          <textarea
+            ref={cancelReasonRef}
+            value={cancelReason}
+            onChange={(event) => { setCancelReason(event.target.value); setCancelError(""); }}
+            maxLength={300}
+            rows={3}
+            required
+            autoFocus
+            aria-invalid={cancelError ? true : undefined}
+            aria-describedby={cancelError ? "cancel-sale-error" : undefined}
+            disabled={cancelling}
+          />
+        </label>
+        {cancelError && <p id="cancel-sale-error" className="representative-dialog-error" role="alert">{cancelError}</p>}
+        <div className="representative-delete-actions">
+          <button className="secondary-button" type="button" disabled={cancelling} onClick={() => cancelDialogRef.current?.close()}>
+            Voltar
+          </button>
+          <button
+            className="primary-button representative-delete-confirm"
+            type="button"
+            disabled={cancelling}
+            onClick={() => void confirmCancel()}
+          >
+            {cancelling && <LoaderCircle className="spin" />} {cancelling ? "Cancelando…" : "Cancelar venda"}
+          </button>
+        </div>
+      </dialog>
       <dialog
         ref={deleteDialogRef}
         className="representative-delete-dialog"
@@ -1594,11 +1657,11 @@ export function Sales({
           if (event.target === event.currentTarget && !loadingId) event.currentTarget.close();
         }}
       >
-        <h2 id={`delete-sale-${deleteTarget?.id ?? "title"}`}>Excluir este pedido?</h2>
+        <h2 id={`delete-sale-${deleteTarget?.id ?? "title"}`}>Excluir esta venda?</h2>
         <p id={`delete-sale-description-${deleteTarget?.id ?? "title"}`}>
           {deleteTarget
-            ? `O pedido ${deleteTarget.publicCode} será removido do seu histórico. Esta ação não pode ser desfeita. Para confirmar, digite EXCLUIR.`
-            : "Este pedido será removido do seu histórico. Para confirmar, digite EXCLUIR."}
+            ? `A venda ${deleteTarget.publicCode} será removida do seu histórico. Esta ação não pode ser desfeita. Para confirmar, digite EXCLUIR.`
+            : "Esta venda será removida do seu histórico. Para confirmar, digite EXCLUIR."}
         </p>
         <label className="field">
           <span>Confirmação</span>
@@ -1625,7 +1688,7 @@ export function Sales({
             disabled={deleteConfirmation.trim() !== "EXCLUIR" || Boolean(loadingId)}
             onClick={() => void confirmDelete()}
           >
-            {loadingId ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir pedido
+            {loadingId ? <LoaderCircle className="spin" /> : <Trash2 />} Excluir venda
           </button>
         </div>
       </dialog>
@@ -1642,7 +1705,7 @@ function Referral({ referralCode }: { referralCode: string }) {
     <section>
       <PageTitle
         title="Link de indicação"
-        description="Compartilhe seu código pessoal. Vínculos são validados no servidor."
+        description="Compartilhe seu código para indicar novas representantes."
       />
       <div className="representative-card referral-detail">
         <Link2 />
@@ -1661,13 +1724,13 @@ function Kits({
   orders: NonNullable<Snapshot["kitOrders"]>;
   purchasing: boolean;
 }) {
-  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kits para revenda"
-    description="Escolha os kits do catálogo e informe o endereço de entrega em Minas Gerais." />} />;
+  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kit"
+    description="Escolha a ficha e a quantidade. Entrega em Minas Gerais." />} />;
   return (
     <section>
       <PageTitle
         title="Meus kits"
-        description="Acompanhe pagamento, separação e entrega."
+        description="Pagamento, separação e entrega dos seus pedidos."
       />
       {orders.length ? (
         <div className="representative-record-grid">
@@ -1683,7 +1746,8 @@ function Kits({
       ) : (
         <div className="representative-empty">
           <PackageCheck />
-          <h2>Nenhum kit adquirido</h2>
+          <h2>Nenhum kit comprado</h2>
+          <Link className="primary-button" href="/representante/comprar-kit">Comprar kit</Link>
         </div>
       )}
     </section>
@@ -1723,12 +1787,12 @@ function Creatives({ creatives }: { creatives: NonNullable<Snapshot["creatives"]
     <section>
       <PageTitle
         title="Criativos"
-        description="Materiais aprovados para seu perfil, nível e região."
+        description="Materiais aprovados para o seu perfil."
       />
       <label className="representative-search">
         <Search />
         <span className="sr-only">Buscar materiais</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por campanha, formato ou canal" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar material" />
       </label>
       <div className="creative-grid">
         {visible.length ? (
@@ -1796,7 +1860,7 @@ function CountUnavailable({ onRetry }: { onRetry?: () => void }) {
   return (
     <div className="error-state" role="alert">
       <p>Não foi possível carregar a contagem e as outras páginas. Os registros exibidos podem estar incompletos.</p>
-      {onRetry && <button type="button" className="text-button" onClick={onRetry}>Tentar novamente</button>}
+      {onRetry && <button type="button" className="secondary-button compact-button" onClick={onRetry}>Tentar novamente</button>}
     </div>
   );
 }
@@ -1805,9 +1869,8 @@ function PageTitle({ title, description }: { title: string; description: string 
   return (
     <header className="representative-page-title">
       <div>
-        <p className="eyebrow">Portal da representante</p>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
     </header>
   );

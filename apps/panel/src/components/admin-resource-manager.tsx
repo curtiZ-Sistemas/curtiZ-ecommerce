@@ -291,6 +291,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [capabilities, setCapabilities] = useState<ResourceCapabilities>(noCapabilities);
   const [editing, setEditing] = useState<Item | "new" | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState("");
+  const [stateError, setStateError] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
   const [categorySlugEdited, setCategorySlugEdited] = useState(false);
@@ -429,6 +431,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         : "");
     }
     setFieldErrors({});
+    setFormError("");
     setEditing(item);
   };
 
@@ -438,6 +441,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
     setPending(true);
     setMessage(null);
+    setFormError("");
     setDeleteError("");
     setFieldErrors({});
 
@@ -460,7 +464,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         }
       }
     } catch (error) {
-      setMessage({ kind: "error", text: error instanceof Error ? error.message : "Revise os valores informados." });
+      setFormError(error instanceof Error && error.message ? error.message : "Revise os valores informados.");
       setPending(false);
       return;
     }
@@ -501,9 +505,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       await load();
       setMessage({ kind: "success", text: successMessage });
     } catch (error) {
-      setMessage({ kind: "error", text:
-        error instanceof Error && error.message ? error.message : "Não foi possível salvar."
-      });
+      setFormError(error instanceof Error && error.message ? error.message : "Não foi possível salvar.");
     } finally {
       setPending(false);
     }
@@ -547,6 +549,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
     setPending(true);
     setMessage(null);
+    setStateError("");
 
     try {
       const response = await fetch(`/api/admin/resources/${resource}`, {
@@ -571,11 +574,11 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       await load();
       setMessage({ kind: "success", text: successMessage });
     } catch (error) {
-      setMessage({ kind: "error", text:
+      setStateError(
         error instanceof Error && error.message
           ? error.message
           : "Não foi possível atualizar os registros."
-      });
+      );
     } finally {
       setPending(false);
     }
@@ -1152,6 +1155,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                 )}
               </div>
 
+              {formError ? <p className="admin-modal-error" role="alert">{formError}</p> : null}
+
               <footer>
                 <button
                   className="secondary-button"
@@ -1164,7 +1169,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
                 <button className="primary-button" type="submit" disabled={pending}>
                   {pending ? <LoaderCircle className="spin" /> : null}
-                  Salvar
+                  {pending ? "Salvando…" : "Salvar"}
                 </button>
               </footer>
             </form>
@@ -1231,12 +1236,13 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                 ? "Os itens deixarão de ficar ativos, mas o histórico será preservado."
                 : "Os itens voltarão como rascunho ou ativos, conforme o tipo de cadastro."}
             </p>
+            {stateError ? <p className="admin-modal-error" role="alert">{stateError}</p> : null}
 
             <div>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => setStateTarget(null)}
+                onClick={() => { setStateTarget(null); setStateError(""); }}
                 disabled={pending}
               >
                 Cancelar

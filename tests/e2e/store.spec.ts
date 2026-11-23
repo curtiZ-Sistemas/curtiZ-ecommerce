@@ -1052,6 +1052,65 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
 });
 
+test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const kitId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: true,
+    items: [{ kitId, name: "Kit por ficha", color: "Preto", description: "Grade de 12 pares", templates: [
+      { code: "lower_restock", label: "Ficha reposição baixa", available: 3, unitPriceInCents: 26590,
+        sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 3 }, { size: "36", pairs: 4 }, { size: "37", pairs: 4 }] },
+      { code: "upper_restock", label: "Ficha reposição alta", available: 2, unitPriceInCents: 30001,
+        sizes: [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }] }
+    ] }]
+  } }));
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
+    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+  ] } }));
+  const quoteRequests: unknown[] = [];
+  await page.route("**/api/representatives/kits/collection", route => {
+    const body = route.request().postDataJSON() as { paymentTiming: string };
+    quoteRequests.push(body);
+    return route.fulfill({ json: { quote: body.paymentTiming === "collection"
+      ? { id: quoteId, amountInCents: 30001, shippingInCents: 0, service: "Entrega própria", collectionMethods: ["cash"] }
+      : { id: quoteId, amountInCents: 30001, shippingInCents: 0, service: "Entrega própria", collectionMethods: [] } } });
+  });
+  await page.route("**/api/representatives/kits/orders", route => route.fulfill({ json: {
+    ok: true, order: { orderId, state: "awaiting_receipt", amountInCents: 30001, collectionMethod: "cash",
+      cashTenderedInCents: 40000, cashChangeInCents: 9999 }
+  } }));
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await page.getByRole("radio", { name: /Ficha reposição alta/ }).check();
+  await expect(page.getByText("12 pares por ficha")).toBeVisible();
+  await page.getByRole("button", { name: "Solicitar compra" }).click();
+  await page.getByLabel("Endereço de entrega").selectOption(addressId);
+  await expect(page.getByLabel("Quando pagar").locator("option")).toHaveText(["Pagar antecipado", "Pagar no recebimento"]);
+  await page.getByLabel("Quando pagar").selectOption("collection");
+  await page.getByLabel("Escolher forma de pagamento").selectOption("cash");
+  const pay = page.getByRole("button", { name: "Confirmar pagamento no recebimento" });
+  await page.getByLabel("Valor que você vai entregar").fill("200,00");
+  await expect(pay).toBeDisabled();
+  await page.getByLabel("Valor que você vai entregar").fill("400,00");
+  await expect(page.locator("output").filter({ hasText: /Troco no recebimento/ })).toContainText("99,99");
+  const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
+  await pay.click();
+  expect((await reserve).postDataJSON()).toEqual({ action: "reserve_collection", selectionId: kitId, template: "upper_restock",
+    quoteId, addressId, quantity: 1, method: "cash", cashTenderedInCents: 40000,
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await expect(page.getByText(/Valor informado.*Troco.*99,99/)).toBeVisible();
+  expect(quoteRequests).toContainEqual(expect.objectContaining({ kitId, template: "upper_restock", paymentTiming: "collection" }));
+});
+
 test("avisa quando nenhum kit foi cadastrado para o representante", async ({ page, baseURL }) => {
   const loginUrl = new URL("/api/auth/login", baseURL);
   const login = await page.request.post(loginUrl.toString(), {
@@ -1111,7 +1170,7 @@ test("portal da representante mantém a identidade visual da área do cliente", 
 
   await expect(page.locator(".representative-portal-layout")).toHaveCSS(
     "background-color",
-    "rgb(238, 238, 238)"
+    "rgb(245, 243, 240)"
   );
   await expect(page.locator(".representative-sidebar")).toHaveCSS(
     "background-color",

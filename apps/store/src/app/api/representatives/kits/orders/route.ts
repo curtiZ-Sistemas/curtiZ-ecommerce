@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     if (["reserve","reserve_grade","reserve_collection","pix"].includes(data.action) && !commercialKitCheckoutConfigured(environment)) {
       return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
     }
-    if (data.action === "reserve_collection" && (manualFiscal || environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true")) {
+    if (data.action === "reserve_collection" && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true") {
       return reply({ message: "Pagamento no recebimento indisponível para este pedido." }, 409);
     }
     await requirePrivateRateLimit(auth, {

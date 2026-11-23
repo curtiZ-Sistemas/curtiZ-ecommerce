@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
   createServiceSupabaseClient: () => null
 }));
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const url = "https://panel.example/api/operations/representative-kits";
 const orderId = "10000000-0000-4000-8000-000000000001";
@@ -31,6 +31,16 @@ const post = (body: object) => POST(new NextRequest(url, {
 beforeEach(() => { rpc.mockReset().mockResolvedValue({ data: true, error: null }); });
 
 describe("representative kit operations", () => {
+  it("lists the delivery queue with the phone returned by the permission-checked function", async () => {
+    const rows = [{ orderId, deliveryAddress: { name: "Loja", phone: "31999990000" } }];
+    rpc.mockResolvedValueOnce({ data: rows, error: null });
+    const response = await GET(new NextRequest(`${url}?mode=collection`));
+    expect(await response.json()).toEqual({ rows });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("list_representative_kit_collection_work");
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+    expect((await GET(new NextRequest(`${url}?mode=collection`))).status).toBe(403);
+  });
+
   it("queues an imported NF-e for verification without confirming it in the panel", async () => {
     const invoiceKey = "31261112345678000195550030000000001123456782";
     expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(200);
