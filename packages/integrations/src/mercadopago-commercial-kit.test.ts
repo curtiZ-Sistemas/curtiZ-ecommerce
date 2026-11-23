@@ -27,6 +27,25 @@ describe("Mercado Pago commercial kit Pix", () => {
     });
   });
 
+  it("identifies an individual payer by CPF when the buyer has no CNPJ", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json(payment));
+    const provider = new MercadoPagoPaymentProvider("APP_USR-fixture", "production", transport);
+    await provider.createRepresentativeKitPix({ ...input, buyerDocument: "52998224725" });
+    const sent = transport.mock.calls[0]?.[1]?.body;
+    if (typeof sent !== "string") throw new Error("Expected a JSON request body");
+    const body = JSON.parse(sent) as { payer: Record<string, unknown> };
+    expect(body.payer).toMatchObject({ entity_type: "individual", identification: { type: "CPF", number: "52998224725" } });
+  });
+
+  it("refuses a payer document that is neither 11 nor 14 digits", async () => {
+    const transport = vi.fn<typeof fetch>();
+    const provider = new MercadoPagoPaymentProvider("APP_USR-fixture", "production", transport);
+    for (const buyerDocument of ["", "1234567890", "123456789012", "1122233300018x"]) {
+      await expect(provider.createRepresentativeKitPix({ ...input, buyerDocument })).rejects.toThrow("invalid_kit_payment");
+    }
+    expect(transport).not.toHaveBeenCalled();
+  });
+
   it("refuses the commercial aggregate with test credentials without reaching the provider", async () => {
     const transport = vi.fn<typeof fetch>();
     await expect(new MercadoPagoPaymentProvider("TEST-fixture", "test", transport).createRepresentativeKitPix(input))

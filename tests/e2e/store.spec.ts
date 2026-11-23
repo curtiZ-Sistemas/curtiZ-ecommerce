@@ -1031,6 +1031,8 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit/checkout\\?kit=${kitId}&ficha=standard&qtd=1$`));
   await expect(page.getByRole("heading", { name: "Finalizar compra" })).toBeVisible();
   await expect(page.getByText(/Minas Gerais/)).toHaveCount(0);
+  await expect(page.getByText("Nenhum endereço salvo.")).toBeVisible();
+  await page.getByRole("button", { name: "Novo endereço" }).click();
   const address = page.getByRole("group", { name: "Novo endereço" });
   await expect(address).toBeVisible();
   await expect(address.getByLabel("Estado")).toHaveValue("MG");

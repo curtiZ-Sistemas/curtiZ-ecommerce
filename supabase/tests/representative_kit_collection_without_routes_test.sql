@@ -110,9 +110,12 @@ select is((select i.reserved_quantity from public.inventory i join commercial_ki
 select is((select shipping_snapshot->'deliveryAddress'->>'phone'
   from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.receipt_order),
   '(31) 99999-0000','the order snapshot stores the buyer phone');
-select is((select private.representative_kit_manual_fiscal(o)
+select is((select private.representative_kit_mg02_flow(o)
   from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.receipt_order),
-  true,'the manual-invoice rule applies to cash on receipt');
+  true,'the MG02 rule applies to cash on receipt');
+select is((select private.representative_kit_invoice_mode(o)
+  from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.receipt_order),
+  'automatic','the NF-e of a cash order is automatic by default');
 select is((select public.can_start_representative_kit_manual_pix(actor,receipt_order) from commercial_kit_fixture),
   false,'a cash order cannot start a Pix');
 select is((select private.representative_kit_fiscal_ready(o)

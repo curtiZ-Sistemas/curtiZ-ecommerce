@@ -36,6 +36,17 @@ const states: Record<string,string> = {
   requested: "Solicitada", approved: "Aprovada", received: "Aguardando validação do XML",
   verified: "XML validado", refund_pending: "Estorno em andamento", completed: "Concluída", rejected: "Recusada"
 };
+const invoiceErrors: Record<string,string> = {
+  buyer_cnpj_required: "O comprador não tem CNPJ cadastrado.",
+  buyer_registration_required: "O comprador não tem inscrição estadual cadastrada.",
+  payment_method_required: "Forma de pagamento do Bling não configurada.",
+  invoice_recipient_mismatch: "Os dados do destinatário no Bling não conferem com o pedido.",
+  kit_fiscal_clearance_failed: "A conferência fiscal do pedido não passou.",
+  duplicate_contact: "Há mais de um contato com este CNPJ no Bling.",
+  duplicate_external_order: "Há mais de um pedido deste kit no Bling.",
+  uncertain_write: "O Bling não confirmou a gravação.",
+  unexpected_error: "Falha inesperada na emissão."
+};
 const paymentMethods: Record<string,string> = { pix: "Pix", debit_card: "Débito", credit_card: "Crédito", cash: "Dinheiro" };
 const pointStates: Record<string,string> = {
   created: "Enviado ao terminal", at_terminal: "Aguardando no terminal", processed: "Recebimento confirmado",
@@ -109,7 +120,9 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
     const action = submitter instanceof HTMLButtonElement ? submitter.value : "";
     const pairs = requestedPairs(row);
     const body = mode === "fiscal"
-      ? action === "submit_manual_invoice"
+      ? action === "retry_auto_invoice"
+        ? { action, orderId: field(row,"orderId") }
+      : action === "submit_manual_invoice"
         ? { action, orderId: field(row,"orderId"), invoiceId: Number(form.get("invoiceId")), invoiceKey: form.get("invoiceKey") }
         : { action: "approve_invoice", orderId: field(row,"orderId"), hash: field(row,"draftHash"), evidence: form.get("evidence") }
       : action === "register_undelivered_return"
@@ -153,21 +166,31 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
           <li key={sku}>{sku} · {quantity} {quantity === 1 ? "par" : "pares"}</li>)}</ul>
           : <p>{field(row,"sku") ? `${field(row,"sku")} · ` : ""}{typeof row.quantity === "number" ? row.quantity : ""} kits</p>}
         {mode === "fiscal" ? <>
-          <p>{row.invoiceAuthorized ? "NF-e autorizada"
+          <p>{row.invoiceAuthorized ? "NF-e emitida"
+            : row.autoInvoiceStatus === "error" ? "NF-e com erro"
+            : row.autoInvoiceStatus === "pending" ? typeof row.invoiceId === "number" ? "NF-e automática em emissão" : "NF-e automática pendente"
             : row.manualFiscal ? typeof row.manualInvoiceId === "number" ? "Aguardando validação da NF-e" : "Aguardando emissão fiscal"
             : row.draftApproved ? "Rascunho conferido" : typeof row.invoiceId === "number" ? "Aguardando revisão fiscal" : "Aguardando Bling"}</p>
           {typeof row.invoiceId === "number" && <p>NF-e no Bling {row.invoiceId}</p>}
+          {row.invoiceAuthorized === true && field(row,"invoiceNumber") && <p>NF-e nº {field(row,"invoiceNumber")} · série 3</p>}
+          {row.invoiceAuthorized === true && field(row,"invoiceKey") && <p>Chave de acesso {field(row,"invoiceKey")}</p>}
+          {row.autoInvoiceStatus === "error" && !row.invoiceAuthorized && <>
+            <p role="alert">Motivo: {invoiceErrors[field(row,"autoInvoiceError")] ?? "Falha na emissão automática."}</p>
+            {!row.cancellationRequested && typeof row.manualInvoiceId !== "number" && <form onSubmit={event => void submit(event,row)}>
+              <button type="submit" value="retry_auto_invoice" disabled={busy}>Reemitir</button>
+            </form>}
+          </>}
           {canPrint && row.invoiceAuthorized === true && !row.ownDelivery && !row.collectionMethod && ["label_created","dispatched","in_transit","delayed"].includes(field(row,"shipmentStatus"))
             && <button type="button" disabled={busy} onClick={() => void prepareLabel(field(row,"orderId"))}>Preparar impressão da etiqueta</button>}
           {label?.orderId === field(row,"orderId") && <a href={label.url} target="_blank" rel="noreferrer">Abrir etiqueta no Melhor Envio</a>}
           {row.cancellationRequested === true && <p>Cancelamento solicitado</p>}
-          {row.manualFiscal === true && state === "paid" && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
-            <p>Importe no Bling o XML autorizado antes de informar o ID e a chave.</p>
+          {row.manualFiscal === true && ["paid","awaiting_receipt"].includes(state) && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
+            <p>{row.autoInvoiceStatus === "error" ? "Se preferir, emita a NF-e manualmente no Bling. " : ""}Importe no Bling o XML autorizado antes de informar o ID e a chave.</p>
             <label>ID da NF-e no Bling <input required name="invoiceId" type="number" min={1} /></label>
             <label>Chave da NF-e série 003 <input required name="invoiceKey" inputMode="numeric" pattern="31[0-9]{18}55003[0-9]{19}" maxLength={44} /></label>
             <button type="submit" value="submit_manual_invoice" disabled={busy}>Enviar NF-e para validação</button>
           </form>}
-          {field(row,"draftHash") && !row.draftApproved && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
+          {field(row,"draftHash") && !row.draftApproved && row.autoInvoiceStatus == null && !row.invoiceAuthorized && !row.cancellationRequested && <form onSubmit={event => void submit(event,row)}>
             <label>Referência da conferência fiscal <input required name="evidence" minLength={10} maxLength={200} /></label>
             <button type="submit" disabled={busy}>Aprovar rascunho revisado</button>
           </form>}

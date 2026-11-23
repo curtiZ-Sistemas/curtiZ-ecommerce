@@ -14,6 +14,7 @@ const approvals = z.object({ action: z.literal("approve_invoice"), orderId: z.st
 const manualInvoice = z.object({ action: z.literal("submit_manual_invoice"), orderId: z.string().uuid(),
   invoiceId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   invoiceKey: z.string().regex(/^31[0-9]{18}55003[0-9]{19}$/u) }).strict();
+const retryAutoInvoice = z.object({ action: z.literal("retry_auto_invoice"), orderId: z.string().uuid() }).strict();
 const mg02Approval = z.object({ action: z.literal("approve_mg02"), representativeCode: z.string().regex(/^REP-[A-Fa-f0-9]{10}$/u),
   document: z.string().regex(/^[0-9]{14}$/u), legalName: z.string().trim().min(2).max(180),
   stateRegistration: z.string().regex(/^[0-9]{2,14}$/u), fiscalAddress: z.object({
@@ -52,7 +53,7 @@ const point = z.object({ action: z.literal("point"), orderId: z.string().uuid(),
   operation: z.enum(["launch","refresh","cancel"]) }).strict();
 const collectRefund = z.object({ action: z.literal("collection_refund"), returnId,
   cashEvidence: z.string().trim().min(10).max(200).optional() }).strict();
-const input = z.union([approvals,manualInvoice,mg02Approval,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
+const input = z.union([approvals,manualInvoice,retryAutoInvoice,mg02Approval,reasons,receipt,refund,pickupSchedule,pickupReceipt,print,collect,cashSchedule,mdfe,undeliveredReturn,
   point,collectRefund]);
 const send = (value: object, status = 200) => NextResponse.json(value,{ status, headers: technicalNoStore });
 
@@ -194,6 +195,11 @@ export async function POST(request: NextRequest) {
         p_order: item.orderId, p_invoice: item.invoiceId, p_key: item.invoiceKey
       });
       return result.error || result.data !== true ? send({ message: "Confira a NF-e série 003 importada no Bling e a situação do pedido." },
+        result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
+    }
+    if (item.action === "retry_auto_invoice") {
+      const result = await db.rpc("request_representative_kit_auto_invoice_retry",{ p_order: item.orderId });
+      return result.error || result.data !== true ? send({ message: "A NF-e automática não pôde ser reenfileirada." },
         result.error?.code === "42501" ? 403 : 409) : send({ ok: true });
     }
     if (item.action === "approve_invoice") {

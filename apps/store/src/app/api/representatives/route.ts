@@ -22,8 +22,10 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { corsHeadersFor, isAllowedRequestOrigin } from "@/lib/http-origin";
 import { encryptPII } from "@/lib/pii";
 import {
+  cnpjDigits,
   cpfDigits,
   isValidBrazilianPhone,
+  isValidCnpj,
   isValidCpf,
   normalizeBrazilianPhone
 } from "@/lib/personal-data";
@@ -123,6 +125,27 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 
 const noStore: Record<string, string> = { "cache-control": "private, no-store" };
+
+// Optional company data of the applicant (step 2). The CNPJ identifies the buyer of kits and the
+// Pix payer once the application is approved. Returns an error message, or null after normalizing.
+function normalizeCompanyAnswers(values: Record<string, string | boolean>): string | null {
+  const read = (key: string) => (typeof values[key] === "string" ? values[key].trim() : "");
+  const cnpj = read("cnpj");
+  const legalName = read("legalName");
+  const registration = read("stateRegistration");
+  delete values.cnpj;
+  delete values.legalName;
+  delete values.stateRegistration;
+  if (!cnpj) return legalName || registration ? "Informe o CNPJ da empresa." : null;
+  if (!isValidCnpj(cnpj)) return "Informe um CNPJ válido.";
+  if (legalName.length < 2 || legalName.length > 200) return "Informe a razão social da empresa.";
+  const registrationDigits = registration.replace(/\D/gu, "");
+  if (registration && !/^[0-9]{2,14}$/u.test(registrationDigits)) return "Informe a inscrição estadual somente com números.";
+  values.cnpj = cnpjDigits(cnpj);
+  values.legalName = legalName;
+  if (registrationDigits) values.stateRegistration = registrationDigits;
+  return null;
+}
 
 const responseHeaders = (request: Request): Record<string, string> => {
   return { ...noStore, ...corsHeadersFor(request) };
@@ -792,6 +815,10 @@ export async function POST(request: NextRequest) {
     const safeValues = { ...input.values };
     delete safeValues.cpf;
     if (rawPhone) safeValues.phone = normalizeBrazilianPhone(rawPhone) ?? "";
+    if (input.step === 2) {
+      const company = normalizeCompanyAnswers(safeValues);
+      if (company) return NextResponse.json({ message: company }, { status: 422, headers: noStore });
+    }
     let representativeTermsVersionId = "";
     if (input.step === 5 && input.values.termsAccepted) {
       const termsResponse: unknown = await supabase

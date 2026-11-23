@@ -2,6 +2,8 @@ import "server-only";
 import { getMercadoPagoCredentials } from "@curtiz/config";
 import { MercadoPagoPaymentProvider, type MercadoPagoPayment } from "@curtiz/integrations";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { decryptPII } from "./pii";
+import { cpfDigits, isValidCpf } from "./personal-data";
 import { KitTransactionError, kitCall, kitRecord } from "./representative-test-transactions";
 import { getStoreRuntimeEnvironment, type RuntimeEnvironment } from "./runtime-environment";
 import { readNumber, readRows, readString, type UnknownRecord } from "./unknown-data";
@@ -85,6 +87,19 @@ async function readProviderKitPayment(provider: MercadoPagoPaymentProvider, cont
     : readString(context, "startedAt") ? provider.findRepresentativeKitPayment(kitReference(orderId)) : null;
 }
 
+// The approved CNPJ identifies the payer when there is one. Otherwise the representative's own CPF
+// (stored encrypted by the application) is used. The document is never logged or returned.
+async function readRepresentativePayerCpf(db: SupabaseClient, actor: string) {
+  try {
+    const ciphertext = await kitCall(db, "read_representative_kit_payer_cpf", { p_actor: actor });
+    if (typeof ciphertext !== "string" || !ciphertext) return null;
+    const plain = decryptPII(ciphertext);
+    return isValidCpf(plain) ? cpfDigits(plain) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function beginCommercialKitPix(
   db: SupabaseClient, provider: MercadoPagoPaymentProvider, collector: string,
   actor: { id: string; email: string }, orderId: string
@@ -92,13 +107,18 @@ export async function beginCommercialKitPix(
   let context = await commercialKitOrderPayment(db, actor.id, orderId);
   if (readString(context, "startedAt")) return refreshCommercialKitPayment(db, provider, collector, actor.id, orderId, context);
   if (await provider.getRepresentativeKitCollectorId() !== collector) throw new KitTransactionError(503);
-  const claim = await kitCall(db, "claim_representative_kit_pix", { p_actor: actor.id, p_order: orderId });
+  const payerCpf = await readRepresentativePayerCpf(db, actor.id);
+  const claim = await kitCall(db, "claim_representative_kit_pix", {
+    p_actor: actor.id, p_order: orderId, p_payer_cpf_ready: payerCpf !== null
+  });
   if (claim === null) return refreshCommercialKitPayment(db, provider, collector, actor.id, orderId);
   if (typeof claim !== "object" || !claim || Array.isArray(claim)) throw new KitTransactionError(503);
   context = claim as UnknownRecord;
+  const buyerDocument = readString(context, "buyerDocument") || payerCpf;
+  if (!buyerDocument) throw new KitTransactionError(503);
   const payment = await provider.createRepresentativeKitPix({
     orderId, amountInCents: readNumber(context, "amountInCents"), email: actor.email,
-    buyerName: readString(context, "buyerName"), buyerDocument: readString(context, "buyerDocument"),
+    buyerName: readString(context, "buyerName"), buyerDocument,
     expiresAt: readString(context, "expiresAt")
   });
   await reconcileCommercialKitPayment(db, payment, collector, orderId);

@@ -207,7 +207,21 @@ select results_eq(
 
 update commercial_kit_fixture set quote=pg_temp.commercial_quote(),request_key=gen_random_uuid(),expected_payment='222';
 update commercial_kit_fixture set order_id=(pg_temp.reserve_commercial_kit()->>'orderId')::uuid;
-select is(pg_temp.claim_commercial_pix()->>'buyerDocument','11222333000181','a second order has an independent payment claim');
+-- Without a CNPJ on the approval, Pix needs the server to confirm a valid payer CPF first.
+update private.representative_kit_checkout_approvals set buyer_document=null
+  where actor_id=(select actor from commercial_kit_fixture);
+select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
+  'an approval without CNPJ cannot start Pix while the server holds no payer CPF');
+select throws_ok($$select public.claim_representative_kit_pix(actor,order_id,false) from commercial_kit_fixture$$,
+  '23514','resale_payment_blocked','an explicit not-ready payer CPF cannot start Pix either');
+select is((select o.payment_started_at is null from private.representative_kit_orders o
+  join commercial_kit_fixture f on f.order_id=o.id),true,'a blocked claim leaves the order unclaimed');
+select is((select public.claim_representative_kit_pix(actor,order_id,true)->>'buyerName' from commercial_kit_fixture),
+  'Synthetic buyer LTDA','with a payer CPF ready the claim goes through and names the approved buyer');
+select is((select public.claim_representative_kit_pix(actor,order_id,true) from commercial_kit_fixture),null::jsonb,
+  'the CPF claim is also consumed once');
+update private.representative_kit_checkout_approvals set buyer_document='11222333000181'
+  where actor_id=(select actor from commercial_kit_fixture);
 select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','an ordinary payment enqueues fulfillment');
 update private.representative_kit_fulfillment set bling_sale_id=123,bling_invoice_id=456,shipment_id='synthetic-carrier'
   where order_id=(select order_id from commercial_kit_fixture);
@@ -615,6 +629,40 @@ select ok(pg_temp.claim_commercial_pix() is not null,'manual fiscal mode reuses 
 select is(pg_temp.settle_commercial_pix('approved','331',37501)->>'state','paid','payment settles without an invoice');
 select is((select public.read_representative_kit_tracking(actor,order_id)->>'fiscalStatus' from commercial_kit_fixture),
   'awaiting_fiscal_issuance','only the buyer can see that the paid manual order awaits the fiscal document');
+-- 20261124030000: the NF-e is automatic by default; the manual one is only the fallback after a failure.
+select is((select private.representative_kit_invoice_mode(o) from private.representative_kit_orders o
+  join commercial_kit_fixture f on o.id=f.order_id),'automatic','MG02 orders default to the automatic NF-e');
+select is((select private.representative_kit_manual_fiscal(o) from private.representative_kit_orders o
+  join commercial_kit_fixture f on o.id=f.order_id),false,'the manual NF-e is not offered while the automatic one has not failed');
+select is((select public.record_representative_kit_auto_invoice_error(order_id,'buyer_cnpj_required',true)
+  from commercial_kit_fixture),true,'the worker records the automatic failure');
+select is((select private.representative_kit_manual_fiscal(o) from private.representative_kit_orders o
+  join commercial_kit_fixture f on o.id=f.order_id),true,'an automatic failure opens the manual fallback');
+select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated','aal','aal2')::text,true)
+  from commercial_kit_fixture;
+select is((select public.request_representative_kit_auto_invoice_retry(order_id) from commercial_kit_fixture),true,
+  'the operator asks for a new automatic attempt');
+select is((select f.auto_invoice_failed_at is null and f.auto_invoice_error is null and f.checked_at is null
+  from private.representative_kit_fulfillment f join commercial_kit_fixture t using(order_id)),true,
+  'the retry clears the error and puts the order back in the queue');
+select is((select public.request_representative_kit_auto_invoice_retry(order_id) from commercial_kit_fixture),false,
+  'a retry without a recorded failure does nothing');
+select is((select public.record_representative_kit_auto_invoice_error(order_id,'rate_limited',false) from commercial_kit_fixture),true,
+  'a retryable failure is recorded without closing the automatic attempt');
+select is((select f.auto_invoice_failed_at is null and f.auto_invoice_attempts=1
+  from private.representative_kit_fulfillment f join commercial_kit_fixture t using(order_id)),true,
+  'only a final failure shows NF-e with error');
+select is((select public.record_representative_kit_auto_invoice_error(order_id,'Not A Code',true) from commercial_kit_fixture),false,
+  'the failure reason must be a code, never free text');
+select is((select public.record_representative_kit_auto_invoice_error(order_id,'buyer_cnpj_required',true) from commercial_kit_fixture),true,
+  'the final failure is recorded again');
+select is((select r->>'autoInvoiceStatus' from jsonb_array_elements(public.list_representative_kit_fiscal_work()) r
+  join commercial_kit_fixture t on r->>'orderId'=t.order_id::text),'error','the fiscal queue shows the automatic NF-e error');
+select is((select r->>'autoInvoiceError' from jsonb_array_elements(public.list_representative_kit_fiscal_work()) r
+  join commercial_kit_fixture t on r->>'orderId'=t.order_id::text),'buyer_cnpj_required','the fiscal queue shows the reason code');
+select ok(not has_function_privilege('authenticated','public.record_representative_kit_auto_invoice_error(uuid,text,boolean)','execute')
+  and not has_function_privilege('authenticated','public.auto_approve_representative_kit_bling_draft(uuid,text)','execute'),
+  'only the worker records NF-e failures and approves drafts');
 select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated','aal','aal2')::text,true)
   from commercial_kit_fixture;
 select is((select public.submit_representative_kit_manual_invoice(t.order_id,f.bling_invoice_id,
@@ -635,6 +683,10 @@ select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
 select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
     '3126111234567800019555003'||repeat('8',19),'100000000000010',repeat('f',64))
   from commercial_kit_fixture),true,'the worker can attach the verified provider proof');
+select is((select public.request_representative_kit_auto_invoice_retry(order_id) from commercial_kit_fixture),false,
+  'a submitted manual NF-e blocks a second automatic issue for the same order');
+select is((select private.representative_kit_invoice_mode(o) from private.representative_kit_orders o
+  join commercial_kit_fixture f on o.id=f.order_id),'manual','an order with a manual NF-e stays manual');
 
 -- Kit-owned sheet stock: offers, reservation quantities, refusal, single release and direct access.
 select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),9,
