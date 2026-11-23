@@ -22,8 +22,10 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
   }, [retry]);
 
   return <section className="representative-kit-catalog">
-    {header}
-    {catalog?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={catalog.checkoutConfigured} />}
+    <div className="representative-kit-catalog-head">
+      {header}
+      {catalog?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={catalog.checkoutConfigured} />}
+    </div>
     {catalog ? <RepresentativeKitGrades offers={catalog.offers} />
       : error ? <div role="alert" className="representative-kit-catalog-state">
         <p>Não foi possível carregar os kits. Tente novamente.</p>

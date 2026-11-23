@@ -15,6 +15,13 @@ const input = z.union([
 ]);
 const reply = (data: object, status = 200) => Response.json(data, { status, headers: { "cache-control": "private, no-store" } });
 
+// Why the quote came back empty, without exposing fiscal details to the browser.
+async function quoteRefusal(auth: NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>, atReceipt: boolean) {
+  const access = await auth.rpc("read_representative_kit_buyer_enabled").then(result => result, () => null);
+  if (access && !access.error && access.data === false) return "not_enabled";
+  return atReceipt ? "collection" : "address";
+}
+
 export async function POST(request: Request) {
   if (!isAllowedRequestOrigin(request)) return reply({ message: "Origem não autorizada." }, 403);
   try {
@@ -27,8 +34,8 @@ export async function POST(request: Request) {
     const environment = getStoreRuntimeEnvironment();
     const data = parsed.data;
     const atReceipt = data.paymentTiming === "collection";
-    if (!commercialKitCheckoutConfigured(environment)
-      || (atReceipt && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true")) return reply({ quote: null });
+    if (!commercialKitCheckoutConfigured(environment)) return reply({ quote: null, reason: "unavailable" });
+    if (atReceipt && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true") return reply({ quote: null, reason: "collection" });
     const origin = environment.REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE?.trim() || null;
     const db = createServiceSupabaseClient();
     if (!db || (origin && !isRepresentativeKitPostalCode(origin))) throw new KitTransactionError(503);
@@ -38,6 +45,7 @@ export async function POST(request: Request) {
       p_template: "template" in data ? data.template : null, p_quantity: data.quantity,
       p_address: data.addressId, p_origin: origin, p_at_receipt: atReceipt
     });
+    if (quote === null) return reply({ quote, reason: await quoteRefusal(auth, atReceipt) });
     return reply({ quote });
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError ? error.status : 503;

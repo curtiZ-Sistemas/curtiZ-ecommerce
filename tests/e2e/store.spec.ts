@@ -702,7 +702,7 @@ test("preserva o retorno do login e abre atendimento humano", async ({ page }) =
   await expect(page).toHaveURL(/\/login\?next=/);
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta\/atendimento\?new=1/, { timeout: 30_000 });
   await page.getByLabel("Assunto").fill("Prazo da entrega do pedido");
@@ -783,7 +783,7 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await expect(page.getByLabel("Lembrar meu acesso neste dispositivo")).not.toBeChecked();
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
 
@@ -817,7 +817,7 @@ test("respeita Manter conectado e limpa o carrinho no logout", async ({ page, co
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
   await page.getByLabel("Lembrar meu acesso neste dispositivo").check();
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/minha-conta$/u, { timeout: 30_000 });
   const persistentCookies = await context.cookies();
@@ -880,7 +880,7 @@ test("mantém favoritos entre páginas para a conta demo", async ({ page }) => {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL("**/minha-conta", { timeout: 20_000 });
   await page.goto("/minha-conta/favoritos");
@@ -898,7 +898,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/minha-conta$/, { timeout: 20_000 });
@@ -1000,7 +1000,7 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
-    checkoutConfigured: true, orderHistoryAvailable: true,
+    checkoutConfigured: true, orderHistoryAvailable: true, buyerEnabled: true,
     items: [{ kitId, name: "Kit de teste", color: "Preto", description: "Grade de 12 pares", templates: [
       { code: "standard", label: "Ficha padrão", available: 3, unitPriceInCents: 4500,
         sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 2 }, { size: "36", pairs: 3 }, { size: "37", pairs: 3 },
@@ -1010,21 +1010,31 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [] } }));
   await page.route("https://viacep.com.br/ws/**", route => route.fulfill({ json: { erro: true } }));
   await page.route("**/api/customer", route => route.fulfill({ json: { ok: true, data: addressId } }));
-  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: {
-    quote: { id: quoteId, amountInCents: 4500, shippingInCents: 0, estimatedDays: null }
-  } }));
+  await page.route("**/api/representatives/kits/collection", route => {
+    const body = route.request().postDataJSON() as { paymentTiming: string };
+    // Payment on receipt is not offered for this address.
+    return route.fulfill({ json: body.paymentTiming === "collection" ? { quote: null, reason: "collection" }
+      : { quote: { id: quoteId, amountInCents: 4500, shippingInCents: 0, estimatedDays: null } } });
+  });
+  let orderState = "reserved";
   await page.route("**/api/representatives/kits/orders", route => {
     const data = route.request().postDataJSON() as { action: string };
-    const state = data.action === "pix" ? "payment_pending" : data.action === "cancel" ? "cancelled" : "reserved";
-    return route.fulfill({ json: { ok: true, order: {
-      orderId, state, amountInCents: 4500, ...(state === "payment_pending" ? { pix: { copyPaste: "PIX-FIXTURE" } } : {})
-    } } });
+    if (data.action === "pix") orderState = "payment_pending";
+    if (data.action === "cancel") orderState = "cancelled";
+    const order = { orderId, state: orderState, amountInCents: 4500,
+      ...(orderState === "payment_pending" ? { pix: { copyPaste: "PIX-FIXTURE" } } : {}) };
+    return route.fulfill({ json: data.action === "list" ? { ok: true, orders: [order] } : { ok: true, order } });
   });
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Recusar opcionais" }).click();
-  await page.getByRole("button", { name: "Solicitar compra" }).click();
-  const address = page.getByRole("group", { name: "Novo endereço de entrega em Minas Gerais" });
+  await page.getByRole("link", { name: "Comprar", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit/checkout\\?kit=${kitId}&ficha=standard&qtd=1$`));
+  await expect(page.getByRole("heading", { name: "Finalizar compra" })).toBeVisible();
+  await expect(page.getByText(/Minas Gerais/)).toHaveCount(0);
+  const address = page.getByRole("group", { name: "Novo endereço" });
   await expect(address).toBeVisible();
+  await expect(address.getByLabel("Estado")).toHaveValue("MG");
+  await expect(address.getByLabel("Estado")).toHaveAttribute("readonly", "");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
   await address.getByLabel("Destinatário").fill("Representante de teste");
   await address.getByLabel("CEP").fill("30110-100");
@@ -1033,19 +1043,26 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await address.getByLabel("Bairro").fill("Centro");
   await address.getByLabel("Cidade").fill("Belo Horizonte");
   const saveAddress = page.waitForRequest(request => request.url().endsWith("/api/customer") && request.method() === "POST");
-  const quoteAddress = page.waitForRequest(request => request.url().endsWith("/kits/collection"));
-  await address.getByRole("button", { name: "Salvar e usar endereço" }).click();
+  const quoteAddress = page.waitForRequest(request => request.url().endsWith("/kits/collection")
+    && (request.postDataJSON() as { paymentTiming: string }).paymentTiming === "prepay");
+  await address.getByRole("button", { name: "Salvar endereço" }).click();
   expect((await saveAddress).postDataJSON()).toMatchObject({ action: "address_save", postalCode: "30110-100", state: "MG" });
   expect((await quoteAddress).postDataJSON()).toMatchObject({ addressId, paymentTiming: "prepay" });
-  await expect(page.getByRole("combobox", { name: "Endereço de entrega", exact: true })).toHaveValue(addressId);
-  await expect(page.getByText(/Entrega pela curti Z.*R\$\s*0,00/)).toBeVisible();
-  await expect(page.getByText(/Até \d+ dias|No mesmo dia/)).toHaveCount(0);
-  await expect(page.getByText(/Total com frete\s*R\$\s*45,00/)).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Entrega de kits/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Pagar na entrega/ })).toHaveCount(0);
+  const summary = page.locator(".checkout-summary");
+  await expect(summary.getByText("Grátis")).toBeVisible();
+  await expect(summary.locator(".summary-total")).toContainText(/R\$\s*45,00/);
+  await page.getByRole("button", { name: "Aumentar quantidade" }).click();
+  await expect(page.locator("#kit-checkout-quantity")).toHaveText("2");
+  await page.getByRole("button", { name: "Diminuir quantidade" }).click();
+  await expect(page.locator("#kit-checkout-quantity")).toHaveText("1");
   const reserve = page.waitForRequest(request => request.url().endsWith("/kits/orders"));
-  await page.getByRole("button", { name: "Reservar kit" }).click();
+  await page.getByRole("button", { name: "Finalizar pedido" }).click();
   expect((await reserve).postDataJSON()).toEqual({ action: "reserve_grade", kitId, template: "standard", addressId, quoteId, quantity: 1,
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
-  await page.getByRole("button", { name: "Gerar Pix" }).click();
+  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}$`));
   await expect(page.getByLabel("Pix copia e cola")).toHaveValue("PIX-FIXTURE");
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
   await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
@@ -1077,7 +1094,7 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
     ] }]
   } }));
   await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [
-    { id: addressId, label: "Loja", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
+    { id: addressId, label: "Loja", street: "Rua de teste", number: "100", district: "Centro", city: "Belo Horizonte", state: "MG", postalCode: "30110-100" }
   ] } }));
   const quoteRequests: unknown[] = [];
   await page.route("**/api/representatives/kits/collection", route => {
@@ -1087,23 +1104,26 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
       ? { id: quoteId, amountInCents: 30001, shippingInCents: 0, service: "Entrega própria", collectionMethods: ["cash"] }
       : { id: quoteId, amountInCents: 30001, shippingInCents: 0, service: "Entrega própria", collectionMethods: [] } } });
   });
-  await page.route("**/api/representatives/kits/orders", route => route.fulfill({ json: {
-    ok: true, order: { orderId, state: "awaiting_receipt", amountInCents: 30001, collectionMethod: "cash",
-      cashTenderedInCents: 40000, cashChangeInCents: 9999 }
-  } }));
+  await page.route("**/api/representatives/kits/orders", route => {
+    const order = { orderId, state: "awaiting_receipt", amountInCents: 30001, collectionMethod: "cash",
+      cashTenderedInCents: 40000, cashChangeInCents: 9999 };
+    const data = route.request().postDataJSON() as { action: string };
+    return route.fulfill({ json: data.action === "list" ? { ok: true, orders: [order] } : { ok: true, order } });
+  });
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Recusar opcionais" }).click();
   await expect(page.getByRole("radio", { name: /Ficha padrão/ })).toBeDisabled();
   await expect(page.getByText("Esgotada")).toBeVisible();
   await expect(page.getByText("2 disponíveis")).toBeVisible();
   await page.getByRole("radio", { name: /Ficha reposição alta/ }).check();
-  await expect(page.getByText("12 pares por ficha")).toBeVisible();
-  await page.getByRole("button", { name: "Solicitar compra" }).click();
-  await page.getByLabel("Endereço de entrega").selectOption(addressId);
-  await expect(page.getByLabel("Quando pagar").locator("option")).toHaveText(["Pagar antecipado", "Pagar no recebimento"]);
-  await page.getByLabel("Quando pagar").selectOption("collection");
-  await page.getByLabel("Escolher forma de pagamento").selectOption("cash");
-  const pay = page.getByRole("button", { name: "Confirmar pagamento no recebimento" });
+  await page.getByRole("link", { name: "Comprar", exact: true }).click();
+  await expect(page).toHaveURL(/ficha=upper_restock&qtd=1$/);
+  await expect(page.getByText(/Minas Gerais/)).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /Loja/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
+  await page.getByRole("radio", { name: /Pagar na entrega/ }).check();
+  await expect(page.getByRole("radio", { name: "Dinheiro" })).toBeChecked();
+  const pay = page.getByRole("button", { name: "Finalizar pedido" });
   await page.getByLabel("Valor que você vai entregar").fill("200,00");
   await expect(pay).toBeDisabled();
   await page.getByLabel("Valor que você vai entregar").fill("400,00");
@@ -1113,8 +1133,29 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
   expect((await reserve).postDataJSON()).toEqual({ action: "reserve_collection", selectionId: kitId, template: "upper_restock",
     quoteId, addressId, quantity: 1, method: "cash", cashTenderedInCents: 40000,
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
+  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}$`));
   await expect(page.getByText(/Valor informado.*Troco.*99,99/)).toBeVisible();
   expect(quoteRequests).toContainEqual(expect.objectContaining({ kitId, template: "upper_restock", paymentTiming: "collection" }));
+});
+
+test("avisa na página quando a conta ainda não pode comprar kits", async ({ page, baseURL }) => {
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const sizes = [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }];
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: false, buyerEnabled: false,
+    items: [{ kitId: "5ee74d0a-0d74-46ef-b386-9d601b6b4557", name: "Kit liberado", color: null, description: "Com estoque", templates: [
+      { code: "standard", label: "Ficha padrão", available: 5, unitPriceInCents: 36001, sizes }
+    ] }]
+  } }));
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByText("Sua conta ainda não está habilitada para comprar kits.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Comprar", exact: true })).toBeDisabled();
 });
 
 test("deixa o kit sem estoque visível, acinzentado e sem compra", async ({ page, baseURL }) => {
@@ -1334,7 +1375,7 @@ test("mescla e preserva o carrinho depois do login sem loop ou 503", async ({ pa
   await page.goto("/login?next=%2Fcarrinho");
   await page.getByLabel("E-mail de acesso").fill("cliente.demo@curtiz.local");
   await page.locator('input[name="password"]:visible').fill("1234567890");
-  await page.getByLabel(/Li e aceito os Termos de Uso/).check();
+  await page.locator('input[name="terms"]:visible').check();
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/carrinho$/, { timeout: 20_000 });

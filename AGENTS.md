@@ -13,7 +13,7 @@ E-commerce comercial de sandálias e chinelos, principalmente para a Geração Z
 
 Em `.agents/skills/<nome>/SKILL.md`. Leia somente a skill que se aplica à tarefa, e só as referências que ela indicar. São obrigatórias `lean-codex` e `usar-graphify`; as demais, só quando a tarefa pedir. Estas instruções prevalecem sobre qualquer skill: elas não autorizam subagentes, instalação de dependências, rede, commit, push ou deploy. Cada pasta tem `ORIGEM.md` com repositório, commit e licença.
 
-- Design e UX: `frontend-design`, `web-design-guidelines`, `emil-design-eng`, `padrao-premium`, `break-ui`, `accessibility`.
+- Design e UX: `frontend-design`, `web-design-guidelines`, `emil-design-eng`, `padrao-premium`, `break-ui`, `accessibility`, `ui-humanizer` (tirar a cara de IA; detector: `python3 -I .agents/skills/ui-humanizer/scripts/audit.py <pasta>`).
 - Performance: `performance`, `core-web-vitals`, `vercel-react-best-practices`.
 - Segurança: `endurecimento-web`, `sharp-edges`, `differential-review`, `best-practices`, `supabase`, `supabase-postgres-best-practices`, `navegador-seguro`.
 - Processo e economia: `usar-graphify` (mapa do código, 100% local), `writing-plans` (só tarefas grandes), `systematic-debugging`, `verification-before-completion`.

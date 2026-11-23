@@ -1,9 +1,8 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { isUnknownRecord, readRows, readString, type UnknownRecord } from "../lib/unknown-data";
-import { kitCashTenderInCents, RepresentativeKitCashChange } from "./representative-kit-cash-change";
 
 const statusLabels: Record<string, string> = {
   reserved: "Estoque reservado", payment_pending: "Aguardando pagamento",
@@ -16,7 +15,7 @@ const shipmentLabels: Record<string, string> = {
   delivered: "Entregue", returned: "Devolvido ao remetente", cancelled: "Envio cancelado"
 };
 
-async function kitRequest(body: UnknownRecord) {
+export async function kitRequest(body: UnknownRecord) {
   const response = await fetch("/api/representatives/kits/orders", {
     method: "POST", cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
   });
@@ -29,68 +28,14 @@ async function kitRequest(body: UnknownRecord) {
 
 export type RepresentativeKitSelection = { variantId: string } | { kitId: string; template: string };
 
-const collectionMethods = {
+export const collectionMethods = {
   pix: "Pix", debit_card: "Cartão de débito", credit_card: "Cartão de crédito", cash: "Dinheiro"
 };
-type CollectionMethod = keyof typeof collectionMethods;
+export type CollectionMethod = keyof typeof collectionMethods;
 
-export function ReserveRepresentativeKit({ quantity, quoteId, addressId, totalInCents, collection = false, allowedCollectionMethods = [],
-  ...selection }: RepresentativeKitSelection & {
-  quantity: number; quoteId: string; addressId: string; totalInCents: number; collection?: boolean; allowedCollectionMethods?: string[];
+function RepresentativeKitOrder({ initial, checkoutConfigured, autoPix = false }: {
+  initial: UnknownRecord; checkoutConfigured: boolean; autoPix?: boolean;
 }) {
-  const requestKey = useRef("");
-  const [order, setOrder] = useState<UnknownRecord | null>(null);
-  const [waiting, setWaiting] = useState(false);
-  const [error, setError] = useState("");
-  const [selectionLocked, setSelectionLocked] = useState(false);
-  const [method, setMethod] = useState<CollectionMethod | "">("");
-  const [tendered, setTendered] = useState("");
-  const cashTendered = kitCashTenderInCents(tendered);
-  const collectionReady = !collection || Boolean(method && allowedCollectionMethods.includes(method)
-    && (method !== "cash" || cashTendered !== null && cashTendered >= totalInCents));
-  async function reserve() {
-    if (waiting || !collectionReady) return;
-    setWaiting(true);
-    setSelectionLocked(true);
-    setError("");
-    requestKey.current ||= crypto.randomUUID();
-    try {
-      const common = { quantity, quoteId, addressId, idempotencyKey: requestKey.current };
-      const data = await kitRequest(collection ? {
-        ...common, action: "reserve_collection", method,
-        selectionId: "variantId" in selection ? selection.variantId : selection.kitId,
-        ...("template" in selection ? { template: selection.template } : {}),
-        ...(method === "cash" ? { cashTenderedInCents: cashTendered } : {})
-      } : { ...common, action: "variantId" in selection ? "reserve" : "reserve_grade", ...selection });
-      if (!isUnknownRecord(data.order)) throw new Error("Pedido indisponível para consulta.");
-      setOrder(data.order);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Não foi possível reservar o kit.");
-    } finally {
-      setWaiting(false);
-    }
-  }
-  return order ? <RepresentativeKitOrder initial={order} checkoutConfigured /> : <>
-    <p>Total com frete <strong>{formatBRL(totalInCents)}</strong></p>
-    {collection && <fieldset disabled={selectionLocked}>
-      <legend>Forma de pagamento no recebimento</legend>
-      <label>Escolher forma de pagamento
-        <select value={method} onChange={event => setMethod(event.target.value as CollectionMethod | "")}>
-          <option value="">Selecione</option>
-          {Object.entries(collectionMethods).filter(([value]) => allowedCollectionMethods.includes(value))
-            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
-      {method === "cash" && <RepresentativeKitCashChange totalInCents={totalInCents} tendered={tendered} onTenderedChange={setTendered} />}
-    </fieldset>}
-    <button type="button" className="primary-button" disabled={waiting || !collectionReady} onClick={() => void reserve()}>
-      {waiting ? "Confirmando…" : collection ? "Confirmar pagamento no recebimento" : "Reservar kit"}
-    </button>
-    {error && <p role="alert">{error}</p>}
-  </>;
-}
-
-function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: UnknownRecord; checkoutConfigured: boolean }) {
   const [order, setOrder] = useState(initial);
   const [tracking, setTracking] = useState<UnknownRecord | null>(null);
   const [returns, setReturns] = useState<UnknownRecord[]>([]);
@@ -126,6 +71,14 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
       setPending(false);
     }
   }
+  const pixRequested = useRef(false);
+  const startPix = useRef(update);
+  startPix.current = update;
+  useEffect(() => {
+    if (!autoPix || pixRequested.current || !checkoutConfigured || state !== "reserved" || !canCancel) return;
+    pixRequested.current = true;
+    void startPix.current("pix");
+  }, [autoPix, checkoutConfigured, state, canCancel]);
   async function requestReturn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -228,11 +181,14 @@ function RepresentativeKitOrder({ initial, checkoutConfigured }: { initial: Unkn
   </div>;
 }
 
+const orderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkoutConfigured: boolean }) {
   const [orders, setOrders] = useState<UnknownRecord[] | null>(null);
   const [error, setError] = useState("");
   const [waiting, setWaiting] = useState(false);
-  async function loadOrders() {
+  const [highlight, setHighlight] = useState("");
+  const loadOrders = useCallback(async () => {
     setWaiting(true);
     setError("");
     try {
@@ -244,15 +200,26 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkout
     } finally {
       setWaiting(false);
     }
-  }
+  }, []);
+  // The checkout sends the buyer here with the new order, ready to pay.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("pedido") ?? "";
+    if (!orderIdPattern.test(id)) return;
+    setHighlight(id);
+    void loadOrders();
+  }, [loadOrders]);
+  const shown = orders && highlight
+    ? [...orders].sort((a, b) => Number(readString(b, "orderId") === highlight) - Number(readString(a, "orderId") === highlight))
+    : orders;
   return <section aria-label="Meus pedidos de kits">
     <button type="button" className="secondary-button" onClick={() => void loadOrders()} disabled={waiting}>
       {waiting ? "Carregando pedidos…" : "Meus pedidos de kits"}
     </button>
     {error && <p role="alert">{error}</p>}
-    {orders && (orders.length ? <ul className="representative-record-grid">
-      {orders.map(order => <li key={readString(order, "orderId")} className="representative-card">
-        <RepresentativeKitOrder initial={order} checkoutConfigured={checkoutConfigured} />
+    {shown && (shown.length ? <ul className="representative-record-grid">
+      {shown.map(order => <li key={readString(order, "orderId")} className="representative-card">
+        <RepresentativeKitOrder initial={order} checkoutConfigured={checkoutConfigured}
+          autoPix={Boolean(highlight) && readString(order, "orderId") === highlight} />
       </li>)}
     </ul> : <p role="status">Você ainda não tem pedidos de kits.</p>)}
   </section>;

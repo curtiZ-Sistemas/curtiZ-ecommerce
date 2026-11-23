@@ -41,7 +41,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { type CSSProperties, type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/components/logout-button";
 import { UserAvatar } from "@/components/user-avatar";
 import { readString } from "@/lib/unknown-data";
@@ -244,7 +244,7 @@ const navigation = [
   }
 ] as const;
 
-export function RepresentativePortal({ section }: { section: string }) {
+export function RepresentativePortal({ section, children }: { section: string; children?: ReactNode }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [snapshotSection, setSnapshotSection] = useState(section);
   const [error, setError] = useState("");
@@ -366,7 +366,8 @@ export function RepresentativePortal({ section }: { section: string }) {
         </div>
       </main>
     );
-  if (!snapshot || snapshotSection !== section)
+  const sectionReady = snapshotSection === section;
+  if (!snapshot)
     return (
       <main className="representative-loading account-experience-page">
         <LoaderCircle className="spin" />
@@ -426,6 +427,7 @@ export function RepresentativePortal({ section }: { section: string }) {
               {group.items.map(([label, route, Icon]) => (
                 <Link
                   className={route === section ? "active" : ""}
+                  aria-current={route === section ? "page" : undefined}
                   href={route ? `/representante/${route}` : "/representante"}
                   onClick={() => setMenuOpen(false)}
                   key={label}
@@ -496,23 +498,32 @@ export function RepresentativePortal({ section }: { section: string }) {
               </div>
             </div>
           )}
-          <PortalSection
-            section={section}
-            snapshot={snapshot}
-            saleStatus={saleStatus}
-            loading={loadingSnapshot}
-            onRefresh={() => load(page)}
-            onSaleStatusChange={(status) => {
-              setSaleStatus(status);
-              setPage(1);
-              load(1, status);
-            }}
-            onPageChange={(nextPage) => {
-              setPage(nextPage);
-              load(nextPage);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
+          {children ? (
+            children
+          ) : sectionReady ? (
+            <PortalSection
+              section={section}
+              snapshot={snapshot}
+              saleStatus={saleStatus}
+              loading={loadingSnapshot}
+              onRefresh={() => load(page)}
+              onSaleStatusChange={(status) => {
+                setSaleStatus(status);
+                setPage(1);
+                load(1, status);
+              }}
+              onPageChange={(nextPage) => {
+                setPage(nextPage);
+                load(nextPage);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          ) : (
+            <div className="representative-section-loading" role="status" aria-live="polite">
+              <LoaderCircle className="spin" aria-hidden="true" />
+              <span>Carregando</span>
+            </div>
+          )}
         </main>
       </div>
     </div>
@@ -1724,8 +1735,7 @@ function Kits({
   orders: NonNullable<Snapshot["kitOrders"]>;
   purchasing: boolean;
 }) {
-  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kit"
-    description="Escolha a ficha e a quantidade. Entrega em Minas Gerais." />} />;
+  if (purchasing) return <RepresentativeKitCatalog header={<PageTitle title="Comprar kit" description="" />} />;
   return (
     <section>
       <PageTitle
