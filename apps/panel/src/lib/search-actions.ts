@@ -345,6 +345,11 @@ const operacional = build("operacional", [
     keywords: ["nota fiscal", "nfe", "nf-e", "emitir nota", "danfe", "bling nota", "fiscal", "chave da nota", "xml", "nota rejeitada", "nota pendente", "serie 003", "serie 004"]
   },
   {
+    area: "Fiscal", title: "Reemitir NF-e de kit com erro", route: "notas-fiscais", permission: "representatives.kits.fulfill",
+    description: "Na fila de notas dos kits, use \"Reemitir\" no pedido marcado como NF-e com erro.",
+    keywords: ["reemitir", "reemitir nota", "reemitir nfe", "reenviar nota", "emitir de novo", "tentar novamente nota", "nota com erro", "nfe com erro", "erro na nota", "nota do kit", "nota automatica", "falha na nota"]
+  },
+  {
     area: "Fiscal", title: "Enviar NF-e emitida manualmente (kits MG)", route: "notas-fiscais", permission: "representatives.kits.fulfill",
     description: "Informe o ID e a chave da NF-e emitida à mão no Bling para validar o pedido de kit.",
     keywords: ["nfe manual", "nota manual", "nf-e manual", "emitida manualmente", "validar nfe", "chave da nfe", "id da nfe no bling", "enviar nota para validacao", "nota fiscal do kit", "emissao fiscal manual", "serie 003"]
