@@ -1282,9 +1282,9 @@ test("mostra o menu do portal do representante na hora e oculta a estrutura da l
   await page.goto("/representante", { waitUntil: "domcontentloaded" });
 
   // O menu e a barra superior aparecem na hora; só o conteúdo espera os dados.
-  await expect(page.locator(".representative-sidebar")).toBeVisible();
-  await expect(page.locator(".representative-topbar")).toBeVisible();
-  await expect(page.locator(".representative-section-loading")).toBeVisible();
+  await expect(page.locator(".representative-sidebar").first()).toBeVisible();
+  await expect(page.locator(".representative-topbar").first()).toBeVisible();
+  await expect(page.locator(".representative-section-loading").first()).toBeVisible();
   await expect(page.locator(".representative-loading")).toHaveCount(0);
   await expect(page.locator(".site-header")).toBeHidden();
   await expect(page.locator(".site-footer")).toBeHidden();
