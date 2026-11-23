@@ -4,6 +4,7 @@ import {
   formatCpf,
   formatPostalCode,
   isValidBrazilianPhone,
+  isValidCnpj,
   isValidCpf,
   sanitizeBrazilianPhone,
   sanitizeCpf
@@ -43,5 +44,16 @@ describe("personal data formatting", () => {
     expect(isValidBrazilianPhone("(31) 3333-4444")).toBe(true);
     expect(isValidBrazilianPhone("(00) 99999-9999")).toBe(false);
     expect(isValidBrazilianPhone("319999999999999")).toBe(false);
+  });
+});
+
+describe("CNPJ", () => {
+  it("valida os dígitos verificadores e rejeita sequências e letras", () => {
+    expect(isValidCnpj("11.222.333/0001-81")).toBe(true);
+    expect(isValidCnpj("11222333000181")).toBe(true);
+    expect(isValidCnpj("11.222.333/0001-82")).toBe(false);
+    expect(isValidCnpj("00000000000000")).toBe(false);
+    expect(isValidCnpj("1122233300018")).toBe(false);
+    expect(isValidCnpj("ab11222333000181")).toBe(false);
   });
 });

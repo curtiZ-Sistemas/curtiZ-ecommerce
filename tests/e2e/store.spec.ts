@@ -913,7 +913,7 @@ test("entrega a Central da Conta mobile responsiva sem dados fictícios", async 
     await expect(visibleMobileHome).toHaveCount(1);
     await expect(visibleMobileHome).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cliente Demo", exact: true })).toBeVisible();
-    await expect(page.getByText("cliente.demo@curtiz.local")).toBeVisible();
+    await expect(page.getByText("cliente.demo@curtiz.local").first()).toBeVisible();
     await expect(page.locator(".customer-account-nav")).toBeHidden();
     await expect(
       page.locator(".account-mobile-menu-copy strong", {
@@ -1007,9 +1007,19 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
           { size: "38", pairs: 2 }, { size: "39", pairs: 1 }] }
     ] }]
   } }));
-  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [] } }));
+  // The address book starts empty and returns the saved address afterwards, like the real profile.
+  const savedAddresses: unknown[] = [];
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: savedAddresses } }));
   await page.route("https://viacep.com.br/ws/**", route => route.fulfill({ json: { erro: true } }));
-  await page.route("**/api/customer", route => route.fulfill({ json: { ok: true, data: addressId } }));
+  await page.route("**/api/customer", route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.action === "address_save") {
+      savedAddresses.splice(0, savedAddresses.length, { id: addressId, label: body.label, recipientName: body.recipientName,
+        street: body.street, number: body.number, complement: body.complement ?? "", district: body.district,
+        city: body.city, state: body.state, postalCode: body.postalCode, isDefault: false });
+    }
+    return route.fulfill({ json: { ok: true, data: addressId } });
+  });
   await page.route("**/api/representatives/kits/collection", route => {
     const body = route.request().postDataJSON() as { paymentTiming: string };
     // Payment on receipt is not offered for this address.
@@ -1031,6 +1041,8 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit/checkout\\?kit=${kitId}&ficha=standard&qtd=1$`));
   await expect(page.getByRole("heading", { name: "Finalizar compra" })).toBeVisible();
   await expect(page.getByText(/Minas Gerais/)).toHaveCount(0);
+  await expect(page.getByText("Nenhum endereço salvo.")).toBeVisible();
+  await page.getByRole("button", { name: "Novo endereço" }).click();
   const address = page.getByRole("group", { name: "Novo endereço" });
   await expect(address).toBeVisible();
   await expect(address.getByLabel("Estado")).toHaveValue("MG");
@@ -1052,7 +1064,7 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /Pagar na entrega/ })).toHaveCount(0);
   const summary = page.locator(".checkout-summary");
-  await expect(summary.getByText("Grátis")).toBeVisible();
+  await expect(summary.getByText(/Frete|Entrega|Grátis/)).toHaveCount(0);
   await expect(summary.locator(".summary-total")).toContainText(/R\$\s*45,00/);
   await page.getByRole("button", { name: "Aumentar quantidade" }).click();
   await expect(page.locator("#kit-checkout-quantity")).toHaveText("2");

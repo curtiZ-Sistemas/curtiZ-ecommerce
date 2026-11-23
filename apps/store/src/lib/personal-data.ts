@@ -31,6 +31,23 @@ export const formatCpf = (value: string) => {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 };
 
+export const CNPJ_DIGIT_LIMIT = 14;
+export const CNPJ_FORMATTED_MAX_LENGTH = 18;
+
+export const cnpjDigits = (value: string) => value.replace(/\D/gu, "");
+
+export const isValidCnpj = (value: string) => {
+  const digits = cnpjDigits(value);
+  if (/\p{L}/u.test(value) || digits.length !== CNPJ_DIGIT_LIMIT || /^(\d)\1{13}$/u.test(digits)) return false;
+  const check = (length: number) => {
+    const weights = length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const total = weights.reduce((sum, weight, index) => sum + Number(digits[index]) * weight, 0);
+    const remainder = total % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  return check(12) === Number(digits[12]) && check(13) === Number(digits[13]);
+};
+
 export const isValidCpf = (value: string) => {
   const digits = cpfDigits(value);
   if (/\p{L}/u.test(value) || digits.length !== CPF_DIGIT_LIMIT || /^(\d)\1{10}$/u.test(digits)) {

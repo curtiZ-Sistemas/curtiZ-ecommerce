@@ -11,7 +11,7 @@ export type KitQuoteState =
 
 export const kitRefusalMessages: Record<string, string> = {
   not_enabled: "Sua conta ainda não está habilitada para comprar kits.",
-  address: "Não foi possível entregar neste endereço. Escolha outro endereço ou ficha.",
+  address: "Não foi possível liberar esta compra. Sua conta pode ainda não estar habilitada para kits: fale com a curti Z.",
   collection: "Pagamento na entrega indisponível para este endereço.",
   unavailable: "A compra de kits está indisponível no momento."
 };

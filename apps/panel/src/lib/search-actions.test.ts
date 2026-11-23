@@ -44,7 +44,7 @@ describe("motor de busca", () => {
 describe("registro de ações do painel", () => {
   it("cobre os quatro painéis com ids únicos e rotas no formato real", () => {
     const total = panels.reduce((sum, panel) => sum + SEARCH_ACTIONS[panel].length, 0);
-    expect(total).toBeGreaterThanOrEqual(130);
+    expect(total).toBeGreaterThanOrEqual(129);
     for (const panel of panels) {
       const ids = SEARCH_ACTIONS[panel].map((action) => action.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -66,8 +66,9 @@ describe("registro de ações do painel", () => {
     }
   });
 
-  it("no operacional, liberar conta de representante leva à habilitação MG02", () => {
-    expect(top("ativar representante", "operacional")?.title).toBe("Habilitar conta para kits MG02");
+  it("a habilitação manual MG02 saiu da busca: toda representante ativa já compra kits", () => {
+    expect(top("ativar representante", "operacional")?.title).not.toBe("Habilitar conta para kits MG02");
+    expect(top("aprovar mg02", "operacional")?.title).not.toBe("Habilitar conta para kits MG02");
   });
 
   it("'pedido reembolso' e variações levam aos reembolsos", () => {

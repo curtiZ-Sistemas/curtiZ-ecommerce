@@ -3,10 +3,12 @@
 import { ArrowLeft, ArrowRight, Check, FileCheck2, LoaderCircle, Save } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import {
+  CNPJ_FORMATTED_MAX_LENGTH,
   CPF_FORMATTED_MAX_LENGTH,
   formatBrazilianPhone,
   formatCpf,
   isValidBrazilianPhone,
+  isValidCnpj,
   isValidCpf,
   PHONE_FORMATTED_MAX_LENGTH
 } from "@/lib/personal-data";
@@ -91,6 +93,20 @@ export function RepresentativeApplicationWizard() {
         phone.setCustomValidity(
           isValidBrazilianPhone(phone.value) ? "" : "Informe um telefone válido com DDD."
         );
+      }
+      if (!event.currentTarget.checkValidity()) {
+        event.currentTarget.reportValidity();
+        return;
+      }
+    }
+    if (step === 2) {
+      const cnpj = event.currentTarget.elements.namedItem("cnpj");
+      const legalName = event.currentTarget.elements.namedItem("legalName");
+      if (cnpj instanceof HTMLInputElement) {
+        cnpj.setCustomValidity(!cnpj.value || isValidCnpj(cnpj.value) ? "" : "Informe um CNPJ válido.");
+      }
+      if (cnpj instanceof HTMLInputElement && legalName instanceof HTMLInputElement) {
+        legalName.setCustomValidity(cnpj.value && legalName.value.trim().length < 2 ? "Informe a razão social." : "");
       }
       if (!event.currentTarget.checkValidity()) {
         event.currentTarget.reportValidity();
@@ -239,6 +255,18 @@ export function RepresentativeApplicationWizard() {
               <textarea name="experience" maxLength={500} rows={4} required />
             </label>
             <Field label="Canal principal de atuação" name="salesChannel" required />
+            <Field
+              label="CNPJ (opcional)"
+              name="cnpj"
+              inputMode="numeric"
+              placeholder="Somente números"
+              maxLength={CNPJ_FORMATTED_MAX_LENGTH}
+            />
+            <Field label="Razão social (se tiver CNPJ)" name="legalName" maxLength={200} />
+            <Field label="Inscrição estadual (se tiver)" name="stateRegistration" inputMode="numeric" maxLength={20} />
+            <p className="field-help">
+              Com CNPJ, as compras de kits e o Pix saem no nome da empresa; sem CNPJ, usamos o seu CPF.
+            </p>
           </StepForm>
         )}
         {step === 3 && (

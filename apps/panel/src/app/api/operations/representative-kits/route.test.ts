@@ -49,6 +49,19 @@ describe("representative kit operations", () => {
     });
   });
 
+  it("requests a new automatic NF-e attempt through the permission-checked function", async () => {
+    expect((await post({ action: "retry_auto_invoice", orderId })).status).toBe(200);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("request_representative_kit_auto_invoice_retry", { p_order: orderId });
+  });
+
+  it("refuses to requeue an NF-e that is not in error and an operator without permission", async () => {
+    rpc.mockResolvedValueOnce({ data: false, error: null });
+    expect((await post({ action: "retry_auto_invoice", orderId })).status).toBe(409);
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+    expect((await post({ action: "retry_auto_invoice", orderId })).status).toBe(403);
+    expect((await post({ action: "retry_auto_invoice", orderId: "x" })).status).toBe(400);
+  });
+
   it("rejects a return NF-e in the manual sale workflow", async () => {
     const invoiceKey = "31261112345678000195550040000000001123456782";
     expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(400);

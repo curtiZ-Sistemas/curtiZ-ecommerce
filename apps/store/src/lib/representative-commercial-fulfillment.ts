@@ -144,6 +144,14 @@ const positiveId = (value: unknown) => {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null;
 };
 
+// Automatic MG02 orders paid in cash on receipt have no per-route Bling method: the owner configures
+// the Bling "dinheiro" payment method once. Pix keeps BLING_PAYMENT_METHOD_ID.
+function kitBlingPaymentMethod(environment: RuntimeEnvironment, job: UnknownRecord, collection: boolean) {
+  if (!collection) return positiveId(environment.BLING_PAYMENT_METHOD_ID);
+  return positiveId(job.collectionBlingMethod)
+    ?? (job.invoiceMode === "automatic" && job.collectionMethod === "cash" ? positiveId(environment.BLING_CASH_PAYMENT_METHOD_ID) : null);
+}
+
 async function advanceRepresentativeKitBling(db: SupabaseClient, provider: BlingClient, environment: RuntimeEnvironment, job: UnknownRecord) {
   const orderId = readString(job, "orderId");
   const reference = `KITMG-${orderId}`;
@@ -172,8 +180,12 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
   if (rule.series !== 3) throw scopeError();
   const buyerName = readString(context, "buyerName");
   const collection = Boolean(readString(job, "collectionMethod"));
-  const methodId = positiveId(collection ? job.collectionBlingMethod : environment.BLING_PAYMENT_METHOD_ID);
-  if (!methodId || !/^\d{14}$/u.test(document) || !/^\d{2,14}$/u.test(registration) || address.state !== "MG" || billing.state !== "MG") throw scopeError();
+  const methodId = kitBlingPaymentMethod(environment, job, collection);
+  // Reasons the operator can act on; the panel translates these codes.
+  if (!methodId) throw new BlingError("payment_method_required", 409);
+  if (!/^\d{14}$/u.test(document)) throw new BlingError("buyer_cnpj_required", 409);
+  if (!/^\d{2,14}$/u.test(registration)) throw new BlingError("buyer_registration_required", 409);
+  if (address.state !== "MG" || billing.state !== "MG") throw scopeError();
   let collectionDueDate: string | undefined;
   const scheduledCashDate = readString(job, "collectionDueOn");
   if (scheduledCashDate) {
@@ -209,7 +221,18 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
   const linkedSale = positiveId(context.saleId);
   let saleId = linkedSale ?? await findBlingOrder(provider, reference);
   if (!saleId) {
-    const contactId = await findBlingContact(provider, document);
+    let contactId = await findBlingContact(provider, document);
+    if (!contactId && job.invoiceMode === "automatic") {
+      // The buyer's company is created in Bling from the approved order snapshot, once: the lookup
+      // above runs again on every retry, so a retry never creates a second contact.
+      contactId = positiveId(row(row(await provider.request("/contatos", { method: "POST", body: {
+        nome: buyerName, situacao: "A", tipo: "J", numeroDocumento: document, ie: registration, contribuinte: 1,
+        endereco: { geral: { endereco: readString(billing, "street"), numero: readString(billing, "number"),
+          complemento: readString(billing, "complement"), bairro: readString(billing, "district"),
+          municipio: readString(billing, "city"), uf: "MG", cep: readString(billing, "postal_code") } }
+      } })).data).id);
+      if (!contactId) throw new BlingError("uncertain_write", 503, false, true);
+    }
     if (!contactId) throw scopeError();
     const contact = row(row(await provider.request(`/contatos/${contactId}`)).data);
     const fiscalAddress = row(row(contact.endereco).geral);
@@ -258,10 +281,23 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
   const draftHash = await blingFiscalMirrorHash({ orderId, draft, competence: date.slice(0,7), preview, mirror, origin: job.originPostalCode });
   if (await kitCall(db, "record_representative_kit_bling_draft", { p_order: orderId, p_invoice: draft, p_hash: draftHash }) !== true) throw scopeError();
+  // MG02 automatic orders: the worker has just rebuilt the fiscal mirror (CFOP 5102, CSOSN 102, series 3,
+  // nature) from the Bling preview, so it approves that exact hash instead of waiting for an operator.
+  if (job.invoiceMode === "automatic"
+    && await kitCall(db, "auto_approve_representative_kit_bling_draft", { p_order: orderId, p_hash: draftHash }) !== true) throw scopeError();
   if (environment.BLING_INVOICE_SEND_ENABLED !== "true" || environment.BLING_INVOICE_TRANSMISSION_MODE !== "production"
     || environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED !== "true" || await claim("bling_invoice_send", draftHash) !== true) return false;
   await provider.request(`/nfe/${draft}/enviar?enviarEmail=false`, { method: "POST" });
   return false;
+}
+
+// Only a code is stored and shown, never provider text or personal data. Retryable provider failures
+// and uncertain writes stay in the queue (the database makes the third attempt final).
+export function automaticFailureReason(error: unknown): { code: string; final: boolean } {
+  if (error instanceof BlingError) {
+    return { code: /^[a-z0-9_]{3,80}$/u.test(error.code) ? error.code : "bling_error", final: !error.retryable && !error.uncertainWrite };
+  }
+  return { code: "unexpected_error", final: false };
 }
 
 export async function runRepresentativeCommercialFulfillment(environment: RuntimeEnvironment, transport: typeof fetch = fetch) {
@@ -279,8 +315,11 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
     const orderId = readString(job, "orderId");
     let clearance = false;
     try {
-      if (row(job.fiscalParameters).advancePixWithManualInvoice === true) {
-        if (environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED !== "true") continue;
+      // The database decides the mode per order: manual only when configured or after the automatic issue failed.
+      const manualMode = job.invoiceMode === undefined
+        ? row(job.fiscalParameters).advancePixWithManualInvoice === true : job.invoiceMode === "manual";
+      if (manualMode) {
+        if (job.autoInvoiceFailed !== true && environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED !== "true") continue;
         const manual = row(await kitCall(db, "read_representative_kit_manual_invoice", { p_order: orderId }));
         if (manual.manual !== true) throw scopeError();
         const invoiceId = positiveId(manual.invoiceId);
@@ -315,8 +354,16 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
       if (getMelhorEnvioEnvironment(environment) !== "production") throw scopeError();
       const shipping = createMelhorEnvioProvider(environment, db, transport);
       await advanceRepresentativeKitShipping(db, shipping, environment, job, verified.key);
-    } catch {
-      logServerEvent("error", "representative_kit_fulfillment_check_failed", { orderId });
+    } catch (error) {
+      const reason = automaticFailureReason(error);
+      logServerEvent("error", "representative_kit_fulfillment_check_failed", { orderId, reason: reason.code });
+      if (job.invoiceMode === "automatic" && !clearance) {
+        try {
+          await kitCall(db, "record_representative_kit_auto_invoice_error", {
+            p_order: orderId, p_reason: reason.code, p_final: reason.final
+          });
+        } catch { /* The queue retries the check; the failure itself was logged. */ }
+      }
     } finally {
       await kitCall(db, "finish_representative_kit_fulfillment_check", { p_order: orderId, p_clearance_current: clearance });
     }

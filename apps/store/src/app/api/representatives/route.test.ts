@@ -227,3 +227,51 @@ describe("representative snapshot", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 });
+
+describe("representative application company data", () => {
+  beforeEach(() => { vi.clearAllMocks(); demo.session = null; });
+
+  function applicationClient(saved: Array<Record<string, unknown>>) {
+    const query = {
+      select: () => query, eq: () => query, maybeSingle: async () => ({ data: null, error: null }),
+      insert: (payload: Record<string, unknown>) => { saved.push(payload); return query; },
+      update: (payload: Record<string, unknown>) => { saved.push(payload); return query; },
+      single: async () => ({ data: { id: "app-a" }, error: null })
+    };
+    return { auth: { getUser: async () => ({ data: { user: { id: "user-a" } } }) }, from: () => query, rpc: async () => ({ data: [], error: null }) };
+  }
+  const step2 = (values: Record<string, string | undefined>) => new NextRequest("http://localhost:3000/api/representatives", {
+    method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" },
+    body: JSON.stringify({ action: "save_draft", step: 2, values: { city: "BH", regionCode: "MG", ...values } })
+  });
+
+  it("stores a valid CNPJ, legal name and state registration as digits in the step answers", async () => {
+    const saved: Array<Record<string, unknown>> = [];
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(applicationClient(saved) as never);
+    const response = await POST(step2({ cnpj: "11.222.333/0001-81", legalName: " Loja Teste LTDA ", stateRegistration: "001.234.567/0089" }));
+    expect(response.status).toBe(200);
+    expect(saved[0]?.answers).toEqual({ "2": { city: "BH", regionCode: "MG", cnpj: "11222333000181",
+      legalName: "Loja Teste LTDA", stateRegistration: "0012345670089" } });
+  });
+
+  it("accepts an application without any company data", async () => {
+    const saved: Array<Record<string, unknown>> = [];
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(applicationClient(saved) as never);
+    const response = await POST(step2({ cnpj: "", legalName: "", stateRegistration: "" }));
+    expect(response.status).toBe(200);
+    expect(saved[0]?.answers).toEqual({ "2": { city: "BH", regionCode: "MG" } });
+  });
+
+  it.each([
+    { cnpj: "11.222.333/0001-82", legalName: "Loja Teste LTDA" },
+    { cnpj: "11.222.333/0001-81", legalName: "" },
+    { cnpj: "11.222.333/0001-81", legalName: "Loja", stateRegistration: "isento" },
+    { cnpj: "", legalName: "Loja sem CNPJ" }
+  ])("rejects incomplete or invalid company data %#", async (values) => {
+    const saved: Array<Record<string, unknown>> = [];
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(applicationClient(saved) as never);
+    const response = await POST(step2(values));
+    expect(response.status).toBe(422);
+    expect(saved).toHaveLength(0);
+  });
+});

@@ -241,7 +241,7 @@ export class MercadoPagoPaymentProvider {
   }): Promise<MercadoPagoPayment> {
     if (this.mode !== "production") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
     if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(input.orderId)
-      || !/^\d{14}$/u.test(input.buyerDocument)
+      || !/^(?:\d{11}|\d{14})$/u.test(input.buyerDocument)
       || !Number.isSafeInteger(input.amountInCents) || input.amountInCents <= 0
       || !Number.isFinite(Date.parse(input.expiresAt))) {
       throw new MercadoPagoProviderError("invalid_kit_payment", 400);
@@ -255,8 +255,9 @@ export class MercadoPagoPaymentProvider {
         installments: 1,
         payment_method_id: "pix",
         payer: {
-          email: input.email, first_name: input.buyerName, entity_type: "association",
-          identification: { type: "CNPJ", number: input.buyerDocument }
+          email: input.email, first_name: input.buyerName,
+          entity_type: input.buyerDocument.length === 14 ? "association" : "individual",
+          identification: { type: input.buyerDocument.length === 14 ? "CNPJ" : "CPF", number: input.buyerDocument }
         },
         external_reference: reference,
         metadata: { aggregate: "representative_kit_orders", kit_order_id: input.orderId },
