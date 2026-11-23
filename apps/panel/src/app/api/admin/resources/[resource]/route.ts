@@ -13,6 +13,7 @@ import {
   adminResources,
   isAdminResource,
   kitGradePriceFields,
+  kitGradeStockFields,
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
@@ -83,44 +84,47 @@ const normalizedSlug = (value: string) =>
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-|-$/gu, "");
 
-function normalizeKitGradeSource(values: Record<string, unknown>, source: unknown) {
-  if (source === undefined) return;
-  if (typeof source !== "string") throw new Error("Escolha uma linha de estoque válida.");
-  if (source === "") {
-    values.grade_product_id = null;
-    values.grade_color = null;
-    return;
-  }
-  const separator = source.indexOf("|");
+// The reference product line gives NCM, weight and dimensions for freight and the invoice.
+// It never provides stock, but the kit is only offered with it.
+function normalizeKitGradeSource(values: Record<string, unknown>, source: unknown): string | null {
+  const separator = typeof source === "string" ? source.indexOf("|") : -1;
+  if (typeof source !== "string" || separator < 0) return "Selecione o produto de referência para frete e NF-e.";
   const product = postgresUuidSchema.safeParse(source.slice(0, separator));
   const color = source.slice(separator + 1);
-  if (separator < 0 || !product.success || color.length > 150 || color.trim().length === 0) {
-    throw new Error("Escolha uma linha de estoque válida.");
+  if (!product.success || color.length > 150 || color.trim().length === 0) {
+    return "Selecione o produto de referência para frete e NF-e.";
   }
   values.grade_product_id = product.data;
   values.grade_color = color;
+  return null;
 }
 
 const kitGradePrice = z.number().int().min(12).max(9_999_999_999);
+const kitGradeStock = z.number().int().min(0).max(1_000_000);
 
-function normalizeKitGradePrices(values: Record<string, unknown>, input: Record<string, unknown>) {
-  normalizeKitGradeSource(values, input.gradeSource);
+// Each of the three sheets needs a price and a stock of complete kits, plus the reference product.
+function normalizeKitGradePrices(values: Record<string, unknown>, input: Record<string, unknown>, creating: boolean) {
+  const fields = [...kitGradePriceFields, ...kitGradeStockFields];
+  if (!creating && !fields.some(field => field.key in input) && !("gradeSource" in input)) return;
   const errors: Record<string, string> = {};
-  if (values.grade_product_id === null) {
-    for (const field of kitGradePriceFields) values[field.key] = null;
-  } else if (typeof values.grade_product_id === "string") {
-    for (const field of kitGradePriceFields) {
-      const price = kitGradePrice.safeParse(input[field.key]);
-      if (price.success) {
-        values[field.key] = price.data;
-      } else {
-        errors[field.key] = "Informe um preço entre R$ 0,12 e R$ 99.999.999,99.";
-      }
+  const sourceError = normalizeKitGradeSource(values, input.gradeSource);
+  if (sourceError) errors.gradeSource = sourceError;
+  for (const field of kitGradePriceFields) {
+    const price = kitGradePrice.safeParse(input[field.key]);
+    if (price.success) {
+      values[field.key] = price.data;
+    } else {
+      errors[field.key] = "Informe um preço entre R$ 0,12 e R$ 99.999.999,99.";
     }
-    // Keep the kit's legacy price available to consumers that don't read grade prices.
-    values.price_in_cents = values.grade_standard_price_cents;
-  } else if (kitGradePriceFields.some(field => field.key in input)) {
-    errors.gradeSource = "Selecione a linha de estoque das fichas.";
+  }
+  for (const field of kitGradeStockFields) {
+    const raw = input[field.key];
+    const stock = kitGradeStock.safeParse(typeof raw === "string" && /^[0-9]{1,7}$/u.test(raw.trim()) ? Number(raw) : raw);
+    if (stock.success) {
+      values[field.key] = stock.data;
+    } else {
+      errors[field.key] = "Informe um número inteiro de kits, a partir de 0.";
+    }
   }
   if (Object.keys(errors).length > 0) {
     return NextResponse.json(
@@ -128,6 +132,8 @@ function normalizeKitGradePrices(values: Record<string, unknown>, input: Record<
       { status: 400, headers: privateNoStore }
     );
   }
+  // Keep the kit legacy price available to consumers that do not read sheet prices.
+  values.price_in_cents = values.grade_standard_price_cents;
 }
 
 function normalizeCategoryValues(values: Record<string, unknown>, requestedSlug?: unknown) {
@@ -383,7 +389,7 @@ export async function GET(
     if (!writePermission.allowed) return forbiddenPermissionResponse();
     const sources = await context.auth.supabase.rpc("list_representative_kit_grade_sources");
     if (sources.error || !Array.isArray(sources.data)) {
-      return NextResponse.json({ message: "Não foi possível carregar as linhas de estoque." }, { status: 503, headers: privateNoStore });
+      return NextResponse.json({ message: "Não foi possível carregar os produtos de referência." }, { status: 503, headers: privateNoStore });
     }
     return NextResponse.json({ items: sources.data }, { headers: privateNoStore });
   }
@@ -577,7 +583,7 @@ export async function POST(
         );
       }
       values.slug = slug;
-      const invalid = normalizeKitGradePrices(values, parsed.data.values);
+      const invalid = normalizeKitGradePrices(values, parsed.data.values, true);
       if (invalid) return invalid;
     }
     validateResourceRules(context.resource, values);
@@ -609,7 +615,7 @@ export async function POST(
       if (context.resource === "categorias") logResourceQueryFailure(context.resource, "categories.POST", result.error);
       if (context.resource === "kits" && result.error.message === "invalid_kit_grade_source") {
         return NextResponse.json(
-          { message: "A linha precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha uma linha disponível." } },
+          { message: "O produto de referência precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha um produto de referência disponível." } },
           { status: 409, headers: privateNoStore }
         );
       }
@@ -807,7 +813,7 @@ export async function PATCH(
       }
     }
     if (context.resource === "kits") {
-      const invalid = normalizeKitGradePrices(values, parsed.data.values);
+      const invalid = normalizeKitGradePrices(values, parsed.data.values, false);
       if (invalid) return invalid;
     }
     validateResourceRules(context.resource, values);
@@ -835,7 +841,7 @@ export async function PATCH(
       if (context.resource === "categorias" && result.error) logResourceQueryFailure(context.resource, "categories.PATCH", result.error);
       if (context.resource === "kits" && result.error?.message === "invalid_kit_grade_source") {
         return NextResponse.json(
-          { message: "A linha precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha uma linha disponível." } },
+          { message: "O produto de referência precisa ter um SKU avulso ativo de cada tamanho de 34 a 39.", errors: { gradeSource: "Escolha um produto de referência disponível." } },
           { status: 409, headers: privateNoStore }
         );
       }

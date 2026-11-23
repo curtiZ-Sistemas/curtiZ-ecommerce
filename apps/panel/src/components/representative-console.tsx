@@ -32,9 +32,9 @@ const storeOrigin = () => {
   ).storeUrl;
 };
 
-export function RepresentativeConsole({ role, section }: { role: PanelRole; section: string }) {
+export function RepresentativeConsole({ role, section, initialStatus = "" }: { role: PanelRole; section: string; initialStatus?: string }) {
   if (section === "solicitacoes-representantes" || section === "representantes") {
-    return <Applications role={role} />;
+    return <Applications key={initialStatus} role={role} initialStatus={initialStatus} />;
   }
   if (section === "kits-representantes") {
     return (
@@ -370,13 +370,15 @@ function CreativeManager({ role }: { role: PanelRole }) {
   );
 }
 
-function Applications({ role }: { role: PanelRole }) {
+function Applications({ role, initialStatus }: { role: PanelRole; initialStatus: string }) {
   const requestPrompt = usePanelPrompt();
   const [items, setItems] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<InternalCapabilities>({});
+  const [statusFilter, setStatusFilter] = useState(applicationFilters.some(([value]) => value === initialStatus) ? initialStatus : "");
+  const visibleItems = items.filter((item) => matchesApplicationFilter(item.status, statusFilter));
   const canReview =
     (role === "administracao" || role === "gerencia") &&
     capabilities["representatives.manage"] === true;
@@ -448,8 +450,14 @@ function Applications({ role }: { role: PanelRole }) {
           <h2>Solicitações de representantes</h2>
           <p>Fila auditada, sem exposição de documentos ou CPF nesta visão.</p>
         </div>
-        <span>{items.length} registros</span>
+        <span>{visibleItems.length} registros</span>
       </header>
+      <label className="representative-status-filter">
+        Situação
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          {applicationFilters.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      </label>
       {loading ? (
         <div className="panel-loading">
           <LoaderCircle className="spin" /> Carregando
@@ -473,7 +481,7 @@ function Applications({ role }: { role: PanelRole }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <strong>{item.publicCode}</strong>
@@ -555,6 +563,20 @@ function HonestState({
     </section>
   );
 }
+
+// Filtros aceitos em ?status= (a busca global abre a fila já em "pendentes").
+const pendingApplicationStatuses = ["submitted", "under_review", "documents_pending"];
+const applicationFilters: ReadonlyArray<readonly [string, string]> = [
+  ["", "Todas"],
+  ["pendentes", "Pendentes (enviadas, em análise e correção)"],
+  ["submitted", "Enviadas"],
+  ["under_review", "Em análise"],
+  ["documents_pending", "Correção solicitada"],
+  ["approved", "Aprovadas"],
+  ["rejected", "Rejeitadas"]
+];
+const matchesApplicationFilter = (status: string, filter: string) =>
+  !filter || (filter === "pendentes" ? pendingApplicationStatuses.includes(status) : status === filter);
 
 const maskEmail = (email: string) => {
   const [name, domain] = email.split("@");

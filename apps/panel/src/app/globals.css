@@ -10027,6 +10027,65 @@ button:not(:disabled):active,
   text-align: center;
 }
 
+.panel-global-search-results a[data-active="true"] {
+  background: var(--brand-50);
+  box-shadow: inset 3px 0 0 var(--brand-800);
+}
+
+.panel-global-search-results mark {
+  background: transparent;
+  color: var(--brand-800);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.panel-global-search-results small em {
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--brand-50);
+  color: var(--brand-800);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.panel-global-search-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 9px 8px;
+}
+
+.panel-global-search-recent button,
+.panel-global-search-results .panel-global-search-recent a {
+  display: inline-flex;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.panel-global-search-hint,
+.panel-global-search-empty {
+  color: var(--muted);
+  text-align: center;
+}
+
+.panel-global-search-empty {
+  padding: 14px 10px;
+}
+
+.panel-global-search-empty p {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 @media (max-width: 1200px) {
   .topbar-search, .topbar-search.open { position: static; }
   .topbar-search .panel-global-search {

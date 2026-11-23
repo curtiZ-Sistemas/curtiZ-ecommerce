@@ -1066,7 +1066,10 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
   const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
   await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
     checkoutConfigured: true, orderHistoryAvailable: true,
-    items: [{ kitId, name: "Kit por ficha", color: "Preto", description: "Grade de 12 pares", templates: [
+    items: [{ kitId, name: "Kit por ficha", color: null, description: "Grade de 12 pares", templates: [
+      { code: "standard", label: "Ficha padrão", available: 0, unitPriceInCents: 36001,
+        sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 2 }, { size: "36", pairs: 3 }, { size: "37", pairs: 3 },
+          { size: "38", pairs: 2 }, { size: "39", pairs: 1 }] },
       { code: "lower_restock", label: "Ficha reposição baixa", available: 3, unitPriceInCents: 26590,
         sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 3 }, { size: "36", pairs: 4 }, { size: "37", pairs: 4 }] },
       { code: "upper_restock", label: "Ficha reposição alta", available: 2, unitPriceInCents: 30001,
@@ -1090,6 +1093,9 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
   } }));
   await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  await expect(page.getByRole("radio", { name: /Ficha padrão/ })).toBeDisabled();
+  await expect(page.getByText("Esgotada")).toBeVisible();
+  await expect(page.getByText("2 disponíveis")).toBeVisible();
   await page.getByRole("radio", { name: /Ficha reposição alta/ }).check();
   await expect(page.getByText("12 pares por ficha")).toBeVisible();
   await page.getByRole("button", { name: "Solicitar compra" }).click();
@@ -1109,6 +1115,32 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
   await expect(page.getByText(/Valor informado.*Troco.*99,99/)).toBeVisible();
   expect(quoteRequests).toContainEqual(expect.objectContaining({ kitId, template: "upper_restock", paymentTiming: "collection" }));
+});
+
+test("deixa o kit sem estoque visível, acinzentado e sem compra", async ({ page, baseURL }) => {
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const sizes = [{ size: "37", pairs: 4 }, { size: "38", pairs: 4 }, { size: "39", pairs: 4 }];
+  await page.route("**/api/representatives/kits/grades", route => route.fulfill({ json: {
+    checkoutConfigured: true, orderHistoryAvailable: true,
+    items: [{ kitId: "5ee74d0a-0d74-46ef-b386-9d601b6b4557", name: "Kit esgotado", color: null, description: "Sem estoque", templates: [
+      { code: "standard", label: "Ficha padrão", available: 0, unitPriceInCents: 36001, sizes },
+      { code: "lower_restock", label: "Ficha reposição baixa", available: 0, unitPriceInCents: 35001, sizes },
+      { code: "upper_restock", label: "Ficha reposição alta", available: 0, unitPriceInCents: 37001, sizes }
+    ] }]
+  } }));
+  await page.goto("/representante/comprar-kit", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
+  const card = page.locator(".representative-grade-card.is-sold-out");
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Esgotado", { exact: true }).first()).toBeVisible();
+  await expect(card.getByRole("button", { name: "Esgotado" })).toBeDisabled();
+  await expect(card.getByRole("radio", { name: /Ficha/ })).toHaveCount(3);
+  await expect(card.getByRole("radio", { name: /Ficha/ }).first()).toBeDisabled();
 });
 
 test("avisa quando nenhum kit foi cadastrado para o representante", async ({ page, baseURL }) => {
