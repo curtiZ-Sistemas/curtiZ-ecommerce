@@ -3,28 +3,25 @@
 import { resolvePublicAppUrls } from "@curtiz/config";
 
 import {
-  Check,
   FileImage,
   LoaderCircle,
   PackageCheck,
   Plus,
   ShieldAlert,
-  Users,
-  X
+  Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PanelRole } from "./panel-shell";
 import { PanelDrawer } from "./panel-drawer";
 import { usePanelPrompt } from "./panel-prompt";
-
-type Application = {
-  id: string;
-  publicCode: string;
-  fullName?: string;
-  email?: string;
-  status: string;
-  updatedAt: string;
-};
+import {
+  type Application,
+  ApplicationsTable,
+  recordsLabel,
+  ReviewDialog,
+  type ReviewDecision,
+  reviewDecisionCopy
+} from "./representative-application-table";
 
 const storeOrigin = () => {
   return resolvePublicAppUrls(
@@ -371,11 +368,13 @@ function CreativeManager({ role }: { role: PanelRole }) {
 }
 
 function Applications({ role, initialStatus }: { role: PanelRole; initialStatus: string }) {
-  const requestPrompt = usePanelPrompt();
   const [items, setItems] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [dialog, setDialog] = useState<{ item: Application; decision: ReviewDecision } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dialogError, setDialogError] = useState("");
   const [capabilities, setCapabilities] = useState<InternalCapabilities>({});
   const [statusFilter, setStatusFilter] = useState(applicationFilters.some(([value]) => value === initialStatus) ? initialStatus : "");
   const visibleItems = items.filter((item) => matchesApplicationFilter(item.status, statusFilter));
@@ -414,32 +413,38 @@ function Applications({ role, initialStatus }: { role: PanelRole; initialStatus:
 
   useEffect(load, []);
 
-  const review = async (
-    applicationId: string,
-    decision: "start_review" | "request_documents" | "approve" | "reject"
-  ) => {
-    const reason = await requestPrompt({
-      title: "Revisar solicitação",
-      label: "Motivo desta decisão",
-      minLength: 3
-    });
-    if (!reason || reason.trim().length < 3 || pending) return;
-    setPending(applicationId);
-    setError("");
+  const openDialog = (item: Application, decision: ReviewDecision) => {
+    setDialogError("");
+    setNotice("");
+    setDialog({ item, decision });
+  };
+  const closeDialog = () => setDialog(null);
+
+  const submitReview = async (reason: string) => {
+    if (!dialog || saving) return;
+    setSaving(true);
+    setDialogError("");
     try {
       const response = await fetch(`${storeOrigin()}/api/representatives`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "review", applicationId, decision, reason })
+        body: JSON.stringify({
+          action: "review",
+          applicationId: dialog.item.id,
+          decision: dialog.decision,
+          reason
+        })
       });
-      const result = (await response.json()) as { message?: string };
+      const result = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) throw new Error(result.message ?? "Decisão não aplicada.");
+      setNotice(`${reviewDecisionCopy(dialog.decision).title}: ${dialog.item.publicCode} atualizada.`);
+      setDialog(null);
       load();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Falha inesperada.");
+    } catch (reasonError) {
+      setDialogError(reasonError instanceof Error ? reasonError.message : "Falha inesperada.");
     } finally {
-      setPending(null);
+      setSaving(false);
     }
   };
 
@@ -448,9 +453,9 @@ function Applications({ role, initialStatus }: { role: PanelRole; initialStatus:
       <header>
         <div>
           <h2>Solicitações de representantes</h2>
-          <p>Fila auditada, sem exposição de documentos ou CPF nesta visão.</p>
+          <p>Decisões ficam registradas com justificativa.</p>
         </div>
-        <span>{visibleItems.length} registros</span>
+        <span>{recordsLabel(visibleItems.length)}</span>
       </header>
       <label className="representative-status-filter">
         Situação
@@ -458,6 +463,7 @@ function Applications({ role, initialStatus }: { role: PanelRole; initialStatus:
           {applicationFilters.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
         </select>
       </label>
+      {notice && <p role="status">{notice}</p>}
       {loading ? (
         <div className="panel-loading">
           <LoaderCircle className="spin" /> Carregando
@@ -469,74 +475,18 @@ function Applications({ role, initialStatus }: { role: PanelRole; initialStatus:
           <button onClick={load}>Tentar novamente</button>
         </div>
       ) : (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Solicitação</th>
-                <th>Candidata</th>
-                <th>Status</th>
-                <th>Atualização</th>
-                {canReview && <th>Ações</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleItems.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>{item.publicCode}</strong>
-                  </td>
-                  <td>
-                    {item.fullName ?? "Dados protegidos"}
-                    {item.email && <small>{maskEmail(item.email)}</small>}
-                  </td>
-                  <td>
-                    <span className={`status ${item.status}`}>{label(item.status)}</span>
-                  </td>
-                  <td>{new Intl.DateTimeFormat("pt-BR").format(new Date(item.updatedAt))}</td>
-                  {canReview && (
-                    <td>
-                      <div className="review-actions">
-                        {item.status === "submitted" && (
-                          <button
-                            disabled={pending === item.id}
-                            onClick={() => void review(item.id, "start_review")}
-                          >
-                            Iniciar análise
-                          </button>
-                        )}
-                        {item.status === "under_review" && (
-                          <>
-                            <button
-                              className="approve"
-                              disabled={pending === item.id}
-                              onClick={() => void review(item.id, "approve")}
-                            >
-                              <Check /> Aprovar
-                            </button>
-                            <button
-                              disabled={pending === item.id}
-                              onClick={() => void review(item.id, "request_documents")}
-                            >
-                              Correção
-                            </button>
-                            <button
-                              className="reject"
-                              disabled={pending === item.id}
-                              onClick={() => void review(item.id, "reject")}
-                            >
-                              <X /> Rejeitar
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ApplicationsTable items={visibleItems} role={role} canReview={canReview} onDecision={openDialog} />
+      )}
+      {dialog && (
+        <ReviewDialog
+          key={`${dialog.item.id}:${dialog.decision}`}
+          publicCode={dialog.item.publicCode}
+          decision={dialog.decision}
+          saving={saving}
+          error={dialogError}
+          onCancel={closeDialog}
+          onConfirm={(reason) => void submitReview(reason)}
+        />
       )}
     </section>
   );
@@ -577,11 +527,6 @@ const applicationFilters: ReadonlyArray<readonly [string, string]> = [
 ];
 const matchesApplicationFilter = (status: string, filter: string) =>
   !filter || (filter === "pendentes" ? pendingApplicationStatuses.includes(status) : status === filter);
-
-const maskEmail = (email: string) => {
-  const [name, domain] = email.split("@");
-  return `${name?.slice(0, 2) ?? ""}***@${domain ?? ""}`;
-};
 
 const label = (status: string) =>
   ({

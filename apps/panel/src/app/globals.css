@@ -3561,6 +3561,7 @@ button:not(:disabled):active,
 }
 
 .review-actions button,
+.review-actions a,
 .panel-error button {
   display: inline-flex;
   align-items: center;
@@ -3571,6 +3572,10 @@ button:not(:disabled):active,
   background: white;
   color: var(--ink);
   cursor: pointer;
+}
+
+.review-actions a {
+  text-decoration: none;
 }
 
 .review-actions button svg {
