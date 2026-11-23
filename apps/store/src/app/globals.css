@@ -7330,8 +7330,7 @@ select:disabled {
   width: 17px;
 }
 
-.representative-wizard-loading,
-.representative-loading {
+.representative-wizard-loading {
   display: grid;
   place-items: center;
   align-content: center;
@@ -7343,18 +7342,11 @@ select:disabled {
   min-height: 420px;
 }
 
-.representative-loading {
-  min-height: 100vh;
-  background: var(--neutral-100);
-}
-
-body:has(.representative-portal-layout) > main,
-body:has(.representative-loading) > main {
+body:has(.representative-portal-layout) > main {
   min-height: 100vh;
 }
 
-body:has(.representative-portal-layout) :is(.site-header, .site-footer, .promotion-bar),
-body:has(.representative-loading) :is(.site-header, .site-footer, .promotion-bar) {
+body:has(.representative-portal-layout) :is(.site-header, .site-footer, .promotion-bar) {
   display: none;
 }
 
@@ -15957,17 +15949,6 @@ body:has(.checkout-transition) .help-widget {
 }
 
 /* Cartão da ficha no catálogo */
-.kit-checkout-chip {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 8px;
-  border: 1px solid var(--neutral-200);
-  border-radius: 999px;
-  color: var(--neutral-700);
-  font-size: 0.7rem;
-  vertical-align: middle;
-}
-
 .kit-checkout-description {
   display: -webkit-box;
   overflow: hidden;
@@ -16104,4 +16085,30 @@ body:has(.representative-portal-layout .checkout-page) #main-content { backgroun
 
 @media (max-width: 520px) {
   .kit-checkout-address-dialog-actions > * { flex: 1 1 0; }
+}
+
+.kit-order-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kit-card-payment {
+  margin-top: 12px;
+}
+
+/* Portal do representante: o menu aparece na hora e a barra superior espera os dados */
+.representative-skeleton {
+  display: block;
+  border-radius: 999px;
+  background: var(--neutral-200, #e5e1dc);
+  animation: representative-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.representative-skeleton-avatar { width: 32px; height: 32px; }
+.representative-skeleton-line { width: 120px; height: 12px; }
+@keyframes representative-skeleton-pulse {
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .representative-skeleton { animation: none; }
 }

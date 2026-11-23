@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isAllowedRequestOrigin } from "@/lib/http-origin";
 import { PrivateRequestError, readPrivateJson, requirePrivateRateLimit } from "@/lib/private-request";
 import {
-  beginCommercialKitPix, cancelCommercialKitPayment, commercialKitCheckoutConfigured, commercialKitCollector, commercialKitPaymentProvider,
+  beginCommercialKitCard, beginCommercialKitPix, cancelCommercialKitPayment, commercialKitCardSession, commercialKitCheckoutConfigured, commercialKitCollector, commercialKitPaymentProvider,
   kitPaymentView, refreshCommercialKitPayment
 } from "@/lib/representative-commercial-payments";
 import { isRepresentativeKitPostalCode } from "@/lib/representative-resale-scope";
@@ -12,6 +12,16 @@ import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/s
 
 const orderId = z.string().uuid();
 const gradeTemplate = z.enum(["standard","lower_restock","upper_restock"]);
+// Only the token and the choices the buyer makes in the card form: the amount, payer and
+// document are always read on the server.
+const cardPayment = z.object({
+  kind: z.enum(["credit", "debit"]),
+  token: z.string().trim().regex(/^[a-zA-Z0-9_-]{8,500}$/u),
+  payment_method_id: z.string().trim().regex(/^[a-z0-9_-]{2,50}$/u),
+  installments: z.coerce.number().int().min(1).max(48).default(1),
+  issuer_id: z.union([z.string().trim().regex(/^[1-9]\d{0,9}$/u), z.number().int().positive().max(Number.MAX_SAFE_INTEGER)])
+    .transform(Number).optional()
+}).strict();
 const input = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reserve"), variantId: z.string().uuid(), quoteId: z.string().uuid(),
     addressId: z.string().uuid(), quantity: z.number().int().min(1).max(99), idempotencyKey: z.string().uuid() }).strict(),
@@ -23,6 +33,8 @@ const input = z.discriminatedUnion("action", [
     idempotencyKey: z.string().uuid(), method: z.enum(["cash","pix","debit_card","credit_card"]),
     cashTenderedInCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   z.object({ action: z.literal("pix"), orderId }).strict(),
+  z.object({ action: z.literal("card_session"), orderId }).strict(),
+  z.object({ action: z.literal("card"), orderId, payment: cardPayment }).strict(),
   z.object({ action: z.literal("status"), orderId }).strict(),
   z.object({ action: z.literal("list") }).strict(),
   z.object({ action: z.literal("return"), orderId, quantity: z.number().int().min(1).max(99),
@@ -47,7 +59,7 @@ export async function POST(request: Request) {
     if (!auth || session?.error || !user) throw new KitTransactionError(401);
     const environment = getStoreRuntimeEnvironment();
     const manualFiscal = environment.REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED === "true";
-    if (["reserve","reserve_grade","reserve_collection","pix"].includes(data.action) && !commercialKitCheckoutConfigured(environment)) {
+    if (["reserve","reserve_grade","reserve_collection","pix","card","card_session"].includes(data.action) && !commercialKitCheckoutConfigured(environment)) {
       return reply({ code: "RESALE_NOT_HOMOLOGATED", message: "A compra de kits aguarda homologação." }, 409);
     }
     if (data.action === "reserve_collection" && environment.REPRESENTATIVE_KIT_COLLECTION_ENABLED !== "true") {
@@ -55,7 +67,7 @@ export async function POST(request: Request) {
     }
     await requirePrivateRateLimit(auth, {
       reserve: "checkout_quote", reserve_grade: "checkout_quote", reserve_collection: "checkout_quote",
-      pix: "payment_attempt", status: "payment_reconcile", cancel: "order_cancel", list: "customer_write",
+      pix: "payment_attempt", card: "payment_attempt", card_session: "payment_reconcile", status: "payment_reconcile", cancel: "order_cancel", list: "customer_write",
       return: "return_request"
     }[data.action]);
     const db = createServiceSupabaseClient();
@@ -97,13 +109,24 @@ export async function POST(request: Request) {
       });
       return reply({ ok: true, order: kitPaymentView(order) }, 200);
     }
-    if (data.action === "pix") {
+    if (data.action === "pix" || data.action === "card" || data.action === "card_session") {
       if (!user.email || !user.email_confirmed_at) throw new KitTransactionError(403);
       if (manualFiscal && await kitCall(db,"can_start_representative_kit_manual_pix", {
         p_actor: user.id, p_order: data.orderId
       }) !== true) throw new KitTransactionError(409);
-      const order = await beginCommercialKitPix(db, provider, collector, { id: user.id, email: user.email }, data.orderId.toLowerCase());
-      return reply({ ok: true, order }, 200);
+      const payer = { id: user.id, email: user.email };
+      const id = data.orderId.toLowerCase();
+      if (data.action === "card_session") {
+        return reply({ ok: true, session: await commercialKitCardSession(db, payer, id, environment) }, 200);
+      }
+      if (data.action === "card") {
+        const { kind, token, payment_method_id: paymentMethodId, installments, issuer_id: issuerId } = data.payment;
+        const result = await beginCommercialKitCard(db, provider, collector, payer, id, {
+          kind, token, paymentMethodId, installments, ...(issuerId !== undefined ? { issuerId } : {})
+        });
+        return reply({ ok: true, ...result }, 200);
+      }
+      return reply({ ok: true, order: await beginCommercialKitPix(db, provider, collector, payer, id) }, 200);
     }
     const order = data.action === "cancel"
       ? await cancelCommercialKitPayment(db, provider, collector, user.id, data.orderId.toLowerCase())
@@ -116,6 +139,12 @@ export async function POST(request: Request) {
     return reply({ ok: true, order, tracking, returns }, 200);
   } catch (error) {
     const status = error instanceof KitTransactionError || error instanceof PrivateRequestError ? error.status : 503;
+    // A fixed, actionable reason: the buyer has no valid CPF or CNPJ for the provider. The document
+    // itself is never part of the answer.
+    if (error instanceof KitTransactionError && error.reason === "payer_document_required") {
+      return reply({ code: "PAYER_DOCUMENT_REQUIRED",
+        message: "Complete seu CPF ou CNPJ no cadastro para pagar com Pix ou cartão." }, 409);
+    }
     return reply({ message: status >= 500 ? "Não foi possível confirmar o estado. Consulte o pedido antes de tentar novamente."
       : "Não foi possível concluir a operação do kit." }, status);
   }

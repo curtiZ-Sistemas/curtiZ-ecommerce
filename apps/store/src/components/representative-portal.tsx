@@ -367,14 +367,11 @@ export function RepresentativePortal({ section, children }: { section: string; c
       </main>
     );
   const sectionReady = snapshotSection === section;
-  if (!snapshot)
-    return (
-      <main className="representative-loading account-experience-page">
-        <LoaderCircle className="spin" />
-        <span>Carregando portal</span>
-      </main>
-    );
-  if (!snapshot.representative) {
+  const representative = snapshot?.representative ?? null;
+  const unreadNotifications = (snapshot?.notifications ?? []).filter((item) => !item.readAt).length;
+  // The shell (sidebar, logo, menu footer and top bar) is static: it shows at once and only the
+  // content area waits for the snapshot.
+  if (snapshot && !snapshot.representative) {
     return (
       <main className="container page-shell account-experience-page">
         <section className="application-status-state">
@@ -456,20 +453,31 @@ export function RepresentativePortal({ section, children }: { section: string; c
             <Menu />
           </button>
           <div className="representative-topbar-profile">
-            <div className="representative-topbar-identity">
-              <UserAvatar
-                name={snapshot.representative.fullName || "Representante curti Z"}
-                src={snapshot.representative.avatarUrl}
-                size="small"
-              />
-              <div>
-                <small>Representante</small>
-                <strong>{snapshot.representative.fullName || snapshot.representative.publicCode}</strong>
+            {representative ? (
+              <>
+                <div className="representative-topbar-identity">
+                  <UserAvatar
+                    name={representative.fullName || "Representante curti Z"}
+                    src={representative.avatarUrl}
+                    size="small"
+                  />
+                  <div>
+                    <small>Representante</small>
+                    <strong>{representative.fullName || representative.publicCode}</strong>
+                  </div>
+                </div>
+                <span className={`representative-status ${representative.status}`}>
+                  {statusLabel(representative.status)}
+                </span>
+              </>
+            ) : (
+              <div className="representative-topbar-identity" aria-hidden="true">
+                <span className="representative-skeleton representative-skeleton-avatar" />
+                <div>
+                  <span className="representative-skeleton representative-skeleton-line" />
+                </div>
               </div>
-            </div>
-            <span className={`representative-status ${snapshot.representative.status}`}>
-              {statusLabel(snapshot.representative.status)}
-            </span>
+            )}
           </div>
           <nav className="representative-topbar-actions" aria-label="Conta profissional">
             <Link className="representative-account-link" href="/minha-conta">
@@ -478,29 +486,27 @@ export function RepresentativePortal({ section, children }: { section: string; c
             </Link>
             <Link className="representative-notification-link" href="/representante/notificacoes">
               <Bell />
-              {(snapshot.notifications ?? []).filter((item) => !item.readAt).length > 0 && (
-                <span>{(snapshot.notifications ?? []).filter((item) => !item.readAt).length}</span>
-              )}
+              {unreadNotifications > 0 && <span>{unreadNotifications}</span>}
               <span className="sr-only">Notificações</span>
             </Link>
           </nav>
         </header>
-        <main className="representative-content">
-          {["suspended", "cancelled", "inactive"].includes(snapshot.representative.status) && (
+        <div className="representative-content">
+          {representative && ["suspended", "cancelled", "inactive"].includes(representative.status) && (
             <div className="representative-access-alert" role="status">
               <ShieldCheck />
               <div>
                 <strong>Acesso limitado</strong>
                 <p>
                   Seu histórico continua disponível, mas novas vendas e kits podem ficar bloqueados
-                  enquanto o status for {statusLabel(snapshot.representative.status).toLocaleLowerCase("pt-BR")}.
+                  enquanto o status for {statusLabel(representative.status).toLocaleLowerCase("pt-BR")}.
                 </p>
               </div>
             </div>
           )}
-          {children ? (
+          {snapshot && children ? (
             children
-          ) : sectionReady ? (
+          ) : snapshot && sectionReady ? (
             <PortalSection
               section={section}
               snapshot={snapshot}
@@ -524,7 +530,7 @@ export function RepresentativePortal({ section, children }: { section: string; c
               <span>Carregando</span>
             </div>
           )}
-        </main>
+        </div>
       </div>
     </div>
   );

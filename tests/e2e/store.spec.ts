@@ -1061,7 +1061,7 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   expect((await saveAddress).postDataJSON()).toMatchObject({ action: "address_save", postalCode: "30110-100", state: "MG" });
   expect((await quoteAddress).postDataJSON()).toMatchObject({ addressId, paymentTiming: "prepay" });
   await expect(page.getByRole("radio", { name: /Entrega de kits/ })).toBeChecked();
-  await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Pagar agora/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /Pagar na entrega/ })).toHaveCount(0);
   const summary = page.locator(".checkout-summary");
   await expect(summary.getByText(/Frete|Entrega|Grátis/)).toHaveCount(0);
@@ -1074,11 +1074,67 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await page.getByRole("button", { name: "Finalizar pedido" }).click();
   expect((await reserve).postDataJSON()).toEqual({ action: "reserve_grade", kitId, template: "standard", addressId, quoteId, quantity: 1,
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/u) });
-  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}$`));
+  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}&pagamento=pix$`));
   await expect(page.getByLabel("Pix copia e cola")).toHaveValue("PIX-FIXTURE");
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
   await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
+});
+
+test("escolhe cartão de crédito no checkout do kit e vê o formulário do Mercado Pago no pedido", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);
+  const loginUrl = new URL("/api/auth/login", baseURL);
+  const login = await page.request.post(loginUrl.toString(), {
+    headers: { origin: loginUrl.origin },
+    data: { email: "representante.demo@curtiz.local", password: "1234567890" }
+  });
+  expect(login.ok()).toBe(true);
+  const kitId = "5ee74d0a-0d74-46ef-b386-9d601b6b4557";
+  const addressId = "93c4530c-fc1b-450f-8fa2-ff31499cf681";
+  const quoteId = "1de3191f-fd04-47db-b043-aa1f3418ab67";
+  const orderId = "adaf10fb-c4cd-4ef1-88df-9184b2615258";
+  const offers = { checkoutConfigured: true, orderHistoryAvailable: true, buyerEnabled: true,
+    items: [{ kitId, name: "Kit de teste", color: "Vermelho", description: "Grade de 12 pares", templates: [
+      { code: "standard", label: "Ficha padrão", available: 3, unitPriceInCents: 4500,
+        sizes: [{ size: "34", pairs: 1 }, { size: "35", pairs: 2 }] }] }] };
+  let offerLoads = 0;
+  await page.route("**/api/representatives/kits/grades", route => { offerLoads += 1; return route.fulfill({ json: offers }); });
+  await page.route("**/api/checkout/profile", route => route.fulfill({ json: { addresses: [{
+    id: addressId, label: "Entrega de kits", recipientName: "Representante", street: "Rua de teste", number: "100", complement: "",
+    district: "Centro", city: "Belo Horizonte", state: "MG", postalCode: "30110-100", isDefault: true }] } }));
+  await page.route("**/api/representatives/kits/collection", route => route.fulfill({ json: {
+    quote: { id: quoteId, amountInCents: 4500, shippingInCents: 0, estimatedDays: null } } }));
+  // The Mercado Pago SDK is replaced by a stub that only records the Brick it is asked to create.
+  await page.route("https://sdk.mercadopago.com/js/v2", route => route.fulfill({ contentType: "text/javascript", body: `
+    window.MercadoPago = function () { return { bricks: () => ({ create: async (type, id, settings) => {
+      window.__brick = { type, id, methods: settings.customization.paymentMethods, amount: settings.initialization.amount };
+      document.getElementById(id).textContent = "Formulário do cartão";
+      settings.callbacks.onReady();
+      return { unmount() {} };
+    } }) }; };` }));
+  const requests: Array<Record<string, unknown>> = [];
+  await page.route("**/api/representatives/kits/orders", route => {
+    const data = route.request().postDataJSON() as { action: string };
+    requests.push(data);
+    const order = { orderId, state: "reserved", amountInCents: 4500 };
+    if (data.action === "list") return route.fulfill({ json: { ok: true, orders: [order] } });
+    if (data.action === "card_session") return route.fulfill({ json: { ok: true, session: {
+      orderId, amountInCents: 4500, publicKey: "APP_USR-fixture", email: "representante.demo@curtiz.local" } } });
+    if (data.action === "card") return route.fulfill({ json: { ok: true, order: { ...order, state: "paid" }, card: { status: "approved" } } });
+    return route.fulfill({ json: { ok: true, order } });
+  });
+  await page.goto(`/representante/comprar-kit/checkout?kit=${kitId}&ficha=standard&qtd=1`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Vermelho")).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /Pagar agora/ })).toBeChecked();
+  await page.getByRole("radio", { name: "Cartão de crédito" }).check();
+  await page.getByRole("button", { name: "Finalizar pedido" }).click();
+  await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}&pagamento=credit_card$`));
+  await expect(page.locator(`#kit-card-brick-${orderId}`)).toContainText("Formulário do cartão");
+  expect(await page.evaluate(() => (window as unknown as { __brick: unknown }).__brick)).toEqual({
+    type: "payment", id: `kit-card-brick-${orderId}`, methods: { creditCard: "all" }, amount: 45 });
+  expect(requests.some(request => request.action === "pix")).toBe(false);
+  expect(requests).toContainEqual({ action: "card_session", orderId });
+  expect(offerLoads).toBeGreaterThan(0);
 });
 
 test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", async ({ page, baseURL }) => {
@@ -1132,7 +1188,7 @@ test("escolhe a ficha e calcula o troco no recebimento sem rota cadastrada", asy
   await expect(page).toHaveURL(/ficha=upper_restock&qtd=1$/);
   await expect(page.getByText(/Minas Gerais/)).toHaveCount(0);
   await expect(page.getByRole("radio", { name: /Loja/ })).toBeChecked();
-  await expect(page.getByRole("radio", { name: /Pagar agora \(Pix\)/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Pagar agora/ })).toBeChecked();
   await page.getByRole("radio", { name: /Pagar na entrega/ }).check();
   await expect(page.getByRole("radio", { name: "Dinheiro" })).toBeChecked();
   const pay = page.getByRole("button", { name: "Finalizar pedido" });
@@ -1210,7 +1266,7 @@ test("avisa quando nenhum kit foi cadastrado para o representante", async ({ pag
   await expect(page.getByRole("radio")).toHaveCount(0);
 });
 
-test("oculta a estrutura da loja enquanto o portal do representante carrega", async ({ page }) => {
+test("mostra o menu do portal do representante na hora e oculta a estrutura da loja", async ({ page }) => {
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     headers: { origin: "http://localhost:3000" },
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
@@ -1223,7 +1279,11 @@ test("oculta a estrutura da loja enquanto o portal do representante carrega", as
   });
   await page.goto("/representante", { waitUntil: "domcontentloaded" });
 
-  await expect(page.locator(".representative-loading")).toBeVisible();
+  // O menu e a barra superior aparecem na hora; só o conteúdo espera os dados.
+  await expect(page.locator(".representative-sidebar")).toBeVisible();
+  await expect(page.locator(".representative-topbar")).toBeVisible();
+  await expect(page.locator(".representative-section-loading")).toBeVisible();
+  await expect(page.locator(".representative-loading")).toHaveCount(0);
   await expect(page.locator(".site-header")).toBeHidden();
   await expect(page.locator(".site-footer")).toBeHidden();
   await expect(page.locator(".promotion-bar")).toBeHidden();

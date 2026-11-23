@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { readGradeCatalog, RepresentativeKitGrades, type GradeCatalog } from "./representative-kit-grades";
 import { RepresentativeKitOrderHistory } from "./representative-kit-order";
 
@@ -21,10 +21,14 @@ export function RepresentativeKitCatalog({ header }: { header: ReactNode }) {
     return () => controller.abort();
   }, [retry]);
 
+  // Cancelling, paying or expiring an order changes the stock the offers show.
+  const reloadOffers = useCallback(() => setRetry(value => value + 1), []);
+
   return <section className="representative-kit-catalog">
     <div className="representative-kit-catalog-head">
       {header}
-      {catalog?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={catalog.checkoutConfigured} />}
+      {catalog?.orderHistoryAvailable && <RepresentativeKitOrderHistory checkoutConfigured={catalog.checkoutConfigured}
+        onOffersChanged={reloadOffers} />}
     </div>
     {catalog ? <RepresentativeKitGrades offers={catalog.offers} />
       : error ? <div role="alert" className="representative-kit-catalog-state">

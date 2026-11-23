@@ -41,7 +41,7 @@ export interface PaymentProvider {
 }
 
 export type MercadoPagoPaymentInput = {
-  aggregate?: "orders" | "kit_orders";
+  aggregate?: "orders" | "kit_orders" | "representative_kit_orders";
   orderId: string;
   orderCode: string;
   amountInCents: number;
@@ -50,6 +50,8 @@ export type MercadoPagoPaymentInput = {
   customerEmail: string;
   customerName: string;
   customerDocument: string;
+  /** Defaults to CPF. The commercial kit payer can be the approved CNPJ. */
+  documentType?: "CPF" | "CNPJ";
   entityType: "individual" | "association";
   paymentMethodId: string;
   token?: string;
@@ -271,10 +273,16 @@ export class MercadoPagoPaymentProvider {
     if (!/^KITMG-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(reference)) {
       throw new MercadoPagoProviderError("invalid_kit_payment", 400);
     }
-    const query = new URLSearchParams({ external_reference: reference, sort: "date_created", criteria: "desc", limit: "2" });
+    const query = new URLSearchParams({ external_reference: reference, sort: "date_created", criteria: "desc", limit: "20" });
     const response = await this.requestJson(`/v1/payments/search?${query}`, { method: "GET" });
-    const results = response && typeof response === "object" && "results" in response ? response.results : null;
-    if (!Array.isArray(results) || results.length > 1) throw new MercadoPagoProviderError("ambiguous_kit_payment");
+    const found = response && typeof response === "object" && "results" in response ? response.results : null;
+    // A refused card attempt stays in the provider history while the buyer tries again. Only the
+    // refused ones are set aside: any other pair of payments is still ambiguous.
+    const results: unknown = Array.isArray(found) ? (found as unknown[]).filter(entry => !(typeof entry === "object" && entry !== null
+      && (entry as { status?: unknown }).status === "rejected")) : found;
+    if (!Array.isArray(results) || results.length > 1 || (Array.isArray(found) && found.length >= 20)) {
+      throw new MercadoPagoProviderError("ambiguous_kit_payment");
+    }
     if (!results.length) return null;
     const candidate = mercadoPagoPayment(results[0]);
     if (candidate.externalReference !== reference) throw new MercadoPagoProviderError("invalid_provider_response");
@@ -302,6 +310,15 @@ export class MercadoPagoPaymentProvider {
 
   async createPayment(input: MercadoPagoPaymentInput): Promise<MercadoPagoPayment> {
     if (input.aggregate === "kit_orders" && this.mode !== "test") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+    if (input.aggregate === "representative_kit_orders") {
+      // Commercial kit cards are real charges against the kit reference, never a free-form order code.
+      if (this.mode !== "production") throw new MercadoPagoProviderError("payment_mode_mismatch", 409);
+      if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(input.orderId) || input.orderCode !== `KITMG-${input.orderId}`
+        || !/^(?:\d{11}|\d{14})$/u.test(input.customerDocument) || !input.token
+        || !Number.isSafeInteger(input.amountInCents) || input.amountInCents <= 0) {
+        throw new MercadoPagoProviderError("invalid_kit_payment", 400);
+      }
+    }
     if (input.issuerId !== undefined && (!Number.isSafeInteger(input.issuerId) || input.issuerId <= 0)) {
       throw new MercadoPagoProviderError("invalid_issuer", 400);
     }
@@ -322,13 +339,15 @@ export class MercadoPagoPaymentProvider {
             email: input.customerEmail,
             first_name: input.customerName,
             entity_type: input.entityType,
-            ...(input.providerCustomerId ? {} : { identification: { type: "CPF", number: input.customerDocument } })
+            ...(input.providerCustomerId ? {} : { identification: { type: input.documentType ?? "CPF", number: input.customerDocument } })
           },
           external_reference: input.orderCode,
           statement_descriptor: "CURTIZ",
           metadata: input.aggregate === "kit_orders"
             ? { aggregate: "kit_orders", kit_order_id: input.orderId }
-            : { order_id: input.orderId },
+            : input.aggregate === "representative_kit_orders"
+              ? { aggregate: "representative_kit_orders", kit_order_id: input.orderId }
+              : { order_id: input.orderId },
           binary_mode: false,
           ...(input.paymentMethodId === "pix" || input.paymentMethodId.includes("bol")
             ? { date_of_expiration: expiration.toISOString() }

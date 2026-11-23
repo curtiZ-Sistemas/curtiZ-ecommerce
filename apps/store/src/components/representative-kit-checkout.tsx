@@ -9,7 +9,7 @@ import { KitCheckoutAddress } from "./representative-kit-checkout-address";
 import { kitRefusalMessages, useKitQuote, type KitQuoteState } from "./representative-kit-checkout-quote";
 import { kitCashTenderInCents, RepresentativeKitCashChange } from "./representative-kit-cash-change";
 import { readGradeCatalog, type GradeOffer } from "./representative-kit-grades";
-import { collectionMethods, kitRequest, type CollectionMethod } from "./representative-kit-order";
+import { collectionMethods, kitRequest, prepayMethods, type CollectionMethod, type PrepayMethod } from "./representative-kit-order";
 
 type Mode = "prepay" | "collection";
 const maxQuantity = 99;
@@ -72,6 +72,7 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
   const [quantity, setQuantity] = useState(Math.min(Math.max(initialQuantity, 1), available));
   const [addressId, setAddressId] = useState("");
   const [mode, setMode] = useState<Mode>("prepay");
+  const [prepayMethod, setPrepayMethod] = useState<PrepayMethod>("pix");
   const [chosenMethod, setChosenMethod] = useState<CollectionMethod | "">("");
   const [tendered, setTendered] = useState("");
   const [retry, setRetry] = useState(0);
@@ -112,7 +113,8 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
       const data = await kitRequest({ ...body, idempotencyKey: request.current.key });
       const orderId = isUnknownRecord(data.order) ? readString(data.order, "orderId") : "";
       if (!orderId) throw new Error("Pedido indisponível para consulta.");
-      router.push(`${backHref}?pedido=${encodeURIComponent(orderId)}`);
+      const chosen = active === "prepay" ? `&pagamento=${prepayMethod}` : "";
+      router.push(`${backHref}?pedido=${encodeURIComponent(orderId)}${chosen}`);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Não foi possível finalizar o pedido.");
       setWaiting(false);
@@ -141,13 +143,26 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
             <legend className="sr-only">Quando pagar</legend>
             <label className="kit-checkout-choice">
               <input type="radio" name="kit-payment" checked={active === "prepay"} onChange={() => setMode("prepay")} />
-              <span><strong>Pagar agora (Pix)</strong><small>O Pix é gerado depois de finalizar o pedido.</small></span>
+              <span><strong>Pagar agora</strong><small>Pix, cartão de crédito ou de débito. O pagamento é feito depois de finalizar o pedido.</small></span>
             </label>
             {collectionOffered && <label className="kit-checkout-choice">
               <input type="radio" name="kit-payment" checked={active === "collection"} onChange={() => setMode("collection")} />
               <span><strong>Pagar na entrega</strong><small>Você paga quando receber o kit.</small></span>
             </label>}
           </fieldset>}
+          {active === "prepay" && prepay.status === "ready" && <div className="kit-checkout-method">
+            <fieldset className="kit-checkout-segmented">
+              <legend>Forma de pagamento</legend>
+              {(Object.keys(prepayMethods) as PrepayMethod[]).map(item => <label key={item}>
+                <input type="radio" name="kit-prepay-method" value={item} checked={prepayMethod === item}
+                  onChange={() => setPrepayMethod(item)} />
+                <span>{prepayMethods[item]}</span>
+              </label>)}
+            </fieldset>
+            {prepayMethod !== "pix" && <p className="kit-checkout-note">
+              {prepayMethod === "credit_card" ? "Você informa o cartão e escolhe o parcelamento depois de finalizar o pedido."
+                : "Você informa os dados do cartão de débito depois de finalizar o pedido."}</p>}
+          </div>}
           {active === "collection" && quote && <div className="kit-checkout-method">
             <fieldset className="kit-checkout-segmented">
               <legend>Forma de pagamento</legend>
@@ -168,7 +183,6 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
       <section className="checkout-order-products" aria-labelledby="kit-checkout-product">
         <header className="checkout-order-heading">
           <h2 id="kit-checkout-product">{offer.name}</h2>
-          {offer.color && <span>{offer.color}</span>}
         </header>
         <p className="kit-checkout-template"><strong>{row.label}</strong><span>{formatBRL(row.unitPriceInCents)} por ficha</span></p>
         <table className="kit-checkout-sizes">

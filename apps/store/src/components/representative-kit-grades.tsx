@@ -17,7 +17,6 @@ export type GradeOffer = {
   kitId: string;
   name: string;
   description: string;
-  color: string;
   templates: GradeTemplate[];
   buyerEnabled: boolean | null;
 };
@@ -36,7 +35,6 @@ export function readGradeCatalog(value: unknown): GradeCatalog {
       kitId: readString(item, "kitId"),
       name: readString(item, "name"),
       description: readString(item, "description"),
-      color: readString(item, "color"),
       buyerEnabled,
       templates: readRows(item.templates).map(template => ({
         code: readString(template, "code"),
@@ -75,7 +73,6 @@ function GradeCard({ offer }: { offer: GradeOffer }) {
       aria-disabled={soldOut || undefined}>
       <header>
         <h3>{offer.name}</h3>
-        {offer.color && <span className="kit-checkout-chip">{offer.color}</span>}
         {soldOut && <span className="representative-grade-badge">Esgotado</span>}
         {offer.description && <p className="kit-checkout-description">{offer.description}</p>}
       </header>

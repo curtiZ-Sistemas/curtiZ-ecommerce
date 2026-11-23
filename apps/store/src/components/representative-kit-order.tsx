@@ -1,8 +1,13 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { isUnknownRecord, readRows, readString, type UnknownRecord } from "../lib/unknown-data";
+import { RepresentativeKitCardPayment, type KitCardKind } from "./representative-kit-card-payment";
+import { kitRequest, KitRequestError } from "./representative-kit-request";
+
+export { kitRequest };
 
 const statusLabels: Record<string, string> = {
   reserved: "Estoque reservado", payment_pending: "Aguardando pagamento",
@@ -15,17 +20,6 @@ const shipmentLabels: Record<string, string> = {
   delivered: "Entregue", returned: "Devolvido ao remetente", cancelled: "Envio cancelado"
 };
 
-export async function kitRequest(body: UnknownRecord) {
-  const response = await fetch("/api/representatives/kits/orders", {
-    method: "POST", cache: "no-store", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
-  });
-  const data: unknown = await response.json();
-  if (!response.ok || !isUnknownRecord(data) || data.ok !== true) {
-    throw new Error(isUnknownRecord(data) ? readString(data, "message", "Operação indisponível.") : "Operação indisponível.");
-  }
-  return data;
-}
-
 export type RepresentativeKitSelection = { variantId: string } | { kitId: string; template: string };
 
 export const collectionMethods = {
@@ -33,8 +27,13 @@ export const collectionMethods = {
 };
 export type CollectionMethod = keyof typeof collectionMethods;
 
-function RepresentativeKitOrder({ initial, checkoutConfigured, autoPix = false }: {
-  initial: UnknownRecord; checkoutConfigured: boolean; autoPix?: boolean;
+export type PrepayMethod = "pix" | "credit_card" | "debit_card";
+export const prepayMethods: Record<PrepayMethod, string> = { pix: "Pix", credit_card: "Cartão de crédito", debit_card: "Cartão de débito" };
+export const isPrepayMethod = (value: string): value is PrepayMethod => Object.hasOwn(prepayMethods, value);
+const cardKinds: Record<Exclude<PrepayMethod, "pix">, KitCardKind> = { credit_card: "credit", debit_card: "debit" };
+
+function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null, onOffersChanged }: {
+  initial: UnknownRecord; checkoutConfigured: boolean; autoMethod?: PrepayMethod | null; onOffersChanged?: () => void;
 }) {
   const [order, setOrder] = useState(initial);
   const [tracking, setTracking] = useState<UnknownRecord | null>(null);
@@ -45,40 +44,61 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoPix = false }
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
+  const [cardKind, setCardKind] = useState<KitCardKind | null>(null);
+  const [issueCode, setIssueCode] = useState("");
   const orderId = readString(order, "orderId");
   const state = readString(order, "state");
   const canCancel = (["reserved", "payment_pending"].includes(state) || order.canCancelPaid === true || order.canCancelCollection === true)
     && order.cancellationRequested !== true;
   const method = readString(order, "collectionMethod") as CollectionMethod;
   const pix = isUnknownRecord(order.pix) ? readString(order.pix, "copyPaste") : "";
+  const orderState = useRef(state);
+  orderState.current = state;
   async function update(action: "pix" | "status" | "cancel") {
     if (pending) return;
     setPending(true);
     setMessage("");
+    setIssueCode("");
     setCopied(false);
     try {
       const data = await kitRequest({ action, orderId });
       if (!isUnknownRecord(data.order)) throw new Error("Pedido indisponível para consulta.");
       const next = data.order;
       setOrder(current => ({ ...current, ...next, pix: next.pix }));
+      // A cancelled or expired order gives its stock back: the offers must show it.
+      if (action === "cancel" || readString(next, "state") !== orderState.current) onOffersChanged?.();
       if (action === "status") {
         setTracking(isUnknownRecord(data.tracking) ? data.tracking : null);
         setReturns(readRows(data.returns));
       }
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : "Não foi possível consultar o pedido.");
+      setIssueCode(failure instanceof KitRequestError ? failure.code : "");
     } finally {
       setPending(false);
     }
   }
-  const pixRequested = useRef(false);
+  function cardResult(data: UnknownRecord) {
+    if (isUnknownRecord(data.order)) {
+      const next = data.order;
+      setOrder(current => ({ ...current, ...next, pix: undefined }));
+    }
+    const status = isUnknownRecord(data.card) ? readString(data.card, "status") : "";
+    setCardKind(null);
+    setMessage(status === "approved" ? "Pagamento aprovado."
+      : status === "in_process" ? "Pagamento em análise. Avisaremos assim que o Mercado Pago confirmar."
+        : "Pagamento enviado. Use Atualizar situação para acompanhar.");
+    onOffersChanged?.();
+  }
+  const autoStarted = useRef(false);
   const startPix = useRef(update);
   startPix.current = update;
   useEffect(() => {
-    if (!autoPix || pixRequested.current || !checkoutConfigured || state !== "reserved" || !canCancel) return;
-    pixRequested.current = true;
-    void startPix.current("pix");
-  }, [autoPix, checkoutConfigured, state, canCancel]);
+    if (!autoMethod || autoStarted.current || !checkoutConfigured || state !== "reserved" || !canCancel) return;
+    autoStarted.current = true;
+    if (autoMethod === "pix") void startPix.current("pix");
+    else setCardKind(cardKinds[autoMethod]);
+  }, [autoMethod, checkoutConfigured, state, canCancel]);
   async function requestReturn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -136,8 +156,17 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoPix = false }
           .catch(() => setMessage("Selecione e copie o código Pix."));
       }}>{copied ? "Código copiado" : "Copiar código Pix"}</button>
     </>}
-    {state === "reserved" && checkoutConfigured && canCancel && <button type="button" className="primary-button"
-      disabled={pending} onClick={() => void update("pix")}>Gerar Pix</button>}
+    {state === "payment_pending" && order.paymentMethod === "card" && !pix && order.cancellationRequested !== true
+      && <p role="status">Pagamento no cartão em análise. Atualizaremos o pedido assim que o Mercado Pago confirmar.</p>}
+    {state === "reserved" && checkoutConfigured && canCancel && <div className="kit-order-payment-actions">
+      <button type="button" className="primary-button" disabled={pending} onClick={() => { setCardKind(null); void update("pix"); }}>Gerar Pix</button>
+      <button type="button" className="secondary-button" disabled={pending} aria-expanded={cardKind === "credit"}
+        onClick={() => setCardKind("credit")}>Pagar com cartão de crédito</button>
+      <button type="button" className="secondary-button" disabled={pending} aria-expanded={cardKind === "debit"}
+        onClick={() => setCardKind("debit")}>Pagar com cartão de débito</button>
+    </div>}
+    {state === "reserved" && checkoutConfigured && canCancel && cardKind
+      && <RepresentativeKitCardPayment key={cardKind} orderId={orderId} kind={cardKind} onResult={cardResult} />}
     <button type="button" className="secondary-button" disabled={pending}
       onClick={() => void update("status")}>{pending ? "Consultando…" : "Atualizar situação"}</button>
     {canCancel && <button type="button" className="secondary-button" disabled={pending}
@@ -178,16 +207,22 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoPix = false }
         {typeof item.instructions === "string" && <p>{item.instructions}</p>}</li>;
     })}</ul>}
     {message && <p role="alert">{message}</p>}
+    {issueCode === "PAYER_DOCUMENT_REQUIRED" && <p><Link href="/representante/solicitacao">Completar CPF ou CNPJ no cadastro</Link></p>}
   </div>;
 }
 
 const orderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkoutConfigured: boolean }) {
+export function RepresentativeKitOrderHistory({ checkoutConfigured, onOffersChanged }: {
+  checkoutConfigured: boolean; onOffersChanged?: () => void;
+}) {
   const [orders, setOrders] = useState<UnknownRecord[] | null>(null);
   const [error, setError] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [highlight, setHighlight] = useState("");
+  const [highlightMethod, setHighlightMethod] = useState<PrepayMethod>("pix");
+  const offersChanged = useRef(onOffersChanged);
+  offersChanged.current = onOffersChanged;
   const loadOrders = useCallback(async () => {
     setWaiting(true);
     setError("");
@@ -195,6 +230,8 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkout
       const data = await kitRequest({ action: "list" });
       if (!Array.isArray(data.orders)) throw new Error("Não foi possível consultar seus pedidos.");
       setOrders(readRows(data.orders));
+      // Holds that expired since the catalog was loaded already gave their stock back.
+      offersChanged.current?.();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Não foi possível consultar seus pedidos.");
     } finally {
@@ -206,6 +243,8 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkout
     const id = new URLSearchParams(window.location.search).get("pedido") ?? "";
     if (!orderIdPattern.test(id)) return;
     setHighlight(id);
+    const method = new URLSearchParams(window.location.search).get("pagamento") ?? "";
+    if (isPrepayMethod(method)) setHighlightMethod(method);
     void loadOrders();
   }, [loadOrders]);
   const shown = orders && highlight
@@ -219,7 +258,8 @@ export function RepresentativeKitOrderHistory({ checkoutConfigured }: { checkout
     {shown && (shown.length ? <ul className="representative-record-grid">
       {shown.map(order => <li key={readString(order, "orderId")} className="representative-card">
         <RepresentativeKitOrder initial={order} checkoutConfigured={checkoutConfigured}
-          autoPix={Boolean(highlight) && readString(order, "orderId") === highlight} />
+          autoMethod={highlight && readString(order, "orderId") === highlight ? highlightMethod : null}
+          onOffersChanged={onOffersChanged} />
       </li>)}
     </ul> : <p role="status">Você ainda não tem pedidos de kits.</p>)}
   </section>;
