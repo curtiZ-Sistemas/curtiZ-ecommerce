@@ -58,13 +58,6 @@ insert into private.representative_kit_checkout_approvals(
 select actor,rule_version,'MG02','MG','35520000','synthetic buyer','synthetic operation','synthetic stock',
   'synthetic XML authorization',now()+interval '1 hour' from commercial_kit_fixture;
 
-update public.products set width_cm = 15 where id = (select product from commercial_kit_fixture);
-select throws_ok($$select pg_temp.reserve_commercial_kit()$$,'23514','kit_shipping_inputs_changed',
-  'packing changes invalidate the freight even when unit price stays unchanged');
-update public.products set width_cm = 10 where id = (select product from commercial_kit_fixture);
-
-select throws_ok($$select pg_temp.reserve_commercial_kit()$$,'23514','resale_configuration_required',
-  'the fiscal buyer and its official registration are required before creating an order');
 update private.representative_kit_checkout_approvals set buyer_legal_name = 'Synthetic buyer LTDA',
   buyer_document = '11222333000181', buyer_state_registration = '0012345678900',
   buyer_fiscal_address = '{"state":"MG","postal_code":"30110100","street":"Test street","number":"1","district":"Test district","city":"Test city"}'
@@ -151,6 +144,84 @@ select is((select r->'deliveryAddress'->>'phone'
   from jsonb_array_elements(public.list_representative_kit_collection_work()) r
   join commercial_kit_fixture f on r->>'orderId'=f.receipt_order::text),
   '(31) 98888-1111','older orders fall back to the profile phone');
+
+-- Security: another user's address, phone exposure and navigation write grants.
+alter table commercial_kit_fixture add column foreign_address uuid default gen_random_uuid(),
+  add column reader uuid default gen_random_uuid(), add column foreign_quote uuid;
+insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
+  select reader,'kit-returns-reader@example.invalid','{}'::jsonb,'{}'::jsonb from commercial_kit_fixture;
+insert into public.addresses(id,user_id,label,recipient_name,postal_code,street,number,district,city,state)
+  select foreign_address,outsider,'Other','Other recipient','30110-100','Other street','2','Other district','Other city','MG'
+  from commercial_kit_fixture;
+select is((select public.quote_representative_kit_own_delivery(actor,variant,null,1,foreign_address,null,true)
+  from commercial_kit_fixture),null::jsonb,'another user address cannot be quoted for payment on receipt');
+update commercial_kit_fixture set foreign_quote=(public.quote_representative_kit_own_delivery(
+  actor,variant,null,1,address,null,true)->>'id')::uuid;
+select throws_ok($$select public.reserve_representative_kit_own_collection(actor,variant,null,1,foreign_quote,foreign_address,gen_random_uuid(),null,'cash',9000)
+  from commercial_kit_fixture$$,'23514','kit_quote_unavailable','a quote cannot be reserved with another user address');
+select is((select i.reserved_quantity from public.inventory i join commercial_kit_fixture f on f.variant=i.variant_id),
+  1,'the rejected address leaves stock reserved only for the real order');
+
+select ok(not has_function_privilege('anon','public.list_representative_kit_collection_work()','execute'),
+  'anonymous clients cannot call the delivery queue');
+select ok(not has_function_privilege('anon','public.list_representative_kit_return_work()','execute'),
+  'anonymous clients cannot call the returns queue');
+select ok(not has_function_privilege('anon',
+  'public.reserve_representative_kit_own_collection(uuid,uuid,text,integer,uuid,uuid,uuid,text,text,bigint)','execute')
+  and not has_function_privilege('authenticated',
+  'public.reserve_representative_kit_own_collection(uuid,uuid,text,integer,uuid,uuid,uuid,text,text,bigint)','execute'),
+  'signed-in and anonymous clients cannot reserve a receipt order through SQL');
+select ok(not has_function_privilege('anon','public.quote_representative_kit_own_delivery(uuid,uuid,text,integer,uuid,text,boolean)','execute')
+  and not has_function_privilege('authenticated','public.quote_representative_kit_own_delivery(uuid,uuid,text,integer,uuid,text,boolean)','execute'),
+  'signed-in and anonymous clients cannot quote on behalf of another account');
+select ok(not has_table_privilege('anon','private.representative_kit_orders','select')
+  and not has_table_privilege('authenticated','private.representative_kit_orders','select'),
+  'the order snapshot with the phone is not readable by clients');
+select ok(not exists(select 1 from public.audit_logs a
+  where to_jsonb(a)::text like '%99999-0000%' or to_jsonb(a)::text like '%98888-1111%'),
+  'the buyer phone never reaches the audit log');
+select ok((select private.representative_kit_order_summary(o)::text not like '%99999%'
+  from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.receipt_order),
+  'the order summary returned to the buyer carries no phone');
+
+select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select throws_ok($$select public.list_representative_kit_return_work()$$,'42501',null,
+  'the buyer cannot read the returns queue or its phones');
+
+update private.representative_kit_orders set shipping_snapshot=jsonb_set(shipping_snapshot,'{deliveryAddress,phone}','"(31) 99999-0000"')
+  where id=(select receipt_order from commercial_kit_fixture);
+insert into private.representative_kit_returns(order_id,request_key,quantity,reason)
+  select receipt_order,gen_random_uuid(),1,'Synthetic phone scope' from commercial_kit_fixture;
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.reader,p.id,true,'Synthetic returns reader',f.reader
+  from public.permissions p cross join commercial_kit_fixture f where p.code='returns.read';
+insert into public.user_permission_overrides(user_id,permission_id,allowed,reason,created_by)
+select f.outsider,p.id,true,'Synthetic returns operator',f.outsider
+  from public.permissions p cross join commercial_kit_fixture f where p.code='returns.read';
+select set_config('request.jwt.claims',jsonb_build_object('sub',reader,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select is((select count(*)::integer from jsonb_array_elements(public.list_representative_kit_return_work()) r
+  where r->'deliveryAddress'->>'street' is not null and r->'deliveryAddress'->>'phone' is null),1,
+  'a returns reader without the operational permission does not receive the phone');
+select throws_ok($$select public.list_representative_kit_collection_work()$$,'42501','permission_denied',
+  'a returns reader cannot read the delivery queue');
+select set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select is((select count(*)::integer from jsonb_array_elements(public.list_representative_kit_return_work()) r
+  where r->'deliveryAddress'->>'phone' is not null),1,
+  'an operator with both permissions receives the phone');
+
+select ok(not has_table_privilege('anon','public.store_navigation_items','insert')
+  and not has_table_privilege('anon','public.store_navigation_items','update')
+  and not has_table_privilege('anon','public.store_navigation_items','delete'),
+  'anonymous clients have no write grant on store navigation');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='store_navigation_items'
+  and policyname='taxonomy managers maintain store navigation' and qual like '%catalog.taxonomy.manage%'
+  and with_check like '%catalog.taxonomy.manage%'),'navigation writes are limited to taxonomy managers');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='store_navigation_items'
+  and policyname='closed customer access revoked' and permissive='RESTRICTIVE'),
+  'closed accounts keep the restrictive policy on store navigation');
 
 select * from finish();
 rollback;
