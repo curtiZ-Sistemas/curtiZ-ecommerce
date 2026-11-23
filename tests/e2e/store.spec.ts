@@ -1126,7 +1126,7 @@ test("escolhe cartão de crédito no checkout do kit e vê o formulário do Merc
   await page.goto(`/representante/comprar-kit/checkout?kit=${kitId}&ficha=standard&qtd=1`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Vermelho")).toHaveCount(0);
   await expect(page.getByRole("radio", { name: /Pagar agora/ })).toBeChecked();
-  await page.locator('input[name="kit-prepay-method"][value="credit_card"]').first().check();
+  await page.locator('label:has(input[name="kit-prepay-method"][value="credit_card"])').first().click();
   await page.getByRole("button", { name: "Finalizar pedido" }).click();
   await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}&pagamento=credit_card$`));
   await expect(page.locator(`#kit-card-brick-${orderId}`)).toContainText("Formulário do cartão");
@@ -1266,7 +1266,8 @@ test("avisa quando nenhum kit foi cadastrado para o representante", async ({ pag
   await expect(page.getByRole("radio")).toHaveCount(0);
 });
 
-test("mostra o menu do portal do representante na hora e oculta a estrutura da loja", async ({ page }) => {
+test("mostra o menu do portal do representante na hora e oculta a estrutura da loja", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "No celular o menu é uma gaveta fechada; o comportamento do shell é coberto no desktop.");
   const login = await page.request.post("http://localhost:3000/api/auth/login", {
     headers: { origin: "http://localhost:3000" },
     data: { email: "representante.demo@curtiz.local", password: "1234567890" }
