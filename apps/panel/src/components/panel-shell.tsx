@@ -327,6 +327,14 @@ export function PanelShell({
   };
   const configuredStoreUrl = storeUrl;
   const navigationGroups = groupedMenu(role);
+  const searchPages = navigationGroups.flatMap((group) =>
+    group.items.map(([label, route]) => ({
+      label,
+      href: route ? `/${role}/${route}` : `/${role}`,
+      area: group.label,
+      ...(sectionCopy[role][route] ? { description: sectionCopy[role][route] } : {})
+    }))
+  );
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("curtiz:panel-sidebar-collapsed") === "true");
@@ -572,7 +580,7 @@ export function PanelShell({
           </nav>
           <div className={searchOpen ? "topbar-search open" : "topbar-search"}>
             {searchOpen && (
-              <PanelGlobalSearch role={role} onNavigate={() => setSearchOpen(false)} onClose={() => {
+              <PanelGlobalSearch role={role} pages={searchPages} onNavigate={() => setSearchOpen(false)} onClose={() => {
                 setSearchOpen(false);
                 searchButtonRef.current?.focus();
               }} />

@@ -56,3 +56,39 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
+.kit-grade-sheet {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line, rgb(0 0 0 / 10%));
+}
+
+.kit-grade-sheet > strong,
+.kit-grade-sheet > .kit-grade-sizes {
+  grid-column: 1;
+  margin: 0;
+}
+
+.kit-grade-sheet > .kit-grade-sizes {
+  grid-row: 2;
+}
+
+.kit-grade-sheet > label {
+  grid-row: 1 / span 2;
+}
+
+@media (max-width: 640px) {
+  .kit-grade-sheet {
+    grid-template-columns: 1fr;
+  }
+
+  .kit-grade-sheet > label,
+  .kit-grade-sheet > .kit-grade-sizes {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}

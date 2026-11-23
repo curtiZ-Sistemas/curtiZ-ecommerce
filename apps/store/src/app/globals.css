@@ -15432,6 +15432,21 @@ body:has(.checkout-transition) .help-widget {
   background: var(--white);
 }
 
+.representative-grade-card.is-sold-out {
+  opacity: 0.6;
+  filter: grayscale(0.85);
+}
+
+.representative-grade-badge {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--neutral-200);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .representative-grade-card > header {
   display: grid;
   gap: 2px;

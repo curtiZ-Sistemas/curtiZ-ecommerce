@@ -167,7 +167,21 @@ select throws_ok($$select pg_temp.settle_commercial_pix('approved','456')$$,'235
   'a different payment cannot replace the attached identity');
 select is((select public.request_representative_kit_payment_cancellation(actor,order_id)->>'cancellationRequested'
   from commercial_kit_fixture),'true','a requested cancellation awaits provider confirmation');
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'approved_waiting_kit','reserved, pending and cancelled orders do not activate the representative');
 select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','confirmed approval wins the cancellation race');
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'active','the first paid kit order activates the representative');
+select ok((select activated_at is not null from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'the activation date is recorded');
+select is((select count(*)::integer from public.audit_logs where action='representative.activated_by_kit_payment'
+  and entity_id=(select representative from commercial_kit_fixture)),1,'the activation is audited once');
+select ok((select actor_id is null and not (new_data_sanitized::text ~* '(mail|phone|document|name)') from public.audit_logs
+  where action='representative.activated_by_kit_payment' and entity_id=(select representative from commercial_kit_fixture)),
+  'the activation audit carries no personal data');
+select ok(not has_function_privilege('anon','private.activate_representative_after_kit_payment()','execute')
+  and not has_function_privilege('authenticated','private.activate_representative_after_kit_payment()','execute'),
+  'API roles cannot call the activation trigger function');
 select is(pg_temp.settle_commercial_pix('pending')->>'state','paid','a stale pending response cannot regress payment');
 select results_eq(
   $$select available_quantity,reserved_quantity from public.inventory where variant_id=(select variant from commercial_kit_fixture)$$,
@@ -374,7 +388,8 @@ select throws_ok($$update public.kits set grade_standard_price_cents=36001
   where id=(select grade_kit from commercial_kit_fixture)$$,
   '23514',null,'a kit cannot have a partial price configuration');
 update public.kits set grade_standard_price_cents=36001,
-  grade_lower_restock_price_cents=35001,grade_upper_restock_price_cents=37001
+  grade_lower_restock_price_cents=35001,grade_upper_restock_price_cents=37001,
+  grade_standard_stock=5,grade_lower_restock_stock=5,grade_upper_restock_stock=0
   where id=(select grade_kit from commercial_kit_fixture);
 select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true)
   from commercial_kit_fixture;
@@ -418,24 +433,27 @@ select is((select used_at from private.representative_kit_shipping_checkout_quot
   'a stale quote remains unused');
 update commercial_kit_fixture set grade_quote=(public.quote_representative_kit_collection(actor,grade_kit,'standard',1,address,
   '35520000')->>'id')::uuid;
-update public.inventory set available_quantity=0 where variant_id in (
-  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
-select throws_ok($$select pg_temp.reserve_grade_cash()$$,'23514','kit_grade_quote_changed',
-  'a missing grade size rejects the complete sheet');
-select is((select sum(i.reserved_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
-  join commercial_kit_fixture f on v.product_id=f.grade_product),0,'failure leaves all reservations untouched');
-update public.inventory set available_quantity=5 where variant_id in (
-  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product where v.size='38');
+update public.kits set grade_standard_stock=0 where id=(select grade_kit from commercial_kit_fixture);
+select throws_ok($$select pg_temp.reserve_grade_cash()$$,'23514','kit_grade_out_of_stock',
+  'a sheet without kit stock is refused whatever the product inventory holds');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),0,
+  'a refused reservation leaves the kit stock untouched');
+select is((select used_at from private.representative_kit_shipping_checkout_quotes
+  where id=(select grade_quote from commercial_kit_fixture)),null::timestamptz,'a refused reservation keeps the quote unused');
+update public.kits set grade_standard_stock=5 where id=(select grade_kit from commercial_kit_fixture);
 select is(pg_temp.reserve_grade_cash()->>'cashChangeInCents','2199','the new grade price and freight determine cash change');
 update public.kits set grade_standard_price_cents=37501 where id=(select grade_kit from commercial_kit_fixture);
 select is(pg_temp.reserve_grade_cash()->>'amountInCents','37801','an idempotent replay retains the reserved grade price');
-select is((select jsonb_object_agg(v.size,i.reserved_quantity) from public.inventory i join public.product_variants v on v.id=i.variant_id
-  join commercial_kit_fixture f on v.product_id=f.grade_product),
-  '{"34":1,"35":2,"36":3,"37":3,"38":2,"39":1}'::jsonb,'reserving a sheet holds its exact shared stock');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),4,
+  'reserving a sheet takes one complete sheet from the kit stock');
+select is((select sum(i.reserved_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),0,'the single-SKU product inventory is not reserved');
 select is((select public.request_representative_kit_payment_cancellation(actor,(pg_temp.reserve_grade_cash()->>'orderId')::uuid)->>'state'
   from commercial_kit_fixture),'cancelled','the unpaid grade can be cancelled as a whole');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),5,
+  'the cancelled sheet returns to the kit stock');
 select is((select sum(i.available_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
-  join commercial_kit_fixture f on v.product_id=f.grade_product),30,'all of the original grade stock is restored');
+  join commercial_kit_fixture f on v.product_id=f.grade_product),30,'the product inventory never moved');
 
 alter table commercial_kit_fixture add column delivery_order uuid, add column pair_return uuid;
 update private.representative_kit_collection_routes set closed_at=now() where name='Synthetic delivery';
@@ -513,7 +531,9 @@ select is((select public.prepare_representative_kit_collection_refund(pair_retur
   from commercial_kit_fixture),'true','cash return confirmation finalizes inventory without a route');
 select is((select jsonb_object_agg(v.size,i.available_quantity) from public.inventory i
   join public.product_variants v on v.id=i.variant_id join commercial_kit_fixture f on v.product_id=f.grade_product),
-  '{"34":4,"35":4,"36":2,"37":2,"38":3,"39":4}'::jsonb,'only the inspected variant returns to inventory');
+  '{"34":5,"35":5,"36":5,"37":5,"38":5,"39":5}'::jsonb,'a returned pair never feeds the product inventory of a kit order');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),4,
+  'a returned loose pair cannot rebuild a complete sheet in the kit stock');
 
 -- Without its own approval the plain kit must not borrow the grade's cash rule. The route-free
 -- receipt path covers approved MG02 products, so the plain kit's approval is revoked for this check.
@@ -581,8 +601,7 @@ select is((select public.record_representative_kit_return_invoice(r.id,r.invoice
 select is((select o.stock_state from private.representative_kit_orders o join commercial_kit_fixture t
   on o.id=t.delivery_order),'released','the final state reflects the released reservation');
 
-update public.inventory set available_quantity=10 where variant_id in (
-  select v.id from public.product_variants v join commercial_kit_fixture f on v.product_id=f.grade_product);
+update public.kits set grade_standard_stock=10 where id=(select grade_kit from commercial_kit_fixture);
 
 update commercial_kit_fixture set grade_key=gen_random_uuid(),grade_quote=(public.quote_representative_kit_own_delivery(
   actor,grade_kit,'standard',1,address,'35520000',false)->>'id')::uuid;
@@ -616,6 +635,172 @@ select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
 select is((select public.confirm_representative_kit_manual_invoice(order_id,919,
     '3126111234567800019555003'||repeat('8',19),'100000000000010',repeat('f',64))
   from commercial_kit_fixture),true,'the worker can attach the verified provider proof');
+
+-- Kit-owned sheet stock: offers, reservation quantities, refusal, single release and direct access.
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),9,
+  'a paid sheet stays out of the kit stock');
+alter table commercial_kit_fixture add column own_stock_quote uuid, add column own_stock_key uuid default gen_random_uuid(),
+  add column own_stock_order uuid, add column no_line_kit uuid default gen_random_uuid(), add column ref_kit uuid default gen_random_uuid(),
+  add column unpriced_kit uuid default gen_random_uuid();
+update commercial_kit_fixture set own_stock_quote=(public.quote_representative_kit_own_delivery(
+  actor,grade_kit,'standard',2,address,'35520000',false)->>'id')::uuid;
+update commercial_kit_fixture set own_stock_order=(public.reserve_representative_kit_manual_pix(
+  actor,grade_kit,'standard',2,own_stock_quote,address,own_stock_key,null)->>'orderId')::uuid;
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),7,
+  'a quantity of two takes two sheets from the kit stock');
+select is((select o.grade_stock_source from private.representative_kit_orders o join commercial_kit_fixture f on o.id=f.own_stock_order),
+  'kit','new orders are marked as kit-sourced');
+select is((select sum(i.reserved_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),0,'the order holds no product inventory');
+select is((select public.request_representative_kit_payment_cancellation(actor,own_stock_order)->>'state'
+  from commercial_kit_fixture),'cancelled','the unpaid sheets can be cancelled');
+select is((select public.request_representative_kit_payment_cancellation(actor,own_stock_order)->>'state'
+  from commercial_kit_fixture),'cancelled','a repeated cancellation is accepted');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),9,
+  'the sheets return to the kit stock exactly once');
+
+-- A request above the stock gets no quote, and stock that vanishes after the quote refuses the reservation.
+update public.kits set grade_standard_stock=1 where id=(select grade_kit from commercial_kit_fixture);
+select is((select public.quote_representative_kit_own_delivery(actor,grade_kit,'standard',2,address,'35520000',false)
+  from commercial_kit_fixture),null::jsonb,'insufficient stock for the requested quantity gets no quote');
+update public.kits set grade_standard_stock=5 where id=(select grade_kit from commercial_kit_fixture);
+update commercial_kit_fixture set own_stock_key=gen_random_uuid(),own_stock_quote=(public.quote_representative_kit_own_delivery(
+  actor,grade_kit,'standard',2,address,'35520000',false)->>'id')::uuid;
+update public.kits set grade_standard_stock=1 where id=(select grade_kit from commercial_kit_fixture);
+select throws_ok($$select public.reserve_representative_kit_manual_pix(actor,grade_kit,'standard',2,own_stock_quote,address,
+  own_stock_key,null) from commercial_kit_fixture$$,'23514','kit_grade_out_of_stock','insufficient stock refuses the reservation');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),1,
+  'a refused reservation takes nothing from the kit stock');
+
+-- Orders reserved in the earlier model keep returning stock to the product variants.
+update public.kits set grade_standard_stock=5 where id=(select grade_kit from commercial_kit_fixture);
+update commercial_kit_fixture set own_stock_key=gen_random_uuid(),own_stock_quote=(public.quote_representative_kit_own_delivery(
+  actor,grade_kit,'standard',1,address,'35520000',false)->>'id')::uuid;
+update commercial_kit_fixture set own_stock_order=(public.reserve_representative_kit_manual_pix(
+  actor,grade_kit,'standard',1,own_stock_quote,address,own_stock_key,null)->>'orderId')::uuid;
+update private.representative_kit_orders set grade_stock_source='variants' where id=(select own_stock_order from commercial_kit_fixture);
+update public.inventory i set available_quantity=i.available_quantity-(l->>'pairs')::integer,
+  reserved_quantity=i.reserved_quantity+(l->>'pairs')::integer
+  from private.representative_kit_orders o cross join lateral jsonb_array_elements(o.grade_lines) l
+  where o.id=(select own_stock_order from commercial_kit_fixture) and i.variant_id=(l->>'variantId')::uuid;
+select is((select public.request_representative_kit_payment_cancellation(actor,own_stock_order)->>'state'
+  from commercial_kit_fixture),'cancelled','an order from the variant model can still be cancelled');
+select is((select sum(i.available_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),30,'the old reservation returns to the product variants');
+select is((select sum(i.reserved_quantity)::integer from public.inventory i join public.product_variants v on v.id=i.variant_id
+  join commercial_kit_fixture f on v.product_id=f.grade_product),0,'no old reservation is left on the variants');
+select is((select grade_standard_stock from public.kits where id=(select grade_kit from commercial_kit_fixture)),4,
+  'the kit stock is not credited for an order that never took from it');
+
+-- Offers need the reference product line and the three prices; their stock comes from the kit only.
+update public.kits set grade_standard_stock=3,grade_lower_restock_stock=0,grade_upper_restock_stock=2
+  where id=(select grade_kit from commercial_kit_fixture);
+insert into public.kits(id,name,slug,description,price_in_cents,created_by,grade_standard_price_cents,
+  grade_lower_restock_price_cents,grade_upper_restock_price_cents,grade_standard_stock,grade_lower_restock_stock,
+  grade_upper_restock_stock)
+select no_line_kit,'No line kit',no_line_kit::text,'Own stock only',30001,actor,30001,29001,31001,3,0,0 from commercial_kit_fixture;
+insert into public.kits(id,name,slug,description,price_in_cents,created_by,grade_standard_stock)
+select unpriced_kit,'Unpriced kit',unpriced_kit::text,'No prices',30001,actor,9 from commercial_kit_fixture;
+insert into public.kits(id,name,slug,description,price_in_cents,created_by,grade_product_id,grade_color,grade_standard_price_cents,
+  grade_lower_restock_price_cents,grade_upper_restock_price_cents,grade_standard_stock,grade_lower_restock_stock,
+  grade_upper_restock_stock)
+select ref_kit,'Reference kit',ref_kit::text,'Own stock only',30001,actor,grade_product,'White',30001,29001,31001,0,0,0
+  from commercial_kit_fixture;
+select throws_ok($$update public.kits set grade_standard_price_cents=null
+  where id=(select no_line_kit from commercial_kit_fixture)$$,'23514',null,'a kit cannot hold only some grade prices');
+select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+select is((select count(*)::integer from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  where (offer->>'kitId')::uuid=(select no_line_kit from commercial_kit_fixture)),0,
+  'a kit without a reference product is not offered even with prices and stock');
+select is((select jsonb_object_agg(template->>'code',template->'available')
+  from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  cross join lateral jsonb_array_elements(offer->'templates') template
+  where (offer->>'kitId')::uuid=(select ref_kit from commercial_kit_fixture)),
+  '{"standard":0,"lower_restock":0,"upper_restock":0}'::jsonb,
+  'the product inventory of the reference line never makes a sheet available');
+select is((select jsonb_object_agg(template->>'code',template->'available')
+  from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  cross join lateral jsonb_array_elements(offer->'templates') template
+  where (offer->>'kitId')::uuid=(select grade_kit from commercial_kit_fixture)),
+  '{"standard":3,"lower_restock":0,"upper_restock":2}'::jsonb,'the kit stock is published for each of the three sheets');
+select is((select count(*)::integer from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  where (offer->>'kitId')::uuid=(select unpriced_kit from commercial_kit_fixture)),0,'a kit without the three prices is not offered');
+select is((select jsonb_array_length(offer->'templates')
+  from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  where (offer->>'kitId')::uuid=(select ref_kit from commercial_kit_fixture)),3,'each offer lists the three sheets');
+select is((select template->'sizes' from jsonb_array_elements(public.list_representative_kit_grade_offers()) offer
+  cross join lateral jsonb_array_elements(offer->'templates') template
+  where (offer->>'kitId')::uuid=(select ref_kit from commercial_kit_fixture) and template->>'code'='upper_restock'),
+  '[{"size":"37","pairs":4},{"size":"38","pairs":4},{"size":"39","pairs":4}]'::jsonb,
+  'the size distribution of each sheet is still published');
+
+-- Direct table access never exposes or changes the stock of kits to anonymous or ordinary users.
+select set_config('test.anon_stock_rows','-1',true),set_config('test.anon_stock_updated','-1',true),
+  set_config('test.user_stock_updated','-1',true);
+set local role anon;
+do $$ begin
+  perform set_config('test.anon_stock_rows',(select count(*) from public.kits where grade_standard_stock>=0)::text,true);
+exception when insufficient_privilege then perform set_config('test.anon_stock_rows','0',true);
+end $$;
+do $$ declare changed integer; begin
+  update public.kits set grade_standard_stock=999;
+  get diagnostics changed=row_count;
+  perform set_config('test.anon_stock_updated',changed::text,true);
+exception when insufficient_privilege then perform set_config('test.anon_stock_updated','0',true);
+end $$;
+reset role;
+select is(current_setting('test.anon_stock_rows'),'0','anonymous callers read no kit stock');
+select is(current_setting('test.anon_stock_updated'),'0','anonymous callers cannot change kit stock');
+select set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true)
+  from commercial_kit_fixture;
+set local role authenticated;
+do $$ declare changed integer; begin
+  update public.kits set grade_standard_stock=999,grade_lower_restock_stock=999,grade_upper_restock_stock=999;
+  get diagnostics changed=row_count;
+  perform set_config('test.user_stock_updated',changed::text,true);
+exception when insufficient_privilege then perform set_config('test.user_stock_updated','0',true);
+end $$;
+reset role;
+select is(current_setting('test.user_stock_updated'),'0','an ordinary authenticated user cannot change kit stock');
+select is((select grade_standard_stock+grade_lower_restock_stock+grade_upper_restock_stock from public.kits
+  where id=(select grade_kit from commercial_kit_fixture)),5,'the stock is unchanged after the direct access attempts');
+select ok(not has_function_privilege('anon','private.representative_kit_grade_stock(public.kits,text)','execute')
+  and not has_function_privilege('authenticated','private.representative_kit_grade_stock(public.kits,text)','execute'),
+  'the stock helper is not callable from the API roles');
+
+-- Activation only moves a representative waiting for the first kit, and only on confirmed payment.
+-- The fulfillment queue trigger is paused so that only the activation rule reacts to these state changes.
+alter table private.representative_kit_orders disable trigger enqueue_representative_kit_after_payment;
+update public.representatives set status='suspended',activated_at=null where id=(select representative from commercial_kit_fixture);
+update private.representative_kit_orders set state='paid' where id=(select own_stock_order from commercial_kit_fixture);
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'suspended','a suspended representative is not reactivated by a paid kit');
+update public.representatives set status='inactive' where id=(select representative from commercial_kit_fixture);
+update private.representative_kit_orders set state='refunded' where id=(select own_stock_order from commercial_kit_fixture);
+update private.representative_kit_orders set state='paid' where id=(select own_stock_order from commercial_kit_fixture);
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'inactive','an inactive representative is not reactivated by a paid kit');
+update public.representatives set status='approved_waiting_kit' where id=(select representative from commercial_kit_fixture);
+update private.representative_kit_orders set state='payment_pending' where id=(select own_stock_order from commercial_kit_fixture);
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'approved_waiting_kit','an unpaid order does not activate the representative');
+update private.representative_kit_orders set state='cancelled' where id=(select own_stock_order from commercial_kit_fixture);
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'approved_waiting_kit','a cancelled order does not activate the representative');
+update private.representative_kit_orders set state='paid' where id=(select own_stock_order from commercial_kit_fixture);
+select is((select status::text from public.representatives where id=(select representative from commercial_kit_fixture)),
+  'active','the paid order activates a representative waiting for the kit');
+select is((select count(*)::integer from public.audit_logs where action='representative.activated_by_kit_payment'
+  and entity_id=(select representative from commercial_kit_fixture)),2,'each activation is audited');
+update public.representatives set activated_at='2026-01-01 00:00:00+00' where id=(select representative from commercial_kit_fixture);
+update private.representative_kit_orders set state='cancelled' where id=(select own_stock_order from commercial_kit_fixture);
+update private.representative_kit_orders set state='paid' where id=(select own_stock_order from commercial_kit_fixture);
+select ok((select status='active' and activated_at='2026-01-01 00:00:00+00'::timestamptz from public.representatives
+  where id=(select representative from commercial_kit_fixture)),'an already active representative keeps the status and activation date');
+select is((select count(*)::integer from public.audit_logs where action='representative.activated_by_kit_payment'
+  and entity_id=(select representative from commercial_kit_fixture)),2,'an already active representative is not audited again');
+alter table private.representative_kit_orders enable trigger enqueue_representative_kit_after_payment;
 
 create temporary table mg02_approval_fixture as
 select gen_random_uuid() as actor,gen_random_uuid() as application,gen_random_uuid() as representative;

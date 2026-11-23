@@ -24,6 +24,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import {
   adminResources,
   kitGradePriceFields,
+  kitGradeStockFields,
   type AdminResourceField,
   type AdminResourceKey
 } from "@/lib/admin-resources";
@@ -31,11 +32,19 @@ import {
 type Item = Record<string, unknown>;
 type KitGradeSource = { productId: string; name: string; color: string };
 
-const kitGradeDistributions: Record<(typeof kitGradePriceFields)[number]["key"], string> = {
-  grade_standard_price_cents: "34×1, 35×2, 36×3, 37×3, 38×2, 39×1",
-  grade_lower_restock_price_cents: "34×1, 35×3, 36×4, 37×4",
-  grade_upper_restock_price_cents: "37×4, 38×4, 39×4"
-};
+const kitGradeSheets = [
+  { label: "Ficha padrão", short: "Padrão", priceKey: kitGradePriceFields[0].key, stockKey: kitGradeStockFields[0].key, distribution: "34×1, 35×2, 36×3, 37×3, 38×2, 39×1" },
+  { label: "Ficha reposição baixa", short: "Baixa", priceKey: kitGradePriceFields[1].key, stockKey: kitGradeStockFields[1].key, distribution: "34×1, 35×3, 36×4, 37×4" },
+  { label: "Ficha reposição alta", short: "Alta", priceKey: kitGradePriceFields[2].key, stockKey: kitGradeStockFields[2].key, distribution: "37×4, 38×4, 39×4" }
+] as const;
+
+function hasKitPrices(item: Item): boolean {
+  return kitGradePriceFields.every(field => typeof item[field.key] === "number");
+}
+
+function kitStockSummary(item: Item): string {
+  return kitGradeSheets.map(sheet => `${sheet.short} ${readNumber(item[sheet.stockKey]) ?? 0}`).join(" · ");
+}
 
 type ListResponse = {
   items?: Item[];
@@ -128,7 +137,7 @@ const columnLabels: Record<string, string> = {
   storage_path: "Arquivo",
   accepted_at: "Aceito em",
   product_count: "Produtos",
-  kit_line: "Linha de estoque",
+  kit_stock: "Estoque",
   kit_prices: "Preços por ficha"
 };
 
@@ -344,7 +353,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
     void fetch("/api/admin/resources/kits?gradeSources=true", { cache: "no-store", signal: controller.signal })
       .then(async response => {
         const result = await readListResponse(response);
-        if (!response.ok || !result.items) throw new Error("Linhas de estoque indisponíveis.");
+        if (!response.ok || !result.items) throw new Error("Produtos de referência indisponíveis.");
         const sources = result.items.flatMap(item =>
           typeof item.productId === "string" && typeof item.name === "string" && typeof item.color === "string"
             ? [{ productId: item.productId, name: item.name, color: item.color }]
@@ -411,7 +420,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       .map((key) => key.trim())
       .filter((key) => !["id", "updated_at", "created_at", "edited_at"].includes(key));
 
-    if (resource === "kits") return ["name", "kit_line", "kit_prices", "active"];
+    if (resource === "kits") return ["name", "kit_stock", "kit_prices", "active"];
     return resource === "categorias"
       ? ["name", "product_count", "active", "sort_order"]
       : keys.slice(0, 5);
@@ -450,7 +459,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
 
     try {
       for (const field of definition.fields) {
-        if (resource === "kits" && field.key === "price_in_cents" && kitGradeSource) continue;
         values[field.key] = getFormValue(form, field);
       }
       if (resource === "categorias") {
@@ -459,9 +467,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
       }
       if (resource === "kits") {
         values.gradeSource = kitGradeSource;
-        if (kitGradeSource) {
-          for (const field of kitGradePriceFields) values[field.key] = getFormValue(form, field);
-        }
+        for (const field of kitGradePriceFields) values[field.key] = getFormValue(form, field);
+        for (const field of kitGradeStockFields) values[field.key] = getFormValue(form, field);
       }
     } catch (error) {
       setFormError(error instanceof Error && error.message ? error.message : "Revise os valores informados.");
@@ -826,28 +833,34 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                     ) : null}
                     {columns.map((column) => (
                       <td key={column} data-label={columnLabel(column, definition.fields)}>
-                        {column === "kit_line" ? (
-                          typeof item.grade_product_id === "string" && typeof item.grade_color === "string" ? (
-                            <div className="kit-admin-line">
-                              <strong>{kitLineNames[item.grade_product_id] ?? "Linha vinculada"}</strong>
-                              <small>{item.grade_color}</small>
-                            </div>
+                        {column === "kit_stock" ? (
+                          typeof item.grade_product_id !== "string" || typeof item.grade_color !== "string" ? (
+                            <span className="kit-admin-line-missing">Sem produto de referência — não aparece ao representante</span>
                           ) : (
-                            <span className="kit-admin-line-missing">Sem linha de estoque — não aparece ao representante</span>
+                            <div className="kit-admin-line">
+                              {hasKitPrices(item) ? (
+                                kitGradeSheets.every(sheet => (readNumber(item[sheet.stockKey]) ?? 0) === 0)
+                                  ? <span className="kit-admin-line-missing">Sem estoque</span>
+                                  : <span>{kitStockSummary(item)}</span>
+                              ) : (
+                                <span className="kit-admin-line-missing">Sem preços — não aparece ao representante</span>
+                              )}
+                              <small>Referência: {kitLineNames[item.grade_product_id] ?? "Produto vinculado"} · {item.grade_color}</small>
+                            </div>
                           )
                         ) : column === "kit_prices" ? (
-                          item.grade_product_id
+                          hasKitPrices(item)
                             ? (
                               <div className="kit-admin-prices">
                                 {kitGradePriceFields.map(field => (
                                   <div key={field.key}>
                                     <span>{field.label}</span>
-                                    <strong>{displayValue(item[field.key] ?? item.price_in_cents, field.key)}</strong>
+                                    <strong>{displayValue(item[field.key], field.key)}</strong>
                                   </div>
                                 ))}
                               </div>
                             )
-                            : displayValue(item.price_in_cents, "price_in_cents")
+                            : "—"
                         ) : displayValue(item[column], column)}
                       </td>
                     ))}
@@ -967,7 +980,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
             <form onSubmit={(event) => void save(event)}>
               <div className="admin-form-grid">
                 {definition.fields.map((field) => {
-                  if (resource === "kits" && field.key === "price_in_cents" && kitGradeSource) return null;
                   const source: Item = editing === "new" ? {} : editing;
                   const value = fieldValue(source, field);
 
@@ -1091,19 +1103,20 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                 {resource === "kits" && (
                   <div className="wide">
                     <label>
-                      <span>Linha de estoque das fichas</span>
+                      <span>Produto de referência para frete e NF-e *</span>
                       {kitGradeSources ? (
                         <select
                           name="gradeSource"
                           value={kitGradeSource}
+                          required
                           onChange={event => setKitGradeSource(event.target.value)}
                           aria-describedby={fieldErrors.gradeSource ? "grade-source-error" : "grade-source-help"}
                           aria-invalid={Boolean(fieldErrors.gradeSource)}
                         >
-                          <option value="">Sem fichas vinculadas</option>
+                          <option value="">Selecione o produto</option>
                           {editing !== "new" && typeof editing.grade_product_id === "string" && typeof editing.grade_color === "string"
                             && !kitGradeSources.some(source => source.productId === editing.grade_product_id && source.color === editing.grade_color) && (
-                              <option value={`${editing.grade_product_id}|${editing.grade_color}`}>Linha vinculada indisponível</option>
+                              <option value={`${editing.grade_product_id}|${editing.grade_color}`}>Produto vinculado indisponível</option>
                             )}
                           {kitGradeSources.map(source => {
                             const value = `${source.productId}|${source.color}`;
@@ -1111,44 +1124,63 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                           })}
                         </select>
                       ) : kitGradeSourcesError ? (
-                        <span role="alert">Não foi possível carregar as linhas de estoque.</span>
-                      ) : <span role="status">Carregando linhas de estoque…</span>}
+                        <span role="alert">Não foi possível carregar os produtos de referência.</span>
+                      ) : <span role="status">Carregando produtos…</span>}
                     </label>
                     {kitGradeSourcesError && <button type="button" className="secondary-button" onClick={() => setKitGradeSourcesRetry(value => value + 1)}>Tentar novamente</button>}
                     {fieldErrors.gradeSource ? (
                       <small className="admin-field-error" id="grade-source-error" role="alert">{fieldErrors.gradeSource}</small>
                     ) : (
-                      <small id="grade-source-help">Obrigatória para o kit aparecer ao representante. Uma linha de pares avulsos habilita as três fichas de 12 pares.</small>
+                      <small id="grade-source-help">Usado só para NCM, peso e medidas. Não usa o estoque do produto.</small>
                     )}
                   </div>
                 )}
-                {resource === "kits" && kitGradeSource && (
+                {resource === "kits" && (
                   <fieldset className="wide kit-grade-prices">
-                    <legend>Preços por ficha</legend>
-                    <p className="wide kit-grade-help">Cada ficha tem 12 pares, com a distribuição de tamanhos fixa abaixo.</p>
-                    {kitGradePriceFields.map(field => {
-                      const cents = editing === "new" ? undefined : readNumber(editing[field.key])
-                        ?? (editing.grade_product_id ? readNumber(editing.price_in_cents) : undefined);
-                      const error = fieldErrors[field.key];
+                    <legend>Fichas</legend>
+                    <p className="wide kit-grade-help">Cada ficha tem 12 pares, com a distribuição de tamanhos fixa. O estoque conta kits completos; ficha sem estoque fica indisponível.</p>
+                    {kitGradeSheets.map(sheet => {
+                      const cents = editing === "new" ? undefined : readNumber(editing[sheet.priceKey]);
+                      const stock = editing === "new" ? undefined : readNumber(editing[sheet.stockKey]);
+                      const priceError = fieldErrors[sheet.priceKey];
+                      const stockError = fieldErrors[sheet.stockKey];
                       return (
-                        <label key={field.key}>
-                          <span>{field.label} *</span>
-                          <small className="kit-grade-sizes">{kitGradeDistributions[field.key]}</small>
-                          <span className="money-field-control">
-                            <span aria-hidden="true">R$</span>
+                        <div key={sheet.priceKey} className="kit-grade-sheet">
+                          <strong>{sheet.label}</strong>
+                          <small className="kit-grade-sizes">{sheet.distribution}</small>
+                          <label>
+                            <span>Preço (R$) *</span>
+                            <span className="money-field-control">
+                              <span aria-hidden="true">R$</span>
+                              <input
+                                name={sheet.priceKey}
+                                type="text"
+                                inputMode="decimal"
+                                defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
+                                placeholder="0,00"
+                                required
+                                aria-invalid={Boolean(priceError)}
+                                aria-describedby={priceError ? `${sheet.priceKey}-error` : undefined}
+                              />
+                            </span>
+                            {priceError && <small className="admin-field-error" id={`${sheet.priceKey}-error`} role="alert">{priceError}</small>}
+                          </label>
+                          <label>
+                            <span>Estoque (kits) *</span>
                             <input
-                              name={field.key}
-                              type="text"
-                              inputMode="decimal"
-                              defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
-                              placeholder="0,00"
+                              name={sheet.stockKey}
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              step={1}
+                              defaultValue={stock ?? 0}
                               required
-                              aria-invalid={Boolean(error)}
-                              aria-describedby={error ? `${field.key}-error` : undefined}
+                              aria-invalid={Boolean(stockError)}
+                              aria-describedby={stockError ? `${sheet.stockKey}-error` : undefined}
                             />
-                          </span>
-                          {error && <small className="admin-field-error" id={`${field.key}-error`} role="alert">{error}</small>}
-                        </label>
+                            {stockError && <small className="admin-field-error" id={`${sheet.stockKey}-error`} role="alert">{stockError}</small>}
+                          </label>
+                        </div>
                       );
                     })}
                   </fieldset>
@@ -1190,7 +1222,6 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
               <>
                 <p>Tem certeza de que deseja excluir o kit <strong>{displayValue(deleteTarget.name, "name")}</strong>?</p>
                 <p>O kit sai do catálogo de representantes. Pedidos anteriores ficam no histórico.</p>
-                {deleteTarget.required_for_activation === true && <p>Este kit está marcado como obrigatório para ativação.</p>}
               </>
             ) : (
               <p><strong>{displayValue(deleteTarget.name, "name")}</strong> será excluída somente se não estiver em uso.</p>

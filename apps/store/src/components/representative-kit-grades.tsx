@@ -45,6 +45,10 @@ export function readGradeCatalog(value: unknown): GradeCatalog {
 
 const maxQuantity = 99;
 
+function availabilityLabel(available: number) {
+  return available > 0 ? `${available} ${available === 1 ? "disponível" : "disponíveis"}` : "Esgotada";
+}
+
 function GradeCard({ offer }: { offer: GradeOffer }) {
   const groupId = useId();
   const [selected, setSelected] = useState(offer.templates.find(template => template.available > 0)?.code ?? "");
@@ -54,22 +58,25 @@ function GradeCard({ offer }: { offer: GradeOffer }) {
   const count = Number(quantity);
   const validQuantity = Number.isInteger(count) && count >= 1 && count <= limit;
   const totalPairs = template?.sizes.reduce((pairs, row) => pairs + row.pairs, 0) ?? 0;
+  const soldOut = offer.templates.every(item => item.available <= 0);
   const change = (next: number) => setQuantity(String(Math.min(Math.max(next, 1), Math.max(limit, 1))));
 
   return (
-    <article className="representative-grade-card">
+    <article className={soldOut ? "representative-grade-card is-sold-out" : "representative-grade-card"}
+      aria-disabled={soldOut || undefined}>
       <header>
         <h3>{offer.name}</h3>
+        {soldOut && <span className="representative-grade-badge">Esgotado</span>}
         {offer.color && <p>{offer.color}</p>}
         {offer.description && <p>{offer.description}</p>}
       </header>
-      <fieldset className="representative-grade-options">
+      <fieldset className="representative-grade-options" disabled={soldOut}>
         <legend>Ficha</legend>
         {offer.templates.map(item => (
           <label className="representative-grade-option" key={item.code}>
             <input type="radio" name={`${groupId}-ficha`} value={item.code} checked={item.code === selected}
               disabled={item.available <= 0} onChange={() => { setSelected(item.code); setQuantity("1"); }} />
-            <span><strong>{item.label}</strong><small>{item.available > 0 ? "Disponível" : "Esgotado"}</small></span>
+            <span><strong>{item.label}</strong><small>{availabilityLabel(item.available)}</small></span>
             <span>{formatBRL(item.unitPriceInCents)}</span>
           </label>
         ))}
@@ -97,7 +104,10 @@ function GradeCard({ offer }: { offer: GradeOffer }) {
           ? <RepresentativeKitDelivery key={template.code} kitId={offer.kitId} template={template.code} quantity={count} />
           : <p className="representative-grade-note" role="status">Informe de 1 a {limit} fichas para continuar.</p>}
       </>}
-      {!template && <p className="representative-grade-note" role="status">Todas as fichas deste kit estão esgotadas.</p>}
+      {soldOut && <>
+        <p className="representative-grade-note" role="status">Todas as fichas deste kit estão esgotadas.</p>
+        <button type="button" disabled>Esgotado</button>
+      </>}
     </article>
   );
 }

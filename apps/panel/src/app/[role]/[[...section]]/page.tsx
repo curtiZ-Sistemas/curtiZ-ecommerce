@@ -81,13 +81,13 @@ export default async function RolePage({
       ) : section === "devolucoes" && ["administracao", "gerencia"].includes(role) ? (
         <OperationalConsole section="devolucoes" initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : role === "administracao" ? (
-        <Administration section={section} initialQuery={initialQuery} draftOwnerKey={access.userId} />
+        <Administration section={section} initialQuery={initialQuery} initialStatus={initialStatus} draftOwnerKey={access.userId} />
       ) : representativeSections.has(section) && role !== "gerencia" ? (
-        <RepresentativeConsole role={role} section={section} />
+        <RepresentativeConsole role={role} section={section} initialStatus={initialStatus} />
       ) : role === "operacional" ? (
         <Operational section={section} initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : role === "gerencia" ? (
-        <Management section={section} initialQuery={initialQuery} />
+        <Management section={section} initialQuery={initialQuery} initialStatus={initialStatus} />
       ) : (
         <Technical section={section} initialQuery={initialQuery} />
       )}
@@ -149,7 +149,7 @@ function Operational({
   );
 }
 
-function Administration({ section, initialQuery, draftOwnerKey }: { section: string; initialQuery: string; draftOwnerKey: string }) {
+function Administration({ section, initialQuery, initialStatus, draftOwnerKey }: { section: string; initialQuery: string; initialStatus: string; draftOwnerKey: string }) {
   if (!section) return <AdminDashboard />;
   if (["modelos", "variacoes", "midias", "estoque"].includes(section))
     redirect("/administracao/produtos");
@@ -165,7 +165,7 @@ function Administration({ section, initialQuery, draftOwnerKey }: { section: str
   if (section === "permissoes") return <AdminPermissions />;
   if (section === "politicas") return <LegalCenter />;
   if (section === "representantes" || section === "criativos") {
-    return <RepresentativeConsole role="administracao" section={section} />;
+    return <RepresentativeConsole role="administracao" section={section} initialStatus={initialStatus} />;
   }
   if (isAdminResource(section)) return <AdminResourceManager resource={section} />;
   return (
@@ -176,7 +176,7 @@ function Administration({ section, initialQuery, draftOwnerKey }: { section: str
   );
 }
 
-function Management({ section, initialQuery }: { section: string; initialQuery: string }) {
+function Management({ section, initialQuery, initialStatus }: { section: string; initialQuery: string; initialStatus: string }) {
   if (!section) return <ManagerDashboard />;
   if (section === "visao-estrategica") return <ManagerStrategy />;
   if (section === "alertas") return <ManagerAlerts />;
@@ -189,7 +189,7 @@ function Management({ section, initialQuery }: { section: string; initialQuery: 
   if (section === "aprovacoes") return <ManagerApprovals />;
   if (section === "politicas") return <LegalCenter />;
   if (section === "solicitacoes-representantes" || section === "criativos") {
-    return <RepresentativeConsole role="gerencia" section={section} />;
+    return <RepresentativeConsole role="gerencia" section={section} initialStatus={initialStatus} />;
   }
   if (["niveis", "metas", "kits", "banners"].includes(section)) {
     return <AdminResourceManager resource={section as "niveis" | "metas" | "kits" | "banners"} />;

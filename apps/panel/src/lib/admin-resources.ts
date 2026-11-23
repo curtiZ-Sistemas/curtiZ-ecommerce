@@ -24,6 +24,12 @@ export const kitGradePriceFields = [
   { key: "grade_upper_restock_price_cents", label: "Reposição alta", type: "money" }
 ] as const satisfies readonly AdminResourceField[];
 
+export const kitGradeStockFields = [
+  { key: "grade_standard_stock", label: "Ficha padrão", type: "number" },
+  { key: "grade_lower_restock_stock", label: "Reposição baixa", type: "number" },
+  { key: "grade_upper_restock_stock", label: "Reposição alta", type: "number" }
+] as const satisfies readonly AdminResourceField[];
+
 export type AdminResourceDefinition = {
   label: string;
   singular: string;
@@ -381,19 +387,17 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
   kits: {
     label: "Kits",
     singular: "kit",
-    description: "Gerencie os kits, a linha de estoque vinculada e os preços por ficha.",
+    description: "Gerencie os kits, o produto de referência para frete e NF-e e, para cada ficha, o preço e o estoque de kits completos.",
     table: "kits",
     readPermission: "representatives.read_all",
     writePermission: "representatives.rules.manage",
     select:
-      "id,name,slug,description,price_in_cents,active,required_for_activation,version,updated_at,grade_product_id,grade_color," +
-      kitGradePriceFields.map(field => field.key).join(","),
+      "id,name,slug,description,price_in_cents,active,version,updated_at,grade_product_id,grade_color," +
+      [...kitGradePriceFields, ...kitGradeStockFields].map(field => field.key).join(","),
     searchColumns: ["name", "slug"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
       { key: "description", label: "Descrição", type: "textarea", required: true },
-      { key: "price_in_cents", label: "Preço", type: "money", required: true },
-      { key: "required_for_activation", label: "Obrigatório para ativação", type: "boolean" },
       { key: "active", label: "Ativo", type: "boolean" }
     ],
     allowCreate: true,

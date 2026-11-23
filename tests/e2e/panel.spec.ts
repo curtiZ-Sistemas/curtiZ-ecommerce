@@ -129,11 +129,13 @@ test("busca global abre com teclado e mantém resultados protegidos por função
     await searchButton.click();
     await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  const search = page.getByRole("textbox", { name: "Buscar no painel", exact: true });
+  const search = page.getByRole("combobox", { name: "Buscar no painel", exact: true });
   await expect(search).toBeFocused();
-  await search.fill("produto");
+  await search.fill("ativar representante");
   await expect(page.locator("#panel-search-results")).toBeVisible();
-  await expect(page.getByText("Nenhum resultado encontrado.")).toBeVisible();
+  await expect(page.getByRole("option", { name: /Aprovar solicitações de representantes/u }).first()).toBeVisible();
+  await search.fill("zzqxw sem correspondencia");
+  await expect(page.getByText(/Nenhum resultado para/u)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(search).toBeHidden();
   await expect(searchButton).toHaveAttribute("aria-expanded", "false");
