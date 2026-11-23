@@ -125,7 +125,7 @@ function CheckoutForm({ offer, template, available, initialQuantity }: {
     <div className="checkout-form-column">
       <section className="checkout-section" aria-labelledby="kit-checkout-address">
         <h2 id="kit-checkout-address">Endereço de entrega</h2>
-        <KitCheckoutAddress addressId={addressId} onSelect={selectAddress} />
+        <KitCheckoutAddress addressId={addressId} onSelect={selectAddress} onChanged={() => setRetry(value => value + 1)} />
       </section>
       <section className="checkout-section" aria-labelledby="kit-checkout-payment">
         <h2 id="kit-checkout-payment">Pagamento</h2>

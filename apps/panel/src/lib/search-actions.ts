@@ -349,11 +349,6 @@ const operacional = build("operacional", [
     description: "Informe o ID e a chave da NF-e emitida à mão no Bling para validar o pedido de kit.",
     keywords: ["nfe manual", "nota manual", "nf-e manual", "emitida manualmente", "validar nfe", "chave da nfe", "id da nfe no bling", "enviar nota para validacao", "nota fiscal do kit", "emissao fiscal manual", "serie 003"]
   },
-  {
-    area: "Fiscal", title: "Habilitar conta para kits MG02", route: "notas-fiscais", permission: "representatives.rules.manage",
-    description: "Na tela de notas fiscais, informe os dados fiscais e as evidências para liberar a conta da representante nos kits MG02.",
-    keywords: ["mg02", "ativar representante", "ativar conta de representante", "liberar conta", "liberar conta mg02", "habilitar conta", "habilitar representante", "aprovar mg02", "elegibilidade mg02", "conta de kit", "liberar representante para comprar kit", "homologacao", "inscricao estadual"]
-  },
   // Pós-venda
   {
     area: "Pós-venda", title: "Trocas", route: "trocas", permission: "returns.inspect",
