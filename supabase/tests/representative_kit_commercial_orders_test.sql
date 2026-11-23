@@ -211,6 +211,10 @@ update commercial_kit_fixture set order_id=(pg_temp.reserve_commercial_kit()->>'
 -- then Pix needs the server to confirm a valid payer CPF first.
 update private.representative_kit_checkout_approvals set buyer_document=null,granted_automatically=true
   where actor_id=(select actor from commercial_kit_fixture);
+-- The order keeps the fiscal buyer it was reserved with; align it with the approval as an order
+-- reserved for a CNPJ-less automatic approval would be.
+update private.representative_kit_orders set buyer_snapshot=jsonb_set(buyer_snapshot,'{document}','null'::jsonb)
+  where id=(select order_id from commercial_kit_fixture);
 select throws_ok($$select pg_temp.claim_commercial_pix()$$,'23514','resale_payment_blocked',
   'an approval without CNPJ cannot start Pix while the server holds no payer CPF');
 select throws_ok($$select public.claim_representative_kit_pix(actor,order_id,false) from commercial_kit_fixture$$,
@@ -223,6 +227,8 @@ select is((select public.claim_representative_kit_pix(actor,order_id,true) from 
   'the CPF claim is also consumed once');
 update private.representative_kit_checkout_approvals set buyer_document='11222333000181',granted_automatically=false
   where actor_id=(select actor from commercial_kit_fixture);
+update private.representative_kit_orders set buyer_snapshot=jsonb_set(buyer_snapshot,'{document}','"11222333000181"'::jsonb)
+  where id=(select order_id from commercial_kit_fixture);
 select is(pg_temp.settle_commercial_pix('approved')->>'state','paid','an ordinary payment enqueues fulfillment');
 update private.representative_kit_fulfillment set bling_sale_id=123,bling_invoice_id=456,shipment_id='synthetic-carrier'
   where order_id=(select order_id from commercial_kit_fixture);

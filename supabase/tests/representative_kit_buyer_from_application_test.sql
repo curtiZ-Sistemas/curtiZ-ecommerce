@@ -51,7 +51,7 @@ insert into private.bling_catalog_metadata(product_id,commercial_unit,pairs_per_
   union all select product2,'UN',2,'64022000',0,'','T','App fixture 2' from app_kit_fixture;
 insert into private.bling_kit_fiscal_components(
   kit_variant_id,position,sku,description,unit,quantity_pairs,allocation_weight,ncm,origin,cest,source_hash,evidence_reference)
-select v.variant,n,'APP-PAIR-'||n,'Fixture pair '||n,'PR',1,1,'64022000',0,'',
+select v.variant,n,'APP-PAIR-'||left(v.variant::text,8)||'-'||n,'Fixture pair '||n,'PR',1,1,'64022000',0,'',
   private.bling_kit_source_hash(v.variant),'Synthetic fixture evidence'
 from (select variant from app_kit_fixture union all select variant2 from app_kit_fixture) v cross join generate_series(1,2) n;
 
