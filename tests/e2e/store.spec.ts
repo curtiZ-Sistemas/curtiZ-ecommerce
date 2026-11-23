@@ -1077,6 +1077,7 @@ test("cadastra o endereço no checkout do kit, reserva, exibe o Pix e acompanha 
   await expect(page).toHaveURL(new RegExp(`/representante/comprar-kit\\?pedido=${orderId}&pagamento=pix$`));
   await expect(page.getByLabel("Pix copia e cola")).toHaveValue("PIX-FIXTURE");
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
+  await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
   await expect(page.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Pix copia e cola")).toHaveCount(0);
 });

@@ -124,7 +124,7 @@ export function RepresentativeKitCardPayment({ orderId, kind, onResult }: {
     };
   }, [session, sdkReady, kind, containerId, orderId]);
 
-  return <section className="checkout-payment-brick kit-card-payment"
+  return <section className="kit-card-payment"
     aria-label={kind === "credit" ? "Cartão de crédito" : "Cartão de débito"}>
     <Script src="https://sdk.mercadopago.com/js/v2" strategy="afterInteractive"
       onReady={() => setSdkReady(true)} onLoad={() => setSdkReady(true)} onError={() => setFailed(true)} />
