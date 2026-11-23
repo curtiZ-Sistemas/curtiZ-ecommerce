@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({
   actor: "10000000-0000-4000-8000-000000000001", configured: true, collection: false,
-  session: vi.fn(), authBudget: vi.fn(), call: vi.fn()
+  session: vi.fn(), access: vi.fn(), authBudget: vi.fn(), call: vi.fn()
 }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => true }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({
@@ -16,7 +16,7 @@ vi.mock("@/lib/private-request", () => ({
   PrivateRequestError: class extends Error { status = 429; }
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: () => ({ auth: { getUser: mock.session } }),
+  createServerSupabaseClient: () => ({ auth: { getUser: mock.session }, rpc: mock.access }),
   createServiceSupabaseClient: () => ({})
 }));
 vi.mock("@/lib/representative-commercial-payments", () => ({ commercialKitCheckoutConfigured: () => mock.configured }));
@@ -50,7 +50,7 @@ describe("own delivery quote route", () => {
   });
 
   it("offers payment on receipt by address only while collection is enabled, without requiring a route", async () => {
-    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "collection" })).json()).toEqual({ quote: null });
+    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "collection" })).json()).toEqual({ quote: null, reason: "collection" });
     expect(mock.call).not.toHaveBeenCalled();
     mock.collection = true;
     mock.call.mockResolvedValue({ id: "quote", collectionMethods: ["cash"] });
@@ -60,9 +60,23 @@ describe("own delivery quote route", () => {
       expect.objectContaining({ p_at_receipt: true, p_origin: "35520000" }));
   });
 
+  it("tells why the quote is empty: account not enabled, otherwise the address or the collection", async () => {
+    mock.call.mockResolvedValue(null);
+    mock.access.mockResolvedValueOnce({ data: false, error: null });
+    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).json())
+      .toEqual({ quote: null, reason: "not_enabled" });
+    mock.access.mockResolvedValueOnce({ data: true, error: null });
+    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).json())
+      .toEqual({ quote: null, reason: "address" });
+    mock.access.mockResolvedValueOnce({ data: null, error: { code: "42883" } });
+    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).json())
+      .toEqual({ quote: null, reason: "address" });
+  });
+
   it("does not quote without a configured checkout or a session", async () => {
     mock.configured = false;
-    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).json()).toEqual({ quote: null });
+    expect(await (await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).json())
+      .toEqual({ quote: null, reason: "unavailable" });
     mock.configured = true;
     mock.session.mockResolvedValueOnce({ data: { user: null } });
     expect((await post({ variantId, addressId, quantity: 1, paymentTiming: "prepay" })).status).toBe(401);
