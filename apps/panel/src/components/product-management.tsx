@@ -101,6 +101,12 @@ function ProductFeedbackMessage({ feedback, className = "" }: { feedback: Produc
   );
 }
 
+// Erros de uma ação iniciada dentro de um modal aparecem no próprio modal.
+function ModalFeedback({ feedback }: { feedback: ProductFeedback | null }) {
+  if (!feedback || (feedback.kind !== "error" && feedback.kind !== "warning")) return null;
+  return <ProductFeedbackMessage feedback={feedback} className="product-modal-message" />;
+}
+
 async function readCatalogResponse(response: Response): Promise<CatalogResponse> {
   const body = await response.text();
   try {
@@ -704,6 +710,13 @@ export function ProductManagement({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    // Ao abrir um modal, descarta o aviso antigo para não exibi-lo como erro da nova ação.
+    if (archiveTarget || deleteTarget || duplicateTarget || mediaDeleteTarget || statusTarget || bulkAction) {
+      setFeedback(null);
+    }
+  }, [archiveTarget, deleteTarget, duplicateTarget, mediaDeleteTarget, statusTarget, bulkAction]);
 
   useEffect(() => {
     const hasDialog = Boolean(
@@ -2305,6 +2318,7 @@ export function ProductManagement({
                 placeholder="Registre o motivo para a auditoria"
               />
             </label>
+            <ModalFeedback feedback={message} />
             <div>
               <button
                 className="secondary-button"
@@ -3483,6 +3497,7 @@ export function ProductManagement({
               A imagem <strong>{mediaDeleteTarget.alt}</strong> será removida permanentemente do
               produto.
             </p>
+            <ModalFeedback feedback={message} />
             <div>
               <button
                 className="secondary-button"
@@ -3511,6 +3526,7 @@ export function ProductManagement({
           <section className="admin-confirm" role="alertdialog" aria-modal="true" aria-labelledby="bulk-product-title">
             <h2 id="bulk-product-title">{bulkAction === "delete" ? "Excluir produtos?" : bulkAction === "restore" ? "Restaurar produtos?" : "Arquivar produtos?"}</h2>
             <p>{bulkAction === "delete" ? "Esta ação não poderá ser desfeita. Produtos, variantes, estoque, mídias e eventos auxiliares serão removidos." : bulkAction === "restore" ? "Os produtos voltarão como não ativos." : "Os produtos deixarão de aparecer na loja, sem apagar o histórico."}</p>
+            <ModalFeedback feedback={message} />
             <div><button className="secondary-button" type="button" disabled={Boolean(pending)} onClick={() => setBulkAction(null)}>Cancelar</button><button className={`primary-button ${bulkAction === "restore" ? "" : "danger-button"}`} type="button" disabled={Boolean(pending)} onClick={() => void runBulkAction()}>{pending === `bulk-${bulkAction}` ? <LoaderCircle className="spin" /> : null}{bulkAction === "delete" ? "Excluir produtos" : bulkAction === "restore" ? "Restaurar produtos" : "Arquivar produtos"}</button></div>
           </section>
         </div>
@@ -3543,6 +3559,7 @@ export function ProductManagement({
                 onChange={(event) => setStatusReason(event.target.value)}
               />
             </label>
+            <ModalFeedback feedback={message} />
             <div>
               <button
                 className="secondary-button"
@@ -3600,6 +3617,7 @@ export function ProductManagement({
                   defaultValue={`${duplicateTarget.slug}-copia`}
                 />
               </label>
+              <ModalFeedback feedback={message} />
               <div>
                 <button
                   className="secondary-button"
@@ -3609,7 +3627,7 @@ export function ProductManagement({
                   Cancelar
                 </button>
                 <button className="primary-button" type="submit" disabled={Boolean(pending)}>
-                  {pending && <LoaderCircle className="spin" />} Duplicar
+                  {pending && <LoaderCircle className="spin" />} {pending ? "Duplicando…" : "Duplicar"}
                 </button>
               </div>
             </form>

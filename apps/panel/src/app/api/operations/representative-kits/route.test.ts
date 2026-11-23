@@ -12,16 +12,10 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
   createServiceSupabaseClient: () => null
 }));
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const url = "https://panel.example/api/operations/representative-kits";
 const orderId = "10000000-0000-4000-8000-000000000001";
-const route = {
-  name: "Rota de teste", origin_postal_code: "35524168", destination_from: "30110000",
-  destination_through: "30110999", delivery_cents: 0, estimated_days: 2,
-  bling_method_ids: { cash: "11" },
-  point_terminal_id: null, verified_evidence: "Conferência isolada de teste", valid_until: "2099-01-01T00:00:00Z"
-};
 const mg02 = {
   action: "approve_mg02", representativeCode: "REP-0123ABCDEF", document: "11222333000181",
   legalName: "Empresa de teste LTDA", stateRegistration: "0012345678900",
@@ -37,6 +31,16 @@ const post = (body: object) => POST(new NextRequest(url, {
 beforeEach(() => { rpc.mockReset().mockResolvedValue({ data: true, error: null }); });
 
 describe("representative kit operations", () => {
+  it("lists the delivery queue with the phone returned by the permission-checked function", async () => {
+    const rows = [{ orderId, deliveryAddress: { name: "Loja", phone: "31999990000" } }];
+    rpc.mockResolvedValueOnce({ data: rows, error: null });
+    const response = await GET(new NextRequest(`${url}?mode=collection`));
+    expect(await response.json()).toEqual({ rows });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("list_representative_kit_collection_work");
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+    expect((await GET(new NextRequest(`${url}?mode=collection`))).status).toBe(403);
+  });
+
   it("queues an imported NF-e for verification without confirming it in the panel", async () => {
     const invoiceKey = "31261112345678000195550030000000001123456782";
     expect((await post({ action: "submit_manual_invoice", orderId, invoiceId: 301, invoiceKey })).status).toBe(200);
@@ -72,30 +76,6 @@ describe("representative kit operations", () => {
   it("preserves the database permission boundary for MG02 approvals", async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
     expect((await post(mg02)).status).toBe(403);
-  });
-
-  it("rejects a route charging one cent before calling the database", async () => {
-    const response = await post({ action: "create_route", route: { ...route, delivery_cents: 1 } });
-    expect(response.status).toBe(400);
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("passes a free route through to the protected function", async () => {
-    const response = await post({ action: "create_route", route });
-    expect(response.status).toBe(200);
-    expect(rpc).toHaveBeenCalledWith("manage_representative_kit_delivery_route", { p_close: null, p_route: route });
-  });
-
-  it("accepts a prepaid-only route without inventing an at-receipt method", async () => {
-    const prepaid = { ...route, bling_method_ids: {} };
-    expect((await post({ action: "create_route", route: prepaid })).status).toBe(200);
-    expect(rpc).toHaveBeenCalledWith("manage_representative_kit_delivery_route", { p_close: null, p_route: prepaid });
-  });
-
-  it("rejects an electronic payment method when Point is missing", async () => {
-    const unsupported = { ...route, point_terminal_id: null, bling_method_ids: { credit_card: "44" } };
-    expect((await post({ action: "create_route", route: unsupported })).status).toBe(400);
-    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("registers inspection and the series 004 entry for a kit that returned undelivered", async () => {

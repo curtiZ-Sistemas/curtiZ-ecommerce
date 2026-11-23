@@ -319,7 +319,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
         <div className="homepage-header-actions">
           <button className="secondary-button" type="button" onClick={() => setPreview("page")}><Eye /> Visualizar como ficará na loja</button>
           {data?.capabilities["homepage.publish"] && <><button className="secondary-button" type="button" disabled={pending} onClick={() => void publish(true)}><FileClock /> Agendar</button><button className="primary-button" type="button" disabled={pending} onClick={() => void publish(false)}><ShieldCheck /> Publicar página</button></>}
-          {data?.capabilities["homepage.create"] && <button className="primary-button" type="button" onClick={() => setEditor(emptyEditor(data.sections.length + 1))}><Plus /> Nova seção</button>}
+          {data?.capabilities["homepage.create"] && <button className="primary-button" type="button" onClick={() => { setError(""); setEditor(emptyEditor(data.sections.length + 1)); }}><Plus /> Nova seção</button>}
         </div>
       </header>
       <nav className="homepage-tabs" aria-label="Áreas do construtor">
@@ -330,7 +330,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
       </nav>
 
       {message && <p className="admin-feedback" role="status">{message}</p>}
-      {error && <p className="admin-feedback error" role="alert">{error}</p>}
+      {error && !editor && <p className="admin-feedback error" role="alert">{error}</p>}
 
       {tab === "builder" && <>
         <div className="homepage-toolbar">
@@ -353,7 +353,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
                 <div className="homepage-block-meta"><span className={`status ${["published","approved"].includes(section.status) ? "green" : section.status === "rejected" ? "red" : "gray"}`}>{statusLabel(section.status)}</span><span>Posição {globalIndex + 1}</span><span>{visibilityLabel(section.visibility)}</span><span>Responsável: {section.responsible_name}</span><span>{dateLabel(section.starts_at)} → {dateLabel(section.ends_at)}</span>{section.locked && <span><Lock /> Bloqueada</span>}</div>
                 <div className="homepage-block-actions">
                   <button type="button" onClick={() => setPreview(sectionEditor(section))} aria-label={`Pré-visualizar ${section.internal_name}`}><Eye /></button>
-                  {data?.capabilities["homepage.edit"] && <><button type="button" disabled={pending || globalIndex === 0} onClick={() => void reorder(section.id, globalIndex - 1)} aria-label="Subir"><ArrowUp /></button><button type="button" disabled={pending || globalIndex === data.sections.length - 1} onClick={() => void reorder(section.id, globalIndex + 1)} aria-label="Descer"><ArrowDown /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, 0)} aria-label="Enviar ao topo"><MoveUp /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, data.sections.length - 1)} aria-label="Enviar ao final"><MoveDown /></button><button type="button" onClick={() => setEditor(sectionEditor(section))} aria-label="Editar"><Pencil /></button><button type="button" disabled={pending} onClick={() => void act({ action: "duplicate", sectionId: section.id }, "Seção duplicada.")} aria-label="Duplicar"><Copy /></button></>}
+                  {data?.capabilities["homepage.edit"] && <><button type="button" disabled={pending || globalIndex === 0} onClick={() => void reorder(section.id, globalIndex - 1)} aria-label="Subir"><ArrowUp /></button><button type="button" disabled={pending || globalIndex === data.sections.length - 1} onClick={() => void reorder(section.id, globalIndex + 1)} aria-label="Descer"><ArrowDown /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, 0)} aria-label="Enviar ao topo"><MoveUp /></button><button type="button" disabled={pending} onClick={() => void reorder(section.id, data.sections.length - 1)} aria-label="Enviar ao final"><MoveDown /></button><button type="button" onClick={() => { setError(""); setEditor(sectionEditor(section)); }} aria-label="Editar"><Pencil /></button><button type="button" disabled={pending} onClick={() => void act({ action: "duplicate", sectionId: section.id }, "Seção duplicada.")} aria-label="Duplicar"><Copy /></button></>}
                   {data?.capabilities["homepage.edit"] && <button type="button" disabled={pending} onClick={() => void choosePosition(section.id, globalIndex)} aria-label="Definir posição numérica"><GripVertical /></button>}
                   {data?.capabilities["homepage.edit"] && ["draft","rejected"].includes(section.status) && <button type="button" onClick={() => void transition(section, "submit_review")} aria-label="Enviar para aprovação"><Send /></button>}
                   {data?.capabilities["homepage.review"] && section.status === "pending_review" && <><button type="button" onClick={() => void transition(section, "approve")} aria-label="Aprovar"><Check /></button><button type="button" onClick={() => void transition(section, "reject")} aria-label="Rejeitar"><X /></button></>}
@@ -370,7 +370,7 @@ export function HomepageBuilder({ showVersions = false }: { showVersions?: boole
       {tab === "metrics" && <MetricsView metrics={data?.metrics ?? []} sections={data?.sections ?? []} />}
       {tab === "audit" && <AuditView entries={data?.audit ?? []} sections={data?.sections ?? []} />}
 
-      {editor && <EditorModal editor={editor} canUpload={Boolean(data?.capabilities["homepage.media.manage"])} pending={pending} onClose={() => setEditor(null)} onPreview={setPreview} onSave={async (value) => { const ok = await act({ action: "save", expectedRevision: value.revision, payload: serializeEditor(value) }, "Rascunho salvo."); if (ok) setEditor(null); }} />}
+      {editor && <EditorModal editor={editor} canUpload={Boolean(data?.capabilities["homepage.media.manage"])} pending={pending} error={error} onClose={() => setEditor(null)} onPreview={setPreview} onSave={async (value) => { const ok = await act({ action: "save", expectedRevision: value.revision, payload: serializeEditor(value) }, "Rascunho salvo."); if (ok) setEditor(null); }} />}
       {preview && <PreviewModal preview={preview} sections={data?.sections ?? []} device={device} onDevice={setDevice} onClose={() => setPreview(null)} />}
     </section>
   );
@@ -391,7 +391,7 @@ function serializeEditor(editor: Editor) {
   };
 }
 
-function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, onSave }: { editor: Editor; canUpload: boolean; pending: boolean; onClose: () => void; onPreview: (editor: Editor) => void; onSave: (editor: Editor) => Promise<void> }) {
+function EditorModal({ editor: initial, canUpload, pending, error, onClose, onPreview, onSave }: { editor: Editor; canUpload: boolean; pending: boolean; error: string; onClose: () => void; onPreview: (editor: Editor) => void; onSave: (editor: Editor) => Promise<void> }) {
   const [value, setValue] = useState(initial);
   const update = <K extends keyof Editor>(key: K, next: Editor[K]) => setValue((current) => ({ ...current, [key]: next }));
   const content = (key: string, next: unknown) => update("content", { ...value.content, [key]: next });
@@ -452,7 +452,8 @@ function EditorModal({ editor: initial, canUpload, pending, onClose, onPreview, 
         {value.items.length === 0 ? <div className="admin-empty-state compact"><p>Use conteúdo automático ou adicione itens manuais.</p></div> : value.items.map((item, index) => <ItemEditor key={item.id ?? index} item={item} index={index} sectionType={value.sectionType} canUpload={canUpload} onChange={(next) => updateItem(index, next)} onRemove={() => update("items", value.items.filter((_, itemIndex) => itemIndex !== index))} onMove={(direction) => { const target = index + direction; if (target < 0 || target >= value.items.length) return; const items = [...value.items]; [items[index], items[target]] = [items[target]!, items[index]!]; update("items", items); }} />)}
       </section>
       {performanceWarning && <p className="homepage-performance-warning" role="status">Esta seção possui muitos elementos e pode deixar a página mais lenta. Revise a quantidade antes de publicar.</p>}
-      <footer><button className="secondary-button" type="button" onClick={() => onPreview(value)}><Eye /> Pré-visualizar</button><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" type="submit" disabled={pending}>{pending ? <LoaderCircle className="spin" /> : <Save />} Salvar rascunho</button></footer>
+      {error ? <p className="admin-modal-error" role="alert">{error}</p> : null}
+      <footer><button className="secondary-button" type="button" onClick={() => onPreview(value)}><Eye /> Pré-visualizar</button><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" type="submit" disabled={pending}>{pending ? <LoaderCircle className="spin" /> : <Save />} {pending ? "Salvando…" : "Salvar rascunho"}</button></footer>
     </form>
   </section></div>;
 }

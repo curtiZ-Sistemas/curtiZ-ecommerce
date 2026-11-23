@@ -11164,6 +11164,19 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 .admin-field-error { color: var(--danger); }
+.admin-modal-error {
+  margin: 0 20px 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  background: #fef2f2;
+  color: var(--danger);
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.admin-confirm .admin-modal-error { margin: 12px 0 0; }
+.product-modal-message { margin: 12px 0 0; }
 .admin-modal {
   display: flex;
   flex-direction: column;

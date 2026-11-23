@@ -515,8 +515,14 @@ select is((select jsonb_object_agg(v.size,i.available_quantity) from public.inve
   join public.product_variants v on v.id=i.variant_id join commercial_kit_fixture f on v.product_id=f.grade_product),
   '{"34":4,"35":4,"36":2,"37":2,"38":3,"39":4}'::jsonb,'only the inspected variant returns to inventory');
 
+-- Without its own approval the plain kit must not borrow the grade's cash rule. The route-free
+-- receipt path covers approved MG02 products, so the plain kit's approval is revoked for this check.
+update private.representative_kit_checkout_approvals set revoked_at=now()
+  where actor_id=(select actor from commercial_kit_fixture) and rule_version_id=(select rule_version from commercial_kit_fixture);
 select is((select public.quote_representative_kit_own_delivery(actor,variant,null,1,address,null,true)
   from commercial_kit_fixture),null::jsonb,'cash approval for a grade cannot authorize a different product');
+update private.representative_kit_checkout_approvals set revoked_at=null
+  where actor_id=(select actor from commercial_kit_fixture) and rule_version_id=(select rule_version from commercial_kit_fixture);
 update private.representative_kit_collection_routes set closed_at=null where name='Synthetic delivery';
 update private.representative_kit_collection_routes set delivery_cents=0 where name='Synthetic delivery';
 update commercial_kit_fixture set collection_key=gen_random_uuid(),collection_quote=(public.quote_representative_kit_own_delivery(

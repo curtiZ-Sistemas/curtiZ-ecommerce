@@ -256,6 +256,11 @@ export function FinancialControl() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    // Erro antigo não deve aparecer dentro de um modal recém-aberto.
+    if (modal) setMessage(null);
+  }, [modal]);
+
   const mutate = async (action: string, payload: Record<string, unknown>, success: string) => {
     setPending(true);
     setMessage(null);
@@ -421,7 +426,7 @@ export function FinancialControl() {
         </nav>
       </div>
 
-      {message ? (
+      {message && !(modal && message.kind === "error") ? (
         <p className={`admin-feedback ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>
           {message.text}
         </p>
@@ -573,6 +578,7 @@ export function FinancialControl() {
           modal={modal}
           data={data}
           pending={pending}
+          error={message?.kind === "error" ? message.text : ""}
           close={closeModal}
           mutate={mutate}
         />
@@ -2232,12 +2238,14 @@ function FinancialModal({
   modal,
   data,
   pending,
+  error,
   close,
   mutate
 }: {
   modal: ModalState;
   data: FinancialSnapshot;
   pending: boolean;
+  error: string;
   close: () => void;
   mutate: (action: string, payload: Record<string, unknown>, success: string) => Promise<boolean>;
 }) {
@@ -2306,6 +2314,7 @@ function FinancialModal({
         modal.kind === "partner" ? (
           <ConfigForm modal={modal} data={data} pending={pending} mutate={mutate} />
         ) : null}
+        {error ? <p className="admin-modal-error" role="alert">{error}</p> : null}
       </section>
     </div>
   );
@@ -2359,7 +2368,7 @@ function SubmitButton({ pending, label = "Salvar" }: { pending: boolean; label?:
   return (
     <button className="primary-button" type="submit" disabled={pending}>
       {pending ? <LoaderCircle className="spin" /> : null}
-      {label}
+      {pending && label === "Salvar" ? "Salvando…" : label}
     </button>
   );
 }

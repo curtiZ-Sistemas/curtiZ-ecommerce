@@ -15,8 +15,23 @@ function requestedPairs(row: Row): [string,number][] {
 function DeliveryAddress({ value }: { value: unknown }) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const address = value as Row;
-  return <p>{["name","street","number","complement","district","city","state","postalCode"]
-    .map(key => field(address,key)).filter(Boolean).join(" · ")}</p>;
+  const postalCode = field(address,"postalCode").replace(/\D/gu,"");
+  const street = [field(address,"street"),field(address,"number")].filter(Boolean).join(", ");
+  const lines = [
+    field(address,"name") && `Destinatário: ${field(address,"name")}`,
+    street && `Endereço: ${[street,field(address,"complement")].filter(Boolean).join(" · ")}`,
+    field(address,"district") && `Bairro: ${field(address,"district")}`,
+    (field(address,"city") || field(address,"state")) && `Cidade: ${[field(address,"city"),field(address,"state")].filter(Boolean).join("/")}`,
+    postalCode && `CEP: ${postalCode.length === 8 ? `${postalCode.slice(0,5)}-${postalCode.slice(5)}` : postalCode}`
+  ].filter(Boolean);
+  const phone = field(address,"phone").trim();
+  const dial = phone.replace(/[^\d+]/gu,"");
+  return lines.length || phone ? <div aria-label="Endereço de entrega">
+    <strong>Entregar em</strong>
+    {lines.map(line => <p key={line}>{line}</p>)}
+    {phone && dial.replace("+","").length >= 8 ? <p>Telefone: <a href={`tel:${dial}`}>{phone}</a></p>
+      : phone ? <p>Telefone: {phone}</p> : null}
+  </div> : null;
 }
 const states: Record<string,string> = {
   requested: "Solicitada", approved: "Aprovada", received: "Aguardando validação do XML",

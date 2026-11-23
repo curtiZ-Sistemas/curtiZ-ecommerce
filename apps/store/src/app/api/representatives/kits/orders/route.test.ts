@@ -4,12 +4,13 @@ const mock = vi.hoisted(() => ({
   actor: "10000000-0000-4000-8000-000000000001", configured: false, originAllowed: true,
   session: vi.fn(), authBudget: vi.fn(), record: vi.fn(), call: vi.fn(),
   begin: vi.fn(), cancel: vi.fn(), refresh: vi.fn(), makeProvider: vi.fn(),
-  originPostal: "35520000", manualFiscal: false
+  originPostal: "35520000", manualFiscal: false, collection: false
 }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => mock.originAllowed }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({
   REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE: mock.originPostal,
   REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED: String(mock.manualFiscal),
+  REPRESENTATIVE_KIT_COLLECTION_ENABLED: String(mock.collection),
 }) }));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/private-request", () => ({
@@ -46,6 +47,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mock.configured = false;
   mock.originAllowed = true;
+  mock.collection = false;
   mock.manualFiscal = false;
   mock.originPostal = "35520000";
   mock.session.mockResolvedValue({ data: { user: { id: mock.actor, email: "verified@example.invalid",
@@ -63,6 +65,20 @@ describe("commercial kit order route", () => {
     expect((await post({ action: "pix", orderId })).status).toBe(409);
     expect(mock.call).toHaveBeenCalledWith(expect.anything(),"can_start_representative_kit_manual_pix", { p_actor: mock.actor, p_order: orderId });
     expect(mock.begin).not.toHaveBeenCalled();
+  });
+
+  it("reserves cash on receipt without a route only when collection is enabled, also in manual fiscal mode", async () => {
+    mock.configured = true;
+    mock.manualFiscal = true;
+    const collection = { action: "reserve_collection", selectionId: variantId, quoteId, addressId, quantity: 1, idempotencyKey,
+      method: "cash", cashTenderedInCents: 40000 };
+    expect((await post(collection)).status).toBe(409);
+    expect(mock.record).not.toHaveBeenCalled();
+    mock.collection = true;
+    mock.record.mockResolvedValue({ orderId, state: "awaiting_receipt" });
+    expect((await post(collection)).status).toBe(200);
+    expect(mock.record).toHaveBeenCalledWith(expect.anything(), "reserve_representative_kit_own_collection", expect.objectContaining({
+      p_actor: mock.actor, p_selection: variantId, p_quote: quoteId, p_method: "cash", p_cash_tendered: 40000 }));
   });
 
   it("blocks origin before reading the account", async () => {

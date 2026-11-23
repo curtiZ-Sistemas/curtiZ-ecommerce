@@ -30,7 +30,7 @@ import { PanelDrawer } from "./panel-drawer";
 import { usePanelConfirm } from "./panel-prompt";
 import { Code, Kpi, KpiStrip, SectionHeader, StateMessage, StatusLabel, type UiTone } from "./panel-ui";
 import React from "react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type MetricName =
   | "newOrders"
@@ -355,6 +355,7 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
   }
 
   return (
+    <OperationalErrorContext.Provider value={{ error, clearError: () => setError("") }}>
     <div className="operational-console">
       {data.demo ? (
         <p className="admin-feedback info operational-banner" role="status">
@@ -392,8 +393,15 @@ export function OperationalConsole({ section, initialQuery = "", initialStatus =
         <Dashboard metrics={data.metrics} data={data} />
       )}
     </div>
+    </OperationalErrorContext.Provider>
   );
 }
+
+// Erro da ação aparece dentro do modal aberto, não só no banner atrás dele.
+const OperationalErrorContext = createContext<{ error: string; clearError: () => void }>({
+  error: "",
+  clearError: () => undefined
+});
 
 function Dashboard({ metrics, data }: { metrics: OperationMetrics; data: OperationsResponse }) {
   const queues: Array<[string, number, string]> = [
@@ -1612,6 +1620,8 @@ function OperationalActionDialog({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   children: React.ReactNode;
 }) {
+  const { error: actionError, clearError } = useContext(OperationalErrorContext);
+  useEffect(() => { clearError(); }, []);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   const pendingRef = useRef(pending);
@@ -1680,13 +1690,14 @@ function OperationalActionDialog({
         <form onSubmit={onSubmit}>
           <p id="operational-dialog-description">{description}</p>
           <div className="operational-dialog-fields">{children}</div>
+          {actionError ? <p className="admin-modal-error" role="alert">{actionError}</p> : null}
           <footer>
             <button className="secondary-button" type="button" onClick={onClose} disabled={pending}>
               Cancelar
             </button>
             <button className="primary-button" type="submit" disabled={pending}>
               {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
-              {pending ? "Processando" : submitLabel}
+              {pending ? "Processando…" : submitLabel}
             </button>
           </footer>
         </form>
