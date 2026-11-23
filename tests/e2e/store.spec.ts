@@ -1124,6 +1124,7 @@ test("escolhe cartão de crédito no checkout do kit e vê o formulário do Merc
     return route.fulfill({ json: { ok: true, order } });
   });
   await page.goto(`/representante/comprar-kit/checkout?kit=${kitId}&ficha=standard&qtd=1`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Recusar opcionais" }).click();
   await expect(page.getByText("Vermelho")).toHaveCount(0);
   await expect(page.getByRole("radio", { name: /Pagar agora/ })).toBeChecked();
   await page.locator('label:has(input[name="kit-prepay-method"][value="credit_card"])').first().click();
