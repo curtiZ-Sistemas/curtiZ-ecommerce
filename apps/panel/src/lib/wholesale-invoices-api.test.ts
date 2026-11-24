@@ -95,7 +95,9 @@ describe("notas de atacado: criar", () => {
     expect((await post(create({ buyer: buyer({ registration: "123" }) }))).status).toBe(400);
     const exempt = await post(create({ buyer: buyer({ registration: "Isenta" }) }));
     expect(exempt.status).toBe(422);
-    expect(await exempt.json()).toMatchObject({ code: "exempt_fiscal_rule_required", message: expect.stringContaining("Para revenda") });
+    const body = await exempt.json() as { code: string; message: string };
+    expect(body.code).toBe("exempt_fiscal_rule_required");
+    expect(body.message).toContain("Para revenda");
     expect(state.rpc).not.toHaveBeenCalled();
   });
 
