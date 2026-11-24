@@ -177,8 +177,8 @@ export function KitStep({ offers, kitId, template, onKit, onTemplate }: {
 
 export type LookupState = "idle" | "loading" | "found" | "missing" | "failed";
 
-export function ClientStep({ buyer, lookup, onChange }: {
-  buyer: WholesaleBuyer; lookup: LookupState; onChange: (patch: Partial<WholesaleBuyer>) => void;
+export function ClientStep({ buyer, lookup, onChange, onRetryLookup }: {
+  buyer: WholesaleBuyer; lookup: LookupState; onChange: (patch: Partial<WholesaleBuyer>) => void; onRetryLookup?: () => void;
 }) {
   const cnpjId = useId();
   const digits = onlyDigits(buyer.document);
@@ -205,10 +205,15 @@ export function ClientStep({ buyer, lookup, onChange }: {
         : lookup === "failed" ? "Não foi possível consultar agora. Preencha os dados abaixo."
         : "Digite o CNPJ para preencher os dados da empresa."}
     </p>
+    {(lookup === "failed" || lookup === "missing") && onRetryLookup && <button type="button" className="secondary-button" onClick={onRetryLookup}>Consultar novamente</button>}
     {outside && <p className="wholesale-alert" role="alert">Só emitimos nota de atacado para empresas de Minas Gerais. Esta empresa é de {buyer.state}.</p>}
     <div className="wholesale-fields">
       {field("Razão social", "name", { wide: true, max: 180 })}
-      {field("Inscrição estadual", "registration", { required: false, mode: "numeric", max: 14, hint: "Sem inscrição, a nota sai para cliente não contribuinte." })}
+      <label><span>Inscrição estadual (obrigatória)</span>
+        <input value={buyer.registration} maxLength={18} autoComplete="off" placeholder="13 dígitos ou ISENTA"
+          onChange={event => onChange({ registration: event.target.value.toUpperCase() })} />
+        <small>Informe os 13 dígitos de MG ou ISENTA. Emissão para isentos depende de regra fiscal específica aprovada.</small>
+      </label>
       <label><span>CEP</span><input inputMode="numeric" autoComplete="off" value={formatCep(buyer.postalCode)}
         onChange={event => onChange({ postalCode: onlyDigits(event.target.value).slice(0, 8) })} /></label>
       {field("Rua", "street", { wide: true, max: 180 })}
@@ -229,7 +234,9 @@ export function buyerProblem(buyer: WholesaleBuyer): string | null {
   if (!isValidCnpj(buyer.document)) return "Informe um CNPJ válido.";
   if (buyer.state !== "MG") return "Só emitimos para empresas de Minas Gerais.";
   if (buyer.name.trim().length < 2) return "Informe a razão social.";
-  if (buyer.registration && !/^\d{2,14}$/u.test(buyer.registration)) return "A inscrição estadual deve ter só números.";
+  const registration = buyer.registration.trim().toUpperCase();
+  if (registration === "ISENTA") return "Emissão para inscrição estadual isenta ainda não tem regra fiscal aprovada. Consulte a contabilidade.";
+  if (!/^\d{13}$/u.test(registration.replace(/[.\-\s]/gu, ""))) return "Informe os 13 dígitos da inscrição estadual de MG ou ISENTA.";
   if (!/^3\d{7}$/u.test(buyer.postalCode)) return "Informe um CEP de Minas Gerais.";
   if (!buyer.street.trim() || !buyer.number.trim() || !buyer.district.trim() || !buyer.city.trim()) return "Complete o endereço.";
   return null;
@@ -334,7 +341,7 @@ export function WholesaleInvoiceManager() {
   const [result, setResult] = useState<Extract<IssueEvent, { type: "result" }> | null>(null);
   const [issuingId, setIssuingId] = useState("");
   const key = useRef("");
-  const lookedUp = useRef("");
+  const [lookupRetry, setLookupRetry] = useState(0);
   const titleId = useId();
 
   const load = useCallback(async () => {
@@ -352,19 +359,19 @@ export function WholesaleInvoiceManager() {
 
   const cnpj = wizard?.buyer.document ?? "";
   useEffect(() => {
-    if (!isValidCnpj(cnpj) || lookedUp.current === cnpj) return;
-    lookedUp.current = cnpj;
+    if (!isValidCnpj(cnpj)) { setLookup("idle"); return; }
     setLookup("loading");
     const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetch(`/api/fiscal/cnpj?cnpj=${cnpj}`, { cache: "no-store", signal: controller.signal });
         const body = record(await response.json());
-        if (!response.ok || !body) { setLookup("failed"); return; }
+        if (controller.signal.aborted) return;
+        if (!response.ok || !body || body.unavailable === true) { setLookup("failed"); return; }
         if (body.found !== true) { setLookup("missing"); return; }
         const a = record(body.address) ?? {};
         setWizard(current => current && current.buyer.document === cnpj ? { ...current, buyer: {
-          ...current.buyer, name: str(body.name) || current.buyer.name, postalCode: str(a.postal_code) || current.buyer.postalCode,
+          ...current.buyer, registration: current.buyer.registration || str(body.registration), name: str(body.name) || current.buyer.name, postalCode: str(a.postal_code) || current.buyer.postalCode,
           street: str(a.street) || current.buyer.street, number: str(a.number) || current.buyer.number,
           complement: str(a.complement), district: str(a.district) || current.buyer.district,
           city: str(a.city) || current.buyer.city, state: str(a.state) || current.buyer.state
@@ -373,11 +380,10 @@ export function WholesaleInvoiceManager() {
       } catch { if (!controller.signal.aborted) setLookup("failed"); }
     })();
     return () => controller.abort();
-  }, [cnpj]);
+  }, [cnpj, lookupRetry]);
 
   function open() {
     key.current = crypto.randomUUID();
-    lookedUp.current = "";
     setLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
     setWizard(newWizard());
   }
@@ -453,7 +459,7 @@ export function WholesaleInvoiceManager() {
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "create", key: key.current, kitId: kit.kitId, template: template.code, quantity: wizard.quantity,
-          unitPriceInCents: cents, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), registration: b.registration,
+          unitPriceInCents: cents, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), registration: b.registration.trim().toUpperCase().replace(/[.\-\s]/gu, ""),
             address: { state: b.state, postal_code: b.postalCode, street: b.street.trim(), number: b.number.trim(),
               district: b.district.trim(), city: b.city.trim(), complement: b.complement.trim() } } }) });
       const body = record(await response.json());
@@ -510,7 +516,7 @@ export function WholesaleInvoiceManager() {
         <div className="wholesale-body">
           {wizard.step === 1 && <KitStep offers={offers} kitId={wizard.kitId} template={wizard.template}
             onKit={id => patch({ kitId: id, template: "", price: "" })} onTemplate={code => patch({ template: code, price: "" })} />}
-          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} onChange={value => patch({ buyer: { ...wizard.buyer, ...value } })} />}
+          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={value => patch({ buyer: { ...(value.document !== undefined && value.document !== wizard.buyer.document ? emptyBuyer : wizard.buyer), ...value } })} />}
           {wizard.step === 3 && template && kit && <PaymentStep template={template} kitName={kit.name} quantity={wizard.quantity} price={wizard.price}
             method={wizard.method} buyerName={wizard.buyer.name} onQuantity={value => patch({ quantity: value })}
             onPrice={value => patch({ price: value })} onMethod={value => patch({ method: value })} />}

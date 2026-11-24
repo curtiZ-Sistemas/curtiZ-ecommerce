@@ -23,7 +23,7 @@ import { GET, POST } from "../app/api/fiscal/wholesale-invoices/route";
 
 const ids = { key: "11111111-1111-4111-8111-111111111111", kit: "22222222-2222-4222-8222-222222222222", invoice: "33333333-3333-4333-8333-333333333333" };
 const buyer = (overrides: Record<string, unknown> = {}, state_ = "MG") => ({
-  document: "11222333000181", name: "Loja Teste LTDA", registration: "", ...overrides,
+  document: "11222333000181", name: "Loja Teste LTDA", registration: "0012345678900", ...overrides,
   address: { state: state_, postal_code: "30110100", street: "Rua Teste", number: "10", district: "Centro", city: "Belo Horizonte", complement: "" }
 });
 const create = (overrides: Record<string, unknown> = {}) => ({
@@ -87,6 +87,13 @@ describe("notas de atacado: criar", () => {
     const outside = await post(create({ buyer: buyer({}, "SP") }));
     expect(outside.status).toBe(422);
     expect(((await outside.json()) as { code: string }).code).toBe("buyer_outside_mg");
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it("recusa IE vazia, incompleta e isenta sem regra fiscal aprovada", async () => {
+    expect((await post(create({ buyer: buyer({ registration: "" }) }))).status).toBe(400);
+    expect((await post(create({ buyer: buyer({ registration: "123" }) }))).status).toBe(400);
+    expect((await post(create({ buyer: buyer({ registration: "Isenta" }) }))).status).toBe(422);
     expect(state.rpc).not.toHaveBeenCalled();
   });
 

@@ -36,12 +36,12 @@ describe("passo 1: kit e ficha", () => {
 });
 
 describe("passo 2: cliente por CNPJ", () => {
-  it("aplica a máscara, mostra o estado da consulta e a IE como opcional", () => {
+  it("aplica a máscara, mostra o estado da consulta e a IE como obrigatória", () => {
     const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA" };
     const html = renderToStaticMarkup(<ClientStep buyer={buyer} lookup="found" onChange={noop} />);
     expect(html).toContain("11.222.333/0001-81");
     expect(html).toContain("Dados da empresa preenchidos");
-    expect(html).toContain("Inscrição estadual (opcional)");
+    expect(html).toContain("Inscrição estadual (obrigatória)");
   });
 
   it("bloqueia empresa fora de MG e CNPJ inválido com avisos claros", () => {
@@ -53,12 +53,13 @@ describe("passo 2: cliente por CNPJ", () => {
     expect(buyerProblem({ ...emptyBuyer, document: "11222333000182" })).toBe("Informe um CNPJ válido.");
   });
 
-  it("libera o passo quando o cadastro está completo, com ou sem inscrição estadual", () => {
+  it("libera o passo quando o cadastro está completo, com inscrição estadual de 13 dígitos", () => {
     const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA", postalCode: "30110100", street: "Rua A", number: "1", district: "Centro", city: "Belo Horizonte" };
-    expect(buyerProblem(buyer)).toBeNull();
+    expect(buyerProblem(buyer)).toContain("13 dígitos");
+    expect(buyerProblem({ ...buyer, registration: "ISENTA" })).toContain("regra fiscal aprovada");
     expect(buyerProblem({ ...buyer, registration: "0012345678900" })).toBeNull();
-    expect(buyerProblem({ ...buyer, registration: "12.3" })).toBe("A inscrição estadual deve ter só números.");
-    expect(buyerProblem({ ...buyer, postalCode: "01310100" })).toBe("Informe um CEP de Minas Gerais.");
+    expect(buyerProblem({ ...buyer, registration: "12.3" })).toContain("13 dígitos");
+    expect(buyerProblem({ ...buyer, registration: "0012345678900", postalCode: "01310100" })).toBe("Informe um CEP de Minas Gerais.");
   });
 });
 

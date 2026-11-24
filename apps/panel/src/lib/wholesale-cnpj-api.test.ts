@@ -42,14 +42,20 @@ describe("consulta de CNPJ", () => {
   });
 
   it("diz que não achou quando o CNPJ não existe e cai no preenchimento manual quando a consulta falha", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 404 }));
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 404 })).mockResolvedValueOnce(new Response("{}", { status: 404 }));
     expect(await (await call("11222333000181")).json()).toMatchObject({ found: false });
     fetchMock.mockRejectedValueOnce(new Error("timeout"));
     const failed = await call("11222333000181");
-    expect(failed.status).toBe(502);
+    expect(failed.status).toBe(200);
     expect(((await failed.json()) as { message: string }).message).toContain("manualmente");
     fetchMock.mockResolvedValueOnce(new Response("oops", { status: 500 }));
-    expect((await call("11222333000181")).status).toBe(502);
+    expect(await (await call("11222333000181")).json()).toMatchObject({ unavailable: true });
+  });
+
+  it("usa CNPJ.ws como alternativa à BrasilAPI e sugere IE ativa de MG", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 502 })).mockResolvedValueOnce(new Response(JSON.stringify({ razao_social: "LOJA TESTE", estabelecimento: { cnpj: "11222333000181", situacao_cadastral: "Ativa", estado: { sigla: "MG" }, cidade: { nome: "Belo Horizonte" }, cep: "30110100", tipo_logradouro: "Rua", logradouro: "Teste", numero: "1", bairro: "Centro", inscricoes_estaduais: [{ ativo: true, inscricao_estadual: "0012345678900", estado: { sigla: "MG" } }] } })));
+    expect(await (await call("11222333000181")).json()).toMatchObject({ found: true, registration: "0012345678900", address: { state: "MG", city: "Belo Horizonte" } });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://publica.cnpj.ws/cnpj/11222333000181");
   });
 
   it("só atende quem tem sessão com MFA e a permissão de emitir", async () => {

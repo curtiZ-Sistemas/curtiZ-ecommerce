@@ -12,7 +12,7 @@ import { issueWholesaleKitInvoice } from "@/lib/wholesale-kit-invoice";
 const text = (max: number) => z.string().trim().min(1).max(max);
 const buyer = z.object({
   document: z.string().regex(/^[0-9]{14}$/u), name: z.string().trim().min(2).max(180),
-  registration: z.string().regex(/^([0-9]{2,14})?$/u),
+  registration: z.string().trim().toUpperCase().regex(/^(?:[0-9]{13}|ISENTA)$/u),
   address: z.object({
     state: z.string().length(2), postal_code: z.string().regex(/^[0-9]{8}$/u), street: text(180), number: text(30),
     district: text(100), city: text(100), complement: z.string().trim().max(100).default("")
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     const item = parsed.data;
 
     if (item.action === "create") {
+      if (item.buyer.registration === "ISENTA") return send({ code: "exempt_fiscal_rule_required", message: "Emissão para inscrição estadual isenta ainda não tem regra fiscal aprovada. Consulte a contabilidade." }, 422);
       if (!isValidCnpj(item.buyer.document)) return send({ code: "cnpj_invalid", message: cnpjInvalid }, 422);
       if (item.buyer.address.state.toUpperCase() !== "MG") return send({ code: "buyer_outside_mg", message: outsideMg }, 422);
       const created = await db.rpc("create_wholesale_kit_invoice", {
@@ -83,7 +84,8 @@ export async function POST(request: NextRequest) {
       const invoice = record(created.data);
       if (created.error || !invoice) {
         const reason = databaseReasons[created.error?.message ?? ""];
-        if (reason) return send({ message: reason[1] }, reason[0]);
+        if (reason) return send({ code: created.error?.message, message: reason[1] }, reason[0]);
+        if (created.error?.code === "42501") return send({ code: "permission_denied", message: "Sua conta não tem permissão fiscal para emitir esta nota. Procure o administrador." }, 403);
         return send({ message: "Não foi possível criar a nota." }, created.error?.code === "42501" ? 403 : 503);
       }
       return send({ invoice });
