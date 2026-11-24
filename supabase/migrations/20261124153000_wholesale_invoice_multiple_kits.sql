@@ -57,7 +57,7 @@ begin
   if coalesce(v_address ->> 'state', '') <> 'MG' or coalesce(v_address ->> 'postal_code', '') !~ '^3[0-9]{7}$' then
     raise exception 'wholesale_buyer_outside_mg' using errcode = '23514';
   end if;
-  if length(v_name) not between 2 and 180 or (v_registration !~ '^[0-9]{13}
+  if length(v_name) not between 2 and 180 or (v_registration !~ '^[0-9]{13}$')
     or length(btrim(coalesce(v_address ->> 'street', ''))) not between 1 and 180
     or length(btrim(coalesce(v_address ->> 'number', ''))) not between 1 and 30
     or length(btrim(coalesce(v_address ->> 'district', ''))) not between 1 and 100
@@ -70,21 +70,6 @@ begin
       'street', btrim(v_address ->> 'street'), 'number', btrim(v_address ->> 'number'),
       'district', btrim(v_address ->> 'district'), 'city', btrim(v_address ->> 'city'),
       'complement', btrim(coalesce(v_address ->> 'complement', ''))));
-
-)
-    or length(btrim(coalesce(v_address ->> 'street', ''))) not between 1 and 180
-    or length(btrim(coalesce(v_address ->> 'number', ''))) not between 1 and 30
-    or length(btrim(coalesce(v_address ->> 'district', ''))) not between 1 and 100
-    or length(btrim(coalesce(v_address ->> 'city', ''))) not between 1 and 100
-    or length(btrim(coalesce(v_address ->> 'complement', ''))) > 100 then
-    raise exception 'invalid_wholesale_invoice' using errcode = '22023';
-  end if;
-  v_buyer := jsonb_build_object('document', v_document, 'name', v_name, 'registration', v_registration,
-    'address', jsonb_build_object('state', 'MG', 'postal_code', v_address ->> 'postal_code',
-      'street', btrim(v_address ->> 'street'), 'number', btrim(v_address ->> 'number'),
-      'district', btrim(v_address ->> 'district'), 'city', btrim(v_address ->> 'city'),
-      'complement', btrim(coalesce(v_address ->> 'complement', ''))));
-
 
   perform pg_advisory_xact_lock(hashtextextended('wholesale-kit-invoice:' || p_key::text, 0));
   select * into v_row from private.wholesale_kit_invoices where idempotency_key=p_key;
