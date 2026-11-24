@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     const item = parsed.data;
 
     if (item.action === "create") {
-      if (item.buyer.registration === "ISENTA") return send({ code: "exempt_fiscal_rule_required", message: "Emissão para inscrição estadual isenta ainda não tem regra fiscal aprovada. Consulte a contabilidade." }, 422);
+      if (item.buyer.registration === "ISENTA") return send({ code: "exempt_fiscal_rule_required", message: "Para revenda, este fluxo exige inscrição estadual ativa de MG. Consulte o cadastro do CNPJ no SINTEGRA; não contribuinte não pode ser emitido como revenda neste fluxo." }, 422);
       if (!isValidCnpj(item.buyer.document)) return send({ code: "cnpj_invalid", message: cnpjInvalid }, 422);
       if (item.buyer.address.state.toUpperCase() !== "MG") return send({ code: "buyer_outside_mg", message: outsideMg }, 422);
       const created = await db.rpc("create_wholesale_kit_invoice", {

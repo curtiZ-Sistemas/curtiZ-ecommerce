@@ -93,7 +93,9 @@ describe("notas de atacado: criar", () => {
   it("recusa IE vazia, incompleta e isenta sem regra fiscal aprovada", async () => {
     expect((await post(create({ buyer: buyer({ registration: "" }) }))).status).toBe(400);
     expect((await post(create({ buyer: buyer({ registration: "123" }) }))).status).toBe(400);
-    expect((await post(create({ buyer: buyer({ registration: "Isenta" }) }))).status).toBe(422);
+    const exempt = await post(create({ buyer: buyer({ registration: "Isenta" }) }));
+    expect(exempt.status).toBe(422);
+    expect(await exempt.json()).toMatchObject({ code: "exempt_fiscal_rule_required", message: expect.stringContaining("Para revenda") });
     expect(state.rpc).not.toHaveBeenCalled();
   });
 

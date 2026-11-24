@@ -212,8 +212,9 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup }: {
       <label><span>Inscrição estadual (obrigatória)</span>
         <input value={buyer.registration} maxLength={18} autoComplete="off" placeholder="13 dígitos ou ISENTA"
           onChange={event => onChange({ registration: event.target.value.toUpperCase() })} />
-        <small>Informe os 13 dígitos de MG ou ISENTA. Emissão para isentos depende de regra fiscal específica aprovada.</small>
+        <small>Informe os 13 dígitos da IE ativa de MG. Se não souber, <a href="https://www.fazenda.mg.gov.br/empresas/Cadastro/cadastro/consultapublica.html" target="_blank" rel="noopener noreferrer">consulte pelo CNPJ no SINTEGRA</a>.</small>
       </label>
+      {buyer.registration.trim().toUpperCase() === "ISENTA" && <p className="wholesale-alert wide" role="alert">O atacado é destinado à revenda. Confira a IE do comprador no SINTEGRA antes de continuar.</p>}
       <label><span>CEP</span><input inputMode="numeric" autoComplete="off" value={formatCep(buyer.postalCode)}
         onChange={event => onChange({ postalCode: onlyDigits(event.target.value).slice(0, 8) })} /></label>
       {field("Rua", "street", { wide: true, max: 180 })}
@@ -235,8 +236,8 @@ export function buyerProblem(buyer: WholesaleBuyer): string | null {
   if (buyer.state !== "MG") return "Só emitimos para empresas de Minas Gerais.";
   if (buyer.name.trim().length < 2) return "Informe a razão social.";
   const registration = buyer.registration.trim().toUpperCase();
-  if (registration === "ISENTA") return "Emissão para inscrição estadual isenta ainda não tem regra fiscal aprovada. Consulte a contabilidade.";
-  if (!/^\d{13}$/u.test(registration.replace(/[.\-\s]/gu, ""))) return "Informe os 13 dígitos da inscrição estadual de MG ou ISENTA.";
+  if (registration === "ISENTA") return "Para revenda, este fluxo exige inscrição estadual ativa de MG. Consulte o cadastro do CNPJ no SINTEGRA; não contribuinte não pode ser emitido como revenda neste fluxo.";
+  if (!/^\d{13}$/u.test(registration.replace(/[.\-\s]/gu, ""))) return "Informe os 13 dígitos da inscrição estadual ativa de MG.";
   if (!/^3\d{7}$/u.test(buyer.postalCode)) return "Informe um CEP de Minas Gerais.";
   if (!buyer.street.trim() || !buyer.number.trim() || !buyer.district.trim() || !buyer.city.trim()) return "Complete o endereço.";
   return null;

@@ -12,7 +12,7 @@ const title = (value: string) => value.toLowerCase().replace(/(^|\s)\S/gu, lette
 const manual = "A consulta do CNPJ está indisponível. Preencha os dados manualmente.";
 
 /**
- * Preenche razão social e endereço da empresa pelo CNPJ (BrasilAPI, dado público da Receita).
+ * Preenche razão social, endereço e, quando disponível, IE ativa pelo CNPJ (dados públicos).
  * Só para quem pode emitir nota de atacado. Se a consulta falhar, a tela segue com preenchimento manual.
  */
 export async function GET(request: NextRequest) {
@@ -25,34 +25,14 @@ export async function GET(request: NextRequest) {
   const cnpj = onlyDigits(request.nextUrl.searchParams.get("cnpj") ?? "");
   if (!/^\d{14}$/u.test(cnpj) || !isValidCnpj(cnpj)) return send({ message: "O CNPJ informado não é válido." }, 400);
   // Host fixo; o caminho recebe só os 14 dígitos já validados.
-  const target = new URL("https://brasilapi.com.br/");
-  target.pathname = `/api/cnpj/v1/${encodeURIComponent(cnpj)}`;
   let primaryMissing = false;
+  const target = new URL("https://publica.cnpj.ws/");
+  target.pathname = `/cnpj/${encodeURIComponent(cnpj)}`;
   try {
     const response = await fetch(target, {
-      headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000), redirect: "error"
+      headers: { accept: "application/json" }, signal: AbortSignal.timeout(3000), redirect: "error"
     });
     primaryMissing = response.status === 404;
-    const data = record(response.ok ? await response.json() : null);
-    if (!data || !text(data.razao_social) || !text(data.uf)) throw new Error("lookup_unavailable");
-    const street = [text(data.descricao_tipo_de_logradouro), text(data.logradouro)].filter(Boolean).join(" ");
-    return send({
-      found: true, name: text(data.razao_social), status: title(text(data.descricao_situacao_cadastral)),
-      active: text(data.descricao_situacao_cadastral).toUpperCase() === "ATIVA",
-      address: {
-        state: text(data.uf).toUpperCase(), postal_code: onlyDigits(text(data.cep)).slice(0, 8), street: title(street),
-        number: text(data.numero), complement: title(text(data.complemento)), district: title(text(data.bairro)), city: title(text(data.municipio))
-      }
-    });
-  } catch { /* A second independent public provider covers failures and timeouts. */ }
-
-  const fallback = new URL("https://publica.cnpj.ws/");
-  fallback.pathname = `/cnpj/${encodeURIComponent(cnpj)}`;
-  try {
-    const response = await fetch(fallback, {
-      headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000), redirect: "error"
-    });
-    if (response.status === 404 && primaryMissing) return send({ found: false, message: "CNPJ não encontrado nas bases consultadas." });
     const data = record(response.ok ? await response.json() : null);
     const establishment = record(data?.estabelecimento);
     if (!data || !establishment || onlyDigits(text(establishment.cnpj)) !== cnpj || !text(data.razao_social)) throw new Error("lookup_unavailable");
@@ -64,12 +44,31 @@ export async function GET(request: NextRequest) {
     const status = text(establishment.situacao_cadastral);
     return send({
       found: true, name: text(data.razao_social), status: title(status), active: status.toUpperCase() === "ATIVA",
-      ...(state === "MG" && activeMg.length === 1 ? { registration: activeMg[0] } : {}),
+      ...(status.toUpperCase() === "ATIVA" && state === "MG" && activeMg.length === 1 ? { registration: activeMg[0] } : {}),
       address: {
         state, postal_code: onlyDigits(text(establishment.cep)).slice(0, 8),
         street: title([text(establishment.tipo_logradouro), text(establishment.logradouro)].filter(Boolean).join(" ")),
         number: text(establishment.numero), complement: title(text(establishment.complemento)),
         district: title(text(establishment.bairro)), city: title(text(record(establishment.cidade)?.nome))
+      }
+    });
+  } catch { /* BrasilAPI remains available if the registration provider fails or is rate limited. */ }
+  const fallback = new URL("https://brasilapi.com.br/");
+  fallback.pathname = `/api/cnpj/v1/${encodeURIComponent(cnpj)}`;
+  try {
+    const response = await fetch(fallback, {
+      headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000), redirect: "error"
+    });
+    if (response.status === 404 && primaryMissing) return send({ found: false, message: "CNPJ não encontrado nas bases consultadas." });
+    const data = record(response.ok ? await response.json() : null);
+    if (!data || !text(data.razao_social) || !text(data.uf)) throw new Error("lookup_unavailable");
+    const street = [text(data.descricao_tipo_de_logradouro), text(data.logradouro)].filter(Boolean).join(" ");
+    return send({
+      found: true, name: text(data.razao_social), status: title(text(data.descricao_situacao_cadastral)),
+      active: text(data.descricao_situacao_cadastral).toUpperCase() === "ATIVA",
+      address: {
+        state: text(data.uf).toUpperCase(), postal_code: onlyDigits(text(data.cep)).slice(0, 8), street: title(street),
+        number: text(data.numero), complement: title(text(data.complemento)), district: title(text(data.bairro)), city: title(text(data.municipio))
       }
     });
   } catch { /* Do not leak provider errors or make up company data. */ }

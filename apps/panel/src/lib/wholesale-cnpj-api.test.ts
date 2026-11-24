@@ -21,7 +21,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("consulta de CNPJ", () => {
   it("preenche razão social e endereço pela BrasilAPI, sem enviar dados do usuário", async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 429 })).mockResolvedValueOnce(new Response(JSON.stringify({
       razao_social: "LOJA TESTE LTDA", descricao_situacao_cadastral: "ATIVA", uf: "MG", cep: "30110100",
       descricao_tipo_de_logradouro: "RUA", logradouro: "DOS TESTES", numero: "10", complemento: "SALA 2", bairro: "CENTRO", municipio: "BELO HORIZONTE"
     }), { status: 200 }));
@@ -30,7 +30,7 @@ describe("consulta de CNPJ", () => {
       found: true, name: "LOJA TESTE LTDA", status: "Ativa", active: true,
       address: { state: "MG", postal_code: "30110100", street: "Rua Dos Testes", number: "10", complement: "Sala 2", district: "Centro", city: "Belo Horizonte" }
     });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(String(url)).toBe("https://brasilapi.com.br/api/cnpj/v1/11222333000181");
     expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.stringify(init)).not.toMatch(/cookie|authorization/iu);
@@ -52,10 +52,11 @@ describe("consulta de CNPJ", () => {
     expect(await (await call("11222333000181")).json()).toMatchObject({ unavailable: true });
   });
 
-  it("usa CNPJ.ws como alternativa à BrasilAPI e sugere IE ativa de MG", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 502 })).mockResolvedValueOnce(new Response(JSON.stringify({ razao_social: "LOJA TESTE", estabelecimento: { cnpj: "11222333000181", situacao_cadastral: "Ativa", estado: { sigla: "MG" }, cidade: { nome: "Belo Horizonte" }, cep: "30110100", tipo_logradouro: "Rua", logradouro: "Teste", numero: "1", bairro: "Centro", inscricoes_estaduais: [{ ativo: true, inscricao_estadual: "0012345678900", estado: { sigla: "MG" } }] } })));
+  it("prioriza CNPJ.ws e sugere IE ativa de MG", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ razao_social: "LOJA TESTE", estabelecimento: { cnpj: "11222333000181", situacao_cadastral: "Ativa", estado: { sigla: "MG" }, cidade: { nome: "Belo Horizonte" }, cep: "30110100", tipo_logradouro: "Rua", logradouro: "Teste", numero: "1", bairro: "Centro", inscricoes_estaduais: [{ ativo: true, inscricao_estadual: "0012345678900", estado: { sigla: "MG" } }] } })));
     expect(await (await call("11222333000181")).json()).toMatchObject({ found: true, registration: "0012345678900", address: { state: "MG", city: "Belo Horizonte" } });
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://publica.cnpj.ws/cnpj/11222333000181");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://publica.cnpj.ws/cnpj/11222333000181");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("só atende quem tem sessão com MFA e a permissão de emitir", async () => {
