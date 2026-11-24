@@ -90,7 +90,10 @@ const reasons: Record<string, string> = {
   invoice_recipient_mismatch: "Os dados do cliente no Bling não conferem com os desta nota.",
   invoice_rejected_by_sefaz: "A SEFAZ recusou a nota. Solicite revisão fiscal pelo suporte. A nota não será reenviada às cegas.",
   invoice_cancelled_in_bling: "A nota foi cancelada no Bling. Cancele aqui para devolver as fichas ao estoque.",
-  validation_error: "O Bling recusou algum dado da nota. Confira o endereço e a inscrição estadual do cliente.",
+  validation_error: "O Bling recusou a operação. A causa foi registrada para diagnóstico; não crie outra venda enquanto esta estiver pendente.",
+  draft_generation_rejected: "O Bling recusou a geração da NF-e a partir da venda. A venda está preservada. O sistema verificará se existe uma nota antes de qualquer nova operação.",
+  draft_lookup_unconfirmed: "O Bling não confirmou o vínculo da nota com a venda. A operação foi preservada para evitar duplicidade.",
+  duplicate_external_invoice: "Mais de uma nota está vinculada à venda. A integração bloqueou a duplicidade; solicite suporte.",
   buyer_outside_mg: "Só emitimos nota de atacado para empresas de Minas Gerais.",
   storage_unavailable: "O sistema não conseguiu salvar o andamento. Tente de novo em instantes.",
   unexpected_error: "A nota não foi emitida por um erro inesperado. Tente de novo."
@@ -132,9 +135,9 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel }: {
         </div>
         <strong className="wholesale-row-total">{formatBRL(invoice.totalInCents)}</strong>
         <div className="wholesale-row-status">
-          <span className={`wholesale-badge ${status.tone}`}>{status.label}</span>
+          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.cancelPending ? "Cancelamento pendente" : status.label}</span>
           {invoice.invoiceNumber && <span>NF-e nº {invoice.invoiceNumber}</span>}
-          {open && invoice.errorCode && <span className="wholesale-row-reason">{wholesaleReason(invoice.errorCode)}</span>}
+          {(open || invoice.cancelPending) && invoice.errorCode && <span className="wholesale-row-reason">{wholesaleReason(invoice.errorCode)}</span>}
         </div>
         <div className="wholesale-row-actions">
           <InvoiceActions authorized={invoice.authorized} blingInvoiceId={invoice.invoiceId}

@@ -30,6 +30,30 @@ const saoPauloDate = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "America
 const SEND_BLOCKED_SITUATIONS = [2, 4, 9, 11];
 const WAITING_SITUATIONS = [3, 8, 10];
 
+// GET /nfe returns summary objects, not the complete invoice. The order
+// reference is a detail field; verify it before adopting or deleting a note.
+async function findWholesaleDraft(provider: BlingClient, reference: string): Promise<UnknownRecord | null> {
+  const result = row(await provider.request(`/nfe?numeroLoja=${encodeURIComponent(reference)}&pagina=1&limite=100`));
+  if (!Array.isArray(result.data) || result.data.length >= 100) throw new BlingError("draft_lookup_unconfirmed", 409);
+  const matches: UnknownRecord[] = [];
+  for (const entry of result.data) {
+    const id = positiveId(row(entry).id);
+    if (!id) throw new BlingError("draft_lookup_unconfirmed", 409);
+    const detail = row(row(await provider.request(`/nfe/${id}`)).data);
+    if (positiveId(detail.id) !== id || text(detail.numeroPedidoLoja || detail.numeroLoja) !== reference)
+      throw new BlingError("draft_lookup_unconfirmed", 409);
+    matches.push(detail);
+  }
+  if (matches.length > 1) throw new BlingError("duplicate_external_invoice", 409);
+  return matches[0] ?? null;
+}
+
+function logWholesaleProviderError(event: string, invoiceId: string, stage: string, error: unknown) {
+  logServerEvent("error", event, { invoiceId, stage, reason: wholesaleFailureCode(error),
+    ...(error instanceof BlingError ? { providerStatus: error.status, validationCodes: error.validationCodes,
+      validationFields: error.validationFields, validationTopics: error.validationHints } : {}) });
+}
+
 /** Fixed, non-personal reason stored with a failed or waiting invoice. */
 export function wholesaleFailureCode(error: unknown): string {
   if (error instanceof BlingError) return /^[a-z0-9_]{3,80}$/u.test(error.code) ? error.code : "bling_error";
@@ -68,9 +92,11 @@ export async function issueWholesaleKitInvoice(input: {
   const claim = async (operation: string, hash: string | null = null) =>
     await call(db, "claim_wholesale_kit_invoice_write", { p_id: input.invoiceId, p_operation: operation, p_expected_hash: hash }) === true;
   const readInvoice = async (invoiceId: number) => row(row(await provider.request(`/nfe/${invoiceId}`)).data);
+  let stage = "initial";
 
   try {
     if (environment.APP_ENV !== "production") return await waiting("bling_not_production");
+    stage = "fiscal_scope";
     if (job.fiscalCurrent !== true) throw new BlingError("wholesale_grade_changed", 409);
     const reference = `ATACADO-${input.invoiceId}`;
     const billing = row(job.fiscalAddress);
@@ -136,6 +162,7 @@ export async function issueWholesaleKitInvoice(input: {
       total: (item.unitPriceInCents * item.quantity) / 100, discount_amount: 0
     }));
 
+    stage = "sale_lookup";
     saleId ??= await findBlingOrder(provider, reference);
     if (!saleId) {
       step("contact");
@@ -189,7 +216,14 @@ export async function issueWholesaleKitInvoice(input: {
       return await waiting("bling_invoice_sync_disabled");
 
     step("draft");
+    stage = "draft_generation";
     draftId ??= positiveId(row(sale.notaFiscal).id);
+    let independentlyLinked = false;
+    // A previous POST may have created an invoice without updating the sale link.
+    if (!draftId && job.draftClaimed === true) {
+      const existing = await findWholesaleDraft(provider, reference);
+      if (existing) { draftId = positiveId(existing.id); independentlyLinked = true; }
+    }
     if (!draftId) {
       if (!rows(sale.itens).length || rows(sale.itens).some(line => Number(row(line.naturezaOperacao).id) !== natureId)) throw scopeError();
       // The POST may have succeeded even when the response was lost or wrapped differently.
@@ -199,7 +233,7 @@ export async function issueWholesaleKitInvoice(input: {
         try {
           const generated = row(await provider.request(`/pedidos/vendas/${saleId}/gerar-nfe`, { method: "POST" }));
           draftId = positiveId(generated.idNotaFiscal) ?? positiveId(row(generated.data).idNotaFiscal);
-        } catch (error) { generationError = error; }
+        } catch (error) { generationError = error; logWholesaleProviderError("wholesale_draft_generation_failed", input.invoiceId, stage, error); }
       }
       if (!draftId) {
         for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -212,13 +246,20 @@ export async function issueWholesaleKitInvoice(input: {
         }
       }
       if (!draftId) {
-        if (generationError instanceof BlingError && !generationError.uncertainWrite) throw generationError;
+        const existing = await findWholesaleDraft(provider, reference);
+        if (existing) { draftId = positiveId(existing.id); independentlyLinked = true; }
+      }
+      if (!draftId) {
+        if (generationError instanceof BlingError && !generationError.uncertainWrite) {
+          if (generationError.code === "validation_error") throw new BlingError("draft_generation_rejected", generationError.status);
+          throw generationError;
+        }
         return await waiting("awaiting_bling_confirmation");
       }
     }
     // Confirm the exact link before adopting a draft, including a lost POST response.
     let linked = positiveId(row(sale.notaFiscal).id);
-    for (let attempt = 0; linked !== draftId && attempt < 4; attempt += 1) {
+    for (let attempt = 0; !independentlyLinked && linked !== draftId && attempt < 4; attempt += 1) {
       if (linked) throw scopeError();
       const refreshed = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
       assertBlingExternalOrder(order, items, refreshed);
@@ -226,9 +267,17 @@ export async function issueWholesaleKitInvoice(input: {
       linked = positiveId(row(refreshed.notaFiscal).id);
       if (linked !== draftId && attempt < 3) await sleep(1500);
     }
-    if (linked !== draftId) return await waiting("awaiting_bling_confirmation");
+    if (linked && linked !== draftId) throw scopeError();
     const recovered = await readInvoice(draftId);
     if (Number(recovered.id) !== draftId) throw scopeError();
+    if (linked !== draftId) {
+      if (text(recovered.numeroPedidoLoja || recovered.numeroLoja) !== reference
+        || digits(row(recovered.contato).numeroDocumento) !== document
+        || Math.round(Number(recovered.valorNota) * 100) !== mirror.totalInCents
+        || Number(recovered.tipo) !== 1 || Number(row(recovered.naturezaOperacao).id) !== natureId)
+        return await waiting("awaiting_bling_confirmation");
+    }
+    stage = "draft_preparation";
     if (await call(db, "link_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId }) !== true) throw scopeError();
     const recoveredSituation = Number(recovered.situacao);
     if (recoveredSituation === 5) return await authorize(draftId, recovered);
@@ -253,6 +302,7 @@ export async function issueWholesaleKitInvoice(input: {
 
     if (environment.BLING_INVOICE_SEND_ENABLED !== "true" || environment.BLING_INVOICE_TRANSMISSION_MODE !== "production"
       || environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED !== "true") return await waiting("bling_send_disabled");
+    stage = "sefaz_send";
     step("send");
     if (await claim("bling_invoice_send", hash)) {
       await provider.request(`/nfe/${draftId}/enviar?enviarEmail=false`, { method: "POST" });
@@ -260,7 +310,7 @@ export async function issueWholesaleKitInvoice(input: {
     return await awaitAuthorization(draftId);
   } catch (error) {
     const code = wholesaleFailureCode(error);
-    logServerEvent("error", "wholesale_invoice_issue_failed", { invoiceId: input.invoiceId, reason: code });
+    logWholesaleProviderError("wholesale_invoice_issue_failed", input.invoiceId, stage, error);
     try { await progress("error", code); } catch { /* The invoice stays "issuing" and is released for retry after a few minutes. */ }
     return { status: "error", code };
   }
@@ -272,6 +322,7 @@ export async function cancelWholesaleKitInvoice(input: {
 }): Promise<boolean> {
   const { db, provider, environment, invoiceId, job } = input;
   const p_id = invoiceId;
+  let stage = "cancel_scope";
   const finish = async () => await call(db, "finish_wholesale_kit_invoice_cancel", { p_id }) === true;
   const get = async (path: string): Promise<UnknownRecord | null> => {
     try {
@@ -301,6 +352,7 @@ export async function cancelWholesaleKitInvoice(input: {
       || digits(company.cnpj) !== text(row(job.fiscalParameters).issuerDocument)) throw scopeError();
     saleId ??= await findBlingOrder(provider, reference);
     if (!saleId) throw new BlingError("cancel_reconciliation_pending", 409);
+    stage = "cancel_sale_read";
     const salePath = `/pedidos/vendas/${saleId}`;
     const sale = await get(salePath);
     if (sale) {
@@ -316,32 +368,40 @@ export async function cancelWholesaleKitInvoice(input: {
     }
     // A lost draft response must be reconciled by its unique order reference, not guessed.
     if (!draftId && job.draftClaimed === true) {
-      const result = row(await provider.request(`/nfe?numeroLoja=${encodeURIComponent(reference)}&pagina=1&limite=100`));
-      if (!Array.isArray(result.data)) throw scopeError();
-      const matches = rows(result.data);
-      if (matches.length > 1) throw scopeError();
-      if (matches.length === 1) {
-        const match = matches[0]!;
-        if (text(match.numeroPedidoLoja || match.numeroLoja) !== reference) throw scopeError();
+      stage = "cancel_draft_lookup";
+      const match = await findWholesaleDraft(provider, reference);
+      if (match) {
         draftId = positiveId(match.id);
         if (!draftId) throw scopeError();
       } else if (!Number.isFinite(Date.parse(text(job.draftClaimedAt))) || Date.now() - Date.parse(text(job.draftClaimedAt)) < 180_000) {
         throw new BlingError("cancel_reconciliation_pending", 409);
       }
     }
+    stage = "cancel_record_remote";
     if (await call(db, "record_wholesale_cancel_remote", { p_id, p_sale: saleId, p_invoice: draftId }) !== true) throw scopeError();
     if (draftId) {
+      stage = "cancel_draft_read";
       const path = `/nfe/${draftId}`;
       const draft = await get(path);
       if (draft) {
         const linked = positiveId(row(sale?.notaFiscal).id) === draftId;
+        const draftReference = text(draft.numeroPedidoLoja || draft.numeroLoja);
+        const persistedLink = positiveId(job.invoiceId) === draftId;
+        const expectedNature = rows(row(row(job.fiscalParameters).blingRule).natures).find(nature => nature.final_consumer === false);
+        const exactPersisted = persistedLink && !draftReference && Number(draft.tipo) === 1
+          && Math.round(Number(draft.valorNota) * 100) === Number(job.amountInCents)
+          && positiveId(row(draft.naturezaOperacao).id) === positiveId(expectedNature?.external_nature_id)
+          && positiveId(expectedNature?.external_nature_id) !== null;
         if (Number(draft.id) !== draftId || Number(draft.situacao) !== 1 || text(draft.chaveAcesso)
-          || (!linked && text(draft.numeroPedidoLoja || draft.numeroLoja) !== reference)
+          || (draftReference && draftReference !== reference)
+          || (!linked && draftReference !== reference && !exactPersisted)
           || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+        stage = "cancel_draft_delete";
         await remove(`/nfe?idsNotas%5B%5D=${draftId}`, path);
       }
     }
     if (sale) {
+      stage = "cancel_sale_delete";
       const current = await get(salePath);
       if (current) {
         if (text(current.numeroLoja) !== reference || Number(current.id) !== saleId
@@ -351,9 +411,10 @@ export async function cancelWholesaleKitInvoice(input: {
         await remove(salePath, salePath);
       }
     }
+    stage = "cancel_stock_release";
     return await finish();
   } catch (error) {
-    logServerEvent("error", "wholesale_invoice_cancel_failed", { invoiceId, reason: wholesaleFailureCode(error) });
+    logWholesaleProviderError("wholesale_invoice_cancel_failed", invoiceId, stage, error);
     try { await call(db, "record_wholesale_cancel_pending", { p_id }); } catch { /* Lease expires; retry reconciles remote IDs. */ }
     return false;
   }

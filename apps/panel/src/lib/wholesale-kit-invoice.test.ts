@@ -121,6 +121,22 @@ describe("emissão da nota de atacado", () => {
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
   });
 
+  it("recupera pelo detalhe de NF-e quando a listagem não traz a referência e o pedido ainda não tem o vínculo", async () => {
+    state.job = { ...baseJob(), saleId: 900, draftClaimed: true };
+    state.claimed.add("bling_invoice_draft");
+    const remote = { request: async (path: string, options?: { method?: string }) => {
+      if (path.startsWith("/nfe?numeroLoja=")) return { data: [{ id: 77, situacao: 1 }] };
+      if (path === "/nfe/77") {
+        const response = await provider.request(path, options) as { data: Record<string, unknown> };
+        return { data: { ...response.data, numeroPedidoLoja: `ATACADO-${id}`, tipo: 1, valorNota: 720.02,
+          contato: { numeroDocumento: "11222333000181" } } };
+      }
+      return provider.request(path, options);
+    } };
+    expect(await issueWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id,
+      sleep: async () => undefined })).toEqual({ status: "authorized" });
+    expect(posts("/gerar-nfe")).toHaveLength(0);
+  });
   it("não repete a geração quando a tentativa anterior já foi registrada", async () => {
     state.job = { ...baseJob(), saleId: 900 };
     state.claimed.add("bling_invoice_draft");
@@ -222,6 +238,21 @@ describe("cancelamento conciliado", () => {
     } };
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob() })).toBe(true);
     expect(state.requests.filter(r => r.method === "DELETE").map(r => r.path)).toEqual(["/nfe?idsNotas%5B%5D=77", "/pedidos/vendas/900"]);
+    expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
+  });
+  it("consulta o detalhe da nota em uma conciliação de rascunho sem ID local", async () => {
+    let draftExists = true;
+    const remote = { request: async (path: string, options?: { method?: string }) => {
+      const method = options?.method ?? "GET";
+      state.requests.push({ path, method });
+      if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "12345678000195" } };
+      if (path.startsWith("/nfe?numeroLoja=")) return { data: [{ id: 77 }] };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, numeroPedidoLoja: `ATACADO-${id}`, contato: { numeroDocumento: "11222333000181" } } };
+      if (path === "/nfe?idsNotas%5B%5D=77" && method === "DELETE") { draftExists = false; return {}; }
+      throw new BlingError("provider_error", 404);
+    } };
+    expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id,
+      job: { ...cancelJob(), invoiceId: null } })).toBe(true);
     expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
   });
   it("não exclui nota já enviada", async () => {
