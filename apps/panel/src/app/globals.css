@@ -11385,7 +11385,17 @@ button:not(:disabled):active,
 .wholesale-modal { width: min(100%, 720px); padding: 0; }
 .wholesale-modal > header { align-items: center; }
 .wholesale-modal > header p { margin: 2px 0 0; color: var(--neutral-600); font-size: 0.85rem; }
-.wholesale-body { display: grid; gap: 14px; padding: 20px; }
+.wholesale-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
 .wholesale-step { display: grid; gap: 16px; }
 .wholesale-choice { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .wholesale-choice legend { padding: 0; margin-bottom: 6px; font-weight: 700; }
@@ -11423,7 +11433,7 @@ button:not(:disabled):active,
 .wholesale-progress li.done span { background: var(--success-bg); border-color: var(--success-line); }
 .wholesale-done { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wholesale-actions, .wholesale-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.wholesale-footer { padding: 14px 20px; border-top: 1px solid var(--line); }
+.wholesale-footer { flex: 0 0 auto; padding: 14px 20px; border-top: 1px solid var(--line); }
 @media (max-width: 760px) {
   .wholesale-row { grid-template-columns: minmax(0, 1fr) auto; }
   .wholesale-row-kit, .wholesale-row-status, .wholesale-row-actions { grid-column: 1 / -1; }
