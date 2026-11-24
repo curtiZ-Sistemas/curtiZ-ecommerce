@@ -23,9 +23,13 @@ const create = z.object({
   template: z.enum(["standard", "lower_restock", "upper_restock"]), quantity: z.number().int().min(1).max(99),
   unitPriceInCents: z.number().int().min(12).max(100_000_000), paymentMethod: z.enum(["pix", "cash"]), buyer
 }).strict();
+const batchItem = z.object({ kitId: z.string().uuid(), template: z.enum(["standard", "lower_restock", "upper_restock"]),
+  quantity: z.number().int().min(1).max(99), unitPriceInCents: z.number().int().min(12).max(100_000_000) }).strict();
+const batch = z.object({ action: z.literal("create_batch"), key: z.string().uuid(), items: z.array(batchItem).min(1).max(20),
+  paymentMethod: z.enum(["pix", "cash"]), buyer }).strict();
 const issue = z.object({ action: z.literal("issue"), id: z.string().uuid() }).strict();
 const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
-const input = z.discriminatedUnion("action", [create, issue, cancel]);
+const input = z.discriminatedUnion("action", [create, batch, issue, cancel]);
 
 const send = (value: object, status = 200) => NextResponse.json(value, { status, headers: technicalNoStore });
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -72,15 +76,18 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return send({ message: "Revise os dados informados." }, 400);
     const item = parsed.data;
 
-    if (item.action === "create") {
+    if (item.action === "create" || item.action === "create_batch") {
       if (item.buyer.registration === "ISENTA") return send({ code: "exempt_fiscal_rule_required", message: "Para revenda, este fluxo exige inscrição estadual ativa de MG. Consulte o cadastro do CNPJ no SINTEGRA; não contribuinte não pode ser emitido como revenda neste fluxo." }, 422);
       if (!isValidCnpj(item.buyer.document)) return send({ code: "cnpj_invalid", message: cnpjInvalid }, 422);
       if (item.buyer.address.state.toUpperCase() !== "MG") return send({ code: "buyer_outside_mg", message: outsideMg }, 422);
-      const created = await db.rpc("create_wholesale_kit_invoice", {
-        p_key: item.key, p_kit: item.kitId, p_template: item.template, p_quantity: item.quantity,
-        p_unit_price_cents: item.unitPriceInCents, p_payment_method: item.paymentMethod,
-        p_buyer: { ...item.buyer, address: { ...item.buyer.address, state: "MG" } }
-      });
+      const common = { p_key: item.key, p_payment_method: item.paymentMethod,
+        p_buyer: { ...item.buyer, address: { ...item.buyer.address, state: "MG" } } };
+      if (item.action === "create_batch" && new Set(item.items.map(line => line.kitId)).size !== item.items.length)
+        return send({ message: "Selecione apenas uma ficha por kit." }, 400);
+      const created = item.action === "create_batch"
+        ? await db.rpc("create_wholesale_kit_invoice_batch", { ...common, p_items: item.items })
+        : await db.rpc("create_wholesale_kit_invoice", { ...common, p_kit: item.kitId, p_template: item.template, p_quantity: item.quantity,
+          p_unit_price_cents: item.unitPriceInCents });
       const invoice = record(created.data);
       if (created.error || !invoice) {
         const reason = databaseReasons[created.error?.message ?? ""];

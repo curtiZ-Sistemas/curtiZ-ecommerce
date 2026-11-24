@@ -73,6 +73,19 @@ describe("notas de atacado: criar", () => {
     expect(state.issue).not.toHaveBeenCalled();
   });
 
+  it("cria uma nota com vários kits por uma única RPC", async () => {
+    const items = [{ kitId: ids.kit, template: "standard", quantity: 1, unitPriceInCents: 36001 },
+      { kitId: ids.invoice, template: "upper_restock", quantity: 2, unitPriceInCents: 37001 }];
+    const body = { action: "create_batch", key: ids.key, paymentMethod: "pix", buyer: buyer(), items };
+    expect((await post(body)).status).toBe(200);
+    expect(state.rpc).toHaveBeenCalledWith("create_wholesale_kit_invoice_batch", {
+      p_key: ids.key, p_payment_method: "pix", p_buyer: buyer(), p_items: items
+    });
+    state.rpc.mockClear();
+    expect((await post({ ...body, items: [items[0], items[0]] })).status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
   it("repetir a mesma chave volta a mesma nota", async () => {
     await post(create());
     await post(create());

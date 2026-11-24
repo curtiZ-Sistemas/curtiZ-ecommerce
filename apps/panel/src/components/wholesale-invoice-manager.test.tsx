@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   buyerProblem, ClientStep, emptyBuyer, IssueProgress, KitStep, PaymentStep, parseIssueLine, readInvoice, readOffers,
-  wholesaleReason, wholesaleStatus, WholesaleInvoiceList, type WholesaleInvoice, type WholesaleOffer
+  wholesaleReason, wholesaleStatus, WholesaleInvoiceList, MultiKitStep, MultiPaymentStep, selectionProblem, type WholesaleInvoice, type WholesaleOffer
 } from "./wholesale-invoice-manager";
 
 const noop = () => undefined;
@@ -32,6 +32,25 @@ describe("passo 1: kit e ficha", () => {
 
   it("avisa quando não há kit configurado", () => {
     expect(renderToStaticMarkup(<KitStep offers={[]} kitId="" template="" onKit={noop} onTemplate={noop} />)).toContain("Nenhum kit");
+  });
+});
+
+describe("vários kits na mesma nota", () => {
+  const multiple = [...offers, { ...offers[0]!, kitId: "k2", name: "Kit Praia" }];
+  const selected = [{ kitId: "k1", template: "standard", quantity: 1, price: "360,01" },
+    { kitId: "k2", template: "standard", quantity: 2, price: "360,01" }];
+  it("permite uma ficha de cada kit e mostra ambos", () => {
+    const html = renderToStaticMarkup(<MultiKitStep offers={multiple} selections={selected} onChange={noop} />);
+    expect(html).toContain("Kits da nota (2)");
+    expect(html).toContain("Kit Praia");
+    expect(selectionProblem(multiple, selected)).toBeNull();
+    expect(selectionProblem(multiple, [selected[0]!, selected[0]!])).not.toBeNull();
+  });
+  it("soma os valores e as quantidades de todos os kits", () => {
+    const html = renderToStaticMarkup(<MultiPaymentStep offers={multiple} selections={selected} buyerName="Loja Teste"
+      method="pix" onChange={noop} onMethod={noop} />);
+    expect(html).toContain("3 fichas");
+    expect(html).toContain("1.080,03");
   });
 });
 

@@ -21,6 +21,24 @@ export async function commercialKitFiscalLines(readCatalogVariant: CatalogVarian
   commercial: KitSaleLine[];
   expanded: BlingFiscalItem[];
 }> {
+  if (Array.isArray(job.gradeSelections)) {
+    if (!job.gradeSelections.length || job.gradeSelections.length > 20) throw scopeError();
+    const combined = new Map<string, KitSaleLine>();
+    for (const value of job.gradeSelections) {
+      const selection = row(value);
+      if (!Array.isArray(selection.gradeLines)) throw scopeError();
+      const { commercial } = await commercialKitFiscalLines(readCatalogVariant, {
+        gradeLines: selection.gradeLines, unitPriceInCents: readNumber(selection, "unitPriceInCents"), quantity: readNumber(selection, "quantity")
+      });
+      for (const item of commercial) {
+        const key = JSON.stringify([item.variantId, item.sku, item.unitPriceInCents, item.description, item.ncm, item.origin, item.cest]);
+        const previous = combined.get(key);
+        combined.set(key, previous ? { ...previous, quantity: previous.quantity + item.quantity } : item);
+      }
+    }
+    const commercial = [...combined.values()];
+    return { commercial, expanded: commercial.map(item => ({ ...item, sku: blingExternalSku(item.sku, item.variantId) })) };
+  }
   const unitPriceInCents = readNumber(job, "unitPriceInCents");
   const quantity = readNumber(job, "quantity");
   if (Array.isArray(job.gradeLines)) {

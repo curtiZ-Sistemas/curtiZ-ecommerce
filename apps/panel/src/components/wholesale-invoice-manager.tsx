@@ -329,9 +329,107 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
   </div>;
 }
 
-type Wizard = { step: 1 | 2 | 3 | 4; kitId: string; template: string; buyer: WholesaleBuyer; quantity: number; price: string; method: "pix" | "cash" };
-const newWizard = (): Wizard => ({ step: 1, kitId: "", template: "", buyer: emptyBuyer, quantity: 1, price: "", method: "pix" });
-const stepTitles = ["Kit e ficha", "Cliente", "Quantidade e pagamento", "Emissão"];
+export type KitSelection = { kitId: string; template: string; quantity: number; price: string };
+type Wizard = { step: 1 | 2 | 3 | 4; selections: KitSelection[]; buyer: WholesaleBuyer; method: "pix" | "cash" };
+const newWizard = (): Wizard => ({ step: 1, selections: [], buyer: emptyBuyer, method: "pix" });
+
+export function selectionProblem(offers: WholesaleOffer[], selections: KitSelection[]) {
+  if (!selections.length || selections.length > 20 || new Set(selections.map(item => item.kitId)).size !== selections.length)
+    return "Selecione de um a vinte kits distintos.";
+  for (const selection of selections) {
+    const kit = offers.find(item => item.kitId === selection.kitId);
+    const template = kit?.templates.find(item => item.code === selection.template);
+    if (!kit || !template || !Number.isInteger(selection.quantity) || selection.quantity < 1 || selection.quantity > Math.min(99, template.available))
+      return "Escolha uma ficha disponível para cada kit e confira as quantidades.";
+  }
+  return null;
+}
+
+const selectionPrice = (price: string) => { try { return parseBRLToCents(price); } catch { return 0; } };
+
+export function MultiKitStep({ offers, selections, onChange }: {
+  offers: WholesaleOffer[]; selections: KitSelection[]; onChange: (selections: KitSelection[]) => void;
+}) {
+  if (!offers.length) return <p className="wholesale-empty">Nenhum kit com as três fichas e os preços configurados. Configure em Kits.</p>;
+  return <div className="wholesale-step">
+    <p className="wholesale-note">Selecione os kits da venda. Para cada kit escolhido, selecione uma ficha.</p>
+    <fieldset className="wholesale-choice">
+      <legend>Kits da nota ({selections.length})</legend>
+      <div className="wholesale-cards">
+        {offers.map(offer => {
+          const selection = selections.find(item => item.kitId === offer.kitId);
+          const available = offer.templates.some(item => item.available > 0);
+          return <button key={offer.kitId} type="button" className="wholesale-card" aria-pressed={Boolean(selection)}
+            disabled={!selection && (!available || selections.length >= 20)}
+            onClick={() => onChange(selection ? selections.filter(item => item.kitId !== offer.kitId)
+              : [...selections, { kitId: offer.kitId, template: "", quantity: 1, price: "" }])}>
+            <strong>{offer.name}</strong>
+            {offer.description && <span>{offer.description}</span>}
+            <span>{selection ? "Selecionado · clique para remover" : available ? "Selecionar" : "Esgotado"}</span>
+          </button>;
+        })}
+      </div>
+    </fieldset>
+    {selections.map(selection => {
+      const kit = offers.find(offer => offer.kitId === selection.kitId);
+      if (!kit) return null;
+      return <fieldset key={selection.kitId} className="wholesale-choice">
+        <legend>{kit.name} — ficha</legend>
+        <div className="wholesale-cards">
+          {kit.templates.map(template => <button key={template.code} type="button" className="wholesale-card"
+            aria-pressed={selection.template === template.code} disabled={template.available < 1}
+            onClick={() => onChange(selections.map(item => item.kitId === selection.kitId
+              ? { ...item, template: template.code, quantity: Math.min(item.quantity, template.available), price: formatBRLInput(template.unitPriceInCents) } : item))}>
+            <strong>{template.label}</strong>
+            <span>{template.sizes.map(size => size.size + " ×" + size.pairs).join(" · ")}</span>
+            <span>{formatBRL(template.unitPriceInCents)} por ficha</span>
+            <span>{template.available > 0 ? template.available + " em estoque" : "Esgotada"}</span>
+          </button>)}
+        </div>
+      </fieldset>;
+    })}
+  </div>;
+}
+
+export function MultiPaymentStep({ offers, selections, buyerName, method, onChange, onMethod }: {
+  offers: WholesaleOffer[]; selections: KitSelection[]; buyerName: string; method: "pix" | "cash";
+  onChange: (selections: KitSelection[]) => void; onMethod: (value: "pix" | "cash") => void;
+}) {
+  const total = selections.reduce((sum, item) => sum + selectionPrice(item.price) * item.quantity, 0);
+  const change = (id: string, patch: Partial<KitSelection>) => onChange(selections.map(item => item.kitId === id ? { ...item, ...patch } : item));
+  return <div className="wholesale-step">
+    {selections.map(selection => {
+      const kit = offers.find(item => item.kitId === selection.kitId);
+      const template = kit?.templates.find(item => item.code === selection.template);
+      if (!kit || !template) return null;
+      const limit = Math.min(99, template.available);
+      return <fieldset key={kit.kitId} className="wholesale-choice">
+        <legend>{kit.name} · {template.label}</legend>
+        <div className="wholesale-fields">
+          <label><span>Quantidade de fichas</span><input type="number" min={1} max={limit} value={selection.quantity}
+            onChange={event => change(kit.kitId, { quantity: Math.min(Math.max(1, Math.floor(Number(event.target.value)) || 1), Math.max(1, limit)) })} />
+            <small>{template.available} em estoque</small></label>
+          <label><span>Preço por ficha</span><input inputMode="decimal" value={selection.price}
+            onChange={event => change(kit.kitId, { price: event.target.value })} aria-invalid={selectionPrice(selection.price) < 12} />
+            <small>Sugerido: {formatBRL(template.unitPriceInCents)}</small></label>
+        </div>
+        <p>Subtotal: <strong>{formatBRL(selectionPrice(selection.price) * selection.quantity)}</strong></p>
+      </fieldset>;
+    })}
+    <fieldset className="wholesale-choice"><legend>Como o cliente pagou?</legend>
+      <div className="wholesale-methods">
+        {([["pix", "Pix"], ["cash", "Dinheiro"]] as const).map(([value, label]) =>
+          <button key={value} type="button" className="wholesale-card" aria-pressed={method === value} onClick={() => onMethod(value)}><strong>{label}</strong></button>)}
+      </div>
+    </fieldset>
+    <dl className="wholesale-summary" aria-label="Resumo da nota">
+      <div><dt>Cliente</dt><dd>{buyerName}</dd></div>
+      <div><dt>Kits</dt><dd>{selections.length} · {selections.reduce((sum, item) => sum + item.quantity, 0)} fichas</dd></div>
+      <div className="total"><dt>Total da nota</dt><dd>{formatBRL(total)}</dd></div>
+    </dl>
+  </div>;
+}
+const stepTitles = ["Kits e fichas", "Cliente", "Quantidade e pagamento", "Emissão"];
 
 async function readMessage(response: Response, fallback: string) {
   try { return str(record(await response.json())?.message) || fallback; } catch { return fallback; }
@@ -440,16 +538,15 @@ export function WholesaleInvoiceManager() {
     return () => window.removeEventListener("keydown", onKey);
   }, [wizard, close]);
 
-  const kit = offers.find(item => item.kitId === wizard?.kitId);
-  const template = kit?.templates.find(item => item.code === wizard?.template);
   const patch = (value: Partial<Wizard>) => setWizard(current => current ? { ...current, ...value } : current);
 
   function next() {
     if (!wizard) return;
     setProblem("");
     if (wizard.step === 1) {
-      if (!kit || !template || template.available < 1) { setProblem("Escolha o kit e uma ficha em estoque."); return; }
-      patch({ step: 2, price: wizard.price || formatBRLInput(template.unitPriceInCents), quantity: Math.min(wizard.quantity, template.available) });
+      const issue = selectionProblem(offers, wizard.selections);
+      if (issue) { setProblem(issue); return; }
+      patch({ step: 2 });
     } else if (wizard.step === 2) {
       const issue = buyerProblem(wizard.buyer);
       if (issue) { setProblem(issue); return; }
@@ -493,18 +590,18 @@ export function WholesaleInvoiceManager() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!wizard || !template || !kit || wizard.step !== 3 || running) return;
-    let cents = 0;
-    try { cents = parseBRLToCents(wizard.price); } catch { cents = 0; }
-    if (cents < 12) { setProblem("Informe o preço por ficha."); return; }
+    if (!wizard || wizard.step !== 3 || running) return;
+    const issue = selectionProblem(offers, wizard.selections) || buyerProblem(wizard.buyer);
+    if (issue) { setProblem(issue); return; }
+    const items = wizard.selections.map(item => ({ kitId: item.kitId, template: item.template, quantity: item.quantity, unitPriceInCents: selectionPrice(item.price) }));
+    if (items.some(item => !Number.isSafeInteger(item.unitPriceInCents) || item.unitPriceInCents < 12 || item.unitPriceInCents > 100_000_000)) { setProblem("Confira o preço por ficha de todos os kits."); return; }
     setProblem("");
     patch({ step: 4 });
     setRunning(true);
     const b = wizard.buyer;
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create", key: key.current, kitId: kit.kitId, template: template.code, quantity: wizard.quantity,
-          unitPriceInCents: cents, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), registration: b.registration.trim().toUpperCase().replace(/[.\-\s]/gu, ""),
+        body: JSON.stringify({ action: "create_batch", key: key.current, items, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), registration: b.registration.trim().toUpperCase().replace(/[.\-\s]/gu, ""),
             address: { state: b.state, postal_code: b.postalCode, street: b.street.trim(), number: b.number.trim(),
               district: b.district.trim(), city: b.city.trim(), complement: b.complement.trim() } } }) });
       const body = record(await response.json());
@@ -541,7 +638,7 @@ export function WholesaleInvoiceManager() {
 
   return <section className="panel-card wholesale">
     <header className="wholesale-header">
-      <p>Emita a NF-e de um kit para uma empresa de Minas Gerais. CFOP, série e natureza são automáticos.</p>
+      <p>Emita uma NF-e com um ou vários kits para uma empresa de Minas Gerais. CFOP, série e natureza são automáticos.</p>
       <button className="primary-button" type="button" onClick={open}>Emitir nota</button>
     </header>
     {notice && <p className="wholesale-note" role="status">{notice}</p>}
@@ -559,12 +656,10 @@ export function WholesaleInvoiceManager() {
           <button type="button" aria-label="Fechar" disabled={running} onClick={close}><X aria-hidden="true" /></button>
         </header>
         <div className="wholesale-body">
-          {wizard.step === 1 && <KitStep offers={offers} kitId={wizard.kitId} template={wizard.template}
-            onKit={id => patch({ kitId: id, template: "", price: "" })} onTemplate={code => patch({ template: code, price: "" })} />}
+          {wizard.step === 1 && <MultiKitStep offers={offers} selections={wizard.selections} onChange={selections => patch({ selections })} />}
           {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} postalLookup={postalLookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={changeBuyer} />}
-          {wizard.step === 3 && template && kit && <PaymentStep template={template} kitName={kit.name} quantity={wizard.quantity} price={wizard.price}
-            method={wizard.method} buyerName={wizard.buyer.name} onQuantity={value => patch({ quantity: value })}
-            onPrice={value => patch({ price: value })} onMethod={value => patch({ method: value })} />}
+          {wizard.step === 3 && <MultiPaymentStep offers={offers} selections={wizard.selections} method={wizard.method} buyerName={wizard.buyer.name}
+            onChange={selections => patch({ selections })} onMethod={value => patch({ method: value })} />}
           {wizard.step === 4 && <IssueProgress steps={steps} running={running} result={result} busy={busyId !== ""} onClose={close}
             onRetry={() => void runIssue(issuingId)} onCancel={() => void cancel(issuingId)} />}
           {problem && <p className="wholesale-alert" role="alert">{problem}</p>}
