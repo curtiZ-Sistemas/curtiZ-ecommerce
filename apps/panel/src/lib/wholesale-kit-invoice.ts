@@ -122,7 +122,7 @@ export async function issueWholesaleKitInvoice(input: {
         const invoice = await readInvoice(invoiceId);
         const situation = Number(invoice.situacao);
         if (Number(invoice.id) !== invoiceId) throw scopeError();
-        if (situation === 5) return authorize(invoiceId, invoice);
+        if (situation === 5 || situation === 6) return authorize(invoiceId, invoice);
         if (SEND_BLOCKED_SITUATIONS.includes(situation)) throw new BlingError(situation === 2 ? "invoice_cancelled_in_bling" : "invoice_rejected_by_sefaz", 409);
         if (attempt < 5) await sleep(4000);
       }
@@ -133,7 +133,7 @@ export async function issueWholesaleKitInvoice(input: {
       const invoice = await readInvoice(draftId);
       if (Number(invoice.id) !== draftId) throw scopeError();
       const situation = Number(invoice.situacao);
-      if (situation === 5) return await authorize(draftId, invoice);
+      if (situation === 5 || situation === 6) return await authorize(draftId, invoice);
       if (SEND_BLOCKED_SITUATIONS.includes(situation)) throw new BlingError(situation === 2 ? "invoice_cancelled_in_bling" : "invoice_rejected_by_sefaz", 409);
       if (WAITING_SITUATIONS.includes(situation) || job.sendClaimed === true) return await awaitAuthorization(draftId);
       if (situation !== 1) throw scopeError();
@@ -223,11 +223,22 @@ export async function issueWholesaleKitInvoice(input: {
     if (!draftId && job.draftClaimed === true) {
       const existing = await findWholesaleDraft(provider, reference);
       if (existing) { draftId = positiveId(existing.id); independentlyLinked = true; }
+      else {
+        // A definitive refusal is different from a timeout. Confirm the
+        // exact sale still has no invoice, then let the database check the
+        // prior refusal and age of the claim under its row lock.
+        const refreshed = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+        assertBlingExternalOrder(order, items, refreshed);
+        if (Number(refreshed.id) !== saleId) throw scopeError();
+        draftId = positiveId(row(refreshed.notaFiscal).id);
+        if (!draftId && await call(db, "reopen_rejected_wholesale_draft", { p_id: input.invoiceId, p_sale: saleId }) !== true)
+          return await waiting("awaiting_bling_confirmation");
+      }
     }
     if (!draftId) {
       if (!rows(sale.itens).length || rows(sale.itens).some(line => Number(row(line.naturezaOperacao).id) !== natureId)) throw scopeError();
       // The POST may have succeeded even when the response was lost or wrapped differently.
-      // A claimed write must never be repeated: recover the NF-e through its exact sale instead.
+      // A claimed write with an unknown outcome must never be repeated.
       let generationError: unknown;
       if (await claim("bling_invoice_draft")) {
         try {
@@ -280,7 +291,7 @@ export async function issueWholesaleKitInvoice(input: {
     stage = "draft_preparation";
     if (await call(db, "link_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId }) !== true) throw scopeError();
     const recoveredSituation = Number(recovered.situacao);
-    if (recoveredSituation === 5) return await authorize(draftId, recovered);
+    if (recoveredSituation === 5 || recoveredSituation === 6) return await authorize(draftId, recovered);
     if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
     if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
     if (recoveredSituation !== 1) return await waiting("awaiting_bling_confirmation");

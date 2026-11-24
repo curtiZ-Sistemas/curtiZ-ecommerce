@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   job: undefined as unknown as Record<string, unknown>, calls: [] as { name: string; args: Record<string, unknown> }[], claimed: new Set<string>(),
   requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5,
-  failSale: false, draftResponseLost: false, draftLinked: false, send: vi.fn()
+  failSale: false, draftResponseLost: false, draftLinked: false, allowReopen: false, send: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
@@ -49,6 +49,10 @@ const db = { rpc: async (name: string, args: Record<string, unknown>) => {
   if (name === "read_bling_catalog_variant") return { data: {}, error: null };
   if (name === "read_bling_product_links") return { data: [], error: null };
   if (name === "read_wholesale_kit_invoice_job") return { data: { status: "issuing" }, error: null };
+  if (name === "reopen_rejected_wholesale_draft") {
+    if (state.allowReopen) state.claimed.delete("bling_invoice_draft");
+    return { data: state.allowReopen, error: null };
+  }
   if (name === "claim_wholesale_kit_invoice_write") {
     const operation = String(args.p_operation);
     if (state.claimed.has(operation)) return { data: false, error: null };
@@ -66,6 +70,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
   if (path === "/pedidos/vendas/900/gerar-nfe") { if (state.draftResponseLost) { state.draftLinked = true; throw new BlingError("uncertain_write", 503, false, true); } state.draftLinked = true; return { idNotaFiscal: 77 }; }
   if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: state.draftLinked ? 77 : 0 }, itens: [{ naturezaOperacao: { id: 123 } }] } };
+  if (path.startsWith("/nfe?numeroLoja=")) return { data: [] };
   if (path === "/nfe/77/enviar?enviarEmail=false") { state.send(); return {}; }
   if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: 3,
     naturezaOperacao: { id: 123 }, transporte: { fretePorConta: 3 } } };
@@ -79,7 +84,7 @@ const posts = (suffix: string) => state.requests.filter(request => request.metho
 
 beforeEach(() => {
   state.job = baseJob(); state.calls = []; state.requests = []; state.claimed = new Set(); state.contactExists = true;
-  state.saleInBling = null; state.invoiceSituation = 5; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.send.mockClear();
+  state.saleInBling = null; state.invoiceSituation = 5; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.allowReopen = false; state.send.mockClear();
 });
 
 describe("emissão da nota de atacado", () => {
@@ -145,6 +150,21 @@ describe("emissão da nota de atacado", () => {
     expect(posts("/gerar-nfe")).toHaveLength(0);
   });
 
+  it("reabre somente uma geração recusada após confirmar a ausência remota", async () => {
+    state.job = { ...baseJob(), saleId: 900, draftClaimed: true };
+    state.claimed.add("bling_invoice_draft");
+    expect(await run()).toEqual({ status: "waiting", code: "awaiting_bling_confirmation" });
+    expect(posts("/gerar-nfe")).toHaveLength(0);
+    state.allowReopen = true;
+    expect(await run()).toEqual({ status: "authorized" });
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(posts("/gerar-nfe")).toHaveLength(1);
+  });
+  it("reconhece DANFE emitido após verificar o XML autorizado", async () => {
+    state.invoiceSituation = 6;
+    expect(await run()).toEqual({ status: "authorized" });
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
+  });
   it("é idempotente: reexecutar com a venda e a nota já gravadas não escreve de novo", async () => {
     state.job = { ...baseJob(), saleId: 900, invoiceId: 77 };
     state.claimed = new Set(["bling_sale", "bling_invoice_draft", "bling_invoice_send"]);

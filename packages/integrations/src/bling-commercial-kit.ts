@@ -119,14 +119,21 @@ export async function verifyCommercialKitInvoice(provider: BlingClient, readCata
   const invoiceId = readNumber(job, "invoiceId");
   const { reference, manual } = input;
   if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) throw scopeError();
+  let requiresExactInvoiceReference = false;
   if (!manual) {
     if (!Number.isSafeInteger(saleId) || saleId <= 0) throw scopeError();
     const sale = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
-    if (Number(sale.id) !== saleId || sale.numeroLoja !== reference || Number(row(sale.notaFiscal).id) !== invoiceId) throw scopeError();
+    if (Number(sale.id) !== saleId || sale.numeroLoja !== reference) throw scopeError();
+    const linkedId = Number(row(sale.notaFiscal).id || 0);
+    if (linkedId !== invoiceId) {
+      if (linkedId !== 0 || !/^ATACADO-[a-f0-9-]{36}$/u.test(reference)) throw scopeError();
+      requiresExactInvoiceReference = true;
+    }
   }
   const invoice = manual?.invoice ?? row(row(await provider.request(`/nfe/${invoiceId}`)).data);
+  if (requiresExactInvoiceReference && invoice.numeroPedidoLoja !== reference) throw scopeError();
   const key = readString(invoice, "chaveAcesso");
-  if (Number(invoice.id) !== invoiceId || Number(invoice.situacao) !== 5
+  if (Number(invoice.id) !== invoiceId || ![5, 6].includes(Number(invoice.situacao))
     || (manual ? key !== manual.key : invoice.numeroPedidoLoja && invoice.numeroPedidoLoja !== reference)
     || !/^31\d{42}$/u.test(key)) throw scopeError();
   const issueDate = readString(invoice, "dataEmissao").slice(0, 10);

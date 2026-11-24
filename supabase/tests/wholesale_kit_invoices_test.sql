@@ -157,6 +157,17 @@ select is(public.record_wholesale_kit_invoice_sale((select invoice from wholesal
 select is(public.record_wholesale_kit_invoice_authorized((select invoice from wholesale_fixture),900,77,repeat('1',44),'123456789012345',repeat('a',64),'55'),false,
   'an invoice cannot be authorized before its draft exists');
 select is(public.claim_wholesale_kit_invoice_write((select invoice from wholesale_fixture),'bling_invoice_draft'),true,'the draft write is claimed');
+select is(public.reopen_rejected_wholesale_draft((select invoice from wholesale_fixture),900),false,'fresh claim is protected');
+update private.wholesale_kit_invoice_writes set claimed_at=now()-interval '5 minutes'
+  where invoice_id=(select invoice from wholesale_fixture) and operation='bling_invoice_draft';
+select is(public.reopen_rejected_wholesale_draft((select invoice from wholesale_fixture),900),false,'unknown outcome stays protected');
+select is(public.record_wholesale_kit_invoice_progress((select invoice from wholesale_fixture),'error','draft_generation_rejected'),true,'record definitive refusal');
+select public.begin_wholesale_kit_invoice_issue((select invoice from wholesale_fixture));
+select is(public.reopen_rejected_wholesale_draft((select invoice from wholesale_fixture),901),false,'wrong sale cannot reopen');
+select is(public.reopen_rejected_wholesale_draft((select invoice from wholesale_fixture),900),true,'verified refused draft can reopen');
+select is(public.claim_wholesale_kit_invoice_write((select invoice from wholesale_fixture),'bling_invoice_draft'),true,'retry claims once');
+select is(public.reopen_rejected_wholesale_draft((select invoice from wholesale_fixture),900),false,'retry claim stays locked');
+select ok(not has_function_privilege('authenticated','public.reopen_rejected_wholesale_draft(uuid,bigint)','execute'),'client cannot reopen a remote write');
 select is(public.record_wholesale_kit_invoice_draft((select invoice from wholesale_fixture),900,77,repeat('b',64)),true,'the draft is recorded');
 select is(public.claim_wholesale_kit_invoice_write((select invoice from wholesale_fixture),'bling_invoice_send',repeat('c',64)),false,
   'sending needs the exact recorded draft hash');
