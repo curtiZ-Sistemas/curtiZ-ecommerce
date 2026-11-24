@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
             ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
             : [])
         ]
+      },
+      {
+        // As DANFEs são exibidas no modal do próprio painel; só a mesma origem pode enquadrá-las.
+        source: "/api/:scope*/invoice-pdf",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }]
       }
     ];
   }

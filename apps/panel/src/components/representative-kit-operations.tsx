@@ -2,6 +2,7 @@
 
 import { formatBRL } from "@curtiz/domain";
 import { useState, type FormEvent } from "react";
+import { InvoiceActions } from "./invoice-actions";
 
 type Row = Record<string, unknown>;
 const field = (row: Row,key: string) => typeof row[key] === "string" ? row[key] : "";
@@ -174,6 +175,9 @@ export function RepresentativeKitOperations({ mode, canReview, canInspect, canRe
           {typeof row.invoiceId === "number" && <p>NF-e no Bling {row.invoiceId}</p>}
           {row.invoiceAuthorized === true && field(row,"invoiceNumber") && <p>NF-e nº {field(row,"invoiceNumber")} · série 3</p>}
           {row.invoiceAuthorized === true && field(row,"invoiceKey") && <p>Chave de acesso {field(row,"invoiceKey")}</p>}
+          <InvoiceActions authorized={row.invoiceAuthorized === true} blingInvoiceId={typeof row.invoiceId === "number" ? row.invoiceId : null}
+            pdfUrl={`/api/operations/representative-kits/invoice-pdf?orderId=${encodeURIComponent(field(row,"orderId"))}`}
+            label={field(row,"invoiceNumber") ? `NF-e nº ${field(row,"invoiceNumber")}` : "NF-e"} />
           {row.autoInvoiceStatus === "error" && !row.invoiceAuthorized && <>
             <p role="alert">Motivo: {invoiceErrors[field(row,"autoInvoiceError")] ?? "Falha na emissão automática."}</p>
             {!row.cancellationRequested && typeof row.manualInvoiceId !== "number" && <form onSubmit={event => void submit(event,row)}>
