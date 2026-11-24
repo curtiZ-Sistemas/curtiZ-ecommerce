@@ -181,6 +181,12 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
     await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true);
     expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT", "GET"]);
   });
+  it("rejects a different carrier rather than replacing its document", () => {
+    const ownCarrier = { nome: "Curti Z", numeroDocumento: "12345678000195" };
+    const draft = { ...invoice(), transporte: { fretePorConta: 1, transportador: { nome: "Outra transportadora", numeroDocumento: "11222333000181" } } };
+    expect(() => blingFiscalDraftBody(draft, items, commercial, { ...input, freightMode: 3, ownCarrier }))
+      .toThrow("invoice_carrier_mapping_required");
+  });
   it("includes the verified issuer as own carrier and checks the saved transport", async () => {
     const ownCarrier = { nome: "Curti Z", numeroDocumento: "12345678000195" };
     const wholesale = { ...input, freightMode: 3 as const, ownCarrier };
