@@ -138,7 +138,7 @@ describe("lista de notas", () => {
     const html = renderToStaticMarkup(<WholesaleInvoiceList busyId="" onRetry={noop} onCancel={noop}
       invoices={[invoice({ status: "error", authorized: false, invoiceId: null, invoiceNumber: null, errorCode: "uncertain_write", canCancel: true })]} />);
     expect(html).toContain("Com erro");
-    expect(html).toContain("O Bling não confirmou a gravação");
+    expect(html).toContain("O Bling ainda não confirmou a operação");
     expect(html).toContain("Tentar de novo");
     expect(html).toContain("Cancelar e devolver estoque");
     expect(html).not.toContain('aria-label="Ver nota"');

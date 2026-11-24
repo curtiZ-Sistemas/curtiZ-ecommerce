@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   job: undefined as unknown as Record<string, unknown>, calls: [] as { name: string; args: Record<string, unknown> }[], claimed: new Set<string>(),
   requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5,
-  failSale: false, send: vi.fn()
+  failSale: false, draftResponseLost: false, draftLinked: false, send: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/security", () => ({ logServerEvent: vi.fn() }));
@@ -64,8 +64,8 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
-  if (path === "/pedidos/vendas/900/gerar-nfe") return { idNotaFiscal: 77 };
-  if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: 0 }, itens: [{ naturezaOperacao: { id: 123 } }] } };
+  if (path === "/pedidos/vendas/900/gerar-nfe") { if (state.draftResponseLost) { state.draftLinked = true; throw new BlingError("uncertain_write", 503, false, true); } return { idNotaFiscal: 77 }; }
+  if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: state.draftLinked ? 77 : 0 }, itens: [{ naturezaOperacao: { id: 123 } }] } };
   if (path === "/nfe/77/enviar?enviarEmail=false") { state.send(); return {}; }
   if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: 3,
     naturezaOperacao: { id: 123 }, transporte: { fretePorConta: 3 } } };
@@ -79,7 +79,7 @@ const posts = (suffix: string) => state.requests.filter(request => request.metho
 
 beforeEach(() => {
   state.job = baseJob(); state.calls = []; state.requests = []; state.claimed = new Set(); state.contactExists = true;
-  state.saleInBling = null; state.invoiceSituation = 5; state.failSale = false; state.send.mockClear();
+  state.saleInBling = null; state.invoiceSituation = 5; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.send.mockClear();
 });
 
 describe("emissão da nota de atacado", () => {
@@ -101,6 +101,21 @@ describe("emissão da nota de atacado", () => {
     state.contactExists = false;
     await run();
     expect(posts("/contatos")).toHaveLength(1);
+  });
+
+  it("recupera a nota vinculada à venda quando a resposta do POST se perde", async () => {
+    state.draftResponseLost = true;
+    expect(await run()).toEqual({ status: "authorized" });
+    expect(posts("/gerar-nfe")).toHaveLength(1);
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
+  });
+
+  it("não repete a geração quando a tentativa anterior já foi registrada", async () => {
+    state.job = { ...baseJob(), saleId: 900 };
+    state.claimed.add("bling_invoice_draft");
+    state.draftLinked = true;
+    expect(await run()).toEqual({ status: "authorized" });
+    expect(posts("/gerar-nfe")).toHaveLength(0);
   });
 
   it("é idempotente: reexecutar com a venda e a nota já gravadas não escreve de novo", async () => {

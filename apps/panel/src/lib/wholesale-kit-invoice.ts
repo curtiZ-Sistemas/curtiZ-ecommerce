@@ -159,9 +159,22 @@ export async function issueWholesaleKitInvoice(input: {
       const links = await call(db, "read_bling_product_links", { p_variant_ids: [...new Set(commercial.map(item => item.variantId))] });
       const payload = blingOrderPayload({ order, items, productLinks: rows(links), contactId, paymentMethodId: methodId, natureId,
         collectionDueDate: today });
-      if (!await claim("bling_sale")) throw new BlingError("uncertain_write", 503, false, true);
-      saleId = positiveId(row(row(await provider.request("/pedidos/vendas", { method: "POST", body: payload })).data).id);
-      if (!saleId) throw new BlingError("uncertain_write", 503, false, true);
+      let saleError: unknown;
+      if (await claim("bling_sale")) {
+        try { saleId = positiveId(row(row(await provider.request("/pedidos/vendas", { method: "POST", body: payload })).data).id); }
+        catch (error) { saleError = error; }
+      }
+      if (!saleId) {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          saleId = await findBlingOrder(provider, reference);
+          if (saleId) break;
+          if (attempt < 3) await sleep(1500);
+        }
+      }
+      if (!saleId) {
+        if (saleError instanceof BlingError && !saleError.uncertainWrite) throw saleError;
+        return await waiting("awaiting_bling_confirmation");
+      }
     }
     if (await call(db, "record_wholesale_kit_invoice_sale", { p_id: input.invoiceId, p_sale: saleId }) !== true) throw scopeError();
 
@@ -179,9 +192,43 @@ export async function issueWholesaleKitInvoice(input: {
     draftId ??= positiveId(row(sale.notaFiscal).id);
     if (!draftId) {
       if (!rows(sale.itens).length || rows(sale.itens).some(line => Number(row(line.naturezaOperacao).id) !== natureId)) throw scopeError();
-      if (!await claim("bling_invoice_draft")) throw new BlingError("uncertain_write", 503, false, true);
-      draftId = positiveId(row(await provider.request(`/pedidos/vendas/${saleId}/gerar-nfe`, { method: "POST" })).idNotaFiscal);
-      if (!draftId) throw new BlingError("uncertain_write", 503, false, true);
+      // The POST may have succeeded even when the response was lost or wrapped differently.
+      // A claimed write must never be repeated: recover the NF-e through its exact sale instead.
+      let generationError: unknown;
+      if (await claim("bling_invoice_draft")) {
+        try {
+          const generated = row(await provider.request(`/pedidos/vendas/${saleId}/gerar-nfe`, { method: "POST" }));
+          draftId = positiveId(generated.idNotaFiscal) ?? positiveId(row(generated.data).idNotaFiscal);
+        } catch (error) { generationError = error; }
+      }
+      if (!draftId) {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          const refreshed = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+          if (Number(refreshed.id) !== saleId) throw scopeError();
+          assertBlingExternalOrder(order, items, refreshed);
+          draftId = positiveId(row(refreshed.notaFiscal).id);
+          if (draftId) break;
+          if (attempt < 3) await sleep(1500);
+        }
+      }
+      if (!draftId) {
+        if (generationError instanceof BlingError && !generationError.uncertainWrite) throw generationError;
+        return await waiting("awaiting_bling_confirmation");
+      }
+    }
+    // A recovered note may already be processing or authorized. Never overwrite or send it again.
+    const recovered = await readInvoice(draftId);
+    if (Number(recovered.id) !== draftId) throw scopeError();
+    const recoveredSituation = Number(recovered.situacao);
+    if (recoveredSituation !== 1) {
+      // Persist only after the normal fiscal draft/authorization workflow has verified ownership.
+      // An externally transmitted, unlinked invoice cannot safely be adopted without reconciliation.
+      if (draftId === positiveId(job.invoiceId)) {
+        if (recoveredSituation === 5) return await authorize(draftId, recovered);
+        if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
+      }
+      if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
+      return await waiting("awaiting_bling_confirmation");
     }
     const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
     await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
