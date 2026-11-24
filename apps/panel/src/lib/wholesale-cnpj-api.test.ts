@@ -31,7 +31,7 @@ describe("consulta de CNPJ", () => {
       address: { state: "MG", postal_code: "30110100", street: "Rua Dos Testes", number: "10", complement: "Sala 2", district: "Centro", city: "Belo Horizonte" }
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://brasilapi.com.br/api/cnpj/v1/11222333000181");
+    expect(String(url)).toBe("https://brasilapi.com.br/api/cnpj/v1/11222333000181");
     expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.stringify(init)).not.toMatch(/cookie|authorization/iu);
   });
