@@ -45,6 +45,12 @@ describe("passo 2: cliente por CNPJ", () => {
     expect(html).toContain("consulte pelo CNPJ no SINTEGRA");
   });
 
+  it("mostra a consulta de CEP e permite completar um endereço parcial", () => {
+    const html = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, postalCode: "30110100" }} lookup="failed" postalLookup="partial" onChange={noop} />);
+    expect(html).toContain("30110-100");
+    expect(html).toContain("CEP encontrado. Complete os campos restantes.");
+  });
+
   it("bloqueia empresa fora de MG e CNPJ inválido com avisos claros", () => {
     const outside = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, document: "11222333000181", state: "SP" }} lookup="found" onChange={noop} />);
     expect(outside).toContain("Só emitimos nota de atacado para empresas de Minas Gerais");

@@ -31,6 +31,7 @@ export async function middleware(request: NextRequest) {
     frameSources: ["'self'"],
     connectSources: [
       storeOrigin,
+      "https://viacep.com.br",
       ...(videoUploadSource ? [videoUploadSource] : []),
       ...(process.env.NODE_ENV === "development" ? ["http:", "ws:"] : [])
     ],

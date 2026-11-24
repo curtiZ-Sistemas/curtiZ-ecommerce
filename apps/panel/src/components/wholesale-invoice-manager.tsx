@@ -5,6 +5,7 @@ import { Check, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
 import { InvoiceActions } from "./invoice-actions";
+import { lookupFiscalPostalCode, mergePostalAddress, type PostalLookupState } from "@/lib/fiscal-postal-code";
 
 export type WholesaleTemplate = { code: string; label: string; available: number; unitPriceInCents: number; sizes: { size: string; pairs: number }[] };
 export type WholesaleOffer = { kitId: string; name: string; description: string; templates: WholesaleTemplate[] };
@@ -177,8 +178,9 @@ export function KitStep({ offers, kitId, template, onKit, onTemplate }: {
 
 export type LookupState = "idle" | "loading" | "found" | "missing" | "failed";
 
-export function ClientStep({ buyer, lookup, onChange, onRetryLookup }: {
+export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLookup = "idle" }: {
   buyer: WholesaleBuyer; lookup: LookupState; onChange: (patch: Partial<WholesaleBuyer>) => void; onRetryLookup?: () => void;
+  postalLookup?: PostalLookupState;
 }) {
   const cnpjId = useId();
   const digits = onlyDigits(buyer.document);
@@ -215,8 +217,15 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup }: {
         <small>Informe os 13 dígitos da IE ativa de MG. Se não souber, <a href="https://www.fazenda.mg.gov.br/empresas/Cadastro/cadastro/consultapublica.html" target="_blank" rel="noopener noreferrer">consulte pelo CNPJ no SINTEGRA</a>.</small>
       </label>
       {buyer.registration.trim().toUpperCase() === "ISENTA" && <p className="wholesale-alert wide" role="alert">O atacado é destinado à revenda. Confira a IE do comprador no SINTEGRA antes de continuar.</p>}
-      <label><span>CEP</span><input inputMode="numeric" autoComplete="off" value={formatCep(buyer.postalCode)}
-        onChange={event => onChange({ postalCode: onlyDigits(event.target.value).slice(0, 8) })} /></label>
+      <label><span>CEP</span><input inputMode="numeric" autoComplete="off" placeholder="00000-000" value={formatCep(buyer.postalCode)}
+        onChange={event => onChange({ postalCode: onlyDigits(event.target.value).slice(0, 8) })} />
+        <small role="status">{postalLookup === "loading" ? "Buscando endereço…"
+          : postalLookup === "found" ? "Endereço encontrado. Confira os dados."
+          : postalLookup === "partial" ? "CEP encontrado. Complete os campos restantes."
+          : postalLookup === "missing" ? "CEP não encontrado. Confira o número."
+          : postalLookup === "failed" ? "Consulta indisponível. Preencha o endereço manualmente."
+          : "Digite o CEP para preencher o endereço."}</small>
+      </label>
       {field("Rua", "street", { wide: true, max: 180 })}
       {field("Número", "number", { max: 30 })}
       {field("Complemento", "complement", { required: false, max: 100 })}
@@ -336,6 +345,7 @@ export function WholesaleInvoiceManager() {
   const [busyId, setBusyId] = useState("");
   const [wizard, setWizard] = useState<Wizard | null>(null);
   const [lookup, setLookup] = useState<LookupState>("idle");
+  const [postalLookup, setPostalLookup] = useState<PostalLookupState>("idle");
   const [problem, setProblem] = useState("");
   const [steps, setSteps] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
@@ -372,10 +382,12 @@ export function WholesaleInvoiceManager() {
         if (body.found !== true) { setLookup("missing"); return; }
         const a = record(body.address) ?? {};
         setWizard(current => current && current.buyer.document === cnpj ? { ...current, buyer: {
-          ...current.buyer, registration: current.buyer.registration || str(body.registration), name: str(body.name) || current.buyer.name, postalCode: str(a.postal_code) || current.buyer.postalCode,
-          street: str(a.street) || current.buyer.street, number: str(a.number) || current.buyer.number,
-          complement: str(a.complement), district: str(a.district) || current.buyer.district,
-          city: str(a.city) || current.buyer.city, state: str(a.state) || current.buyer.state
+          ...current.buyer, registration: current.buyer.registration || str(body.registration), name: current.buyer.name || str(body.name),
+          ...(current.buyer.postalCode ? {} : {
+            postalCode: onlyDigits(str(a.postal_code)).slice(0, 8), street: current.buyer.street || str(a.street),
+            number: current.buyer.number || str(a.number), complement: current.buyer.complement || str(a.complement),
+            district: current.buyer.district || str(a.district), city: current.buyer.city || str(a.city), state: str(a.state) || current.buyer.state
+          })
         } } : current);
         setLookup("found");
       } catch { if (!controller.signal.aborted) setLookup("failed"); }
@@ -383,9 +395,40 @@ export function WholesaleInvoiceManager() {
     return () => controller.abort();
   }, [cnpj, lookupRetry]);
 
+  const postalCode = wizard?.buyer.postalCode ?? "";
+  useEffect(() => {
+    if (postalCode.length !== 8) { setPostalLookup("idle"); return; }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let disposed = false;
+    setPostalLookup("loading");
+    void lookupFiscalPostalCode(postalCode, controller.signal).then(result => {
+      if (disposed) return;
+      setPostalLookup(result.status);
+      if (result.status === "found" || result.status === "partial") {
+        setWizard(current => current && current.buyer.document === cnpj && current.buyer.postalCode === postalCode
+          ? { ...current, buyer: mergePostalAddress(current.buyer, result.address) } : current);
+      }
+    }).finally(() => clearTimeout(timeout));
+    return () => { disposed = true; clearTimeout(timeout); controller.abort(); };
+  }, [postalCode, cnpj]);
+
+  function changeBuyer(value: Partial<WholesaleBuyer>) {
+    setWizard(current => {
+      if (!current) return current;
+      const buyer = current.buyer;
+      if (value.document !== undefined && value.document !== buyer.document) return { ...current, buyer: { ...emptyBuyer, ...value } };
+      const changedPostal = value.postalCode !== undefined && value.postalCode !== buyer.postalCode;
+      const clearAddress = changedPostal && buyer.postalCode.length === 8;
+      return { ...current, buyer: { ...buyer,
+        ...(clearAddress ? { street: "", number: "", complement: "", district: "", city: "", state: "" }
+          : changedPostal && buyer.postalCode === "" ? { state: "" } : {}), ...value } };
+    });
+  }
+
   function open() {
     key.current = crypto.randomUUID();
-    setLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
+    setLookup("idle"); setPostalLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
     setWizard(newWizard());
   }
   const close = useCallback(() => { if (!running) { setWizard(null); void load(); } }, [running, load]);
@@ -517,7 +560,7 @@ export function WholesaleInvoiceManager() {
         <div className="wholesale-body">
           {wizard.step === 1 && <KitStep offers={offers} kitId={wizard.kitId} template={wizard.template}
             onKit={id => patch({ kitId: id, template: "", price: "" })} onTemplate={code => patch({ template: code, price: "" })} />}
-          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={value => patch({ buyer: { ...(value.document !== undefined && value.document !== wizard.buyer.document ? emptyBuyer : wizard.buyer), ...value } })} />}
+          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} postalLookup={postalLookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={changeBuyer} />}
           {wizard.step === 3 && template && kit && <PaymentStep template={template} kitName={kit.name} quantity={wizard.quantity} price={wizard.price}
             method={wizard.method} buyerName={wizard.buyer.name} onQuantity={value => patch({ quantity: value })}
             onPrice={value => patch({ price: value })} onMethod={value => patch({ method: value })} />}
