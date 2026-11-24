@@ -198,6 +198,28 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
     await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, wholesale, true, async () => true);
     expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { transporte: { fretePorConta: 3, transportador: ownCarrier } } });
   });
+  it("repairs only the exact linked wholesale draft with the reviewed pair lines", async () => {
+    const document = "11222333000181", registration = "0012345678900";
+    const ownCarrier = { nome: "Curti Z", numeroDocumento: "12345678000195" };
+    const reviewedPairs = [{ ...items[0]!, sku: "PAIR-36", sourceCommercialSku: undefined, quantity: 36, unitPriceInCents: 1700 }];
+    const reviewed = { ...input, document, businessRegistration: registration, icmsTaxpayer: true, totalInCents: 61200,
+      paymentTerms: [{ data: "2026-10-17", valor: 612, formaPagamento: { id: 100 } }],
+      freightMode: 3 as const, ownCarrier, linkedWholesaleDraftId: 77 };
+    const damaged = { ...invoice(), id: 77, valorNota: 612, contato: { ...invoice().contato, numeroDocumento: document, ie: registration },
+      itens: [{ codigo: "", unidade: "UN", quantidade: 36, valor: 17 }] };
+    const body = blingFiscalDraftBody(damaged, reviewedPairs, reviewedPairs, reviewed);
+    expect(body.itens).toMatchObject([{ codigo: "PAIR-36", unidade: "PR", quantidade: 36, valor: 17 }]);
+    const request = vi.fn().mockResolvedValueOnce({ data: damaged }).mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { ...damaged, itens: body.itens, parcelas: body.parcelas, transporte: body.transporte } });
+    await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 77, reviewedPairs, reviewedPairs, reviewed, true, async () => true);
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { itens: body.itens } });
+    expect(() => blingFiscalDraftBody({ ...damaged, id: 78 }, reviewedPairs, reviewedPairs, reviewed))
+      .toThrow("invoice_draft_decomposition_conflict");
+    expect(() => blingFiscalDraftBody({ ...damaged, situacao: 5 }, reviewedPairs, reviewedPairs, reviewed))
+      .toThrow("invoice_draft_decomposition_conflict");
+    expect(() => blingFiscalDraftBody({ ...damaged, valorNota: 600 }, reviewedPairs, reviewedPairs, reviewed))
+      .toThrow("invoice_draft_decomposition_conflict");
+  });
   it("checks the carrier mode again after updating a draft whose SKU lines already match", async () => {
     const wholesale = { ...input, freightMode: 3 as const };
     const body = blingFiscalDraftBody({ ...invoice(), transporte: { fretePorConta: 9 } }, items, commercial, wholesale);

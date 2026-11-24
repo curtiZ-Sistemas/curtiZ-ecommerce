@@ -303,11 +303,13 @@ export async function issueWholesaleKitInvoice(input: {
     })), {
       document, icmsTaxpayer: registration !== "", businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
       totalInCents: mirror.totalInCents, shippingInCents: 0, discountInCents: 0, additionalInCents: 0, freightMode: 3,
-      ownCarrier: { nome: carrierName, numeroDocumento: issuer }, reviewedOperationDate: input.reviewedOperationDate
+      ownCarrier: { nome: carrierName, numeroDocumento: issuer }, reviewedOperationDate: input.reviewedOperationDate,
+      ...(linked === draftId && job.sendClaimed !== true ? { linkedWholesaleDraftId: draftId } : {})
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
+    if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
     if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series
-      || Number(row(preview.naturezaOperacao).id) !== natureId || !invoiceMatchesFiscalLines(preview, mirror.items)
+      || Number(row(preview.naturezaOperacao).id) !== natureId
       || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
     const hash = await blingFiscalMirrorHash({ orderId: input.invoiceId, draft: draftId, competence: today.slice(0, 7), preview, mirror, origin: job.originPostalCode });
     if (await call(db, "record_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId, p_hash: hash }) !== true)
