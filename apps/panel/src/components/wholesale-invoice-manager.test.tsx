@@ -1,0 +1,159 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import {
+  buyerProblem, ClientStep, emptyBuyer, IssueProgress, KitStep, PaymentStep, parseIssueLine, readInvoice, readOffers,
+  wholesaleReason, wholesaleStatus, WholesaleInvoiceList, type WholesaleInvoice, type WholesaleOffer
+} from "./wholesale-invoice-manager";
+
+const noop = () => undefined;
+const sizes = [{ size: "34", pairs: 1 }, { size: "35", pairs: 2 }, { size: "36", pairs: 3 }, { size: "37", pairs: 3 }, { size: "38", pairs: 2 }, { size: "39", pairs: 1 }];
+const offers: WholesaleOffer[] = [{ kitId: "k1", name: "Kit Verão", description: "Tênis branco", templates: [
+  { code: "standard", label: "Ficha padrão", available: 5, unitPriceInCents: 36001, sizes },
+  { code: "lower_restock", label: "Ficha reposição baixa", available: 0, unitPriceInCents: 35001, sizes }
+] }];
+const invoice = (overrides: Partial<WholesaleInvoice> = {}): WholesaleInvoice => ({
+  id: "i1", status: "authorized", stage: "authorized", kitName: "Kit Verão", templateLabel: "Ficha padrão", quantity: 2, totalInCents: 72002,
+  paymentMethod: "pix", buyerName: "Loja Teste LTDA", buyerDocument: "11222333000181", invoiceId: 77, invoiceNumber: "56",
+  authorized: true, errorCode: null, canCancel: false, createdAt: "2026-11-24T15:00:00Z", ...overrides
+});
+
+describe("passo 1: kit e ficha", () => {
+  it("mostra os kits e, ao escolher, as fichas com distribuição, preço e estoque; a esgotada fica desabilitada", () => {
+    const html = renderToStaticMarkup(<KitStep offers={offers} kitId="k1" template="standard" onKit={noop} onTemplate={noop} />);
+    expect(html).toContain("Kit Verão");
+    expect(html).toContain("12 pares: 34 ×1 · 35 ×2 · 36 ×3 · 37 ×3 · 38 ×2 · 39 ×1");
+    expect(html).toContain("5 em estoque");
+    expect(html).toContain("Esgotada");
+    expect(html.match(/aria-pressed="true"/gu)).toHaveLength(2);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?Ficha reposição baixa/u);
+    expect(html).not.toMatch(/CFOP|NCM|série|natureza/iu);
+  });
+
+  it("avisa quando não há kit configurado", () => {
+    expect(renderToStaticMarkup(<KitStep offers={[]} kitId="" template="" onKit={noop} onTemplate={noop} />)).toContain("Nenhum kit");
+  });
+});
+
+describe("passo 2: cliente por CNPJ", () => {
+  it("aplica a máscara, mostra o estado da consulta e a IE como opcional", () => {
+    const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA" };
+    const html = renderToStaticMarkup(<ClientStep buyer={buyer} lookup="found" onChange={noop} />);
+    expect(html).toContain("11.222.333/0001-81");
+    expect(html).toContain("Dados da empresa preenchidos");
+    expect(html).toContain("Inscrição estadual (opcional)");
+  });
+
+  it("bloqueia empresa fora de MG e CNPJ inválido com avisos claros", () => {
+    const outside = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, document: "11222333000181", state: "SP" }} lookup="found" onChange={noop} />);
+    expect(outside).toContain("Só emitimos nota de atacado para empresas de Minas Gerais");
+    const invalid = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, document: "11222333000182" }} lookup="idle" onChange={noop} />);
+    expect(invalid).toContain("CNPJ inválido");
+    expect(buyerProblem({ ...emptyBuyer, document: "11222333000181", state: "SP", name: "Loja" })).toBe("Só emitimos para empresas de Minas Gerais.");
+    expect(buyerProblem({ ...emptyBuyer, document: "11222333000182" })).toBe("Informe um CNPJ válido.");
+  });
+
+  it("libera o passo quando o cadastro está completo, com ou sem inscrição estadual", () => {
+    const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA", postalCode: "30110100", street: "Rua A", number: "1", district: "Centro", city: "Belo Horizonte" };
+    expect(buyerProblem(buyer)).toBeNull();
+    expect(buyerProblem({ ...buyer, registration: "0012345678900" })).toBeNull();
+    expect(buyerProblem({ ...buyer, registration: "12.3" })).toBe("A inscrição estadual deve ter só números.");
+    expect(buyerProblem({ ...buyer, postalCode: "01310100" })).toBe("Informe um CEP de Minas Gerais.");
+  });
+});
+
+describe("passo 3: quantidade, preço e pagamento", () => {
+  it("pré-preenche o preço, limita a quantidade ao estoque e mostra o total", () => {
+    const template = offers[0]!.templates[0]!;
+    const html = renderToStaticMarkup(<PaymentStep template={template} kitName="Kit Verão" quantity={5} price="360,01" method="cash"
+      buyerName="Loja Teste LTDA" onQuantity={noop} onPrice={noop} onMethod={noop} />);
+    expect(html).toContain("360,01");
+    expect(html).toContain("Sugerido: R$ 360,01");
+    expect(html).toMatch(/aria-label="Mais uma ficha"[^>]*disabled=""/u);
+    expect(html).toContain("R$ 1.800,05");
+    expect(html).toMatch(/aria-pressed="true"[^>]*><strong>Dinheiro/u);
+    expect(html).toContain("Pix");
+  });
+});
+
+describe("emissão", () => {
+  const result = (status: string, code: string | null = null, inv: WholesaleInvoice | null = null) => ({ type: "result" as const, status, code, invoice: inv });
+
+  it("mostra o progresso por etapa enquanto emite", () => {
+    const html = renderToStaticMarkup(<IssueProgress steps={["contact", "sale"]} running result={null} busy={false} onRetry={noop} onCancel={noop} onClose={noop} />);
+    expect(html).toContain("Cliente no Bling");
+    expect(html).toContain("Não feche esta janela");
+    expect(html.match(/class="done"/gu)).toHaveLength(1);
+    expect(html.match(/class="active"/gu)).toHaveLength(1);
+    expect(html).not.toContain("Fechar");
+  });
+
+  it("no sucesso mostra o número da nota e as ações de baixar, ver e editar no Bling", () => {
+    const html = renderToStaticMarkup(<IssueProgress steps={["contact"]} running={false} result={result("authorized", null, invoice())} busy={false}
+      onRetry={noop} onCancel={noop} onClose={noop} />);
+    expect(html).toContain("Nota nº 56 autorizada");
+    for (const label of ["Baixar DANFE", "Ver nota", "Editar no Bling"]) expect(html).toContain(`aria-label="${label}"`);
+  });
+
+  it("no erro mostra o motivo, Tentar de novo e Cancelar e devolver estoque", () => {
+    const html = renderToStaticMarkup(<IssueProgress steps={["contact"]} running={false} result={result("error", "validation_error", invoice({ status: "error", canCancel: true }))}
+      busy={false} onRetry={noop} onCancel={noop} onClose={noop} />);
+    expect(html).toContain("O Bling recusou algum dado da nota");
+    expect(html).toContain("Tentar de novo");
+    expect(html).toContain("Cancelar e devolver estoque");
+    expect(html).toContain('role="alert"');
+  });
+
+  it("com envio desligado explica que a nota ficou em rascunho no Bling", () => {
+    expect(wholesaleReason("bling_send_disabled")).toContain("rascunho no Bling");
+    expect(wholesaleReason("desconhecido")).toBe("A nota não foi emitida. Tente de novo.");
+    expect(wholesaleStatus({ status: "draft", stage: "draft_in_bling" })).toEqual({ label: "Rascunho no Bling", tone: "warn" });
+  });
+});
+
+describe("lista de notas", () => {
+  it("mostra data, cliente, kit e ficha, quantidade, total, status e as ações da nota autorizada", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[invoice()]} busyId="" onRetry={noop} onCancel={noop} />);
+    expect(html).toContain("Loja Teste LTDA");
+    expect(html).toContain("11.222.333/0001-81");
+    expect(html).toContain("24/11/26");
+    expect(html).toContain("Kit Verão");
+    expect(html).toContain("Ficha padrão · 2 fichas");
+    expect(html).toContain("R$ 720,02");
+    expect(html).toContain("Autorizada");
+    expect(html).toContain("NF-e nº 56");
+    expect(html).toContain('aria-label="Ver nota"');
+    expect(html).not.toContain("Tentar de novo");
+  });
+
+  it("oferece tentar de novo e cancelar nas notas com erro, com o motivo, e não mostra ações de PDF", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList busyId="" onRetry={noop} onCancel={noop}
+      invoices={[invoice({ status: "error", authorized: false, invoiceId: null, invoiceNumber: null, errorCode: "uncertain_write", canCancel: true })]} />);
+    expect(html).toContain("Com erro");
+    expect(html).toContain("O Bling não confirmou a gravação");
+    expect(html).toContain("Tentar de novo");
+    expect(html).toContain("Cancelar e devolver estoque");
+    expect(html).not.toContain('aria-label="Ver nota"');
+  });
+
+  it("mostra o estado vazio", () => {
+    expect(renderToStaticMarkup(<WholesaleInvoiceList invoices={[]} busyId="" onRetry={noop} onCancel={noop} />)).toContain("Nenhuma nota de atacado ainda");
+  });
+});
+
+describe("leitura das respostas", () => {
+  it("lê as linhas do stream e ignora linhas quebradas", () => {
+    expect(parseIssueLine('{"type":"step","step":"sale"}')).toEqual({ type: "step", step: "sale" });
+    expect(parseIssueLine('{"type":"result","status":"waiting","code":"bling_send_disabled","invoice":null}'))
+      .toEqual({ type: "result", status: "waiting", code: "bling_send_disabled", invoice: null });
+    expect(parseIssueLine("{quebrado")).toBeNull();
+    expect(parseIssueLine('{"type":"outro"}')).toBeNull();
+  });
+
+  it("descarta kits e notas incompletos", () => {
+    expect(readOffers([{ kitId: "k", name: "Kit", templates: [{ code: "standard", available: 1, unitPriceInCents: 100, sizes: [] }, { code: "x" }] }, { nome: "sem id" }])).toHaveLength(1);
+    expect(readOffers([{ kitId: "k", name: "Kit", templates: [{ code: "standard", available: 1, unitPriceInCents: 100, sizes: [] }, { code: "x" }] }])[0]?.templates).toHaveLength(1);
+    expect(readInvoice({ id: "i", quantity: 1 })).toBeNull();
+    expect(readInvoice({ id: "i", quantity: 1, totalInCents: 5, status: "draft" })?.status).toBe("draft");
+  });
+});

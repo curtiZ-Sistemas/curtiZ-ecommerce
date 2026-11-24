@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { encryptPII } from "@curtiz/security/pii";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { beginCommercialKitPix } from "./representative-commercial-payments";
+import { beginCommercialKitPix, kitPaymentView } from "./representative-commercial-payments";
 
 const orderId = "10000000-0000-4000-8000-000000000001";
 const actor = { id: "20000000-0000-4000-8000-000000000002", email: "buyer@example.invalid" };
@@ -75,5 +75,21 @@ describe("beginCommercialKitPix payer document", () => {
     await beginCommercialKitPix(db, provider() as never, "456", actor, orderId);
     expect(spies.every((spy) => !JSON.stringify(spy.mock.calls).includes(cpf))).toBe(true);
     spies.forEach((spy) => spy.mockRestore());
+  });
+});
+
+describe("kitPaymentView Pix QR Code", () => {
+  const context = { ...summary, state: "payment_pending", customerCanPay: true };
+  const view = (pixQrCodeBase64?: string) => kitPaymentView(context, { ...payment, ...(pixQrCodeBase64 === undefined ? {} : { pixQrCodeBase64 }) } as never);
+
+  it("includes a valid base64 QR Code next to the copy and paste code", () => {
+    expect(view("iVBORw0KGgo=").pix).toEqual({ copyPaste: "00020126", expiresAt: payment.expiresAt, qrCodeBase64: "iVBORw0KGgo=" });
+  });
+
+  it("drops a QR Code that is missing, malformed or too large but keeps the copy and paste code", () => {
+    for (const qr of [undefined, "", "not base64!", "<svg/>", "A".repeat(20001)]) {
+      expect(view(qr).pix).toEqual({ copyPaste: "00020126", expiresAt: payment.expiresAt });
+    }
+    expect(view("A".repeat(20000)).pix).toHaveProperty("qrCodeBase64");
   });
 });

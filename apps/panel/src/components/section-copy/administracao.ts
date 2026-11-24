@@ -5,6 +5,7 @@ import type { SectionCopy } from "./types";
 export const administracaoSectionCopy: SectionCopy = {
   devolucoes: "Avalie solicitações, confira fotos, forneça orientações de postagem e acompanhe reembolsos autorizados.",
   representantes: "Acompanhe as solicitações e os cadastros de representantes.",
+  "notas-atacado": "Emita a NF-e de um kit para uma empresa de Minas Gerais e acompanhe as notas já emitidas.",
   criativos: "Crie, publique e arquive os materiais disponíveis no portal dos representantes.",
   "central-ajuda": "Mantenha os artigos e respostas exibidos na central de ajuda da loja.",
   politicas: "Edite, importe e publique as políticas e documentos legais da loja.",

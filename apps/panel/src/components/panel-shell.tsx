@@ -99,6 +99,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Cupons", "cupons", Tags],
     ["Representantes", "representantes", Users],
     ["Kits", "kits", PackageCheck],
+    ["Notas de atacado", "notas-atacado", FileText],
     ["Níveis", "niveis", ChartNoAxesCombined],
     ["Metas", "metas", ClipboardCheck],
     ["Comissões autorizadas", "comissoes", BadgeDollarSign],
@@ -125,6 +126,7 @@ const menus: Record<PanelRole, Array<[string, string, React.ComponentType<{ size
     ["Qualificação", "qualificacao", ShieldCheck],
     ["Metas", "metas", ClipboardCheck],
     ["Kits", "kits", PackageCheck],
+    ["Notas de atacado", "notas-atacado", FileText],
     ["Comissões", "comissoes", BadgeDollarSign],
     ["Regras de comissão", "regras-comissao", Settings],
     ["Fechamentos", "fechamentos", FileClock],
@@ -238,16 +240,16 @@ const menuGroups: Record<PanelRole, Record<number, string>> = {
     5: "Comercial",
     7: "Conteúdo",
     12: "Representantes",
-    20: "Governança"
+    21: "Governança"
   },
   gerencia: {
     0: "Visão geral",
     2: "Resultados",
     6: "Representantes",
-    13: "Financeiro",
-    17: "Conteúdo",
-    22: "Governança",
-    29: "Atendimento"
+    14: "Financeiro",
+    18: "Conteúdo",
+    23: "Governança",
+    30: "Atendimento"
   },
   tecnico: {
     0: "Monitoramento",

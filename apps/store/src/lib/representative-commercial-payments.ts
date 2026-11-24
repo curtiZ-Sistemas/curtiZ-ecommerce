@@ -72,13 +72,18 @@ export async function commercialKitOrderPayment(db: SupabaseClient, actor: strin
   return kitRecord(db, "read_representative_kit_payment", { p_actor: actor, p_order: orderId });
 }
 
+const MAX_PIX_QR_LENGTH = 20000;
+const pixQrPattern = /^[A-Za-z0-9+/=]+$/u;
+
 export function kitPaymentView(context: UnknownRecord, payment?: MercadoPagoPayment) {
+  const qr = payment?.pixQrCodeBase64;
+  const qrCodeBase64 = typeof qr === "string" && qr.length > 0 && qr.length <= MAX_PIX_QR_LENGTH && pixQrPattern.test(qr) ? qr : "";
   const state = readString(context, "state");
   const cancellationRequested = context.cancellationRequested === true;
   const pix = context.customerCanPay === true && !cancellationRequested && state === "payment_pending"
     && payment?.expiresAt && Date.parse(payment.expiresAt) > Date.now()
     && payment.pixCopyPaste.length > 0 && payment.pixCopyPaste.length <= 1024
-    ? { copyPaste: payment.pixCopyPaste, expiresAt: payment.expiresAt } : null;
+    ? { copyPaste: payment.pixCopyPaste, expiresAt: payment.expiresAt, ...(qrCodeBase64 ? { qrCodeBase64 } : {}) } : null;
   return {
     orderId: readString(context, "orderId"), state, cancellationRequested, canCancelPaid: context.canCancelPaid === true,
     ...(context.canCancelCollection === true ? { canCancelCollection: true } : {}),

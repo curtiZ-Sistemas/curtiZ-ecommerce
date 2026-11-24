@@ -49,6 +49,14 @@ describe("Bling authorized MG resale invoice", () => {
     expect(() => readBlingAuthorizedResaleXml(xml().replace(from, to), key, expected)).toThrow();
   });
 
+  it("accepts a company without state registration only as a non-taxpayer recipient without IE", () => {
+    const withoutRegistration = xml().replace("<indIEDest>1</indIEDest><IE>0012345678900</IE>", "<indIEDest>9</indIEDest>");
+    expect(readBlingAuthorizedResaleXml(withoutRegistration, key, { ...expected, buyerStateRegistration: "" }))
+      .toMatchObject({ invoiceKey: key });
+    expect(() => readBlingAuthorizedResaleXml(xml(), key, { ...expected, buyerStateRegistration: "" })).toThrow();
+    expect(() => readBlingAuthorizedResaleXml(withoutRegistration, key, expected)).toThrow();
+  });
+
   it("does not treat a homologation XML as a production authorization", () => {
     expect(() => readBlingAuthorizedResaleXml(xml(), key, { ...expected, environment: 1 })).toThrow();
   });
