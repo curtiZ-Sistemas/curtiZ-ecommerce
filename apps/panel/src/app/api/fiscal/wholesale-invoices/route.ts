@@ -27,7 +27,11 @@ const batchItem = z.object({ kitId: z.string().uuid(), template: z.enum(["standa
   quantity: z.number().int().min(1).max(99), unitPriceInCents: z.number().int().min(12).max(100_000_000) }).strict();
 const batch = z.object({ action: z.literal("create_batch"), key: z.string().uuid(), items: z.array(batchItem).min(1).max(20),
   paymentMethod: z.enum(["pix", "cash"]), buyer }).strict();
-const issue = z.object({ action: z.literal("issue"), id: z.string().uuid() }).strict();
+const operationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u).refine(value => {
+  const parsed = new Date(value + ":00Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 16) === value;
+});
+const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional() }).strict();
 const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
 const input = z.discriminatedUnion("action", [create, batch, issue, cancel]);
 
@@ -129,6 +133,7 @@ export async function POST(request: NextRequest) {
         try {
           const result = await issueWholesaleKitInvoice({
             db: service, provider: panelBlingClient(service), environment: process.env, invoiceId: item.id,
+            reviewedOperationDate: item.operationDate ? item.operationDate.replace("T", " ") + ":00" : undefined,
             onStep: step => write({ type: "step", step })
           });
           const list = await db.rpc("list_wholesale_kit_invoices", { p_limit: 100 });

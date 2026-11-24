@@ -52,7 +52,7 @@ async function call(db: SupabaseClient, name: string, args: UnknownRecord): Prom
  */
 export async function issueWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string;
-  onStep?: (step: WholesaleStep) => void; sleep?: (milliseconds: number) => Promise<void>;
+  onStep?: (step: WholesaleStep) => void; sleep?: (milliseconds: number) => Promise<void>; reviewedOperationDate?: string;
 }): Promise<WholesaleIssueResult> {
   const { db, provider, environment } = input;
   const sleep = input.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
@@ -240,7 +240,8 @@ export async function issueWholesaleKitInvoice(input: {
       ...item, sku: blingExternalSku(item.sku, item.variantId)
     })), {
       document, icmsTaxpayer: registration !== "", businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
-      totalInCents: mirror.totalInCents, shippingInCents: 0, discountInCents: 0, additionalInCents: 0, freightMode: 3
+      totalInCents: mirror.totalInCents, shippingInCents: 0, discountInCents: 0, additionalInCents: 0, freightMode: 3,
+      reviewedOperationDate: input.reviewedOperationDate
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series

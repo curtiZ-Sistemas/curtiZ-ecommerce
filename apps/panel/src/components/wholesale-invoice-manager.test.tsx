@@ -131,6 +131,15 @@ describe("emissão", () => {
     expect(html).toContain('role="alert"');
   });
 
+  it("explica a data de saída ausente sem mandar o contador ao Bling", () => {
+    const html = renderToStaticMarkup(<IssueProgress steps={["contact", "sale", "draft"]} running={false}
+      result={result("error", "invoice_operation_date_required", invoice({ status: "error", canCancel: true }))}
+      busy={false} onRetry={noop} onCancel={noop} onClose={noop} operationDate="" onOperationDate={noop} />);
+    expect(html).toContain("Data e hora de saída da mercadoria");
+    expect(html).toContain('type="datetime-local"');
+    expect(html).toContain("continuar a emissão da mesma nota");
+  });
+
   it("com envio desligado explica que a nota ficou em rascunho no Bling", () => {
     expect(wholesaleReason("bling_send_disabled")).toContain("rascunho no Bling");
     expect(wholesaleReason("desconhecido")).toBe("A nota não foi emitida. Tente de novo.");

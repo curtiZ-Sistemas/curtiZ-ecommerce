@@ -28,7 +28,7 @@ vi.mock("@curtiz/integrations", () => {
     verifyCommercialKitInvoice: async () => ({ key: "3".repeat(44), protocol: "123456789012345", hash: "b".repeat(64) })
   };
 });
-import { BlingError } from "@curtiz/integrations";
+import { BlingError, prepareBlingFiscalDraft } from "@curtiz/integrations";
 import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice, wholesaleFailureCode } from "./wholesale-kit-invoice";
 
 const id = "33333333-3333-4333-8333-333333333333";
@@ -83,6 +83,17 @@ beforeEach(() => {
 });
 
 describe("emissão da nota de atacado", () => {
+  it("retoma o rascunho existente com a data revisada sem criar outra venda ou nota", async () => {
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77 };
+    state.draftLinked = true;
+    const reviewedOperationDate = "2026-11-24 13:10:00";
+    expect(await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment,
+      invoiceId: id, reviewedOperationDate, sleep: async () => undefined })).toEqual({ status: "authorized" });
+    expect(vi.mocked(prepareBlingFiscalDraft)).toHaveBeenCalledWith(expect.anything(), 77, expect.anything(), expect.anything(),
+      expect.objectContaining({ reviewedOperationDate }), true, expect.anything());
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(posts("/gerar-nfe")).toHaveLength(0);
+  });
   it("cria uma venda e uma nota, envia e confirma a autorização", async () => {
     const steps: string[] = [];
     const result = await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment, invoiceId: id,

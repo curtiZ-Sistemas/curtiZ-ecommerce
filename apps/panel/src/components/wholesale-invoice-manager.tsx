@@ -85,6 +85,8 @@ const reasons: Record<string, string> = {
   cancel_reconciliation_pending: "Cancelamento aguardando confirmação. Conclua pelo painel sem duplicar a devolução.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
+  invoice_operation_date_required: "Informe a data e a hora de saída da mercadoria para continuar a emissão da mesma nota.",
+  invoice_operation_date_invalid: "Confira a data e a hora de saída da mercadoria antes de continuar.",
   invoice_recipient_mismatch: "Os dados do cliente no Bling não conferem com os desta nota.",
   invoice_rejected_by_sefaz: "A SEFAZ recusou a nota. Solicite revisão fiscal pelo suporte. A nota não será reenviada às cegas.",
   invoice_cancelled_in_bling: "A nota foi cancelada no Bling. Cancele aqui para devolver as fichas ao estoque.",
@@ -296,12 +298,14 @@ export function PaymentStep({ template, kitName, quantity, price, method, buyerN
   </div>;
 }
 
-export function IssueProgress({ steps, running, result, onRetry, onCancel, onClose, busy }: {
+export function IssueProgress({ steps, running, result, onRetry, onCancel, onClose, busy, operationDate = "", onOperationDate }: {
   steps: string[]; running: boolean; result: Extract<IssueEvent, { type: "result" }> | null;
   onRetry: () => void; onCancel: () => void; onClose: () => void; busy: boolean;
+  operationDate?: string; onOperationDate?: (value: string) => void;
 }) {
   const failed = result?.status === "error" || result?.status === "waiting" || result?.status === "busy";
   const current = steps.at(-1);
+  const needsDate = result?.code === "invoice_operation_date_required" || result?.code === "invoice_operation_date_invalid";
   return <div className="wholesale-step" aria-live="polite">
     <ol className="wholesale-progress">
       {issueSteps.map(([key, label]) => {
@@ -322,12 +326,20 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
     {failed && <p className={result?.status === "error" ? "wholesale-alert" : "wholesale-note"} role={result?.status === "error" ? "alert" : "status"}>
       {result?.status === "busy" ? "Esta nota já está sendo emitida. Aguarde alguns instantes e verifique de novo." : wholesaleReason(result?.code ?? null)}
     </p>}
+    {needsDate && onOperationDate && <DepartureField value={operationDate} onChange={onOperationDate} />}
     <div className="wholesale-actions">
-      {failed && !result?.invoice?.cancelPending && <button className="primary-button" type="button" disabled={busy} onClick={onRetry}>{result?.code === "awaiting_authorization" ? "Verificar de novo" : "Tentar de novo"}</button>}
+      {failed && !result?.invoice?.cancelPending && <button className="primary-button" type="button" disabled={busy || (needsDate && !operationDate)} onClick={onRetry}>{result?.code === "awaiting_authorization" ? "Verificar de novo" : "Tentar de novo"}</button>}
       {failed && result?.invoice?.canCancel === true && <button className="secondary-button danger-button" type="button" disabled={busy} onClick={onCancel}>Cancelar e devolver estoque</button>}
       {!running && <button className="secondary-button" type="button" onClick={onClose}>Fechar</button>}
     </div>
   </div>;
+}
+
+export function DepartureField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <div className="wholesale-fields"><label><span>Data e hora de saída da mercadoria</span>
+    <input type="datetime-local" value={value} onChange={event => onChange(event.target.value)} />
+    <small>Informe a saída real ou prevista, no horário de Brasília. Confira antes de emitir.</small>
+  </label></div>;
 }
 
 export type KitSelection = { kitId: string; template: string; quantity: number; price: string };
@@ -451,6 +463,7 @@ export function WholesaleInvoiceManager() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Extract<IssueEvent, { type: "result" }> | null>(null);
   const [issuingId, setIssuingId] = useState("");
+  const [operationDate, setOperationDate] = useState("");
   const key = useRef("");
   const [lookupRetry, setLookupRetry] = useState(0);
   const titleId = useId();
@@ -528,6 +541,7 @@ export function WholesaleInvoiceManager() {
 
   function open() {
     key.current = crypto.randomUUID();
+    setOperationDate("");
     setLookup("idle"); setPostalLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
     setWizard(newWizard());
   }
@@ -555,12 +569,12 @@ export function WholesaleInvoiceManager() {
     }
   }
 
-  async function runIssue(id: string) {
+  async function runIssue(id: string, reviewedDate?: string) {
     setIssuingId(id); setSteps([]); setResult(null); setRunning(true); setNotice("");
     let final: Extract<IssueEvent, { type: "result" }> | null = null;
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "issue", id }) });
+        body: JSON.stringify({ action: "issue", id, ...(reviewedDate ? { operationDate: reviewedDate } : {}) }) });
       if (!response.ok || !response.body) {
         final = { type: "result", status: response.status === 409 ? "busy" : "error", code: "unexpected_error", invoice: null };
         setNotice(await readMessage(response, ""));
@@ -594,6 +608,7 @@ export function WholesaleInvoiceManager() {
     if (!wizard || wizard.step !== 3 || running) return;
     const issue = selectionProblem(offers, wizard.selections) || buyerProblem(wizard.buyer);
     if (issue) { setProblem(issue); return; }
+    if (!operationDate) { setProblem("Informe a data e a hora de saída da mercadoria."); return; }
     const items = wizard.selections.map(item => ({ kitId: item.kitId, template: item.template, quantity: item.quantity, unitPriceInCents: selectionPrice(item.price) }));
     if (items.some(item => !Number.isSafeInteger(item.unitPriceInCents) || item.unitPriceInCents < 12 || item.unitPriceInCents > 100_000_000)) { setProblem("Confira o preço por ficha de todos os kits."); return; }
     setProblem("");
@@ -611,7 +626,7 @@ export function WholesaleInvoiceManager() {
         setRunning(false); patch({ step: 3 }); setProblem(str(body?.message) || "Não foi possível criar a nota.");
         return;
       }
-      await runIssue(created.id);
+      await runIssue(created.id, operationDate);
     } catch { setRunning(false); patch({ step: 3 }); setProblem("Não foi possível criar a nota. Tente de novo."); }
   }
 
@@ -633,6 +648,7 @@ export function WholesaleInvoiceManager() {
 
   function retryFromList(id: string) {
     key.current = "";
+    setOperationDate("");
     setWizard({ ...newWizard(), step: 4 });
     void runIssue(id);
   }
@@ -661,8 +677,10 @@ export function WholesaleInvoiceManager() {
           {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} postalLookup={postalLookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={changeBuyer} />}
           {wizard.step === 3 && <MultiPaymentStep offers={offers} selections={wizard.selections} method={wizard.method} buyerName={wizard.buyer.name}
             onChange={selections => patch({ selections })} onMethod={value => patch({ method: value })} />}
+          {wizard.step === 3 && <DepartureField value={operationDate} onChange={setOperationDate} />}
           {wizard.step === 4 && <IssueProgress steps={steps} running={running} result={result} busy={busyId !== ""} onClose={close}
-            onRetry={() => void runIssue(issuingId)} onCancel={() => void cancel(issuingId)} />}
+            operationDate={operationDate} onOperationDate={setOperationDate}
+            onRetry={() => void runIssue(issuingId, operationDate)} onCancel={() => void cancel(issuingId)} />}
           {problem && <p className="wholesale-alert" role="alert">{problem}</p>}
         </div>
         {wizard.step < 4 && <footer className="wholesale-footer">

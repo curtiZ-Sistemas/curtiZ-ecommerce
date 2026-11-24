@@ -8,8 +8,9 @@ const row = (v: unknown): Record<string, unknown> => isUnknownRecord(v) ? v : {}
 const array = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.filter(isUnknownRecord) : [];
 const cents = (v: unknown) => Math.round(Number(v) * 100);
 
-function draftOperationDate(invoice: Record<string, unknown>) {
-  const value = readString(invoice, "dataOperacao");
+function draftOperationDate(invoice: Record<string, unknown>, reviewed?: string) {
+  const original = readString(invoice, "dataOperacao");
+  const value = reviewed ?? original;
   // Bling represents an unfilled departure date as a zero datetime on GET.
   // The provider rejects both this sentinel and an omitted date on PUT.
   // Require an actual reviewed timestamp instead of inventing a departure.
@@ -105,7 +106,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number; recipientAddress: Record<string, unknown>;
     paymentTerms: BlingInvoicePaymentTerm[];
     totalInCents: number; shippingInCents: number; discountInCents: number; additionalInCents: number;
-    businessRegistration?: string; freightMode?: 3 }) {
+    businessRegistration?: string; freightMode?: 3; reviewedOperationDate?: string }) {
   // Only the exact, untransmitted commercial draft may be transformed. Never repair
   // an arbitrary/partially edited provider note by overwriting it.
   if (Number(invoice.situacao) !== 1 || readString(invoice, "chaveAcesso") || Number(invoice.tipo) !== 1
@@ -145,7 +146,7 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   if (input.freightMode === 3 && Number(transport.fretePorConta) !== 3 && hasCarrier)
     throw new BlingError("invoice_carrier_mapping_required", 409);
   if (hasCarrier && !readString(carrier, "nome").trim()) throw new BlingError("invoice_carrier_mapping_required", 409);
-  const operationDate = draftOperationDate(invoice);
+  const operationDate = draftOperationDate(invoice, input.reviewedOperationDate);
   return { tipo: 1, numero: readString(invoice, "numero"), dataOperacao: operationDate,
     finalidade: 1, naturezaOperacao: { id: input.natureId },
     contato: { nome: contact.nome, numeroDocumento: input.document, tipoPessoa: business ? "J" : "F", contribuinte: input.icmsTaxpayer ? 1 : 9,
@@ -170,7 +171,8 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   const expected = fiscalItems.map(i => ({ ...i, sku: i.sourceCommercialSku ? i.sku : blingExternalSku(i.sku, i.variantId ?? "") }));
   const matchesItems = invoiceMatchesFiscalLines(invoice, expected);
   const matchesFreightMode = input.freightMode === undefined || Number(row(invoice.transporte).fretePorConta) === input.freightMode;
-  if (matchesItems && matchesFreightMode) {
+  const matchesOperationDate = input.reviewedOperationDate === undefined || readString(invoice, "dataOperacao") === input.reviewedOperationDate;
+  if (matchesItems && matchesFreightMode && matchesOperationDate) {
     assertReviewedAddress(invoice, reviewedRecipientAddress(input.recipientAddress));
     assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
     return;
@@ -184,6 +186,8 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   if (!invoiceMatchesFiscalLines(saved, expected)) throw new BlingError("invoice_items_mismatch", 409);
   if (input.freightMode !== undefined && Number(row(saved.transporte).fretePorConta) !== input.freightMode)
     throw new BlingError("invoice_freight_mapping_required", 409);
+  if (input.reviewedOperationDate !== undefined && readString(saved, "dataOperacao") !== body.dataOperacao)
+    throw new BlingError("invoice_operation_date_invalid", 409);
   assertReviewedAddress(saved, body.contato.endereco);
   assertBlingInvoicePaymentTerms(saved, input.paymentTerms);
 }

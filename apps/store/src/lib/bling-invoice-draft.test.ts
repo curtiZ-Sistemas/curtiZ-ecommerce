@@ -30,6 +30,22 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
       .rejects.toThrow("invoice_operation_date_invalid");
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("uses the explicitly reviewed departure timestamp for a missing Bling date", async () => {
+    const reviewedOperationDate = "2026-10-17 13:20:00";
+    const draft = { ...invoice(), dataOperacao: "0000-00-00 00:00:00" };
+    const reviewed = { ...input, reviewedOperationDate };
+    const body = blingFiscalDraftBody(draft, items, commercial, reviewed);
+    expect(body.dataOperacao).toBe(reviewedOperationDate);
+    expect(body.numero).toBe(draft.numero);
+    const request = vi.fn().mockResolvedValueOnce({ data: draft }).mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { ...draft, dataOperacao: reviewedOperationDate, itens: body.itens, parcelas: body.parcelas } });
+    await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, reviewed, true, async () => true);
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { dataOperacao: reviewedOperationDate } });
+  });
+  it("rejects an invalid reviewed date instead of substituting it", () => {
+    expect(() => blingFiscalDraftBody(invoice(), items, commercial, { ...input, reviewedOperationDate: "2026-02-30 12:00:00" }))
+      .toThrow("invoice_operation_date_invalid");
+  });
   it("preserves a real departure timestamp without changing the invoice", () => {
     const value = invoice();
     expect(blingFiscalDraftBody(value, items, commercial, input).dataOperacao).toBe(value.dataOperacao);
