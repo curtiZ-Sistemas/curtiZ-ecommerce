@@ -125,7 +125,7 @@ describe("emissão", () => {
   it("no erro mostra o motivo, Tentar de novo e Cancelar e devolver estoque", () => {
     const html = renderToStaticMarkup(<IssueProgress steps={["contact"]} running={false} result={result("error", "validation_error", invoice({ status: "error", canCancel: true }))}
       busy={false} onRetry={noop} onCancel={noop} onClose={noop} />);
-    expect(html).toContain("O Bling recusou algum dado da nota");
+    expect(html).toContain("O Bling recusou a operação");
     expect(html).toContain("Tentar de novo");
     expect(html).toContain("Cancelar e devolver estoque");
     expect(html).toContain('role="alert"');
