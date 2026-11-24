@@ -42,7 +42,7 @@ describe("consulta de CNPJ", () => {
   });
 
   it("diz que não achou quando o CNPJ não existe e cai no preenchimento manual quando a consulta falha", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 404 })).mockResolvedValueOnce(new Response("{}", { status: 404 }));
+    for (let index = 0; index < 4; index++) fetchMock.mockResolvedValueOnce(new Response("{}", { status: 404 }));
     expect(await (await call("11222333000181")).json()).toMatchObject({ found: false });
     fetchMock.mockRejectedValueOnce(new Error("timeout"));
     const failed = await call("11222333000181");
@@ -57,6 +57,27 @@ describe("consulta de CNPJ", () => {
     expect(await (await call("11222333000181")).json()).toMatchObject({ found: true, registration: "0012345678900", address: { state: "MG", city: "Belo Horizonte" } });
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://publica.cnpj.ws/cnpj/11222333000181");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("consulta a terceira fonte quando as duas primeiras estão bloqueadas", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 403 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ razao_social: "LOJA TESTE", estabelecimento: {
+        cnpj: "11222333000181", situacao_cadastral: "Ativa", estado: { sigla: "MG" }, cidade: { nome: "Belo Horizonte" },
+        cep: "30110100", tipo_logradouro: "Rua", logradouro: "Teste", numero: "1", bairro: "Centro" } })));
+    expect(await (await call("11222333000181")).json()).toMatchObject({ found: true, name: "LOJA TESTE", address: { state: "MG" } });
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe("https://api.opencnpj.com.br/cnpj/11222333000181");
+  });
+
+  it("consulta ReceitaWS quando três fontes falham e não aceita um CNPJ divergente", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce(new Response("{}", { status: 403 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ razao_social: "OUTRA EMPRESA", estabelecimento: { cnpj: "00000000000191" } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "OK", cnpj: "11.222.333/0001-81",
+        nome: "LOJA TESTE", situacao: "ATIVA", uf: "MG", cep: "30.110-100", logradouro: "Rua Teste",
+        numero: "10", bairro: "Centro", municipio: "Belo Horizonte" })));
+    expect(await (await call("11222333000181")).json()).toMatchObject({ found: true, name: "LOJA TESTE", address: { postal_code: "30110100" } });
+    expect(String(fetchMock.mock.calls[3]?.[0])).toBe("https://www.receitaws.com.br/v1/cnpj/11222333000181");
   });
 
   it("só atende quem tem sessão com MFA e a permissão de emitir", async () => {
