@@ -12,11 +12,10 @@ import {
 import {
   adminResources,
   isAdminResource,
-  kitGradePriceFields,
-  kitGradeStockFields,
   type AdminResourceDefinition
 } from "@/lib/admin-resources";
 import { postgresUuidSchema } from "@/lib/postgres-uuid";
+import { normalizedSlug, normalizeKitGradePrices } from "@/lib/kit-grade-normalize";
 import { normalizeBannerValues } from "@/lib/banner-management";
 import { bannerFailure, validateBannerReferences } from "@/lib/banner-management-server";
 import { categoryDeletionMessage } from "../../../../../lib/category-management";
@@ -74,66 +73,6 @@ function primitiveToString(value: unknown): string | null {
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return null;
-}
-
-const normalizedSlug = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "");
-
-// The reference product line gives NCM, weight and dimensions for freight and the invoice.
-// It never provides stock, but the kit is only offered with it.
-function normalizeKitGradeSource(values: Record<string, unknown>, source: unknown): string | null {
-  const separator = typeof source === "string" ? source.indexOf("|") : -1;
-  if (typeof source !== "string" || separator < 0) return "Selecione o produto de referência para frete e NF-e.";
-  const product = postgresUuidSchema.safeParse(source.slice(0, separator));
-  const color = source.slice(separator + 1);
-  if (!product.success || color.length > 150 || color.trim().length === 0) {
-    return "Selecione o produto de referência para frete e NF-e.";
-  }
-  values.grade_product_id = product.data;
-  values.grade_color = color;
-  return null;
-}
-
-const kitGradePrice = z.number().int().min(12).max(9_999_999_999);
-const kitGradeStock = z.number().int().min(0).max(1_000_000);
-
-// Each of the three sheets needs a price and a stock of complete kits, plus the reference product.
-function normalizeKitGradePrices(values: Record<string, unknown>, input: Record<string, unknown>, creating: boolean) {
-  const fields = [...kitGradePriceFields, ...kitGradeStockFields];
-  if (!creating && !fields.some(field => field.key in input) && !("gradeSource" in input)) return;
-  const errors: Record<string, string> = {};
-  const sourceError = normalizeKitGradeSource(values, input.gradeSource);
-  if (sourceError) errors.gradeSource = sourceError;
-  for (const field of kitGradePriceFields) {
-    const price = kitGradePrice.safeParse(input[field.key]);
-    if (price.success) {
-      values[field.key] = price.data;
-    } else {
-      errors[field.key] = "Informe um preço entre R$ 0,12 e R$ 99.999.999,99.";
-    }
-  }
-  for (const field of kitGradeStockFields) {
-    const raw = input[field.key];
-    const stock = kitGradeStock.safeParse(typeof raw === "string" && /^[0-9]{1,7}$/u.test(raw.trim()) ? Number(raw) : raw);
-    if (stock.success) {
-      values[field.key] = stock.data;
-    } else {
-      errors[field.key] = "Informe um número inteiro de kits, a partir de 0.";
-    }
-  }
-  if (Object.keys(errors).length > 0) {
-    return NextResponse.json(
-      { message: "Revise os campos destacados.", errors },
-      { status: 400, headers: privateNoStore }
-    );
-  }
-  // Keep the kit legacy price available to consumers that do not read sheet prices.
-  values.price_in_cents = values.grade_standard_price_cents;
 }
 
 function normalizeCategoryValues(values: Record<string, unknown>, requestedSlug?: unknown) {
@@ -583,8 +522,15 @@ export async function POST(
         );
       }
       values.slug = slug;
-      const invalid = normalizeKitGradePrices(values, parsed.data.values, true);
-      if (invalid) return invalid;
+      const gradeErrors = normalizeKitGradePrices(values, parsed.data.values, true);
+      if (gradeErrors) {
+        return NextResponse.json(
+          { message: "Revise os campos destacados.", errors: gradeErrors },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+      // The description is optional: an empty one is stored as an empty text.
+      if (typeof values.description !== "string") values.description = "";
     }
     validateResourceRules(context.resource, values);
 
@@ -813,8 +759,14 @@ export async function PATCH(
       }
     }
     if (context.resource === "kits") {
-      const invalid = normalizeKitGradePrices(values, parsed.data.values, false);
-      if (invalid) return invalid;
+      const gradeErrors = normalizeKitGradePrices(values, parsed.data.values, false);
+      if (gradeErrors) {
+        return NextResponse.json(
+          { message: "Revise os campos destacados.", errors: gradeErrors },
+          { status: 400, headers: privateNoStore }
+        );
+      }
+      if ("description" in values && typeof values.description !== "string") values.description = "";
     }
     validateResourceRules(context.resource, values);
 

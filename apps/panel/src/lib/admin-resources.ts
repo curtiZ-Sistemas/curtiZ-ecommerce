@@ -397,7 +397,7 @@ export const adminResources: Record<AdminResourceKey, AdminResourceDefinition> =
     searchColumns: ["name", "slug"],
     fields: [
       { key: "name", label: "Nome", type: "text", required: true },
-      { key: "description", label: "Descrição", type: "textarea", required: true },
+      { key: "description", label: "Descrição", type: "textarea" },
       { key: "active", label: "Ativo", type: "boolean" }
     ],
     allowCreate: true,
