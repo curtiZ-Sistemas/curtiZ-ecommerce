@@ -137,7 +137,7 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
   it("preserves a populated carrier and blocks an incomplete one", () => {
     const carrier = { nome: "Transportadora teste", numeroDocumento: "00000000000000" };
     const draft = (transportador: unknown) => ({ ...invoice(), transporte: { fretePorConta: 1, transportador } });
-    expect(blingFiscalDraftBody(draft(carrier), items, commercial, input).transporte.transportador).toEqual(carrier);
+    expect(blingFiscalDraftBody(draft(carrier), items, commercial, input).transporte).toHaveProperty("transportador", carrier);
     expect(() => blingFiscalDraftBody(draft({ numeroDocumento: carrier.numeroDocumento }), items, commercial, input))
       .toThrow("invoice_carrier_mapping_required");
   });
