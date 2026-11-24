@@ -18,6 +18,7 @@ export const gerenciaSectionCopy: SectionCopy = {
   qualificacao: "Consulte os resultados das regras de qualificação por período.",
   metas: "Consulte e ajuste as metas individuais ou por nível.",
   kits: "Acompanhe pedidos de kits, pagamentos e andamento logístico.",
+  "notas-atacado": "Emita a NF-e de um kit para uma empresa de Minas Gerais e acompanhe as notas já emitidas.",
   comissoes: "Consulte as comissões calculadas, com base, valor e situação.",
   "regras-comissao": "Consulte e ajuste as regras usadas no cálculo das comissões.",
   fechamentos: "Simule, aprove, bloqueie ou reabra fechamentos de comissão com registro em auditoria.",

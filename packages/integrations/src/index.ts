@@ -9,6 +9,10 @@ export * from "./bling-catalog";
 export * from "./bling-fiscal-preview";
 export { readBlingAuthorizedResaleXml, readBlingAuthorizedResaleReturnXml, type BlingResaleInvoiceExpectation } from "./bling-return-xml";
 export * from "./bling-tax";
+export * from "./bling-commercial-kit";
+export * from "./bling-invoice-draft";
+export * from "./bling-order-sync";
+export { priceRepresentativeGradeItems } from "./representative-grade-lines";
 export { sendInvoiceEmail } from "./invoice-email";
 export * from "./transactional-email";
 

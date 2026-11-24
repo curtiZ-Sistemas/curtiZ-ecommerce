@@ -9,6 +9,7 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 import { AdminPermissions } from "@/components/admin-permissions";
 import { AdminResourceManager } from "@/components/admin-resource-manager";
 import { AdminUsers } from "@/components/admin-users";
+import { WholesaleInvoiceManager } from "@/components/wholesale-invoice-manager";
 import { ManagerDashboard } from "@/components/manager-dashboard";
 import { ManagerStrategy } from "@/components/manager-strategy";
 import { ManagerAlerts } from "@/components/manager-alerts";
@@ -164,6 +165,7 @@ function Administration({ section, initialQuery, initialStatus, draftOwnerKey }:
   if (section === "usuarios") return <AdminUsers />;
   if (section === "permissoes") return <AdminPermissions />;
   if (section === "politicas") return <LegalCenter />;
+  if (section === "notas-atacado") return <WholesaleInvoiceManager />;
   if (section === "representantes" || section === "criativos") {
     return <RepresentativeConsole role="administracao" section={section} initialStatus={initialStatus} />;
   }
@@ -187,6 +189,7 @@ function Management({ section, initialQuery, initialStatus }: { section: string;
   if (section === "auditoria") return <ActivityLogs />;
   if (section === "usuarios") return <AdminUsers />;
   if (section === "aprovacoes") return <ManagerApprovals />;
+  if (section === "notas-atacado") return <WholesaleInvoiceManager />;
   if (section === "politicas") return <LegalCenter />;
   if (section === "solicitacoes-representantes" || section === "criativos") {
     return <RepresentativeConsole role="gerencia" section={section} initialStatus={initialStatus} />;

@@ -196,6 +196,11 @@ const administracao = build("administracao", [
     keywords: ["criar kit", "editar kit", "preco do kit", "kit inicial", "kit de ativacao", "kit obrigatorio", "grade do kit", "ficha do kit", "estoque proprio", "pacote inicial", "kit mg"]
   },
   {
+    area: "Fiscal", title: "Emitir nota de atacado", route: "notas-atacado", permission: "fiscal.wholesale_invoices.issue",
+    description: "Emita a NF-e de um kit para uma empresa de MG: escolha a ficha, informe o CNPJ e o pagamento.",
+    keywords: ["emitir nota", "nota de atacado", "nfe de atacado", "vender kit", "venda de atacado", "nota para empresa", "cnpj", "emitir nfe", "nota fiscal do kit", "atacado"]
+  },
+  {
     area: "Representantes", title: "Níveis da rede", route: "niveis", permission: "representatives.read_all",
     description: "Configure os níveis de progressão das representantes e seus critérios.",
     keywords: ["nivel de representante", "criar nivel", "progressao", "bronze", "prata", "ouro", "criterios de nivel", "promover representante", "subir de nivel"]
@@ -486,6 +491,11 @@ const gerencia = build("gerencia", [
     area: "Representantes", title: "Kits de representantes", route: "kits", permission: "representatives.read_all",
     description: "Kits da rede: catálogo, preços por ficha e acompanhamento.",
     keywords: ["criar kit", "editar kit", "preco do kit", "pedido de kit", "pedidos de kit", "kit inicial", "estoque proprio", "kit mg", "entrega de kit"]
+  },
+  {
+    area: "Fiscal", title: "Emitir nota de atacado", route: "notas-atacado", permission: "fiscal.wholesale_invoices.issue",
+    description: "Emita a NF-e de um kit para uma empresa de MG: escolha a ficha, informe o CNPJ e o pagamento.",
+    keywords: ["emitir nota", "nota de atacado", "nfe de atacado", "vender kit", "venda de atacado", "nota para empresa", "cnpj", "emitir nfe", "nota fiscal do kit", "atacado"]
   },
   // Financeiro
   {

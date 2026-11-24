@@ -22,13 +22,16 @@ vi.mock("@curtiz/integrations", () => {
   }
   return {
     BlingError,
-    allocateBlingFiscalCents: () => [],
     blingExternalSku: (sku: string) => sku,
     blingFiscalMirrorHash: async () => "a".repeat(64),
-    buildBlingFiscalMirror: (_rule: unknown, items: { quantity: number; unitPriceInCents: number }[]) => ({
-      taxConfiguration: true, icmsCredit: undefined, totalInCents: items.reduce((sum, i) => sum + i.quantity * i.unitPriceInCents, 0),
-      items: items.map(item => ({ ...item, ncm: "64022000", origin: 0, unit: "PR" }))
-    }),
+    // The fiscal mirror itself is covered in @curtiz/integrations; here only the worker flow matters.
+    commercialKitFiscalMirror: async (_read: unknown, job: Record<string, unknown>) => {
+      const item = { sku: String(job.sku), variantId: String(job.variantId), description: String(job.productName), quantity: Number(job.quantity),
+        unit: "PR", pairsPerSku: 2, fiscalUnitApproved: true, unitPriceInCents: Number(job.unitPriceInCents), ncm: "64022000", origin: 0, cest: "" };
+      return { issuer: "68267385000191", natureId: 15111725693, rule: { series: 3, external_nature_id: 15111725693, cfop: "5102", csosn: "102" },
+        commercial: [item], mirror: { taxConfiguration: true, icmsCredit: undefined, totalInCents: item.quantity * item.unitPriceInCents, items: [item] },
+        allocations: [0], freight: 0 };
+    },
     createBlingClient: () => ({
       request: async (path: string, options?: { method?: string; body?: unknown }) => {
         const method = options?.method ?? "GET";
@@ -46,9 +49,7 @@ vi.mock("@curtiz/integrations", () => {
         throw new Error(`unexpected ${method} ${path}`);
       }
     }),
-    expandBlingFiscalKit: (item: unknown) => [item],
-    readBlingAuthorizedResaleXml: vi.fn(),
-    selectBlingFiscalRule: () => ({ series: 3, external_nature_id: 15111725693, cfop: "5102", csosn: "102" })
+    verifyCommercialKitInvoice: vi.fn()
   };
 });
 vi.mock("./bling-jobs", () => ({
@@ -61,7 +62,6 @@ vi.mock("./bling-invoice-draft", () => ({
 }));
 vi.mock("./melhor-envio-server", () => ({ createMelhorEnvioProvider: vi.fn() }));
 vi.mock("./representative-commercial-shipping", () => ({ advanceRepresentativeKitShipping: vi.fn() }));
-vi.mock("./representative-grade-lines", () => ({ priceRepresentativeGradeItems: vi.fn() }));
 vi.mock("./representative-commercial-returns", () => ({ verifyDueRepresentativeKitReturns: vi.fn() }));
 vi.mock("./representative-test-transactions", () => {
   const call = async (_db: unknown, name: string, args: Record<string, unknown>) => {

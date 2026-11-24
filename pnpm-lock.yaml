@@ -243,6 +243,9 @@ importers:
       '@curtiz/domain':
         specifier: workspace:*
         version: link:../domain
+      '@curtiz/security':
+        specifier: workspace:*
+        version: link:../security
       saxes:
         specifier: 5.0.1
         version: 5.0.1

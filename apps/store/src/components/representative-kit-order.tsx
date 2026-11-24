@@ -1,6 +1,7 @@
 "use client";
 
 import { formatBRL } from "@curtiz/domain";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { isUnknownRecord, readRows, readString, type UnknownRecord } from "../lib/unknown-data";
@@ -61,7 +62,7 @@ function StatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
   return <span className={`kit-order-badge is-${tone}`}>{label}</span>;
 }
 
-function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null, onOffersChanged, onChange }: {
+export function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null, onOffersChanged, onChange }: {
   initial: UnknownRecord; checkoutConfigured: boolean; autoMethod?: PrepayMethod | null; onOffersChanged?: () => void;
   onChange?: (order: UnknownRecord) => void;
 }) {
@@ -85,6 +86,7 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
   const method = readString(order, "collectionMethod") as CollectionMethod;
   const pixData = isUnknownRecord(order.pix) ? order.pix : null;
   const pix = pixData ? readString(pixData, "copyPaste") : "";
+  const pixQr = pixData ? readString(pixData, "qrCodeBase64") : "";
   const choosing = state === "reserved" && checkoutConfigured && canCancel && !cardSubmitted;
   const cardKind = choosing && payMethod !== "pix" ? cardKinds[payMethod] : null;
   const orderState = useRef(state);
@@ -208,6 +210,8 @@ function RepresentativeKitOrder({ initial, checkoutConfigured, autoMethod = null
         {cardKind
           ? <RepresentativeKitCardPayment key={cardKind} orderId={orderId} kind={cardKind} onResult={cardResult} />
           : pix ? <div className="kit-order-pix">
+            {pixQr && <Image unoptimized src={`data:image/png;base64,${pixQr}`} width={220} height={220} alt="QR Code Pix" />}
+            {pixQr && <p className="kit-order-hold">Escaneie o QR Code ou copie o código</p>}
             <label>Pix copia e cola<input readOnly value={pix} onFocus={event => event.currentTarget.select()} /></label>
             <button type="button" className="primary-button" onClick={() => {
               if (!navigator.clipboard) {

@@ -180,11 +180,14 @@ export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, ex
     || (expected.series === 3 && (expected.shippingInCents !== 0 || value(one(info, "transp"), "modFrete") !== "3"))
     || value(ide, "cUF") !== "31" || invoiceKey.slice(0, 2) !== "31"
     || value(ide, "tpNF") !== "1" || value(ide, "finNFe") !== "1" || value(ide, "idDest") !== "1"
-    || value(ide, "indFinal") !== "0" || value(ide, "indPres") !== "2" || value(recipient, "indIEDest") !== "1"
+    || value(ide, "indFinal") !== "0" || value(ide, "indPres") !== "2"
+    || value(recipient, "indIEDest") !== (expected.buyerStateRegistration ? "1" : "9")
     || !/^\d{4}-\d{2}-\d{2}$/u.test(expected.issueDate)
     || value(ide, "dhEmi").slice(0, 10) !== expected.issueDate
     || !/^\d{14}$/u.test(expected.buyerDocument) || value(recipient, "CNPJ") !== expected.buyerDocument
-    || !/^\d{2,14}$/u.test(expected.buyerStateRegistration) || value(recipient, "IE") !== expected.buyerStateRegistration
+    // Empty registration: a company that is not an ICMS taxpayer, so the XML carries no IE.
+    || (expected.buyerStateRegistration ? !/^\d{2,14}$/u.test(expected.buyerStateRegistration)
+      || value(recipient, "IE") !== expected.buyerStateRegistration : children(recipient, "IE").length > 0)
     || children(recipient, "CPF").length || value(destination, "UF") !== "MG"
     || !/^3\d{7}$/u.test(expected.destinationPostalCode) || value(destination, "CEP") !== expected.destinationPostalCode
     || value(one(emitter, "enderEmit"), "UF") !== "MG" || value(pickup, "UF") !== "MG"

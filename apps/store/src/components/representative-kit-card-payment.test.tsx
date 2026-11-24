@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RepresentativeKitCardPayment } from "./representative-kit-card-payment";
 import { readGradeCatalog, RepresentativeKitGrades } from "./representative-kit-grades";
-import { isPrepayMethod, prepayMethods, RepresentativeKitOrderHistory } from "./representative-kit-order";
+import { isPrepayMethod, prepayMethods, RepresentativeKitOrder, RepresentativeKitOrderHistory } from "./representative-kit-order";
 import { KitRequestError, kitRequest } from "./representative-kit-request";
 
 const orderId = "10000000-0000-4000-8000-000000000001";
@@ -61,5 +61,25 @@ describe("kit offers", () => {
     const markup = renderToStaticMarkup(<RepresentativeKitGrades offers={catalog.offers} />);
     expect(markup).toContain("Kit Teste");
     expect(markup).not.toContain("Vermelho");
+  });
+});
+
+describe("kit Pix order", () => {
+  const pixOrder = (pix: Record<string, unknown>) => ({ orderId, state: "payment_pending", canCancelPaid: false, amountInCents: 12100, pix });
+
+  it("shows the QR Code above the copy and paste code", () => {
+    const markup = renderToStaticMarkup(<RepresentativeKitOrder checkoutConfigured
+      initial={pixOrder({ copyPaste: "00020126", expiresAt: "2099-01-01T00:00:00Z", qrCodeBase64: "iVBORw0KGgo=" })} />);
+    expect(markup).toContain('alt="QR Code Pix"');
+    expect(markup).toContain("data:image/png;base64,iVBORw0KGgo=");
+    expect(markup).toContain("Escaneie o QR Code ou copie o código");
+    expect(markup.indexOf("QR Code Pix")).toBeLessThan(markup.indexOf("Pix copia e cola"));
+  });
+
+  it("keeps working with the copy and paste code alone when there is no QR Code", () => {
+    const markup = renderToStaticMarkup(<RepresentativeKitOrder checkoutConfigured
+      initial={pixOrder({ copyPaste: "00020126", expiresAt: "2099-01-01T00:00:00Z" })} />);
+    expect(markup).not.toContain("QR Code");
+    expect(markup).toContain("Pix copia e cola");
   });
 });
