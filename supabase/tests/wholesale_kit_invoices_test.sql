@@ -72,8 +72,8 @@ select throws_ok($$select public.list_wholesale_kit_invoices()$$,'42501',null,'n
 
 select set_config('request.jwt.claims',jsonb_build_object('sub',accountant,'role','authenticated','aal','aal2')::text,true)
   from wholesale_fixture;
-select throws_ok($select pg_temp.create_invoice(gen_random_uuid(),2,36001,pg_temp.buyer('11222333000181','MG',''))$,'22023','invalid_wholesale_invoice','blank IE is rejected at the RPC boundary');
-select throws_ok($select pg_temp.create_invoice(gen_random_uuid(),2,36001,pg_temp.buyer('11222333000181','MG','ISENTA'))$,'22023','invalid_wholesale_invoice','exempt buyer requires a separately approved fiscal rule');
+select throws_ok($$select pg_temp.create_invoice(gen_random_uuid(),2,36001,pg_temp.buyer('11222333000181','MG',''))$$,'22023','invalid_wholesale_invoice','blank IE is rejected at the RPC boundary');
+select throws_ok($$select pg_temp.create_invoice(gen_random_uuid(),2,36001,pg_temp.buyer('11222333000181','MG','ISENTA'))$$,'22023','invalid_wholesale_invoice','exempt buyer requires a separately approved fiscal rule');
 
 -- The owner-approved MG02 no-credit rule for this sheet.
 insert into private.representative_resale_fiscal_rule_versions
