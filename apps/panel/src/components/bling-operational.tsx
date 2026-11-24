@@ -3,6 +3,7 @@
 import { AlertTriangle, CircleCheck, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Code, SectionHeader, StateMessage, StatusLabel, type UiTone } from "./panel-ui";
+import { InvoiceActions } from "./invoice-actions";
 
 type Order = { orderId: string; publicCode: string; externalOrderId: number | null; invoiceId: number | null;
   erpStatus: string; invoiceStatus: string; lastErrorCode: string | null;
@@ -112,6 +113,8 @@ export function BlingOperational({ readOnly = false }: { readOnly?: boolean }) {
                 <StatusLabel tone={invoiceTone(order.invoiceStatus)}>{statusLabels[order.invoiceStatus] ?? order.invoiceStatus}</StatusLabel>
               </div>
               {order.externalOrderId ? <small>Pedido Bling <Code>#{order.externalOrderId}</Code></small> : null}
+              <InvoiceActions authorized={order.invoiceStatus === "authorized"} blingInvoiceId={order.invoiceId}
+                pdfUrl={`/api/integrations/bling/orders/invoice-pdf?orderId=${encodeURIComponent(order.orderId)}`} label={`NF-e do pedido ${order.publicCode}`} />
               {errorCode ? <p className="bling-order-error"><AlertTriangle aria-hidden="true" /><span>{errorLabels[order.lastErrorCode ?? order.jobError ?? ""] ?? "Verifique os dados e a conexão do Bling."}</span></p> : null}
               {order.history?.length ? <details className="bling-order-history"><summary>Histórico de processamento</summary><ul>
                 {order.history.map((item, index) => <li key={`${item.occurred_at}:${index}`}>

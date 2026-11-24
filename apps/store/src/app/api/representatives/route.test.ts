@@ -242,7 +242,7 @@ describe("representative application company data", () => {
   }
   const step2 = (values: Record<string, string | undefined>) => new NextRequest("http://localhost:3000/api/representatives", {
     method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" },
-    body: JSON.stringify({ action: "save_draft", step: 2, values: { city: "BH", regionCode: "MG", ...values } })
+    body: JSON.stringify({ action: "save_draft", step: 2, values: { city: "BH", ...values } })
   });
 
   it("stores a valid CNPJ, legal name and state registration as digits in the step answers", async () => {
@@ -252,6 +252,14 @@ describe("representative application company data", () => {
     expect(response.status).toBe(200);
     expect(saved[0]?.answers).toEqual({ "2": { city: "BH", regionCode: "MG", cnpj: "11222333000181",
       legalName: "Loja Teste LTDA", stateRegistration: "0012345670089" } });
+  });
+
+  it("forces MG as the region code, ignoring the client value", async () => {
+    const saved: Array<Record<string, unknown>> = [];
+    vi.mocked(createServerSupabaseClient).mockResolvedValue(applicationClient(saved) as never);
+    const response = await POST(step2({ regionCode: "SP" }));
+    expect(response.status).toBe(200);
+    expect(saved[0]?.answers).toEqual({ "2": { city: "BH", regionCode: "MG" } });
   });
 
   it("accepts an application without any company data", async () => {

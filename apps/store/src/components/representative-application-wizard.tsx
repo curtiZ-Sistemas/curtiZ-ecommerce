@@ -249,7 +249,6 @@ export function RepresentativeApplicationWizard() {
         {step === 2 && (
           <StepForm onSubmit={submitForm}>
             <Field label="Cidade" name="city" autoComplete="address-level2" required />
-            <Field label="Estado" name="regionCode" maxLength={2} required />
             <label className="field">
               <span>Experiência comercial</span>
               <textarea name="experience" maxLength={500} rows={4} required />

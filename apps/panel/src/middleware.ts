@@ -27,6 +27,8 @@ export async function middleware(request: NextRequest) {
     nonce,
     imageSources: [...mediaOrigins],
     mediaSources: [...mediaOrigins],
+    // O modal da DANFE enquadra o PDF servido pelo próprio painel (rotas invoice-pdf).
+    frameSources: ["'self'"],
     connectSources: [
       storeOrigin,
       ...(videoUploadSource ? [videoUploadSource] : []),

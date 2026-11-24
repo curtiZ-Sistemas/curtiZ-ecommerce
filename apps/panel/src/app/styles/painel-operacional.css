@@ -1628,3 +1628,22 @@
 .return-review-actions { display: grid; gap: 16px; }
 .return-review-actions form { display: grid; gap: 16px; min-width: 0; }
 .operational-return { overflow-wrap: anywhere; min-width: 0; }
+
+.invoice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
+.invoice-action { display: inline-grid; flex: 0 0 auto; place-items: center; width: 40px; height: 40px; padding: 0;
+  border: 1px solid var(--line, #ddd6d1); border-radius: 6px; color: #62130f; background: #fff; cursor: pointer; text-decoration: none; }
+.invoice-action svg { width: 18px; height: 18px; }
+.invoice-action:hover:not(:disabled) { background: #fbf1f0; }
+.invoice-action:focus-visible { outline: 2px solid #62130f; outline-offset: 2px; }
+.invoice-action:disabled { color: #8a8480; cursor: not-allowed; }
+.invoice-actions-error { color: #8f1d12; font-size: 0.875rem; }
+.invoice-preview-backdrop { background: rgb(24 23 22 / 62%); }
+.invoice-preview { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(100%, 960px); height: min(92vh, 900px);
+  overflow: hidden; border: 1px solid var(--line, #ddd6d1); border-radius: 8px; background: #fff; box-shadow: 0 20px 50px rgb(0 0 0 / 30%); }
+.invoice-preview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--line, #ddd6d1); }
+.invoice-preview > header h2 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.invoice-preview-tools { display: flex; align-items: center; gap: 8px; }
+.invoice-preview-body { display: grid; min-height: 0; background: #f4f1ee; }
+.invoice-preview-body p { margin: 16px; }
+.invoice-preview-body iframe { width: 100%; height: 100%; border: 0; background: #fff; }

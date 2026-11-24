@@ -128,6 +128,9 @@ const noStore: Record<string, string> = { "cache-control": "private, no-store" }
 
 // Optional company data of the applicant (step 2). The CNPJ identifies the buyer of kits and the
 // Pix payer once the application is approved. Returns an error message, or null after normalizing.
+/** Representantes atuam somente em Minas Gerais; o servidor ignora a UF enviada pelo cliente. */
+const REPRESENTATIVE_REGION_CODE = "MG";
+
 function normalizeCompanyAnswers(values: Record<string, string | boolean>): string | null {
   const read = (key: string) => (typeof values[key] === "string" ? values[key].trim() : "");
   const cnpj = read("cnpj");
@@ -715,6 +718,7 @@ export async function POST(request: NextRequest) {
           safeValues.cpfLastFour = cpf.slice(-4);
         }
         if (rawPhone) safeValues.phone = normalizeBrazilianPhone(rawPhone) ?? "";
+        if (input.step === 2) safeValues.regionCode = REPRESENTATIVE_REGION_CODE;
         return NextResponse.json(saveDemoRepresentativeDraft(session, input.step, safeValues), {
           headers: responseHeaders(request)
         });
@@ -816,6 +820,7 @@ export async function POST(request: NextRequest) {
     delete safeValues.cpf;
     if (rawPhone) safeValues.phone = normalizeBrazilianPhone(rawPhone) ?? "";
     if (input.step === 2) {
+      safeValues.regionCode = REPRESENTATIVE_REGION_CODE;
       const company = normalizeCompanyAnswers(safeValues);
       if (company) return NextResponse.json({ message: company }, { status: 422, headers: noStore });
     }
