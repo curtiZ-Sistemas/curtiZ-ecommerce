@@ -20,6 +20,7 @@ import { BannerManager } from "./banner-manager";
 import { BlingOperational } from "./bling-operational";
 import { categoryDeletionMessage } from "../lib/category-management";
 import { usePanelPrompt } from "./panel-prompt";
+import { KitQuickCreateModal, suggestedSheetValues, type KitSheetValues } from "./kit-quick-create";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   adminResources,
@@ -310,6 +311,8 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
   const [kitGradeSources, setKitGradeSources] = useState<KitGradeSource[] | null>(null);
   const [kitGradeSourcesError, setKitGradeSourcesError] = useState(false);
   const [kitGradeSourcesRetry, setKitGradeSourcesRetry] = useState(0);
+  const [kitQuickOpen, setKitQuickOpen] = useState(false);
+  const [kitAuto, setKitAuto] = useState<{ values: KitSheetValues; rev: number }>({ values: {}, rev: 0 });
   const [kitLineNames, setKitLineNames] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -440,6 +443,7 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         ? `${item.grade_product_id}|${item.grade_color}`
         : "");
       setKitStockDraft({});
+      setKitAuto(current => ({ values: {}, rev: current.rev + 1 }));
     }
     setFieldErrors({});
     setFormError("");
@@ -642,9 +646,22 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
         </div>
 
         {canCreate ? (
-          <button className="primary-button" type="button" onClick={() => openEditor("new")}>
-            <Plus aria-hidden="true" /> {createLabel}
-          </button>
+          <div className="admin-resource-actions">
+            {resource === "kits" ? (
+              <button className="secondary-button" type="button" onClick={() => setKitQuickOpen(true)}>
+                <Plus aria-hidden="true" /> Cadastro rápido
+              </button>
+            ) : null}
+            <button className="primary-button" type="button" onClick={() => openEditor("new")}>
+              <Plus aria-hidden="true" /> {createLabel}
+            </button>
+          </div>
+        ) : null}
+        {kitQuickOpen ? (
+          <KitQuickCreateModal
+            onClose={() => setKitQuickOpen(false)}
+            onCreated={() => void load()}
+          />
         ) : null}
       </header>
 
@@ -1123,7 +1140,16 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                           name="gradeSource"
                           value={kitGradeSource}
                           required
-                          onChange={event => setKitGradeSource(event.target.value)}
+                          onChange={event => {
+                            const next = event.target.value;
+                            setKitGradeSource(next);
+                            if (editing !== "new") return;
+                            const picked = kitGradeSources.find(source => `${source.productId}|${source.color}` === next);
+                            if (!picked) return;
+                            const suggested = suggestedSheetValues(picked.name);
+                            setKitAuto(current => ({ values: suggested, rev: current.rev + 1 }));
+                            setKitStockDraft(Object.fromEntries(kitGradeStockFields.map(field => [field.key, Number(suggested[field.key])])));
+                          }}
                           aria-describedby={fieldErrors.gradeSource ? "grade-source-error" : "grade-source-help"}
                           aria-invalid={Boolean(fieldErrors.gradeSource)}
                         >
@@ -1180,10 +1206,11 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                               <span className="money-field-control">
                                 <span aria-hidden="true">R$</span>
                                 <input
+                                  key={`${sheet.priceKey}-${kitAuto.rev}`}
                                   name={sheet.priceKey}
                                   type="text"
                                   inputMode="decimal"
-                                  defaultValue={cents === undefined ? "" : formatBRLInput(cents)}
+                                  defaultValue={cents === undefined ? kitAuto.values[sheet.priceKey] ?? "" : formatBRLInput(cents)}
                                   placeholder="0,00"
                                   required
                                   aria-invalid={Boolean(priceError)}
@@ -1196,12 +1223,13 @@ function GenericResourceManager({ resource }: { resource: AdminResourceKey }) {
                               <span className="kit-grade-cell-label">Estoque (kits) *</span>
                               <span className="kit-grade-stock-control">
                                 <input
+                                  key={`${sheet.stockKey}-${kitAuto.rev}`}
                                   name={sheet.stockKey}
                                   type="number"
                                   inputMode="numeric"
                                   min={0}
                                   step={1}
-                                  defaultValue={stock ?? 0}
+                                  defaultValue={stock ?? kitAuto.values[sheet.stockKey] ?? 0}
                                   required
                                   onChange={event => {
                                     const next = event.target.valueAsNumber;

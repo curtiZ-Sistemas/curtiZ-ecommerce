@@ -316,3 +316,10 @@
     margin-top: var(--space-4);
   }
 }
+
+.kit-quick-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.kit-quick-item { display: grid; gap: 0.15rem; padding: 0.6rem 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; }
+.kit-quick-item span { font-size: 0.85rem; opacity: 0.8; }
+.kit-quick-item-exists { opacity: 0.55; }
+.kit-quick-result ul { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+.admin-resource-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
