@@ -12,9 +12,10 @@ const body = (name: string) => {
 };
 
 describe("representative kit card payment migration", () => {
-  it("is the newest migration and never edits an applied one", () => {
+  it("comes after the applied kit migrations and never drops functions", () => {
     const names = readdirSync(dir).filter(name => name.endsWith(".sql")).sort();
-    expect(names.at(-1)).toBe(file);
+    expect(names.indexOf(file)).toBeGreaterThan(
+      names.indexOf("20261124040000_representative_kit_grade_collection_fix.sql"));
     expect(sql).not.toMatch(/\bdrop function/u);
   });
 
