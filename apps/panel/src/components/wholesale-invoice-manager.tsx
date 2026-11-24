@@ -85,7 +85,7 @@ const reasons: Record<string, string> = {
   cancel_reconciliation_pending: "Cancelamento aguardando confirmação. Conclua pelo painel sem duplicar a devolução.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
-  invoice_items_mismatch: "Os produtos retornados pelo Bling não correspondem à venda. O sistema preservou a nota existente e não enviou à SEFAZ.",
+  invoice_items_mismatch: "Os itens da nota no Bling divergem da venda original. As alterações foram preservadas. É necessário conciliar os dados antes do envio à SEFAZ.",
   invoice_draft_decomposition_conflict: "O rascunho não corresponde aos dados revisados da venda. Nenhuma nova nota foi criada.",
   invoice_freight_mapping_required: "O Bling não confirmou o transporte próprio. A nota foi preservada, sem envio à SEFAZ. Tente novamente após a correção.",
   invoice_carrier_mapping_required: "O Bling não confirmou os dados do transportador próprio da curti Z. A nota permanece salva.",

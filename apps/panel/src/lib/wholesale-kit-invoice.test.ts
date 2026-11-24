@@ -95,7 +95,7 @@ describe("emissão da nota de atacado", () => {
     expect(await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment,
       invoiceId: id, reviewedOperationDate, sleep: async () => undefined })).toEqual({ status: "authorized" });
     expect(vi.mocked(prepareBlingFiscalDraft)).toHaveBeenCalledWith(expect.anything(), 77, expect.anything(), expect.anything(),
-      expect.objectContaining({ reviewedOperationDate, linkedWholesaleDraftId: 77, freightMode: 3, ownCarrier: { nome: "Curti Z", numeroDocumento: "12345678000195" } }), true, expect.anything());
+      expect.objectContaining({ reviewedOperationDate, freightMode: 3, ownCarrier: { nome: "Curti Z", numeroDocumento: "12345678000195" } }), true, expect.anything());
     expect(posts("/pedidos/vendas")).toHaveLength(0);
     expect(posts("/gerar-nfe")).toHaveLength(0);
   });

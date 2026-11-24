@@ -106,22 +106,13 @@ export function blingFiscalDraftBody(invoice: Record<string, unknown>, fiscalIte
   commercialItems: CommercialLine[], input: { document: string; icmsTaxpayer: boolean; natureId: number; recipientAddress: Record<string, unknown>;
     paymentTerms: BlingInvoicePaymentTerm[];
     totalInCents: number; shippingInCents: number; discountInCents: number; additionalInCents: number;
-    businessRegistration?: string; freightMode?: 3; ownCarrier?: { nome: string; numeroDocumento: string }; reviewedOperationDate?: string;
-    linkedWholesaleDraftId?: number }) {
-  // Wholesale recovery is restricted to a draft whose identity, sale link,
-  // original commercial lines and write lease were verified by the panel.
-  // Rebuild its items from the immutable reviewed sale, not from provider data.
-  const verifiedWholesaleRecovery = input.linkedWholesaleDraftId !== undefined
-    && Number(invoice.id) === input.linkedWholesaleDraftId
-    && input.freightMode === 3 && input.ownCarrier !== undefined
-    && input.icmsTaxpayer && /^\d{13}$/u.test(input.businessRegistration ?? "")
-    && fiscalItems.every(i => i.unit === "PR" && i.pairsPerSku === 1 && i.fiscalUnitApproved && i.ncm === "64022000" && i.origin === 0);
-  // The other fiscal flows keep the original strict decomposition check.
+    businessRegistration?: string; freightMode?: 3; ownCarrier?: { nome: string; numeroDocumento: string }; reviewedOperationDate?: string }) {
+  // Never overwrite a provider draft whose reviewed commercial items were changed.
   if (Number(invoice.situacao) !== 1 || readString(invoice, "chaveAcesso") || Number(invoice.tipo) !== 1
     || Number(row(invoice.naturezaOperacao).id) !== input.natureId
     || !readString(invoice, "numero")
     || cents(invoice.valorNota) !== input.totalInCents || cents(invoice.valorFrete) !== input.shippingInCents
-    || (!invoiceMatchesFiscalLines(invoice, commercialItems) && !verifiedWholesaleRecovery)) throw new BlingError("invoice_draft_decomposition_conflict", 409);
+    || !invoiceMatchesFiscalLines(invoice, commercialItems)) throw new BlingError("invoice_draft_decomposition_conflict", 409);
   const contact = row(invoice.contato);
   const business = input.businessRegistration !== undefined;
   if (readString(contact, "numeroDocumento").replace(/\D/gu, "") !== input.document
@@ -192,8 +183,15 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
     assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
     return;
   }
-  const linkedRecovery = input.linkedWholesaleDraftId === invoiceId && Number(invoice.id) === invoiceId;
-  if (!matchesItems && !fiscalItems.some(i => i.sourceCommercialSku) && !linkedRecovery) throw new BlingError("invoice_items_mismatch", 409);
+  if (!matchesItems && !fiscalItems.some(i => i.sourceCommercialSku)) {
+    const observed = array(invoice.itens);
+    logServerEvent("warn", "bling_fiscal_items_mismatch", { invoiceId, stage: "draft_read",
+      expectedLines: expected.length, observedLines: observed.length,
+      expectedQuantity: expected.reduce((sum, item) => sum + item.quantity, 0),
+      observedQuantity: observed.reduce((sum, item) => sum + (Number(item.quantidade) || 0), 0),
+      expectedTotalInCents: input.totalInCents, observedTotalInCents: cents(invoice.valorNota) });
+    throw new BlingError("invoice_items_mismatch", 409);
+  }
   if (!stockAutomationDisabled) throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const body = blingFiscalDraftBody(invoice, fiscalItems, matchesItems ? expected : commercialItems, input);
   if (!await authorizeMutation()) throw new BlingError("order_not_eligible", 409);
