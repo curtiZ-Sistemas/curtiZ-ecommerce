@@ -23,9 +23,12 @@ export async function GET(request: NextRequest) {
   if (allowed.error || allowed.data !== true) return send({ message: "Acesso negado." }, 403);
 
   const cnpj = onlyDigits(request.nextUrl.searchParams.get("cnpj") ?? "");
-  if (!isValidCnpj(cnpj)) return send({ message: "O CNPJ informado não é válido." }, 400);
+  if (!/^\d{14}$/u.test(cnpj) || !isValidCnpj(cnpj)) return send({ message: "O CNPJ informado não é válido." }, 400);
+  // Host fixo; o caminho recebe só os 14 dígitos já validados.
+  const target = new URL("https://brasilapi.com.br/");
+  target.pathname = `/api/cnpj/v1/${encodeURIComponent(cnpj)}`;
   try {
-    const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, {
+    const response = await fetch(target, {
       headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000), redirect: "error"
     });
     if (response.status === 404) return send({ found: false, message: "CNPJ não encontrado na Receita." });
