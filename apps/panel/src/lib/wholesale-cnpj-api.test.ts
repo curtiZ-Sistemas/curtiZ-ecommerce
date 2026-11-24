@@ -36,6 +36,22 @@ describe("consulta de CNPJ", () => {
     expect(JSON.stringify(init)).not.toMatch(/cookie|authorization/iu);
   });
 
+  it("usa fetch compatível com workerd e nunca segue redirecionamentos", async () => {
+    fetchMock.mockImplementation((url: URL, init: RequestInit) => {
+      if (init.redirect !== "manual") throw new TypeError("Invalid redirect value");
+      if (url.hostname === "publica.cnpj.ws") {
+        return Promise.resolve(new Response(null, { status: 302, headers: { location: "https://untrusted.example/" } }));
+      }
+      if (url.hostname !== "brasilapi.com.br") throw new Error("Unexpected destination");
+      return Promise.resolve(new Response(JSON.stringify({ cnpj: "11222333000181", razao_social: "LOJA TESTE", descricao_situacao_cadastral: "ATIVA",
+        uf: "MG", cep: "30110100", logradouro: "Rua Teste", numero: "10", bairro: "Centro", municipio: "Belo Horizonte" })));
+    });
+    const response = await call("11222333000181");
+    expect(await response.json()).toMatchObject({ found: true, name: "LOJA TESTE" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://brasilapi.com.br/api/cnpj/v1/11222333000181");
+  });
+
   it("recusa CNPJ inválido sem consultar a Receita", async () => {
     expect((await call("11222333000182")).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();

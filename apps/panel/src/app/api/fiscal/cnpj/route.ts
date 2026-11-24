@@ -58,9 +58,13 @@ async function lookup(provider: Provider, cnpj: string) {
   try {
     const response = await fetch(new URL(provider.url + encodeURIComponent(cnpj)), {
       headers: { accept: "application/json", "user-agent": "CurtiZ-CNPJ/1.0" },
-      cache: "no-store", signal: AbortSignal.timeout(4500), redirect: "error"
+      cache: "no-store", signal: AbortSignal.timeout(4500), redirect: "manual"
     });
-    if (!response.ok) return { data: null, status: response.status };
+    // Workerd não implementa redirect:error. Não seguir redirecionamentos; tratar 3xx como falha.
+    if (!response.ok) {
+      await response.body?.cancel();
+      return { data: null, status: response.status };
+    }
     const payload = record(await response.json());
     const data = payload ? provider.parse(payload, cnpj) : null;
     return { data, status: data ? 200 : "invalid_response" };
