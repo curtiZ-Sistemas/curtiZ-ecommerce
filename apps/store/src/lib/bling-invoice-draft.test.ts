@@ -181,6 +181,17 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
     await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, input, true, async () => true);
     expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT", "GET"]);
   });
+  it("includes the verified issuer as own carrier and checks the saved transport", async () => {
+    const ownCarrier = { nome: "Curti Z", numeroDocumento: "12345678000195" };
+    const wholesale = { ...input, freightMode: 3 as const, ownCarrier };
+    const original = { ...invoice(), transporte: { fretePorConta: 9 } };
+    const body = blingFiscalDraftBody(original, items, commercial, wholesale);
+    expect(body.transporte).toMatchObject({ fretePorConta: 3, frete: 0, transportador: ownCarrier });
+    const request = vi.fn().mockResolvedValueOnce({ data: original }).mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { ...original, itens: body.itens, parcelas: body.parcelas, transporte: body.transporte } });
+    await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, wholesale, true, async () => true);
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { transporte: { fretePorConta: 3, transportador: ownCarrier } } });
+  });
   it("checks the carrier mode again after updating a draft whose SKU lines already match", async () => {
     const wholesale = { ...input, freightMode: 3 as const };
     const body = blingFiscalDraftBody({ ...invoice(), transporte: { fretePorConta: 9 } }, items, commercial, wholesale);

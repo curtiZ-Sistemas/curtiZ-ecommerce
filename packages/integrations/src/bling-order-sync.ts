@@ -84,7 +84,7 @@ export function blingOrderPayload(input: { order: Record<string, unknown>; items
   return { numeroLoja: code, data: paidDate, contato: { id: contactId }, itens: products,
     parcelas: [{ dataVencimento: input.collectionDueDate ?? paidDate, valor: total / 100, formaPagamento: { id: paymentMethodId } }],
     ...(discount > 0 ? { desconto: { valor: discount / 100, unidade: "REAL" } } : {}),
-    transporte: { frete: shipping / 100, etiqueta: {
+    transporte: { ...(code.startsWith("ATACADO-") ? { fretePorConta: 3 } : {}), frete: shipping / 100, etiqueta: {
       nome: readString(order, "customer_name_snapshot"), endereco: readString(address, "street"),
       numero: readString(address, "number"), complemento: readString(address, "complement"),
       bairro: readString(address, "district"), municipio: readString(address, "city"),

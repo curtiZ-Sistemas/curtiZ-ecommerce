@@ -152,6 +152,8 @@ export async function issueWholesaleKitInvoice(input: {
     const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
     const companyId = typeof company.id === "number" || typeof company.id === "string" ? String(company.id) : "";
     if (!companyId || companyId !== scalar(account.companyId) || digits(company.cnpj) !== issuer) throw scopeError();
+    const carrierName = text(company.nome).trim();
+    if (!carrierName) throw new BlingError("invoice_carrier_mapping_required", 409);
 
     const order = { public_code: reference, payment_status: "pending", status: "awaiting_receipt", placed_at: job.createdAt,
       customer_name_snapshot: text(job.buyerName), shipping_address_snapshot: billing, subtotal: mirror.totalInCents / 100,
@@ -301,7 +303,7 @@ export async function issueWholesaleKitInvoice(input: {
     })), {
       document, icmsTaxpayer: registration !== "", businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
       totalInCents: mirror.totalInCents, shippingInCents: 0, discountInCents: 0, additionalInCents: 0, freightMode: 3,
-      reviewedOperationDate: input.reviewedOperationDate
+      ownCarrier: { nome: carrierName, numeroDocumento: issuer }, reviewedOperationDate: input.reviewedOperationDate
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series
@@ -359,7 +361,7 @@ export async function cancelWholesaleKitInvoice(input: {
     const reference = `ATACADO-${invoiceId}`;
     const company = row(row(await provider.request("/empresas/me/dados-basicos")).data);
     const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
-    if (!positiveId(company.id) || scalar(company.id) !== scalar(account.companyId)
+    if (!scalar(company.id) || scalar(company.id) !== scalar(account.companyId)
       || digits(company.cnpj) !== text(row(job.fiscalParameters).issuerDocument)) throw scopeError();
     saleId ??= await findBlingOrder(provider, reference);
     if (!saleId) throw new BlingError("cancel_reconciliation_pending", 409);

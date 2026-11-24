@@ -45,7 +45,7 @@ const baseJob = () => ({
 const db = { rpc: async (name: string, args: Record<string, unknown>) => {
   state.calls.push({ name, args });
   if (name === "begin_wholesale_kit_invoice_issue") return { data: state.job.wholesaleId ? state.job : null, error: null };
-  if (name === "read_bling_account") return { data: { companyId: 7 }, error: null };
+  if (name === "read_bling_account") return { data: { companyId: "company-alphanumeric-32" }, error: null };
   if (name === "read_bling_catalog_variant") return { data: {}, error: null };
   if (name === "read_bling_product_links") return { data: [], error: null };
   if (name === "read_wholesale_kit_invoice_job") return { data: { status: "issuing" }, error: null };
@@ -64,7 +64,7 @@ const db = { rpc: async (name: string, args: Record<string, unknown>) => {
 const provider = { request: async (path: string, options?: { method?: string }) => {
   const method = options?.method ?? "GET";
   state.requests.push({ path, method });
-  if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "12.345.678/0001-95" } };
+  if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12.345.678/0001-95" } };
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
@@ -249,7 +249,7 @@ describe("cancelamento conciliado", () => {
         else throw new Error("unexpected deletion");
         return {};
       }
-      if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "12345678000195" } };
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12345678000195" } };
       if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
       if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
         total: 720.02, contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
@@ -265,7 +265,7 @@ describe("cancelamento conciliado", () => {
     const remote = { request: async (path: string, options?: { method?: string }) => {
       const method = options?.method ?? "GET";
       state.requests.push({ path, method });
-      if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "12345678000195" } };
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12345678000195" } };
       if (path.startsWith("/nfe?numeroLoja=")) return { data: [{ id: 77 }] };
       if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, numeroPedidoLoja: `ATACADO-${id}`, contato: { numeroDocumento: "11222333000181" } } };
       if (path === "/nfe?idsNotas%5B%5D=77" && method === "DELETE") { draftExists = false; return {}; }
