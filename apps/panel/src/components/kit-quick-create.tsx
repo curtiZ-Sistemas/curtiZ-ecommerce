@@ -12,6 +12,11 @@ export type KitBulkOutcome = { name: string; status: "created" | "skipped" | "er
 
 export type KitSheetValues = Record<string, string>;
 
+export function isKitBulkComplete(outcomes: readonly KitBulkOutcome[], expectedCount: number): boolean {
+  return expectedCount > 0 && outcomes.length === expectedCount &&
+    outcomes.every(outcome => outcome.status === "created" || outcome.status === "skipped");
+}
+
 export function groupKitSources(sources: readonly KitSource[]): KitProductGroup[] {
   const groups = new Map<string, KitProductGroup>();
   for (const source of sources) {
@@ -177,6 +182,11 @@ export function KitQuickCreateModal({ onClose, onCreated }: { onClose: () => voi
         }
         return next;
       });
+      if (response.ok && isKitBulkComplete(result, toCreate.length)) {
+        onCreated();
+        onClose();
+        return;
+      }
       if (result.some(outcome => outcome.status === "created")) onCreated();
     } catch (failure) {
       setError(failure instanceof Error && failure.message ? failure.message : "Não foi possível criar os kits.");

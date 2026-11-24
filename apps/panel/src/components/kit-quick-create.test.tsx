@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { groupKitSources, KitBulkResult, KitQuickCreateModal, KitQuickPreview, suggestedSheetValues } from "./kit-quick-create";
+import { groupKitSources, isKitBulkComplete, KitBulkResult, KitQuickCreateModal, KitQuickPreview, suggestedSheetValues } from "./kit-quick-create";
 
 const sources = [
   { productId: "p1", name: "Chinelo Strass", color: "Preto" },
@@ -41,6 +41,16 @@ describe("cadastro rápido de kits", () => {
     expect(html).toContain("1 criado(s)");
     expect(html).toContain("1 pulado(s)");
     expect(html).toContain("C: falhou");
+  });
+
+  it("fecha automaticamente somente quando todos os kits foram criados ou já existiam", () => {
+    expect(isKitBulkComplete([{ name: "A", status: "created" }, { name: "B", status: "created" }], 2)).toBe(true);
+    expect(isKitBulkComplete([{ name: "A", status: "created" }, { name: "B", status: "skipped" }], 2)).toBe(true);
+    expect(isKitBulkComplete([{ name: "A", status: "skipped" }], 1)).toBe(true);
+    expect(isKitBulkComplete([{ name: "A", status: "created" }, { name: "B", status: "error" }], 2)).toBe(false);
+    expect(isKitBulkComplete([{ name: "A", status: "created" }], 2)).toBe(false);
+    expect(isKitBulkComplete([], 1)).toBe(false);
+    expect(isKitBulkComplete([], 0)).toBe(false);
   });
 
   it("abre o modal com o seletor de produto e o botão de criar desabilitado", () => {
