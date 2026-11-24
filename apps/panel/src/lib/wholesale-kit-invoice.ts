@@ -109,7 +109,7 @@ export async function issueWholesaleKitInvoice(input: {
       const situation = Number(invoice.situacao);
       if (situation === 5) return await authorize(draftId, invoice);
       if (SEND_BLOCKED_SITUATIONS.includes(situation)) throw new BlingError(situation === 2 ? "invoice_cancelled_in_bling" : "invoice_rejected_by_sefaz", 409);
-      if (WAITING_SITUATIONS.includes(situation)) return await awaitAuthorization(draftId);
+      if (WAITING_SITUATIONS.includes(situation) || job.sendClaimed === true) return await awaitAuthorization(draftId);
       if (situation !== 1) throw scopeError();
     }
     if (environment.BLING_ORDER_SYNC_ENABLED !== "true") return await waiting("bling_order_sync_disabled");
@@ -216,20 +216,25 @@ export async function issueWholesaleKitInvoice(input: {
         return await waiting("awaiting_bling_confirmation");
       }
     }
-    // A recovered note may already be processing or authorized. Never overwrite or send it again.
+    // Confirm the exact link before adopting a draft, including a lost POST response.
+    let linked = positiveId(row(sale.notaFiscal).id);
+    for (let attempt = 0; linked !== draftId && attempt < 4; attempt += 1) {
+      if (linked) throw scopeError();
+      const refreshed = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+      assertBlingExternalOrder(order, items, refreshed);
+      if (Number(refreshed.id) !== saleId) throw scopeError();
+      linked = positiveId(row(refreshed.notaFiscal).id);
+      if (linked !== draftId && attempt < 3) await sleep(1500);
+    }
+    if (linked !== draftId) return await waiting("awaiting_bling_confirmation");
     const recovered = await readInvoice(draftId);
     if (Number(recovered.id) !== draftId) throw scopeError();
+    if (await call(db, "link_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId }) !== true) throw scopeError();
     const recoveredSituation = Number(recovered.situacao);
-    if (recoveredSituation !== 1) {
-      // Persist only after the normal fiscal draft/authorization workflow has verified ownership.
-      // An externally transmitted, unlinked invoice cannot safely be adopted without reconciliation.
-      if (draftId === positiveId(job.invoiceId)) {
-        if (recoveredSituation === 5) return await authorize(draftId, recovered);
-        if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
-      }
-      if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
-      return await waiting("awaiting_bling_confirmation");
-    }
+    if (recoveredSituation === 5) return await authorize(draftId, recovered);
+    if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
+    if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
+    if (recoveredSituation !== 1) return await waiting("awaiting_bling_confirmation");
     const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
     await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
       ...item, sku: blingExternalSku(item.sku, item.variantId)
@@ -257,5 +262,98 @@ export async function issueWholesaleKitInvoice(input: {
     logServerEvent("error", "wholesale_invoice_issue_failed", { invoiceId: input.invoiceId, reason: code });
     try { await progress("error", code); } catch { /* The invoice stays "issuing" and is released for retry after a few minutes. */ }
     return { status: "error", code };
+  }
+}
+
+/** Reconcile an explicit panel cancellation; never delete a transmitted NF-e or release stock on uncertainty. */
+export async function cancelWholesaleKitInvoice(input: {
+  db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string; job: UnknownRecord;
+}): Promise<boolean> {
+  const { db, provider, environment, invoiceId, job } = input;
+  const p_id = invoiceId;
+  const finish = async () => await call(db, "finish_wholesale_kit_invoice_cancel", { p_id }) === true;
+  const get = async (path: string): Promise<UnknownRecord | null> => {
+    try {
+      const data = row(row(await provider.request(path)).data);
+      if (!positiveId(data.id)) throw scopeError();
+      return data;
+    } catch (error) {
+      if (error instanceof BlingError && error.status === 404) return null;
+      throw error;
+    }
+  };
+  const remove = async (path: string, verifyPath: string) => {
+    try { await provider.request(path, { method: "DELETE" }); }
+    catch (error) { if (!(error instanceof BlingError) || (!error.uncertainWrite && error.status !== 404)) throw error; }
+    if (await get(verifyPath)) throw new BlingError("cancel_reconciliation_pending", 409);
+  };
+  try {
+    if (text(job.wholesaleId) !== invoiceId || job.sendClaimed === true) throw scopeError();
+    let saleId = positiveId(job.saleId);
+    let draftId = positiveId(job.invoiceId);
+    if (!saleId && !draftId && job.saleClaimed !== true && job.draftClaimed !== true) return await finish();
+    if (environment.APP_ENV !== "production" || environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true") throw scopeError();
+    const reference = `ATACADO-${invoiceId}`;
+    const company = row(row(await provider.request("/empresas/me/dados-basicos")).data);
+    const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
+    if (!positiveId(company.id) || scalar(company.id) !== scalar(account.companyId)
+      || digits(company.cnpj) !== text(row(job.fiscalParameters).issuerDocument)) throw scopeError();
+    saleId ??= await findBlingOrder(provider, reference);
+    if (!saleId) throw new BlingError("cancel_reconciliation_pending", 409);
+    const salePath = `/pedidos/vendas/${saleId}`;
+    const sale = await get(salePath);
+    if (sale) {
+      if (Number(sale.id) !== saleId || text(sale.numeroLoja) !== reference
+        || Math.round(Number(sale.total) * 100) !== Number(job.amountInCents)) throw scopeError();
+      const contactId = positiveId(row(sale.contato).id);
+      if (!contactId) throw scopeError();
+      const contact = await get(`/contatos/${contactId}`);
+      if (!contact || digits(contact.numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+      const linked = positiveId(row(sale.notaFiscal).id);
+      if (draftId && linked && draftId !== linked) throw scopeError();
+      draftId ??= linked;
+    }
+    // A lost draft response must be reconciled by its unique order reference, not guessed.
+    if (!draftId && job.draftClaimed === true) {
+      const result = row(await provider.request(`/nfe?numeroLoja=${encodeURIComponent(reference)}&pagina=1&limite=100`));
+      if (!Array.isArray(result.data)) throw scopeError();
+      const matches = rows(result.data);
+      if (matches.length > 1) throw scopeError();
+      if (matches.length === 1) {
+        const match = matches[0]!;
+        if (text(match.numeroPedidoLoja || match.numeroLoja) !== reference) throw scopeError();
+        draftId = positiveId(match.id);
+        if (!draftId) throw scopeError();
+      } else if (!Number.isFinite(Date.parse(text(job.draftClaimedAt))) || Date.now() - Date.parse(text(job.draftClaimedAt)) < 180_000) {
+        throw new BlingError("cancel_reconciliation_pending", 409);
+      }
+    }
+    if (await call(db, "record_wholesale_cancel_remote", { p_id, p_sale: saleId, p_invoice: draftId }) !== true) throw scopeError();
+    if (draftId) {
+      const path = `/nfe/${draftId}`;
+      const draft = await get(path);
+      if (draft) {
+        const linked = positiveId(row(sale?.notaFiscal).id) === draftId;
+        if (Number(draft.id) !== draftId || Number(draft.situacao) !== 1 || text(draft.chaveAcesso)
+          || (!linked && text(draft.numeroPedidoLoja || draft.numeroLoja) !== reference)
+          || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+        await remove(`/nfe?idsNotas%5B%5D=${draftId}`, path);
+      }
+    }
+    if (sale) {
+      const current = await get(salePath);
+      if (current) {
+        if (text(current.numeroLoja) !== reference || Number(current.id) !== saleId
+          || (positiveId(row(current.notaFiscal).id) && positiveId(row(current.notaFiscal).id) !== draftId)) throw scopeError();
+        // Bling refuses deletion when its own stock/financial movements prevent safe removal.
+        // Do not blindly reverse settled financial entries or create a second refund.
+        await remove(salePath, salePath);
+      }
+    }
+    return await finish();
+  } catch (error) {
+    logServerEvent("error", "wholesale_invoice_cancel_failed", { invoiceId, reason: wholesaleFailureCode(error) });
+    try { await call(db, "record_wholesale_cancel_pending", { p_id }); } catch { /* Lease expires; retry reconciles remote IDs. */ }
+    return false;
   }
 }

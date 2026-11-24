@@ -139,11 +139,16 @@ select is((public.read_wholesale_kit_invoice_job((select invoice from wholesale_
 -- Cancellation before authorization gives the sheets back exactly once.
 select set_config('request.jwt.claims',jsonb_build_object('sub',accountant,'role','authenticated','aal','aal2')::text,true)
   from wholesale_fixture;
-select is(public.cancel_wholesale_kit_invoice((select invoice from wholesale_fixture))->>'blingResidue','true',
-  'cancelling warns that a sale already exists in Bling');
-select is(pg_temp.standard_stock(),5,'cancelling returns the sheets');
-select is(public.cancel_wholesale_kit_invoice((select invoice from wholesale_fixture))->>'ok','true','cancelling again is harmless');
+select is(public.cancel_wholesale_kit_invoice((select invoice from wholesale_fixture))->>'ok','false','an external order cannot be cancelled locally');
+select is(pg_temp.standard_stock(),3,'stock remains reserved until reconciliation');
+select is((public.begin_wholesale_kit_invoice_cancel((select invoice from wholesale_fixture))->>'wholesaleId')::uuid,(select invoice from wholesale_fixture),'accountant starts reconciliation');
+select is(public.request_wholesale_kit_invoice_retry((select invoice from wholesale_fixture)),false,'a cancelling invoice cannot be retried');
+select set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
+select is(public.finish_wholesale_kit_invoice_cancel((select invoice from wholesale_fixture)),true,'verified cleanup releases stock');
+select is(public.finish_wholesale_kit_invoice_cancel((select invoice from wholesale_fixture)),true,'repeated completion is harmless');
 select is(pg_temp.standard_stock(),5,'the sheets are returned only once');
+select set_config('request.jwt.claims',jsonb_build_object('sub',accountant,'role','authenticated','aal','aal2')::text,true)
+  from wholesale_fixture;
 select is(public.request_wholesale_kit_invoice_retry((select invoice from wholesale_fixture)),false,'a cancelled invoice cannot be retried');
 
 -- An invoice already transmitted cannot be cancelled.

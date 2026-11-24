@@ -7,7 +7,7 @@ import { isValidCnpj } from "@/lib/cnpj";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore } from "@/lib/technical-api";
-import { issueWholesaleKitInvoice } from "@/lib/wholesale-kit-invoice";
+import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice } from "@/lib/wholesale-kit-invoice";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const buyer = z.object({
@@ -99,9 +99,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (item.action === "cancel") {
-      const cancelled = record((await db.rpc("cancel_wholesale_kit_invoice", { p_id: item.id })).data);
-      if (cancelled?.ok !== true) return send({ message: "Esta nota não pode mais ser cancelada. Ela já foi enviada ou está em andamento." }, 409);
-      return send({ ok: true, blingResidue: cancelled.blingResidue === true });
+      const local = await db.rpc("cancel_wholesale_kit_invoice", { p_id: item.id });
+      if (local.error) return send({ message: "Não foi possível cancelar." }, local.error.code === "42501" ? 403 : 503);
+      if (record(local.data)?.ok === true) return send({ ok: true });
+      if (!blingConfigured()) return send({ message: "Integração temporariamente indisponível. Tente concluir o cancelamento pelo painel." }, 503);
+      const service = createServiceSupabaseClient();
+      if (!service) return send({ message: "Cancelamento indisponível." }, 503);
+      const provider = panelBlingClient(service);
+      const started = await db.rpc("begin_wholesale_kit_invoice_cancel", { p_id: item.id });
+      const job = record(started.data);
+      if (started.error) return send({ message: "Não foi possível iniciar o cancelamento." }, started.error.code === "42501" ? 403 : 503);
+      if (!job) return send({ message: "Esta nota não pode ser cancelada agora. Ela já foi enviada ou está em andamento." }, 409);
+      const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job });
+      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: "Cancelamento aguardando confirmação. Use Concluir cancelamento no painel; o estoque não será devolvido duas vezes." }, 409);
     }
 
     // issue (also the retry): the database allows one running attempt at a time.

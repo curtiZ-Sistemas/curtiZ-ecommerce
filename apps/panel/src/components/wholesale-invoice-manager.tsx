@@ -12,7 +12,7 @@ export type WholesaleOffer = { kitId: string; name: string; description: string;
 export type WholesaleInvoice = {
   id: string; status: string; stage: string; kitName: string; templateLabel: string; quantity: number; totalInCents: number;
   paymentMethod: string; buyerName: string; buyerDocument: string; invoiceId: number | null; invoiceNumber: string | null;
-  authorized: boolean; errorCode: string | null; canCancel: boolean; createdAt: string;
+  authorized: boolean; errorCode: string | null; canCancel: boolean; cancelPending?: boolean; createdAt: string;
 };
 export type WholesaleBuyer = {
   document: string; name: string; registration: string; postalCode: string; street: string; number: string;
@@ -51,7 +51,7 @@ export function readInvoice(value: unknown): WholesaleInvoice | null {
     quantity: row.quantity, totalInCents: row.totalInCents, paymentMethod: str(row.paymentMethod), buyerName: str(row.buyerName),
     buyerDocument: str(row.buyerDocument), invoiceId: typeof row.invoiceId === "number" ? row.invoiceId : null,
     invoiceNumber: str(row.invoiceNumber) || null, authorized: row.authorized === true, errorCode: str(row.errorCode) || null,
-    canCancel: row.canCancel === true, createdAt: str(row.createdAt)
+    canCancel: row.canCancel === true, cancelPending: row.cancelPending === true, createdAt: str(row.createdAt)
   };
 }
 
@@ -75,17 +75,18 @@ const reasons: Record<string, string> = {
   bling_not_production: "A emissão só envia ao Bling no sistema em produção. A nota ficou salva e nada foi enviado.",
   bling_order_sync_disabled: "O envio de pedidos ao Bling está desligado. A nota ficou salva; quando for ligado, use Tentar de novo.",
   bling_invoice_sync_disabled: "A criação da nota no Bling está desligada. A venda foi registrada no Bling e a nota ficou salva.",
-  bling_send_disabled: "A nota está pronta como rascunho no Bling. O envio à SEFAZ está desligado: confira e envie pelo Bling, ou ligue o envio e use Tentar de novo.",
+  bling_send_disabled: "A nota está pronta como rascunho no Bling. O envio à SEFAZ está desligado: o envio precisa ser habilitado pela administração. Depois, use Tentar de novo.",
   awaiting_authorization: "A nota foi enviada, mas a SEFAZ ainda não respondeu. Verifique de novo em instantes.",
   payment_method_required: "A forma de pagamento (Pix ou Dinheiro) não está configurada no Bling.",
   kit_fiscal_clearance_failed: "A conferência fiscal não passou. Confira os dados do cliente e o cadastro fiscal do produto.",
   wholesale_grade_changed: "O cadastro fiscal da ficha mudou depois da venda. Cancele a nota e crie outra.",
-  duplicate_contact: "Há mais de um contato com este CNPJ no Bling. Deixe só um e tente de novo.",
-  duplicate_external_order: "Há mais de um pedido desta nota no Bling. Deixe só um e tente de novo.",
+  duplicate_contact: "Há mais de um contato com este CNPJ no Bling. A integração bloqueou a duplicidade; solicite suporte.",
+  duplicate_external_order: "Há mais de um pedido desta nota no Bling. A integração bloqueou a duplicidade; solicite suporte.",
+  cancel_reconciliation_pending: "Cancelamento aguardando confirmação. Conclua pelo painel sem duplicar a devolução.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
   invoice_recipient_mismatch: "Os dados do cliente no Bling não conferem com os desta nota.",
-  invoice_rejected_by_sefaz: "A SEFAZ recusou a nota. Corrija o motivo no Bling e tente de novo, ou cancele.",
+  invoice_rejected_by_sefaz: "A SEFAZ recusou a nota. Solicite revisão fiscal pelo suporte. A nota não será reenviada às cegas.",
   invoice_cancelled_in_bling: "A nota foi cancelada no Bling. Cancele aqui para devolver as fichas ao estoque.",
   validation_error: "O Bling recusou algum dado da nota. Confira o endereço e a inscrição estadual do cliente.",
   buyer_outside_mg: "Só emitimos nota de atacado para empresas de Minas Gerais.",
@@ -136,8 +137,8 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel }: {
         <div className="wholesale-row-actions">
           <InvoiceActions authorized={invoice.authorized} blingInvoiceId={invoice.invoiceId}
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? ""}`.trim()} />
-          {open && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>Tentar de novo</button>}
-          {open && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>Cancelar e devolver estoque</button>}
+          {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>Tentar de novo</button>}
+          {invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
         </div>
       </li>;
     })}
@@ -322,8 +323,8 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
       {result?.status === "busy" ? "Esta nota já está sendo emitida. Aguarde alguns instantes e verifique de novo." : wholesaleReason(result?.code ?? null)}
     </p>}
     <div className="wholesale-actions">
-      {failed && <button className="primary-button" type="button" disabled={busy} onClick={onRetry}>{result?.code === "awaiting_authorization" ? "Verificar de novo" : "Tentar de novo"}</button>}
-      {failed && result?.invoice?.canCancel !== false && <button className="secondary-button danger-button" type="button" disabled={busy} onClick={onCancel}>Cancelar e devolver estoque</button>}
+      {failed && !result?.invoice?.cancelPending && <button className="primary-button" type="button" disabled={busy} onClick={onRetry}>{result?.code === "awaiting_authorization" ? "Verificar de novo" : "Tentar de novo"}</button>}
+      {failed && result?.invoice?.canCancel === true && <button className="secondary-button danger-button" type="button" disabled={busy} onClick={onCancel}>Cancelar e devolver estoque</button>}
       {!running && <button className="secondary-button" type="button" onClick={onClose}>Fechar</button>}
     </div>
   </div>;
@@ -623,7 +624,7 @@ export function WholesaleInvoiceManager() {
       const body = record(await response.json());
       if (!response.ok) setNotice(str(body?.message) || "Não foi possível cancelar a nota.");
       else {
-        setNotice(body?.blingResidue === true ? "Nota cancelada e fichas devolvidas. Já existia um pedido no Bling: exclua-o por lá." : "Nota cancelada e fichas devolvidas ao estoque.");
+        setNotice("Cancelamento concluído. Estoque conciliado pelo sistema.");
         setWizard(null);
       }
     } catch { setNotice("Não foi possível cancelar a nota."); }

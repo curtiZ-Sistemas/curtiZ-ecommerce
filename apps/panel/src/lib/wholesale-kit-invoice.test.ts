@@ -64,7 +64,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
-  if (path === "/pedidos/vendas/900/gerar-nfe") { if (state.draftResponseLost) { state.draftLinked = true; throw new BlingError("uncertain_write", 503, false, true); } return { idNotaFiscal: 77 }; }
+  if (path === "/pedidos/vendas/900/gerar-nfe") { if (state.draftResponseLost) { state.draftLinked = true; throw new BlingError("uncertain_write", 503, false, true); } state.draftLinked = true; return { idNotaFiscal: 77 }; }
   if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: state.draftLinked ? 77 : 0 }, itens: [{ naturezaOperacao: { id: 123 } }] } };
   if (path === "/nfe/77/enviar?enviarEmail=false") { state.send(); return {}; }
   if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: 3,
