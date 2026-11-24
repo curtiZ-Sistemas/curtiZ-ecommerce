@@ -203,9 +203,9 @@ test("remove configurações técnicas da administração e redireciona o bookma
 });
 
 const panelAccounts = [
-  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 27 },
+  { email: "admin.demo@curtiz.local", role: "administracao", expectedRoutes: 28 },
   { email: "operacional.demo@curtiz.local", role: "operacional", expectedRoutes: 21 },
-  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 33 },
+  { email: "gerencia.demo@curtiz.local", role: "gerencia", expectedRoutes: 34 },
   { email: "tecnico.demo@curtiz.local", role: "tecnico", expectedRoutes: 24 }
 ] as const;
 
