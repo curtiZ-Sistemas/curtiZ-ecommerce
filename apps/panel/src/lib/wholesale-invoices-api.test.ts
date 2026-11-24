@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const state = vi.hoisted(() => ({
-  rpc: vi.fn(), mfa: true, origin: true, budget: true, user: true, service: true, configured: true, issue: vi.fn(), steps: [] as string[]
+  rpc: vi.fn(), mfa: true, origin: true, budget: true, user: true, service: true, configured: true, issue: vi.fn(), cancel: vi.fn(), steps: [] as string[]
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@curtiz/security", () => ({
@@ -14,7 +14,7 @@ vi.mock("@/lib/internal-mfa", () => ({ hasRequiredInternalMfa: async () => state
 vi.mock("@/lib/technical-api", () => ({ safeTechnicalOrigin: () => state.origin, technicalNoStore: { "cache-control": "private, no-store" } }));
 vi.mock("@/lib/bling-server", () => ({ blingConfigured: () => state.configured, panelBlingClient: () => ({}) }));
 vi.mock("@/lib/bling-invoice-pdf", () => ({ authorizedInvoicePdfResponse: vi.fn() }));
-vi.mock("@/lib/wholesale-kit-invoice", () => ({ issueWholesaleKitInvoice: state.issue }));
+vi.mock("@/lib/wholesale-kit-invoice", () => ({ issueWholesaleKitInvoice: state.issue, cancelWholesaleKitInvoice: state.cancel }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({ auth: { getUser: async () => ({ data: { user: state.user ? { id: "accountant" } : null }, error: null }) }, rpc: state.rpc }),
   createServiceSupabaseClient: () => state.service ? { service: true } : null
@@ -39,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(state, { mfa: true, origin: true, budget: true, user: true, service: true, configured: true });
   state.rpc.mockResolvedValue({ data: summary, error: null });
+  state.cancel.mockResolvedValue(true);
   state.issue.mockImplementation(async (input: { onStep?: (step: string) => void }) => {
     input.onStep?.("contact"); input.onStep?.("sale");
     return { status: "authorized" };
@@ -192,12 +193,16 @@ describe("notas de atacado: emitir, tentar de novo e cancelar", () => {
     expect(state.issue).not.toHaveBeenCalled();
   });
 
-  it("cancela devolvendo o estoque e avisa quando já existe pedido no Bling", async () => {
-    state.rpc.mockResolvedValue({ data: { ok: true, blingResidue: true }, error: null });
-    const response = await post({ action: "cancel", id: ids.invoice });
-    expect(await response.json()).toEqual({ ok: true, blingResidue: true });
-    expect(state.rpc).toHaveBeenCalledWith("cancel_wholesale_kit_invoice", { p_id: ids.invoice });
-    state.rpc.mockResolvedValue({ data: { ok: false }, error: null });
+  it("cancela localmente ou concilia no Bling pelo painel", async () => {
+    state.rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    expect(await (await post({ action: "cancel", id: ids.invoice })).json()).toEqual({ ok: true });
+    expect(state.cancel).not.toHaveBeenCalled();
+    state.rpc.mockImplementation(async (name: string) => ({ data: name === "begin_wholesale_kit_invoice_cancel" ? { wholesaleId: ids.invoice } : { ok: false }, error: null }));
+    expect(await (await post({ action: "cancel", id: ids.invoice })).json()).toEqual({ ok: true });
+    expect(state.cancel).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: ids.invoice }));
+    state.cancel.mockResolvedValue(false);
+    expect((await post({ action: "cancel", id: ids.invoice })).status).toBe(409);
+    state.rpc.mockResolvedValue({ data: null, error: null });
     expect((await post({ action: "cancel", id: ids.invoice })).status).toBe(409);
   });
 });

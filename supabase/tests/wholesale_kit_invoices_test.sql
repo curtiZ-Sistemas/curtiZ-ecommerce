@@ -7,7 +7,7 @@ select no_plan();
 create temporary table wholesale_fixture as
 select gen_random_uuid() accountant, gen_random_uuid() outsider, gen_random_uuid() category, gen_random_uuid() product,
   gen_random_uuid() kit, gen_random_uuid() rule_version, gen_random_uuid() request_key, gen_random_uuid() other_key,
-  null::uuid invoice;
+  null::uuid invoice, gen_random_uuid() product2, gen_random_uuid() kit2, gen_random_uuid() rule_version2, gen_random_uuid() batch_key, null::uuid batch_invoice;
 insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
   select accountant,'wholesale-accountant@example.invalid','{}'::jsonb,'{}'::jsonb from wholesale_fixture
   union all select outsider,'wholesale-outsider@example.invalid','{}'::jsonb,'{}'::jsonb from wholesale_fixture;
@@ -32,6 +32,23 @@ insert into public.kits(id,name,slug,description,price_in_cents,grade_product_id
   grade_standard_price_cents,grade_lower_restock_price_cents,grade_upper_restock_price_cents,
   grade_standard_stock,grade_lower_restock_stock,grade_upper_restock_stock)
   select kit,'Wholesale test kit',kit::text,'Wholesale fixture',36001,product,'White',outsider,36001,35001,37001,5,0,0
+  from wholesale_fixture;
+
+insert into public.products(id,name,slug,category_id,status,base_price,weight_grams,width_cm,height_cm,length_cm)
+  select product2,'Wholesale grade fixture 2',product2::text,category,'draft',35,150,8,4,16 from wholesale_fixture;
+insert into public.product_variants(product_id,sku,color_name,size)
+  select product2,'TEST-WHOLESALE2-'||s,'White',s::text from wholesale_fixture cross join generate_series(34,39) s;
+insert into public.product_images(product_id,storage_path,alt_text,width,height,is_primary)
+  select product2,'test/wholesale2.webp','Wholesale fixture',720,720,true from wholesale_fixture;
+update public.products set status='active' where id=(select product2 from wholesale_fixture);
+insert into public.inventory(variant_id,available_quantity,reserved_quantity)
+  select v.id,5,0 from public.product_variants v join wholesale_fixture f on v.product_id=f.product2;
+insert into private.bling_catalog_metadata(product_id,commercial_unit,pairs_per_sku,ncm,origin,cest,production_type,evidence_reference)
+  select product2,'PR',1,'64022000',0,'','T','Wholesale synthetic evidence' from wholesale_fixture;
+insert into public.kits(id,name,slug,description,price_in_cents,grade_product_id,grade_color,created_by,
+  grade_standard_price_cents,grade_lower_restock_price_cents,grade_upper_restock_price_cents,
+  grade_standard_stock,grade_lower_restock_stock,grade_upper_restock_stock)
+  select kit2,'Wholesale test kit2',kit2::text,'Wholesale fixture',36001,product2,'White',outsider,36001,35001,37001,5,0,0
   from wholesale_fixture;
 
 create function pg_temp.buyer(p_document text default '11222333000181', p_state text default 'MG', p_registration text default '0012345678900')
@@ -88,6 +105,19 @@ select rule_version,gen_random_uuid(),1,'synthetic issuer',public.read_represent
 from wholesale_fixture;
 insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
 select rule_version,'synthetic approver','synthetic evidence' from wholesale_fixture;
+
+insert into private.representative_resale_fiscal_rule_versions
+  (id,rule_key,version,issuer_reference,product_fingerprint,origin_state,destination_state,person_type,
+    icms_status,final_consumer,purpose,valid_from,valid_until,fiscal_parameters)
+select rule_version2,gen_random_uuid(),1,'synthetic issuer',public.read_representative_kit_grade_fingerprint(kit2,'standard'),
+  'MG','MG','business','taxpayer',false,'resale',now()-interval '1 day',now()+interval '1 day',
+  '{"buyerProfile":"MG02","issuerDocument":"12345678000195","classification":"third_party_no_st","creditEligible":false,
+    "blingRule":{"scenario":"resale_in_state_no_credit","issuer_state":"MG","series":3,"document_model":55,"cfop":"5102",
+    "csosn":"102","icms_rate":0,"pis_cst":"49","cofins_cst":"49","ipi_cst":"99","ipi_cenq":"999",
+    "pis_rate":0,"cofins_rate":0,"ipi_rate":0,"natures":[{"final_consumer":false,"external_nature_id":123}]}}'
+from wholesale_fixture;
+insert into private.representative_resale_fiscal_rule_approvals(rule_version_id,approver_reference,evidence_reference)
+select rule_version2,'synthetic approver','synthetic evidence' from wholesale_fixture;
 
 select throws_ok($$select pg_temp.create_invoice(gen_random_uuid(),2,36001,pg_temp.buyer('11222333000182'))$$,'22023','wholesale_buyer_cnpj_invalid',
   'an invalid CNPJ is refused');
@@ -171,5 +201,24 @@ select is(public.cancel_wholesale_kit_invoice((select invoice from wholesale_fix
   'an authorized invoice cannot be cancelled');
 select is(pg_temp.standard_stock(),4,'the stock of an authorized sale stays out');
 
+create function pg_temp.batch_items() returns jsonb language sql as $$
+  select jsonb_build_array(jsonb_build_object('kitId',kit,'template','standard','quantity',1,'unitPriceInCents',20400),
+    jsonb_build_object('kitId',kit2,'template','standard','quantity',2,'unitPriceInCents',15000)) from wholesale_fixture;
+$$;
+update wholesale_fixture set batch_invoice=(public.create_wholesale_kit_invoice_batch(batch_key,pg_temp.batch_items(),'pix',pg_temp.buyer())->>'id')::uuid;
+select is(pg_temp.standard_stock(),3,'batch reserves first kit');
+select is((select grade_standard_stock from public.kits where id=(select kit2 from wholesale_fixture)),3,'batch reserves second kit');
+select is((select total_cents from private.wholesale_kit_invoices where id=(select batch_invoice from wholesale_fixture)),50400::bigint,'batch adds every kit price');
+select is((public.create_wholesale_kit_invoice_batch((select batch_key from wholesale_fixture),pg_temp.batch_items(),'pix',pg_temp.buyer())->>'id')::uuid,
+  (select batch_invoice from wholesale_fixture),'batch retry preserves idempotency');
+select is(pg_temp.standard_stock(),3,'batch retry does not reserve twice');
+select throws_ok($$select public.create_wholesale_kit_invoice_batch(gen_random_uuid(),jsonb_set(pg_temp.batch_items(),'{1,quantity}','99'),'pix',pg_temp.buyer())$$,
+  '23514','kit_grade_out_of_stock','batch refuses insufficient stock');
+select is(pg_temp.standard_stock(),3,'failed batch rolls back every kit');
+select is(public.cancel_wholesale_kit_invoice((select batch_invoice from wholesale_fixture))->>'ok','true','local batch cancellation succeeds');
+select is(pg_temp.standard_stock(),4,'batch cancellation restores first kit');
+select is((select grade_standard_stock from public.kits where id=(select kit2 from wholesale_fixture)),5,'batch cancellation restores second kit');
+select ok(not has_function_privilege('anon','public.create_wholesale_kit_invoice_batch(uuid,jsonb,text,jsonb)','execute'),'batch denies anonymous access');
+select ok(not has_function_privilege('authenticated','public.finish_wholesale_kit_invoice_cancel(uuid)','execute'),'client cannot assert remote cleanup');
 select * from finish();
 rollback;

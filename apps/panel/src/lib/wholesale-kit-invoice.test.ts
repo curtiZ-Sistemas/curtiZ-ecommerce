@@ -29,7 +29,7 @@ vi.mock("@curtiz/integrations", () => {
   };
 });
 import { BlingError } from "@curtiz/integrations";
-import { issueWholesaleKitInvoice, wholesaleFailureCode } from "./wholesale-kit-invoice";
+import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice, wholesaleFailureCode } from "./wholesale-kit-invoice";
 
 const id = "33333333-3333-4333-8333-333333333333";
 const environment = {
@@ -185,5 +185,39 @@ describe("emissão da nota de atacado", () => {
     expect(wholesaleFailureCode(new BlingError("Texto com dados pessoais!", 500))).toBe("bling_error");
     expect(wholesaleFailureCode(new Error("boom"))).toBe("unexpected_error");
     expect(wholesaleFailureCode(new BlingError("uncertain_write", 503))).toBe("uncertain_write");
+  });
+});
+
+describe("cancelamento conciliado", () => {
+  const cancelJob = () => ({ ...baseJob(), saleId: 900, invoiceId: 77, saleClaimed: true, draftClaimed: true,
+    amountInCents: 72002, fiscalParameters: { issuerDocument: "12345678000195" } });
+  it("remove somente o rascunho e a venda correspondentes antes de liberar o estoque", async () => {
+    let saleExists = true; let draftExists = true;
+    const remote = { request: async (path: string, options?: { method?: string }) => {
+      const method = options?.method ?? "GET";
+      state.requests.push({ path, method });
+      if (method === "DELETE") {
+        if (path === "/nfe?idsNotas%5B%5D=77") draftExists = false;
+        else if (path === "/pedidos/vendas/900") saleExists = false;
+        else throw new Error("unexpected deletion");
+        return {};
+      }
+      if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "12345678000195" } };
+      if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
+      if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
+        total: 720.02, contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, contato: { numeroDocumento: "11222333000181" } } };
+      throw new BlingError("provider_error", 404);
+    } };
+    expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob() })).toBe(true);
+    expect(state.requests.filter(r => r.method === "DELETE").map(r => r.path)).toEqual(["/nfe?idsNotas%5B%5D=77", "/pedidos/vendas/900"]);
+    expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
+  });
+  it("não exclui nota já enviada", async () => {
+    expect(await cancelWholesaleKitInvoice({ db: db as never, provider: provider as never, environment, invoiceId: id,
+      job: { ...cancelJob(), sendClaimed: true } })).toBe(false);
+    expect(state.requests).toHaveLength(0);
+    expect(names()).not.toContain("finish_wholesale_kit_invoice_cancel");
+    expect(names()).toContain("record_wholesale_cancel_pending");
   });
 });
