@@ -80,10 +80,13 @@ describe("passo 2: cliente por CNPJ", () => {
   });
 
   it("libera o passo quando o cadastro está completo, com inscrição estadual de 13 dígitos", () => {
-    const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA", postalCode: "30110100", street: "Rua A", number: "1", district: "Centro", city: "Belo Horizonte" };
+    const buyer = { ...emptyBuyer, document: "11222333000181", name: "Loja Teste LTDA", regime: "simples" as const, postalCode: "30110100", street: "Rua A", number: "1", district: "Centro", city: "Belo Horizonte" };
     expect(buyerProblem(buyer)).toContain("13 dígitos");
     expect(buyerProblem({ ...buyer, registration: "ISENTA" })).toContain("Para revenda");
     expect(buyerProblem({ ...buyer, registration: "0012345678900" })).toBeNull();
+    expect(buyerProblem({ ...buyer, registration: "0012345678900", regime: "normal" })).toContain("não possui regra");
+    expect(buyerProblem({ ...buyer, registration: "0012345678900", regime: "mei" })).toContain("não possui regra");
+    expect(buyerProblem({ ...buyer, registration: "0012345678900", regime: "" })).toContain("Confirme o regime");
     expect(buyerProblem({ ...buyer, registration: "12.3" })).toContain("13 dígitos");
     expect(buyerProblem({ ...buyer, registration: "0012345678900", postalCode: "01310100" })).toBe("Informe um CEP de Minas Gerais.");
   });

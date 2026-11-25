@@ -17,3 +17,5 @@ O DANFE e o XML disponibilizados pela contabilidade mostram número 3, série 2,
 ## Aceite pendente
 
 Conferir a configuração da natureza de operação no Bling, validar código/ID fiscal dos produtos e os dados reais de retirada e pagamento. Em ambiente apropriado, provar o caminho completo via API até XML autorizado, sem reemitir notas reais. Não considerar CI verde como homologação fiscal. Não armazenar XML/DANFE real no Git.
+
+O painel passou a exigir declaração explícita do regime, com validação também na API e no banco. A declaração do operador não substitui a consulta fiscal oficial. MG01, MG03 e MG04 continuam condicionados a homologação específica; o crédito candidato de novembro de 1,36% não se aplica automaticamente a todo comprador normal.

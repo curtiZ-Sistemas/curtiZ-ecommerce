@@ -15,7 +15,7 @@ export type WholesaleInvoice = {
   authorized: boolean; errorCode: string | null; canCancel: boolean; cancelPending?: boolean; externalReported?: boolean; externalNumber?: string; externalSeries?: string; createdAt: string;
 };
 export type WholesaleBuyer = {
-  document: string; name: string; registration: string; postalCode: string; street: string; number: string;
+  document: string; name: string; registration: string; regime: "" | "normal" | "simples" | "mei" | "pf"; postalCode: string; street: string; number: string;
   complement: string; district: string; city: string; state: string;
 };
 export type IssueEvent =
@@ -226,6 +226,16 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLooku
     {outside && <p className="wholesale-alert" role="alert">Só emitimos nota de atacado para empresas de Minas Gerais. Esta empresa é de {buyer.state}.</p>}
     <div className="wholesale-fields">
       {field("Razão social", "name", { wide: true, max: 180 })}
+      <label className="wide"><span>Regime tributário do comprador</span>
+        <select value={buyer.regime} onChange={event => onChange({ regime: event.target.value as WholesaleBuyer["regime"] })}>
+          <option value="">Selecione o regime confirmado</option>
+          <option value="normal">Regime normal</option>
+          <option value="simples">Simples Nacional</option>
+          <option value="mei">MEI</option>
+          <option value="pf">Pessoa física</option>
+        </select>
+        <small>O atacado automático está restrito à empresa do Simples Nacional, contribuinte de MG, sem crédito. Os demais perfis exigem regra fiscal própria aprovada.</small>
+      </label>
       <label><span>Inscrição estadual (obrigatória)</span>
         <input value={buyer.registration} maxLength={18} autoComplete="off" placeholder="13 dígitos ou ISENTA"
           onChange={event => onChange({ registration: event.target.value.toUpperCase() })} />
@@ -252,10 +262,11 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLooku
   </div>;
 }
 
-export const emptyBuyer: WholesaleBuyer = { document: "", name: "", registration: "", postalCode: "", street: "", number: "", complement: "", district: "", city: "", state: "MG" };
+export const emptyBuyer: WholesaleBuyer = { document: "", name: "", registration: "", regime: "", postalCode: "", street: "", number: "", complement: "", district: "", city: "", state: "MG" };
 
 /** Reasons the client step cannot advance, in the order the accountant should fix them. */
 export function buyerProblem(buyer: WholesaleBuyer): string | null {
+  if (buyer.regime === "pf") return "Pessoa física ainda não está homologada para revenda. Para consumo próprio, utilize o fluxo de varejo.";
   if (!isValidCnpj(buyer.document)) return "Informe um CNPJ válido.";
   if (buyer.state !== "MG") return "Só emitimos para empresas de Minas Gerais.";
   if (buyer.name.trim().length < 2) return "Informe a razão social.";
@@ -264,6 +275,8 @@ export function buyerProblem(buyer: WholesaleBuyer): string | null {
   if (!/^\d{13}$/u.test(registration.replace(/[.\-\s]/gu, ""))) return "Informe os 13 dígitos da inscrição estadual ativa de MG.";
   if (!/^3\d{7}$/u.test(buyer.postalCode)) return "Informe um CEP de Minas Gerais.";
   if (!buyer.street.trim() || !buyer.number.trim() || !buyer.district.trim() || !buyer.city.trim()) return "Complete o endereço.";
+  if (!buyer.regime) return "Confirme o regime tributário do comprador.";
+  if (buyer.regime !== "simples") return "Este regime ainda não possui regra de atacado aprovada.";
   return null;
 }
 
@@ -628,7 +641,7 @@ export function WholesaleInvoiceManager() {
     const b = wizard.buyer;
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "create_batch", key: key.current, items, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), registration: b.registration.trim().toUpperCase().replace(/[.\-\s]/gu, ""),
+        body: JSON.stringify({ action: "create_batch", key: key.current, items, paymentMethod: wizard.method, buyer: { document: b.document, name: b.name.trim(), regime: b.regime, registration: b.registration.trim().toUpperCase().replace(/[.\-\s]/gu, ""),
             address: { state: b.state, postal_code: b.postalCode, street: b.street.trim(), number: b.number.trim(),
               district: b.district.trim(), city: b.city.trim(), complement: b.complement.trim() } } }) });
       const body = record(await response.json());

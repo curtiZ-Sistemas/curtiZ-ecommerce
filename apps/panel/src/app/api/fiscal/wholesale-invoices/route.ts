@@ -12,6 +12,7 @@ import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice } from "@/lib/whole
 const text = (max: number) => z.string().trim().min(1).max(max);
 const buyer = z.object({
   document: z.string().regex(/^[0-9]{14}$/u), name: z.string().trim().min(2).max(180),
+  regime: z.enum(["normal", "simples", "mei", "pf"]),
   registration: z.string().trim().toUpperCase().regex(/^(?:[0-9]{13}|ISENTA)$/u),
   address: z.object({
     state: z.string().length(2), postal_code: z.string().regex(/^[0-9]{8}$/u), street: text(180), number: text(30),
@@ -51,6 +52,7 @@ async function verified() {
 const cnpjInvalid = "O CNPJ informado não é válido.";
 const outsideMg = "Só emitimos nota de atacado para empresas de Minas Gerais.";
 const databaseReasons: Record<string, [number, string]> = {
+  wholesale_buyer_regime_not_approved: [422, "Este regime ainda não possui regra fiscal aprovada para o atacado."],
   wholesale_buyer_cnpj_invalid: [422, cnpjInvalid],
   wholesale_buyer_outside_mg: [422, outsideMg],
   kit_grade_out_of_stock: [409, "Não há fichas suficientes deste kit em estoque."],
@@ -82,6 +84,7 @@ export async function POST(request: NextRequest) {
     const item = parsed.data;
 
     if (item.action === "create" || item.action === "create_batch") {
+      if (item.buyer.regime !== "simples") return send({ code: "wholesale_buyer_regime_not_approved", message: "Este regime ainda não possui regra fiscal aprovada para o atacado." }, 422);
       if (item.buyer.registration === "ISENTA") return send({ code: "exempt_fiscal_rule_required", message: "Para revenda, este fluxo exige inscrição estadual ativa de MG. Consulte o cadastro do CNPJ no SINTEGRA; não contribuinte não pode ser emitido como revenda neste fluxo." }, 422);
       if (!isValidCnpj(item.buyer.document)) return send({ code: "cnpj_invalid", message: cnpjInvalid }, 422);
       if (item.buyer.address.state.toUpperCase() !== "MG") return send({ code: "buyer_outside_mg", message: outsideMg }, 422);

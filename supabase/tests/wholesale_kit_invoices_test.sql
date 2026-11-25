@@ -53,7 +53,7 @@ insert into public.kits(id,name,slug,description,price_in_cents,grade_product_id
 
 create function pg_temp.buyer(p_document text default '11222333000181', p_state text default 'MG', p_registration text default '0012345678900')
 returns jsonb language sql as $$
-  select jsonb_build_object('document',p_document,'name','Loja Teste LTDA','registration',p_registration,
+  select jsonb_build_object('document',p_document,'name','Loja Teste LTDA','registration',p_registration,'regime','simples',
     'address',jsonb_build_object('state',p_state,'postal_code','30110100','street','Rua Teste','number','10',
       'district','Centro','city','Belo Horizonte'));
 $$;

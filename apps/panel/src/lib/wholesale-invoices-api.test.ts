@@ -23,7 +23,7 @@ import { GET, POST } from "../app/api/fiscal/wholesale-invoices/route";
 
 const ids = { key: "11111111-1111-4111-8111-111111111111", kit: "22222222-2222-4222-8222-222222222222", invoice: "33333333-3333-4333-8333-333333333333" };
 const buyer = (overrides: Record<string, unknown> = {}, state_ = "MG") => ({
-  document: "11222333000181", name: "Loja Teste LTDA", registration: "0012345678900", ...overrides,
+  document: "11222333000181", name: "Loja Teste LTDA", regime: "simples", registration: "0012345678900", ...overrides,
   address: { state: state_, postal_code: "30110100", street: "Rua Teste", number: "10", district: "Centro", city: "Belo Horizonte", complement: "" }
 });
 const create = (overrides: Record<string, unknown> = {}) => ({
@@ -94,6 +94,12 @@ describe("notas de atacado: criar", () => {
     expect(keys).toEqual([ids.key, ids.key]);
   });
 
+  it("não reserva estoque para regime não homologado", async () => {
+    for (const regime of ["normal", "mei", "pf"]) {
+      expect((await post(create({ buyer: buyer({ regime }) }))).status).toBe(422);
+    }
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
   it("recusa CNPJ inválido e empresa fora de MG antes de tocar no banco", async () => {
     const invalid = await post(create({ buyer: buyer({ document: "11222333000182" }) }));
     expect(invalid.status).toBe(422);
