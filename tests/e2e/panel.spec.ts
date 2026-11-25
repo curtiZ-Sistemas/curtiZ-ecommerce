@@ -733,3 +733,130 @@ test("abre, edita e salva produtos sem derrubar o painel", async ({ page }) => {
   expect(productDraft).toBeNull();
   expect(failures).toEqual([]);
 });
+
+
+// Regression coverage for fiscal UI: mock only HTTP responses, never use the
+// production database, send a real invoice or call the real Bling account.
+const fiscalExternal = {
+  id: "10000000-0000-4000-8000-000000000101", status: "error", stage: "draft",
+  kitName: "Chinelo Feminino Slim com Strass – Brilho e Conforto – Bege Strass · Chinelo Feminino Slim com Strass – Preto Strass · Chinelo Feminino Slim com Strass – Branco Strass",
+  templateLabel: "Ficha padrão, Ficha reposição alta", quantity: 3, totalInCents: 61200,
+  paymentMethod: "pix", buyerName: "COMÉRCIO DE CALÇADOS E ACESSÓRIOS DE MINAS GERAIS LTDA",
+  buyerDocument: "11222333000181", invoiceId: 77, invoiceNumber: null,
+  authorized: false, canCancel: false, externalReported: true, externalNumber: "000000003",
+  externalSeries: "002", createdAt: "2026-11-24T15:00:00Z"
+};
+const fiscalDraft = {
+  ...fiscalExternal, id: "10000000-0000-4000-8000-000000000102", status: "draft", stage: "draft",
+  externalReported: false, invoiceId: 78, invoiceNumber: "4", errorCode: "draft_ready", canCancel: true
+};
+const fiscalHash = "a".repeat(64);
+const fiscalReview = {
+  hash: fiscalHash, number: "4", series: "3", date: "2026-11-24", operationDate: "2026-11-24",
+  issuer: "11222333000181", nature: "Venda de mercadoria", buyer: fiscalDraft.buyerName,
+  document: fiscalDraft.buyerDocument, registration: "1234567890000", address: "Rua de Teste, 1, Centro, MG",
+  totalInCents: 61200, freight: "Transporte próprio", payment: "Pix", cfop: "5102", csosn: "102",
+  items: [{ code: "BEGE-STRASS-37", description: fiscalExternal.kitName, unit: "PR", quantity: "36",
+    unitValue: "17", ncm: "64022000", origin: "0", cfop: "5102", csosn: "102" }]
+};
+
+test("busca global permanece utilizável em celular e tablet", async ({ page }) => {
+  await loginAs(page, "admin.demo@curtiz.local");
+  for (const width of [360, 412, 768, 1024]) {
+    await page.setViewportSize({ width, height: 850 });
+    const trigger = page.locator(".topbar-search > button");
+    await expect(trigger).toBeVisible();
+    await expect(async () => {
+      await trigger.click();
+      await expect(trigger).toHaveAttribute("aria-expanded", "true", { timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+    const search = page.getByRole("combobox", { name: "Buscar no painel", exact: true });
+    await expect(search).toBeFocused();
+    await search.fill("ativar representante");
+    const suggestion = page.getByRole("option", { name: /Aprovar solicitações de representantes/u }).first();
+    await expect(suggestion).toBeVisible();
+    await expect(suggestion).toHaveCSS("box-shadow", "none");
+    const input = await search.boundingBox();
+    const results = await page.locator("#panel-search-results").boundingBox();
+    expect(input).not.toBeNull(); expect(results).not.toBeNull();
+    expect(input!.x).toBeGreaterThanOrEqual(0);
+    expect(input!.x + input!.width).toBeLessThanOrEqual(width + 1);
+    expect(results!.x).toBeGreaterThanOrEqual(0);
+    expect(results!.x + results!.width).toBeLessThanOrEqual(width + 1);
+    expect(results!.y).toBeGreaterThanOrEqual(input!.y + input!.height - 1);
+    await page.keyboard.press("Escape");
+    await expect(search).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
+});
+
+for (const width of [412, 1280]) {
+  test(`notas de atacado: visualização, revisão e retomada em ${width}px`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width, height: 850 });
+    await loginAs(page, "gerencia.demo@curtiz.local");
+    const requests: Record<string, unknown>[] = [];
+    await page.route("**/api/fiscal/wholesale-invoices", async route => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ json: { offers: [], invoices: [fiscalExternal, fiscalDraft] } });
+        return;
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      requests.push(body);
+      const result = body.reviewedHash === fiscalHash
+        ? { type: "result", status: "authorized", code: null, invoice: { ...fiscalDraft, authorized: true, status: "authorized" } }
+        : { type: "result", status: "ready", code: null, invoice: fiscalDraft, review: fiscalReview };
+      await route.fulfill({ contentType: "application/x-ndjson", body: JSON.stringify(result) + "\n" });
+    });
+    // Exercise a deterministic provider error without creating a fiscal document.
+    await page.route("**/api/fiscal/wholesale-invoices/invoice-pdf?*", route =>
+      route.fulfill({ status: 503, contentType: "application/json", body: '{"message":"Documento indisponível."}' }));
+    await page.goto("/gerencia/notas-atacado");
+    const list = page.locator(".wholesale-list");
+    await expect(list.locator(".wholesale-row")).toHaveCount(2);
+    const external = list.locator(".wholesale-row").first();
+    await expect(external.getByText("Emitida externamente")).toBeVisible();
+    await expect(external.getByRole("button", { name: "Nova nota para este cliente" })).toBeVisible();
+    await expect(external.locator(".wholesale-row-product")).toHaveCSS("text-overflow", "ellipsis");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    const eye = external.getByRole("button", { name: "Ver nota", exact: true });
+    await eye.click();
+    const modal = page.getByRole("dialog", { name: /DANFE/u });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole("button", { name: "Fechar", exact: true })).toBeFocused();
+    await expect(page.locator(".invoice-preview-backdrop")).toHaveCSS("position", "fixed");
+    const bounds = await modal.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThan(width * 0.7);
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 1);
+    await expect(modal.getByRole("alert")).toContainText("PDF indisponível");
+    await expect(modal.getByRole("button", { name: "Tentar novamente" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modal).toBeHidden();
+    await expect(eye).toBeFocused();
+    await eye.click();
+    await modal.getByRole("button", { name: "Fechar", exact: true }).click();
+    await expect(modal).toBeHidden();
+
+    const draft = list.locator(".wholesale-row").nth(1);
+    await draft.getByRole("button", { name: "Visualizar rascunho" }).click();
+    const review = page.getByRole("dialog", { name: "Emitir nota de atacado" });
+    await expect(review.getByText("Sem validade fiscal")).toBeVisible();
+    await expect(review.getByRole("button", { name: "Prosseguir e enviar à SEFAZ" })).toBeVisible();
+    expect(requests).toEqual([{ action: "issue", id: fiscalDraft.id }]);
+    await review.getByRole("button", { name: "Fechar e enviar depois" }).click();
+    await expect(review).toBeHidden();
+    expect(requests).toHaveLength(1);
+    await draft.getByRole("button", { name: "Visualizar rascunho" }).click();
+    await expect(review.getByText("Sem validade fiscal")).toBeVisible();
+    page.once("dialog", dialog => dialog.accept());
+    await review.getByRole("button", { name: "Prosseguir e enviar à SEFAZ" }).click();
+    await expect(review.getByText(/Nota .*autorizada/u)).toBeVisible();
+    expect(requests).toEqual([
+      { action: "issue", id: fiscalDraft.id },
+      { action: "issue", id: fiscalDraft.id },
+      { action: "issue", id: fiscalDraft.id, reviewedHash: fiscalHash }
+    ]);
+  });
+}

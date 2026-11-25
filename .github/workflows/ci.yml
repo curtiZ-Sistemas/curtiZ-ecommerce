@@ -269,6 +269,15 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Executar suíte E2E sem aceitar flaky
         run: pnpm exec playwright test --project=${{ matrix.project }} --workers=1 --fail-on-flaky-tests
+      - name: Repetir fluxos críticos de interface fiscal
+        if: matrix.project == 'panel-desktop'
+        run: >-
+          pnpm exec playwright test
+          --project=panel-desktop
+          --grep "busca global|notas de atacado: visualização"
+          --repeat-each=2
+          --workers=1
+          --fail-on-flaky-tests
       - name: Repetir fluxos críticos da loja
         if: matrix.project == 'store-desktop' || matrix.project == 'store-mobile'
         run: >-

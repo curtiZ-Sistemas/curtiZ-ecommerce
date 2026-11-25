@@ -1657,3 +1657,8 @@
   .admin-modal-backdrop.invoice-preview-backdrop { padding: 8px; }
   .invoice-preview { height: calc(100dvh - 16px); }
 }
+
+.invoice-preview-error { display: grid; align-content: center; justify-items: center; gap: 12px; padding: 20px; text-align: center; }
+.invoice-preview-error > p { margin: 0; }
+.invoice-preview-error > a { color: var(--ink); text-decoration: underline; font-size: .875rem; }
+.invoice-preview-tools { flex-shrink: 0; }

@@ -1767,8 +1767,21 @@ a.ghost-button {
   height: 36px;
   animation: none;
 }
+/* Preserve the trigger's footprint. On narrow headers the input uses the
+   available header width rather than extending outside the viewport. */
 @media (max-width: 1199px) {
-  .topbar-search .panel-global-search { width: min(240px, calc(100vw - 24px)); }
+  .topbar .topbar-search, .topbar .topbar-search.open { position: static; }
+  .topbar .topbar-search .panel-global-search {
+    position: absolute;
+    top: calc((100% - 36px) / 2);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    z-index: 5;
+    background: var(--surface);
+  }
+  .topbar-search .panel-global-search-results { width: 100%; }
+  .topbar .topbar-search-trigger { justify-content: center; padding: 0; }
 }
 
 .topbar-search .panel-global-search input {
@@ -1825,10 +1838,13 @@ a.ghost-button {
 }
 
 .panel-global-search-results a:hover,
-.panel-global-search-results a:focus-visible {
+.panel-global-search-results a:focus-visible,
+.panel-global-search-results a[data-active="true"] {
   background: var(--neutral-100);
   box-shadow: none;
 }
+.panel-global-search-results small em { background: transparent; color: var(--muted); }
+.panel-global-search-results a:focus-visible { outline: 2px solid var(--neutral-600); outline-offset: -2px; }
 
 .panel-global-search-results small {
   font-size: var(--text-xs);
