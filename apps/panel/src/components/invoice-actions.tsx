@@ -2,6 +2,7 @@
 
 import { Download, Eye, Pencil, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Página da NF-e no Bling (abre direto a edição da nota pelo ID salvo). É o padrão do Bling
@@ -36,7 +37,12 @@ export function InvoicePreviewDialog({ title, pdfUrl, loading, error, onDownload
 }) {
   const titleId = useId();
   const dialog = useRef<HTMLElement>(null);
-  useEffect(() => { dialog.current?.querySelector<HTMLElement>("[data-invoice-close]")?.focus(); }, []);
+  useEffect(() => {
+    const priorOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.current?.querySelector<HTMLElement>("[data-invoice-close]")?.focus();
+    return () => { document.body.style.overflow = priorOverflow; };
+  }, []);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>("a[href],button:not([disabled])") ?? []);
     const action = dialogKeyAction(event.key, event.shiftKey, items.indexOf(document.activeElement as HTMLElement), items.length);
@@ -67,14 +73,15 @@ export function InvoicePreviewDialog({ title, pdfUrl, loading, error, onDownload
 }
 
 /** Download, visualização e edição no Bling de uma NF-e autorizada. Não exibe nada antes da autorização. */
-export function InvoiceActions({ authorized, blingInvoiceId, pdfUrl, label }: {
+export function InvoiceActions({ authorized, blingInvoiceId, pdfUrl, label, compact = false, externalReported = false }: {
   authorized: boolean; blingInvoiceId: number | null | undefined; pdfUrl: string; label: string;
+  compact?: boolean; externalReported?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const eye = useRef<HTMLButtonElement>(null);
-  if (!authorized || typeof blingInvoiceId !== "number" || !Number.isSafeInteger(blingInvoiceId) || blingInvoiceId <= 0) return null;
+  if ((!authorized && !externalReported) || typeof blingInvoiceId !== "number" || !Number.isSafeInteger(blingInvoiceId) || blingInvoiceId <= 0) return null;
   const fileName = `danfe-${label.replace(/D/gu, "") || blingInvoiceId}.pdf`;
 
   async function download() {
@@ -108,14 +115,14 @@ export function InvoiceActions({ authorized, blingInvoiceId, pdfUrl, label }: {
   }
 
   return <div className="invoice-actions" role="group" aria-label={`Ações da ${label}`}>
-    <button className="invoice-action" type="button" aria-label="Baixar DANFE" title="Baixar DANFE" onClick={() => void download()}>
-      <Download aria-hidden="true" /></button>
+    {!compact && !externalReported && <button className="invoice-action" type="button" aria-label="Baixar DANFE" title="Baixar DANFE" onClick={() => void download()}>
+      <Download aria-hidden="true" /></button>}
     <button ref={eye} className="invoice-action" type="button" aria-label="Ver nota" title="Ver nota" aria-haspopup="dialog" onClick={view}>
       <Eye aria-hidden="true" /></button>
-    <a className="invoice-action" href={blingInvoiceEditUrl(blingInvoiceId)} target="_blank" rel="noopener noreferrer"
-      aria-label="Editar no Bling" title="Editar no Bling"><Pencil aria-hidden="true" /></a>
+    {!compact && !externalReported && <a className="invoice-action" href={blingInvoiceEditUrl(blingInvoiceId)} target="_blank" rel="noopener noreferrer"
+      aria-label="Editar no Bling" title="Editar no Bling"><Pencil aria-hidden="true" /></a>}
     {error && !open && <span role="alert" className="invoice-actions-error">{error}</span>}
-    {open && <InvoicePreviewDialog title={`DANFE · ${label}`} pdfUrl={pdfUrl} loading={loading} error={error}
-      onDownload={() => void download()} onFrameLoad={frameLoaded} onClose={close} />}
+    {open && createPortal(<InvoicePreviewDialog title={`DANFE · ${label}`} pdfUrl={pdfUrl} loading={loading} error={error}
+      onDownload={() => void download()} onFrameLoad={frameLoaded} onClose={close} />, document.body)}
   </div>;
 }

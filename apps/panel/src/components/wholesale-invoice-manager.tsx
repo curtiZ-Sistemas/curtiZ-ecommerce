@@ -1,7 +1,7 @@
 "use client";
 
 import { formatBRL, formatBRLInput, parseBRLToCents } from "@curtiz/domain";
-import { Check, LoaderCircle, Minus, Plus, X } from "lucide-react";
+import { Check, Eye, FilePlus2, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
 import { InvoiceActions } from "./invoice-actions";
@@ -140,22 +140,24 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
           <span>{formatCnpj(invoice.buyerDocument)} · {formatDate(invoice.createdAt)}</span>
         </div>
         <div className="wholesale-row-kit">
-          <span>{invoice.kitName}</span>
-          <span>{invoice.templateLabel} · {invoice.quantity} {invoice.quantity === 1 ? "ficha" : "fichas"}</span>
+          <span className="wholesale-row-product" title={invoice.kitName}>{invoice.kitName}</span>
+          <span className="wholesale-row-sheet" title={invoice.templateLabel}>{invoice.templateLabel} · {invoice.quantity} {invoice.quantity === 1 ? "ficha" : "fichas"}</span>
         </div>
         <strong className="wholesale-row-total">{formatBRL(invoice.totalInCents)}</strong>
         <div className="wholesale-row-status">
-          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente · conciliar" : invoice.cancelPending ? "Cancelamento pendente" : invoice.errorCode === "draft_ready" && invoice.status === "draft" ? "Pronta para conferência" : status.label}</span>
+          <span className={`wholesale-badge ${invoice.externalReported || invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente" : invoice.cancelPending ? "Cancelamento pendente" : invoice.errorCode === "draft_ready" && invoice.status === "draft" ? "Pronta para conferência" : status.label}</span>
           {invoice.invoiceNumber && <span>NF-e nº {invoice.invoiceNumber}</span>}
-          {invoice.externalReported && <span>NF-e nº {invoice.externalNumber} · Série {invoice.externalSeries}. Documento recebido; conciliação fiscal pendente.</span>}
-          {(open || invoice.cancelPending) && invoice.errorCode && <span className="wholesale-row-reason">{wholesaleReason(invoice.errorCode)}</span>}
+          {invoice.externalReported && <><span>NF-e nº {Number(invoice.externalNumber) || invoice.externalNumber} · Série {invoice.externalSeries}</span><span className="wholesale-reconciliation">Conciliação pendente</span></>}
+          {(open || invoice.cancelPending) && invoice.errorCode && invoice.errorCode !== "draft_ready" && <details className="wholesale-row-details"><summary>Ver motivo</summary><p>{wholesaleReason(invoice.errorCode)}</p></details>}
         </div>
         <div className="wholesale-row-actions">
-          <InvoiceActions authorized={invoice.authorized} blingInvoiceId={invoice.invoiceId}
-            pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? ""}`.trim()} />
+          <InvoiceActions compact authorized={invoice.authorized} externalReported={invoice.externalReported === true} blingInvoiceId={invoice.invoiceId}
+            pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? invoice.externalNumber ?? ""}`.trim()} />
           {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
-            disabled={busyId !== ""} onClick={() => onNewForClient(invoice.id)}>Nova nota para este cliente</button>}
-          {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>{invoice.errorCode === "draft_ready" ? "Visualizar nota" : invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>}
+            disabled={busyId !== ""} aria-label="Nova nota para este cliente" onClick={() => onNewForClient(invoice.id)}><FilePlus2 aria-hidden="true" /> Nova nota</button>}
+          {open && !invoice.cancelPending && (invoice.errorCode === "draft_ready"
+            ? <button className="invoice-action" type="button" aria-label="Visualizar rascunho" title="Visualizar rascunho" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}><Eye aria-hidden="true" /></button>
+            : <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
           {!invoice.externalReported && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
           {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId === invoice.id} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
         </div>

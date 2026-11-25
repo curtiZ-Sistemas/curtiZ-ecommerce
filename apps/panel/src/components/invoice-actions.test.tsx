@@ -51,3 +51,12 @@ describe("ações da NF-e", () => {
     expect(dialogKeyAction("a", false, 0, 2)).toBeNull();
   });
 });
+
+
+it("mostra apenas o olho em uma linha compacta e permite documento externo com ID", () => {
+  const html = renderToStaticMarkup(<InvoiceActions compact externalReported authorized={false} blingInvoiceId={77} pdfUrl={pdfUrl} label="NF-e nº 3" />);
+  expect(html).toContain('aria-label="Ver nota"');
+  expect(html).not.toContain('aria-label="Editar no Bling"');
+  expect(html).not.toContain('aria-label="Baixar DANFE"');
+  expect(renderToStaticMarkup(<InvoiceActions compact externalReported authorized={false} blingInvoiceId={null} pdfUrl={pdfUrl} label="NF-e nº 3" />)).toBe("");
+});

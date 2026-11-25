@@ -212,6 +212,8 @@ describe("histórico de cancelamentos e emissão externa", () => {
       status: "error", authorized: false, canCancel: false, externalReported: true, externalSeries: "002", externalNumber: "000000003"
     })]} busyId="" onRetry={noop} onCancel={noop} onArchive={noop} />);
     expect(html).toContain("Emitida externamente");
+    expect(html).toContain("Conciliação pendente");
+    expect(html).toContain('aria-label="Ver nota"');
     expect(html).not.toContain("Tentar de novo");
     expect(html).not.toContain("Cancelar e devolver estoque");
   });

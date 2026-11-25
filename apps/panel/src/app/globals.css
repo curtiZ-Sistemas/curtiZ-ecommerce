@@ -11495,3 +11495,31 @@ button:not(:disabled):active,
 @media (max-width: 560px) {
   .topbar-search .panel-global-search { width: min(200px, calc(100vw - 24px)); }
 }
+
+/* Notas de atacado: resumo de leitura rápida; o documento contém os itens completos. */
+.wholesale .wholesale-row { grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) minmax(72px,auto) minmax(0,1fr) auto; gap: 10px 14px; padding: 12px 0; }
+.wholesale-row-main strong { font-size: .86rem; line-height: 1.4; }
+.wholesale-row-product, .wholesale-row-sheet { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wholesale-row-kit .wholesale-row-product { font-size: .83rem; }
+.wholesale-row-status .wholesale-badge { justify-self: start; font-size: .75rem; line-height: 1.35; }
+.wholesale-row-status .wholesale-reconciliation { font-size: .73rem; }
+.wholesale-row-actions .invoice-actions { margin: 0; }
+.wholesale-row-actions .secondary-button { min-height: 36px; padding: 7px 10px; font-size: .79rem; display: inline-flex; align-items: center; gap: 5px; }
+.wholesale-row-actions .secondary-button svg { width: 15px; height: 15px; flex-shrink: 0; }
+.wholesale-row-actions .invoice-action { width: 36px; height: 36px; color: var(--ink); }
+.wholesale-row-details { font-size: .75rem; color: var(--muted); }
+.wholesale-row-details summary { cursor: pointer; }
+.wholesale-row-details p { margin: 4px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 1050px) {
+  .wholesale .wholesale-row { grid-template-columns: minmax(0,1fr) auto; gap: 6px 12px; }
+  .wholesale-row-main { grid-column: 1; grid-row: 1; }
+  .wholesale-row-total { grid-column: 2; grid-row: 1; justify-self: end; }
+  .wholesale-row-kit { grid-column: 1 / -1; }
+  .wholesale-row-status { grid-column: 1; }
+  .wholesale-row-actions { grid-column: 2; justify-content: flex-end; }
+}
+@media (max-width: 520px) {
+  .wholesale-row-status, .wholesale-row-actions { grid-column: 1 / -1; }
+  .wholesale-row-actions { justify-content: flex-start; }
+  .wholesale-row-actions .invoice-action, .wholesale-row-actions .secondary-button { min-height: 44px; }
+}

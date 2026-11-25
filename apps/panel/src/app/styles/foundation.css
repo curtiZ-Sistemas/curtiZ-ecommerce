@@ -349,13 +349,17 @@ summary:focus-visible,
 
 .topbar-search,
 .topbar-search.open {
-  flex: 0 0 auto;
-  width: auto;
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 0;
   height: 36px;
+}
+@media (min-width: 1200px) {
+  .topbar-search, .topbar-search.open { flex: 0 1 240px; width: 240px; }
 }
 
 .topbar .topbar-search-trigger {
-  width: auto;
+  width: 100%;
   min-width: 36px;
   display: inline-flex;
   align-items: center;
@@ -370,7 +374,7 @@ summary:focus-visible,
 
 @media (min-width: 1200px) {
   .topbar .topbar-search-trigger:not([aria-expanded="true"]) {
-    width: 240px;
+    width: 100%;
     justify-content: flex-start;
     padding: 0 var(--space-2) 0 10px;
     border-color: var(--line);
@@ -1755,22 +1759,27 @@ a.ghost-button {
 }
 
 /* Busca global */
-.panel-global-search {
-  top: calc(100% + 10px);
-  width: min(460px, calc(100vw - 24px));
-  height: 40px;
+.topbar-search .panel-global-search {
+  top: 0;
+  left: auto;
+  right: 0;
+  width: 100%;
+  height: 36px;
   animation: none;
+}
+@media (max-width: 1199px) {
+  .topbar-search .panel-global-search { width: min(240px, calc(100vw - 24px)); }
 }
 
 .topbar-search .panel-global-search input {
-  height: 40px;
-  min-height: 40px;
-  padding: 0 72px 0 38px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 58px 0 38px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  font-size: var(--text-base);
+  box-shadow: none;
+  font-size: var(--text-sm);
 }
 
 .topbar-search .panel-global-search input:focus-visible {
@@ -1818,7 +1827,7 @@ a.ghost-button {
 .panel-global-search-results a:hover,
 .panel-global-search-results a:focus-visible {
   background: var(--neutral-100);
-  box-shadow: inset 2px 0 0 var(--brand-700);
+  box-shadow: none;
 }
 
 .panel-global-search-results small {
