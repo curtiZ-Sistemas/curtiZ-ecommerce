@@ -145,7 +145,7 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
         </div>
         <strong className="wholesale-row-total">{formatBRL(invoice.totalInCents)}</strong>
         <div className="wholesale-row-status">
-          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente · conciliar" : invoice.cancelPending ? "Cancelamento pendente" : status.label}</span>
+          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente · conciliar" : invoice.cancelPending ? "Cancelamento pendente" : invoice.errorCode === "draft_ready" && invoice.status === "draft" ? "Pronta para conferência" : status.label}</span>
           {invoice.invoiceNumber && <span>NF-e nº {invoice.invoiceNumber}</span>}
           {invoice.externalReported && <span>NF-e nº {invoice.externalNumber} · Série {invoice.externalSeries}. Documento recebido; conciliação fiscal pendente.</span>}
           {(open || invoice.cancelPending) && invoice.errorCode && <span className="wholesale-row-reason">{wholesaleReason(invoice.errorCode)}</span>}

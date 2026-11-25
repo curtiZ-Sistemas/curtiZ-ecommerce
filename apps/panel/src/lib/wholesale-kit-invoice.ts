@@ -91,7 +91,7 @@ export async function issueWholesaleKitInvoice(input: {
   if (text(job.wholesaleId) !== input.invoiceId) return { status: "busy" };
 
   const progress = async (status: "draft" | "error", code: string) => {
-    await call(db, "record_wholesale_kit_invoice_progress", { p_id: input.invoiceId, p_status: status, p_code: code });
+    if (await call(db, "record_wholesale_kit_invoice_progress", { p_id: input.invoiceId, p_status: status, p_code: code }) !== true) throw scopeError();
   };
   const waiting = async (code: string): Promise<WholesaleIssueResult> => { await progress("draft", code); return { status: "waiting", code }; };
   const readVariant = async (variantId: string) => row(await call(db, "read_bling_catalog_variant", { p_variant_id: variantId }));

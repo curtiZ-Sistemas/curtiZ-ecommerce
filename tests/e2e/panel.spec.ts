@@ -125,15 +125,23 @@ test("busca global abre com teclado e mantém resultados protegidos por função
 }) => {
   await loginAs(page, "admin.demo@curtiz.local");
   const searchButton = page.locator(".topbar-search > button");
+  await expect(searchButton).toBeVisible();
+  const before = await searchButton.boundingBox();
   await expect(async () => {
     await searchButton.click();
     await expect(searchButton).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
   const search = page.getByRole("combobox", { name: "Buscar no painel", exact: true });
   await expect(search).toBeFocused();
+  const after = await search.boundingBox();
+  expect(before).not.toBeNull(); expect(after).not.toBeNull();
+  expect(Math.abs(before!.y - after!.y)).toBeLessThan(3);
+  if (page.viewportSize()!.width > 900) expect(Math.abs(before!.x - after!.x)).toBeLessThan(3);
   await search.fill("ativar representante");
   await expect(page.locator("#panel-search-results")).toBeVisible();
-  await expect(page.getByRole("option", { name: /Aprovar solicitações de representantes/u }).first()).toBeVisible();
+  const suggestion = page.getByRole("option", { name: /Aprovar solicitações de representantes/u }).first();
+  await expect(suggestion).toBeVisible();
+  await expect(suggestion).toHaveCSS("box-shadow", "none");
   await search.fill("zzqxw sem correspondencia");
   await expect(page.getByText(/Nenhum resultado para/u)).toBeVisible();
   await page.keyboard.press("Escape");

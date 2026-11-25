@@ -390,11 +390,18 @@ export function PanelShell({
     const closeSearch = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setSearchOpen(false);
-        searchButtonRef.current?.focus();
+        window.setTimeout(() => searchButtonRef.current?.focus(), 0);
       }
     };
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest(".topbar-search")) setSearchOpen(false);
+    };
     document.addEventListener("keydown", closeSearch);
-    return () => document.removeEventListener("keydown", closeSearch);
+    document.addEventListener("pointerdown", outside);
+    return () => {
+      document.removeEventListener("keydown", closeSearch);
+      document.removeEventListener("pointerdown", outside);
+    };
   }, [searchOpen]);
 
   useEffect(() => {
@@ -584,7 +591,7 @@ export function PanelShell({
             {searchOpen && (
               <PanelGlobalSearch role={role} pages={searchPages} onNavigate={() => setSearchOpen(false)} onClose={() => {
                 setSearchOpen(false);
-                searchButtonRef.current?.focus();
+                window.setTimeout(() => searchButtonRef.current?.focus(), 0);
               }} />
             )}
             <button

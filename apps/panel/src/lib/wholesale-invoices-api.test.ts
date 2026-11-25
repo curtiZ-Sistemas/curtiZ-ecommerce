@@ -239,6 +239,9 @@ describe("histórico de clientes de atacado", () => {
 
 
 it("encaminha a confirmação explícita da revisão para transmissão", async () => {
-  await lines(await post({ action: "issue", id: ids.invoice, reviewedHash: "a".repeat(64) }));
+  state.rpc.mockImplementation(async (name: string) => ({ data: name === "request_wholesale_kit_invoice_retry" ? true : [], error: null }));
+  const response = await post({ action: "issue", id: ids.invoice, reviewedHash: "a".repeat(64) });
+  expect(response.status).toBe(200);
+  await lines(response);
   expect(state.issue).toHaveBeenCalledWith(expect.objectContaining({ reviewedHash: "a".repeat(64) }));
 });
