@@ -33,7 +33,8 @@ const operationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u).refin
 });
 const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional() }).strict();
 const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
-const input = z.discriminatedUnion("action", [create, batch, issue, cancel]);
+const archive = z.object({ action: z.literal("archive"), id: z.string().uuid() }).strict();
+const input = z.discriminatedUnion("action", [create, batch, issue, cancel, archive]);
 
 const send = (value: object, status = 200) => NextResponse.json(value, { status, headers: technicalNoStore });
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -102,6 +103,11 @@ export async function POST(request: NextRequest) {
       return send({ invoice });
     }
 
+    if (item.action === "archive") {
+      const result = await db.rpc("archive_wholesale_kit_invoice", { p_id: item.id });
+      if (result.error) return send({ message: "Não foi possível remover a nota da lista." }, result.error.code === "42501" ? 403 : 503);
+      return result.data === true ? send({ ok: true }) : send({ message: "Somente cancelamentos concluídos podem ser arquivados." }, 409);
+    }
     if (item.action === "cancel") {
       const local = await db.rpc("cancel_wholesale_kit_invoice", { p_id: item.id });
       if (local.error) return send({ message: "Não foi possível cancelar." }, local.error.code === "42501" ? 403 : 503);

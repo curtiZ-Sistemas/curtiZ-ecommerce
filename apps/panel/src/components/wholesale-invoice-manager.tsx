@@ -12,7 +12,7 @@ export type WholesaleOffer = { kitId: string; name: string; description: string;
 export type WholesaleInvoice = {
   id: string; status: string; stage: string; kitName: string; templateLabel: string; quantity: number; totalInCents: number;
   paymentMethod: string; buyerName: string; buyerDocument: string; invoiceId: number | null; invoiceNumber: string | null;
-  authorized: boolean; errorCode: string | null; canCancel: boolean; cancelPending?: boolean; createdAt: string;
+  authorized: boolean; errorCode: string | null; canCancel: boolean; cancelPending?: boolean; externalReported?: boolean; externalNumber?: string; externalSeries?: string; createdAt: string;
 };
 export type WholesaleBuyer = {
   document: string; name: string; registration: string; postalCode: string; street: string; number: string;
@@ -51,7 +51,7 @@ export function readInvoice(value: unknown): WholesaleInvoice | null {
     quantity: row.quantity, totalInCents: row.totalInCents, paymentMethod: str(row.paymentMethod), buyerName: str(row.buyerName),
     buyerDocument: str(row.buyerDocument), invoiceId: typeof row.invoiceId === "number" ? row.invoiceId : null,
     invoiceNumber: str(row.invoiceNumber) || null, authorized: row.authorized === true, errorCode: str(row.errorCode) || null,
-    canCancel: row.canCancel === true, cancelPending: row.cancelPending === true, createdAt: str(row.createdAt)
+    canCancel: row.canCancel === true, cancelPending: row.cancelPending === true, ...(row.externalReported === true ? { externalReported: true, externalNumber: str(row.externalNumber), externalSeries: str(row.externalSeries) } : {}), createdAt: str(row.createdAt)
   };
 }
 
@@ -85,6 +85,7 @@ const reasons: Record<string, string> = {
   cancel_reconciliation_pending: "Cancelamento aguardando confirmação. Conclua pelo painel sem duplicar a devolução.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
+  invoice_series_mismatch: "A série gerada pelo Bling diverge da série fiscal aprovada. Nenhuma transmissão foi efetuada.",
   invoice_items_mismatch: "Os itens da nota no Bling divergem da venda original. As alterações foram preservadas. É necessário conciliar os dados antes do envio à SEFAZ.",
   invoice_draft_decomposition_conflict: "O rascunho não corresponde aos dados revisados da venda. Nenhuma nova nota foi criada.",
   invoice_freight_mapping_required: "O Bling não confirmou o transporte próprio. A nota foi preservada, sem envio à SEFAZ. Tente novamente após a correção.",
@@ -120,14 +121,14 @@ const formatDate = (value: string) => {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit" }).format(date);
 };
 
-export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel }: {
-  invoices: WholesaleInvoice[]; busyId: string; onRetry: (id: string) => void; onCancel: (id: string) => void;
+export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onArchive }: {
+  invoices: WholesaleInvoice[]; busyId: string; onRetry: (id: string) => void; onCancel: (id: string) => void; onArchive?: (id: string) => void;
 }) {
   if (!invoices.length) return <p className="wholesale-empty">Nenhuma nota de atacado ainda. Use Emitir nota para criar a primeira.</p>;
   return <ul className="wholesale-list">
     {invoices.map(invoice => {
       const status = wholesaleStatus(invoice);
-      const open = invoice.status === "draft" || invoice.status === "error";
+      const open = !invoice.externalReported && (invoice.status === "draft" || invoice.status === "error");
       return <li key={invoice.id} className="wholesale-row">
         <div className="wholesale-row-main">
           <strong>{invoice.buyerName}</strong>
@@ -139,15 +140,17 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel }: {
         </div>
         <strong className="wholesale-row-total">{formatBRL(invoice.totalInCents)}</strong>
         <div className="wholesale-row-status">
-          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.cancelPending ? "Cancelamento pendente" : status.label}</span>
+          <span className={`wholesale-badge ${invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente · conciliar" : invoice.cancelPending ? "Cancelamento pendente" : status.label}</span>
           {invoice.invoiceNumber && <span>NF-e nº {invoice.invoiceNumber}</span>}
+          {invoice.externalReported && <span>NF-e nº {invoice.externalNumber} · Série {invoice.externalSeries}. Documento recebido; conciliação fiscal pendente.</span>}
           {(open || invoice.cancelPending) && invoice.errorCode && <span className="wholesale-row-reason">{wholesaleReason(invoice.errorCode)}</span>}
         </div>
         <div className="wholesale-row-actions">
           <InvoiceActions authorized={invoice.authorized} blingInvoiceId={invoice.invoiceId}
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? ""}`.trim()} />
           {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>Tentar de novo</button>}
-          {invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
+          {!invoice.externalReported && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
+          {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId === invoice.id} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
         </div>
       </li>;
     })}
@@ -653,6 +656,18 @@ export function WholesaleInvoiceManager() {
     finally { setBusyId(""); void load(); }
   }
 
+  async function archive(id: string) {
+    if (!window.confirm("Remover esta nota cancelada da lista? O histórico fiscal será preservado.")) return;
+    setBusyId(id); setNotice("");
+    try {
+      const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive", id }) });
+      const body = record(await response.json());
+      setNotice(response.ok ? "Nota cancelada arquivada." : str(body?.message) || "Não foi possível arquivar.");
+    } catch { setNotice("Não foi possível arquivar."); }
+    finally { setBusyId(""); void load(); }
+  }
+
   function retryFromList(id: string) {
     key.current = "";
     setOperationDate("");
@@ -668,7 +683,7 @@ export function WholesaleInvoiceManager() {
     {notice && <p className="wholesale-note" role="status">{notice}</p>}
     {error && <p className="wholesale-alert" role="alert">{error} <button className="secondary-button" type="button" onClick={() => void load()}>Tentar de novo</button></p>}
     {loading ? <p className="wholesale-empty" role="status"><LoaderCircle className="spin" aria-hidden="true" /> Carregando</p>
-      : <WholesaleInvoiceList invoices={invoices} busyId={busyId} onRetry={retryFromList} onCancel={id => void cancel(id)} />}
+      : <WholesaleInvoiceList invoices={invoices} busyId={busyId} onRetry={retryFromList} onCancel={id => void cancel(id)} onArchive={id => void archive(id)} />}
 
     {wizard && <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
       <form className="admin-modal wholesale-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={event => void submit(event)}>

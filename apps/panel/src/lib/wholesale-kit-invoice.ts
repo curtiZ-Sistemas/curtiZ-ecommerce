@@ -307,7 +307,8 @@ export async function issueWholesaleKitInvoice(input: {
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
-    if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series
+    if (Number(preview.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
+    if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1
       || Number(row(preview.naturezaOperacao).id) !== natureId
       || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
     const hash = await blingFiscalMirrorHash({ orderId: input.invoiceId, draft: draftId, competence: today.slice(0, 7), preview, mirror, origin: job.originPostalCode });
