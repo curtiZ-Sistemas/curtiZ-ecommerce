@@ -32,7 +32,7 @@ const operationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u).refin
   const parsed = new Date(value + ":00Z");
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 16) === value;
 });
-const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional() }).strict();
+const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional(), reviewedHash: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict();
 const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
 const archive = z.object({ action: z.literal("archive"), id: z.string().uuid() }).strict();
 const searchClients = z.object({ action: z.literal("search_clients"), query: z.string().trim().min(2).max(100) }).strict();
@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
           const result = await issueWholesaleKitInvoice({
             db: service, provider: panelBlingClient(service), environment: process.env, invoiceId: item.id,
             reviewedOperationDate: item.operationDate ? item.operationDate.replace("T", " ") + ":00" : undefined,
+            ...(item.reviewedHash ? { reviewedHash: item.reviewedHash } : {}),
             onStep: step => write({ type: "step", step })
           });
           const list = await db.rpc("list_wholesale_kit_invoices", { p_limit: 100 });

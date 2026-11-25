@@ -80,6 +80,9 @@ const provider = { request: async (path: string, options?: { method?: string }) 
 const run = (overrides: Record<string, string> = {}) => issueWholesaleKitInvoice({
   db: db as never, provider: provider as never, environment: { ...environment, ...overrides }, invoiceId: id, sleep: async () => undefined
 });
+const transmit = (overrides: Record<string, string> = {}, hash = "a".repeat(64)) => issueWholesaleKitInvoice({
+  db: db as never, provider: provider as never, environment: { ...environment, ...overrides }, invoiceId: id, reviewedHash: hash, sleep: async () => undefined
+});
 const names = () => state.calls.map(call => call.name);
 const posts = (suffix: string) => state.requests.filter(request => request.method === "POST" && request.path.endsWith(suffix));
 
@@ -94,7 +97,7 @@ describe("emissão da nota de atacado", () => {
     state.draftLinked = true;
     const reviewedOperationDate = "2026-11-24 13:10:00";
     expect(await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment,
-      invoiceId: id, reviewedOperationDate, sleep: async () => undefined })).toEqual({ status: "authorized" });
+      invoiceId: id, reviewedOperationDate, sleep: async () => undefined })).toMatchObject({ status: "ready" });
     expect(vi.mocked(prepareBlingFiscalDraft)).toHaveBeenCalledWith(expect.anything(), 77, expect.anything(), expect.anything(),
       expect.objectContaining({ reviewedOperationDate, freightMode: 3 }), true, expect.anything());
     expect(posts("/pedidos/vendas")).toHaveLength(0);
@@ -111,12 +114,15 @@ describe("emissão da nota de atacado", () => {
     expect(await run()).toEqual({ status: "error", code: "invoice_series_mismatch" });
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
   });
-  it("cria uma venda e uma nota, envia e confirma a autorização", async () => {
+  it("cria a venda e a nota, pausa para revisão e envia somente após confirmação", async () => {
     const steps: string[] = [];
     const result = await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment, invoiceId: id,
       onStep: step => steps.push(step), sleep: async () => undefined });
-    expect(result).toEqual({ status: "authorized" });
-    expect(steps).toEqual(["contact", "sale", "draft", "send", "authorization"]);
+    expect(result).toMatchObject({ status: "ready" });
+    expect(steps).toEqual(["contact", "sale", "draft"]);
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: "a".repeat(64) };
+    expect(await transmit()).toEqual({ status: "authorized" });
     expect(posts("/pedidos/vendas")).toHaveLength(1);
     expect(posts("/gerar-nfe")).toHaveLength(1);
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
@@ -133,9 +139,9 @@ describe("emissão da nota de atacado", () => {
 
   it("recupera a nota vinculada à venda quando a resposta do POST se perde", async () => {
     state.draftResponseLost = true;
-    expect(await run()).toEqual({ status: "authorized" });
+    expect(await run()).toMatchObject({ status: "ready" });
     expect(posts("/gerar-nfe")).toHaveLength(1);
-    expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
   });
 
   it("recupera pelo detalhe de NF-e quando a listagem não traz a referência e o pedido ainda não tem o vínculo", async () => {
@@ -151,14 +157,14 @@ describe("emissão da nota de atacado", () => {
       return provider.request(path, options);
     } };
     expect(await issueWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id,
-      sleep: async () => undefined })).toEqual({ status: "authorized" });
+      sleep: async () => undefined })).toMatchObject({ status: "ready" });
     expect(posts("/gerar-nfe")).toHaveLength(0);
   });
   it("não repete a geração quando a tentativa anterior já foi registrada", async () => {
     state.job = { ...baseJob(), saleId: 900 };
     state.claimed.add("bling_invoice_draft");
     state.draftLinked = true;
-    expect(await run()).toEqual({ status: "authorized" });
+    expect(await run()).toMatchObject({ status: "ready" });
     expect(posts("/gerar-nfe")).toHaveLength(0);
   });
 
@@ -168,13 +174,15 @@ describe("emissão da nota de atacado", () => {
     expect(await run()).toEqual({ status: "waiting", code: "awaiting_bling_confirmation" });
     expect(posts("/gerar-nfe")).toHaveLength(0);
     state.allowReopen = true;
-    expect(await run()).toEqual({ status: "authorized" });
+    expect(await run()).toMatchObject({ status: "ready" });
     expect(posts("/pedidos/vendas")).toHaveLength(0);
     expect(posts("/gerar-nfe")).toHaveLength(1);
   });
   it("reconhece DANFE emitido após verificar o XML autorizado", async () => {
     state.invoiceSituation = 6;
-    expect(await run()).toEqual({ status: "authorized" });
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: "a".repeat(64) };
+    state.draftLinked = true;
+    expect(await transmit()).toEqual({ status: "authorized" });
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
   });
   it("é idempotente: reexecutar com a venda e a nota já gravadas não escreve de novo", async () => {
@@ -210,7 +218,10 @@ describe("emissão da nota de atacado", () => {
   });
 
   it("deixa a nota em rascunho, com motivo claro, quando o envio está desligado", async () => {
-    expect(await run({ BLING_INVOICE_SEND_ENABLED: "false" })).toEqual({ status: "waiting", code: "bling_send_disabled" });
+    expect(await run()).toMatchObject({ status: "ready" });
+    state.calls = [];
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: "a".repeat(64) };
+    expect(await transmit({ BLING_INVOICE_SEND_ENABLED: "false" })).toEqual({ status: "waiting", code: "bling_send_disabled" });
     expect(state.calls.find(call => call.name === "record_wholesale_kit_invoice_progress")?.args)
       .toEqual({ p_id: id, p_status: "draft", p_code: "bling_send_disabled" });
     expect(posts("/gerar-nfe")).toHaveLength(1);
@@ -230,7 +241,9 @@ describe("emissão da nota de atacado", () => {
 
   it("espera a SEFAZ sem duplicar o envio quando a autorização ainda não saiu", async () => {
     state.invoiceSituation = 3;
-    expect(await run()).toEqual({ status: "waiting", code: "awaiting_authorization" });
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: "a".repeat(64) };
+    state.draftLinked = true;
+    expect(await transmit()).toEqual({ status: "waiting", code: "awaiting_authorization" });
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
     expect(state.calls.some(call => call.name === "record_wholesale_kit_invoice_authorized")).toBe(false);
   });
@@ -240,6 +253,16 @@ describe("emissão da nota de atacado", () => {
     expect(await run()).toEqual({ status: "error", code: "wholesale_grade_changed" });
   });
 
+  it("não transmite sem uma revisão persistida", async () => {
+    expect(await transmit()).toEqual({ status: "waiting", code: "draft_review_required" });
+    expect(state.requests.filter(request => request.method === "POST")).toHaveLength(0);
+  });
+  it("não transmite uma nota alterada depois da revisão", async () => {
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: "b".repeat(64) };
+    state.draftLinked = true;
+    expect(await transmit({}, "b".repeat(64))).toEqual({ status: "waiting", code: "draft_review_changed" });
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+  });
   it("guarda só códigos fixos como motivo", () => {
     expect(wholesaleFailureCode(new BlingError("Texto com dados pessoais!", 500))).toBe("bling_error");
     expect(wholesaleFailureCode(new Error("boom"))).toBe("unexpected_error");

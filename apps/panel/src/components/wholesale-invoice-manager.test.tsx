@@ -243,3 +243,16 @@ describe("clientes recorrentes", () => {
     expect(html).toContain("CNPJ do cliente");
   });
 });
+
+
+it("exibe rascunho sem validade fiscal e permite fechar sem transmitir", () => {
+  const html = renderToStaticMarkup(<IssueProgress steps={["draft"]} running={false} busy={false}
+    result={{ type: "result", status: "ready", code: null, invoice: invoice({ authorized: false, status: "draft" }),
+      review: { hash: "a".repeat(64), number: "56", series: "3", date: "", operationDate: "", issuer: "11222333000181",
+      nature: "Venda", buyer: "Loja Teste", document: "11222333000181", registration: "123", address: "Rua A", totalInCents: 72002,
+      freight: "Transporte próprio", payment: "Pix", cfop: "5102", csosn: "102", items: [] } }}
+    onRetry={noop} onCancel={noop} onClose={noop} onTransmit={noop} />);
+  expect(html).toContain("Sem validade fiscal");
+  expect(html).toContain("Prosseguir e enviar à SEFAZ");
+  expect(html).toContain("Fechar e enviar depois");
+});

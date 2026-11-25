@@ -215,7 +215,7 @@ export function PanelGlobalSearch({
             optionRefs.current[activeIndex]?.click();
           }
         }}
-        placeholder="Buscar ação, página, pedido, cliente ou produto…"
+        placeholder="Buscar no painel…"
         aria-label="Buscar no painel"
         autoComplete="off"
         autoFocus
@@ -237,9 +237,6 @@ export function PanelGlobalSearch({
               ))}
             </div>
           </section>
-        ) : null}
-        {emptyQuery && rows.length ? (
-          <p className="panel-global-search-hint">Digite uma ação, como “aprovar representante”, “reembolso” ou “cadastrar produto”.</p>
         ) : null}
         {sections.map((group) => (
           <section key={group.section}>

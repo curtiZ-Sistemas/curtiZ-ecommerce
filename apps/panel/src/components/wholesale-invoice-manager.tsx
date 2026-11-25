@@ -5,6 +5,7 @@ import { Check, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
 import { InvoiceActions } from "./invoice-actions";
+import type { WholesaleDraftReview } from "@/lib/wholesale-kit-invoice";
 import { lookupFiscalPostalCode, mergePostalAddress, type PostalLookupState } from "@/lib/fiscal-postal-code";
 
 export type WholesaleTemplate = { code: string; label: string; available: number; unitPriceInCents: number; sizes: { size: string; pairs: number }[] };
@@ -20,7 +21,7 @@ export type WholesaleBuyer = {
 };
 export type IssueEvent =
   | { type: "step"; step: string }
-  | { type: "result"; status: string; code: string | null; invoice: WholesaleInvoice | null };
+  | { type: "result"; status: string; code: string | null; invoice: WholesaleInvoice | null; review?: WholesaleDraftReview };
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -61,7 +62,7 @@ export function parseIssueLine(line: string): IssueEvent | null {
     const value = record(JSON.parse(line));
     if (value?.type === "step" && typeof value.step === "string") return { type: "step", step: value.step };
     if (value?.type === "result" && typeof value.status === "string")
-      return { type: "result", status: value.status, code: str(value.code) || null, invoice: readInvoice(value.invoice) };
+      return { type: "result", status: value.status, code: str(value.code) || null, invoice: readInvoice(value.invoice), ...(value.status === "ready" && record(value.review) && /^[0-9a-f]{64}$/u.test(str(record(value.review)?.hash)) && Array.isArray(record(value.review)?.items) ? { review: value.review as WholesaleDraftReview } : {}) };
   } catch { /* A broken line is ignored; the final state is read from the list. */ }
   return null;
 }
@@ -72,6 +73,9 @@ export const issueSteps: [string, string][] = [
 ];
 
 const reasons: Record<string, string> = {
+  draft_ready: "Nota montada e salva. Aguardando conferência e envio à SEFAZ.",
+  draft_review_required: "Abra a nota e confira o rascunho antes de transmitir.",
+  draft_review_changed: "O rascunho ou a competência mudou desde a conferência. Revise novamente antes de enviar.",
   bling_not_production: "A emissão só envia ao Bling no sistema em produção. A nota ficou salva e nada foi enviado.",
   bling_order_sync_disabled: "O envio de pedidos ao Bling está desligado. A nota ficou salva; quando for ligado, use Tentar de novo.",
   bling_invoice_sync_disabled: "A criação da nota no Bling está desligada. A venda foi registrada no Bling e a nota ficou salva.",
@@ -151,7 +155,7 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? ""}`.trim()} />
           {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
             disabled={busyId !== ""} onClick={() => onNewForClient(invoice.id)}>Nova nota para este cliente</button>}
-          {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>Tentar de novo</button>}
+          {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>{invoice.errorCode === "draft_ready" ? "Visualizar nota" : invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>}
           {!invoice.externalReported && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
           {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId === invoice.id} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
         </div>
@@ -409,26 +413,54 @@ export function PaymentStep({ template, kitName, quantity, price, method, buyerN
   </div>;
 }
 
-export function IssueProgress({ steps, running, result, onRetry, onCancel, onClose, busy, operationDate = "", onOperationDate }: {
+export function DraftReview({ review }: { review: WholesaleDraftReview }) {
+  return <article className="wholesale-review">
+    <header><div><h3>Prévia da NF-e nº {review.number || "—"}</h3><p>Série {review.series} · Rascunho no Bling</p></div><strong>Sem validade fiscal</strong></header>
+    <dl>
+      <div><dt>Emitente · CNPJ</dt><dd>{formatCnpj(review.issuer)}</dd></div>
+      <div><dt>Natureza da operação</dt><dd>{review.nature}</dd></div>
+      <div><dt>Destinatário</dt><dd>{review.buyer}</dd></div>
+      <div><dt>CNPJ / IE</dt><dd>{formatCnpj(onlyDigits(review.document))} / {review.registration || "—"}</dd></div>
+      <div className="wholesale-review-wide"><dt>Endereço fiscal</dt><dd>{review.address || "Não informado pelo Bling"}</dd></div>
+      <div><dt>Emissão</dt><dd>{review.date || "—"}</dd></div>
+      <div><dt>Saída</dt><dd>{review.operationDate || "—"}</dd></div>
+      <div><dt>Pagamento previsto</dt><dd>{review.payment}</dd></div>
+      <div><dt>Frete</dt><dd>{review.freight}</dd></div>
+      <div><dt>CFOP / CSOSN previstos</dt><dd>{review.cfop || "—"} / {review.csosn || "—"}</dd></div>
+    </dl>
+    <div className="wholesale-review-table"><table><thead><tr><th>Produto / código</th><th>NCM / origem</th><th>CFOP / CSOSN</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead>
+      <tbody>{review.items.map((item, index) => <tr key={index}><td><strong>{item.description || item.code}</strong><small>{item.code}</small></td>
+        <td>{item.ncm || "—"} / {item.origin || "—"}</td><td>{item.cfop || "—"} / {item.csosn || "—"}</td>
+        <td>{item.quantity} {item.unit}</td><td>{formatBRL(Math.round(Number(item.unitValue) * 100))}</td>
+        <td>{formatBRL(Math.round(Number(item.unitValue) * 100) * Number(item.quantity))}</td></tr>)}</tbody>
+    </table></div>
+    <footer><span>Valor total</span><strong>{formatBRL(review.totalInCents)}</strong></footer>
+    <p>Dados fiscais sujeitos à autorização da SEFAZ. Confira antes de prosseguir.</p>
+  </article>;
+}
+
+export function IssueProgress({ steps, running, result, onRetry, onCancel, onClose, busy, operationDate = "", onOperationDate, onTransmit }: {
   steps: string[]; running: boolean; result: Extract<IssueEvent, { type: "result" }> | null;
   onRetry: () => void; onCancel: () => void; onClose: () => void; busy: boolean;
-  operationDate?: string; onOperationDate?: (value: string) => void;
+  operationDate?: string; onOperationDate?: (value: string) => void; onTransmit?: (hash: string) => void;
 }) {
   const failed = result?.status === "error" || result?.status === "waiting" || result?.status === "busy";
+  const ready = result?.status === "ready" && !!result.review;
   const current = steps.at(-1);
   const needsDate = result?.code === "invoice_operation_date_required" || result?.code === "invoice_operation_date_invalid";
   return <div className="wholesale-step" aria-live="polite">
     <ol className="wholesale-progress">
       {issueSteps.map(([key, label]) => {
         const index = steps.indexOf(key);
-        const done = result?.status === "authorized" || (index >= 0 && key !== current) || (index >= 0 && !running && !failed);
+        const done = result?.status === "authorized" || (ready && ["contact", "sale", "draft"].includes(key)) || (index >= 0 && key !== current) || (index >= 0 && !running && !failed);
         const active = running && key === current;
         return <li key={key} className={done ? "done" : active ? "active" : ""}>
           <span aria-hidden="true">{done ? <Check /> : active ? <LoaderCircle className="spin" /> : null}</span>{label}
         </li>;
       })}
     </ol>
-    {running && <p>Emitindo a nota. Não feche esta janela.</p>}
+    {running && <p>Processando a nota. Não feche esta janela.</p>}
+    {ready && result.review && <DraftReview review={result.review} />}
     {result?.status === "authorized" && <div className="wholesale-done">
       <p><strong>Nota {result.invoice?.invoiceNumber ? `nº ${result.invoice.invoiceNumber} ` : ""}autorizada.</strong></p>
       {result.invoice && <InvoiceActions authorized={result.invoice.authorized} blingInvoiceId={result.invoice.invoiceId}
@@ -439,9 +471,10 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
     </p>}
     {needsDate && onOperationDate && <DepartureField value={operationDate} onChange={onOperationDate} />}
     <div className="wholesale-actions">
+      {ready && result.review && onTransmit && <button className="primary-button" type="button" disabled={busy || running} onClick={() => onTransmit(result.review!.hash)}>Prosseguir e enviar à SEFAZ</button>}
       {failed && !result?.invoice?.cancelPending && <button className="primary-button" type="button" disabled={busy || (needsDate && !operationDate)} onClick={onRetry}>{result?.code === "awaiting_authorization" ? "Verificar de novo" : "Tentar de novo"}</button>}
       {failed && result?.invoice?.canCancel === true && <button className="secondary-button danger-button" type="button" disabled={busy} onClick={onCancel}>Cancelar e devolver estoque</button>}
-      {!running && <button className="secondary-button" type="button" onClick={onClose}>Fechar</button>}
+      {!running && <button className="secondary-button" type="button" onClick={onClose}>{ready ? "Fechar e enviar depois" : "Fechar"}</button>}
     </div>
   </div>;
 }
@@ -709,12 +742,12 @@ export function WholesaleInvoiceManager() {
     }
   }
 
-  async function runIssue(id: string, reviewedDate?: string) {
+  async function runIssue(id: string, reviewedDate?: string, reviewedHash?: string) {
     setIssuingId(id); setSteps([]); setResult(null); setRunning(true); setNotice("");
     let final: Extract<IssueEvent, { type: "result" }> | null = null;
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "issue", id, ...(reviewedDate ? { operationDate: reviewedDate } : {}) }) });
+        body: JSON.stringify({ action: "issue", id, ...(reviewedDate ? { operationDate: reviewedDate } : {}), ...(reviewedHash ? { reviewedHash } : {}) }) });
       if (!response.ok || !response.body) {
         final = { type: "result", status: response.status === 409 ? "busy" : "error", code: "unexpected_error", invoice: null };
         setNotice(await readMessage(response, ""));
@@ -816,7 +849,7 @@ export function WholesaleInvoiceManager() {
       : <WholesaleInvoiceList invoices={invoices} busyId={busyId} onRetry={retryFromList} onCancel={id => void cancel(id)} onArchive={id => void archive(id)} onNewForClient={id => void openFromInvoice(id)} />}
 
     {wizard && <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
-      <form className="admin-modal wholesale-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={event => void submit(event)}>
+      <form className={`admin-modal wholesale-modal${result?.status === "ready" ? " wholesale-review-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={event => void submit(event)}>
         <header>
           <div>
             <h2 id={titleId}>Emitir nota de atacado</h2>
@@ -832,13 +865,13 @@ export function WholesaleInvoiceManager() {
           {wizard.step === 3 && <DepartureField value={operationDate} onChange={setOperationDate} />}
           {wizard.step === 4 && <IssueProgress steps={steps} running={running} result={result} busy={busyId !== ""} onClose={close}
             operationDate={operationDate} onOperationDate={setOperationDate}
-            onRetry={() => void runIssue(issuingId, operationDate)} onCancel={() => void cancel(issuingId)} />}
+            onRetry={() => void runIssue(issuingId, operationDate)} onTransmit={hash => { if (window.confirm("Transmitir esta NF-e revisada à SEFAZ?")) void runIssue(issuingId, undefined, hash); }} onCancel={() => void cancel(issuingId)} />}
           {problem && <p className="wholesale-alert" role="alert">{problem}</p>}
         </div>
         {wizard.step < 4 && <footer className="wholesale-footer">
           {wizard.step > 1 ? <button className="secondary-button" type="button" onClick={() => patch({ step: wizard.step === 3 ? 2 : 1 })}>Voltar</button> : <span />}
           {wizard.step < 3 ? <button className="primary-button" type="button" onClick={next}>Continuar</button>
-            : <button className="primary-button" type="submit" disabled={running}>Emitir nota</button>}
+            : <button className="primary-button" type="submit" disabled={running}>Gerar rascunho</button>}
         </footer>}
       </form>
     </div>}

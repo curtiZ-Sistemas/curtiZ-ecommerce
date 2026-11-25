@@ -13,7 +13,13 @@ type UnknownRecord = Record<string, unknown>;
 
 export type WholesaleStep = "contact" | "sale" | "draft" | "send" | "authorization";
 /** waiting = the invoice is saved and safe, but something outside the app has to happen (see `code`). */
-export type WholesaleIssueResult = { status: "authorized" | "waiting" | "error" | "busy"; code?: string };
+export type WholesaleDraftReview = {
+  hash: string; number: string; series: string; date: string; operationDate: string;
+  issuer: string; nature: string; buyer: string; document: string; registration: string; address: string;
+  totalInCents: number; freight: string; payment: string; cfop: string; csosn: string;
+  items: { code: string; description: string; unit: string; quantity: string; unitValue: string; ncm: string; origin: string; cfop: string; csosn: string }[];
+};
+export type WholesaleIssueResult = { status: "authorized" | "ready" | "waiting" | "error" | "busy"; code?: string; review?: WholesaleDraftReview };
 
 const row = (value: unknown): UnknownRecord => value !== null && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -76,7 +82,7 @@ async function call(db: SupabaseClient, name: string, args: UnknownRecord): Prom
  */
 export async function issueWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string;
-  onStep?: (step: WholesaleStep) => void; sleep?: (milliseconds: number) => Promise<void>; reviewedOperationDate?: string;
+  onStep?: (step: WholesaleStep) => void; sleep?: (milliseconds: number) => Promise<void>; reviewedOperationDate?: string; reviewedHash?: string;
 }): Promise<WholesaleIssueResult> {
   const { db, provider, environment } = input;
   const sleep = input.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
@@ -138,6 +144,10 @@ export async function issueWholesaleKitInvoice(input: {
       if (WAITING_SITUATIONS.includes(situation) || job.sendClaimed === true) return await awaitAuthorization(draftId);
       if (situation !== 1) throw scopeError();
     }
+    // A send action cannot create a fresh sale or draft. It must refer to the
+    // exact persisted review, or the operator must return to preparation.
+    if (input.reviewedHash && (!draftId || !saleId || text(job.draftHash) !== input.reviewedHash))
+      return await waiting("draft_review_required");
     if (environment.BLING_ORDER_SYNC_ENABLED !== "true") return await waiting("bling_order_sync_disabled");
 
     const today = saoPauloDate();
@@ -309,7 +319,7 @@ export async function issueWholesaleKitInvoice(input: {
     if (recoveredSituation !== 1) return await waiting("awaiting_bling_confirmation");
     if (Number(recovered.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
     const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
-    await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
+    if (!input.reviewedHash) await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
       ...item, sku: blingExternalSku(item.sku, item.variantId)
     })), {
       document, icmsTaxpayer: registration !== "", businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
@@ -323,8 +333,27 @@ export async function issueWholesaleKitInvoice(input: {
       || Number(row(preview.naturezaOperacao).id) !== natureId
       || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
     const hash = await blingFiscalMirrorHash({ orderId: input.invoiceId, draft: draftId, competence: today.slice(0, 7), preview, mirror, origin: job.originPostalCode });
-    if (await call(db, "record_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId, p_hash: hash }) !== true)
-      throw scopeError();
+    if (input.reviewedHash && hash !== input.reviewedHash) return await waiting("draft_review_changed");
+    if (!input.reviewedHash) {
+      if (await call(db, "record_wholesale_kit_invoice_draft", { p_id: input.invoiceId, p_sale: saleId, p_invoice: draftId, p_hash: hash }) !== true)
+        throw scopeError();
+      const recipient = row(preview.contato);
+      const address = row(recipient.endereco);
+      const review: WholesaleDraftReview = {
+        hash, number: scalar(preview.numero), series: scalar(preview.serie), date: scalar(preview.dataEmissao),
+        operationDate: scalar(preview.dataOperacao), issuer, nature: scalar(row(preview.naturezaOperacao).descricao) || String(natureId),
+        buyer: scalar(recipient.nome) || text(job.buyerName), document: scalar(recipient.numeroDocumento) || document,
+        registration: scalar(recipient.ie) || registration,
+        address: [address.endereco, address.numero, address.complemento, address.bairro, address.municipio, address.uf, address.cep].map(scalar).filter(Boolean).join(", "),
+        totalInCents: mirror.totalInCents, freight: "Transporte próprio", payment: job.paymentMethod === "cash" ? "Dinheiro" : "Pix",
+        cfop: scalar(rule.cfop), csosn: scalar(rule.csosn),
+        items: rows(preview.itens).map(item => ({ code: scalar(item.codigo), description: scalar(item.descricao), unit: scalar(item.unidade),
+          quantity: scalar(item.quantidade), unitValue: scalar(item.valor), ncm: scalar(item.classificacaoFiscal), origin: scalar(item.origem),
+          cfop: scalar(item.cfop), csosn: scalar(row(row(item.tributacao).icms).csosn) }))
+      };
+      await progress("draft", "draft_ready");
+      return { status: "ready", review };
+    }
 
     if (environment.BLING_INVOICE_SEND_ENABLED !== "true" || environment.BLING_INVOICE_TRANSMISSION_MODE !== "production"
       || environment.BLING_LIVE_INVOICE_SEND_AUTHORIZED !== "true") return await waiting("bling_send_disabled");

@@ -236,3 +236,9 @@ describe("histórico de clientes de atacado", () => {
     expect(state.rpc).not.toHaveBeenCalled();
   });
 });
+
+
+it("encaminha a confirmação explícita da revisão para transmissão", async () => {
+  await lines(await post({ action: "issue", id: ids.invoice, reviewedHash: "a".repeat(64) }));
+  expect(state.issue).toHaveBeenCalledWith(expect.objectContaining({ reviewedHash: "a".repeat(64) }));
+});

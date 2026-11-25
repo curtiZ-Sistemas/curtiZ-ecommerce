@@ -11449,3 +11449,44 @@ button:not(:disabled):active,
 .wholesale-client-results { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 230px; overflow-y: auto; }
 .wholesale-client-results .wholesale-card { width: 100%; overflow-wrap: anywhere; }
 .wholesale-client-results .wholesale-card:hover:not(:disabled) { border-color: var(--brand-900); background: var(--brand-50); }
+
+/* Busca ancorada no cabeçalho, sem deslocar os controles adjacentes. */
+.topbar-search, .topbar-search.open { position: relative; inset: auto; width: 240px; flex: 0 1 240px; min-width: 0; height: 36px; }
+.topbar-search > .topbar-search-trigger { display: flex; width: 100%; height: 36px; min-height: 36px; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: #f8f7f6; color: var(--muted); }
+.topbar-search-trigger svg { width: 17px; height: 17px; flex-shrink: 0; }
+.topbar-search-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.topbar-search-kbd { margin-left: auto; white-space: nowrap; font-size: .68rem; }
+.topbar-search.open > .topbar-search-trigger { visibility: hidden; }
+.topbar-search .panel-global-search { position: absolute; inset: 0 auto auto 0; width: 100%; height: 36px; animation: none; }
+.topbar-search .panel-global-search input { height: 36px; min-height: 36px; border-radius: 5px; padding-right: 58px; box-shadow: none; }
+.topbar-search .panel-global-search-close { width: 32px; height: 34px; min-height: 34px; border-radius: 4px; }
+.panel-global-search-loader { top: 9px; right: 36px; }
+.panel-global-search-results { top: calc(100% + 6px); right: 0; width: min(360px, calc(100vw - 24px)); max-height: min(410px, calc(100dvh - 100px)); border-radius: 6px; padding: 5px; }
+.panel-global-search-results a { padding: 8px 9px; gap: 3px; }
+.panel-global-search-results a:hover, .panel-global-search-results a:focus-visible, .panel-global-search-results a[data-active="true"] { background: #f2f1ef; box-shadow: none; }
+.panel-global-search-results a:focus-visible { outline: 2px solid #777; outline-offset: -2px; }
+.panel-global-search-results small em { background: transparent; color: var(--muted); padding: 0; margin-right: 7px; font-weight: 600; }
+.panel-global-search-results mark { color: inherit; text-decoration: none; font-weight: 800; }
+@media (max-width: 900px) {
+  .topbar-search, .topbar-search.open { width: 42px; flex: 0 0 42px; }
+  .topbar-search-label, .topbar-search-kbd { display: none; }
+  .topbar-search > .topbar-search-trigger { justify-content: center; padding: 0; }
+  .topbar-search .panel-global-search { left: auto; right: 0; width: min(240px, calc(100vw - 24px)); background: white; }
+  .panel-global-search-results { width: 100%; }
+}
+.wholesale-modal.wholesale-review-modal { width: min(960px, calc(100vw - 24px)); max-width: 960px; }
+.wholesale-review { border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: grid; gap: 16px; background: white; min-width: 0; }
+.wholesale-review > header, .wholesale-review > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.wholesale-review h3, .wholesale-review p, .wholesale-review dl, .wholesale-review dd { margin: 0; }
+.wholesale-review > header > strong { color: var(--muted); font-size: .78rem; }
+.wholesale-review dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.wholesale-review dt { color: var(--muted); font-size: .75rem; }
+.wholesale-review dd { font-size: .87rem; overflow-wrap: anywhere; }
+.wholesale-review-wide { grid-column: 1 / -1; }
+.wholesale-review-table { overflow-x: auto; min-width: 0; }
+.wholesale-review-table table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.wholesale-review-table th, .wholesale-review-table td { padding: 9px 7px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+.wholesale-review-table td small { display: block; color: var(--muted); }
+.wholesale-review > footer { font-size: 1rem; }
+.wholesale-review > p { font-size: .78rem; color: var(--muted); }
+@media (max-width: 560px) { .wholesale-review { padding: 10px; } .wholesale-review dl { grid-template-columns: 1fr; } }
