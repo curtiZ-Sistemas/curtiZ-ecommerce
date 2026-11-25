@@ -11442,3 +11442,10 @@ button:not(:disabled):active,
   .wholesale-body { padding: 16px; }
   .wholesale-footer { padding: 12px 16px; }
 }
+
+/* Clientes recorrentes no assistente fiscal. */
+.wholesale-client-search { display: grid; gap: 8px; }
+.wholesale-client-search .wholesale-cnpj { max-width: none; }
+.wholesale-client-results { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 230px; overflow-y: auto; }
+.wholesale-client-results .wholesale-card { width: 100%; overflow-wrap: anywhere; }
+.wholesale-client-results .wholesale-card:hover:not(:disabled) { border-color: var(--brand-900); background: var(--brand-50); }

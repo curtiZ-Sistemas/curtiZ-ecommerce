@@ -122,8 +122,8 @@ const formatDate = (value: string) => {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit" }).format(date);
 };
 
-export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onArchive }: {
-  invoices: WholesaleInvoice[]; busyId: string; onRetry: (id: string) => void; onCancel: (id: string) => void; onArchive?: (id: string) => void;
+export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onArchive, onNewForClient }: {
+  invoices: WholesaleInvoice[]; busyId: string; onRetry: (id: string) => void; onCancel: (id: string) => void; onArchive?: (id: string) => void; onNewForClient?: (id: string) => void;
 }) {
   if (!invoices.length) return <p className="wholesale-empty">Nenhuma nota de atacado ainda. Use Emitir nota para criar a primeira.</p>;
   return <ul className="wholesale-list">
@@ -149,6 +149,8 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
         <div className="wholesale-row-actions">
           <InvoiceActions authorized={invoice.authorized} blingInvoiceId={invoice.invoiceId}
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? ""}`.trim()} />
+          {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
+            disabled={busyId !== ""} onClick={() => onNewForClient(invoice.id)}>Nova nota para este cliente</button>}
           {open && !invoice.cancelPending && <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>Tentar de novo</button>}
           {!invoice.externalReported && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
           {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId === invoice.id} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
@@ -193,9 +195,93 @@ export function KitStep({ offers, kitId, template, onKit, onTemplate }: {
 
 export type LookupState = "idle" | "loading" | "found" | "missing" | "failed";
 
-export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLookup = "idle" }: {
+type HistoricalClient = { id: string; name: string; document: string; city: string };
+
+export function readHistoricalBuyer(value: unknown): WholesaleBuyer | null {
+  const row = record(value);
+  const address = record(row?.address);
+  if (!row || !address || !isValidCnpj(str(row.document)) || !str(row.name)) return null;
+  const regime = str(row.regime);
+  return { document: str(row.document), name: str(row.name), registration: str(row.registration),
+    regime: regime === "normal" || regime === "simples" || regime === "mei" || regime === "pf" ? regime : "",
+    postalCode: str(address.postal_code), street: str(address.street), number: str(address.number),
+    district: str(address.district), city: str(address.city), state: str(address.state), complement: str(address.complement) };
+}
+
+async function loadHistoricalClient(id: string, signal?: AbortSignal) {
+  const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", cache: "no-store",
+    headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reuse_client", id }), signal });
+  const body = record(await response.json());
+  const buyer = readHistoricalBuyer(body?.buyer);
+  if (!response.ok || !buyer) throw new Error(str(body?.message) || "Não foi possível carregar os dados do cliente.");
+  return { buyer, selections: body?.selections };
+}
+
+export function HistoricalClientSearch({ onSelect }: { onSelect: (buyer: WholesaleBuyer) => void }) {
+  const [query, setQuery] = useState("");
+  const [clients, setClients] = useState<HistoricalClient[]>([]);
+  const [state, setState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [selecting, setSelecting] = useState(false);
+  const selection = useRef<AbortController | null>(null);
+  const searchId = useId();
+  useEffect(() => () => selection.current?.abort(), []);
+  useEffect(() => {
+    const term = query.trim();
+    setClients([]);
+    if (term.length < 2) { setState("idle"); return; }
+    setState("loading");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", cache: "no-store",
+            headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "search_clients", query: term }), signal: controller.signal });
+          const body = record(await response.json());
+          if (controller.signal.aborted) return;
+          if (!response.ok || !Array.isArray(body?.clients)) { setState("failed"); return; }
+          setClients(body.clients.flatMap((value): HistoricalClient[] => {
+            const row = record(value);
+            return row && str(row.id) && str(row.name) && isValidCnpj(str(row.document))
+              ? [{ id: str(row.id), name: str(row.name), document: str(row.document), city: str(row.city) }] : [];
+          }));
+          setState("ready");
+        } catch { if (!controller.signal.aborted) setState("failed"); }
+      })();
+    }, 350);
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [query]);
+
+  async function choose(id: string) {
+    if (selection.current) return;
+    const controller = new AbortController();
+    selection.current = controller; setSelecting(true);
+    try {
+      const detail = await loadHistoricalClient(id, controller.signal);
+      if (!controller.signal.aborted) { onSelect(detail.buyer); setQuery(""); setClients([]); setState("idle"); }
+    } catch { if (!controller.signal.aborted) setState("failed"); }
+    finally { if (!controller.signal.aborted) { selection.current = null; setSelecting(false); } }
+  }
+
+  return <div className="wholesale-client-search">
+    <label className="wholesale-cnpj" htmlFor={searchId}><span>Buscar cliente pelo nome</span>
+      <input id={searchId} value={query} maxLength={100} autoComplete="off" placeholder="Nome, razão social ou CNPJ"
+        disabled={selecting} onChange={event => { setClients([]); setQuery(event.target.value); }}
+        onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
+    <p className="wholesale-lookup" role="status">{selecting ? "Carregando cadastro…"
+      : state === "loading" ? "Buscando clientes…" : state === "failed" ? "Consulta indisponível. Você pode preencher manualmente."
+      : state === "ready" && !clients.length ? "Nenhum cliente encontrado. Continue com o cadastro manual."
+      : "Clientes com notas já emitidas pela curti Z. Selecione para preencher os dados ou continue manualmente."}</p>
+    {clients.length > 0 && <ul className="wholesale-client-results" aria-label="Clientes encontrados">
+      {clients.map(client => <li key={client.id}><button type="button" className="wholesale-card" disabled={selecting} onClick={() => void choose(client.id)}>
+        <strong>{client.name}</strong><span>{formatCnpj(client.document)}{client.city ? " · " + client.city : ""}</span>
+      </button></li>)}
+    </ul>}
+  </div>;
+}
+
+export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLookup = "idle", onHistoricalClient }: {
   buyer: WholesaleBuyer; lookup: LookupState; onChange: (patch: Partial<WholesaleBuyer>) => void; onRetryLookup?: () => void;
-  postalLookup?: PostalLookupState;
+  postalLookup?: PostalLookupState; onHistoricalClient?: (buyer: WholesaleBuyer) => void;
 }) {
   const cnpjId = useId();
   const digits = onlyDigits(buyer.document);
@@ -209,6 +295,7 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLooku
       {extra.hint && <small>{extra.hint}</small>}
     </label>;
   return <div className="wholesale-step">
+    {onHistoricalClient && <HistoricalClientSearch onSelect={onHistoricalClient} />}
     <label className="wholesale-cnpj" htmlFor={cnpjId}>
       <span>CNPJ do cliente</span>
       <input id={cnpjId} inputMode="numeric" autoComplete="off" placeholder="00.000.000/0000-00" value={formatCnpj(buyer.document)}
@@ -466,6 +553,24 @@ export function MultiPaymentStep({ offers, selections, buyerName, method, onChan
     </dl>
   </div>;
 }
+export function reuseKitSelections(offers: WholesaleOffer[], value: unknown): { selections: KitSelection[]; adjusted: boolean } {
+  const previous = Array.isArray(value) ? value : [];
+  let adjusted = false;
+  const selections: KitSelection[] = [];
+  for (const entry of previous) {
+    const row = record(entry);
+    const kitId = str(row?.kitId);
+    const templateCode = str(row?.template);
+    const template = offers.find(offer => offer.kitId === kitId)?.templates.find(item => item.code === templateCode);
+    const quantity = row?.quantity;
+    if (!template || template.available < 1 || typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1
+      || selections.some(item => item.kitId === kitId) || selections.length >= 20) { adjusted = true; continue; }
+    const available = Math.min(quantity, 99, template.available);
+    if (available !== quantity) adjusted = true;
+    selections.push({ kitId, template: templateCode, quantity: available, price: formatBRLInput(template.unitPriceInCents) });
+  }
+  return { selections, adjusted };
+}
 const stepTitles = ["Kits e fichas", "Cliente", "Quantidade e pagamento", "Emissão"];
 
 async function readMessage(response: Response, fallback: string) {
@@ -563,11 +668,22 @@ export function WholesaleInvoiceManager() {
     });
   }
 
-  function open() {
+  function open(initial?: { buyer: WholesaleBuyer; selections: KitSelection[] }) {
     key.current = crypto.randomUUID();
     setOperationDate("");
     setLookup("idle"); setPostalLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
-    setWizard(newWizard());
+    setWizard({ ...newWizard(), ...initial });
+  }
+  async function openFromInvoice(id: string) {
+    if (busyId || running) return;
+    setBusyId(id); setNotice("");
+    try {
+      const detail = await loadHistoricalClient(id);
+      const copied = reuseKitSelections(offers, detail.selections);
+      open({ buyer: detail.buyer, selections: copied.selections });
+      if (copied.adjusted) setProblem("Algumas fichas ou quantidades anteriores não estão disponíveis. Confira os kits e o estoque atual.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Não foi possível carregar o cliente."); }
+    finally { setBusyId(""); }
   }
   const close = useCallback(() => { if (!running) { setWizard(null); void load(); } }, [running, load]);
   useEffect(() => {
@@ -692,12 +808,12 @@ export function WholesaleInvoiceManager() {
   return <section className="panel-card wholesale">
     <header className="wholesale-header">
       <p>Emita uma NF-e com um ou vários kits para uma empresa de Minas Gerais. CFOP, série e natureza são automáticos.</p>
-      <button className="primary-button" type="button" onClick={open}>Emitir nota</button>
+      <button className="primary-button" type="button" disabled={busyId !== ""} onClick={() => open()}>Emitir nota</button>
     </header>
     {notice && <p className="wholesale-note" role="status">{notice}</p>}
     {error && <p className="wholesale-alert" role="alert">{error} <button className="secondary-button" type="button" onClick={() => void load()}>Tentar de novo</button></p>}
     {loading ? <p className="wholesale-empty" role="status"><LoaderCircle className="spin" aria-hidden="true" /> Carregando</p>
-      : <WholesaleInvoiceList invoices={invoices} busyId={busyId} onRetry={retryFromList} onCancel={id => void cancel(id)} onArchive={id => void archive(id)} />}
+      : <WholesaleInvoiceList invoices={invoices} busyId={busyId} onRetry={retryFromList} onCancel={id => void cancel(id)} onArchive={id => void archive(id)} onNewForClient={id => void openFromInvoice(id)} />}
 
     {wizard && <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
       <form className="admin-modal wholesale-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={event => void submit(event)}>
@@ -709,8 +825,8 @@ export function WholesaleInvoiceManager() {
           <button type="button" aria-label="Fechar" disabled={running} onClick={close}><X aria-hidden="true" /></button>
         </header>
         <div className="wholesale-body">
-          {wizard.step === 1 && <MultiKitStep offers={offers} selections={wizard.selections} onChange={selections => patch({ selections })} />}
-          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} postalLookup={postalLookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={changeBuyer} />}
+          {wizard.step === 1 && <>{wizard.buyer.document && <p className="wholesale-note">Cliente: <strong>{wizard.buyer.name}</strong> · Confira os kits e os preços atuais.</p>}<MultiKitStep offers={offers} selections={wizard.selections} onChange={selections => patch({ selections })} /></>}
+          {wizard.step === 2 && <ClientStep buyer={wizard.buyer} lookup={lookup} postalLookup={postalLookup} onRetryLookup={() => setLookupRetry(value => value + 1)} onChange={changeBuyer} onHistoricalClient={buyer => { setProblem(""); patch({ buyer }); }} />}
           {wizard.step === 3 && <MultiPaymentStep offers={offers} selections={wizard.selections} method={wizard.method} buyerName={wizard.buyer.name}
             onChange={selections => patch({ selections })} onMethod={value => patch({ method: value })} />}
           {wizard.step === 3 && <DepartureField value={operationDate} onChange={setOperationDate} />}

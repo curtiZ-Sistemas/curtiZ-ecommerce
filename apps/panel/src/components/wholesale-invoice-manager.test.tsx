@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
-  buyerProblem, ClientStep, emptyBuyer, IssueProgress, KitStep, PaymentStep, parseIssueLine, readInvoice, readOffers,
+  buyerProblem, ClientStep, emptyBuyer, readHistoricalBuyer, reuseKitSelections, IssueProgress, KitStep, PaymentStep, parseIssueLine, readInvoice, readOffers,
   wholesaleReason, wholesaleStatus, WholesaleInvoiceList, MultiKitStep, MultiPaymentStep, selectionProblem, type WholesaleInvoice, type WholesaleOffer
 } from "./wholesale-invoice-manager";
 
@@ -214,5 +214,32 @@ describe("histórico de cancelamentos e emissão externa", () => {
     expect(html).toContain("Emitida externamente");
     expect(html).not.toContain("Tentar de novo");
     expect(html).not.toContain("Cancelar e devolver estoque");
+  });
+});
+
+
+describe("clientes recorrentes", () => {
+  it("permite nova nota somente a partir de emissão anterior", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[
+      invoice(), invoice({ id: "i2", status: "error", authorized: false }),
+      invoice({ id: "i3", status: "error", authorized: false, externalReported: true })
+    ]} busyId="" onRetry={noop} onCancel={noop} onNewForClient={noop} />);
+    expect(html.match(/Nova nota para este cliente/gu)).toHaveLength(2);
+  });
+  it("preenche o cadastro salvo sem presumir o regime de notas antigas", () => {
+    const buyer = readHistoricalBuyer({ document: "11222333000181", name: "Loja Teste", registration: "0012345678900",
+      address: { postal_code: "30110100", street: "Rua A", number: "1", district: "Centro", city: "Belo Horizonte", state: "MG" } });
+    expect(buyer).toMatchObject({ document: "11222333000181", name: "Loja Teste", postalCode: "30110100", regime: "" });
+    expect(readHistoricalBuyer({ document: "invalido" })).toBeNull();
+  });
+  it("reaproveita apenas fichas disponíveis e usa o preço atual", () => {
+    const copied = reuseKitSelections(offers, [{ kitId: "k1", template: "standard", quantity: 6 }, { kitId: "k2", template: "standard", quantity: 1 }]);
+    expect(copied.adjusted).toBe(true);
+    expect(copied.selections).toEqual([{ kitId: "k1", template: "standard", quantity: 5, price: "360,01" }]);
+  });
+  it("mostra a pesquisa opcional sem impedir o cadastro manual", () => {
+    const html = renderToStaticMarkup(<ClientStep buyer={emptyBuyer} lookup="idle" onChange={noop} onHistoricalClient={noop} />);
+    expect(html).toContain("Buscar cliente pelo nome");
+    expect(html).toContain("CNPJ do cliente");
   });
 });

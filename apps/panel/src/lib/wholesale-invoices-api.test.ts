@@ -212,3 +212,27 @@ describe("notas de atacado: emitir, tentar de novo e cancelar", () => {
     expect((await post({ action: "cancel", id: ids.invoice })).status).toBe(409);
   });
 });
+
+
+describe("histórico de clientes de atacado", () => {
+  it("busca apenas pela RPC protegida e não cria nem transmite nota", async () => {
+    state.rpc.mockResolvedValue({ data: [{ id: ids.invoice, name: "Loja Teste" }], error: null });
+    const response = await post({ action: "search_clients", query: "Loja" });
+    expect(response.status).toBe(200);
+    expect(state.rpc).toHaveBeenCalledWith("search_wholesale_invoice_clients", { p_query: "Loja", p_invoice_id: null });
+    expect(state.issue).not.toHaveBeenCalled();
+  });
+  it("carrega o cliente selecionado sem retornar dados fiscais dos itens anteriores", async () => {
+    state.rpc.mockResolvedValue({ data: { buyer: buyer(), selections: [{ kitId: ids.kit, template: "standard", quantity: 1, gradeLines: [] }] }, error: null });
+    const response = await post({ action: "reuse_client", id: ids.invoice });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ buyer: buyer(), selections: [{ kitId: ids.kit, template: "standard", quantity: 1 }] });
+  });
+  it("nega pesquisa sem MFA e não permite consulta vazia", async () => {
+    state.mfa = false;
+    expect((await post({ action: "search_clients", query: "Loja" })).status).toBe(403);
+    state.mfa = true;
+    expect((await post({ action: "search_clients", query: " " })).status).toBe(400);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+});

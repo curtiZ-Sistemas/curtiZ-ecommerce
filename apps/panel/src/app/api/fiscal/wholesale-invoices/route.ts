@@ -35,7 +35,9 @@ const operationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u).refin
 const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional() }).strict();
 const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
 const archive = z.object({ action: z.literal("archive"), id: z.string().uuid() }).strict();
-const input = z.discriminatedUnion("action", [create, batch, issue, cancel, archive]);
+const searchClients = z.object({ action: z.literal("search_clients"), query: z.string().trim().min(2).max(100) }).strict();
+const reuseClient = z.object({ action: z.literal("reuse_client"), id: z.string().uuid() }).strict();
+const input = z.discriminatedUnion("action", [create, batch, issue, cancel, archive, searchClients, reuseClient]);
 
 const send = (value: object, status = 200) => NextResponse.json(value, { status, headers: technicalNoStore });
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -82,6 +84,22 @@ export async function POST(request: NextRequest) {
     const parsed = input.safeParse(await readBoundedJson(request, 8192));
     if (!parsed.success) return send({ message: "Revise os dados informados." }, 400);
     const item = parsed.data;
+
+    if (item.action === "search_clients" || item.action === "reuse_client") {
+      const result = await db.rpc("search_wholesale_invoice_clients", {
+        p_query: item.action === "search_clients" ? item.query : "",
+        p_invoice_id: item.action === "reuse_client" ? item.id : null
+      });
+      if (result.error) return send({ message: "Não foi possível consultar o histórico de clientes." }, result.error.code === "42501" ? 403 : 503);
+      if (item.action === "search_clients") return Array.isArray(result.data) ? send({ clients: result.data }) : send({ message: "Histórico indisponível." }, 503);
+      const detail = record(result.data);
+      if (!detail) return send({ message: "Cliente sem nota emitida no histórico." }, 404);
+      const selections = Array.isArray(detail.selections) ? detail.selections.flatMap(value => {
+        const row = record(value);
+        return row ? [{ kitId: row.kitId, template: row.template, quantity: row.quantity }] : [];
+      }) : [];
+      return send({ buyer: detail.buyer, selections });
+    }
 
     if (item.action === "create" || item.action === "create_batch") {
       if (item.buyer.regime !== "simples") return send({ code: "wholesale_buyer_regime_not_approved", message: "Este regime ainda não possui regra fiscal aprovada para o atacado." }, 422);
