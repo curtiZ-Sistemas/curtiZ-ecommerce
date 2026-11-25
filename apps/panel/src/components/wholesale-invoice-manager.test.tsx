@@ -193,3 +193,23 @@ describe("leitura das respostas", () => {
     expect(readInvoice({ id: "i", quantity: 1, totalInCents: 5, status: "draft" })?.status).toBe("draft");
   });
 });
+
+
+describe("histórico de cancelamentos e emissão externa", () => {
+  it("permite remover da lista somente o cancelamento concluído", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[
+      invoice({ status: "cancelled", authorized: false, canCancel: false }),
+      invoice({ id: "i2", status: "cancelled", authorized: false, canCancel: true, cancelPending: true })
+    ]} busyId="" onRetry={noop} onCancel={noop} onArchive={noop} />);
+    expect(html.match(/Remover da lista/gu)).toHaveLength(1);
+    expect(html).toContain("Concluir cancelamento");
+  });
+  it("preserva a nota emitida externamente e não oferece nova emissão nem cancelamento", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[invoice({
+      status: "error", authorized: false, canCancel: false, externalReported: true, externalSeries: "002", externalNumber: "000000003"
+    })]} busyId="" onRetry={noop} onCancel={noop} onArchive={noop} />);
+    expect(html).toContain("Emitida externamente");
+    expect(html).not.toContain("Tentar de novo");
+    expect(html).not.toContain("Cancelar e devolver estoque");
+  });
+});

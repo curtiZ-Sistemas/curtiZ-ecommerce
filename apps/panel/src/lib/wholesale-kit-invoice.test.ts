@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   job: undefined as unknown as Record<string, unknown>, calls: [] as { name: string; args: Record<string, unknown> }[], claimed: new Set<string>(),
-  requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5,
+  requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5, natureActive: true, draftSeries: 3,
   failSale: false, draftResponseLost: false, draftLinked: false, allowReopen: false, send: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
@@ -65,6 +65,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   const method = options?.method ?? "GET";
   state.requests.push({ path, method });
   if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12.345.678/0001-95" } };
+  if (path.startsWith("/naturezas-operacoes?")) return { data: state.natureActive ? [{ id: 123, situacao: 1 }] : [] };
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
@@ -72,7 +73,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: state.draftLinked ? 77 : 0 }, itens: [{ naturezaOperacao: { id: 123 } }] } };
   if (path.startsWith("/nfe?numeroLoja=")) return { data: [] };
   if (path === "/nfe/77/enviar?enviarEmail=false") { state.send(); return {}; }
-  if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: 3,
+  if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: state.draftSeries,
     naturezaOperacao: { id: 123 }, transporte: { fretePorConta: 3 } } };
   throw new Error(`unexpected ${method} ${path}`);
 } };
@@ -84,7 +85,7 @@ const posts = (suffix: string) => state.requests.filter(request => request.metho
 
 beforeEach(() => {
   state.job = baseJob(); state.calls = []; state.requests = []; state.claimed = new Set(); state.contactExists = true;
-  state.saleInBling = null; state.invoiceSituation = 5; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.allowReopen = false; state.send.mockClear();
+  state.saleInBling = null; state.invoiceSituation = 5; state.natureActive = true; state.draftSeries = 3; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.allowReopen = false; state.send.mockClear();
 });
 
 describe("emissão da nota de atacado", () => {
@@ -95,9 +96,20 @@ describe("emissão da nota de atacado", () => {
     expect(await issueWholesaleKitInvoice({ db: db as never, provider: provider as never, environment,
       invoiceId: id, reviewedOperationDate, sleep: async () => undefined })).toEqual({ status: "authorized" });
     expect(vi.mocked(prepareBlingFiscalDraft)).toHaveBeenCalledWith(expect.anything(), 77, expect.anything(), expect.anything(),
-      expect.objectContaining({ reviewedOperationDate, freightMode: 3, ownCarrier: { nome: "Curti Z", numeroDocumento: "12345678000195" } }), true, expect.anything());
+      expect.objectContaining({ reviewedOperationDate, freightMode: 3 }), true, expect.anything());
     expect(posts("/pedidos/vendas")).toHaveLength(0);
     expect(posts("/gerar-nfe")).toHaveLength(0);
+  });
+  it("impede criar venda quando a natureza aprovada não está ativa", async () => {
+    state.natureActive = false;
+    expect(await run()).toEqual({ status: "error", code: "nature_not_active" });
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+  });
+  it("não altera nem transmite o rascunho cuja série difere da regra aprovada", async () => {
+    state.draftSeries = 2;
+    expect(await run()).toEqual({ status: "error", code: "invoice_series_mismatch" });
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
   });
   it("cria uma venda e uma nota, envia e confirma a autorização", async () => {
     const steps: string[] = [];

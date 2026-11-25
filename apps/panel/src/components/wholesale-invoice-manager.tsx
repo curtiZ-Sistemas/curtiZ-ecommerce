@@ -85,6 +85,7 @@ const reasons: Record<string, string> = {
   cancel_reconciliation_pending: "Cancelamento aguardando confirmação. Conclua pelo painel sem duplicar a devolução.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
+  nature_not_active: "A natureza fiscal aprovada não está ativa no Bling. Nenhum novo pedido foi criado.",
   invoice_series_mismatch: "A série gerada pelo Bling diverge da série fiscal aprovada. Nenhuma transmissão foi efetuada.",
   invoice_items_mismatch: "Os itens da nota no Bling divergem da venda original. As alterações foram preservadas. É necessário conciliar os dados antes do envio à SEFAZ.",
   invoice_draft_decomposition_conflict: "O rascunho não corresponde aos dados revisados da venda. Nenhuma nova nota foi criada.",

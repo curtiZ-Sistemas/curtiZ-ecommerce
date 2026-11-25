@@ -152,8 +152,18 @@ export async function issueWholesaleKitInvoice(input: {
     const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
     const companyId = typeof company.id === "number" || typeof company.id === "string" ? String(company.id) : "";
     if (!companyId || companyId !== scalar(account.companyId) || digits(company.cnpj) !== issuer) throw scopeError();
-    const carrierName = text(company.nome).trim();
-    if (!carrierName) throw new BlingError("invoice_carrier_mapping_required", 409);
+    // The approved nature must be active before creating a provider sale.
+    // Bling's list API does not expose the configured series; check the actual
+    // draft's series as soon as it is available, before any PUT.
+    let natureActive = false;
+    for (let page = 1; page <= 20; page += 1) {
+      const result = rows(row(await provider.request(`/naturezas-operacoes?pagina=${page}&limite=100&situacao=1`)).data);
+      if (result.some(nature => positiveId(nature.id) === natureId && Number(nature.situacao ?? 1) === 1)) {
+        natureActive = true; break;
+      }
+      if (result.length < 100) break;
+    }
+    if (!natureActive) throw new BlingError("nature_not_active", 409);
 
     const order = { public_code: reference, payment_status: "pending", status: "awaiting_receipt", placed_at: job.createdAt,
       customer_name_snapshot: text(job.buyerName), shipping_address_snapshot: billing, subtotal: mirror.totalInCents / 100,
@@ -297,13 +307,14 @@ export async function issueWholesaleKitInvoice(input: {
     if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
     if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
     if (recoveredSituation !== 1) return await waiting("awaiting_bling_confirmation");
+    if (Number(recovered.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
     const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
     await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
       ...item, sku: blingExternalSku(item.sku, item.variantId)
     })), {
       document, icmsTaxpayer: registration !== "", businessRegistration: registration, natureId, recipientAddress: billing, paymentTerms,
       totalInCents: mirror.totalInCents, shippingInCents: 0, discountInCents: 0, additionalInCents: 0, freightMode: 3,
-      ownCarrier: { nome: carrierName, numeroDocumento: issuer }, reviewedOperationDate: input.reviewedOperationDate
+      reviewedOperationDate: input.reviewedOperationDate
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
