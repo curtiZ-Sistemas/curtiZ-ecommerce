@@ -161,6 +161,7 @@ export type BlingResaleInvoiceExpectation = ArchiveExpectation & {
   deliveryPostalCode?: string;
   originPostalCode: string;
   shippingInCents: number;
+  paymentMethod?: "pix" | "cash";
   additionalInfo?: string;
   items: ResaleInvoiceLine[];
 };
@@ -199,6 +200,19 @@ export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, ex
     if (!/^3\d{7}$/u.test(delivery) || value(place,"UF") !== "MG" || value(place,"CEP") !== delivery) return fail();
   }
   const invoice = readBlingInvoiceItems(info, expected.totalInCents);
+  if (expected.paymentMethod) {
+    const payments = one(info, "pag");
+    const details = children(payments, "detPag");
+    const codes = expected.paymentMethod === "pix" ? ["17", "20"] : ["01"];
+    let paidInCents = 0;
+    for (const detail of details) {
+      const amount = money(value(detail, "vPag"));
+      if (!codes.includes(value(detail, "tPag")) || amount <= 0) throw new BlingError("invoice_fiscal_payment_mismatch", 409);
+      paidInCents += amount;
+    }
+    if (!details.length || !Number.isSafeInteger(paidInCents) || paidInCents - optionalMoney(payments, "vTroco") !== expected.totalInCents)
+      throw new BlingError("invoice_fiscal_payment_mismatch", 409);
+  }
   if (expected.additionalInfo && !value(one(info, "infAdic"), "infCpl").includes(expected.additionalInfo)) return fail();
   const details = children(info, "det");
   if (invoice.shippingInCents !== expected.shippingInCents || invoice.items.length !== expected.items.length

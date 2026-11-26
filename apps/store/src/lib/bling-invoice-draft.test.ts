@@ -212,6 +212,19 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
       .rejects.toThrow("invoice_items_mismatch");
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("restores missing wholesale payment terms without rewriting linked items", async () => {
+    const document = "11222333000181";
+    const reviewed = { ...input, document, businessRegistration: "", freightMode: 3 as const };
+    const draft = { ...invoice(), contato: { ...invoice().contato, numeroDocumento: document },
+      transporte: { fretePorConta: 3 }, parcelas: [],
+      itens: items.map(item => ({ codigo: item.sku, unidade: item.unit, quantidade: item.quantity, valor: item.unitPriceInCents / 100 })) };
+    const request = vi.fn().mockResolvedValueOnce({ data: draft }).mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { ...draft, parcelas: input.paymentTerms } });
+    await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, reviewed, true, async () => true);
+    const update = request.mock.calls[1]?.[1] as { method?: string; body?: unknown } | undefined;
+    expect(update).toMatchObject({ method: "PUT", body: { parcelas: input.paymentTerms } });
+    expect(update?.body).not.toHaveProperty("itens");
+  });
   it("waits for the saved own-transport snapshot without a second mutation or an invented carrier", async () => {
     const wholesale = { ...input, freightMode: 3 as const };
     const body = blingFiscalDraftBody(invoice(), items, commercial, wholesale);

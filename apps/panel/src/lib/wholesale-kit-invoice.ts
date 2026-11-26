@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  assertBlingExternalOrder, BlingError, blingExternalSku, blingFiscalMirrorHash, blingInvoicePaymentTerms, blingOrderPayload,
+  assertBlingExternalOrder, assertBlingInvoicePaymentTerms, BlingError, blingExternalSku, blingFiscalMirrorHash, blingInvoicePaymentTerms, blingOrderPayload,
   commercialKitFiscalMirror, findBlingContact, findBlingOrder, prepareBlingFiscalDraft, verifyCommercialKitInvoice,
   invoiceMatchesFiscalLines, type BlingClient
 } from "@curtiz/integrations";
@@ -107,12 +107,14 @@ export async function issueWholesaleKitInvoice(input: {
     const billing = row(job.fiscalAddress);
     const document = text(job.buyerDocument);
     const registration = text(job.buyerStateRegistration);
+    const paymentMethod = job.paymentMethod;
+    if (paymentMethod !== "pix" && paymentMethod !== "cash") throw new BlingError("payment_method_required", 409);
     let saleId = positiveId(job.saleId);
     let draftId = positiveId(job.invoiceId);
 
     const authorize = async (invoiceId: number, invoice: UnknownRecord): Promise<WholesaleIssueResult> => {
       const verified = await verifyCommercialKitInvoice(provider, readVariant, { ...job, saleId, invoiceId }, 1, {
-        reference, billingPostalCode: async () => text(billing.postal_code)
+        reference, billingPostalCode: async () => text(billing.postal_code), paymentMethod
       });
       const authorized = await call(db, "record_wholesale_kit_invoice_authorized", {
         p_id: input.invoiceId, p_sale: saleId, p_invoice: invoiceId, p_key: verified.key, p_protocol: verified.protocol,
@@ -154,7 +156,7 @@ export async function issueWholesaleKitInvoice(input: {
     const today = saoPauloDate();
     const { issuer, natureId, rule, commercial, mirror } = await commercialKitFiscalMirror(readVariant, job, today);
     if (rule.series !== 3) throw scopeError();
-    const methodId = positiveId(job.paymentMethod === "cash" ? environment.BLING_CASH_PAYMENT_METHOD_ID : environment.BLING_PAYMENT_METHOD_ID);
+    const methodId = positiveId(paymentMethod === "cash" ? environment.BLING_CASH_PAYMENT_METHOD_ID : environment.BLING_PAYMENT_METHOD_ID);
     if (!methodId) throw new BlingError("payment_method_required", 409);
     if (!/^\d{14}$/u.test(document) || (registration && !/^\d{2,14}$/u.test(registration))) throw scopeError();
     if (text(billing.state) !== "MG" || !/^3\d{7}$/u.test(text(billing.postal_code))) throw new BlingError("buyer_outside_mg", 409);
@@ -163,6 +165,13 @@ export async function issueWholesaleKitInvoice(input: {
     const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
     const companyId = typeof company.id === "number" || typeof company.id === "string" ? String(company.id) : "";
     if (!companyId || companyId !== scalar(account.companyId) || digits(company.cnpj) !== issuer) throw scopeError();
+    stage = "fiscal_payment_method";
+    const method = row(row(await provider.request(`/formas-pagamentos/${methodId}`)).data);
+    const fiscalTypes = paymentMethod === "cash" ? [1] : [17, 20];
+    if (positiveId(method.id) !== methodId || Number(method.situacao) !== 1
+      || ![2, 3].includes(Number(method.finalidade)) || !fiscalTypes.includes(Number(method.tipoPagamento)))
+      throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
+    stage = "fiscal_scope";
     // The approved nature must be active before creating a provider sale.
     // Bling's list API does not expose the configured series; check the actual
     // draft's series as soon as it is available, before any PUT.
@@ -345,8 +354,11 @@ export async function issueWholesaleKitInvoice(input: {
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
+    assertBlingInvoicePaymentTerms(preview, paymentTerms);
+    if (Math.round(Number(preview.valorNota) * 100) !== mirror.totalInCents || preview.valorFrete == null || Number(preview.valorFrete) !== 0)
+      throw new BlingError("invoice_draft_total_mismatch", 409);
     assertSeries(preview);
-    if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1
+    if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1 || Number(preview.tipo) !== 1
       || Number(row(preview.naturezaOperacao).id) !== natureId
       || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
     const hash = await blingFiscalMirrorHash({ orderId: input.invoiceId, draft: draftId, competence: today.slice(0, 7), preview, mirror, origin: job.originPostalCode });

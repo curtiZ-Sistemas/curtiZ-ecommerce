@@ -15,6 +15,7 @@ vi.mock("@curtiz/integrations", () => {
   return {
     BlingError,
     assertBlingExternalOrder: vi.fn(),
+    assertBlingInvoicePaymentTerms: vi.fn(),
     blingExternalSku: (sku: string) => sku,
     blingFiscalMirrorHash: async () => "a".repeat(64),
     blingInvoicePaymentTerms: () => [],
@@ -65,6 +66,8 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   const method = options?.method ?? "GET";
   state.requests.push({ path, method });
   if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12.345.678/0001-95" } };
+  if (path === "/formas-pagamentos/11") return { data: { id: 11, situacao: 1, finalidade: 2, tipoPagamento: 17 } };
+  if (path === "/formas-pagamentos/22") return { data: { id: 22, situacao: 1, finalidade: 2, tipoPagamento: 1 } };
   if (path.startsWith("/naturezas-operacoes?")) return { data: state.natureActive ? [{ id: 123, situacao: 1, serie: state.natureSeries }] : [] };
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
@@ -74,7 +77,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   if (path.startsWith("/nfe?numeroLoja=")) return { data: [] };
   if (path === "/nfe/77/enviar?enviarEmail=false") { state.send(); return {}; }
   if (path === "/nfe/77") return { data: { id: 77, numero: "56", situacao: state.claimed.has("bling_invoice_send") ? state.invoiceSituation : 1, serie: state.draftSeries,
-    naturezaOperacao: { id: 123 }, transporte: { fretePorConta: 3 } } };
+    tipo: 1, valorNota: 720.02, valorFrete: 0, naturezaOperacao: { id: 123 }, transporte: { fretePorConta: 3 } } };
   throw new Error(`unexpected ${method} ${path}`);
 } };
 const run = (overrides: Record<string, string> = {}) => issueWholesaleKitInvoice({
@@ -92,6 +95,26 @@ beforeEach(() => {
 });
 
 describe("emissão da nota de atacado", () => {
+  it("blocks a payment method configured as Sem pagamento before creating a sale", async () => {
+    const wrongMethod = { request: async (path: string, options?: { method?: string }) => path === "/formas-pagamentos/11"
+      ? { data: { id: 11, situacao: 1, finalidade: 2, tipoPagamento: 90 } } : provider.request(path, options) };
+    const result = await issueWholesaleKitInvoice({ db: db as never, provider: wrongMethod as never, environment, invoiceId: id });
+    expect(result).toEqual({ status: "error", code: "invoice_fiscal_payment_method_invalid" });
+    expect(state.requests.some(request => request.method === "POST")).toBe(false);
+  });
+  it("blocks transmission if the remote review total diverges even when its item lines match", async () => {
+    const reviewedHash = "a".repeat(64);
+    state.job = { ...baseJob(), saleId: 900, invoiceId: 77, draftHash: reviewedHash };
+    state.draftLinked = true;
+    const wrongTotal = { request: async (path: string, options?: { method?: string }) => {
+      const response = await provider.request(path, options);
+      return path === "/nfe/77" ? { ...response, data: { ...response.data, valorNota: 720.03 } } : response;
+    } };
+    const result = await issueWholesaleKitInvoice({ db: db as never, provider: wrongTotal as never, environment,
+      invoiceId: id, reviewedHash });
+    expect(result).toEqual({ status: "error", code: "invoice_draft_total_mismatch" });
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+  });
   it("retoma o rascunho existente com a data revisada sem criar outra venda ou nota", async () => {
     state.job = { ...baseJob(), saleId: 900, invoiceId: 77 };
     state.draftLinked = true;

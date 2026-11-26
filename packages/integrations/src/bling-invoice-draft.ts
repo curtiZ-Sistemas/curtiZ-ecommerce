@@ -178,10 +178,14 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   const matchesFreightMode = input.freightMode === undefined || Number(row(invoice.transporte).fretePorConta) === input.freightMode;
   const matchesOperationDate = input.reviewedOperationDate === undefined || readString(invoice, "dataOperacao") === input.reviewedOperationDate;
   const matchesCarrier = !input.ownCarrier || readString(row(row(invoice.transporte).transportador), "numeroDocumento").replace(/\D/gu, "") === input.ownCarrier.numeroDocumento;
+  const missingWholesalePayment = (draft: Record<string, unknown>) => input.freightMode === 3 && input.businessRegistration !== undefined
+    && (draft.parcelas == null || Array.isArray(draft.parcelas) && draft.parcelas.length === 0);
   if (matchesItems && matchesFreightMode && matchesOperationDate && matchesCarrier) {
     assertReviewedAddress(invoice, reviewedRecipientAddress(input.recipientAddress));
-    assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
-    return;
+    if (!missingWholesalePayment(invoice)) {
+      assertBlingInvoicePaymentTerms(invoice, input.paymentTerms);
+      return;
+    }
   }
   if (!matchesItems && !fiscalItems.some(i => i.sourceCommercialSku)) {
     const observed = array(invoice.itens);
@@ -195,13 +199,17 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   if (!stockAutomationDisabled) throw new BlingError("invoice_stock_automation_must_be_disabled", 409);
   const body = blingFiscalDraftBody(invoice, fiscalItems, matchesItems ? expected : commercialItems, input);
   if (!await authorizeMutation()) throw new BlingError("order_not_eligible", 409);
-  await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_update", { method: "PUT", body });
+  // Bling restricts editing items on a note linked to an order. For a
+  // wholesale metadata-only correction, keep the existing provider items.
+  const { itens, ...fields } = body;
+  const update = matchesItems && input.freightMode === 3 && input.businessRegistration !== undefined ? fields : { ...fields, itens };
+  await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_update", { method: "PUT", body: update });
   let saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
   // The provider may return the previous transport snapshot immediately after PUT.
   // Read again (never repeat the mutation) before concluding that it did not persist.
   if (input.freightMode === 3) {
     for (let attempt = 0; attempt < 3 && Number(saved.situacao) === 1 && (!invoiceMatchesFiscalLines(saved, expected)
-      || Number(row(saved.transporte).fretePorConta) !== input.freightMode
+      || Number(row(saved.transporte).fretePorConta) !== input.freightMode || missingWholesalePayment(saved)
       || (input.ownCarrier && readString(row(row(saved.transporte).transportador), "numeroDocumento").replace(/\D/gu, "") !== input.ownCarrier.numeroDocumento)); attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 750));
       saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
