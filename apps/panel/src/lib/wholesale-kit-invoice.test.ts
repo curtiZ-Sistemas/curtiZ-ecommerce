@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   job: undefined as unknown as Record<string, unknown>, calls: [] as { name: string; args: Record<string, unknown> }[], claimed: new Set<string>(),
-  requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5, natureActive: true, draftSeries: 3,
+  requests: [] as { path: string; method: string }[], contactExists: true, saleInBling: null as number | null, invoiceSituation: 5, natureActive: true, natureSeries: undefined as number | undefined, draftSeries: 3,
   failSale: false, draftResponseLost: false, draftLinked: false, allowReopen: false, send: vi.fn()
 }));
 vi.mock("server-only", () => ({}));
@@ -65,7 +65,7 @@ const provider = { request: async (path: string, options?: { method?: string }) 
   const method = options?.method ?? "GET";
   state.requests.push({ path, method });
   if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12.345.678/0001-95" } };
-  if (path.startsWith("/naturezas-operacoes?")) return { data: state.natureActive ? [{ id: 123, situacao: 1 }] : [] };
+  if (path.startsWith("/naturezas-operacoes?")) return { data: state.natureActive ? [{ id: 123, situacao: 1, serie: state.natureSeries }] : [] };
   if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
   if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "", endereco: { geral: { uf: "MG", cep: "30110100" } } } };
   if (path === "/pedidos/vendas" && method === "POST") { if (state.failSale) throw new BlingError("validation_error", 422); return { data: { id: 900 } }; }
@@ -88,7 +88,7 @@ const posts = (suffix: string) => state.requests.filter(request => request.metho
 
 beforeEach(() => {
   state.job = baseJob(); state.calls = []; state.requests = []; state.claimed = new Set(); state.contactExists = true;
-  state.saleInBling = null; state.invoiceSituation = 5; state.natureActive = true; state.draftSeries = 3; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.allowReopen = false; state.send.mockClear();
+  state.saleInBling = null; state.invoiceSituation = 5; state.natureActive = true; state.natureSeries = undefined; state.draftSeries = 3; state.failSale = false; state.draftResponseLost = false; state.draftLinked = false; state.allowReopen = false; state.send.mockClear();
 });
 
 describe("emissão da nota de atacado", () => {
@@ -107,6 +107,13 @@ describe("emissão da nota de atacado", () => {
     state.natureActive = false;
     expect(await run()).toEqual({ status: "error", code: "nature_not_active" });
     expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+  });
+  it("bloqueia série divergente informada pela natureza antes de criar venda", async () => {
+    state.natureSeries = 2;
+    expect(await run()).toEqual({ status: "error", code: "invoice_series_mismatch" });
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(posts("/gerar-nfe")).toHaveLength(0);
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
   });
   it("não altera nem transmite o rascunho cuja série difere da regra aprovada", async () => {
@@ -309,6 +316,29 @@ describe("cancelamento conciliado", () => {
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id,
       job: { ...cancelJob(), invoiceId: null } })).toBe(true);
     expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
+  });
+  it.each([true, false])("concilia recusa de exclusão apenas após confirmar ausência (%s)", async (disappeared) => {
+    let draftExists = true;
+    let saleExists = true;
+    const remote = { request: async (path: string, options?: { method?: string }) => {
+      const method = options?.method ?? "GET";
+      state.requests.push({ path, method });
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", cnpj: "12345678000195" } };
+      if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
+      if (path === "/nfe?idsNotas%5B%5D=77" && method === "DELETE") {
+        if (disappeared) draftExists = false;
+        throw new BlingError("validation_error", 400);
+      }
+      if (path === "/pedidos/vendas/900" && method === "DELETE") { saleExists = false; return {}; }
+      if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
+        total: 720.02, contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, contato: { numeroDocumento: "11222333000181" } } };
+      throw new BlingError("provider_error", 404);
+    } };
+    expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob() })).toBe(disappeared);
+    expect(names().includes("finish_wholesale_kit_invoice_cancel")).toBe(disappeared);
+    expect(names().includes("record_wholesale_cancel_pending")).toBe(!disappeared);
+    expect(state.requests.some(r => r.method === "DELETE" && r.path === "/pedidos/vendas/900")).toBe(disappeared);
   });
   it("não exclui nota já enviada", async () => {
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: provider as never, environment, invoiceId: id,

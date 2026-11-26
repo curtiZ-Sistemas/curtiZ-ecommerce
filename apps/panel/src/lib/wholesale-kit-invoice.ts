@@ -165,15 +165,31 @@ export async function issueWholesaleKitInvoice(input: {
     // The approved nature must be active before creating a provider sale.
     // Bling's list API does not expose the configured series; check the actual
     // draft's series as soon as it is available, before any PUT.
-    let natureActive = false;
+    let approvedNature: UnknownRecord | undefined;
     for (let page = 1; page <= 20; page += 1) {
       const result = rows(row(await provider.request(`/naturezas-operacoes?pagina=${page}&limite=100&situacao=1`)).data);
-      if (result.some(nature => positiveId(nature.id) === natureId && Number(nature.situacao ?? 1) === 1)) {
-        natureActive = true; break;
-      }
+      approvedNature = result.find(nature => positiveId(nature.id) === natureId && Number(nature.situacao ?? 1) === 1);
+      if (approvedNature) break;
       if (result.length < 100) break;
     }
-    if (!natureActive) throw new BlingError("nature_not_active", 409);
+    if (!approvedNature) throw new BlingError("nature_not_active", 409);
+    // The list normally omits the series. If it is exposed, detect a known
+    // configuration mismatch before creating another sale.
+    const configuredSeries = scalar(approvedNature.serie);
+    if (configuredSeries && Number(configuredSeries) !== rule.series) {
+      logServerEvent("warn", "wholesale_invoice_nature_series_mismatch", {
+        invoiceId: input.invoiceId, natureId, expectedSeries: rule.series, observedSeries: positiveId(configuredSeries)
+      });
+      throw new BlingError("invoice_series_mismatch", 409);
+    }
+    const assertSeries = (invoice: UnknownRecord) => {
+      if (Number(invoice.serie) === rule.series) return;
+      logServerEvent("warn", "wholesale_invoice_draft_series_mismatch", {
+        invoiceId: input.invoiceId, natureId, expectedSeries: rule.series,
+        observedSeries: positiveId(invoice.serie), observedNatureId: positiveId(row(invoice.naturezaOperacao).id)
+      });
+      throw new BlingError("invoice_series_mismatch", 409);
+    };
 
     const order = { public_code: reference, payment_status: "pending", status: "awaiting_receipt", placed_at: job.createdAt,
       customer_name_snapshot: text(job.buyerName), shipping_address_snapshot: billing, subtotal: mirror.totalInCents / 100,
@@ -317,7 +333,7 @@ export async function issueWholesaleKitInvoice(input: {
     if (SEND_BLOCKED_SITUATIONS.includes(recoveredSituation)) throw new BlingError("invoice_rejected_by_sefaz", 409);
     if (WAITING_SITUATIONS.includes(recoveredSituation)) return await awaitAuthorization(draftId);
     if (recoveredSituation !== 1) return await waiting("awaiting_bling_confirmation");
-    if (Number(recovered.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
+    assertSeries(recovered);
     const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
     if (!input.reviewedHash) await prepareBlingFiscalDraft(provider, draftId, mirror.items, commercial.map(item => ({
       ...item, sku: blingExternalSku(item.sku, item.variantId)
@@ -328,7 +344,7 @@ export async function issueWholesaleKitInvoice(input: {
     }, true, async () => text(row(await call(db, "read_wholesale_kit_invoice_job", { p_id: input.invoiceId })).status) === "issuing");
     const preview = row(row(await provider.request(`/nfe/${draftId}`)).data);
     if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
-    if (Number(preview.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
+    assertSeries(preview);
     if (Number(preview.id) !== draftId || Number(preview.situacao) !== 1
       || Number(row(preview.naturezaOperacao).id) !== natureId
       || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
@@ -390,9 +406,18 @@ export async function cancelWholesaleKitInvoice(input: {
     }
   };
   const remove = async (path: string, verifyPath: string) => {
+    let refusal: BlingError | undefined;
     try { await provider.request(path, { method: "DELETE" }); }
-    catch (error) { if (!(error instanceof BlingError) || (!error.uncertainWrite && error.status !== 404)) throw error; }
-    if (await get(verifyPath)) throw new BlingError("cancel_reconciliation_pending", 409);
+    catch (error) {
+      if (!(error instanceof BlingError)) throw error;
+      refusal = error;
+    }
+    // A definitive refusal may race with an operator or a previous deletion.
+    // Never release stock unless a fresh GET confirms the resource is absent.
+    if (await get(verifyPath)) {
+      if (refusal) throw refusal;
+      throw new BlingError("cancel_reconciliation_pending", 409);
+    }
   };
   try {
     if (text(job.wholesaleId) !== invoiceId || job.sendClaimed === true) throw scopeError();
