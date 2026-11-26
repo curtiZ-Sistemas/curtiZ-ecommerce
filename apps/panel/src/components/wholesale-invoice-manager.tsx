@@ -1,7 +1,7 @@
 "use client";
 
 import { formatBRL, formatBRLInput, parseBRLToCents } from "@curtiz/domain";
-import { Check, ChevronDown, Eye, FilePlus2, LoaderCircle, Minus, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Eye, FilePlus2, LoaderCircle, Minus, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
 import { dialogKeyAction, InvoiceActions } from "./invoice-actions";
@@ -84,10 +84,11 @@ const reasons: Record<string, string> = {
   awaiting_authorization: "A nota foi enviada, mas a SEFAZ ainda não respondeu. Verifique de novo em instantes.",
   payment_method_required: "A forma de pagamento (Pix ou Dinheiro) não está configurada no Bling.",
   kit_fiscal_clearance_failed: "A conferência fiscal não passou. Confira os dados do cliente e o cadastro fiscal do produto.",
-  wholesale_grade_changed: "O cadastro fiscal da ficha mudou depois da venda. Cancele a nota e crie outra.",
+  wholesale_grade_changed: "O cadastro fiscal da ficha mudou. Tente de novo para preparar uma nota com os dados atuais.",
+  wholesale_rule_changed: "A configuração fiscal desta nota foi substituída. Tente de novo para preparar uma nova nota com a regra vigente." ,
   duplicate_contact: "Há mais de um contato com este CNPJ no Bling. A integração bloqueou a duplicidade; solicite suporte.",
   duplicate_external_order: "Há mais de um pedido desta nota no Bling. A integração bloqueou a duplicidade; solicite suporte.",
-  cancel_reconciliation_pending: "O cancelamento ainda não foi confirmado pelo Bling. O estoque permanece reservado. Se a recusa persistir, solicite a conciliação fiscal antes de repetir.",
+  cancel_reconciliation_pending: "O Bling ainda não confirmou a exclusão. O estoque permanece reservado e não será criada outra nota.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
   nature_not_active: "A natureza fiscal aprovada não está ativa no Bling. Nenhum novo pedido foi criado.",
@@ -128,11 +129,12 @@ const formatDate = (value: string) => {
 };
 
 /** Read-only inspection of a linked provider document. Never runs issuance. */
-export function DraftInspection({ id, disabled = false }: { id: string; disabled?: boolean }) {
+export function DraftInspection({ id, disabled = false, cancelled = false }: { id: string; disabled?: boolean; cancelled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [review, setReview] = useState<WholesaleDraftReview | null>(null);
+  const [historySource, setHistorySource] = useState("");
   const eye = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLElement>(null);
   const title = useId();
@@ -157,14 +159,14 @@ export function DraftInspection({ id, disabled = false }: { id: string; disabled
         if (!response.ok || !record(body?.review) || !Array.isArray(record(body?.review)?.items)) {
           setError(str(body?.message) || "Não foi possível consultar o documento no Bling."); return;
         }
-        setReview(body!.review as WholesaleDraftReview);
+        setReview(body!.review as WholesaleDraftReview); setHistorySource(str(body?.source));
       } catch { if (!controller.signal.aborted) setError("Não foi possível consultar o documento no Bling."); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     })();
     return () => controller.abort();
   }, [open, id]);
   return <>
-    <button ref={eye} className="invoice-action" type="button" aria-label="Visualizar rascunho existente" title="Visualizar rascunho existente"
+    <button ref={eye} className="invoice-action" type="button" aria-label={cancelled ? "Visualizar nota cancelada" : "Visualizar rascunho existente"} title={cancelled ? "Visualizar nota cancelada" : "Visualizar rascunho existente"}
       aria-haspopup="dialog" disabled={disabled} onClick={() => { setReview(null); setError(""); setLoading(true); setOpen(true); }}><Eye aria-hidden="true" /></button>
     {open && createPortal(<div className="admin-modal-backdrop invoice-preview-backdrop" role="presentation"
       onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
@@ -176,16 +178,22 @@ export function DraftInspection({ id, disabled = false }: { id: string; disabled
           event.preventDefault(); event.stopPropagation();
           if (action === "close") close(); else items[action.focus]?.focus();
         }}>
-        <header><div><h2 id={title}>Visualizar nota montada</h2><p>Consulta ao Bling · nenhuma transmissão será realizada.</p></div>
+        <header><div><h2 id={title}>{cancelled ? "Nota cancelada" : "Visualizar nota montada"}</h2><p>{cancelled ? "Histórico preservado no painel · sem validade fiscal." : "Consulta ao Bling · nenhuma transmissão será realizada."}</p></div>
           <button type="button" aria-label="Fechar visualização" onClick={close}><X aria-hidden="true" /></button></header>
         <div className="wholesale-body">
           {loading && <p role="status"><LoaderCircle className="spin" aria-hidden="true" /> Consultando nota…</p>}
           {error && <p className="wholesale-alert" role="alert">{error}</p>}
-          {review && <DraftReview review={review} inspection />}
+          {review && <DraftReview review={review} inspection historySource={cancelled ? historySource || "local" : undefined} />}
         </div>
       </section>
     </div>, document.body)}
   </>;
+}
+
+/** An unsent, failed note can be replaced only after its old draft is removed. */
+export function shouldRebuildWholesale(invoice: WholesaleInvoice): boolean {
+  return invoice.status === "error" && invoice.canCancel && !invoice.cancelPending && !invoice.authorized && !invoice.externalReported
+    && invoice.stage !== "sent" && invoice.errorCode !== "invoice_operation_date_required" && invoice.errorCode !== "invoice_operation_date_invalid";
 }
 
 export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onArchive, onNewForClient }: {
@@ -196,6 +204,7 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
     {invoices.map(invoice => {
       const status = wholesaleStatus(invoice);
       const open = !invoice.externalReported && (invoice.status === "draft" || invoice.status === "error");
+      const cancelled = invoice.status === "cancelled" && !invoice.cancelPending && !invoice.canCancel && !invoice.externalReported;
       return <li key={invoice.id} className="wholesale-row">
         <div className="wholesale-row-main">
           <strong>{invoice.buyerName}</strong>
@@ -215,8 +224,11 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
         </div>
         <div className="wholesale-row-actions">
           <div className="wholesale-row-primary-actions">
-          <InvoiceActions compact authorized={invoice.authorized} externalReported={invoice.externalReported === true} blingInvoiceId={invoice.invoiceId}
-            pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? invoice.externalNumber ?? ""}`.trim()} />
+          {cancelled && onNewForClient && <button type="button" className="secondary-button" disabled={busyId !== ""}
+            aria-label="Nova nota para este cliente" onClick={() => onNewForClient(invoice.id)}><FilePlus2 aria-hidden="true" /> Nova nota</button>}
+          {cancelled && <DraftInspection id={invoice.id} cancelled disabled={busyId !== ""} />}
+          {!cancelled && <InvoiceActions compact authorized={invoice.authorized} externalReported={invoice.externalReported === true} blingInvoiceId={invoice.invoiceId}
+            pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? invoice.externalNumber ?? ""}`.trim()} />}
           {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
             disabled={busyId !== ""} aria-label="Nova nota para este cliente" onClick={() => onNewForClient(invoice.id)}><FilePlus2 aria-hidden="true" /> Nova nota</button>}
           {!invoice.authorized && !invoice.externalReported && invoice.invoiceId && (open || invoice.cancelPending) && invoice.errorCode !== "draft_ready" &&
@@ -226,7 +238,8 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
             : <button className="secondary-button" type="button" disabled={busyId !== ""} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
           {!invoice.externalReported && invoice.canCancel && (invoice.cancelPending || invoice.status === "cancelled") &&
             <button className="secondary-button wholesale-cancel-pending" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}>Concluir cancelamento</button>}
-          {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId !== ""} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
+          {cancelled && onArchive && <button type="button" className="invoice-action wholesale-archive-action" disabled={busyId !== ""}
+            aria-label="Remover da lista" title="Remover da lista" onClick={() => onArchive(invoice.id)}><Trash2 aria-hidden="true" /></button>}
           </div>
           {!invoice.externalReported && invoice.canCancel && !invoice.cancelPending && invoice.status !== "cancelled" &&
             <button className="wholesale-cancel-link" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}
@@ -291,7 +304,7 @@ async function loadHistoricalClient(id: string, signal?: AbortSignal) {
   const body = record(await response.json());
   const buyer = readHistoricalBuyer(body?.buyer);
   if (!response.ok || !buyer) throw new Error(str(body?.message) || "Não foi possível carregar os dados do cliente.");
-  return { buyer, selections: body?.selections };
+  return { buyer, selections: body?.selections, method: body?.paymentMethod === "cash" ? "cash" as const : "pix" as const };
 }
 
 export function HistoricalClientSearch({ onSelect }: { onSelect: (buyer: WholesaleBuyer) => void }) {
@@ -497,9 +510,9 @@ export function PaymentStep({ template, kitName, quantity, price, method, buyerN
   </div>;
 }
 
-export function DraftReview({ review, inspection = false }: { review: WholesaleDraftReview; inspection?: boolean }) {
+export function DraftReview({ review, inspection = false, historySource }: { review: WholesaleDraftReview; inspection?: boolean; historySource?: string }) {
   return <article className="wholesale-review">
-    <header><div><h3>Prévia da NF-e nº {review.number || "—"}</h3><p>Série {review.series || "—"} · {inspection ? "Documento consultado no Bling" : "Rascunho no Bling"}</p></div><strong>Sem validade fiscal</strong></header>
+    <header><div><h3>Prévia da NF-e nº {review.number || "—"}</h3><p>Série {review.series || "—"} · {historySource === "bling_snapshot" ? "Prévia salva antes da exclusão" : historySource ? "Registro interno da venda" : inspection ? "Documento consultado no Bling" : "Rascunho no Bling"}</p></div><strong>Sem validade fiscal</strong></header>
     <dl>
       <div><dt>Emitente · CNPJ</dt><dd>{formatCnpj(review.issuer)}</dd></div>
       <div><dt>Natureza da operação</dt><dd>{review.nature}</dd></div>
@@ -519,7 +532,7 @@ export function DraftReview({ review, inspection = false }: { review: WholesaleD
         <td>{formatBRL(Math.round(Number(item.unitValue) * 100) * Number(item.quantity))}</td></tr>)}</tbody>
     </table></div>
     <footer><span>Valor total</span><strong>{formatBRL(review.totalInCents)}</strong></footer>
-    <p>{inspection ? "Consulta somente leitura. Os dados exibidos ainda não foram conciliados pelo painel; esta prévia não é um DANFE autorizado." : "Dados fiscais sujeitos à autorização da SEFAZ. Confira antes de prosseguir."}</p>
+    <p>{historySource ? "Nota cancelada. Este registro histórico não é um DANFE e não pode ser transmitido." : inspection ? "Consulta somente leitura. Os dados exibidos ainda não foram conciliados pelo painel; esta prévia não é um DANFE autorizado." : "Dados fiscais sujeitos à autorização da SEFAZ. Confira antes de prosseguir."}</p>
   </article>;
 }
 
@@ -720,10 +733,12 @@ export function WholesaleInvoiceManager() {
       const response = await fetch("/api/fiscal/wholesale-invoices", { cache: "no-store" });
       const body = record(await response.json());
       if (!response.ok || !body) throw new Error("unavailable");
-      setOffers(readOffers(body.offers));
+      const currentOffers = readOffers(body.offers);
+      setOffers(currentOffers);
       setInvoices((Array.isArray(body.invoices) ? body.invoices : []).map(readInvoice).filter((item): item is WholesaleInvoice => item !== null));
       setError("");
-    } catch { setError("Não foi possível carregar as notas de atacado."); }
+      return currentOffers;
+    } catch { setError("Não foi possível carregar as notas de atacado."); return null; }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -786,7 +801,7 @@ export function WholesaleInvoiceManager() {
     });
   }
 
-  function open(initial?: { buyer: WholesaleBuyer; selections: KitSelection[] }) {
+  function open(initial?: { buyer: WholesaleBuyer; selections: KitSelection[]; method?: "pix" | "cash" }) {
     key.current = crypto.randomUUID();
     setOperationDate("");
     setLookup("idle"); setPostalLookup("idle"); setProblem(""); setSteps([]); setResult(null); setRunning(false); setIssuingId(""); setNotice("");
@@ -797,8 +812,10 @@ export function WholesaleInvoiceManager() {
     setBusyId(id); setNotice("");
     try {
       const detail = await loadHistoricalClient(id);
-      const copied = reuseKitSelections(offers, detail.selections);
-      open({ buyer: detail.buyer, selections: copied.selections });
+      const currentOffers = await load();
+      if (!currentOffers) throw new Error("Não foi possível conferir o estoque atual.");
+      const copied = reuseKitSelections(currentOffers, detail.selections);
+      open({ buyer: detail.buyer, selections: copied.selections, method: detail.method });
       if (copied.adjusted) setProblem("Algumas fichas ou quantidades anteriores não estão disponíveis. Confira os kits e o estoque atual.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Não foi possível carregar o cliente."); }
     finally { setBusyId(""); }
@@ -888,8 +905,9 @@ export function WholesaleInvoiceManager() {
     } catch { setRunning(false); patch({ step: 3 }); setProblem("Não foi possível criar a nota. Tente de novo."); }
   }
 
-  async function cancel(id: string) {
-    if (!window.confirm("Cancelar esta nota e devolver as fichas ao estoque?")) return;
+  async function cancel(id: string, rebuild = false) {
+    if (busyId || running) return;
+    if (!window.confirm(rebuild ? "Excluir o rascunho anterior no Bling e preparar uma nova nota com as configurações e preços atuais? A nova nota será revisada antes de emitir." : "Cancelar esta nota, excluir o rascunho no Bling e devolver as fichas ao estoque?")) return;
     setBusyId(id); setNotice("");
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
@@ -897,10 +915,18 @@ export function WholesaleInvoiceManager() {
       const body = record(await response.json());
       if (!response.ok) setNotice(str(body?.message) || "Não foi possível cancelar a nota.");
       else {
-        setNotice("Cancelamento concluído. Estoque conciliado pelo sistema.");
+        setNotice("Cancelamento concluído. Rascunho removido e estoque conciliado.");
         setWizard(null);
+        if (rebuild) {
+          const detail = await loadHistoricalClient(id);
+          const currentOffers = await load();
+          if (!currentOffers) throw new Error("Não foi possível conferir o estoque atual.");
+          const copied = reuseKitSelections(currentOffers, detail.selections);
+          open({ buyer: { ...detail.buyer, regime: "" }, selections: copied.selections, method: detail.method });
+          if (copied.adjusted) setProblem("Confira as fichas disponíveis, as quantidades e os preços atuais.");
+        }
       }
-    } catch { setNotice("Não foi possível cancelar a nota."); }
+    } catch (error) { setNotice(rebuild ? "Confira a lista: se a nota estiver cancelada, use Nova nota para preparar com os dados atuais." : error instanceof Error ? "Não foi possível confirmar o cancelamento." : "Não foi possível cancelar a nota."); }
     finally { setBusyId(""); void load(); }
   }
 
@@ -917,6 +943,8 @@ export function WholesaleInvoiceManager() {
   }
 
   function retryFromList(id: string) {
+    const invoice = invoices.find(item => item.id === id);
+    if (invoice && shouldRebuildWholesale(invoice)) { void cancel(id, true); return; }
     key.current = "";
     setOperationDate("");
     setWizard({ ...newWizard(), step: 4 });
@@ -950,7 +978,7 @@ export function WholesaleInvoiceManager() {
           {wizard.step === 3 && <DepartureField value={operationDate} onChange={setOperationDate} />}
           {wizard.step === 4 && <IssueProgress steps={steps} running={running} result={result} busy={busyId !== ""} onClose={close}
             operationDate={operationDate} onOperationDate={setOperationDate}
-            onRetry={() => void runIssue(issuingId, operationDate)} onTransmit={hash => { if (window.confirm("Transmitir esta NF-e revisada à SEFAZ?")) void runIssue(issuingId, undefined, hash); }} onCancel={() => void cancel(issuingId)} />}
+            onRetry={() => { if (result?.invoice && shouldRebuildWholesale(result.invoice)) void cancel(issuingId, true); else void runIssue(issuingId, operationDate); }} onTransmit={hash => { if (window.confirm("Transmitir esta NF-e revisada à SEFAZ?")) void runIssue(issuingId, undefined, hash); }} onCancel={() => void cancel(issuingId)} />}
           {problem && <p className="wholesale-alert" role="alert">{problem}</p>}
         </div>
         {wizard.step < 4 && <footer className="wholesale-footer">

@@ -225,8 +225,11 @@ describe("histórico de cancelamentos e emissão externa", () => {
     const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[
       invoice({ status: "cancelled", authorized: false, canCancel: false }),
       invoice({ id: "i2", status: "cancelled", authorized: false, canCancel: true, cancelPending: true })
-    ]} busyId="" onRetry={noop} onCancel={noop} onArchive={noop} />);
-    expect(html.match(/Remover da lista/gu)).toHaveLength(1);
+    ]} busyId="" onRetry={noop} onCancel={noop} onArchive={noop} onNewForClient={noop} />);
+    expect(html.match(/aria-label="Remover da lista"/gu)).toHaveLength(1);
+    expect(html.match(/aria-label="Visualizar nota cancelada"/gu)).toHaveLength(1);
+    expect(html.indexOf("Nova nota para este cliente")).toBeLessThan(html.indexOf("Visualizar nota cancelada"));
+    expect(html.indexOf("Visualizar nota cancelada")).toBeLessThan(html.indexOf("Remover da lista"));
     expect(html).toContain("Concluir cancelamento");
   });
   it("preserva a nota emitida externamente e não oferece nova emissão nem cancelamento", () => {

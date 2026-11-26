@@ -3,7 +3,7 @@ import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { blingConfigured, panelBlingClient } from "@/lib/bling-server";
 import { technicalNoStore } from "@/lib/technical-api";
-import { inspectWholesaleDraft } from "@/lib/wholesale-kit-invoice";
+import { inspectWholesaleDraft, reviewFromCancelledHistory } from "@/lib/wholesale-kit-invoice";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const send = (value: object, status = 200) => NextResponse.json(value, { status, headers: technicalNoStore });
@@ -21,8 +21,20 @@ export async function GET(request: NextRequest) {
   if (list.error) return send({ message: "Consulta indisponível." }, list.error.code === "42501" ? 403 : 503);
   const note = Array.isArray(list.data) ? list.data.map(record).find(item => item?.id === id) : null;
   const invoiceId = Number(note?.invoiceId);
-  if (!note || note.authorized === true || note.externalReported === true || (note.status === "cancelled" && note.cancelPending !== true)
-    || !Number.isSafeInteger(invoiceId) || invoiceId <= 0) return send({ message: "Rascunho indisponível." }, 404);
+  if (!note || note.authorized === true || note.externalReported === true) return send({ message: "Rascunho indisponível." }, 404);
+  if (note.status === "cancelled" && note.cancelPending !== true && note.canCancel !== true) {
+    const service = createServiceSupabaseClient();
+    if (!service) return send({ message: "Histórico indisponível." }, 503);
+    try {
+      const saved = await service.rpc("read_wholesale_cancelled_history", { p_id: id });
+      const history = record(saved.data);
+      if (saved.error || !history) return send({ message: "Histórico indisponível." }, 404);
+      const review = record(history.review);
+      return review && Array.isArray(review.items) ? send({ review, source: "bling_snapshot" })
+        : send({ review: reviewFromCancelledHistory(history), source: "local" });
+    } catch { return send({ message: "Histórico indisponível." }, 503); }
+  }
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return send({ message: "Rascunho indisponível." }, 404);
   if (!blingConfigured() || process.env.APP_ENV !== "production") return send({ message: "Integração indisponível." }, 503);
   const service = createServiceSupabaseClient();
   if (!service) return send({ message: "Consulta indisponível." }, 503);

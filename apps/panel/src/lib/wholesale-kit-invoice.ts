@@ -103,7 +103,6 @@ export async function issueWholesaleKitInvoice(input: {
   try {
     if (environment.APP_ENV !== "production") return await waiting("bling_not_production");
     stage = "fiscal_scope";
-    if (job.fiscalCurrent !== true) throw new BlingError("wholesale_grade_changed", 409);
     const reference = `ATACADO-${input.invoiceId}`;
     const billing = row(job.fiscalAddress);
     const document = text(job.buyerDocument);
@@ -144,6 +143,8 @@ export async function issueWholesaleKitInvoice(input: {
       if (WAITING_SITUATIONS.includes(situation) || job.sendClaimed === true) return await awaitAuthorization(draftId);
       if (situation !== 1) throw scopeError();
     }
+    if (job.fiscalCurrent !== true) throw new BlingError("wholesale_grade_changed", 409);
+    if (await call(db, "wholesale_kit_invoice_rule_current", { p_id: input.invoiceId }) !== true) throw new BlingError("wholesale_rule_changed", 409);
     // A send action cannot create a fresh sale or draft. It must refer to the
     // exact persisted review, or the operator must return to preparation.
     if (input.reviewedHash && (!draftId || !saleId || text(job.draftHash) !== input.reviewedHash))
@@ -411,6 +412,11 @@ export async function inspectWholesaleDraft(input: {
   if (positiveId(preview.id) !== expectedDraftId || digits(recipient.numeroDocumento) !== document
     || Number(preview.tipo) !== 1 || (draftReference && draftReference !== reference)
     || (positiveId(row(sale.notaFiscal).id) !== expectedDraftId && draftReference !== reference)) throw scopeError();
+  return reviewFromProvider(job, preview, issuer);
+}
+
+function reviewFromProvider(job: UnknownRecord, preview: UnknownRecord, issuer: string): WholesaleDraftReview {
+  const recipient = row(preview.contato);
   const address = row(recipient.endereco);
   const rule = row(row(job.fiscalParameters).blingRule);
   const totalInCents = Math.round(Number(preview.valorNota) * 100);
@@ -430,9 +436,28 @@ export async function inspectWholesaleDraft(input: {
   };
 }
 
+/** A locally reconstructed history is not a copy of the provider document. */
+export function reviewFromCancelledHistory(history: UnknownRecord): WholesaleDraftReview {
+  const job = row(history.job), buyer = row(history.buyer), address = row(buyer.address);
+  const rule = row(row(job.fiscalParameters).blingRule);
+  const selections = rows(history.selections);
+  const items = selections.map(item => ({
+    code: scalar(item.kitId), description: scalar(item.kitName || job.productName) || "Kit de atacado",
+    unit: "ficha", quantity: scalar(item.quantity), unitValue: String(Number(item.unitPriceInCents) / 100),
+    ncm: "", origin: "", cfop: "", csosn: ""
+  }));
+  return { hash: "", number: "", series: scalar(rule.series), date: scalar(job.createdAt), operationDate: "",
+    issuer: scalar(row(job.fiscalParameters).issuerDocument), nature: "Regra fiscal registrada na venda",
+    buyer: scalar(buyer.name), document: scalar(buyer.document), registration: scalar(buyer.registration),
+    address: [address.street,address.number,address.complement,address.district,address.city,address.state,address.postal_code].map(scalar).filter(Boolean).join(", "),
+    totalInCents: Number(job.amountInCents), freight: "Entrega própria (prevista)", payment: history.paymentMethod === "cash" ? "Dinheiro" : "Pix",
+    cfop: scalar(rule.cfop), csosn: scalar(rule.csosn), items };
+}
+
 /** Reconcile an explicit panel cancellation; never delete a transmitted NF-e or release stock on uncertainty. */
 export async function cancelWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string; job: UnknownRecord;
+  onBlocked?: (reason: "provider_refusal" | "pending") => void;
 }): Promise<boolean> {
   const { db, provider, environment, invoiceId, job } = input;
   const p_id = invoiceId;
@@ -519,6 +544,9 @@ export async function cancelWholesaleKitInvoice(input: {
           || (draftReference && draftReference !== reference)
           || (!linked && draftReference !== reference && !exactPersisted)
           || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+        stage = "cancel_draft_snapshot";
+        const preview = reviewFromProvider(job, draft, digits(company.cnpj));
+        if (await call(db, "save_wholesale_cancel_preview", { p_id, p_preview: preview }) !== true) throw scopeError();
         stage = "cancel_draft_delete";
         await remove(`/nfe?idsNotas%5B%5D=${draftId}`, path);
       }
@@ -538,6 +566,7 @@ export async function cancelWholesaleKitInvoice(input: {
     return await finish();
   } catch (error) {
     logWholesaleProviderError("wholesale_invoice_cancel_failed", invoiceId, stage, error);
+    input.onBlocked?.(error instanceof BlingError && (stage === "cancel_draft_delete" || stage === "cancel_sale_delete") && [400, 403, 422].includes(error.status) ? "provider_refusal" : "pending");
     try { await call(db, "record_wholesale_cancel_pending", { p_id }); } catch { /* Lease expires; retry reconciles remote IDs. */ }
     return false;
   }

@@ -92,13 +92,28 @@ export async function POST(request: NextRequest) {
       });
       if (result.error) return send({ message: "Não foi possível consultar o histórico de clientes." }, result.error.code === "42501" ? 403 : 503);
       if (item.action === "search_clients") return Array.isArray(result.data) ? send({ clients: result.data }) : send({ message: "Histórico indisponível." }, 503);
-      const detail = record(result.data);
-      if (!detail) return send({ message: "Cliente sem nota emitida no histórico." }, 404);
+      let detail = record(result.data);
+      let cancelledHistory = false;
+      if (!detail) {
+        // Only a permission-filtered, fully reconciled cancellation can be reused.
+        const list = await db.rpc("list_wholesale_kit_invoices", { p_limit: 100 });
+        if (list.error) return send({ message: "Histórico indisponível." }, list.error.code === "42501" ? 403 : 503);
+        const note = Array.isArray(list.data) ? list.data.map(record).find(row => row?.id === item.id) : null;
+        if (!note || note.status !== "cancelled" || note.cancelPending === true || note.canCancel === true || note.externalReported === true)
+          return send({ message: "Cliente sem nota concluída no histórico." }, 404);
+        const service = createServiceSupabaseClient();
+        if (!service) return send({ message: "Histórico indisponível." }, 503);
+        const saved = await service.rpc("read_wholesale_cancelled_history", { p_id: item.id });
+        if (saved.error) return send({ message: "Histórico indisponível." }, 503);
+        detail = record(saved.data);
+        cancelledHistory = true;
+      }
+      if (!detail) return send({ message: "Cliente sem nota concluída no histórico." }, 404);
       const selections = Array.isArray(detail.selections) ? detail.selections.flatMap(value => {
         const row = record(value);
         return row ? [{ kitId: row.kitId, template: row.template, quantity: row.quantity }] : [];
       }) : [];
-      return send({ buyer: detail.buyer, selections });
+      return send({ buyer: detail.buyer, selections, ...(cancelledHistory ? { paymentMethod: detail.paymentMethod } : {}) });
     }
 
     if (item.action === "create" || item.action === "create_batch") {
@@ -141,8 +156,12 @@ export async function POST(request: NextRequest) {
       const job = record(started.data);
       if (started.error) return send({ message: "Não foi possível iniciar o cancelamento." }, started.error.code === "42501" ? 403 : 503);
       if (!job) return send({ message: "Esta nota não pode ser cancelada agora. Ela já foi enviada ou está em andamento." }, 409);
-      const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job });
-      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: "Cancelamento aguardando confirmação. Use Concluir cancelamento no painel; o estoque não será devolvido duas vezes." }, 409);
+      const outcome: { refused: boolean } = { refused: false };
+      const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job,
+        onBlocked: reason => { outcome.refused = reason === "provider_refusal"; } });
+      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: outcome.refused
+        ? "O Bling recusou a exclusão do rascunho ou pedido. Nenhuma nova nota será criada; confira as permissões e lançamentos vinculados no Bling."
+        : "A exclusão ainda não foi confirmada. Conclua o cancelamento antes de criar outra nota; o estoque permanece protegido." }, 409);
     }
 
     // issue (also the retry): the database allows one running attempt at a time.

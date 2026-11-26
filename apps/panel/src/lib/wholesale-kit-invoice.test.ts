@@ -270,6 +270,13 @@ describe("emissão da nota de atacado", () => {
     expect(await transmit({}, "b".repeat(64))).toEqual({ status: "waiting", code: "draft_review_changed" });
     expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
   });
+  it("não cria venda ou nota com versão fiscal revogada", async () => {
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) =>
+      name === "wholesale_kit_invoice_rule_current" ? { data: false, error: null } : db.rpc(name, args));
+    expect(await issueWholesaleKitInvoice({ db: { rpc } as never, provider: provider as never, environment, invoiceId: id }))
+      .toEqual({ status: "error", code: "wholesale_rule_changed" });
+    expect(state.requests).toHaveLength(0);
+  });
   it("guarda só códigos fixos como motivo", () => {
     expect(wholesaleFailureCode(new BlingError("Texto com dados pessoais!", 500))).toBe("bling_error");
     expect(wholesaleFailureCode(new Error("boom"))).toBe("unexpected_error");
@@ -295,11 +302,13 @@ describe("cancelamento conciliado", () => {
       if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
       if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
         total: 720.02, contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
-      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, contato: { numeroDocumento: "11222333000181" } } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, serie: 2, valorNota: 720.02, itens: [], contato: { numeroDocumento: "11222333000181" } } };
       throw new BlingError("provider_error", 404);
     } };
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob() })).toBe(true);
     expect(state.requests.filter(r => r.method === "DELETE").map(r => r.path)).toEqual(["/nfe?idsNotas%5B%5D=77", "/pedidos/vendas/900"]);
+    expect(names()).toContain("save_wholesale_cancel_preview");
+    expect(names().indexOf("save_wholesale_cancel_preview")).toBeLessThan(names().indexOf("finish_wholesale_kit_invoice_cancel"));
     expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
   });
   it("consulta o detalhe da nota em uma conciliação de rascunho sem ID local", async () => {
@@ -309,7 +318,7 @@ describe("cancelamento conciliado", () => {
       state.requests.push({ path, method });
       if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", nome: "Curti Z", cnpj: "12345678000195" } };
       if (path.startsWith("/nfe?numeroLoja=")) return { data: [{ id: 77 }] };
-      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, numeroPedidoLoja: `ATACADO-${id}`, contato: { numeroDocumento: "11222333000181" } } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, serie: 2, valorNota: 720.02, itens: [], numeroPedidoLoja: `ATACADO-${id}`, contato: { numeroDocumento: "11222333000181" } } };
       if (path === "/nfe?idsNotas%5B%5D=77" && method === "DELETE") { draftExists = false; return {}; }
       throw new BlingError("provider_error", 404);
     } };
@@ -332,7 +341,7 @@ describe("cancelamento conciliado", () => {
       if (path === "/pedidos/vendas/900" && method === "DELETE") { saleExists = false; return {}; }
       if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
         total: 720.02, contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
-      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, contato: { numeroDocumento: "11222333000181" } } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, serie: 2, valorNota: 720.02, itens: [], contato: { numeroDocumento: "11222333000181" } } };
       throw new BlingError("provider_error", 404);
     } };
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob() })).toBe(disappeared);
