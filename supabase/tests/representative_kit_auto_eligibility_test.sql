@@ -68,7 +68,14 @@ select is((select public.quote_representative_kit_own_delivery(actor,variant,nul
 
 select ok((select r.fiscal_parameters #>> '{blingRule,cfop}'='5102' and r.fiscal_parameters #>> '{blingRule,csosn}'='102'
     and r.fiscal_parameters #>> '{blingRule,series}'='3'
-    and r.fiscal_parameters #>> '{blingRule,natures,0,external_nature_id}'='15111725693'
+    and r.fiscal_parameters #> '{blingRule,natures}'='[{"final_consumer":false,"external_nature_id":15111975260}]'::jsonb
+    and r.fiscal_parameters #>> '{blingRule,ipi_cst}'='99'
+    and r.fiscal_parameters #>> '{blingRule,ipi_cenq}'='999'
+    and r.fiscal_parameters #>> '{blingRule,pis_cst}'='49'
+    and r.fiscal_parameters #>> '{blingRule,cofins_cst}'='49'
+    and r.fiscal_parameters #> '{blingRule,ipi_rate}'='0'::jsonb
+    and r.fiscal_parameters #> '{blingRule,pis_rate}'='0'::jsonb
+    and r.fiscal_parameters #> '{blingRule,cofins_rate}'='0'::jsonb
     and r.fiscal_parameters #>> '{returnRules,own_inflow,cfop}'='1202'
     and r.fiscal_parameters #>> '{returnRules,own_inflow,series}'='4'
     and r.fiscal_parameters -> 'creditEligible'='false'::jsonb and r.issuer_reference='68267385000191'
@@ -121,6 +128,11 @@ select f.variant2,n,'AUTO2-PAIR-'||n,'Fixture pair '||n,'PR',1,1,'64022000',0,''
 from auto_kit_fixture f cross join generate_series(1,2) n;
 select ok((select public.quote_representative_kit_own_delivery(actor,variant2,null,1,address,null,true) is not null
   from auto_kit_fixture),'a kit created after the first approval is quotable automatically');
+select ok((select r.fiscal_parameters #> '{blingRule,natures}'='[{"final_consumer":false,"external_nature_id":15111975260}]'::jsonb
+    and r.fiscal_parameters #>> '{blingRule,series}'='3'
+  from private.representative_resale_fiscal_rule_versions r
+  where r.product_fingerprint=public.read_representative_resale_product_fingerprint((select variant2 from auto_kit_fixture))),
+  'a subsequently created kit also uses the corrected MG02 nature and series 003');
 
 -- Accounts outside the program never quote.
 update public.representatives set status='suspended' where id=(select representative from auto_kit_fixture);
