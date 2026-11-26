@@ -29,7 +29,7 @@ vi.mock("@curtiz/integrations", () => {
   };
 });
 import { BlingError, prepareBlingFiscalDraft } from "@curtiz/integrations";
-import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice, wholesaleFailureCode } from "./wholesale-kit-invoice";
+import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice, inspectWholesaleDraft, wholesaleFailureCode } from "./wholesale-kit-invoice";
 
 const id = "33333333-3333-4333-8333-333333333333";
 const environment = {
@@ -346,5 +346,25 @@ describe("cancelamento conciliado", () => {
     expect(state.requests).toHaveLength(0);
     expect(names()).not.toContain("finish_wholesale_kit_invoice_cancel");
     expect(names()).toContain("record_wholesale_cancel_pending");
+  });
+});
+
+describe("consulta de nota montada sem emissão", () => {
+  it.each([true, false])("consulta apenas o documento vinculado (%s), sem operações de escrita", async valid => {
+    const rpc = vi.fn(async (name: string) => ({ error: null, data: name === "read_wholesale_kit_invoice_job"
+      ? { ...baseJob(), saleId: 900, invoiceId: 77, fiscalParameters: { issuerDocument: "12345678000195", blingRule: { cfop: "5102", csosn: "102" } } }
+      : { companyId: "company-alphanumeric-32" } }));
+    const remote = { request: vi.fn(async (path: string) => {
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", cnpj: "12345678000195" } };
+      if (path === "/pedidos/vendas/900") return { data: { id: 900, numeroLoja: `ATACADO-${id}`, notaFiscal: { id: 77 } } };
+      if (path === "/nfe/77") return { data: { id: 77, tipo: 1, situacao: 1, serie: 2, numero: "56", valorNota: 720.02,
+        contato: { numeroDocumento: valid ? "11222333000181" : "12345678000195" }, itens: [] } };
+      throw Error("unexpected path");
+    }) };
+    const result = inspectWholesaleDraft({ db: { rpc } as never, provider: remote as never, invoiceId: id, expectedDraftId: 77 });
+    if (valid) await expect(result).resolves.toMatchObject({ series: "2", number: "56", totalInCents: 72002, hash: "" });
+    else await expect(result).rejects.toThrow("kit_fiscal_clearance_failed");
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(["read_wholesale_kit_invoice_job", "read_bling_account"]);
+    expect(remote.request.mock.calls).toEqual([["/empresas/me/dados-basicos"], ["/pedidos/vendas/900"], ["/nfe/77"]]);
   });
 });

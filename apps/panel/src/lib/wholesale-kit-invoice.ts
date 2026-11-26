@@ -387,6 +387,49 @@ export async function issueWholesaleKitInvoice(input: {
   }
 }
 
+/** Inspect the persisted remote note without taking an issuance lease or mutating anything. */
+export async function inspectWholesaleDraft(input: {
+  db: SupabaseClient; provider: BlingClient; invoiceId: string; expectedDraftId: number;
+}): Promise<WholesaleDraftReview> {
+  const { db, provider, invoiceId, expectedDraftId } = input;
+  const job = row(await call(db, "read_wholesale_kit_invoice_job", { p_id: invoiceId }));
+  const saleId = positiveId(job.saleId);
+  const document = text(job.buyerDocument);
+  const issuer = text(row(job.fiscalParameters).issuerDocument);
+  if (text(job.wholesaleId) !== invoiceId || positiveId(job.invoiceId) !== expectedDraftId || !saleId
+    || !/^\d{14}$/u.test(document) || !/^\d{14}$/u.test(issuer)) throw scopeError();
+  const company = row(row(await provider.request("/empresas/me/dados-basicos")).data);
+  const account = row(await call(db, "read_bling_account", { p_environment: "production" }));
+  if (!scalar(company.id) || scalar(company.id) !== scalar(account.companyId) || digits(company.cnpj) !== issuer) throw scopeError();
+  const sale = row(row(await provider.request(`/pedidos/vendas/${saleId}`)).data);
+  const reference = `ATACADO-${invoiceId}`;
+  if (positiveId(sale.id) !== saleId || text(sale.numeroLoja) !== reference
+    || positiveId(row(sale.notaFiscal).id) && positiveId(row(sale.notaFiscal).id) !== expectedDraftId) throw scopeError();
+  const preview = row(row(await provider.request(`/nfe/${expectedDraftId}`)).data);
+  const recipient = row(preview.contato);
+  const draftReference = text(preview.numeroPedidoLoja || preview.numeroLoja);
+  if (positiveId(preview.id) !== expectedDraftId || digits(recipient.numeroDocumento) !== document
+    || Number(preview.tipo) !== 1 || (draftReference && draftReference !== reference)
+    || (positiveId(row(sale.notaFiscal).id) !== expectedDraftId && draftReference !== reference)) throw scopeError();
+  const address = row(recipient.endereco);
+  const rule = row(row(job.fiscalParameters).blingRule);
+  const totalInCents = Math.round(Number(preview.valorNota) * 100);
+  if (!Number.isSafeInteger(totalInCents) || totalInCents < 0 || !Array.isArray(preview.itens)) throw scopeError();
+  const freight = Number(row(preview.transporte).fretePorConta);
+  return {
+    // No usable authorization hash: only the normal review/issue path can produce it.
+    hash: "", number: scalar(preview.numero), series: scalar(preview.serie), date: scalar(preview.dataEmissao),
+    operationDate: scalar(preview.dataOperacao), issuer, nature: scalar(row(preview.naturezaOperacao).descricao) || scalar(row(preview.naturezaOperacao).id),
+    buyer: scalar(recipient.nome), document: scalar(recipient.numeroDocumento), registration: scalar(recipient.ie),
+    address: [address.endereco, address.numero, address.complemento, address.bairro, address.municipio, address.uf, address.cep].map(scalar).filter(Boolean).join(", "),
+    totalInCents, freight: freight === 3 ? "Transporte próprio" : Number.isFinite(freight) ? `Modalidade ${freight}` : "Não informado",
+    payment: "Não conciliado nesta consulta", cfop: scalar(rule.cfop), csosn: scalar(rule.csosn),
+    items: rows(preview.itens).map(item => ({ code: scalar(item.codigo), description: scalar(item.descricao), unit: scalar(item.unidade),
+      quantity: scalar(item.quantidade), unitValue: scalar(item.valor), ncm: scalar(item.classificacaoFiscal), origin: scalar(item.origem),
+      cfop: scalar(item.cfop), csosn: scalar(row(row(item.tributacao).icms).csosn) }))
+  };
+}
+
 /** Reconcile an explicit panel cancellation; never delete a transmitted NF-e or release stock on uncertainty. */
 export async function cancelWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string; job: UnknownRecord;

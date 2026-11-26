@@ -4,7 +4,8 @@ import { formatBRL, formatBRLInput, parseBRLToCents } from "@curtiz/domain";
 import { Check, Eye, FilePlus2, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
-import { InvoiceActions } from "./invoice-actions";
+import { dialogKeyAction, InvoiceActions } from "./invoice-actions";
+import { createPortal } from "react-dom";
 import type { WholesaleDraftReview } from "@/lib/wholesale-kit-invoice";
 import { lookupFiscalPostalCode, mergePostalAddress, type PostalLookupState } from "@/lib/fiscal-postal-code";
 
@@ -126,6 +127,67 @@ const formatDate = (value: string) => {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit" }).format(date);
 };
 
+/** Read-only inspection of a linked provider document. Never runs issuance. */
+export function DraftInspection({ id, disabled = false }: { id: string; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [review, setReview] = useState<WholesaleDraftReview | null>(null);
+  const eye = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLElement>(null);
+  const title = useId();
+  const close = () => { setOpen(false); setTimeout(() => eye.current?.focus(), 0); };
+  useEffect(() => {
+    if (!open) return;
+    const prior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.current?.querySelector<HTMLElement>("button")?.focus();
+    return () => { document.body.style.overflow = prior; };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setLoading(true); setError(""); setReview(null);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/fiscal/wholesale-invoices/draft-preview?id=${encodeURIComponent(id)}`,
+          { cache: "no-store", signal: controller.signal });
+        const body = record(await response.json());
+        if (controller.signal.aborted) return;
+        if (!response.ok || !record(body?.review) || !Array.isArray(record(body?.review)?.items)) {
+          setError(str(body?.message) || "Não foi possível consultar o documento no Bling."); return;
+        }
+        setReview(body!.review as WholesaleDraftReview);
+      } catch { if (!controller.signal.aborted) setError("Não foi possível consultar o documento no Bling."); }
+      finally { if (!controller.signal.aborted) setLoading(false); }
+    })();
+    return () => controller.abort();
+  }, [open, id]);
+  return <>
+    <button ref={eye} className="invoice-action" type="button" aria-label="Visualizar rascunho existente" title="Visualizar rascunho existente"
+      aria-haspopup="dialog" disabled={disabled} onClick={() => { setReview(null); setError(""); setLoading(true); setOpen(true); }}><Eye aria-hidden="true" /></button>
+    {open && createPortal(<div className="admin-modal-backdrop invoice-preview-backdrop" role="presentation"
+      onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
+      <section ref={dialog} className="admin-modal wholesale-modal wholesale-review-modal" role="dialog" aria-modal="true" aria-labelledby={title}
+        onKeyDown={event => {
+          const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]),a[href]") ?? []);
+          const action = dialogKeyAction(event.key, event.shiftKey, items.indexOf(document.activeElement as HTMLElement), items.length);
+          if (action === null) return;
+          event.preventDefault(); event.stopPropagation();
+          if (action === "close") close(); else items[action.focus]?.focus();
+        }}>
+        <header><div><h2 id={title}>Visualizar nota montada</h2><p>Consulta ao Bling · nenhuma transmissão será realizada.</p></div>
+          <button type="button" aria-label="Fechar visualização" onClick={close}><X aria-hidden="true" /></button></header>
+        <div className="wholesale-body">
+          {loading && <p role="status"><LoaderCircle className="spin" aria-hidden="true" /> Consultando nota…</p>}
+          {error && <p className="wholesale-alert" role="alert">{error}</p>}
+          {review && <DraftReview review={review} inspection />}
+        </div>
+      </section>
+    </div>, document.body)}
+  </>;
+}
+
 export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onArchive, onNewForClient }: {
   invoices: WholesaleInvoice[]; busyId: string; onRetry: (id: string) => void; onCancel: (id: string) => void; onArchive?: (id: string) => void; onNewForClient?: (id: string) => void;
 }) {
@@ -146,6 +208,7 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
         <strong className="wholesale-row-total">{formatBRL(invoice.totalInCents)}</strong>
         <div className="wholesale-row-status">
           <span className={`wholesale-badge ${invoice.externalReported || invoice.cancelPending ? "warn" : status.tone}`}>{invoice.externalReported ? "Emitida externamente" : invoice.cancelPending ? "Cancelamento pendente" : invoice.errorCode === "draft_ready" && invoice.status === "draft" ? "Pronta para conferência" : status.label}</span>
+          {invoice.invoiceId && !invoice.authorized && !invoice.externalReported && (open || invoice.cancelPending) && <span>Nota montada no Bling</span>}
           {invoice.invoiceNumber && <span>NF-e nº {invoice.invoiceNumber}</span>}
           {invoice.externalReported && <><span>NF-e nº {Number(invoice.externalNumber) || invoice.externalNumber} · Série {invoice.externalSeries}</span><span className="wholesale-reconciliation">Conciliação pendente</span></>}
           {(open || invoice.cancelPending) && invoice.errorCode && invoice.errorCode !== "draft_ready" && <details className="wholesale-row-details"><summary>Ver motivo</summary><p>{wholesaleReason(invoice.errorCode)}</p></details>}
@@ -155,6 +218,8 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? invoice.externalNumber ?? ""}`.trim()} />
           {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
             disabled={busyId !== ""} aria-label="Nova nota para este cliente" onClick={() => onNewForClient(invoice.id)}><FilePlus2 aria-hidden="true" /> Nova nota</button>}
+          {!invoice.authorized && !invoice.externalReported && invoice.invoiceId && (open || invoice.cancelPending) && invoice.errorCode !== "draft_ready" &&
+            <DraftInspection id={invoice.id} disabled={busyId !== ""} />}
           {open && !invoice.cancelPending && (invoice.errorCode === "draft_ready"
             ? <button className="invoice-action" type="button" aria-label="Visualizar rascunho" title="Visualizar rascunho" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}><Eye aria-hidden="true" /></button>
             : <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
@@ -415,9 +480,9 @@ export function PaymentStep({ template, kitName, quantity, price, method, buyerN
   </div>;
 }
 
-export function DraftReview({ review }: { review: WholesaleDraftReview }) {
+export function DraftReview({ review, inspection = false }: { review: WholesaleDraftReview; inspection?: boolean }) {
   return <article className="wholesale-review">
-    <header><div><h3>Prévia da NF-e nº {review.number || "—"}</h3><p>Série {review.series} · Rascunho no Bling</p></div><strong>Sem validade fiscal</strong></header>
+    <header><div><h3>Prévia da NF-e nº {review.number || "—"}</h3><p>Série {review.series || "—"} · {inspection ? "Documento consultado no Bling" : "Rascunho no Bling"}</p></div><strong>Sem validade fiscal</strong></header>
     <dl>
       <div><dt>Emitente · CNPJ</dt><dd>{formatCnpj(review.issuer)}</dd></div>
       <div><dt>Natureza da operação</dt><dd>{review.nature}</dd></div>
@@ -437,7 +502,7 @@ export function DraftReview({ review }: { review: WholesaleDraftReview }) {
         <td>{formatBRL(Math.round(Number(item.unitValue) * 100) * Number(item.quantity))}</td></tr>)}</tbody>
     </table></div>
     <footer><span>Valor total</span><strong>{formatBRL(review.totalInCents)}</strong></footer>
-    <p>Dados fiscais sujeitos à autorização da SEFAZ. Confira antes de prosseguir.</p>
+    <p>{inspection ? "Consulta somente leitura. Os dados exibidos ainda não foram conciliados pelo painel; esta prévia não é um DANFE autorizado." : "Dados fiscais sujeitos à autorização da SEFAZ. Confira antes de prosseguir."}</p>
   </article>;
 }
 
@@ -454,7 +519,7 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
     <ol className="wholesale-progress">
       {issueSteps.map(([key, label]) => {
         const index = steps.indexOf(key);
-        const done = result?.status === "authorized" || (ready && ["contact", "sale", "draft"].includes(key)) || (index >= 0 && key !== current) || (index >= 0 && !running && !failed);
+        const done = result?.status === "authorized" || ((ready || !!result?.invoice?.invoiceId) && ["contact", "sale", "draft"].includes(key)) || (index >= 0 && key !== current) || (index >= 0 && !running && !failed);
         const active = running && key === current;
         return <li key={key} className={done ? "done" : active ? "active" : ""}>
           <span aria-hidden="true">{done ? <Check /> : active ? <LoaderCircle className="spin" /> : null}</span>{label}
@@ -471,6 +536,7 @@ export function IssueProgress({ steps, running, result, onRetry, onCancel, onClo
     {failed && <p className={result?.status === "error" ? "wholesale-alert" : "wholesale-note"} role={result?.status === "error" ? "alert" : "status"}>
       {result?.status === "busy" ? "Esta nota já está sendo emitida. Aguarde alguns instantes e verifique de novo." : wholesaleReason(result?.code ?? null)}
     </p>}
+    {failed && result?.invoice?.invoiceId && !result.invoice.authorized && !result.invoice.externalReported && <div className="wholesale-actions"><span>Nota montada no Bling</span><DraftInspection id={result.invoice.id} disabled={busy || running} /></div>}
     {needsDate && onOperationDate && <DepartureField value={operationDate} onChange={onOperationDate} />}
     <div className="wholesale-actions">
       {ready && result.review && onTransmit && <button className="primary-button" type="button" disabled={busy || running} onClick={() => onTransmit(result.review!.hash)}>Prosseguir e enviar à SEFAZ</button>}

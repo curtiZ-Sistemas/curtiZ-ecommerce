@@ -175,6 +175,15 @@ describe("lista de notas", () => {
     expect(html).not.toContain('aria-label="Ver nota"');
   });
 
+  it("mostra a nota montada e o olho mesmo após falha ou cancelamento pendente", () => {
+    const html = renderToStaticMarkup(<WholesaleInvoiceList busyId="" onRetry={noop} onCancel={noop}
+      invoices={[invoice({ status: "error", authorized: false, errorCode: "invoice_series_mismatch" }),
+        invoice({ id: "i2", status: "error", authorized: false, cancelPending: true, errorCode: "cancel_reconciliation_pending" })]} />);
+    expect(html.match(/aria-label="Visualizar rascunho existente"/gu)).toHaveLength(2);
+    expect(html.match(/Nota montada no Bling/gu)).toHaveLength(2);
+    expect(html).toContain("Tentar de novo");
+    expect(html).not.toContain("Prosseguir e enviar à SEFAZ");
+  });
   it("mostra o estado vazio", () => {
     expect(renderToStaticMarkup(<WholesaleInvoiceList invoices={[]} busyId="" onRetry={noop} onCancel={noop} />)).toContain("Nenhuma nota de atacado ainda");
   });
