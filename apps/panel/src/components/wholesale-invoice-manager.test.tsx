@@ -64,6 +64,18 @@ describe("passo 2: cliente por CNPJ", () => {
     expect(html).toContain("consulte pelo CNPJ no SINTEGRA");
   });
 
+  it("exige a confirmação explícita do regime e mostra apenas o aviso relevante", () => {
+    const empty = renderToStaticMarkup(<ClientStep buyer={emptyBuyer} lookup="idle" onChange={noop} />);
+    expect(empty).toContain('class="wholesale-select"');
+    expect(empty).toContain('aria-required="true"');
+    expect(empty).toContain('aria-describedby=');
+    expect(empty).toContain('Selecione o regime confirmado');
+    expect(empty).toContain('Disponível: Simples Nacional, contribuinte de MG, sem crédito.');
+    const unsupported = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, regime: "mei" }} lookup="idle" onChange={noop} />);
+    expect(unsupported).toContain('Este regime ainda não possui regra de atacado aprovada.');
+    expect(unsupported).not.toContain('Disponível: Simples Nacional');
+  });
+
   it("mostra a consulta de CEP e permite completar um endereço parcial", () => {
     const html = renderToStaticMarkup(<ClientStep buyer={{ ...emptyBuyer, postalCode: "30110100" }} lookup="failed" postalLookup="partial" onChange={noop} />);
     expect(html).toContain("30110-100");
@@ -181,6 +193,7 @@ describe("lista de notas", () => {
         invoice({ id: "i2", status: "error", authorized: false, cancelPending: true, errorCode: "cancel_reconciliation_pending" })]} />);
     expect(html.match(/aria-label="Visualizar rascunho existente"/gu)).toHaveLength(2);
     expect(html.match(/Nota montada no Bling/gu)).toHaveLength(2);
+    expect(html.match(/class="wholesale-row-primary-actions"/gu)).toHaveLength(2);
     expect(html).toContain("Tentar de novo");
     expect(html).not.toContain("Prosseguir e enviar à SEFAZ");
   });

@@ -798,7 +798,9 @@ for (const width of [412, 1280]) {
     const requests: Record<string, unknown>[] = [];
     await page.route("**/api/fiscal/wholesale-invoices", async route => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ json: { offers: [], invoices: [fiscalExternal, fiscalDraft] } });
+        await route.fulfill({ json: { offers: [{ kitId: "kit-test", name: "Kit de teste", description: "", templates: [
+          { code: "standard", label: "Ficha padrão", available: 5, unitPriceInCents: 20400, sizes: [{ size: "37", pairs: 12 }] }
+        ] }], invoices: [fiscalExternal, fiscalDraft] } });
         return;
       }
       const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -819,6 +821,26 @@ for (const width of [412, 1280]) {
     await expect(external.getByRole("button", { name: "Nova nota para este cliente" })).toBeVisible();
     await expect(external.locator(".wholesale-row-product")).toHaveCSS("text-overflow", "ellipsis");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    const actions = external.locator(".wholesale-row-primary-actions");
+    await expect(actions.getByRole("button", { name: "Ver nota", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Emitir nota", exact: true }).click();
+    const wizard = page.getByRole("dialog", { name: "Emitir nota de atacado" });
+    await wizard.getByRole("button", { name: /Kit de teste/u }).click();
+    await wizard.getByRole("button", { name: /Ficha padrão/u }).click();
+    await wizard.getByRole("button", { name: "Continuar", exact: true }).click();
+    const regime = wizard.getByRole("combobox", { name: "Regime tributário do comprador" });
+    await expect(regime).toHaveValue("");
+    await expect(regime).toHaveCSS("border-top-style", "solid");
+    const selectBounds = await regime.boundingBox();
+    expect(selectBounds!.height).toBeGreaterThanOrEqual(44);
+    await regime.selectOption("mei");
+    await expect(wizard.getByText("Este regime ainda não possui regra de atacado aprovada.")).toBeVisible();
+    await regime.selectOption("simples");
+    await expect(regime).toHaveValue("simples");
+    await expect(wizard.getByText("Este regime ainda não possui regra de atacado aprovada.")).toHaveCount(0);
+    await wizard.getByRole("button", { name: "Fechar", exact: true }).click();
+    await expect(wizard).toBeHidden();
+    expect(requests).toHaveLength(0);
     const eye = external.getByRole("button", { name: "Ver nota", exact: true });
     await eye.click();
     const modal = page.getByRole("dialog", { name: /DANFE/u });

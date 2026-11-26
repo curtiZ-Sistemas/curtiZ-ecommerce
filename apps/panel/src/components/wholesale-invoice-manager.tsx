@@ -1,7 +1,7 @@
 "use client";
 
 import { formatBRL, formatBRLInput, parseBRLToCents } from "@curtiz/domain";
-import { Check, Eye, FilePlus2, LoaderCircle, Minus, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Eye, FilePlus2, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { formatCep, formatCnpj, isValidCnpj, onlyDigits } from "@/lib/cnpj";
 import { dialogKeyAction, InvoiceActions } from "./invoice-actions";
@@ -214,6 +214,7 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
           {(open || invoice.cancelPending) && invoice.errorCode && invoice.errorCode !== "draft_ready" && <details className="wholesale-row-details"><summary>Ver motivo</summary><p>{wholesaleReason(invoice.errorCode)}</p></details>}
         </div>
         <div className="wholesale-row-actions">
+          <div className="wholesale-row-primary-actions">
           <InvoiceActions compact authorized={invoice.authorized} externalReported={invoice.externalReported === true} blingInvoiceId={invoice.invoiceId}
             pdfUrl={`/api/fiscal/wholesale-invoices/invoice-pdf?id=${invoice.id}`} label={`NF-e nº ${invoice.invoiceNumber ?? invoice.externalNumber ?? ""}`.trim()} />
           {(invoice.authorized || invoice.externalReported) && onNewForClient && <button type="button" className="secondary-button"
@@ -221,10 +222,15 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
           {!invoice.authorized && !invoice.externalReported && invoice.invoiceId && (open || invoice.cancelPending) && invoice.errorCode !== "draft_ready" &&
             <DraftInspection id={invoice.id} disabled={busyId !== ""} />}
           {open && !invoice.cancelPending && (invoice.errorCode === "draft_ready"
-            ? <button className="invoice-action" type="button" aria-label="Visualizar rascunho" title="Visualizar rascunho" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}><Eye aria-hidden="true" /></button>
-            : <button className="secondary-button" type="button" disabled={busyId === invoice.id} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
-          {!invoice.externalReported && invoice.canCancel && <button className="secondary-button danger-button" type="button" disabled={busyId === invoice.id} onClick={() => onCancel(invoice.id)}>{invoice.cancelPending || invoice.status === "cancelled" ? "Concluir cancelamento" : "Cancelar e devolver estoque"}</button>}
-          {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId === invoice.id} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
+            ? <button className="invoice-action" type="button" aria-label="Visualizar rascunho" title="Visualizar rascunho" disabled={busyId !== ""} onClick={() => onRetry(invoice.id)}><Eye aria-hidden="true" /></button>
+            : <button className="secondary-button" type="button" disabled={busyId !== ""} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
+          {!invoice.externalReported && invoice.canCancel && (invoice.cancelPending || invoice.status === "cancelled") &&
+            <button className="secondary-button wholesale-cancel-pending" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}>Concluir cancelamento</button>}
+          {invoice.status === "cancelled" && !invoice.canCancel && !invoice.cancelPending && onArchive && <button type="button" className="secondary-button" disabled={busyId !== ""} onClick={() => onArchive(invoice.id)}>Remover da lista</button>}
+          </div>
+          {!invoice.externalReported && invoice.canCancel && !invoice.cancelPending && invoice.status !== "cancelled" &&
+            <button className="wholesale-cancel-link" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}
+              title="Cancelar e devolver estoque" aria-label="Cancelar e devolver estoque">Cancelar nota</button>}
         </div>
       </li>;
     })}
@@ -355,6 +361,8 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLooku
   postalLookup?: PostalLookupState; onHistoricalClient?: (buyer: WholesaleBuyer) => void;
 }) {
   const cnpjId = useId();
+  const regimeId = useId();
+  const regimeUnsupported = buyer.regime !== "" && buyer.regime !== "simples";
   const digits = onlyDigits(buyer.document);
   const invalid = digits.length === 14 && !isValidCnpj(digits);
   const outside = buyer.state !== "" && buyer.state !== "MG";
@@ -384,22 +392,31 @@ export function ClientStep({ buyer, lookup, onChange, onRetryLookup, postalLooku
     {outside && <p className="wholesale-alert" role="alert">Só emitimos nota de atacado para empresas de Minas Gerais. Esta empresa é de {buyer.state}.</p>}
     <div className="wholesale-fields">
       {field("Razão social", "name", { wide: true, max: 180 })}
-      <label className="wide"><span>Regime tributário do comprador</span>
-        <select value={buyer.regime} onChange={event => onChange({ regime: event.target.value as WholesaleBuyer["regime"] })}>
-          <option value="">Selecione o regime confirmado</option>
-          <option value="normal">Regime normal</option>
-          <option value="simples">Simples Nacional</option>
-          <option value="mei">MEI</option>
-          <option value="pf">Pessoa física</option>
-        </select>
-        <small>O atacado automático está restrito à empresa do Simples Nacional, contribuinte de MG, sem crédito. Os demais perfis exigem regra fiscal própria aprovada.</small>
-      </label>
+      <div className="wholesale-regime-field">
+        <label htmlFor={regimeId}><span>Regime tributário do comprador</span></label>
+        <div className="wholesale-select-wrap">
+          <select id={regimeId} className="wholesale-select" value={buyer.regime} aria-required="true"
+            aria-invalid={regimeUnsupported} aria-describedby={regimeId + "-hint"}
+            onChange={event => onChange({ regime: event.target.value as WholesaleBuyer["regime"] })}>
+            <option value="">Selecione o regime confirmado</option>
+            <option value="simples">Simples Nacional</option>
+            <option value="normal">Regime normal</option>
+            <option value="mei">MEI</option>
+            <option value="pf">Pessoa física</option>
+          </select>
+          <ChevronDown aria-hidden="true" />
+        </div>
+        <small id={regimeId + "-hint"} role="status" className={regimeUnsupported ? "wholesale-regime-warning" : undefined}>
+          {regimeUnsupported ? "Este regime ainda não possui regra de atacado aprovada." : "Disponível: Simples Nacional, contribuinte de MG, sem crédito."}
+        </small>
+      </div>
       <label><span>Inscrição estadual (obrigatória)</span>
         <input value={buyer.registration} maxLength={18} autoComplete="off" placeholder="13 dígitos ou ISENTA"
           onChange={event => onChange({ registration: event.target.value.toUpperCase() })} />
-        <small>Informe os 13 dígitos da IE ativa de MG. Se não souber, <a href="https://www.fazenda.mg.gov.br/empresas/Cadastro/cadastro/consultapublica.html" target="_blank" rel="noopener noreferrer">consulte pelo CNPJ no SINTEGRA</a>.</small>
+        <small>IE ativa de MG, com 13 dígitos. <a href="https://www.fazenda.mg.gov.br/empresas/Cadastro/cadastro/consultapublica.html" target="_blank" rel="noopener noreferrer">consulte pelo CNPJ no SINTEGRA</a>.</small>
       </label>
       {buyer.registration.trim().toUpperCase() === "ISENTA" && <p className="wholesale-alert wide" role="alert">O atacado é destinado à revenda. Confira a IE do comprador no SINTEGRA antes de continuar.</p>}
+      <h3 className="wholesale-field-heading">Endereço da empresa</h3>
       <label><span>CEP</span><input inputMode="numeric" autoComplete="off" placeholder="00000-000" value={formatCep(buyer.postalCode)}
         onChange={event => onChange({ postalCode: onlyDigits(event.target.value).slice(0, 8) })} />
         <small role="status">{postalLookup === "loading" ? "Buscando endereço…"
@@ -908,7 +925,7 @@ export function WholesaleInvoiceManager() {
 
   return <section className="panel-card wholesale">
     <header className="wholesale-header">
-      <p>Emita uma NF-e com um ou vários kits para uma empresa de Minas Gerais. CFOP, série e natureza são automáticos.</p>
+      <p>Emita notas de atacado para empresas de Minas Gerais.</p>
       <button className="primary-button" type="button" disabled={busyId !== ""} onClick={() => open()}>Emitir nota</button>
     </header>
     {notice && <p className="wholesale-note" role="status">{notice}</p>}
