@@ -156,10 +156,12 @@ export async function POST(request: NextRequest) {
       const job = record(started.data);
       if (started.error) return send({ message: "Não foi possível iniciar o cancelamento." }, started.error.code === "42501" ? 403 : 503);
       if (!job) return send({ message: "Esta nota não pode ser cancelada agora. Ela já foi enviada ou está em andamento." }, 409);
-      const outcome: { refused: boolean } = { refused: false };
+      const outcome: { reason: "provider_refusal" | "pending" | "access_key_requires_reconciliation" } = { reason: "pending" };
       const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job,
-        onBlocked: reason => { outcome.refused = reason === "provider_refusal"; } });
-      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: outcome.refused
+        onBlocked: reason => { outcome.reason = reason; } });
+      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: outcome.reason === "access_key_requires_reconciliation"
+        ? "A nota possui chave de acesso. Confirme a situação na SEFAZ antes de excluir; o estoque permanece reservado."
+        : outcome.reason === "provider_refusal"
         ? "O Bling recusou a exclusão do rascunho ou pedido. Nenhuma nova nota será criada; confira as permissões e lançamentos vinculados no Bling."
         : "A exclusão ainda não foi confirmada. Conclua o cancelamento antes de criar outra nota; o estoque permanece protegido." }, 409);
     }

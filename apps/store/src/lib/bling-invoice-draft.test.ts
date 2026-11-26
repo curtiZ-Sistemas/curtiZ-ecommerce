@@ -212,14 +212,25 @@ describe("safe fiscal decomposition of an existing untransmitted draft", () => {
       .rejects.toThrow("invoice_items_mismatch");
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("waits for the saved own-transport snapshot without a second mutation or an invented carrier", async () => {
+    const wholesale = { ...input, freightMode: 3 as const };
+    const body = blingFiscalDraftBody(invoice(), items, commercial, wholesale);
+    const saved = { ...invoice(), itens: body.itens, parcelas: body.parcelas, transporte: body.transporte };
+    const request = vi.fn().mockResolvedValueOnce({ data: invoice() }).mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ data: invoice() }).mockResolvedValueOnce({ data: saved });
+    await prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, wholesale, true, async () => true);
+    expect(request.mock.calls.map(c => (c[1] as { method?: string } | undefined)?.method ?? "GET")).toEqual(["GET", "PUT", "GET", "GET"]);
+    expect(body.transporte).not.toHaveProperty("transportador");
+  });
   it("checks the carrier mode again after updating a draft whose SKU lines already match", async () => {
     const wholesale = { ...input, freightMode: 3 as const };
     const body = blingFiscalDraftBody({ ...invoice(), transporte: { fretePorConta: 9 } }, items, commercial, wholesale);
     const aligned = { ...invoice(), itens: body.itens, parcelas: body.parcelas, transporte: { fretePorConta: 9 } };
     const request = vi.fn().mockResolvedValueOnce({ data: aligned }).mockResolvedValueOnce({ data: {} })
-      .mockResolvedValueOnce({ data: aligned });
+      .mockResolvedValue({ data: aligned });
     await expect(prepareBlingFiscalDraft({ request } as unknown as BlingClient, 1, items, commercial, wholesale, true, async () => true))
       .rejects.toThrow("invoice_freight_mapping_required");
+    expect(request.mock.calls.filter(c => (c[1] as { method?: string } | undefined)?.method === "PUT")).toHaveLength(1);
     expect(request.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: { transporte: { fretePorConta: 3, frete: 0 } } });
   });
 });

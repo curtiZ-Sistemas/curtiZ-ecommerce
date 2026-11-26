@@ -457,7 +457,7 @@ export function reviewFromCancelledHistory(history: UnknownRecord): WholesaleDra
 /** Reconcile an explicit panel cancellation; never delete a transmitted NF-e or release stock on uncertainty. */
 export async function cancelWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string; job: UnknownRecord;
-  onBlocked?: (reason: "provider_refusal" | "pending") => void;
+  onBlocked?: (reason: "provider_refusal" | "pending" | "access_key_requires_reconciliation") => void;
 }): Promise<boolean> {
   const { db, provider, environment, invoiceId, job } = input;
   const p_id = invoiceId;
@@ -540,10 +540,13 @@ export async function cancelWholesaleKitInvoice(input: {
           && Math.round(Number(draft.valorNota) * 100) === Number(job.amountInCents)
           && positiveId(row(draft.naturezaOperacao).id) === positiveId(expectedNature?.external_nature_id)
           && positiveId(expectedNature?.external_nature_id) !== null;
-        if (Number(draft.id) !== draftId || Number(draft.situacao) !== 1 || text(draft.chaveAcesso)
+        if (Number(draft.id) !== draftId || Number(draft.situacao) !== 1
           || (draftReference && draftReference !== reference)
           || (!linked && draftReference !== reference && !exactPersisted)
           || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+        // A key can be generated before authorization. It is not proof of an authorized NF-e,
+        // but the provider's pending status alone does not rule out an external transmission.
+        if (text(draft.chaveAcesso).trim()) throw new BlingError("cancel_access_key_requires_reconciliation", 409);
         stage = "cancel_draft_snapshot";
         const preview = reviewFromProvider(job, draft, digits(company.cnpj));
         if (await call(db, "save_wholesale_cancel_preview", { p_id, p_preview: preview }) !== true) throw scopeError();
@@ -566,7 +569,9 @@ export async function cancelWholesaleKitInvoice(input: {
     return await finish();
   } catch (error) {
     logWholesaleProviderError("wholesale_invoice_cancel_failed", invoiceId, stage, error);
-    input.onBlocked?.(error instanceof BlingError && (stage === "cancel_draft_delete" || stage === "cancel_sale_delete") && [400, 403, 422].includes(error.status) ? "provider_refusal" : "pending");
+    input.onBlocked?.(error instanceof BlingError && error.code === "cancel_access_key_requires_reconciliation"
+      ? "access_key_requires_reconciliation" : error instanceof BlingError && (stage === "cancel_draft_delete" || stage === "cancel_sale_delete")
+      && [400, 403, 422].includes(error.status) ? "provider_refusal" : "pending");
     try { await call(db, "record_wholesale_cancel_pending", { p_id }); } catch { /* Lease expires; retry reconciles remote IDs. */ }
     return false;
   }

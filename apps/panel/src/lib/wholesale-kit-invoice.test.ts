@@ -349,6 +349,22 @@ describe("cancelamento conciliado", () => {
     expect(names().includes("record_wholesale_cancel_pending")).toBe(!disappeared);
     expect(state.requests.some(r => r.method === "DELETE" && r.path === "/pedidos/vendas/900")).toBe(disappeared);
   });
+  it("explica a existência de chave em nota pendente sem excluir nem liberar estoque", async () => {
+    const onBlocked = vi.fn();
+    const remote = { request: vi.fn(async (path: string) => {
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", cnpj: "12345678000195" } };
+      if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
+      if (path === "/pedidos/vendas/900") return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
+        total: 720.02, contato: { id: 55 }, notaFiscal: { id: 77 } } };
+      if (path === "/nfe/77") return { data: { id: 77, situacao: 1, chaveAcesso: "3".repeat(44),
+        contato: { numeroDocumento: "11222333000181" } } };
+      throw new Error("unexpected call");
+    }) };
+    expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id, job: cancelJob(), onBlocked })).toBe(false);
+    expect(onBlocked).toHaveBeenCalledWith("access_key_requires_reconciliation");
+    expect(remote.request.mock.calls).toEqual([["/empresas/me/dados-basicos"], ["/pedidos/vendas/900"], ["/contatos/55"], ["/nfe/77"]]);
+    expect(names()).not.toContain("finish_wholesale_kit_invoice_cancel");
+  });
   it("não exclui nota já enviada", async () => {
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: provider as never, environment, invoiceId: id,
       job: { ...cancelJob(), sendClaimed: true } })).toBe(false);

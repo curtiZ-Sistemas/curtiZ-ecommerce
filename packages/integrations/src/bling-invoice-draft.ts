@@ -199,9 +199,10 @@ export async function prepareBlingFiscalDraft(provider: BlingClient, invoiceId: 
   let saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
   // The provider may return the previous transport snapshot immediately after PUT.
   // Read again (never repeat the mutation) before concluding that it did not persist.
-  if (input.ownCarrier) {
-    for (let attempt = 0; attempt < 3 && (!invoiceMatchesFiscalLines(saved, expected) || Number(row(saved.transporte).fretePorConta) !== input.freightMode
-      || readString(row(row(saved.transporte).transportador), "numeroDocumento").replace(/\D/gu, "") !== input.ownCarrier.numeroDocumento); attempt += 1) {
+  if (input.freightMode === 3) {
+    for (let attempt = 0; attempt < 3 && Number(saved.situacao) === 1 && (!invoiceMatchesFiscalLines(saved, expected)
+      || Number(row(saved.transporte).fretePorConta) !== input.freightMode
+      || (input.ownCarrier && readString(row(row(saved.transporte).transportador), "numeroDocumento").replace(/\D/gu, "") !== input.ownCarrier.numeroDocumento)); attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 750));
       saved = row(row(await requestBlingFiscalResource(provider, `/nfe/${invoiceId}`, "draft_verify")).data);
     }
