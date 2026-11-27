@@ -161,7 +161,7 @@ export type BlingResaleInvoiceExpectation = ArchiveExpectation & {
   deliveryPostalCode?: string;
   originPostalCode: string;
   shippingInCents: number;
-  paymentMethod?: "pix" | "cash";
+  paymentMethod?: "pix" | "cash" | "credit_card" | "debit_card";
   additionalInfo?: string;
   /** Extra observation requested for this specific sale, not a substitute for structured pickup. */
   pickupObservation?: string;
@@ -215,7 +215,8 @@ export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, ex
   if (expected.paymentMethod) {
     const payments = one(info, "pag");
     const details = children(payments, "detPag");
-    const codes = expected.paymentMethod === "pix" ? ["17", "20"] : ["01"];
+    const codes = expected.paymentMethod === "pix" ? ["17", "20"] : expected.paymentMethod === "cash" ? ["01"]
+      : expected.paymentMethod === "credit_card" ? ["03"] : ["04"];
     let paidInCents = 0;
     for (const detail of details) {
       const amount = money(value(detail, "vPag"));

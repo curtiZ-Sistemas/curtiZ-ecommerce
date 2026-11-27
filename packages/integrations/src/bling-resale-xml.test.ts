@@ -37,6 +37,13 @@ describe("Bling authorized MG resale invoice", () => {
     const withoutPayment = withPayment.replace(`<tPag>${code}</tPag><vPag>20.00</vPag>`, "<tPag>90</tPag><vPag>0.00</vPag>");
     expect(() => readBlingAuthorizedResaleXml(withoutPayment, ownDeliveryKey, ownDelivery)).toThrow("invoice_fiscal_payment_mismatch");
   });
+  it.each([["credit_card", "03"], ["debit_card", "04"], ["cash", "01"]] as const)("validates %s without treating it as Pix", (method, code) => {
+    const ownDelivery = { ...expected, series: 3, totalInCents: 2000, shippingInCents: 0, paymentMethod: method,
+      items: expected.items.map(item => ({ ...item, shippingInCents: 0 })) };
+    const withPayment = ownDeliveryXml().replace("</infNFe>", `<pag><detPag><tPag>${code}</tPag><vPag>20.00</vPag></detPag></pag></infNFe>`);
+    expect(readBlingAuthorizedResaleXml(withPayment, ownDeliveryKey, ownDelivery)).toMatchObject({ totalInCents: 2000 });
+    expect(() => readBlingAuthorizedResaleXml(withPayment.replace(`<tPag>${code}</tPag>`, "<tPag>17</tPag>"), ownDeliveryKey, ownDelivery)).toThrow("invoice_fiscal_payment_mismatch");
+  });
   it("validates an authorized synthetic business resale document and returns its protocol", () => {
     expect(readBlingAuthorizedResaleXml(xml(), key, expected)).toMatchObject({
       invoiceKey: key, protocol: "000000000000001", environment: 2, shippingInCents: 200, totalInCents: 2200

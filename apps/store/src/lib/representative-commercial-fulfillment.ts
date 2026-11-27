@@ -7,8 +7,9 @@ import {
 import { getMelhorEnvioEnvironment } from "@curtiz/config";
 import { logServerEvent } from "@curtiz/security";
 import { assertBlingExternalOrder, blingOrderPayload, findBlingContact, findBlingOrder } from "./bling-jobs";
-import { blingInvoicePaymentTerms, invoiceMatchesFiscalLines, prepareBlingFiscalDraft } from "./bling-invoice-draft";
+import { assertBlingInvoicePaymentTerms, blingInvoicePaymentTerms, invoiceMatchesFiscalLines, prepareBlingFiscalDraft } from "./bling-invoice-draft";
 import { createMelhorEnvioProvider } from "./melhor-envio-server";
+import { commercialKitCollector, commercialKitPaymentProvider, kitPaymentMethodAllowed } from "./representative-commercial-payments";
 import { advanceRepresentativeKitShipping } from "./representative-commercial-shipping";
 import { verifyDueRepresentativeKitReturns } from "./representative-commercial-returns";
 import { kitCall, kitRecord } from "./representative-test-transactions";
@@ -23,10 +24,10 @@ const readVariant = (db: SupabaseClient) => (variantId: string) =>
   kitRecord(db, "read_bling_catalog_variant", { p_variant_id: variantId });
 
 export async function verifyCommercialKitInvoice(db: SupabaseClient, provider: BlingClient, job: UnknownRecord, environment: 1 | 2,
-  manual?: { key: string; invoice: UnknownRecord }) {
+  manual?: { key: string; invoice: UnknownRecord }, paymentMethod?: KitFiscalPayment) {
   const orderId = readString(job, "orderId");
   return verifySharedKitInvoice(provider, readVariant(db), job, environment, {
-    reference: `KITMG-${orderId}`, ...(manual ? { manual } : {}),
+    reference: `KITMG-${orderId}`, ...(manual ? { manual } : {}), paymentMethod,
     billingPostalCode: async () => readString(row((await kitRecord(db, "read_representative_kit_bling_order", { p_order: orderId })).fiscalAddress), "postal_code")
   });
 }
@@ -36,28 +37,57 @@ const positiveId = (value: unknown) => {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null;
 };
 
-// Automatic MG02 orders paid in cash on receipt have no per-route Bling method: the owner configures
-// the Bling "dinheiro" payment method once. Pix keeps BLING_PAYMENT_METHOD_ID.
-function kitBlingPaymentMethod(environment: RuntimeEnvironment, job: UnknownRecord, collection: boolean) {
-  if (!collection) return positiveId(environment.BLING_PAYMENT_METHOD_ID);
-  return positiveId(job.collectionBlingMethod)
-    ?? (job.invoiceMode === "automatic" && job.collectionMethod === "cash" ? positiveId(environment.BLING_CASH_PAYMENT_METHOD_ID) : null);
+type KitFiscalPayment = "pix" | "cash" | "credit_card" | "debit_card";
+const fiscalPaymentTypes: Record<KitFiscalPayment, readonly number[]> = {
+  pix: [17, 20], cash: [1], credit_card: [3], debit_card: [4]
+};
+
+// The paid order is already gated by the database. Independently verify its actual
+// provider payment before assigning a fiscal method: card charges must never become Pix.
+async function resolveKitFiscalPayment(environment: RuntimeEnvironment, job: UnknownRecord, transport: typeof fetch): Promise<KitFiscalPayment> {
+  const collection = readString(job, "collectionMethod");
+  if (collection) {
+    if (collection === "cash" || collection === "pix" || collection === "credit_card" || collection === "debit_card") return collection;
+    throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
+  }
+  const reference = `KITMG-${readString(job, "orderId")}`;
+  const payment = await commercialKitPaymentProvider(environment, transport).findRepresentativeKitPayment(reference);
+  if (!payment) throw new BlingError("kit_payment_unconfirmed", 409, true);
+  if (payment.status !== "approved" || payment.externalReference !== reference
+    || payment.collectorId !== commercialKitCollector(environment) || payment.currency !== "BRL"
+    || payment.amountInCents !== readNumber(job, "amountInCents") || !payment.dateApproved
+    || !Number.isFinite(Date.parse(payment.dateApproved)) || payment.refunds.length || !kitPaymentMethodAllowed(payment))
+    throw new BlingError("kit_payment_unconfirmed", 409);
+  if (payment.paymentMethodId === "pix") return "pix";
+  if (payment.paymentTypeId === "credit_card" || payment.paymentTypeId === "debit_card") return payment.paymentTypeId;
+  throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
 }
 
-async function advanceRepresentativeKitBling(db: SupabaseClient, provider: BlingClient, environment: RuntimeEnvironment, job: UnknownRecord) {
+function kitBlingPaymentMethod(environment: RuntimeEnvironment, job: UnknownRecord, payment: KitFiscalPayment) {
+  const collection = Boolean(readString(job, "collectionMethod"));
+  if (collection && positiveId(job.collectionBlingMethod)) return positiveId(job.collectionBlingMethod);
+  if (collection && payment !== "cash") return null;
+  if (payment === "cash") return job.invoiceMode === "automatic" ? positiveId(environment.BLING_CASH_PAYMENT_METHOD_ID) : null;
+  if (payment === "pix") return positiveId(environment.BLING_PAYMENT_METHOD_ID);
+  return positiveId(payment === "credit_card" ? environment.BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID
+    : environment.BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID);
+}
+
+async function advanceRepresentativeKitBling(db: SupabaseClient, provider: BlingClient, environment: RuntimeEnvironment, job: UnknownRecord, transport: typeof fetch) {
   const orderId = readString(job, "orderId");
   const reference = `KITMG-${orderId}`;
   const invoiceId = positiveId(job.invoiceId);
   if (invoiceId) {
     const invoice = row(row(await provider.request(`/nfe/${invoiceId}`)).data);
     if (Number(invoice.id) !== invoiceId) throw scopeError();
-    if (Number(invoice.situacao) === 5) return true;
+    if ([5, 6].includes(Number(invoice.situacao))) return true;
     if (Number(invoice.situacao) === 2) {
       await kitCall(db, "observe_representative_kit_invoice_cancellation", {
         p_order: orderId, p_invoice: invoiceId, p_key: readString(invoice, "chaveAcesso")
       });
       return false;
     }
+    if ([4, 9, 11].includes(Number(invoice.situacao))) throw new BlingError("invoice_rejected_by_sefaz", 409);
     if (Number(invoice.situacao) !== 1) return false;
   }
   if (environment.BLING_ORDER_SYNC_ENABLED !== "true") return false;
@@ -72,7 +102,8 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
   if (rule.series !== 3) throw scopeError();
   const buyerName = readString(context, "buyerName");
   const collection = Boolean(readString(job, "collectionMethod"));
-  const methodId = kitBlingPaymentMethod(environment, job, collection);
+  const paymentKind = await resolveKitFiscalPayment(environment, job, transport);
+  const methodId = kitBlingPaymentMethod(environment, job, paymentKind);
   // Reasons the operator can act on; the panel translates these codes.
   if (!methodId) throw new BlingError("payment_method_required", 409);
   if (!/^\d{14}$/u.test(document)) throw new BlingError("buyer_cnpj_required", 409);
@@ -95,6 +126,18 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
   const account = await kitRecord(db, "read_bling_account", { p_environment: "production" });
   if (id(company.id) !== id(account.companyId) || !id(company.id)
     || readString(company, "cnpj").replace(/\D/gu, "") !== issuer) throw scopeError();
+  const method = row(row(await provider.request(`/formas-pagamentos/${methodId}`)).data);
+  if (positiveId(method.id) !== methodId || Number(method.situacao) !== 1
+    || ![2, 3].includes(Number(method.finalidade)) || !fiscalPaymentTypes[paymentKind].includes(Number(method.tipoPagamento)))
+    throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
+  let approvedNature: UnknownRecord | undefined;
+  for (let page = 1; page <= 20; page += 1) {
+    const result = readRows(row(await provider.request(`/naturezas-operacoes?pagina=${page}&limite=100&situacao=1`)).data);
+    approvedNature = result.find(nature => positiveId(nature.id) === natureId && Number(nature.situacao ?? 1) === 1);
+    if (approvedNature || result.length < 100) break;
+  }
+  if (!approvedNature) throw new BlingError("nature_not_active", 409);
+  if (id(approvedNature.serie) && Number(approvedNature.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
   const order = { public_code: reference, payment_status: collection ? "pending" : "approved",
     status: collection ? "awaiting_receipt" : "payment_approved", placed_at: collection ? job.createdAt : job.paidAt,
     customer_name_snapshot: buyerName, shipping_address_snapshot: address, subtotal: (mirror.totalInCents - freight) / 100,
@@ -159,6 +202,14 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     draft = positiveId(row(await provider.request(`/pedidos/vendas/${saleId}/gerar-nfe`, { method: "POST" })).idNotaFiscal);
     if (!draft || await link(draft) !== true) throw new BlingError("uncertain_write", 503, false, true);
   }
+  const before = row(row(await provider.request(`/nfe/${draft}`)).data);
+  if (Number(before.id) !== draft || Number(before.tipo) !== 1 || Number(row(before.naturezaOperacao).id) !== natureId) throw scopeError();
+  if (Number(before.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
+  if ([5, 6].includes(Number(before.situacao))) return false;
+  if ([4, 9, 11].includes(Number(before.situacao))) throw new BlingError("invoice_rejected_by_sefaz", 409);
+  if (Number(before.situacao) !== 1) return false;
+  // Never edit a draft already carrying a fiscal key, even if Bling reports it as pending.
+  if (readString(before, "chaveAcesso")) throw new BlingError("invoice_reconciliation_required", 409);
   const paymentTerms = blingInvoicePaymentTerms(sale, { totalInCents: mirror.totalInCents, paymentMethodId: methodId });
   await prepareBlingFiscalDraft(provider, draft, mirror.items, commercial.map(item => ({
     ...item, sku: blingExternalSku(item.sku,item.variantId)
@@ -168,8 +219,14 @@ async function advanceRepresentativeKitBling(db: SupabaseClient, provider: Bling
     freightMode: 3
   }, true, async () => await kitCall(db,"read_representative_kit_bling_order",{ p_order: orderId }) !== null);
   const preview = row(row(await provider.request(`/nfe/${draft}`)).data);
-  if (Number(preview.id) !== draft || Number(preview.situacao) !== 1 || Number(preview.serie) !== rule.series
-    || Number(row(preview.naturezaOperacao).id) !== natureId || !invoiceMatchesFiscalLines(preview, mirror.items)
+  if (Number(preview.serie) !== rule.series) throw new BlingError("invoice_series_mismatch", 409);
+  if (!invoiceMatchesFiscalLines(preview, mirror.items)) throw new BlingError("invoice_items_mismatch", 409);
+  assertBlingInvoicePaymentTerms(preview, paymentTerms);
+  if (preview.valorNota == null || Math.round(Number(preview.valorNota) * 100) !== mirror.totalInCents
+    || preview.valorFrete == null || Math.round(Number(preview.valorFrete) * 100) !== freight)
+    throw new BlingError("invoice_draft_total_mismatch", 409);
+  if (Number(preview.id) !== draft || Number(preview.situacao) !== 1 || Number(preview.tipo) !== 1
+    || readString(preview, "chaveAcesso") || Number(row(preview.naturezaOperacao).id) !== natureId
     || Number(row(preview.transporte).fretePorConta) !== 3) throw scopeError();
   const draftHash = await blingFiscalMirrorHash({ orderId, draft, competence: date.slice(0,7), preview, mirror, origin: job.originPostalCode });
   if (await kitCall(db, "record_representative_kit_bling_draft", { p_order: orderId, p_invoice: draft, p_hash: draftHash }) !== true) throw scopeError();
@@ -235,8 +292,8 @@ export async function runRepresentativeCommercialFulfillment(environment: Runtim
         }
         continue;
       }
-      if (!await advanceRepresentativeKitBling(db, bling, environment, job)) continue;
-      const verified = await verifyCommercialKitInvoice(db, bling, job, 1);
+      if (!await advanceRepresentativeKitBling(db, bling, environment, job, transport)) continue;
+      const verified = await verifyCommercialKitInvoice(db, bling, job, 1, undefined, await resolveKitFiscalPayment(environment, job, transport));
       clearance = await kitCall(db, "record_representative_kit_authorized_invoice", {
         p_order: orderId, p_sale: job.saleId, p_invoice: job.invoiceId,
         p_key: verified.key, p_protocol: verified.protocol, p_sha256: verified.hash

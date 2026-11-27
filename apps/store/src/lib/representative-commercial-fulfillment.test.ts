@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
   claimed: new Set<string>(),
   saleId: null as number | null,
   contactExists: true,
+  paymentKind: "pix" as "pix" | "credit_card" | "debit_card",
+  paymentStatus: "approved", paymentAmount: 10000, paymentRefunds: [] as unknown[],
+  natureActive: true, natureSeries: 3, draftSeries: 3, draftAmount: 100, methodTypeOverride: null as number | null,
   requests: [] as { path: string; method: string; body?: unknown }[],
   buyer: Object.fromEntries([] as [string, unknown][])
 }));
@@ -28,7 +31,7 @@ vi.mock("@curtiz/integrations", () => {
     commercialKitFiscalMirror: async (_read: unknown, job: Record<string, unknown>) => {
       const item = { sku: String(job.sku), variantId: String(job.variantId), description: String(job.productName), quantity: Number(job.quantity),
         unit: "PR", pairsPerSku: 2, fiscalUnitApproved: true, unitPriceInCents: Number(job.unitPriceInCents), ncm: "64022000", origin: 0, cest: "" };
-      return { issuer: "68267385000191", natureId: 15111725693, rule: { series: 3, external_nature_id: 15111725693, cfop: "5102", csosn: "102" },
+      return { issuer: "68267385000191", natureId: 15111975260, rule: { series: 3, external_nature_id: 15111975260, cfop: "5102", csosn: "102" },
         commercial: [item], mirror: { taxConfiguration: true, icmsCredit: undefined, totalInCents: item.quantity * item.unitPriceInCents, items: [item] },
         allocations: [0], freight: 0 };
     },
@@ -36,6 +39,8 @@ vi.mock("@curtiz/integrations", () => {
       request: async (path: string, options?: { method?: string; body?: unknown }) => {
         const method = options?.method ?? "GET";
         state.requests.push({ path, method, body: options?.body });
+        if (path.startsWith("/naturezas-operacoes?")) return { data: state.natureActive ? [{ id: 15111975260, situacao: 1, serie: state.natureSeries }] : [] };
+        if (path.startsWith("/formas-pagamentos/")) { const id = Number(path.split("/").pop()); return { data: { id, situacao: 1, finalidade: 2, tipoPagamento: state.methodTypeOverride ?? ({ 11: 17, 22: 1, 33: 3, 44: 4 } as Record<number, number>)[id] } }; }
         if (path === "/empresas/me/dados-basicos") return { data: { id: 7, cnpj: "68.267.385/0001-91" } };
         if (path === "/contatos" && method === "POST") { state.contactExists = true; return { data: { id: 55 } }; }
         if (path.startsWith("/contatos/")) return { data: { id: 55, tipo: "J", numeroDocumento: "11222333000181", ie: "0012345678900",
@@ -43,9 +48,9 @@ vi.mock("@curtiz/integrations", () => {
         if (path === "/pedidos/vendas" && method === "POST") { state.saleId = 900; return { data: { id: 900 } }; }
         if (path === "/pedidos/vendas/900/gerar-nfe") return { idNotaFiscal: 77 };
         if (path === "/pedidos/vendas/900") return { data: { id: 900, contato: { id: 55 }, notaFiscal: { id: state.claimed.has("bling_invoice_draft") ? 77 : 0 },
-          itens: [{ naturezaOperacao: { id: 15111725693 } }] } };
+          itens: [{ naturezaOperacao: { id: 15111975260 } }] } };
         if (path === "/nfe/77/enviar?enviarEmail=false") return {};
-        if (path === "/nfe/77") return { data: { id: 77, situacao: 1, serie: 3, naturezaOperacao: { id: 15111725693 }, transporte: { fretePorConta: 3 } } };
+        if (path === "/nfe/77") return { data: { id: 77, situacao: 1, tipo: 1, serie: state.draftSeries, valorNota: state.draftAmount, valorFrete: 0, naturezaOperacao: { id: 15111975260 }, transporte: { fretePorConta: 3 } } };
         throw new Error(`unexpected ${method} ${path}`);
       }
     }),
@@ -58,7 +63,15 @@ vi.mock("./bling-jobs", () => ({
   findBlingOrder: async () => state.saleId
 }));
 vi.mock("./bling-invoice-draft", () => ({
-  blingInvoicePaymentTerms: () => [], invoiceMatchesFiscalLines: () => true, prepareBlingFiscalDraft: vi.fn()
+  assertBlingInvoicePaymentTerms: vi.fn(), blingInvoicePaymentTerms: () => [], invoiceMatchesFiscalLines: () => true, prepareBlingFiscalDraft: vi.fn()
+}));
+vi.mock("./representative-commercial-payments", () => ({
+  commercialKitCollector: () => "collector", kitPaymentMethodAllowed: () => true,
+  commercialKitPaymentProvider: () => ({ findRepresentativeKitPayment: async (reference: string) => ({
+    externalReference: reference, collectorId: "collector", currency: "BRL", amountInCents: state.paymentAmount,
+    status: state.paymentStatus, dateApproved: "2026-11-23T12:00:00Z", refunds: state.paymentRefunds,
+    paymentMethodId: state.paymentKind === "pix" ? "pix" : "visa", paymentTypeId: state.paymentKind
+  }) })
 }));
 vi.mock("./melhor-envio-server", () => ({ createMelhorEnvioProvider: vi.fn() }));
 vi.mock("./representative-commercial-shipping", () => ({ advanceRepresentativeKitShipping: vi.fn() }));
@@ -96,7 +109,8 @@ const environment = {
   SUPABASE_URL: "https://project.supabase.co", SUPABASE_SECRET_KEY: "secret",
   BLING_ORDER_SYNC_ENABLED: "true", BLING_INVOICE_SYNC_ENABLED: "true", BLING_INVOICE_STOCK_AUTOMATION_DISABLED: "true",
   BLING_INVOICE_SEND_ENABLED: "true", BLING_INVOICE_TRANSMISSION_MODE: "production", BLING_LIVE_INVOICE_SEND_AUTHORIZED: "true",
-  BLING_PAYMENT_METHOD_ID: "11", BLING_CASH_PAYMENT_METHOD_ID: "22"
+  BLING_PAYMENT_METHOD_ID: "11", BLING_CASH_PAYMENT_METHOD_ID: "22",
+  BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID: "33", BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID: "44"
 };
 const orderId = "11111111-1111-4111-8111-111111111111";
 const baseJob = {
@@ -113,6 +127,8 @@ const run = () => runRepresentativeCommercialFulfillment(environment);
 describe("automatic MG02 kit invoice", () => {
   beforeEach(() => {
     state.calls = []; state.requests = []; state.claimed = new Set(); state.saleId = null; state.contactExists = true; state.jobs = [{ ...baseJob }];
+    state.paymentKind = "pix"; state.paymentStatus = "approved"; state.paymentAmount = 10000; state.paymentRefunds = [];
+    state.natureActive = true; state.natureSeries = 3; state.draftSeries = 3; state.draftAmount = 100; state.methodTypeOverride = null;
     state.buyer = { buyerName: "Loja Teste LTDA", buyerDocument: "11222333000181", buyerRegistration: "0012345678900" };
   });
 
@@ -125,6 +141,45 @@ describe("automatic MG02 kit invoice", () => {
     expect(names().indexOf("auto_approve_representative_kit_bling_draft")).toBeLessThan(names().lastIndexOf("claim_representative_kit_bling_write"));
     expect(state.requests.find(request => request.path === "/pedidos/vendas" && request.method === "POST")?.body).toEqual({ method: 11 });
     expect(names()).not.toContain("record_representative_kit_auto_invoice_error");
+  });
+
+  it.each([["credit_card", 33], ["debit_card", 44]] as const)("uses the real %s fiscal method, never Pix", async (kind, method) => {
+    state.paymentKind = kind;
+    await run();
+    expect(posts("/pedidos/vendas")[0]?.body).toEqual({ method });
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(1);
+  });
+  it("does not issue a paid card order as Pix when its fiscal method is missing", async () => {
+    state.paymentKind = "credit_card";
+    await runRepresentativeCommercialFulfillment({ ...environment, BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID: "" });
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(state.calls.find(call => call.name === "record_representative_kit_auto_invoice_error")?.args).toMatchObject({ p_reason: "payment_method_required" });
+  });
+  it.each(["pending", "refunded"])("does not issue when the provider payment is %s", async status => {
+    state.paymentStatus = status;
+    await run();
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(state.calls.find(call => call.name === "record_representative_kit_auto_invoice_error")?.args).toMatchObject({ p_reason: "kit_payment_unconfirmed" });
+  });
+  it.each([
+    ["nature_not_active", () => { state.natureActive = false; }],
+    ["invoice_series_mismatch", () => { state.natureSeries = 2; }],
+    ["invoice_fiscal_payment_method_invalid", () => { state.methodTypeOverride = 90; }]
+  ] as const)("blocks sale creation on %s", async (reason, configure) => {
+    configure();
+    await run();
+    expect(posts("/pedidos/vendas")).toHaveLength(0);
+    expect(state.calls.find(call => call.name === "record_representative_kit_auto_invoice_error")?.args).toMatchObject({ p_reason: reason });
+  });
+  it.each([
+    ["invoice_series_mismatch", () => { state.draftSeries = 2; }],
+    ["invoice_draft_total_mismatch", () => { state.draftAmount = 101; }]
+  ] as const)("blocks automatic approval and send on %s", async (reason, configure) => {
+    configure();
+    await run();
+    expect(names()).not.toContain("auto_approve_representative_kit_bling_draft");
+    expect(posts("/enviar?enviarEmail=false")).toHaveLength(0);
+    expect(state.calls.find(call => call.name === "record_representative_kit_auto_invoice_error")?.args).toMatchObject({ p_reason: reason });
   });
 
   it("does not duplicate the sale, the draft or the transmission when the check runs again", async () => {

@@ -15,7 +15,7 @@ const referencePattern = /^KITMG-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/
 const kitReference = (orderId: string) => `KITMG-${orderId}`;
 
 // Pix, or a credit/debit card whose method and type agree with each other.
-function kitPaymentMethodAllowed(payment: MercadoPagoPayment) {
+export function kitPaymentMethodAllowed(payment: MercadoPagoPayment) {
   if (payment.paymentMethodId === "pix") return true;
   if (!mercadoPagoCardMethodIds.has(payment.paymentMethodId)) return false;
   return payment.paymentTypeId === "debit_card" ? mercadoPagoDebitMethodIds.has(payment.paymentMethodId)

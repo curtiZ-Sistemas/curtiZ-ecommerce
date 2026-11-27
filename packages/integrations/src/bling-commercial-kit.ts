@@ -114,7 +114,7 @@ export async function commercialKitFiscalMirror(readCatalogVariant: CatalogVaria
  * CFOP, CSOSN, destinatário e totais). `reference` é o numeroLoja do pedido de venda.
  */
 export async function verifyCommercialKitInvoice(provider: BlingClient, readCatalogVariant: CatalogVariantReader, job: UnknownRecord,
-  environment: 1 | 2, input: { reference: string; billingPostalCode: () => Promise<string>; paymentMethod?: "pix" | "cash";
+  environment: 1 | 2, input: { reference: string; billingPostalCode: () => Promise<string>; paymentMethod?: "pix" | "cash" | "credit_card" | "debit_card";
     manual?: { key: string; invoice: UnknownRecord }; pickupObservation?: string }) {
   const saleId = readNumber(job, "saleId");
   const invoiceId = readNumber(job, "invoiceId");
@@ -149,7 +149,9 @@ export async function verifyCommercialKitInvoice(provider: BlingClient, readCata
     originPostalCode: readString(job, "originPostalCode"), destinationPostalCode,
     deliveryPostalCode: readString(job, "postalCode"),
     totalInCents: mirror.totalInCents, shippingInCents: freight, additionalInfo: mirror.icmsCredit?.message, paymentMethod: input.paymentMethod,
-    pickupObservation: input.pickupObservation,
+    pickupObservation: input.pickupObservation ?? (reference.startsWith("KITMG-") && natureId === 15111975260
+      && readString(job, "originPostalCode") === "35524168"
+      ? "Local de retirada das mercadorias: Rua Antônio Pedro da Silva, nº 753, bairro Romeu Duarte, Nova Serrana/MG, CEP 35524-168." : undefined),
     items: mirror.items.map((item, index) => {
       const credit = mirror.icmsCredit;
       const icms: Record<string, string> = credit ? {
