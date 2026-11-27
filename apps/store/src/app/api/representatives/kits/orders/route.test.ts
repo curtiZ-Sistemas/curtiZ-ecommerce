@@ -4,13 +4,15 @@ const mock = vi.hoisted(() => ({
   actor: "10000000-0000-4000-8000-000000000001", configured: false, originAllowed: true,
   session: vi.fn(), authBudget: vi.fn(), record: vi.fn(), call: vi.fn(),
   begin: vi.fn(), beginCard: vi.fn(), cardSession: vi.fn(), cancel: vi.fn(), refresh: vi.fn(), makeProvider: vi.fn(),
-  originPostal: "35520000", manualFiscal: false, collection: false
+  originPostal: "35520000", manualFiscal: false, collection: false, creditMethod: "33", debitMethod: "44"
 }));
 vi.mock("@/lib/http-origin", () => ({ isAllowedRequestOrigin: () => mock.originAllowed }));
 vi.mock("@/lib/runtime-environment", () => ({ getStoreRuntimeEnvironment: () => ({
   REPRESENTATIVE_KIT_ORIGIN_POSTAL_CODE: mock.originPostal,
   REPRESENTATIVE_KIT_MANUAL_FISCAL_ENABLED: String(mock.manualFiscal),
   REPRESENTATIVE_KIT_COLLECTION_ENABLED: String(mock.collection),
+  BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID: mock.creditMethod,
+  BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID: mock.debitMethod,
 }) }));
 vi.mock("@/lib/representative-resale-scope", () => import("../../../../../lib/representative-resale-scope"));
 vi.mock("@/lib/private-request", () => ({
@@ -50,6 +52,7 @@ beforeEach(() => {
   mock.collection = false;
   mock.manualFiscal = false;
   mock.originPostal = "35520000";
+  mock.creditMethod = "33"; mock.debitMethod = "44";
   mock.session.mockResolvedValue({ data: { user: { id: mock.actor, email: "verified@example.invalid",
     email_confirmed_at: "2026-11-18T00:00:00Z" } } });
 });
@@ -152,6 +155,17 @@ describe("commercial kit order route", () => {
     const token = "token-fixture-123";
     const payment = { kind: "credit", token, payment_method_id: "visa", installments: 3, issuer_id: "25" };
     const body = { action: "card", orderId, payment };
+    it("does not collect money when the card fiscal mapping is missing", async () => {
+      mock.configured = true;
+      mock.creditMethod = ""; mock.debitMethod = "";
+      for (const request of [body, { action: "card_session", orderId }]) {
+        const response = await post(request);
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: "CARD_FISCAL_NOT_CONFIGURED" });
+      }
+      expect(mock.beginCard).not.toHaveBeenCalled();
+      expect(mock.cardSession).not.toHaveBeenCalled();
+    });
 
     it("is closed with the rest of the checkout until the release is configured", async () => {
       for (const request of [body, { action: "card_session", orderId }]) expect((await post(request)).status).toBe(409);

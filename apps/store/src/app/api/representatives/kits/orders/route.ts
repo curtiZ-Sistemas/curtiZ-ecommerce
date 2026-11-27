@@ -116,6 +116,17 @@ export async function POST(request: Request) {
       }) !== true) throw new KitTransactionError(409);
       const payer = { id: user.id, email: user.email };
       const id = data.orderId.toLowerCase();
+      // Do not accept a new card charge if its fiscal mapping has not been configured.
+      // Existing payment status, refund and cancellation operations remain available.
+      const fiscalCardConfigured = (kind: "credit" | "debit") => {
+        const method = Number(kind === "credit" ? environment.BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID
+          : environment.BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID);
+        return Number.isSafeInteger(method) && method > 0;
+      };
+      if ((data.action === "card" && !fiscalCardConfigured(data.payment.kind))
+        || (data.action === "card_session" && !fiscalCardConfigured("credit") && !fiscalCardConfigured("debit"))) {
+        return reply({ code: "CARD_FISCAL_NOT_CONFIGURED", message: "Pagamento por cartão temporariamente indisponível. Escolha Pix ou outra forma disponível." }, 409);
+      }
       if (data.action === "card_session") {
         return reply({ ok: true, session: await commercialKitCardSession(db, payer, id, environment) }, 200);
       }
