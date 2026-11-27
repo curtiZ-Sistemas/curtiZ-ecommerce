@@ -43,6 +43,33 @@ async function call(db: SupabaseClient, name: string, args: Record<string, unkno
   return result.data;
 }
 
+// Payment summary is persisted by the verified Mercado Pago response/webhook.
+async function retailBlingPaymentMethod(db: SupabaseClient, provider: BlingClient, environment: Environment,
+  orderId: string, totalInCents: number): Promise<number> {
+  const result = await db.from("payments").select("provider,provider_payment_id,status,amount,currency,payment_method_summary").eq("order_id", orderId);
+  if (result.error) throw new BlingError("storage_unavailable", 503, true);
+  const payments = array(result.data).filter(p => p.provider === "mercadopago" && p.status === "approved");
+  if (payments.length !== 1 || !readString(payments[0]!, "provider_payment_id")
+    || payments[0]!.currency !== "BRL" || !Number.isSafeInteger(totalInCents) || totalInCents <= 0
+    || cents(payments[0]!.amount) !== totalInCents) throw new BlingError("invoice_payment_terms_required", 409);
+  const summary = readString(payments[0]!, "payment_method_summary").trim().toLowerCase();
+  const [kind, method] = summary.split(":");
+  const mapping = summary === "pix" || kind === "bank_transfer" && method === "pix"
+    ? { id: environment.BLING_PAYMENT_METHOD_ID, codes: [17, 20] }
+    : kind === "credit_card" && method ? { id: environment.BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID, codes: [3] }
+      : kind === "debit_card" && method ? { id: environment.BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID, codes: [4] }
+        : summary === "bolbradesco" || kind === "ticket" && method === "bolbradesco"
+          ? { id: environment.BLING_BOLETO_PAYMENT_METHOD_ID, codes: [15] } : null;
+  if (!mapping) throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
+  const methodId = idNumber(mapping.id);
+  if (!methodId) throw new BlingError("payment_method_required", 409);
+  const remote = row(data(await requestBlingFiscalResource(provider, `/formas-pagamentos/${methodId}`, "order_read")));
+  if (idNumber(remote?.id) !== methodId || Number(remote?.situacao) !== 1
+    || ![2, 3].includes(Number(remote?.finalidade)) || !mapping.codes.includes(Number(remote?.tipoPagamento)))
+    throw new BlingError("invoice_fiscal_payment_method_invalid", 409);
+  return methodId;
+}
+
 async function confirmOrderReconciliation(db: SupabaseClient, provider: BlingClient, orderId: string, external: Record<string, unknown>) {
   const invoiceId = idNumber(row(external.notaFiscal)?.id);
   if (invoiceId) {
@@ -90,8 +117,7 @@ async function createOrder(db: SupabaseClient, provider: BlingClient, environmen
   const address = row(order.shipping_address_snapshot);
   if (!address || ["street", "number", "district", "city", "state"].some((key) => !readString(address, key))
     || !/^\d{8}$/u.test(readString(address, "postal_code").replace(/\D/gu, ""))) throw new BlingError("shipping_address_required", 409);
-  const paymentMethodId = idNumber(environment.BLING_PAYMENT_METHOD_ID);
-  if (!paymentMethodId) throw new BlingError("payment_method_required", 409);
+  const paymentMethodId = await retailBlingPaymentMethod(db, provider, environment, orderId, cents(order.grand_total));
   // Validate the entire immutable order before any external mutation.
   blingOrderPayload({ order, items, productLinks: array(links), contactId: 1, paymentMethodId });
   const existing = await findBlingOrder(provider, code);
@@ -238,8 +264,8 @@ async function fiscalPreconditions(db: SupabaseClient, provider: BlingClient, en
   assertBlingExternalOrder(order, items, externalOrder);
   if (!externalOrder || link?.invoice_id && idNumber(row(externalOrder.notaFiscal)?.id) !== idNumber(link.invoice_id))
     throw new BlingError("invoice_link_conflict", 409);
-  const paymentTerms = blingInvoicePaymentTerms(externalOrder, { totalInCents: mirror.totalInCents,
-    paymentMethodId: Number(environment.BLING_PAYMENT_METHOD_ID) });
+  const paymentMethodId = await retailBlingPaymentMethod(db, provider, environment, orderId, mirror.totalInCents);
+  const paymentTerms = blingInvoicePaymentTerms(externalOrder, { totalInCents: mirror.totalInCents, paymentMethodId });
   return { externalOrderId, invoiceId: idNumber(link?.invoice_id), natureId, series: mirror.rule.series, cfop: mirror.rule.cfop, expectedRecipient, mirror, commercialItems,
     externalOrder, paymentTerms,
     expectedItems, totalInCents: mirror.totalInCents, shippingInCents: mirror.shippingInCents };

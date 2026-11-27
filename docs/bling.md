@@ -67,7 +67,10 @@ O Bling usa a mesma API real para as operações aqui implementadas. O identific
    | `BLING_REDIRECT_URI` | panel | Uma URL da tabela acima, HTTPS, sem query. |
    | `APP_ENV`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | ambos | Configuração existente; banco da instalação correspondente. |
    | `PII_ENCRYPTION_KEY` | store | Chave existente para o CPF **salvo no pedido**, sem buscar o CPF atual do perfil. |
-   | `BLING_PAYMENT_METHOD_ID` | store | ID real, no Bling, da forma de pagamento correspondente ao recebimento via Mercado Pago. |
+   | `BLING_PAYMENT_METHOD_ID` | store | ID real do Pix no Bling (17/20). |
+   | `BLING_REPRESENTATIVE_CREDIT_CARD_PAYMENT_METHOD_ID` | store | ID real do cartão de crédito (03), compartilhado por varejo e representantes. |
+   | `BLING_REPRESENTATIVE_DEBIT_CARD_PAYMENT_METHOD_ID` | store | ID real do cartão de débito (04), compartilhado por varejo e representantes. |
+   | `BLING_BOLETO_PAYMENT_METHOD_ID` | store | ID real do boleto (15), caso oferecido no varejo; não substituir por Pix. |
    | `BLING_STOCK_DEPOSIT_ID` | store | ID real do depósito que receberá o saldo local. |
    | Naturezas fiscais por cenário | banco privado | `private.bling_fiscal_rules` registra IDs reais conferidos no Bling, por UF/contribuinte/operação. O antigo `BLING_NATURE_OF_OPERATION_ID` global não decide mais a emissão. |
    | `BLING_WEBHOOK_CONFIGURED` | panel | `true` somente depois de cadastrar e verificar o webhook; não prova entrega. |
