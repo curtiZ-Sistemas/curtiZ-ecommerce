@@ -79,6 +79,18 @@ describe("Bling authorized MG resale invoice", () => {
       ownDeliveryKey, ownDelivery)).toThrow();
   });
 
+  it("requires the full complementary pickup observation when requested and never accepts it instead of a conflicting structured address", () => {
+    const observation = "Local de retirada das mercadorias: Rua Antônio Pedro da Silva, nº 753, bairro Romeu Duarte, Nova Serrana/MG, CEP 35524-168.";
+    const ownDelivery = { ...expected, series: 3, shippingInCents: 0, totalInCents: 2000, originPostalCode: "35524168", pickupObservation: observation,
+      items: expected.items.map(item => ({ ...item, shippingInCents: 0 })) };
+    const draft = ownDeliveryXml().replace("<CEP>35520000</CEP>", "<CEP>35524168</CEP>");
+    const documented = draft.replace("</infNFe>", `<infAdic><infCpl>${observation}</infCpl></infAdic></infNFe>`);
+    expect(readBlingAuthorizedResaleXml(documented, ownDeliveryKey, ownDelivery)).toMatchObject({ invoiceKey: ownDeliveryKey });
+    expect(() => readBlingAuthorizedResaleXml(draft, ownDeliveryKey, ownDelivery)).toThrow("invoice_pickup_observation_missing");
+    expect(() => readBlingAuthorizedResaleXml(documented.replace("753", "754"), ownDeliveryKey, ownDelivery)).toThrow("invoice_pickup_observation_missing");
+    expect(() => readBlingAuthorizedResaleXml(documented.replace("<CEP>35524168</CEP>", "<CEP>33913400</CEP>"), ownDeliveryKey, ownDelivery)).toThrow("invoice_pickup_address_mismatch");
+    expect(() => readBlingAuthorizedResaleXml(documented.replace("<retirada><UF>MG</UF><CEP>35524168</CEP><cMun>3145208</cMun></retirada>", ""), ownDeliveryKey, ownDelivery)).toThrow("invoice_pickup_address_mismatch");
+  });
   it("checks a distinct delivery address without changing the official fiscal recipient", () => {
     const distinct = { ...expected, deliveryPostalCode: "30110200" };
     expect(() => readBlingAuthorizedResaleXml(xml(), key, distinct)).toThrow();

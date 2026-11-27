@@ -115,7 +115,7 @@ export async function commercialKitFiscalMirror(readCatalogVariant: CatalogVaria
  */
 export async function verifyCommercialKitInvoice(provider: BlingClient, readCatalogVariant: CatalogVariantReader, job: UnknownRecord,
   environment: 1 | 2, input: { reference: string; billingPostalCode: () => Promise<string>; paymentMethod?: "pix" | "cash";
-    manual?: { key: string; invoice: UnknownRecord } }) {
+    manual?: { key: string; invoice: UnknownRecord }; pickupObservation?: string }) {
   const saleId = readNumber(job, "saleId");
   const invoiceId = readNumber(job, "invoiceId");
   const { reference, manual } = input;
@@ -149,6 +149,7 @@ export async function verifyCommercialKitInvoice(provider: BlingClient, readCata
     originPostalCode: readString(job, "originPostalCode"), destinationPostalCode,
     deliveryPostalCode: readString(job, "postalCode"),
     totalInCents: mirror.totalInCents, shippingInCents: freight, additionalInfo: mirror.icmsCredit?.message, paymentMethod: input.paymentMethod,
+    pickupObservation: input.pickupObservation,
     items: mirror.items.map((item, index) => {
       const credit = mirror.icmsCredit;
       const icms: Record<string, string> = credit ? {

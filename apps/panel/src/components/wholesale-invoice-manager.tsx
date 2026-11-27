@@ -87,6 +87,8 @@ const reasons: Record<string, string> = {
   invoice_payment_terms_required: "O pedido no Bling não possui parcelas que confirmem a forma de pagamento desta nota.",
   invoice_payment_terms_mismatch: "As parcelas da nota no Bling divergem do pedido. Confira a forma e o valor do pagamento antes de continuar.",
   invoice_fiscal_payment_mismatch: "O pagamento do XML autorizado diverge da venda. Concilie o documento fiscal existente antes de prosseguir.",
+  invoice_pickup_address_mismatch: "O XML autorizado não confirma o local de retirada previsto. Confira a nota existente no Bling e não emita outra.",
+  invoice_pickup_observation_missing: "O XML autorizado não contém a observação de retirada esperada. Confira a nota existente no Bling e não emita outra.",
   kit_fiscal_clearance_failed: "A conferência fiscal não passou. Confira os dados do cliente e o cadastro fiscal do produto.",
   wholesale_grade_changed: "O cadastro fiscal da ficha mudou. Tente de novo para preparar uma nota com os dados atuais.",
   wholesale_rule_changed: "A configuração fiscal desta nota foi substituída. Tente de novo para preparar uma nova nota com a regra vigente." ,
@@ -540,6 +542,11 @@ export function DraftReview({ review, inspection = false, historySource }: { rev
       <div><dt>Frete</dt><dd>{review.freight}</dd></div>
       <div><dt>CFOP / CSOSN previstos</dt><dd>{review.cfop || "—"} / {review.csosn || "—"}</dd></div>
     </dl>
+    {review.expectedPickupObservation && <div className="wholesale-note">
+      <strong>Informação complementar prevista</strong>
+      <p>{review.expectedPickupObservation}</p>
+      <p>Confira no documento do Bling antes de transmitir. O texto acima é a regra esperada, não uma leitura das observações do provedor. O grupo fiscal de retirada continua sujeito à validação.</p>
+    </div>}
     <div className="wholesale-review-table"><table><thead><tr><th>Produto / código</th><th>NCM / origem</th><th>CFOP / CSOSN</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead>
       <tbody>{review.items.map((item, index) => <tr key={index}><td><strong>{item.description || item.code}</strong><small>{item.code}</small></td>
         <td>{item.ncm || "—"} / {item.origin || "—"}</td><td>{item.cfop || "—"} / {item.csosn || "—"}</td>

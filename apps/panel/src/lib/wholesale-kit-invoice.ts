@@ -11,12 +11,18 @@ import { logServerEvent } from "@curtiz/security";
 type Environment = Readonly<Record<string, string | undefined>>;
 type UnknownRecord = Record<string, unknown>;
 
+// The address belongs only to the approved MG02 nature and dispatch CEP.
+export const MG02_PICKUP_OBSERVATION = "Local de retirada das mercadorias: Rua Antônio Pedro da Silva, nº 753, bairro Romeu Duarte, Nova Serrana/MG, CEP 35524-168.";
+const mg02PickupObservation = (natureId: number | null, originPostalCode: unknown) =>
+  natureId === 15111975260 && originPostalCode === "35524168" ? MG02_PICKUP_OBSERVATION : undefined;
+
 export type WholesaleStep = "contact" | "sale" | "draft" | "send" | "authorization";
 /** waiting = the invoice is saved and safe, but something outside the app has to happen (see `code`). */
 export type WholesaleDraftReview = {
   hash: string; number: string; series: string; date: string; operationDate: string;
   issuer: string; nature: string; buyer: string; document: string; registration: string; address: string;
   totalInCents: number; freight: string; payment: string; cfop: string; csosn: string;
+  expectedPickupObservation?: string;
   items: { code: string; description: string; unit: string; quantity: string; unitValue: string; ncm: string; origin: string; cfop: string; csosn: string }[];
 };
 export type WholesaleIssueResult = { status: "authorized" | "ready" | "waiting" | "error" | "busy"; code?: string; review?: WholesaleDraftReview };
@@ -114,7 +120,8 @@ export async function issueWholesaleKitInvoice(input: {
 
     const authorize = async (invoiceId: number, invoice: UnknownRecord): Promise<WholesaleIssueResult> => {
       const verified = await verifyCommercialKitInvoice(provider, readVariant, { ...job, saleId, invoiceId }, 1, {
-        reference, billingPostalCode: async () => text(billing.postal_code), paymentMethod
+        reference, billingPostalCode: async () => text(billing.postal_code), paymentMethod,
+        pickupObservation: mg02PickupObservation(positiveId(row(invoice.naturezaOperacao).id), job.originPostalCode)
       });
       const authorized = await call(db, "record_wholesale_kit_invoice_authorized", {
         p_id: input.invoiceId, p_sale: saleId, p_invoice: invoiceId, p_key: verified.key, p_protocol: verified.protocol,
@@ -376,6 +383,7 @@ export async function issueWholesaleKitInvoice(input: {
         address: [address.endereco, address.numero, address.complemento, address.bairro, address.municipio, address.uf, address.cep].map(scalar).filter(Boolean).join(", "),
         totalInCents: mirror.totalInCents, freight: "Transporte próprio", payment: job.paymentMethod === "cash" ? "Dinheiro" : "Pix",
         cfop: scalar(rule.cfop), csosn: scalar(rule.csosn),
+        expectedPickupObservation: mg02PickupObservation(natureId, job.originPostalCode),
         items: rows(preview.itens).map(item => ({ code: scalar(item.codigo), description: scalar(item.descricao), unit: scalar(item.unidade),
           quantity: scalar(item.quantidade), unitValue: scalar(item.valor), ncm: scalar(item.classificacaoFiscal), origin: scalar(item.origem),
           cfop: scalar(item.cfop), csosn: scalar(row(row(item.tributacao).icms).csosn) }))
@@ -442,6 +450,7 @@ function reviewFromProvider(job: UnknownRecord, preview: UnknownRecord, issuer: 
     address: [address.endereco, address.numero, address.complemento, address.bairro, address.municipio, address.uf, address.cep].map(scalar).filter(Boolean).join(", "),
     totalInCents, freight: freight === 3 ? "Transporte próprio" : Number.isFinite(freight) ? `Modalidade ${freight}` : "Não informado",
     payment: "Não conciliado nesta consulta", cfop: scalar(rule.cfop), csosn: scalar(rule.csosn),
+    expectedPickupObservation: mg02PickupObservation(positiveId(row(preview.naturezaOperacao).id), job.originPostalCode),
     items: rows(preview.itens).map(item => ({ code: scalar(item.codigo), description: scalar(item.descricao), unit: scalar(item.unidade),
       quantity: scalar(item.quantidade), unitValue: scalar(item.valor), ncm: scalar(item.classificacaoFiscal), origin: scalar(item.origem),
       cfop: scalar(item.cfop), csosn: scalar(row(row(item.tributacao).icms).csosn) }))
