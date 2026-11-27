@@ -205,7 +205,7 @@ describe("notas de atacado: emitir, tentar de novo e cancelar", () => {
     expect(state.cancel).not.toHaveBeenCalled();
     state.rpc.mockImplementation(async (name: string) => ({ data: name === "begin_wholesale_kit_invoice_cancel" ? { wholesaleId: ids.invoice } : { ok: false }, error: null }));
     expect(await (await post({ action: "cancel", id: ids.invoice })).json()).toEqual({ ok: true });
-    expect(state.cancel).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: ids.invoice }));
+    expect(state.cancel).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: ids.invoice, afterBlingReview: true }));
     state.cancel.mockResolvedValue(false);
     expect((await post({ action: "cancel", id: ids.invoice })).status).toBe(409);
     state.rpc.mockResolvedValue({ data: null, error: null });

@@ -507,7 +507,6 @@ export async function cancelWholesaleKitInvoice(input: {
     if (text(job.wholesaleId) !== invoiceId || job.sendClaimed === true) throw scopeError();
     let saleId = positiveId(job.saleId);
     let draftId = positiveId(job.invoiceId);
-    if (input.afterBlingReview && !draftId) throw scopeError();
     if (!saleId && !draftId && job.saleClaimed !== true && job.draftClaimed !== true) return await finish();
     if (environment.APP_ENV !== "production" || environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true") throw scopeError();
     const reference = `ATACADO-${invoiceId}`;
@@ -562,12 +561,11 @@ export async function cancelWholesaleKitInvoice(input: {
           || (!linked && draftReference !== reference && !exactPersisted)
           || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
         if (Number(draft.situacao) !== 1) throw new BlingError("cancel_draft_not_pending", 409);
-        // A key can be generated before authorization. It is not proof of an authorized NF-e,
-        // but the provider's pending status alone does not rule out an external transmission.
-        if (text(draft.chaveAcesso).trim()) throw new BlingError("cancel_access_key_requires_reconciliation", 409);
         stage = "cancel_draft_snapshot";
         const preview = reviewFromProvider(job, draft, digits(company.cnpj));
         if (await call(db, "save_wholesale_cancel_preview", { p_id, p_preview: preview }) !== true) throw scopeError();
+        // A key can be generated before authorization; it still requires fiscal reconciliation.
+        if (text(draft.chaveAcesso).trim()) throw new BlingError("cancel_access_key_requires_reconciliation", 409);
         if (input.afterBlingReview) throw new BlingError("cancel_draft_still_present", 409);
         stage = "cancel_draft_delete";
         await remove(`/nfe?idsNotas%5B%5D=${draftId}`, path);

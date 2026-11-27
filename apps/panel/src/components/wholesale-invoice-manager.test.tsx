@@ -230,14 +230,17 @@ describe("histórico de cancelamentos e emissão externa", () => {
     expect(html.match(/aria-label="Visualizar nota cancelada"/gu)).toHaveLength(1);
     expect(html.indexOf("Nova nota para este cliente")).toBeLessThan(html.indexOf("Visualizar nota cancelada"));
     expect(html.indexOf("Visualizar nota cancelada")).toBeLessThan(html.indexOf("Remover da lista"));
-    expect(html).toContain("Concluir cancelamento");
+    expect(html).toContain("Verificar exclusão");
+    expect(html).not.toContain("Tentar exclusão pelo painel");
+    expect(html).toContain("Abrir no Bling");
   });
   it("mostra a revisão no Bling e o retorno da conferência na nota em que houve a recusa", () => {
     const html = renderToStaticMarkup(<WholesaleInvoiceList invoices={[invoice({ id: "i2", invoiceId: 77,
       status: "error", authorized: false, canCancel: true, cancelPending: true })]} busyId="" onRetry={noop} onCancel={noop}
       cancelFeedback={{ id: "i2", reason: "draft_still_present", message: "O rascunho ainda existe no Bling." }} />);
     expect(html).toContain("notas.fiscais.php#edit/77");
-    expect(html).toContain("Revisar no Bling");
+    expect(html).toContain("Abrir no Bling");
+    expect(html).not.toContain("Tentar exclusão pelo painel");
     expect(html).toContain("O rascunho ainda existe no Bling.");
   });
   it("preserva a nota emitida externamente e não oferece nova emissão nem cancelamento", () => {

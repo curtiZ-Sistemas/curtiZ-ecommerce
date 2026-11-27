@@ -1,4 +1,5 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.stubGlobal("React", React);
 
@@ -9,6 +10,8 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/seo", () => ({ BRAND_NAME: "curti Z", officialUrl: (path: string) => path }));
 vi.mock("@/lib/storefront-data", () => ({ getPublicCmsPage: () => Promise.resolve(null) }));
+vi.mock("@/lib/company-identification", () => import("../../lib/company-identification"));
+vi.mock("@/lib/company-identification-data", () => ({ getCompanyIdentification: async () => ({ legalName: "Empresa Teste", taxId: "12345678000195", address: "Rua de Teste, 1", email: null, phone: null }) }));
 vi.mock("@/lib/legal-data", () => ({
   getPublicLegalDocument: (slug: string) =>
     Promise.resolve({ document: state.published.has(slug) ? { slug } : null, unavailable: false })
@@ -37,5 +40,15 @@ describe("páginas antigas de políticas", () => {
     state.published.add("sobre");
     await expect(open("sobre")).resolves.toBeTruthy();
     expect(state.redirected).toBe("");
+  });
+});
+
+describe("dados da empresa", () => {
+  it("exibe a identificação em contato, não em outras páginas", async () => {
+    const contact = renderToStaticMarkup(await open("contato"));
+    expect(contact).toContain("Empresa Teste");
+    expect(contact).toContain("12.345.678/0001-95");
+    expect(contact).toContain("Rua de Teste, 1");
+    expect(renderToStaticMarkup(await open("sobre"))).not.toContain("Rua de Teste, 1");
   });
 });

@@ -359,7 +359,7 @@ describe("cancelamento conciliado", () => {
     expect(names().indexOf("save_wholesale_cancel_preview")).toBeLessThan(names().indexOf("finish_wholesale_kit_invoice_cancel"));
     expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
   });
-  it("consulta o detalhe da nota em uma conciliação de rascunho sem ID local", async () => {
+  it.each([true, false])("consulta o detalhe da nota em uma conciliação de rascunho sem ID local (revisão manual: %s)", async afterBlingReview => {
     let draftExists = true;
     const remote = { request: async (path: string, options?: { method?: string }) => {
       const method = options?.method ?? "GET";
@@ -371,8 +371,12 @@ describe("cancelamento conciliado", () => {
       throw new BlingError("provider_error", 404);
     } };
     expect(await cancelWholesaleKitInvoice({ db: db as never, provider: remote as never, environment, invoiceId: id,
-      job: { ...cancelJob(), invoiceId: null } })).toBe(true);
-    expect(names()).toContain("finish_wholesale_kit_invoice_cancel");
+      job: { ...cancelJob(), invoiceId: null }, afterBlingReview })).toBe(!afterBlingReview);
+    expect(names().includes("finish_wholesale_kit_invoice_cancel")).toBe(!afterBlingReview);
+    if (afterBlingReview) {
+      expect(names()).toContain("save_wholesale_cancel_preview");
+      expect(state.requests.some(r => r.method === "DELETE")).toBe(false);
+    }
   });
   it.each([true, false])("concilia recusa de exclusão apenas após confirmar ausência (%s)", async (disappeared) => {
     let draftExists = true;

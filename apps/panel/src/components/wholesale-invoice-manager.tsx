@@ -92,7 +92,7 @@ const reasons: Record<string, string> = {
   wholesale_rule_changed: "A configuração fiscal desta nota foi substituída. Tente de novo para preparar uma nova nota com a regra vigente." ,
   duplicate_contact: "Há mais de um contato com este CNPJ no Bling. A integração bloqueou a duplicidade; solicite suporte.",
   duplicate_external_order: "Há mais de um pedido desta nota no Bling. A integração bloqueou a duplicidade; solicite suporte.",
-  cancel_reconciliation_pending: "O Bling ainda não confirmou a exclusão. O estoque permanece reservado e não será criada outra nota.",
+  cancel_reconciliation_pending: "Confira a nota no Bling. Se for um rascunho pendente nunca transmitido, exclua-o lá e volte para verificar. O estoque permanece reservado.",
   uncertain_write: "O Bling ainda não confirmou a operação. Tente novamente para o sistema consultar e recuperar o registro existente, sem duplicar a venda.",
   awaiting_bling_confirmation: "Aguardando confirmação do Bling. Verifique novamente pelo painel; o sistema recuperará a operação existente sem duplicá-la.",
   nature_not_active: "A natureza fiscal aprovada não está ativa no Bling. Nenhum novo pedido foi criado.",
@@ -214,7 +214,6 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
       const open = !invoice.externalReported && (invoice.status === "draft" || invoice.status === "error");
       const cancelled = invoice.status === "cancelled" && !invoice.cancelPending && !invoice.canCancel && !invoice.externalReported;
       const feedback = cancelFeedback?.id === invoice.id ? cancelFeedback : null;
-      const previewSaved = feedback?.reason === "draft_still_present" || feedback?.reason === "draft_refused";
       return <li key={invoice.id} className="wholesale-row">
         <div className="wholesale-row-main">
           <strong>{invoice.buyerName}</strong>
@@ -249,13 +248,13 @@ export function WholesaleInvoiceList({ invoices, busyId, onRetry, onCancel, onAr
             : <button className="secondary-button" type="button" disabled={busyId !== ""} onClick={() => onRetry(invoice.id)}>{invoice.stage === "sent" ? "Verificar autorização" : "Tentar de novo"}</button>)}
           {!invoice.externalReported && invoice.canCancel && (invoice.cancelPending || invoice.status === "cancelled") &&
             <button className="secondary-button wholesale-cancel-pending" type="button" disabled={busyId !== ""}
-              onClick={() => onCancel(invoice.id, Boolean(invoice.cancelPending && invoice.invoiceId))}>Concluir cancelamento</button>}
+              onClick={() => onCancel(invoice.id, true)}>Verificar exclusão</button>}
           {cancelled && onArchive && <button type="button" className="invoice-action wholesale-archive-action" disabled={busyId !== ""}
             aria-label="Remover da lista" title="Remover da lista" onClick={() => onArchive(invoice.id)}><Trash2 aria-hidden="true" /></button>}
           </div>
-          {invoice.cancelPending && invoice.canCancel && !invoice.externalReported && invoice.invoiceId && <>
-            {previewSaved && <a className="wholesale-cancel-link" href={blingInvoiceEditUrl(invoice.invoiceId)} target="_blank" rel="noopener noreferrer">Revisar no Bling</a>}
-            <button className="wholesale-cancel-link" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}>Tentar exclusão pelo painel</button>
+          {invoice.cancelPending && invoice.canCancel && !invoice.authorized && !invoice.externalReported && <>
+            <a className="wholesale-cancel-link" href={invoice.invoiceId ? blingInvoiceEditUrl(invoice.invoiceId) : "https://www.bling.com.br/notas.fiscais.php"} target="_blank" rel="noopener noreferrer">Abrir no Bling</a>
+            <small className="wholesale-reconciliation">Exclua apenas rascunhos pendentes nunca transmitidos. Depois, verifique a exclusão aqui.</small>
           </>}
           {!invoice.externalReported && invoice.canCancel && !invoice.cancelPending && invoice.status !== "cancelled" &&
             <button className="wholesale-cancel-link" type="button" disabled={busyId !== ""} onClick={() => onCancel(invoice.id)}
@@ -924,13 +923,18 @@ export function WholesaleInvoiceManager() {
 
   async function cancel(id: string, rebuild = false, afterBlingReview = false) {
     if (busyId || running) return;
-    if (!window.confirm(afterBlingReview ? "Verificar se o rascunho foi removido no Bling? Se a exclusão for confirmada, o sistema removerá o pedido vinculado e devolverá as fichas ao estoque." : rebuild ? "Excluir o rascunho anterior no Bling e preparar uma nova nota com as configurações e preços atuais? A nova nota será revisada antes de emitir." : "Cancelar esta nota, excluir o rascunho no Bling e devolver as fichas ao estoque?")) return;
+    if (!window.confirm(afterBlingReview ? "Verificar a exclusão no Bling? O estoque só será devolvido após a conciliação da nota e do pedido." : rebuild ? "Preparar uma nova nota com as configurações atuais? Se existir um rascunho no Bling, será necessário excluí-lo lá antes de continuar." : "Iniciar cancelamento? Se existir um rascunho no Bling, será necessário excluí-lo lá. O estoque só será devolvido após a conferência.")) return;
     setBusyId(id); setNotice(""); setCancelFeedback(null);
     try {
       const response = await fetch("/api/fiscal/wholesale-invoices", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "cancel", id, ...(afterBlingReview ? { afterBlingReview: true } : {}) }) });
       const body = record(await response.json());
-      if (!response.ok) setCancelFeedback({ id, reason: str(body?.reason), message: str(body?.message) || "Não foi possível cancelar a nota." });
+      if (!response.ok) {
+        const message = str(body?.message) || "Não foi possível cancelar a nota.";
+        setCancelFeedback({ id, reason: str(body?.reason), message });
+        if (body?.code === "cancel_reconciliation_pending") setWizard(null);
+        else setNotice(message);
+      }
       else {
         setNotice("Cancelamento concluído. Rascunho removido e estoque conciliado.");
         setWizard(null);

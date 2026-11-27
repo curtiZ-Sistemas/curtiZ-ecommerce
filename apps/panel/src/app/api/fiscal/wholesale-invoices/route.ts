@@ -64,8 +64,8 @@ const databaseReasons: Record<string, [number, string]> = {
 };
 const cancelReasons: Record<WholesaleCancelBlock, string> = {
   draft_refused: "O Bling recusou a exclusão do rascunho. Abra a nota no Bling e confira a situação antes de continuar. O estoque segue reservado.",
-  sale_refused: "O rascunho já não consta no Bling, mas o pedido vinculado não pôde ser removido. Confira esse pedido no Bling. O estoque segue reservado.",
-  draft_still_present: "O rascunho ainda existe no Bling. Se a nota estiver pendente e nunca tiver sido transmitida, exclua o rascunho no Bling e volte para concluir.",
+  sale_refused: "O rascunho não consta mais no Bling, mas o pedido vinculado ainda existe. Confira os lançamentos e solicite a remoção segura do pedido no Bling; depois, verifique novamente. O estoque segue reservado.",
+  draft_still_present: "O rascunho ainda existe no Bling. Exclua-o lá somente se estiver Pendente e nunca tiver sido transmitido. Depois, volte e clique em Verificar exclusão. O estoque segue reservado.",
   draft_not_pending: "A nota está fora da situação Pendente no Bling. Confira a situação fiscal antes de qualquer exclusão. O estoque segue reservado.",
   access_key_requires_reconciliation: "A nota possui chave de acesso. Confirme a situação na SEFAZ antes de qualquer exclusão. O estoque segue reservado.",
   pending: "A exclusão ainda não foi confirmada. O estoque segue reservado."
@@ -166,7 +166,8 @@ export async function POST(request: NextRequest) {
       if (!job) return send({ message: "Esta nota não pode ser cancelada agora. Ela já foi enviada ou está em andamento." }, 409);
       const outcome: { reason: WholesaleCancelBlock } = { reason: "pending" };
       const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job,
-        afterBlingReview: item.afterBlingReview,
+        // The Bling API has refused draft deletion; panel cancellation only verifies manual removal.
+        afterBlingReview: true,
         onBlocked: reason => { outcome.reason = reason; } });
       return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", reason: outcome.reason, message: cancelReasons[outcome.reason] }, 409);
     }
