@@ -408,7 +408,7 @@ describe("cancelamento conciliado", () => {
       if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
       if (path === "/pedidos/vendas/900") return { data: { id: 900, numeroLoja: `ATACADO-${id}`,
         total: 720.02, contato: { id: 55 }, notaFiscal: { id: 77 } } };
-      if (path === "/nfe/77") return { data: { id: 77, situacao: 1, chaveAcesso: "3".repeat(44),
+      if (path === "/nfe/77") return { data: { id: 77, situacao: 1, chaveAcesso: "3".repeat(44), valorNota: 720.02, itens: [],
         contato: { numeroDocumento: "11222333000181" } } };
       throw new Error("unexpected call");
     }) };
