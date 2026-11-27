@@ -310,6 +310,31 @@ describe("emissão da nota de atacado", () => {
 describe("cancelamento conciliado", () => {
   const cancelJob = () => ({ ...baseJob(), saleId: 900, invoiceId: 77, saleClaimed: true, draftClaimed: true,
     amountInCents: 72002, fiscalParameters: { issuerDocument: "12345678000195" } });
+  it.each([true, false])("confere a exclusão feita pelo Bling sem repetir DELETE da nota (presente: %s)", async draftExists => {
+    let saleExists = true;
+    const onBlocked = vi.fn();
+    const request = vi.fn(async (path: string, options?: { method?: string }) => {
+      if (path === "/empresas/me/dados-basicos") return { data: { id: "company-alphanumeric-32", cnpj: "12345678000195" } };
+      if (path === "/contatos/55") return { data: { id: 55, numeroDocumento: "11222333000181" } };
+      if (path === "/nfe/77" && draftExists) return { data: { id: 77, situacao: 1, valorNota: 720.02, itens: [],
+        contato: { numeroDocumento: "11222333000181" } } };
+      if (path === "/pedidos/vendas/900" && options?.method === "DELETE" && !draftExists) { saleExists = false; return null; }
+      if (path === "/pedidos/vendas/900" && saleExists) return { data: { id: 900, total: 720.02, numeroLoja: `ATACADO-${id}`,
+        contato: { id: 55 }, notaFiscal: { id: draftExists ? 77 : 0 } } };
+      if (options?.method === "DELETE") throw Error("unexpected delete");
+      throw new BlingError("provider_error", 404);
+    });
+    const result = await cancelWholesaleKitInvoice({ db: db as never, provider: { request } as never, environment,
+      invoiceId: id, job: cancelJob(), afterBlingReview: true, onBlocked });
+    expect(result).toBe(!draftExists);
+    expect(request.mock.calls.filter(([, options]) => options?.method === "DELETE").map(([path]) => path))
+      .toEqual(draftExists ? [] : ["/pedidos/vendas/900"]);
+    expect(names().includes("finish_wholesale_kit_invoice_cancel")).toBe(!draftExists);
+    if (draftExists) {
+      expect(onBlocked).toHaveBeenCalledWith("draft_still_present");
+      expect(names()).toContain("save_wholesale_cancel_preview");
+    }
+  });
   it("remove somente o rascunho e a venda correspondentes antes de liberar o estoque", async () => {
     let saleExists = true; let draftExists = true;
     const remote = { request: async (path: string, options?: { method?: string }) => {

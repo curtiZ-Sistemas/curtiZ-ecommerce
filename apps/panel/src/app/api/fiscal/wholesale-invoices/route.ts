@@ -7,7 +7,7 @@ import { isValidCnpj } from "@/lib/cnpj";
 import { hasRequiredInternalMfa } from "@/lib/internal-mfa";
 import { createServerSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase/server";
 import { safeTechnicalOrigin, technicalNoStore } from "@/lib/technical-api";
-import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice } from "@/lib/wholesale-kit-invoice";
+import { issueWholesaleKitInvoice, cancelWholesaleKitInvoice, type WholesaleCancelBlock } from "@/lib/wholesale-kit-invoice";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const buyer = z.object({
@@ -33,7 +33,7 @@ const operationDate = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u).refin
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 16) === value;
 });
 const issue = z.object({ action: z.literal("issue"), id: z.string().uuid(), operationDate: operationDate.optional(), reviewedHash: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict();
-const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid() }).strict();
+const cancel = z.object({ action: z.literal("cancel"), id: z.string().uuid(), afterBlingReview: z.literal(true).optional() }).strict();
 const archive = z.object({ action: z.literal("archive"), id: z.string().uuid() }).strict();
 const searchClients = z.object({ action: z.literal("search_clients"), query: z.string().trim().min(2).max(100) }).strict();
 const reuseClient = z.object({ action: z.literal("reuse_client"), id: z.string().uuid() }).strict();
@@ -61,6 +61,14 @@ const databaseReasons: Record<string, [number, string]> = {
   wholesale_kit_unavailable: [409, "Este kit não está disponível para venda de atacado."],
   resale_not_homologated: [409, "Esta ficha ainda não tem a regra fiscal aprovada. Avise o responsável pela configuração fiscal."],
   wholesale_idempotency_conflict: [409, "Esta nota já foi criada com outros dados. Atualize a tela e confira a lista."]
+};
+const cancelReasons: Record<WholesaleCancelBlock, string> = {
+  draft_refused: "O Bling recusou a exclusão do rascunho. Abra a nota no Bling e confira a situação antes de continuar. O estoque segue reservado.",
+  sale_refused: "O rascunho já não consta no Bling, mas o pedido vinculado não pôde ser removido. Confira esse pedido no Bling. O estoque segue reservado.",
+  draft_still_present: "O rascunho ainda existe no Bling. Se a nota estiver pendente e nunca tiver sido transmitida, exclua o rascunho no Bling e volte para concluir.",
+  draft_not_pending: "A nota está fora da situação Pendente no Bling. Confira a situação fiscal antes de qualquer exclusão. O estoque segue reservado.",
+  access_key_requires_reconciliation: "A nota possui chave de acesso. Confirme a situação na SEFAZ antes de qualquer exclusão. O estoque segue reservado.",
+  pending: "A exclusão ainda não foi confirmada. O estoque segue reservado."
 };
 
 export async function GET() {
@@ -156,14 +164,11 @@ export async function POST(request: NextRequest) {
       const job = record(started.data);
       if (started.error) return send({ message: "Não foi possível iniciar o cancelamento." }, started.error.code === "42501" ? 403 : 503);
       if (!job) return send({ message: "Esta nota não pode ser cancelada agora. Ela já foi enviada ou está em andamento." }, 409);
-      const outcome: { reason: "provider_refusal" | "pending" | "access_key_requires_reconciliation" } = { reason: "pending" };
+      const outcome: { reason: WholesaleCancelBlock } = { reason: "pending" };
       const ok = await cancelWholesaleKitInvoice({ db: service, provider, environment: process.env, invoiceId: item.id, job,
+        afterBlingReview: item.afterBlingReview,
         onBlocked: reason => { outcome.reason = reason; } });
-      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", message: outcome.reason === "access_key_requires_reconciliation"
-        ? "A nota possui chave de acesso. Confirme a situação na SEFAZ antes de excluir; o estoque permanece reservado."
-        : outcome.reason === "provider_refusal"
-        ? "O Bling recusou a exclusão do rascunho ou pedido. Nenhuma nova nota será criada; confira as permissões e lançamentos vinculados no Bling."
-        : "A exclusão ainda não foi confirmada. Conclua o cancelamento antes de criar outra nota; o estoque permanece protegido." }, 409);
+      return ok ? send({ ok: true }) : send({ code: "cancel_reconciliation_pending", reason: outcome.reason, message: cancelReasons[outcome.reason] }, 409);
     }
 
     // issue (also the retry): the database allows one running attempt at a time.

@@ -466,10 +466,14 @@ export function reviewFromCancelledHistory(history: UnknownRecord): WholesaleDra
     cfop: scalar(rule.cfop), csosn: scalar(rule.csosn), items };
 }
 
+export type WholesaleCancelBlock = "draft_refused" | "sale_refused" | "draft_still_present" | "draft_not_pending"
+  | "pending" | "access_key_requires_reconciliation";
+
 /** Reconcile an explicit panel cancellation; never delete a transmitted NF-e or release stock on uncertainty. */
 export async function cancelWholesaleKitInvoice(input: {
   db: SupabaseClient; provider: BlingClient; environment: Environment; invoiceId: string; job: UnknownRecord;
-  onBlocked?: (reason: "provider_refusal" | "pending" | "access_key_requires_reconciliation") => void;
+  afterBlingReview?: boolean;
+  onBlocked?: (reason: WholesaleCancelBlock) => void;
 }): Promise<boolean> {
   const { db, provider, environment, invoiceId, job } = input;
   const p_id = invoiceId;
@@ -503,6 +507,7 @@ export async function cancelWholesaleKitInvoice(input: {
     if (text(job.wholesaleId) !== invoiceId || job.sendClaimed === true) throw scopeError();
     let saleId = positiveId(job.saleId);
     let draftId = positiveId(job.invoiceId);
+    if (input.afterBlingReview && !draftId) throw scopeError();
     if (!saleId && !draftId && job.saleClaimed !== true && job.draftClaimed !== true) return await finish();
     if (environment.APP_ENV !== "production" || environment.BLING_INVOICE_STOCK_AUTOMATION_DISABLED !== "true") throw scopeError();
     const reference = `ATACADO-${invoiceId}`;
@@ -552,16 +557,18 @@ export async function cancelWholesaleKitInvoice(input: {
           && Math.round(Number(draft.valorNota) * 100) === Number(job.amountInCents)
           && positiveId(row(draft.naturezaOperacao).id) === positiveId(expectedNature?.external_nature_id)
           && positiveId(expectedNature?.external_nature_id) !== null;
-        if (Number(draft.id) !== draftId || Number(draft.situacao) !== 1
+        if (Number(draft.id) !== draftId
           || (draftReference && draftReference !== reference)
           || (!linked && draftReference !== reference && !exactPersisted)
           || digits(row(draft.contato).numeroDocumento) !== text(job.buyerDocument)) throw scopeError();
+        if (Number(draft.situacao) !== 1) throw new BlingError("cancel_draft_not_pending", 409);
         // A key can be generated before authorization. It is not proof of an authorized NF-e,
         // but the provider's pending status alone does not rule out an external transmission.
         if (text(draft.chaveAcesso).trim()) throw new BlingError("cancel_access_key_requires_reconciliation", 409);
         stage = "cancel_draft_snapshot";
         const preview = reviewFromProvider(job, draft, digits(company.cnpj));
         if (await call(db, "save_wholesale_cancel_preview", { p_id, p_preview: preview }) !== true) throw scopeError();
+        if (input.afterBlingReview) throw new BlingError("cancel_draft_still_present", 409);
         stage = "cancel_draft_delete";
         await remove(`/nfe?idsNotas%5B%5D=${draftId}`, path);
       }
@@ -581,9 +588,13 @@ export async function cancelWholesaleKitInvoice(input: {
     return await finish();
   } catch (error) {
     logWholesaleProviderError("wholesale_invoice_cancel_failed", invoiceId, stage, error);
-    input.onBlocked?.(error instanceof BlingError && error.code === "cancel_access_key_requires_reconciliation"
-      ? "access_key_requires_reconciliation" : error instanceof BlingError && (stage === "cancel_draft_delete" || stage === "cancel_sale_delete")
-      && [400, 403, 422].includes(error.status) ? "provider_refusal" : "pending");
+    if (error instanceof BlingError) {
+      if (error.code === "cancel_access_key_requires_reconciliation") input.onBlocked?.("access_key_requires_reconciliation");
+      else if (error.code === "cancel_draft_not_pending") input.onBlocked?.("draft_not_pending");
+      else if (error.code === "cancel_draft_still_present") input.onBlocked?.("draft_still_present");
+      else if (stage === "cancel_draft_delete" && [400, 403, 422].includes(error.status)) input.onBlocked?.("draft_refused");
+      else if (stage === "cancel_sale_delete" && [400, 403, 422].includes(error.status)) input.onBlocked?.("sale_refused");
+    }
     try { await call(db, "record_wholesale_cancel_pending", { p_id }); } catch { /* Lease expires; retry reconciles remote IDs. */ }
     return false;
   }

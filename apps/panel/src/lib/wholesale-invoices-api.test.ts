@@ -211,6 +211,20 @@ describe("notas de atacado: emitir, tentar de novo e cancelar", () => {
     state.rpc.mockResolvedValue({ data: null, error: null });
     expect((await post({ action: "cancel", id: ids.invoice })).status).toBe(409);
   });
+  it("encaminha a conferência após revisão e informa que o rascunho ainda existe", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({ data: name === "begin_wholesale_kit_invoice_cancel"
+      ? { wholesaleId: ids.invoice, invoiceId: 77 } : { ok: false }, error: null }));
+    state.cancel.mockImplementation(async ({ onBlocked }: { onBlocked: (reason: string) => void }) => {
+      onBlocked("draft_still_present");
+      return false;
+    });
+    const response = await post({ action: "cancel", id: ids.invoice, afterBlingReview: true });
+    expect(response.status).toBe(409);
+    expect(state.cancel).toHaveBeenCalledWith(expect.objectContaining({ afterBlingReview: true }));
+    const body = await response.json() as { reason: string; message: string };
+    expect(body.reason).toBe("draft_still_present");
+    expect(body.message).toContain("rascunho ainda existe no Bling");
+  });
 });
 
 
