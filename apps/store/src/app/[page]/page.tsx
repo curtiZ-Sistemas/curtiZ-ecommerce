@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { BRAND_NAME, officialUrl } from "@/lib/seo";
 import { getPublicLegalDocument } from "@/lib/legal-data";
+import { formatCnpj } from "@/lib/company-identification";
+import { getCompanyIdentification } from "@/lib/company-identification-data";
 import { getPublicCmsPage } from "@/lib/storefront-data";
 
 // Publicações do painel precisam valer sem novo build.
@@ -164,6 +166,7 @@ export default async function ContentPage({ params }: { params: Promise<{ page: 
   const title = cmsPage?.title ?? fallback!.title;
   const lead = cmsPage?.summary ?? fallback!.lead;
   const body = cmsPage?.paragraphs.length ? cmsPage.paragraphs : fallback!.body;
+  const company = slug === "contato" ? await getCompanyIdentification() : null;
 
   return (
     <div className="container page-shell">
@@ -174,6 +177,17 @@ export default async function ContentPage({ params }: { params: Promise<{ page: 
           <p>{lead}</p>
         </div>
       </div>
+      {company ? (
+        <section id="dados-da-empresa" className="form-card" aria-labelledby="dados-da-empresa-title">
+          <h2 id="dados-da-empresa-title">Dados da empresa</h2>
+          <p><strong>Razão social:</strong> {company.legalName}</p>
+          <p><strong>CNPJ:</strong> {formatCnpj(company.taxId)}</p>
+          <p><strong>Endereço:</strong> {company.address}</p>
+          {company.email ? <p><strong>E-mail:</strong> <a href={`mailto:${company.email}`}>{company.email}</a></p> : null}
+          {company.phone ? <p><strong>Telefone:</strong> {company.phone}</p> : null}
+          <p>Loja exclusivamente online.</p>
+        </section>
+      ) : null}
       <section className="form-card">
         {body.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>

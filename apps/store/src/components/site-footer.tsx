@@ -112,10 +112,7 @@ export function SiteFooter({
             <div>
               <dt>CNPJ</dt>
               <dd>{formatCnpj(company.taxId)}</dd>
-            </div>
-            <div>
-              <dt>Endereço</dt>
-              <dd>{company.address}</dd>
+              <dd><Link href="/contato#dados-da-empresa" prefetch={false}>Dados da empresa</Link></dd>
             </div>
             {company.email || company.phone ? (
               <div>

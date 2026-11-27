@@ -64,7 +64,10 @@ describe("rodapé da loja", () => {
     expect(html).toContain("Identificação do fornecedor");
     expect(html).toContain("Empresa Exemplo Ltda");
     expect(html).toContain("11.222.333/0001-81");
-    expect(html).toContain("Rua Exemplo, 100, Centro");
+    expect(html).not.toContain("Rua Exemplo, 100, Centro");
+    expect(html).not.toContain("<dt>Endereço</dt>");
+    expect(html).toContain('href="/contato#dados-da-empresa"');
+    expect(html).toContain("Dados da empresa");
     expect(html).toContain("mailto:contato@example.test");
   });
 
