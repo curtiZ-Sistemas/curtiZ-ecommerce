@@ -194,13 +194,16 @@ export function readBlingAuthorizedResaleXml(xml: string, invoiceKey: string, ex
     || children(recipient, "CPF").length || value(destination, "UF") !== "MG"
     || !/^3\d{7}$/u.test(expected.destinationPostalCode) || value(destination, "CEP") !== expected.destinationPostalCode
     || value(one(emitter, "enderEmit"), "UF") !== "MG") return fail();
-  if (!/^3\d{7}$/u.test(expected.originPostalCode) || value(pickup, "UF") !== "MG"
+  if (!/^3\d{7}$/u.test(expected.originPostalCode) || ["UF", "cMun", "CEP"].some(field => {
+    const matches = children(pickup, field);
+    return matches.length !== 1 || matches[0]!.children.length !== 0;
+  }) || value(pickup, "UF") !== "MG"
     || value(pickup, "cMun") !== "3145208" || value(pickup, "CEP") !== expected.originPostalCode)
     throw new BlingError("invoice_pickup_address_mismatch", 409);
   if (expected.pickupObservation) {
     const additional = children(info, "infAdic");
     const complementary = additional.length === 1 ? children(additional[0]!, "infCpl") : [];
-    if (complementary.length !== 1 || !complementary[0]!.text.normalize("NFC").replace(/\s+/gu, " ").includes(expected.pickupObservation.normalize("NFC").replace(/\s+/gu, " ")))
+    if (complementary.length !== 1 || complementary[0]!.children.length !== 0 || !complementary[0]!.text.normalize("NFC").replace(/\s+/gu, " ").includes(expected.pickupObservation.normalize("NFC").replace(/\s+/gu, " ")))
       throw new BlingError("invoice_pickup_observation_missing", 409);
   }
   const delivery = expected.deliveryPostalCode ?? expected.destinationPostalCode;
