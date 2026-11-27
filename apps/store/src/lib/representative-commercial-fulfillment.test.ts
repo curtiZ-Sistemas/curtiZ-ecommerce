@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({
   claimed: new Set<string>(),
   saleId: null as number | null,
   contactExists: true,
-  paymentKind: "pix" as "pix" | "credit_card" | "debit_card",
+  paymentKind: "pix",
   paymentStatus: "approved", paymentAmount: 10000, paymentRefunds: [] as unknown[],
   natureActive: true, natureSeries: 3, draftSeries: 3, draftAmount: 100, methodTypeOverride: null as number | null,
   requests: [] as { path: string; method: string; body?: unknown }[],
